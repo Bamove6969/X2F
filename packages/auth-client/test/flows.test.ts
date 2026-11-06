@@ -54,7 +54,6 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/news',
   'GET /v1/offers',
   'GET /v1/offers/:id',
-  'GET /v1/owner/price-health',
   'GET /v1/price',
   'GET /v1/reviews/pending',
   'GET /v1/trades/:code',

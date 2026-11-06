@@ -822,7 +822,7 @@ describe('staff, owner and other mounts', () => {
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
        values ($1, $2, 'second-factor', 'pair', $3, $4, $5) returning id`,
-      [id, dev, JSON.stringify({ first: { method: 'pgp', fingerprint: ka.fingerprint, fingerprints: [ka.fingerprint] } }), now, new Date(now.getTime() + 5 * MIN)],
+      [id, dev, JSON.stringify({ first: { method: 'pgp', fingerprint: ka.fingerprint, fingerprints: [ka.fingerprint] }, app: 'trader' }), now, new Date(now.getTime() + 5 * MIN)],
     );
     const pendingId = rows[0]!.id;
     const s = await loginStart(b, kb, { pendingId }, STAFF_MOUNT);

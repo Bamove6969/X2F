@@ -32,7 +32,7 @@ import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
 import { requestOrigin } from './origin.js';
 import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
-import { TRADER_LOGIN_KINDS, requireSession, startSession } from './sessions.js';
+import { TRADER_LOGIN_KINDS, realmOf, requireSession, startSession } from './sessions.js';
 import { NIL_UUID } from './throttle.js';
 
 // ---------------------------------------------------------------------------------------------
@@ -507,12 +507,13 @@ async function assertStartAllowed(db: Queryable, tag: string, device: Buffer, no
  * creates them): same account, same device, unused, unexpired. Read, not consumed;
  * `completeLogin` consumes it at `finish`. Null for anything else.
  */
-async function pendingFirstFactor(deps: Deps, pendingId: string, accountId: string, device: Buffer | null, now: Date) {
+async function pendingFirstFactor(deps: Deps, pendingId: string, accountId: string, device: Buffer | null, now: Date, app: 'trader' | 'staff') {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pendingId) || device === null) return null;
   const { rows } = await deps.db.query<{ payload: Record<string, unknown> }>(
     `select payload from challenges
-      where id = $1 and purpose = 'second-factor' and method = 'pair' and account_id = $2 and device_hash = $3 and used_at is null and expires_at > $4`,
-    [pendingId, accountId, device, now],
+      where id = $1 and purpose = 'second-factor' and method = 'pair' and account_id = $2 and device_hash = $3 and used_at is null and expires_at > $4
+        and payload->>'app' = $5`,
+    [pendingId, accountId, device, now, app],
   );
   return rows[0]?.payload ?? null;
 }
@@ -646,7 +647,7 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
   const recipientOk = await pastedRecipientStillValid(merged.pasted, merged.key, now);
   const { pending } = await pendingKey(deps.config, merged.armored, fingerprint, now);
   // The pending-step lookup runs whenever a pendingId is given, known key or not.
-  const pendingRow = pendingId !== undefined ? await pendingFirstFactor(deps, pendingId, account?.id ?? NIL_UUID, device, now) : undefined;
+  const pendingRow = pendingId !== undefined ? await pendingFirstFactor(deps, pendingId, account?.id ?? NIL_UUID, device, now, realmOf(req).app) : undefined;
   // The second step of a staff or owner login: this key's account's own pending login, from this
   // device, with a key other than the first step's.
   const pendingOk = pendingRow === undefined || (pendingRow !== null && !usedFingerprints(pendingRow).includes(fingerprint));

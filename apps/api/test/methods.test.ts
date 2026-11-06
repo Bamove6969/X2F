@@ -708,21 +708,21 @@ async function keyStep(b: Browser, username: string, auth: SoftAuthenticator, pe
 
 const hasSessionCookie = (res: LightMyRequestResponse) => res.cookies.some((c) => c.name === SESSION_COOKIE);
 
-// Staff steps go to the staff API's mounts (`STAFF_LOGIN`); the owner's stay on the trader API (OWNER-Q).
+// Staff and owner steps go to the staff API's mounts (`STAFF_LOGIN`): neither logs in on the trader API (owner Q13).
 describe('two factors for staff and the owner (R1)', () => {
   it('owner: security key, then PGP with the pendingId → a full session', async () => {
     const { id, username } = await account('owner');
     const { auth } = await addCredential(id, 'security-key', true);
     await addPgp(id, keys[0]!);
     const b = new Browser();
-    const { res: first } = await keyStep(b, username, auth);
+    const { res: first } = await keyStep(b, username, auth, undefined, STAFF_LOGIN);
     expect(first.statusCode).toBe(200);
     const body = first.json();
     expect(body).toEqual({ status: 'second-factor', pendingId: expect.any(String), needs: ['pgp'] });
     expect(hasSessionCookie(first)).toBe(false);
     expect(await sessionCount(id)).toBe(0);
 
-    const second = await pgpStep(b, username, keys[0]!, body.pendingId);
+    const second = await pgpStep(b, username, keys[0]!, body.pendingId, STAFF_LOGIN);
     expect(second.statusCode).toBe(200);
     expect(second.json()).toEqual({ status: 'ok' });
     expect(hasSessionCookie(second)).toBe(true);
@@ -731,7 +731,7 @@ describe('two factors for staff and the owner (R1)', () => {
     expect(await alertsOf(id, 'new-login')).toEqual([{ method: 'pgp', deviceLabel: 'Desk' }]);
 
     // The pending login was used up.
-    const again = await keyStep(new Browser(), username, auth, body.pendingId);
+    const again = await keyStep(new Browser(), username, auth, body.pendingId, STAFF_LOGIN);
     expect(again.res.statusCode).toBe(400);
   });
 
@@ -740,10 +740,10 @@ describe('two factors for staff and the owner (R1)', () => {
     const { auth } = await addCredential(id, 'security-key', true);
     await addPgp(id, keys[0]!);
     const b = new Browser();
-    const first = await pgpStep(b, username, keys[0]!);
+    const first = await pgpStep(b, username, keys[0]!, undefined, STAFF_LOGIN);
     expect(first.json()).toEqual({ status: 'second-factor', pendingId: expect.any(String), needs: ['security-key'] });
     expect(hasSessionCookie(first)).toBe(false);
-    const { res } = await keyStep(b, username, auth, first.json().pendingId);
+    const { res } = await keyStep(b, username, auth, first.json().pendingId, STAFF_LOGIN);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ status: 'ok' });
     expect(hasSessionCookie(res)).toBe(true);
@@ -838,25 +838,25 @@ describe('two factors for staff and the owner (R1)', () => {
 
     // Another device.
     const a = new Browser();
-    const p1 = (await pgpStep(a, username, keys[0]!)).json().pendingId as string;
-    const elsewhere = await keyStep(new Browser(), username, auth, p1);
+    const p1 = (await pgpStep(a, username, keys[0]!, undefined, STAFF_LOGIN)).json().pendingId as string;
+    const elsewhere = await keyStep(new Browser(), username, auth, p1, STAFF_LOGIN);
     expect(elsewhere.res.statusCode).toBe(400);
     expect(errorOf(elsewhere.res)).toBe('challenge-expired');
     expect(hasSessionCookie(elsewhere.res)).toBe(false);
 
     // Another account (same browser).
-    const p2 = (await pgpStep(a, username, keys[0]!)).json().pendingId as string;
+    const p2 = (await pgpStep(a, username, keys[0]!, undefined, STAFF_LOGIN)).json().pendingId as string;
     // The staff member's key on the staff API's mount (staff never log in on the trader API).
     const cross = await keyStep(a, crew.username, crewKey.auth, p2, STAFF_LOGIN);
     expect(errorOf(cross.res)).toBe('challenge-expired');
 
     // At exactly 5:00.
     const t = now;
-    const p3 = (await pgpStep(a, username, keys[0]!)).json().pendingId as string;
+    const p3 = (await pgpStep(a, username, keys[0]!, undefined, STAFF_LOGIN)).json().pendingId as string;
     setNow(new Date(t.getTime() + 4 * MIN));
-    const s = await a.post('/v1/login/webauthn/start', { loginName: username, pendingId: p3 });
+    const s = await a.post(`${STAFF_LOGIN}/webauthn/start`, { loginName: username, pendingId: p3 });
     setNow(new Date(t.getTime() + 5 * MIN));
-    const late = await a.post('/v1/login/webauthn/finish', {
+    const late = await a.post(`${STAFF_LOGIN}/webauthn/finish`, {
       challengeId: s.json().challengeId, response: auth.authenticate(s.json().options, ORIGIN), deviceLabel: 'Desk', pendingId: p3,
     });
     expect(late.statusCode).toBe(400);
@@ -870,15 +870,15 @@ describe('two factors for staff and the owner (R1)', () => {
     const { auth } = await addCredential(id, 'security-key', true);
     await addPgp(id, keys[0]!);
     const b = new Browser();
-    const pendingId = (await pgpStep(b, username, keys[0]!)).json().pendingId as string;
+    const pendingId = (await pgpStep(b, username, keys[0]!, undefined, STAFF_LOGIN)).json().pendingId as string;
     // Started without one: finishing with one is refused, and the pending login is untouched.
-    const s = await b.post('/v1/login/webauthn/start', { loginName: username });
-    const res = await b.post('/v1/login/webauthn/finish', {
+    const s = await b.post(`${STAFF_LOGIN}/webauthn/start`, { loginName: username });
+    const res = await b.post(`${STAFF_LOGIN}/webauthn/finish`, {
       challengeId: s.json().challengeId, response: auth.authenticate(s.json().options, ORIGIN), deviceLabel: 'Desk', pendingId,
     });
     expect(res.statusCode).toBe(400);
     expect(errorOf(res)).toBe('challenge-expired');
-    const ok = await keyStep(b, username, auth, pendingId);
+    const ok = await keyStep(b, username, auth, pendingId, STAFF_LOGIN);
     expect(ok.res.json()).toEqual({ status: 'ok' });
   });
 
@@ -889,15 +889,15 @@ describe('two factors for staff and the owner (R1)', () => {
     const crew = await account('staff');
     await addPgp(crew.id, keys[1]!);
     const a = new Browser();
-    const pendingId = (await pgpStep(a, username, keys[0]!)).json().pendingId as string;
-    expect(errorOf((await keyStep(new Browser(), username, auth, pendingId)).res)).toBe('challenge-expired');
+    const pendingId = (await pgpStep(a, username, keys[0]!, undefined, STAFF_LOGIN)).json().pendingId as string;
+    expect(errorOf((await keyStep(new Browser(), username, auth, pendingId, STAFF_LOGIN)).res)).toBe('challenge-expired');
     const cross = await a.post('/t/complete', {
       accountId: crew.id, factor: { method: 'security-key', credentialId: 'k', attested: true }, pendingId,
     });
     expect(errorOf(cross)).toBe('challenge-expired');
     const { rows } = await deps.db.query('select used_at from challenges where id = $1', [pendingId]);
     expect(rows[0].used_at).toBeNull();
-    const ok = await keyStep(a, username, auth, pendingId);
+    const ok = await keyStep(a, username, auth, pendingId, STAFF_LOGIN);
     expect(ok.res.json()).toEqual({ status: 'ok' });
     expect(await sessionCount(crew.id)).toBe(0);
   });

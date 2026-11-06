@@ -84,14 +84,14 @@ async function keyFirstStep(b: StaffBrowser, loginName: string, key: SoftAuthent
  * A whole two-factor login: a PGP first factor recorded for this browser (as `completeLogin` writes
  * it; PGP itself is Plan 2's and tested there), then the security key as the second step.
  */
-async function fullLogin(b: StaffBrowser, accountId: string, loginName: string, key: SoftAuthenticator) {
+async function fullLogin(b: StaffBrowser, accountId: string, loginName: string, key: SoftAuthenticator, pendingApp: 'staff' | 'trader' = 'staff') {
   const probe = (await b.post('/staff/v1/login/security-key/start', { loginName })).json();
   const { rows: dev } = await deps.db.query<{ device_hash: Buffer }>('select device_hash from challenges where id = $1', [probe.challengeId]);
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
     `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
      values ($1, $2, 'second-factor', 'pair', $3, $4, $5) returning id`,
-    [accountId, dev[0]!.device_hash, JSON.stringify({ first: { method: 'pgp', fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] } }), now, new Date(now.getTime() + 5 * MIN)],
+    [accountId, dev[0]!.device_hash, JSON.stringify({ first: { method: 'pgp', fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] }, app: pendingApp }), now, new Date(now.getTime() + 5 * MIN)],
   );
   const pendingId = rows[0]!.id;
   const start = (await b.post('/staff/v1/login/security-key/start', { pendingId })).json();
@@ -284,7 +284,7 @@ describe('the AAGUID allowlist at staff and owner login (Plan 4 M1, RV5 m5)', ()
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
        values ($1, $2, 'second-factor', 'pair', $3, $4, $5) returning id`,
-      [s.id, dev[0]!.device_hash, JSON.stringify({ first: { method: 'pgp', fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] } }), deps.clock(), new Date(deps.clock().getTime() + 5 * MIN)],
+      [s.id, dev[0]!.device_hash, JSON.stringify({ first: { method: 'pgp', fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] }, app: 'staff' }), deps.clock(), new Date(deps.clock().getTime() + 5 * MIN)],
     );
     const second = (await b2.post('/staff/v1/login/security-key/start', { pendingId: rows[0]!.id })).json();
     lists.staff.delete(KEY_AAGUID);
@@ -400,8 +400,8 @@ async function traderPgpLogin(b: StaffBrowser, key: { publicKey: string; private
  * API's login mounts it is EXACTLY an unknown login name or key (security review RV5 I1): the
  * staff kind is "not found" at the lookup, so start and finish answer with the same status and body
  * as for a name or key that does not exist, before and after the credential, and nothing is made.
- * OWNER-Q 19a: the owner still logs in on both sites until the owner decides. Traders and team
- * members are unchanged.
+ * The owner is refused there the same way (owner Q13, 6 Nov). Traders and team members are
+ * unchanged.
  */
 describe('staff accounts log in only on the staff site (owner 2026-11-03, Q19; RV5 I1)', () => {
   const noSessions = async (accountId: string) =>
@@ -454,7 +454,7 @@ describe('staff accounts log in only on the staff site (owner 2026-11-03, Q19; R
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
        values ($1, $2, 'second-factor', 'pair', $3, $4, $5) returning id`,
-      [s.id, dev, JSON.stringify({ first: { method: 'pgp', fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] } }), now, new Date(now.getTime() + 5 * MIN)],
+      [s.id, dev, JSON.stringify({ first: { method: 'pgp', fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] }, app: 'trader' }), now, new Date(now.getTime() + 5 * MIN)],
     );
     const results = [];
     for (const pendingId of [rows[0]!.id, '00000000-0000-4000-8000-0000000000aa']) {
@@ -506,20 +506,64 @@ describe('staff accounts log in only on the staff site (owner 2026-11-03, Q19; R
     }
   });
 
-  it('OWNER-Q 19a: the owner still logs in on both sites (a full two-factor login on the trader API, and on the staff API)', async () => {
+  it('owner Q13: the owner is refused on the trader site exactly as an unknown name or key, and logs in on the staff site', async () => {
     const key = await addKey(owner.id);
     const k = await genKey();
     await insertPgpKey(deps.db, deps.config, { accountId: owner.id, fingerprint: k.fingerprint, armored: k.publicKey, now: deps.clock() });
-    const b = traderBrowser();
-    const first = await traderPgpLogin(b, k);
-    expect(first.decoy).toBe(false);
-    expect(first.finish.json()).toMatchObject({ status: 'second-factor' });
-    const second = await traderKeyLogin(b, owner.loginName, key, { pendingId: first.finish.json().pendingId });
-    expect(second.finish.json()).toEqual({ status: 'ok' });
-    expect(b.cookies[SESSION_COOKIE]).toBeDefined();
+    const pgp = [];
+    for (const kk of [k, await genKey()]) {
+      const r = await traderPgpLogin(traderBrowser(), kk);
+      pgp.push({ decoy: r.decoy, finish: [r.finish.statusCode, r.finish.json()] });
+    }
+    expect(pgp[0]).toEqual(pgp[1]);
+    expect(pgp[0]).toEqual({ decoy: true, finish: [401, { error: 'code-invalid' }] });
+    const keys = [];
+    for (const name of [owner.loginName, uniqueTrader()]) {
+      const b = traderBrowser();
+      const r = await traderKeyLogin(b, name, key);
+      keys.push({ listedTheKey: r.listed.includes(key.credentialId), finish: [r.finish.statusCode, r.finish.json()], session: b.cookies[SESSION_COOKIE] !== undefined });
+    }
+    expect(keys[0]).toEqual(keys[1]);
+    expect(keys[0]).toEqual({ listedTheKey: false, finish: [401, { error: 'webauthn-failed' }], session: false });
     const s = new StaffBrowser(app);
     expect((await fullLogin(s, owner.id, owner.loginName, key)).json()).toEqual({ status: 'ok' });
     expect(s.cookies[STAFF_SESSION_COOKIE]).toBeDefined();
+  });
+
+  it("lead review I-1: one name's decoy lists differ between the two sites, so comparing them shows no real key", async () => {
+    // An unknown name: two different lists of the same length, each the same on every start.
+    const name = uniqueTrader();
+    const ids = async (b: StaffBrowser, url: string, loginName: string) =>
+      ((await b.post(url, { loginName })).json().options.allowCredentials as Array<{ id: string }>).map((c) => c.id);
+    const onTrader = await ids(traderBrowser(), '/v1/login/webauthn/start', name);
+    const onStaff = await ids(new StaffBrowser(app), '/staff/v1/login/security-key/start', name);
+    expect(onTrader).toHaveLength(onStaff.length);
+    expect(onTrader.filter((id) => onStaff.includes(id))).toEqual([]);
+    expect(await ids(traderBrowser(), '/v1/login/webauthn/start', name)).toEqual(onTrader);
+    expect(await ids(new StaffBrowser(app), '/staff/v1/login/security-key/start', name)).toEqual(onStaff);
+    // A staff member with two keys: the trader site's list (all decoys) shares nothing with the staff
+    // site's, so the difference between them is never the real keys.
+    const m = await seedStaff(deps, { role: 'mod' });
+    const k1 = await addKey(m.id);
+    const k2 = await addKey(m.id);
+    const staffList = await ids(new StaffBrowser(app), '/staff/v1/login/security-key/start', m.loginName);
+    const traderList = await ids(traderBrowser(), '/v1/login/webauthn/start', m.loginName);
+    expect(staffList).toEqual(expect.arrayContaining([k1.credentialId, k2.credentialId]));
+    expect(traderList).not.toContain(k1.credentialId);
+    expect(traderList.filter((id) => staffList.includes(id))).toEqual([]);
+  });
+
+  it('lead review M-1: a pending login recorded on the trader site cannot be finished on the staff site', async () => {
+    const s = await seedStaff(deps, { role: 'senior' });
+    const key = await addKey(s.id);
+    const b = new StaffBrowser(app);
+    const res = await fullLogin(b, s.id, s.loginName, key, 'trader');
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'webauthn-failed' });
+    expect(b.cookies[STAFF_SESSION_COOKIE]).toBeUndefined();
+    expect(await noSessions(s.id)).toBe(true);
+    // The same pair recorded on the staff site works.
+    expect((await fullLogin(new StaffBrowser(app), s.id, s.loginName, key)).json()).toEqual({ status: 'ok' });
   });
 
   it('leaves trader and team-member logins on the trader API unchanged', async () => {

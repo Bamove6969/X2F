@@ -579,7 +579,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     const pk = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await insertCredential(ownerId, key, 'security-key', true);
     await insertCredential(ownerId, pk, 'passkey', false);
-    const { res, options } = await usernameLogin(pk, await usernameOf(ownerId));
+    const { res, options } = await usernameLogin(pk, await usernameOf(ownerId), new Browser(), '/t/two'); // the owner logs in only on the staff site's mount (owner Q13)
     const listed = options.allowCredentials.map((c: { id: string }) => c.id);
     expect(listed).toHaveLength(MAX_SECURITY_KEYS); // the key plus decoys (review I2)
     expect(listed).toContain(key.credentialId);
@@ -634,7 +634,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
         [
           staffId, deviceHash,
           // A PGP first factor as completeLogin records it (parseFactor needs the fingerprints).
-          JSON.stringify({ first: method === 'pgp' ? { method, fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] } : { method } }),
+          JSON.stringify({ first: method === 'pgp' ? { method, fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] } : { method }, app: 'trader' }),
           now, new Date(now.getTime() + 5 * MIN),
         ],
       );

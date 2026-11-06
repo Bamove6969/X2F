@@ -34,10 +34,10 @@ export const STAFF_REALM: SessionRealm = { cookie: STAFF_SESSION_COOKIE, app: 's
  * not in these kinds, so the lookup treats it as not found (security review RV5 I1): start and
  * finish answer exactly as for a login name or key that does not exist (decoy options or message,
  * then 401 `webauthn-failed` / `code-invalid`), and nothing tells that the account is there. Team
- * members are vendor-side and stay. OWNER-Q 19a: the owner is still served here (the owner's
- * price-health page lives on the trader API) until the owner decides otherwise.
+ * members are vendor-side and stay. The owner is refused here the same way (owner Q13, 6 Nov: "the
+ * owner uses only the staff site"); the owner's Price health moved to `GET /staff/v1/price-health`.
  */
-export const TRADER_LOGIN_KINDS: readonly AccountKind[] = ['trader', 'owner', 'member'];
+export const TRADER_LOGIN_KINDS: readonly AccountKind[] = ['trader', 'member'];
 
 /** The realm the request's app decorated (`buildApi`: trader; `buildStaffApi`: staff). */
 export function realmOf(req: FastifyRequest): SessionRealm {

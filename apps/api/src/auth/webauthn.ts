@@ -26,7 +26,7 @@ import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { assertMethodAllowed } from './methods.js';
-import { requireSession, startSession } from './sessions.js';
+import { realmOf, requireSession, startSession } from './sessions.js';
 import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
 
 export type CredentialKind = 'passkey' | 'security-key';
@@ -508,11 +508,24 @@ async function securityKeyIdLengths(db: Queryable): Promise<IdLengths[]> {
  * lengths of the security keys actually stored (`lengths`, weighted by count), so a stranger's name
  * lists IDs of the same lengths as registered accounts do; with nothing stored yet, 64 bytes (a
  * YubiKey's non-discoverable credential ID). The bytes come from HMAC-SHA-512 in counter mode.
+ *
+ * `realm` (lead review I-1, 6 Nov): the staff app shares `serverKey`, so without it both sites made
+ * the same decoys for a name, and comparing one name's lists on the two sites showed which IDs were
+ * real (a staff member's n keys on the staff site, a trader's on the trader site). The staff realm
+ * puts `staff/` in front of the label; the trader realm keeps the label it always had, so traders'
+ * decoys do not change.
  */
-export function decoyCredentialIds(deps: Pick<Deps, 'config'>, nameTag: string, count: number, lengths: readonly IdLengths[]): Buffer[] {
+export function decoyCredentialIds(
+  deps: Pick<Deps, 'config'>,
+  nameTag: string,
+  count: number,
+  lengths: readonly IdLengths[],
+  realm: LoginRealm = 'trader',
+): Buffer[] {
   const key = subkey(deps.config, 'decoy');
+  const prefix = realm === 'staff' ? 'staff/' : '';
   const mac = (label: string, i: number, j: number) =>
-    createHmac('sha512', key).update(Buffer.concat([Buffer.from(`${label}/${nameTag}/`, 'utf8'), Buffer.from([i, j])])).digest();
+    createHmac('sha512', key).update(Buffer.concat([Buffer.from(`${prefix}${label}/${nameTag}/`, 'utf8'), Buffer.from([i, j])])).digest();
   const total = lengths.reduce((sum, l) => sum + l.n, 0);
   // A uniform draw in [0, 1) per decoy, mapped through the cumulative distribution of the stored
   // lengths, so a shift in the stored mix moves only the few draws near a boundary (the modulo
@@ -548,8 +561,8 @@ async function pendingAfterPgp(deps: Deps, req: FastifyRequest, accountId: strin
   const { rows } = await deps.db.query(
     `select 1 from challenges
       where id = $1 and account_id = $2 and device_hash = $3 and purpose = 'second-factor' and method = 'pair'
-        and used_at is null and expires_at > $4 and payload->'first'->>'method' = 'pgp'`,
-    [pendingId, accountId, device, deps.clock()],
+        and used_at is null and expires_at > $4 and payload->'first'->>'method' = 'pgp' and payload->>'app' = $5`,
+    [pendingId, accountId, device, deps.clock(), realmOf(req).app],
   );
   return rows.length > 0;
 }
@@ -565,8 +578,8 @@ async function pendingPgpAccount(deps: Deps, req: FastifyRequest, pendingId: str
   const { rows } = await deps.db.query<{ id: string; kind: AccountKind }>(
     `select a.id, a.kind from challenges c join accounts a on a.id = c.account_id
       where c.id = $1 and c.device_hash = $2 and c.purpose = 'second-factor' and c.method = 'pair'
-        and c.used_at is null and c.expires_at > $3 and c.payload->'first'->>'method' = 'pgp'`,
-    [pendingId, device, deps.clock()],
+        and c.used_at is null and c.expires_at > $3 and c.payload->'first'->>'method' = 'pgp' and c.payload->>'app' = $4`,
+    [pendingId, device, deps.clock(), realmOf(req).app],
   );
   return rows[0] ?? null;
 }
@@ -576,8 +589,13 @@ function pendingTag(deps: Pick<Deps, 'config'>, pendingId: string): string {
   return createHmac('sha256', subkey(deps.config, 'name')).update(`pending/${pendingId}`).digest('hex');
 }
 
+/** Which site a login runs on: decoys differ per site (lead review I-1). */
+export type LoginRealm = 'trader' | 'staff';
+
 interface LoginRouteOptions {
   kinds: AccountKind[];
+  /** The site these routes serve; 'trader' when absent. The staff app passes 'staff'. */
+  realm?: LoginRealm;
   afterAuthenticate?: (accountId: string) => Promise<void>;
   /** Route `config` for both routes (Plan 4's staff app marks them `{ perm: 'public-login' }`). */
   routeConfig?: Record<string, unknown>;
@@ -660,7 +678,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     // staff second step after a PGP first factor (passkeys listed too) can exceed that, and it
     // already named the account.
     const lengths = await securityKeyIdLengths(deps.db);
-    const decoys = decoyCredentialIds(deps, tag, Math.max(0, MAX_SECURITY_KEYS - creds.length), lengths);
+    const decoys = decoyCredentialIds(deps, tag, Math.max(0, MAX_SECURITY_KEYS - creds.length), lengths, opts.realm ?? 'trader');
     creds = [...creds, ...decoys.map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false, aaguid: null }))].sort((x, y) =>
       Buffer.compare(x.credential_id, y.credential_id),
     );

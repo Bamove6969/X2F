@@ -36,6 +36,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'A message.' } },
   { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'Edited.' } },
   { method: 'DELETE', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER },
+  // Owner Q13 (6 Nov): the owner's Price health, moved from the trader API.
+  { method: 'GET', url: '/staff/v1/price-health', perm: 'stats.read', allowed: OWNER },
   // Plan 5 Tasks 4 and 21: platform feedback and the feedback form, read by the owner.
   { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: OWNER },
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: OWNER },

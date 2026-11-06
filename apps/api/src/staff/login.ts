@@ -36,7 +36,7 @@ export async function staffLoginRoutes(app: FastifyInstance): Promise<void> {
   const afterAuthenticate = staffLoginCheck(app.deps);
   const kinds = ['staff', 'owner'] as const;
   await app.register(securityKeyLoginRoutes, {
-    prefix: '/staff/v1/login/security-key', kinds: [...kinds], afterAuthenticate, routeConfig: PUBLIC_LOGIN, recheckAllowlist: true,
+    prefix: '/staff/v1/login/security-key', kinds: [...kinds], realm: 'staff', afterAuthenticate, routeConfig: PUBLIC_LOGIN, recheckAllowlist: true,
   });
   await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...kinds], afterAuthenticate, routeConfig: PUBLIC_LOGIN }), {
     prefix: '/staff/v1/login/pgp',
