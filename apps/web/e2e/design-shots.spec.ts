@@ -785,8 +785,11 @@ test("52 an unfolded Fold (884x1104): the seller's paid room with the chat pane"
 test('53 an unfolded Fold (884x1104): the offers list (SellOffers)', async ({ page }) => {
   await page.setViewportSize(FOLD);
   await stubBrowseApi(page, { signedIn: true, live: { USD: BOARD_SELL_LIVE_USD }, offers: (c) => (c === 'USD' ? boardSellOffers() : []), market: { USD: BOARD_SELL_OFFERS.marketCentsPerXmr } });
+  await page.route('**/v1/wallets', json([...B.wallets]));
+  await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 }));
   await page.goto('/sell/ZELLE');
-  await expect(page.locator('article').first()).toBeVisible();
+  // Two panes (Fold-Offers): the list picks, the quote is beside it.
+  await expect(page.locator('[data-pane="side"] #quote-amount')).toBeVisible();
   await shot(page, '53-fold-884-offers-list');
 });
 
@@ -795,6 +798,7 @@ test('54 an unfolded Fold (884x1104): My offers', async ({ page }) => {
   await myOffersApi(page, { offers: myOffers() });
   await page.goto('/profile/offers');
   await expect(page.locator('[data-part="offer"]')).toHaveCount(3);
+  await expect(page.locator('[data-pane="side"] [data-part="offer-detail"]')).toBeVisible();
   await shot(page, '54-fold-884-myoffers');
 });
 

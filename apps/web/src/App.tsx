@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
+import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { TradeChatPanel } from './chat/ChatPanel.js';
@@ -14,17 +14,12 @@ import { PostOffer } from './screens/PostOffer.js';
 import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
-import { OfferList } from './screens/browse/OfferList.js';
+import { OffersRoute } from './screens/browse/OffersRoute.js';
 import { SELL_COPY } from './screens/browse/SellCopy.js';
-import { adSide, currencyFrom, type Side } from './screens/browse/api.js';
-import type { BrowseCopy } from './screens/browse/SellCopy.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
 import { Login } from './screens/auth/Login.js';
 import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js';
 import { MemberInvite } from './screens/auth/MemberInvite.js';
-import { BuyQuote } from './screens/quote/BuyQuote.js';
-import { quotePath } from './screens/quote/quoteModel.js';
-import { SellQuote } from './screens/quote/SellQuote.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
@@ -73,18 +68,6 @@ function Layout({ nav }: { nav: boolean }) {
 /** Each screen's task replaces its placeholder (Tasks 16-30). */
 function Screen({ name }: { name: string }) {
   return <main data-screen={name} />;
-}
-
-/**
- * The offer list (Tasks 16/17) with its Trade button opening the quote (Task 18): a sell ad opens
- * BuyQuote at `/buy/<method>/<offer>`, a buy ad SellQuote at `/sell/<method>/<offer>`, in the
- * currency being browsed.
- */
-function BrowseOffers({ side, copy }: { side: Side; copy: BrowseCopy }) {
-  const { methodId = '' } = useParams();
-  const { search } = useLocation();
-  const navigate = useNavigate();
-  return <OfferList side={side} copy={copy} onTrade={(o) => void navigate(quotePath(adSide(side), methodId, o.id, currencyFrom(search)))} />;
 }
 
 /** Hands the router's navigate to the API client, so terms-required and no-wallet redirects stay in the app. */
@@ -181,10 +164,11 @@ export function App() {
         </Route>
         <Route element={<Layout nav={false} />}>
           <Route path="/post" element={<PostOffer />} />
-          <Route path="/sell/:methodId" element={<BrowseOffers side="sell" copy={SELL_COPY} />} />
-          <Route path="/buy/:methodId" element={<BrowseOffers side="buy" copy={BUY_COPY} />} />
-          <Route path="/sell/:methodId/:offerId" element={<SellQuote />} />
-          <Route path="/buy/:methodId/:offerId" element={<BuyQuote />} />
+          {/* The offers and their quote share one component (two panes on a fold, Fold-Offers). */}
+          <Route path="/sell/:methodId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
+          <Route path="/buy/:methodId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
+          <Route path="/sell/:methodId/:offerId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
+          <Route path="/buy/:methodId/:offerId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
           <Route path="/trade/:code" element={<TradeRoom />} />
           {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
           <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
