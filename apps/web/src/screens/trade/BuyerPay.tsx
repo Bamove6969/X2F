@@ -244,7 +244,7 @@ function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () 
     </svg>
   );
   return (
-    <section aria-label="Payment timer" className="x2f-card x2f-pay-timer">
+    <section aria-label="Payment timer" className="x2f-card x2f-pay-timer" data-fold-glance="timer">
       <button type="button" className="x2f-pay-timer__text" aria-describedby="tip-pay" {...tip.trigger}>
         <span className="x2f-pay-timer__label">
           Time to pay
@@ -278,7 +278,7 @@ function PaymentCard({ view, method, total, rate }: { view: TradeView; method: M
   const details = usePaymentDetails(view.code);
   const rows: { label: string; value: string }[] = details ?? [{ label: `${method.name} to`, value: 'Ask in the chat' }];
   return (
-    <section aria-label="Send this payment" className="x2f-card x2f-pay-card">
+    <section aria-label="Send this payment" className="x2f-card x2f-pay-card" data-fold-glance="pay">
       <h2 className="x2f-pay-card__title">Send exactly</h2>
       {total ? (
         <span className="x2f-pay-card__total">

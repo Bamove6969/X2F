@@ -2,24 +2,19 @@ import { describe, expect, it } from 'vitest';
 import {
   BAD_PHRASES,
   GOOD_PHRASES,
-  LATE_REVIEW,
-  REVEAL_AFTER_DAYS,
   REVIEW_NOTE_MAX,
   ReviewError,
   STAR_MAX,
   TRADE_BADGES,
   UNDER_REVIEW_LABEL,
-  assertLateReviewAllowed,
   countsInStats,
-  isRevealed,
   reviewMonth,
-  revealAt,
   validateReview,
   type ReviewErrorCode,
 } from '../src/index.js';
+import * as rep from '../src/index.js';
 
 const none = () => false;
-const DAY = 86_400_000;
 
 function codeOf(fn: () => unknown): ReviewErrorCode | 'no-throw' {
   try {
@@ -123,38 +118,14 @@ describe('validateReview', () => {
   });
 });
 
-describe('blind reveal (spec 5.3, P5-A5)', () => {
-  const since = new Date('2026-03-01T12:00:00Z');
-  const at = (d: number) => new Date(since.getTime() + d * DAY);
-  it('waits 7 days when only one side has rated', () => {
-    expect(REVEAL_AFTER_DAYS).toBe(7);
-    expect(revealAt({ reviewableSince: since, submitted: { buyer: at(2), seller: null } })).toEqual(at(7));
-    expect(revealAt({ reviewableSince: since, submitted: { buyer: null, seller: null } })).toEqual(at(7));
-  });
-  it('reveals at the later submission when both have rated', () => {
-    expect(revealAt({ reviewableSince: since, submitted: { buyer: at(3), seller: at(2) } })).toEqual(at(3));
-  });
-  it('is false 1 ms before and true at the instant', () => {
-    const a = { reviewableSince: since, submitted: { buyer: at(2), seller: null } };
-    expect(isRevealed(a, new Date(at(7).getTime() - 1))).toBe(false);
-    expect(isRevealed(a, at(7))).toBe(true);
-  });
-  it('a pair rated after the 7 days reveals at the 7 days, not later', () => {
-    expect(revealAt({ reviewableSince: since, submitted: { buyer: at(9), seller: at(10) } })).toEqual(at(7));
-  });
-});
-
-describe('late reviews (P5-A31, OPEN: default keeps the draft)', () => {
-  it('defaults to any', () => {
-    expect(LATE_REVIEW).toBe('any');
-  });
-  it('neutral-only refuses stars after the reveal and allows Neutral', () => {
-    const stars = { neutral: false as const, stars: 5 as const, phrases: [], tradeBadges: [] };
-    expect(codeOf(() => assertLateReviewAllowed(stars, true, 'neutral-only'))).toBe('late-review-neutral-only');
-    expect(codeOf(() => assertLateReviewAllowed({ neutral: true }, true, 'neutral-only'))).toBe('no-throw');
-    expect(codeOf(() => assertLateReviewAllowed(stars, false, 'neutral-only'))).toBe('no-throw');
-    expect(codeOf(() => assertLateReviewAllowed(stars, true, 'any'))).toBe('no-throw');
-    expect(codeOf(() => assertLateReviewAllowed({ neutral: true }, true, 'closed'))).toBe('late-review-closed');
+describe('no blind reveal and no late-review modes (owner 2026-11-02: a review shows once submitted)', () => {
+  it('@x2f/reputation has no reveal deadline or late-review rule any more', () => {
+    for (const name of ['REVEAL_AFTER_DAYS', 'revealAt', 'isRevealed', 'LATE_REVIEW', 'assertLateReviewAllowed']) {
+      expect(Object.keys(rep), name).not.toContain(name);
+    }
+    // @ts-expect-error the late-review refusals are gone with the late-review modes
+    const late: ReviewErrorCode = 'late-review-closed';
+    expect(late).toBe('late-review-closed');
   });
 });
 
