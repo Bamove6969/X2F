@@ -1,7 +1,8 @@
 import {
-  UNCHOSEN_SESSION_HOURS, checkLoginName, isSessionHours, sessionHoursFor, type AccountKind, type ConfirmAction, type MethodType, type SessionAccountType,
+  SESSION_CHOICE_WINDOW_MS, UNCHOSEN_SESSION_HOURS, checkLoginName, isIdleReminderMinutes, isSessionHours, sessionHoursFor, type AccountKind, type ConfirmAction,
+  type MethodType, type SessionAccountType,
 } from '@x2f/accounts';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import { lockNames, loginNameTaken, loginTags, setLoginName } from '../accounts.js';
 import type { Config } from '../config.js';
@@ -13,7 +14,7 @@ import type { TeamRole } from '../team/perms.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
 import { gateChange, heldReply, holdUntil, pushHoldStarted, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
-import { refreshSessionCookie, requireSession, type SessionLevel } from '../auth/sessions.js';
+import { personAccountId, refreshSessionCookie, requireSession, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
 
@@ -49,6 +50,12 @@ export interface AccountOverview {
    * fixed rules.
    */
   session: SessionInfo | null;
+  /**
+   * The person's idle reminder (owner, Q75, 6 Nov 2026): minutes without activity before the app
+   * reminds them, or null when off (the default). A team member's is their own (their login
+   * account's), never the account owner's. Null for staff and owner accounts, which have none.
+   */
+  idleReminderMinutes: number | null;
 }
 
 /** A full trader session's length, as `GET /v1/account/me` and the session routes return it. */
@@ -59,7 +66,11 @@ export interface SessionInfo {
   choices: number[];
   /** When the session ends unless "Stay logged in" extends it. */
   expiresAt: string;
-  /** False for a team member's session: extending re-proves the account owner's login methods (open owner question). */
+  /**
+   * True for every full trader session: the person (a team member too, owner Q73, 6 Nov 2026)
+   * extends it by re-proving one of their own login methods. Kept as a field so a later rule can
+   * turn it off for some sessions.
+   */
   canExtend: boolean;
   /** The server's time as it answered, for the prompt's countdown (`serverClock`). */
   serverNow: string;
@@ -73,12 +84,12 @@ export function sessionAccountType(_kind: AccountKind): SessionAccountType {
   return 'trader';
 }
 
-function sessionInfo(kind: AccountKind, memberId: string | null, row: { length_hours: number | null; expires_at: Date }, now: Date): SessionInfo {
+function sessionInfo(kind: AccountKind, row: { length_hours: number | null; expires_at: Date }, now: Date): SessionInfo {
   return {
     lengthHours: row.length_hours,
     choices: [...sessionHoursFor(sessionAccountType(kind))],
     expiresAt: row.expires_at.toISOString(),
-    canExtend: memberId === null,
+    canExtend: true,
     serverNow: now.toISOString(),
   };
 }
@@ -159,15 +170,26 @@ function idParam(req: FastifyRequest): string {
   return id;
 }
 
+async function idleReminderOf(db: Queryable, personId: string): Promise<number | null> {
+  const { rows } = await db.query<{ m: number | null }>('select idle_reminder_minutes as m from accounts where id = $1', [personId]);
+  return rows[0]?.m ?? null;
+}
+
+/**
+ * Checks `hours` of `POST /v1/account/session/extend` before `requireConfirm`, so a bad choice never
+ * uses up the confirm token (as R17 asks of the wallet route). Absent: the session's own length.
+ */
+const extendHoursValid: preHandlerAsyncHookHandler = async function (req) {
+  const body = req.body;
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
+  const hours = (body as { hours?: unknown }).hours;
+  if (hours !== undefined && !isSessionHours(sessionAccountType(req.auth.kind), hours)) throw new ApiError(400, 'bad-request');
+};
+
 async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOverview> {
   const { accountId, sessionId } = req.auth;
   // A member's own login methods (its own login account); the account owner's are not theirs to see.
-  let methodsOf = accountId;
-  if (req.auth.memberId !== null) {
-    const m = await deps.db.query<{ member_account_id: string }>('select member_account_id from team_members where id = $1', [req.auth.memberId]);
-    if (!m.rows[0]) throw new ApiError(401, 'not-authenticated');
-    methodsOf = m.rows[0].member_account_id;
-  }
+  const methodsOf = await personAccountId(deps.db, req.auth);
   const { rows } = await deps.db.query<{
     display_name: string;
     legacy_login_name: boolean;
@@ -204,7 +226,8 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
     member,
-    session: row.kind === 'trader' && row.level === 'full' ? sessionInfo(row.kind, req.auth.memberId, row, now) : null,
+    session: row.kind === 'trader' && row.level === 'full' ? sessionInfo(row.kind, row, now) : null,
+    idleReminderMinutes: row.kind === 'trader' ? await idleReminderOf(deps.db, methodsOf) : null,
   };
 }
 
@@ -338,10 +361,11 @@ export function accountRoutes(app: FastifyInstance): void {
    * Session length (owner, 2 Nov 2026; boards SessionLength, Devices). `PUT /v1/account/session/length
    * { hours }` sets the calling session's own length: full trader sessions only, a team member's
    * included (its own login); 400 `bad-request` unless `hours` is one of the account type's choices.
-   * - Not chosen yet (the question after every login): the session lasts `hours` from its login
-   *   (from its last "Stay logged in" if it had one).
-   * - Already chosen (Devices and sessions): a shorter length applies at once; a longer one never
-   *   adds time without a login method, so the end stays and the next "Stay logged in" uses it.
+   * - Not chosen yet, within SESSION_CHOICE_WINDOW_MS of the login (the question after every
+   *   login): the session lasts `hours` from its login.
+   * - Otherwise (Devices and sessions, or a first choice made later; lead decision 6 Nov 2026): a
+   *   shorter length applies at once; a longer one never adds time without a login method, so the
+   *   end stays and the next "Stay logged in" uses it.
    * Not a held change: it can only end this session sooner, or set its length at the login itself.
    */
   app.put(
@@ -357,49 +381,84 @@ export function accountRoutes(app: FastifyInstance): void {
       return withTx(d.db, async (db) => {
         // Tasks 16-17: the calling session must still be live where it writes.
         await requireLiveSessionInTx(db, req.auth, now);
+        // The free first choice: the length was never chosen and the login was a moment ago. An
+        // extend sets the length, so an unchosen session's period is still its login.
         const { rows } = await db.query<{ length_hours: number | null; expires_at: Date }>(
           `update sessions
-              set expires_at = case when length_hours is null then period_started_at + $2 * interval '1 hour'
+              set expires_at = case when length_hours is null and $3::timestamptz < period_started_at + $4 * interval '1 millisecond'
+                                    then period_started_at + $2 * interval '1 hour'
                                     else least(expires_at, period_started_at + $2 * interval '1 hour') end,
                   length_hours = $2
             where id = $1
         returning length_hours, expires_at`,
-          [req.auth.sessionId, hours],
+          [req.auth.sessionId, hours, now, SESSION_CHOICE_WINDOW_MS],
         );
-        return sessionInfo(req.auth.kind, req.auth.memberId, rows[0]!, now);
+        return sessionInfo(req.auth.kind, rows[0]!, now);
       });
     },
   );
 
   /**
-   * `POST /v1/account/session/extend { confirmToken }`: "Stay logged in?" (owner, 2 Nov 2026; board
-   * SessionExtend). The person re-proves a login method on the server (a confirm token for
-   * `extend-session` from any confirm route: passkey, security key, PGP key, or the password with
-   * its authenticator code when the account has one), and the session lasts its length again from
-   * now (the shortest choice if none was chosen). No fixed maximum. The cookie is set again with a
-   * fresh lifetime. Full trader sessions of the account owner only: a team member's session is
-   * refused (`owner-only`), since the confirm routes check the account owner's methods.
+   * `POST /v1/account/session/extend { confirmToken, hours? }`: "Stay logged in?" (owner, 2 Nov
+   * 2026, board SessionExtend; Q73, 6 Nov). The person re-proves one of their own login methods on
+   * the server (a confirm token for `extend-session` from a confirm route: passkey, security key,
+   * PGP key, or the password with its authenticator code when the account has one; a team member
+   * with their own PGP key, passkey or security key), and the session lasts `hours` from now (one
+   * of the choices offered at login; absent, its own length, or the shortest choice if none was
+   * chosen). `hours` becomes the session's length. No fixed maximum. The cookie is set again with a
+   * fresh lifetime. Full trader sessions only, a team member's included; recovery sessions are
+   * refused (`recovery-session`). Bad `hours` → 400 `bad-request` before the token is spent.
    */
   app.post(
     '/v1/account/session/extend',
-    { preHandler: [requireSession({ kinds: ['trader'], allowStaleTerms: true }), requireConfirm({ kind: 'extend-session' })] },
+    {
+      preHandler: [
+        requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'any' }),
+        extendHoursValid,
+        requireConfirm({ kind: 'extend-session' }),
+      ],
+    },
     async (req, reply) => {
       const d = deps();
       const now = d.clock();
+      const hours = (req.body as { hours?: number }).hours ?? null;
       const info = await withTx(d.db, async (db) => {
         await requireLiveSessionInTx(db, req.auth, now);
         const { rows } = await db.query<{ length_hours: number | null; expires_at: Date }>(
           `update sessions
               set period_started_at = $2,
-                  expires_at = $2::timestamptz + coalesce(length_hours, $3) * interval '1 hour'
+                  length_hours = coalesce($4::smallint, length_hours),
+                  expires_at = $2::timestamptz + coalesce($4::smallint, length_hours, $3) * interval '1 hour'
             where id = $1
         returning length_hours, expires_at`,
-          [req.auth.sessionId, now, UNCHOSEN_SESSION_HOURS],
+          [req.auth.sessionId, now, UNCHOSEN_SESSION_HOURS, hours],
         );
-        return sessionInfo(req.auth.kind, req.auth.memberId, rows[0]!, now);
+        return sessionInfo(req.auth.kind, rows[0]!, now);
       });
       refreshSessionCookie(req, reply);
       return info;
+    },
+  );
+
+  /**
+   * `PUT /v1/account/idle-reminder { minutes }` (owner, Q75, 6 Nov 2026): the person's own idle
+   * reminder, one of IDLE_REMINDER_MINUTES, or null to turn it off (the default). A reminder only:
+   * it never logs anyone out and never moves a session's end. It is the person's: a team member's
+   * is stored on their own login account, never the account owner's. Trader sessions only (a team
+   * member's included); not a held change (it touches no login, session or security state).
+   */
+  app.put(
+    '/v1/account/idle-reminder',
+    { preHandler: requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'any' }) },
+    async (req) => {
+      const d = deps();
+      const body = req.body;
+      if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
+      const minutes = (body as { minutes?: unknown }).minutes;
+      if (minutes !== null && !isIdleReminderMinutes(minutes)) throw new ApiError(400, 'bad-request');
+      const person = await personAccountId(d.db, req.auth);
+      await d.db.query('update accounts set idle_reminder_minutes = $2 where id = $1', [person, minutes]);
+      return { idleReminderMinutes: minutes };
     },
   );
 

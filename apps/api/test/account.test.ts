@@ -213,6 +213,7 @@ describe('GET /v1/account/me', () => {
       displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, stage: 'starter', methods: ['password'], hasBackup: false,
       suggestions: ['add-authenticator', 'add-backup'], termsCurrent: true, accountHoldUntil: null, member: null,
       session: { lengthHours: null, choices: [2, 4, 6, 12], expiresAt: at(2 * HOUR).toISOString(), canExtend: true, serverNow: now.toISOString() },
+      idleReminderMinutes: null,
     });
     await addTotp(id);
     const after = await me(b);

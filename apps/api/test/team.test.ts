@@ -320,11 +320,15 @@ describe('owner-only', () => {
       await m.browser.patch(`/v1/team/members/${m.id}`, { roles: ['offers'] }),
       await m.browser.delete(`/v1/team/members/${m.id}`),
       await m.browser.get('/v1/team/audit'),
-      await m.browser.post('/v1/account/session/extend', {}),
       await m.browser.get('/v1/account/sessions'),
+      // Owner Q73: a member confirms with their own methods for "Stay logged in" only.
+      await m.browser.post('/v1/confirm/pgp/start', { action: { kind: 'set-password' } }),
+      await m.browser.post('/v1/confirm/webauthn/start', { action: { kind: 'team-remove', memberId: m.id } }),
       await m.browser.post('/v1/account/login-name', { loginName: 'whatever1' }),
     ];
     for (const r of refused) expect(err(r)).toEqual({ status: 403, error: 'owner-only' });
+    // Owner Q73 (6 Nov 2026): a member extends their own session, with a proof of their own.
+    expect(err(await m.browser.post('/v1/account/session/extend', {}))).toEqual({ status: 403, error: 'confirm-required' });
     // Every member may read who they are (the overview of the account they work for).
     expect((await m.browser.get('/v1/account/me')).statusCode).toBe(200);
   });
@@ -714,6 +718,14 @@ describe('the audit log covers every member action (review M3)', () => {
       'POST /v1/feedback/form': 'anonymous by design (Plan 5 Task 21): not an account action, and a row would tie the member to the text',
       'POST /v1/trades/:code/identity': 'refused to every member (ownerDeviceOnly, member-cannot-sign) until Plan 3 Task 42',
       'PUT /v1/account/session/length': "the member's own session length after their own login (owner, 2 Nov 2026): not an account action",
+      // Owner Q73 (6 Nov 2026): a member extends their own session with their own login methods.
+      'POST /v1/account/session/extend': "the member's own session, re-proved with their own login method: not an account action",
+      'POST /v1/confirm/pgp/start': "a confirm challenge to the member's own keys, extend-session only (confirmerOf): writes a challenge row, not an account action",
+      'POST /v1/confirm/pgp/finish': 'a confirm token for the calling session, extend-session only: not an account action',
+      'POST /v1/confirm/webauthn/start': "a confirm challenge for the member's own credentials, extend-session only: not an account action",
+      'POST /v1/confirm/webauthn/finish': 'a confirm token for the calling session, extend-session only: not an account action',
+      // Owner Q75: the member's own idle reminder, on their own login account.
+      'PUT /v1/account/idle-reminder': "the member's own reminder preference on their own login: not an account action",
     };
     const found: string[] = [];
     const audited = new Set<string>();

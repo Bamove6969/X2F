@@ -43,4 +43,6 @@ export {
   addressesHash,
   describeAction,
 } from './confirmAction.js';
-export { SESSION_PROMPT_MS, type SessionAccountType, UNCHOSEN_SESSION_HOURS, isSessionHours, sessionHoursFor } from './sessionLength.js';
+export {
+  IDLE_REMINDER_MINUTES, SESSION_CHOICE_WINDOW_MS, SESSION_PROMPT_MS, type SessionAccountType, UNCHOSEN_SESSION_HOURS, isIdleReminderMinutes, isSessionHours, sessionHoursFor,
+} from './sessionLength.js';

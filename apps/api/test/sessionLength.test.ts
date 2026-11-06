@@ -11,9 +11,10 @@ import { insertPgpKey } from '../src/auth/pgp.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
+import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
 import { testApp } from './helpers/app.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
-import { Browser, addTestLogin } from './helpers/totp.js';
+import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
 
 const T0 = new Date('2026-11-02T12:00:00Z');
 const MIN = 60_000;
@@ -325,6 +326,36 @@ describe('who has a session length', () => {
     expect(res.json()).toMatchObject({ lengthHours: 4, expiresAt: iso(6 * HOUR - 4 * MIN) });
   });
 
+  it("a team member proves it's them with their own passkey; the account owner's passkey does not count", async () => {
+    const { teamId, loginId, m } = await member();
+    const insertPasskey = async (accountId: string, auth: SoftAuthenticator) =>
+      deps.db.query(
+        `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, label, created_at)
+         values ($1, $2, $3, 0, 'passkey', true, 'multiDevice', false, 'k', $4)`,
+        [accountId, Buffer.from(auth.credentialId, 'base64url'), auth.cosePublicKey, deps.clock()],
+      );
+    const own = createSoftAuthenticator({ backedUp: true, userVerified: true });
+    const owners = createSoftAuthenticator({ backedUp: true, userVerified: true });
+    await insertPasskey(loginId, own);
+    await insertPasskey(teamId, owners);
+    const start = async () => {
+      const r = await m.post('/v1/confirm/webauthn/start', { action: { kind: 'extend-session' } });
+      expect(r.statusCode, r.body).toBe(200);
+      return r.json() as { challengeId: string; options: Parameters<SoftAuthenticator['authenticate']>[0] };
+    };
+    // Only the member's own credential is offered.
+    const first = await start();
+    expect((first.options.allowCredentials ?? []).map((c) => c.id)).toEqual([own.credentialId]);
+    const byOwner = await m.post('/v1/confirm/webauthn/finish', { challengeId: first.challengeId, response: owners.authenticate(first.options, ORIGIN) });
+    expect(byOwner.statusCode).not.toBe(200);
+    const second = await start();
+    const fin = await m.post('/v1/confirm/webauthn/finish', { challengeId: second.challengeId, response: own.authenticate(second.options, ORIGIN) });
+    expect(fin.statusCode, fin.body).toBe(200);
+    const { confirmToken } = fin.json() as { confirmToken: string };
+    expect(await confirmTokenMethod(deps, confirmToken)).toBe('passkey');
+    expect((await m.post('/v1/account/session/extend', { confirmToken })).statusCode).toBe(200);
+  });
+
   it('a team member with no PGP key of their own gets method-not-allowed, even when the owner has one', async () => {
     const { teamId, m } = await member();
     const owners = await genKey();
@@ -388,11 +419,10 @@ describe('the idle reminder (owner, Q75): a reminder in personal settings, never
     expect(await reminderOf(m)).toBe(60);
   });
 
-  it('staff, owner and backup sessions have none', async () => {
-    for (const kind of ['staff', 'owner'] as const) {
-      const { b } = await trader(kind);
-      expect(errorOf(await setReminder(b, 30))).toBe('wrong-account-kind');
-    }
+  it('staff and backup sessions have none', async () => {
+    // (One owner account per database: the owner's refusal is the same kinds check, in "who has a session length".)
+    const { b } = await trader('staff');
+    expect(errorOf(await setReminder(b, 30))).toBe('wrong-account-kind');
     const id = await seedAccount(deps, { loginName: `irec${String(++n).padStart(4, '0')}x` });
     const r = await loggedIn(id, { level: 'recovery' });
     expect(errorOf(await setReminder(r, 30))).toBe('recovery-session');

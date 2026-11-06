@@ -387,6 +387,19 @@ export function requireSession(
   return handler;
 }
 
+/**
+ * The person behind a session: the account itself, or for a team member's session (a session of the
+ * team account, Task 18) the member's own login account. Their login methods and personal settings
+ * (the idle reminder) live there. 401 `not-authenticated` when the member row is gone.
+ */
+export async function personAccountId(db: Queryable, auth: { accountId: string; memberId: string | null }): Promise<string> {
+  if (auth.memberId === null) return auth.accountId;
+  const { rows } = await db.query<{ member_account_id: string | null }>('select member_account_id from team_members where id = $1', [auth.memberId]);
+  const id = rows[0]?.member_account_id;
+  if (!id) throw new ApiError(401, 'not-authenticated');
+  return id;
+}
+
 /** True when a route's preHandler (one hook or a list) includes `requireSession`. */
 export function runsWithSession(preHandler: unknown): boolean {
   const hooks = Array.isArray(preHandler) ? preHandler : [preHandler];
