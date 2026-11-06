@@ -47,15 +47,17 @@ function cut(r: Region, k: Box): Region[] {
  * and merge every group of overlapping regions into one box. A merged box keeps the first kind of
  * `name, card, iban, account, address, phone, email, handle, manual`. Sorted top to bottom, left to right.
  *
- * `keepClear` (the trade amount's boxes, from `amountBoxes`): no automatic region reaches into them,
+ * `keepClear` (the trade amount's boxes, from `amountBoxes`; required, review RV4-M1): no automatic region reaches into them,
  * by padding or by merging (owner 2026-11-02: the automatic blur never hides the amount). A padded
  * automatic region is cut around them, and two regions are not merged when their joint box would
  * cover one that neither covered. Only a `manual` region (the uploader's own) may cover them. Nothing
  * is ever taken away from the regions given: every pixel of each still lies in an output region
  * (outside `keepClear`, for automatic ones).
  */
-export function padAndMerge(rs: Region[], w: number, h: number, padPx = 4, keepClear: readonly Box[] = []): Region[] {
+export function padAndMerge(rs: Region[], w: number, h: number, keepClear: readonly Box[], padPx = 4): Region[] {
   checkSize(w, h);
+  // Required (review RV4-M1): a forgotten `amountBoxes` would let padding and merging cover the amount.
+  if (!Array.isArray(keepClear)) throw new RangeError('keepClear (the amount boxes from amountBoxes) is required; pass [] when there is no amount');
   if (!Number.isFinite(padPx) || padPx < 0) throw new RangeError('padPx must be a finite number >= 0');
   for (const k of keepClear) if (![k.x0, k.y0, k.x1, k.y1].every(Number.isFinite)) throw new RangeError('keepClear box must be finite');
   let boxes: Region[] = [];
