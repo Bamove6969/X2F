@@ -3,7 +3,7 @@ import { withTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import type { LogAction } from '../log/actions.js';
-import { NewsInputError, addNews, cleanDraft, deleteNews, editNews } from '../news/store.js';
+import { NewsInputError, addNews, cleanDraft, deleteNews, editNews, listNews } from '../news/store.js';
 import { requireStaff } from './guard.js';
 
 const ID = /^[1-9]\d{0,15}$/;
@@ -31,6 +31,8 @@ function draftOf(body: unknown): { title: string; body: string } {
  * { title, body }` → 201 the message; `PUT /staff/v1/news/:id` → the message (404 `not-found`);
  * `DELETE /staff/v1/news/:id` → 204 (404 `not-found`). Each change is appended to the activity log
  * in the same transaction with the message id only, never its text. Readers keep `GET /v1/news`.
+ * `GET /staff/v1/news` → `{ items }` (Plan 4 Task 16, for the owner's NewsEditor: the staff site
+ * may reach only its own origin, so it cannot read the trader API's list).
  */
 export function staffNewsRoutes(app: FastifyInstance): void {
   const perm = 'site.control' as const;
@@ -39,6 +41,8 @@ export function staffNewsRoutes(app: FastifyInstance): void {
     appendLog(c, {
       at: req.server.deps.clock(), actor: { kind: 'staff', id: req.staff.accountId, role: req.staff.role }, tradeCode: null, action, detail: { newsId: String(id) },
     });
+
+  app.get('/staff/v1/news', opts, async (req) => ({ items: await listNews(req.server.deps.db) }));
 
   app.post('/staff/v1/news', opts, async (req, reply) => {
     const draft = draftOf(req.body);

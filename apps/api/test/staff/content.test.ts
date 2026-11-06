@@ -31,6 +31,10 @@ describe('News on the staff API (site.control)', () => {
     expect(item).toMatchObject({ title: 'Maintenance tonight', body: 'Back by 02:00 UTC.', editedAt: null });
     const read = (await trader.inject({ method: 'GET', url: '/v1/news' })).json().items as { id: number; title: string }[];
     expect(read.map((n) => n.id)).toContain(item.id);
+    // The owner's NewsEditor reads the same list on the staff origin (Task 16).
+    const listed = await owner.send('GET', '/staff/v1/news');
+    expect(listed.statusCode).toBe(200);
+    expect((listed.json() as { items: { id: number }[] }).items.map((n) => n.id)).toEqual(read.map((n) => n.id));
 
     const edited = await owner.send('PUT', `/staff/v1/news/${item.id}`, { title: 'Maintenance tonight', body: 'Back by 03:00 UTC.' });
     expect(edited.statusCode).toBe(200);

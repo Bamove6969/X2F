@@ -7,7 +7,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { loadStaff, requireStaff, withinHours } from './guard.js';
 
-const PUBLIC_LOGIN = { perm: 'public-login' } as const;
+export const PUBLIC_LOGIN = { perm: 'public-login' } as const;
 
 /**
  * Plan 4 Task 4's `afterAuthenticate` for every staff login step. It runs only after the key or the

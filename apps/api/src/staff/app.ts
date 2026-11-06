@@ -12,6 +12,7 @@ import { staffMemberRoutes } from './members.js';
 import { ownerKeyRoutes } from './ownerKeys.js';
 import { staffFeedbackRoutes } from './feedback.js';
 import { keyTapRoutes } from './keyTap.js';
+import { serveStaffWeb } from './web.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { ownerSetupRoutes } from './ownerSetup.js';
@@ -32,6 +33,8 @@ export interface StaffDeps extends Deps {
   /** The WebAuthn relying party of staff keys; default the staff origin's host name. */
   staffRpId?: string;
   moderation: ModerationClient;
+  /** `X2F_STAFF_WEB_ROOT`: the built staff app (apps/staff-web/dist), served on this origin (Task 16). */
+  staffWebRoot?: string;
 }
 
 /** One registered staff route, as the privilege matrix test (test/staff/routes.ts) lists it. */
@@ -128,6 +131,8 @@ export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { wr
   staffNewsRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
+  // Plan 4 Task 16: the staff web app's pages, last, so every API route above wins.
+  if (deps.staffWebRoot !== undefined) await serveStaffWeb(app, deps.staffWebRoot);
 
   return app;
 }

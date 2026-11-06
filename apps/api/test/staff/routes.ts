@@ -68,7 +68,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'PUT', url: '/staff/v1/site/banner', perm: 'site.control', body: { text: 'Matrix is down for an hour.', kind: 'info' } },
   { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control' },
   { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', body: { on: false } },
-  // Plan 4 Task 28: News, written by the owner.
+  // Plan 4 Task 28: News, written by the owner (the list: Task 16's NewsEditor).
+  { method: 'GET', url: '/staff/v1/news', perm: 'site.control' },
   { method: 'POST', url: '/staff/v1/news', perm: 'site.control', body: { title: 'Matrix', body: 'A message.' } },
   { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', body: { title: 'Matrix', body: 'Edited.' } },
   { method: 'DELETE', url: '/staff/v1/news/:id', perm: 'site.control' },
