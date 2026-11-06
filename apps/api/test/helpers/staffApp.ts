@@ -109,10 +109,17 @@ export async function logEntries(deps: Deps, action: string): Promise<Array<{ ac
  * routes only `consumeKeyTap` it; Task 5's own tests cover starting and finishing a real one.
  */
 export async function seedTap(deps: Deps, accountId: string, intent: KeyTapIntent, startedAt = deps.clock()): Promise<string> {
+  // The answering key is registered to the account, as a real finish needs (consume re-checks it, RV5 m9).
+  const credentialId = randomBytes(16);
+  await deps.db.query(
+    `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, aaguid, label, created_at)
+     values ($1, $2, $3, 0, 'security-key', false, 'singleDevice', true, null, 'tap', $4)`,
+    [accountId, credentialId, randomBytes(77), startedAt],
+  );
   const { rows } = await deps.db.query<{ id: string }>(
     `insert into key_taps (account_id, credential_id, intent, nonce, response, started_at, finished_at)
      values ($1, $2, $3, $4, $5, $6, $6) returning id`,
-    [accountId, randomBytes(16).toString('base64url'), canonicalJson(intent), randomBytes(16), JSON.stringify({ id: 'test' }), startedAt],
+    [accountId, credentialId.toString('base64url'), canonicalJson(intent), randomBytes(16), JSON.stringify({ id: 'test' }), startedAt],
   );
   return rows[0]!.id;
 }

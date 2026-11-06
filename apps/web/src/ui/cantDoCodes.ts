@@ -123,7 +123,6 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   // Plan 4 Tasks 5 and 8: staff-API answers (a security-key tap, the owner's banner limit) that
   // traders never get, and maintenance, which the app shows as the Maintenance screen.
   'tap-invalid': 'a staff security-key tap (staff app only)',
-  'outside-login-hours': "a staff member's login hours (Plan 4 Task 4; staff app only)",
   'banner-too-long': "an input check on the owner's banner (staff app only)",
   maintenance: "the site is in maintenance: the Maintenance screen with the owner's message",
   'out-of-range': 'an input check on the amount',
