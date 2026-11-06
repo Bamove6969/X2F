@@ -10,6 +10,7 @@ import { assertRoutePerm, type StaffRoutePerm } from './guard.js';
 import { staffFeedbackRoutes } from './feedback.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
+import { staffPastRepRoutes } from './pastrep.js';
 import { staffPriceHealthRoutes } from './priceHealth.js';
 
 /**
@@ -111,6 +112,8 @@ export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { wr
   staffNewsRoutes(app);
   // Owner Q13 (6 Nov): the owner's Price health page, moved from the trader API.
   staffPriceHealthRoutes(app);
+  // Plan 5 Task 10 (owner 2026-11-02): a claim's verified dollar figure (senior moderators and the owner).
+  staffPastRepRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
 

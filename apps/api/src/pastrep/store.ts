@@ -38,12 +38,15 @@ export type SetVerifiedUsdResult = { ok: true } | { ok: false; reason: 'not-foun
 /** The staff member entering the figure: their account and their role (Plan 4's `req.staff`). */
 export type PastRepVerifier = { accountId: string; role: StaffRole };
 
+/** Owner Q58 (6 Nov 2026): a verified imported figure is at most $100,000 (in cents). */
+export const MAX_VERIFIED_USD_CENTS = 100_000 * 100;
+
 /** Sets (or, with `null`, clears) a claim's verified dollar figure in whole US cents. */
 export async function setVerifiedPastRepUsd(
   q: Queryable, claimId: string, cents: number | null, actor: PastRepVerifier, now: Date,
 ): Promise<SetVerifiedUsdResult> {
   if (!PASTREP_VERIFY_ROLES.includes(actor.role)) return { ok: false, reason: 'forbidden' };
-  if (cents !== null && !(Number.isSafeInteger(cents) && cents > 0)) return { ok: false, reason: 'bad-amount' };
+  if (cents !== null && !(Number.isSafeInteger(cents) && cents > 0 && cents <= MAX_VERIFIED_USD_CENTS)) return { ok: false, reason: 'bad-amount' };
   const staffId = actor.accountId;
   // The account kind the role needs: the owner role is the owner account, every other role a staff account.
   const kind = actor.role === 'owner' ? 'owner' : 'staff';

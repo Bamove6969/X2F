@@ -38,6 +38,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'DELETE', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER },
   // Owner Q13 (6 Nov): the owner's Price health, moved from the trader API.
   { method: 'GET', url: '/staff/v1/price-health', perm: 'stats.read', allowed: OWNER },
+  // Plan 5 Task 10 (owner 2026-11-02): a past-rep claim's verified dollar figure.
+  { method: 'PUT', url: '/staff/v1/past-rep/:id/verified-usd', perm: 'reputation.verify', allowed: ['owner', 'senior'], body: { usdCents: 100 } },
   // Plan 5 Tasks 4 and 21: platform feedback and the feedback form, read by the owner.
   { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: OWNER },
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: OWNER },
