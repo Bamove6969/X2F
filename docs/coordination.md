@@ -557,3 +557,8 @@ Review: `~/x2f-comms/review-task40-2026-10-29.md`. Built: the app shell (one tre
 - m11: a NUL in a tap answer is 400 `bad-request` before the assertion is checked.
 - m12: at most 5 open (unfinished, unexpired) taps per account; the 6th is 429 `slow-down`.
 - m7 (taps/start checks the intent's perm) is done with Task 7, where the routes are mounted.
+
+### Task 15 x main: overturned trades lose their reviews (claude3, 6 Nov)
+- NEEDS_P4_OVERTURN_ERASES_REVIEWS fired here (Task 10's rulings meet main's reviews). `saveDispute` now calls `eraseReviewsOfTrade` in the ruling's own transaction when `d.overturned === true` (idempotent); `overturnedSql` also reads `disputes.overturned`. The tripwire trusts `withDispute`/`saveDispute` and pins that seam. Test: Task 10's real path (publish, appeal, round 2) erases on "overruled", keeps on "stands"; overturned → reviewableSince null and POST review 409 not-reviewable.
+- Lock order on that path: the dispute row, then the trade row (inside eraseReviewsOfTrade). Lead: check no trade path locks a trade then a dispute `for update`.
+- OWNER-Q (Q40, 6 Nov): the owner's words tie "no feedback" to a trade that is REVERSED ("all moneys are reversed, like no trade happened") and keep it when it "settles like a trade happened". Built today: erased only when the appeal changes round 1's outcome. A round-1 refund that stands keeps reviews (rarely any exist, since a disputed trade is reviewable only once the dispute is done). Needs the lead's reading before Task 12.
