@@ -98,6 +98,20 @@ describe('amount', () => {
     expect(proofCardLines(jpy, { ...TRADE, total: '¥41,250', currency: 'JPY', exponent: 0 })[0]).toEqual({ tone: 'caution', text: 'Shows ¥40,000, not ¥41,250' });
   });
 
+  it('a whole amount with no marker that Task 7 keeps clear is the amount (review RV4-M4, owner Q17)', () => {
+    const whole = { fiatCents: 25000000n };
+    // After an amount label, or on its own: Task 7 leaves it visible, so it is the amount, not "not found".
+    expect(check(ocr('Total 250000', `Ref ${CODE}`, 'Oct 16, 2026'), ['name'], whole).amount).toEqual({ status: 'match', seen: 25000000n });
+    expect(check(ocr('Amount: 250,000', `Memo ${CODE}`, 'Oct 16, 2026'), ['name'], whole).amount).toEqual({ status: 'match', seen: 25000000n });
+    expect(check(ocr('Payment sent', '250000', `Memo ${CODE}`), ['name'], whole).amount).toEqual({ status: 'match', seen: 25000000n });
+    // The same number as a group of a card or phone is no amount (Task 7 masks it, review RV4-I1).
+    expect(check(ocr('Card 4111 - 1000 - 1111 - 1111', `Memo ${CODE}`, 'Oct 16, 2026'), ['name'], { fiatCents: 100000n }).amount).toEqual({ status: 'not-found', seen: null });
+    expect(check(ocr('Tel 555 - 201 - 3344', `Memo ${CODE}`, 'Oct 16, 2026'), ['name'], { fiatCents: 334400n }).amount).toEqual({ status: 'not-found', seen: null });
+    // Not the trade amount, or not a whole trade amount: unchanged.
+    expect(check(ocr('Total 249999', `Memo ${CODE}`, 'Oct 16, 2026'), ['name'], whole).amount).toEqual({ status: 'not-found', seen: null });
+    expect(check(ocr('Total 41250', `Memo ${CODE}`, 'Oct 16, 2026')).amount).toEqual({ status: 'not-found', seen: null });
+  });
+
   // PENDING LEAD (copy): the plan gives no line for an amount it could not find; none is shown.
   it('shows no amount line when the amount is not found', () => {
     const lines = proofCardLines(check(receipt({ amount: 'Sent' })), TRADE);

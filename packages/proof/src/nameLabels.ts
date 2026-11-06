@@ -9,7 +9,7 @@
 // Each label is lower case, single-spaced; accents are optional when matching (OCR drops them).
 // `labels` count at the start of a line with or without a colon (`Empfänger Max`), and later in a
 // line with a colon. `colonOnly` are short words that are also everyday prepositions (`De nada`,
-// `Van harte`): they count only when a colon follows them.
+// `Van harte`, `Para su seguridad`, review RV4-M3): they count only when a colon follows them.
 
 export interface LabelSet {
   readonly labels: readonly string[];
@@ -22,8 +22,8 @@ export const NAME_LABELS: Readonly<Record<string, LabelSet>> = {
     colonOnly: [],
   },
   es: {
-    labels: ['titular de la cuenta', 'titular', 'beneficiario', 'destinatario', 'ordenante', 'remitente', 'emisor', 'receptor', 'nombre', 'enviado a', 'pagado a', 'para'],
-    colonOnly: ['de', 'a'],
+    labels: ['titular de la cuenta', 'titular', 'beneficiario', 'destinatario', 'ordenante', 'remitente', 'emisor', 'receptor', 'nombre', 'enviado a', 'pagado a'],
+    colonOnly: ['de', 'a', 'para'],
   },
   de: {
     labels: ['kontoinhaber', 'inhaber', 'zahlungsempfänger', 'empfänger', 'begünstigter', 'auftraggeber', 'absender', 'zahler', 'überwiesen an', 'gesendet an', 'bezahlt an'],
@@ -42,7 +42,7 @@ export const NAME_LABELS: Readonly<Record<string, LabelSet>> = {
     colonOnly: ['da', 'a'],
   },
   pt: {
-    labels: ['titular', 'beneficiário', 'destinatário', 'favorecido', 'remetente', 'ordenante', 'pagador', 'recebedor', 'nome', 'pago a', 'enviado para', 'para'],
-    colonOnly: ['de'],
+    labels: ['titular', 'beneficiário', 'destinatário', 'favorecido', 'remetente', 'ordenante', 'pagador', 'recebedor', 'nome', 'pago a', 'enviado para'],
+    colonOnly: ['de', 'para'],
   },
 };

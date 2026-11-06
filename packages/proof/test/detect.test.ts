@@ -930,7 +930,7 @@ describe('owner (2026-11-02): the automatic blur never hides the amount', () => 
     for (const [lines, amount, fiatCents, exponent] of cases) {
       const w = ocr(...lines);
       const keep = { ...KEEP, fiatCents, exponent };
-      const merged = padAndMerge(detectSensitive(w, keep), 1000, 1000, 4, amountBoxes(w, keep));
+      const merged = padAndMerge(detectSensitive(w, keep), 1000, 1000, amountBoxes(w, keep));
       for (const t of amount) for (const r of merged) expect(hits(r, amountBox(w, t)), `${lines.join(' / ')}: ${t}`).toBe(false);
     }
   });
@@ -982,5 +982,94 @@ describe('owner (2026-11-02): the automatic blur never hides the amount', () => 
     expect(maskedTexts(ocr('Ref #12345678'), at(1234567800n))).toEqual(['#12345678']);
     expect(maskedTexts(ocr('Ref 12345678AB'), at(1234567800n))).toEqual(['12345678AB']);
     expect(amountBoxes(ocr('Card 4111 1111 1111 1111'), at(111100n))).toEqual([]);
+  });
+
+  it('review RV4-I1: a card or phone with spaced or other joiners is masked in full when a group equals the amount', () => {
+    const at = (fiatCents: bigint): typeof KEEP => ({ ...KEEP, fiatCents });
+    // [line, a trade amount equal to one of its groups]. The binding rule: when a number is part of
+    // a detected card or phone (or IBAN or account), its blur wins over "the amount stays clear".
+    const cases: Array<[string, bigint]> = [
+      // Spaced dash (owner item 37), the group in the middle, last, first, and every group the same.
+      ['Card 4111 - 1111 - 1111 - 1111', 111100n],
+      ['Card 4000 - 1234 - 5678 - 1000', 100000n],
+      ['Card 1234 - 5678 - 9012 - 3456', 123400n],
+      ['Card 1234 - 5678 - 9012 - 3456', 567800n],
+      // Other joiners: en and em dash, spaced or not, dot, slash, double dash, one space after.
+      ['Card 4111 – 1111 – 1111 – 1111', 111100n],
+      ['Card 4111 — 1111 — 1111 — 1111', 111100n],
+      ['Card 4111 . 1111 . 1111 . 1111', 111100n],
+      ['Card 4111 / 1111 / 1111 / 1111', 111100n],
+      ['Card 4111 -- 1111 -- 1111 -- 1111', 111100n],
+      ['Card 4111- 1111- 1111- 1111', 111100n],
+      ['Card 4111 -1111 -1111 -1111', 111100n],
+      // Phones.
+      ['Tel 555 - 201 - 3344', 334400n],
+      ['Tel 555 - 201 - 3344', 20100n],
+      ['Tel 555 - 201 - 3344', 55500n],
+      ['Tel +1 415 – 555 – 1000', 100000n],
+      ['Tel (415) 555 - 1000', 100000n],
+      ['Tel 06. 12. 34. 56. 78', 7800n],
+      ['Tel 06. 12. 34. 56. 78', 1200n],
+      ['Tel 555 / 201 / 3344', 334400n],
+      ['Tel 555 . 201 . 3344', 334400n],
+      // An IBAN or account written with spaced joiners.
+      ['IBAN DE89 – 3704 – 0044 – 0532 – 0130 – 00', 370400n],
+      ['Acct 1234 - 567890', 56789000n],
+      // After an amount label too: the card or phone still wins.
+      ['Sent 4111 - 1111 - 1111 - 1111', 411100n],
+      ['Total 1000 - 4111 - 1111 - 1111', 100000n],
+    ];
+    for (const [line, cents] of cases) {
+      const w = ocr(line);
+      const plain = detectSensitive(w, KEEP);
+      expect(plain.length, line).toBeGreaterThan(0);
+      // Exactly the regions the line gets when no group is the amount.
+      expect.soft(detectSensitive(w, at(cents)), `${line} @ ${cents}`).toEqual(plain);
+      expect.soft(amountBoxes(w, at(cents)), `${line} @ ${cents}`).toEqual([]);
+    }
+  });
+
+  it('review RV4-I1: the amount itself stays clear next to a spaced card or phone', () => {
+    const at = (fiatCents: bigint): typeof KEEP => ({ ...KEEP, fiatCents });
+    // On its own line, or apart from the card by a word.
+    expect(maskedTexts(ocr('Card 4111 - 1111 - 1111 - 1111', 'Total 1111'), at(111100n))).toEqual(['4111', '-', '1111', '-', '1111', '-', '1111']);
+    expect(maskedTexts(ocr('Tel 555 - 201 - 3344 paid 3344'), at(334400n))).toEqual(['555', '-', '201', '-', '3344']);
+    expect(maskedTexts(ocr('Card 4111 - 1111 - 1111 - 1111 $1,111.00'), at(111100n))).toEqual(['4111', '-', '1111', '-', '1111', '-', '1111']);
+    expect(amountBoxes(ocr('Total 1111'), at(111100n))).toEqual([{ x0: 60, y0: 0, x1: 100, y1: 16 }]);
+  });
+
+  it('review RV4-M2: next to a date or the trade code, a detail still reaches one more character (M8); next to the amount it does not', () => {
+    // One OCR word `Doe,14:32`: the name covers `Doe,` and one more character, as before the amount rule.
+    const w = ocr('Name: Jane Doe,14:32');
+    const word = w.find((x) => x.text === 'Doe,14:32')!;
+    const r = detectSensitive(w, KEEP).find((x) => x.x0 === word.x0)!;
+    expect(r.kind).toBe('name');
+    expect(r.x1).toBe(word.x0 + 50);
+    const c = ocr('Name: Jane Doe,K7M2-9QXA-4FTR-8WPN');
+    const cw = c.find((x) => x.text.startsWith('Doe,'))!;
+    expect(detectSensitive(c, KEEP).find((x) => x.x0 === cw.x0)!.x1).toBe(cw.x0 + 50);
+    // Next to the amount: never into it.
+    const a = ocr('Name: Jane Doe,$412.50');
+    const aw = a.find((x) => x.text.startsWith('Doe,'))!;
+    expect(detectSensitive(a, KEEP).find((x) => x.x0 === aw.x0)!.x1).toBe(aw.x0 + 40);
+  });
+});
+
+describe('review RV4-M3: name labels', () => {
+  it('(a) a label written with decomposed accents (NFD) is a label', () => {
+    expect(maskedTexts(ocr('Empfänger: Max Mustermann'))).toEqual(['Max', 'Mustermann']);
+    expect(maskedTexts(ocr('Empfänger Max Mustermann'))).toEqual(['Max', 'Mustermann']);
+    expect(maskedTexts(ocr('Bénéficiaire : Jean Dupont'))).toEqual(['Jean', 'Dupont']);
+    // The name itself in NFD is covered whole.
+    expect(maskedTexts(ocr('Name: José Müller'))).toEqual(['José', 'Müller']);
+  });
+
+  it('(b) `para` is a label only with a colon (it is the commonest Spanish and Portuguese preposition)', () => {
+    expect(maskedTexts(ocr('Para su seguridad no comparta K7M2-9QXA-4FTR-8WPN'))).toEqual([]);
+    expect(maskedTexts(ocr('Para sua segurança, não compartilhe'))).toEqual([]);
+    // `enviado para` ("sent to") stays a full label.
+    expect(maskedTexts(ocr('Enviado para Ana Souza'))).toEqual(['Ana', 'Souza']);
+    expect(maskedTexts(ocr('Para: Juan Pérez'))).toEqual(['Juan', 'Pérez']);
+    expect(maskedTexts(ocr('Transferencia Para: Juan Pérez'))).toEqual(['Juan', 'Pérez']);
   });
 });
