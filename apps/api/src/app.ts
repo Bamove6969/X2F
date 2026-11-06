@@ -8,7 +8,7 @@ import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { recoveryRoutes } from './auth/recovery.js';
 import { approvalRoutes } from './auth/approval.js';
-import { TRADER_REALM, logoutRoute, runsWithSession, type SessionRealm } from './auth/sessions.js';
+import { TRADER_LOGIN_KINDS, TRADER_REALM, logoutRoute, runsWithSession, type SessionRealm } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import type { TxConfirmations } from './trades/chain.js';
@@ -273,8 +273,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // Plan 2 Task 16: new-device approval (the new device's poll and the logged-in device's decision).
   approvalRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
+  // Staff accounts log in only on the staff API (owner 2026-11-03): see `TRADER_LOGIN_KINDS`.
   webauthnRoutes(app);
-  await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner', 'member'] });
+  await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: [...TRADER_LOGIN_KINDS] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
   // Plan 3 Task 3: method lists, suggestions and the price (browsing needs no session); the owner's price health.

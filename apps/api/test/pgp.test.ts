@@ -57,6 +57,8 @@ beforeAll(async () => {
       }),
     { prefix: '/t/pgp' },
   );
+  // The staff API's mount (staff and the owner): staff log in only there (owner 2026-11-03).
+  await app.register(async (s) => pgpLoginRoutes(s, { kinds: ['staff', 'owner'] }), { prefix: '/s/pgp' });
 });
 
 afterAll(async () => {
@@ -103,13 +105,16 @@ async function registerPgp(displayName: string, key: Pair, b = new Browser()): P
 }
 
 /** PGP login needs no name: the person pastes their whole public key (a key pair sends its public half; a string is sent as is). */
-async function loginStart(b: Browser, key: Pair | string, extra: Record<string, unknown> = {}) {
-  return b.post('/v1/login/pgp/start', { key: typeof key === 'string' ? key : key.publicKey, ...extra });
+async function loginStart(b: Browser, key: Pair | string, extra: Record<string, unknown> = {}, mount = '/v1/login/pgp') {
+  return b.post(`${mount}/start`, { key: typeof key === 'string' ? key : key.publicKey, ...extra });
 }
 
-async function loginFinish(b: Browser, challengeId: string, code: string, extra: Record<string, unknown> = {}) {
-  return b.post('/v1/login/pgp/finish', { challengeId, code, deviceLabel: 'Test browser', ...extra });
+async function loginFinish(b: Browser, challengeId: string, code: string, extra: Record<string, unknown> = {}, mount = '/v1/login/pgp') {
+  return b.post(`${mount}/finish`, { challengeId, code, deviceLabel: 'Test browser', ...extra });
 }
+
+/** The staff API's PGP mount (`/s/pgp` here, kinds staff and owner). */
+const STAFF_MOUNT = '/s/pgp';
 
 /** True when a login start answered with a decoy: a challenge bound to no account (to the outside it looks like any other). */
 async function isDecoy(res: LightMyRequestResponse): Promise<boolean> {
@@ -760,14 +765,14 @@ describe('user IDs (R16)', () => {
 });
 
 describe('staff, owner and other mounts', () => {
-  it('a staff account’s correct code alone → second-factor and no session (R1, Task 10)', async () => {
+  it('a staff account’s correct code alone on the staff mount → second-factor and no session (R1, Task 10)', async () => {
     const n = uniqueName('crew');
     const k = await genKey();
     const id = await seedAccount(deps, { loginName: n, kind: 'staff' });
     await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: k.fingerprint, armored: k.publicKey, now });
     const b = new Browser();
-    const s = await loginStart(b, k);
-    const res = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, k.privateKey)));
+    const s = await loginStart(b, k, {}, STAFF_MOUNT);
+    const res = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, k.privateKey)), {}, STAFF_MOUNT);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ status: 'second-factor', pendingId: expect.any(String), needs: ['pgp', 'security-key', 'passkey'] });
     expect(b.cookies[SESSION_COOKIE]).toBeUndefined();
@@ -803,7 +808,7 @@ describe('staff, owner and other mounts', () => {
     expect(await isDecoy(ds)).toBe(true);
   });
 
-  it('with a pendingId the second step refuses the key the first factor used; a bad pendingId gets a decoy', async () => {
+  it('on the staff mount, with a pendingId the second step refuses the key the first factor used; a bad pendingId gets a decoy', async () => {
     const n = uniqueName('crew');
     const [ka, kb] = await Promise.all([genKey(), genKey()]);
     const id = await seedAccount(deps, { loginName: n, kind: 'staff' });
@@ -820,25 +825,25 @@ describe('staff, owner and other mounts', () => {
       [id, dev, JSON.stringify({ first: { method: 'pgp', fingerprint: ka.fingerprint, fingerprints: [ka.fingerprint] } }), now, new Date(now.getTime() + 5 * MIN)],
     );
     const pendingId = rows[0]!.id;
-    const s = await loginStart(b, kb, { pendingId });
+    const s = await loginStart(b, kb, { pendingId }, STAFF_MOUNT);
     expect(s.statusCode).toBe(200);
     await dec(s.json().encryptedMessage, kb.privateKey);
     // The first factor's key again: a decoy.
-    const sameKey = await loginStart(b, ka, { pendingId });
+    const sameKey = await loginStart(b, ka, { pendingId }, STAFF_MOUNT);
     expect(sameKey.statusCode).toBe(200);
     expect(await isDecoy(sameKey)).toBe(true);
     expect(await isDecoy(s)).toBe(false);
 
     // M6: finish must name the pendingId the challenge was started with.
     const code = codeOf(await dec(s.json().encryptedMessage, kb.privateKey));
-    const swapped = await loginFinish(b, s.json().challengeId, code, { pendingId: '00000000-0000-4000-8000-000000000001' });
+    const swapped = await loginFinish(b, s.json().challengeId, code, { pendingId: '00000000-0000-4000-8000-000000000001' }, STAFF_MOUNT);
     expect(swapped.json()).toEqual({ error: 'challenge-expired' });
 
     // From another browser (another device) the same pendingId is a decoy.
-    const other = await loginStart(new Browser(), kb, { pendingId });
+    const other = await loginStart(new Browser(), kb, { pendingId }, STAFF_MOUNT);
     expect(await isDecoy(other)).toBe(true);
     // An unknown pendingId is a decoy.
-    const unknown = await loginStart(b, kb, { pendingId: '00000000-0000-4000-8000-000000000000' });
+    const unknown = await loginStart(b, kb, { pendingId: '00000000-0000-4000-8000-000000000000' }, STAFF_MOUNT);
     expect(await isDecoy(unknown)).toBe(true);
   });
 });

@@ -611,7 +611,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     expect(ok('trader', 'password', false)).toBe(false);
   });
 
-  it('lists a staff passkey at login only after a PGP first factor from the same device', async () => {
+  it('lists a staff passkey at login only after a PGP first factor from the same device (on a staff mount: staff log in only on the staff API, owner 2026-11-03)', async () => {
     const name = uniqueName('crewlogin');
     const staffId = await seedAccount(deps, { loginName: name, kind: 'staff' });
     const key = createSoftAuthenticator({ backedUp: false, userVerified: true });
@@ -619,7 +619,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     await insertCredential(staffId, key, 'security-key', true);
     await insertCredential(staffId, pk, 'passkey', false);
     const b = new Browser();
-    const plain = (await b.post('/v1/login/webauthn/start', { loginName: name })).json();
+    const plain = (await b.post('/t/two/start', { loginName: name })).json();
     const ids = (j: { options: { allowCredentials: Array<{ id: string }> } }) => j.options.allowCredentials.map((c) => c.id);
     // The key among decoys (review I2: always MAX_SECURITY_KEYS entries), never the passkey.
     expect(ids(plain)).toHaveLength(MAX_SECURITY_KEYS);
@@ -639,33 +639,33 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
         ],
       );
     const afterPgp = (await insertPending('pgp', device.rows[0]!.device_hash)).rows[0]!.id;
-    const withPending = (await b.post('/v1/login/webauthn/start', { loginName: name, pendingId: afterPgp })).json();
+    const withPending = (await b.post('/t/two/start', { loginName: name, pendingId: afterPgp })).json();
     expect(ids(withPending)).toEqual(expect.arrayContaining([key.credentialId, pk.credentialId]));
     expect(ids(withPending)).toHaveLength(MAX_SECURITY_KEYS);
     // The second step needs no login name (review I3): the pending login from this device names the account.
-    const nameless = (await b.post('/v1/login/webauthn/start', { pendingId: afterPgp })).json();
+    const nameless = (await b.post('/t/two/start', { pendingId: afterPgp })).json();
     expect(ids(nameless)).toEqual(expect.arrayContaining([key.credentialId, pk.credentialId]));
     expect(ids(nameless)).toHaveLength(MAX_SECURITY_KEYS);
     expect(nameless.options.userVerification).toBe('required');
     // From another device, or with a pendingId that names nothing, it is a decoy; no name is needed either.
-    const elsewhere = (await new Browser().post('/v1/login/webauthn/start', { pendingId: afterPgp })).json();
+    const elsewhere = (await new Browser().post('/t/two/start', { pendingId: afterPgp })).json();
     expect(ids(elsewhere)).toHaveLength(MAX_SECURITY_KEYS);
     expect(ids(elsewhere)).not.toContain(key.credentialId);
-    const nothing = (await b.post('/v1/login/webauthn/start', { pendingId: '0b8f3a52-6f0e-4d3c-9a4e-2b7c1d5e8f90' })).json();
+    const nothing = (await b.post('/t/two/start', { pendingId: '0b8f3a52-6f0e-4d3c-9a4e-2b7c1d5e8f90' })).json();
     expect(ids(nothing)).toHaveLength(MAX_SECURITY_KEYS);
     expect(ids(nothing)).not.toContain(key.credentialId);
     expect(withPending.options.userVerification).toBe('required');
 
     // Another device, or a first factor that was not PGP: security keys only.
-    const other = (await new Browser().post('/v1/login/webauthn/start', { loginName: name, pendingId: afterPgp })).json();
+    const other = (await new Browser().post('/t/two/start', { loginName: name, pendingId: afterPgp })).json();
     expect(ids(other)).not.toContain(pk.credentialId);
     const afterKey = (await insertPending('security-key', device.rows[0]!.device_hash)).rows[0]!.id;
-    expect(ids((await b.post('/v1/login/webauthn/start', { loginName: name, pendingId: afterKey })).json())).not.toContain(pk.credentialId);
+    expect(ids((await b.post('/t/two/start', { loginName: name, pendingId: afterKey })).json())).not.toContain(pk.credentialId);
     // Reading the pending row does not use it up.
     const { rows } = await deps.db.query('select used_at from challenges where id = $1', [afterPgp]);
     expect(rows[0].used_at).toBeNull();
     // Finishing the nameless start logs the staff member in (the pending login is consumed).
-    const fin = await b.post('/v1/login/webauthn/finish', {
+    const fin = await b.post('/t/two/finish', {
       challengeId: nameless.challengeId, response: key.authenticate(nameless.options, ORIGIN), deviceLabel: 'Desk', pendingId: afterPgp,
     });
     expect(fin.statusCode).toBe(200);

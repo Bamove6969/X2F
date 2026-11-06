@@ -22,6 +22,9 @@ import {
   staffApps,
 } from '../helpers/staffApp.js';
 import { seedAccount } from '../helpers/accounts.js';
+import { insertPgpKey } from '../../src/auth/pgp.js';
+import { DEVICE_COOKIE } from '../../src/auth/device.js';
+import { codeOf, decrypt, genKey } from '../helpers/pgpKeys.js';
 
 const MIN = 60_000;
 /** Mon–Fri 09:00–17:00 in UTC. 2026-11-02 is a Monday. */
@@ -270,6 +273,113 @@ describe('staff sessions are separate from trading sessions', () => {
     const { rows } = await deps.db.query('select revoked_at from sessions where id = $1', [sess.sessionId]);
     expect(rows[0].revoked_at).not.toBeNull();
     expect((await new StaffBrowser(app).post('/staff/v1/logout')).statusCode).toBe(200);
+  });
+});
+
+/** A browser on the trader origin, on the trader API. */
+const traderBrowser = () => new StaffBrowser(trader, TRADER_ORIGIN);
+
+/** A security-key login by name on the trader API's mount (`/v1/login/webauthn`). */
+async function traderKeyLogin(b: StaffBrowser, loginName: string, key: SoftAuthenticator, extra: Record<string, unknown> = {}) {
+  const start = await b.post('/v1/login/webauthn/start', { loginName, ...extra });
+  const options = start.json().options;
+  const finish = await b.post('/v1/login/webauthn/finish', {
+    challengeId: start.json().challengeId, response: key.authenticate(options, TRADER_ORIGIN), deviceLabel: 'Desk', ...extra,
+  });
+  return { listed: (options.allowCredentials as Array<{ id: string }>).map((c) => c.id), finish };
+}
+
+/** A PGP login on the trader API: start with the whole key, decrypt whatever comes back, finish. */
+async function traderPgpLogin(b: StaffBrowser, key: { publicKey: string; privateKey: string }, extra: Record<string, unknown> = {}) {
+  const start = await b.post('/v1/login/pgp/start', { key: key.publicKey, ...extra });
+  expect(start.statusCode).toBe(200);
+  const { rows } = await deps.db.query<{ account_id: string | null }>('select account_id from challenges where id = $1', [start.json().challengeId]);
+  const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey, undefined, deps.clock()));
+  const finish = await b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Desk', ...extra });
+  return { decoy: rows[0]!.account_id === null, finish };
+}
+
+/**
+ * Owner 2026-11-03 (Q19): staff have two separate logins, an ordinary trader account for trading and
+ * the staff account for staff work. A staff account logs in only on the staff API; the trader API's
+ * login mounts treat it as an unknown name or key, so the answer is the same as for a name or key
+ * that does not exist (nothing says the account is there). The owner and team members keep logging
+ * in on the trader API (owner question open: should the owner also be refused there?).
+ */
+describe('staff accounts log in only on the staff site (owner 2026-11-03)', () => {
+  it('refuses a staff security key on the trader API exactly as an unknown name: decoy options, 401 webauthn-failed', async () => {
+    const s = await seedStaff(deps, { role: 'mod' });
+    const key = await addKey(s.id);
+    const staffTry = await traderKeyLogin(traderBrowser(), s.loginName, key);
+    expect(staffTry.listed).not.toContain(key.credentialId);
+    expect(staffTry.finish.statusCode).toBe(401);
+    expect(errorOf(staffTry.finish)).toBe('webauthn-failed');
+    const unknown = await traderKeyLogin(traderBrowser(), uniqueTrader(), key);
+    expect([unknown.finish.statusCode, errorOf(unknown.finish)]).toEqual([401, 'webauthn-failed']);
+    const { rows } = await deps.db.query('select 1 from sessions where account_id = $1', [s.id]);
+    expect(rows).toHaveLength(0);
+    // The same key on the staff site works.
+    expect((await keyFirstStep(new StaffBrowser(app), s.loginName, key)).json()).toMatchObject({ status: 'second-factor' });
+  });
+
+  it('refuses a staff second step on the trader API (a pendingId of a staff first factor): decoy, 401 webauthn-failed', async () => {
+    const s = await seedStaff(deps, { role: 'senior' });
+    const key = await addKey(s.id);
+    const b = traderBrowser();
+    await b.post('/v1/login/webauthn/start', { loginName: uniqueTrader() }); // gets the browser a device cookie
+    const { createHmac } = await import('node:crypto');
+    const { subkey } = await import('../../src/config.js');
+    const dev = createHmac('sha256', subkey(deps.config, 'device')).update(b.cookies[DEVICE_COOKIE]!).digest();
+    const now = deps.clock();
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
+       values ($1, $2, 'second-factor', 'pair', $3, $4, $5) returning id`,
+      [s.id, dev, JSON.stringify({ first: { method: 'pgp', fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] } }), now, new Date(now.getTime() + 5 * MIN)],
+    );
+    const pendingId = rows[0]!.id;
+    const start = (await b.post('/v1/login/webauthn/start', { pendingId })).json();
+    expect(start.options.allowCredentials.map((c: { id: string }) => c.id)).not.toContain(key.credentialId);
+    const finish = await b.post('/v1/login/webauthn/finish', {
+      challengeId: start.challengeId, response: key.authenticate(start.options, TRADER_ORIGIN), deviceLabel: 'Desk', pendingId,
+    });
+    expect([finish.statusCode, errorOf(finish)]).toEqual([401, 'webauthn-failed']);
+    expect(b.cookies[SESSION_COOKIE]).toBeUndefined();
+  });
+
+  it('refuses a staff PGP key on the trader API exactly as an unknown key: decoy challenge, 401 code-invalid', async () => {
+    const s = await seedStaff(deps, { role: 'mod' });
+    const k = await genKey();
+    await insertPgpKey(deps.db, deps.config, { accountId: s.id, fingerprint: k.fingerprint, armored: k.publicKey, now: deps.clock() });
+    const staffTry = await traderPgpLogin(traderBrowser(), k);
+    expect(staffTry.decoy).toBe(true);
+    expect([staffTry.finish.statusCode, errorOf(staffTry.finish)]).toEqual([401, 'code-invalid']);
+    const unknown = await traderPgpLogin(traderBrowser(), await genKey());
+    expect([unknown.finish.statusCode, errorOf(unknown.finish)]).toEqual([401, 'code-invalid']);
+    const { rows } = await deps.db.query('select 1 from sessions where account_id = $1', [s.id]);
+    expect(rows).toHaveLength(0);
+  });
+
+  it('refuses a staff backup-code login on the trader API as for an unknown name (401 code-invalid)', async () => {
+    const s = await seedStaff(deps, { role: 'mod' });
+    for (const kind of ['totp', 'recovery-code']) {
+      const res = await traderBrowser().post('/v1/login/backup', { loginName: s.loginName, kind, code: '123456', deviceLabel: 'D' });
+      const unknown = await traderBrowser().post('/v1/login/backup', { loginName: uniqueTrader(), kind, code: '123456', deviceLabel: 'D' });
+      expect([res.statusCode, errorOf(res)]).toEqual([unknown.statusCode, errorOf(unknown)]);
+    }
+  });
+
+  it('still lets the owner start a login on the trader API (owner question open), and a team member', async () => {
+    const key = await addKey(owner.id);
+    const ownerTry = await traderKeyLogin(traderBrowser(), owner.loginName, key);
+    expect(ownerTry.listed).toContain(key.credentialId);
+    expect(ownerTry.finish.json()).toMatchObject({ status: 'second-factor' });
+    const m = uniqueTrader();
+    const memberId = await seedAccount(deps, { loginName: m, kind: 'member' });
+    const mk = await genKey();
+    await insertPgpKey(deps.db, deps.config, { accountId: memberId, fingerprint: mk.fingerprint, armored: mk.publicKey, now: deps.clock() });
+    const memberTry = await traderPgpLogin(traderBrowser(), mk);
+    expect(memberTry.decoy).toBe(false);
+    expect(memberTry.finish.json()).toMatchObject({ status: 'second-factor' });
   });
 });
 
