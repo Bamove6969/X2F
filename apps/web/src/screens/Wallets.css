@@ -181,7 +181,7 @@
 }
 
 .x2f-app-chip[aria-checked='true'] {
-  border-color: var(--x2f-monero);
+  border: 2px solid var(--x2f-ink);
   background: var(--x2f-surface-raised);
   font-weight: 600;
 }
