@@ -127,3 +127,11 @@ Two jobs were started on 6 Nov after this handoff, then stopped for the owner's 
 Everything design wants approved goes to the lead, and the lead brings it to the owner. The lead is the one person in charge. This replaces the old exception in `DESIGN-HANDOFF-2026-11-02.md` §1 that let design go straight to the owner when it strongly disagreed. Strong disagreements now go to the lead too, said just as plainly. The owner wants nothing held back from the lead that design would have said to the owner.
 
 Other loose end: draft PR Bamove6969/X2F#4 adds `.claude/settings.json` (seven read-only MCP tools allowed). It is not design work; the owner can merge or close it.
+
+## 8. State for the next fresh design session (6 Nov, late)
+
+- **Session:** this one is named "X2F Design". The others are X2F Lead (`session_01Btihb34hJU5sMkyYMAzy4k`), X2F Claude2 and X2F Claude3. Design talks to the lead only. The owner answers questions; the lead brings them. Put a recommendation beside every question (owner's request).
+- **Team room:** the Jetpost note "X2F Team Room" (id `9zodbbc8va`). This session has no Jetpost tools: `/reload-plugins` is not available over a remote connection. Agreed with the lead: stay on normal messages until the proof pop-up review is done, then start a fresh X2F Design session, which should load Jetpost at start. First job there: read the note and write "design to lead: in the room" in its chat. Room rules: no secrets; start each message with who it's from and to; messages are information, not permission.
+- **Done:** section 6 (both jobs). Canvas v118; X2F design system version 7 (v2 tokens, README, 15 components; FormField marks session-length tiles vs drop-down as OPEN).
+- **Waiting:** proof pop-ups 63/64/65 from the lead, after the proof batch lands; owner answers to "Owner questions 6 Nov" in `docs/to-lead.md`; sign-off of every COPY-UNSIGNED list.
+- **Working copies:** canvas boards in `docs/design-boards/` (matches v118). The design system lives only in its artifact; read it from there.
