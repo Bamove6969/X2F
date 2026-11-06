@@ -73,7 +73,8 @@ export interface DetectOptions {
 // full-width form and every digit (`\p{Nd}`, and the other-number digits whose NFKC form is ASCII
 // digits, such as superscript and circled ones) is ASCII; invisible format characters (`\p{Cf}`), the
 // other default-ignorable characters (fillers such as U+3164, variation selectors; review R5-M1) and
-// combining marks after a digit (accents, keycaps) are deleted, and the braille blank U+2800 is a space.
+// combining marks after a digit (accents, keycaps) are deleted, a combining mark that composes with the
+// letter before it is composed into it (NFC, review RV4-M3), and the braille blank U+2800 is a space.
 // Dash look-alikes outside `\p{Pd}` (modifier, superscript and subscript minus, heavy minus, horizontal
 // line extension and box-drawing lines; review R5-M2) are hyphens. The copy can be shorter or longer than
 // the original, so it carries a map from each of its units back to the original, and regions are
@@ -139,14 +140,20 @@ function normalize(text: string): Normalized {
     const units = cp > 0xffff ? 2 : 1;
     const ch = text.slice(i, i + units);
     i += units;
-    const from = out.length;
+    let from = out.length;
     let other: string | null;
+    let composed: string;
     if (cp < 0x80 && ch !== '\t' && ch !== '\v' && ch !== '\f') out += ch;
     else if (SPACE.test(ch)) out += ' ';
     else if (FORMAT.test(ch)) {
       // Deleted: invisible.
     } else if (MARK.test(ch) && isAsciiDigit(out.charCodeAt(out.length - 1))) {
       // Deleted: a combining mark or keycap on a digit (`4\u0301`, `4\ufe0f\u20e3`).
+    } else if (MARK.test(ch) && out.length > 0 && (composed = (out[out.length - 1]! + ch).normalize('NFC')).length === 1) {
+      // A combining mark that composes with the letter before it (decomposed text, review RV4-M3:
+      // `Empfa\u0308nger` reads `Empfänger`): one composed letter, which both units map to.
+      out = out.slice(0, -1) + composed;
+      from = out.length - 1;
     } else if (HYPHEN.test(ch)) out += '-';
     else if (cp >= 0xff01 && cp <= 0xff5e) out += String.fromCharCode(cp - 0xfee0);
     else if (ND.test(ch)) out += digitValue(cp);
@@ -617,10 +624,13 @@ const AMOUNT_LABEL = new RegExp(
 /** A run of 16 or more digits, which the amount reader does not take. */
 const LONG_DIGITS = /(?<![\p{L}\p{N}])\d{16,}(?![\p{N}])/gu;
 
-/** Before a bare number: a digit, or a digit and one joining character (a group of a longer number), or `#` or `+`. */
-const JOINED_BEFORE = /(?:\p{N}[^\p{L}\p{N}]?|[#+])$/u;
-/** After a bare number: a letter or digit, or one joining character and a digit. */
-const JOINED_AFTER = /^(?:[\p{L}\p{N}]|[^\p{L}\p{N}\s]?\p{N}|\s\p{N})/u;
+/**
+ * Before a bare number: a digit, then optional spaces around one joining character (a group of a
+ * longer number: `4111 1111`, `4111-1111`, `4111 - 1111`, `4111 – 1111`, review RV4-I1), or `#` or `+`.
+ */
+const JOINED_BEFORE = /(?:\p{N}\s?[^\p{L}\p{N}\s]?\s?|[#+])$/u;
+/** After a bare number: a letter or digit, or a digit after optional spaces around one joining character. */
+const JOINED_AFTER = /^(?:[\p{L}\p{N}]|\s?[^\p{L}\p{N}\s]?\s?\p{N})/u;
 
 /**
  * A bare number (no marker, no decimals, no label) on its own: no leading zero, and not one part of a
@@ -631,12 +641,29 @@ function standsAlone(text: string, start: number, end: number): boolean {
   return !JOINED_BEFORE.test(text.slice(0, start)) && !JOINED_AFTER.test(text.slice(end));
 }
 
-/** Per character of a normalised line: whether it is part of the trade amount. */
-function amountKept(text: string, keep: Keep): boolean[] {
+/** Dates and the trade code, marked as kept in `k`. */
+function markDatesAndCode(text: string, k: boolean[], codeRe: RegExp): void {
+  markDates(text, k);
+  for (const m of text.matchAll(codeRe)) mark(k, m.index, m.index + m[0].length);
+}
+
+/**
+ * Per character of a normalised line: whether it is part of the trade amount.
+ *
+ * A bare whole number (no currency marker, no decimals; kept for an amount label or owner Q17) is
+ * kept only when it is not part of a longer detected number. THE BINDING RULE (review RV4-I1): the
+ * amount staying clear never exposes a card, phone, IBAN or account number. Detection runs first
+ * without the bare candidates kept; a candidate inside a detected span that holds any other digit
+ * is that number's group (`4111 - 1111 - 1111 - 1111`, `555 / 201 / 3344`, `06. 12. 34. 56. 78`), so
+ * it is masked with the rest. An amount with a marker or decimals is always kept.
+ */
+function amountKept(text: string, keep: Keep, codeRe: RegExp): boolean[] {
   const k: boolean[] = new Array<boolean>(text.length).fill(false);
+  const bare: Array<[number, number]> = [];
   for (const a of findAmounts(text, keep.exponent)) {
     if (a.value !== keep.fiatCents) continue;
-    if (a.marker !== null || a.decimals || AMOUNT_LABEL.test(text.slice(0, a.start)) || standsAlone(text, a.start, a.end)) mark(k, a.start, a.end);
+    if (a.marker !== null || a.decimals) mark(k, a.start, a.end);
+    else if (AMOUNT_LABEL.test(text.slice(0, a.start)) || standsAlone(text, a.start, a.end)) bare.push([a.start, a.end]);
   }
   const unit = 10n ** BigInt(keep.exponent);
   if (keep.fiatCents % unit === 0n) {
@@ -644,10 +671,25 @@ function amountKept(text: string, keep: Keep): boolean[] {
     for (const m of text.matchAll(LONG_DIGITS)) {
       const end = m.index + m[0].length;
       if (m[0].replace(/^0+(?=\d)/, '') !== whole) continue;
-      if (AMOUNT_LABEL.test(text.slice(0, m.index)) || standsAlone(text, m.index, end)) mark(k, m.index, end);
+      if (AMOUNT_LABEL.test(text.slice(0, m.index)) || standsAlone(text, m.index, end)) bare.push([m.index, end]);
     }
   }
+  if (bare.length === 0) return k;
+  const others = [...k];
+  markDatesAndCode(text, others, codeRe);
+  const numbers = moneySpans(blanked(text, others), false, UPI_IDS);
+  const digitOutside = (sp: Span, start: number, end: number): boolean => /\d/.test(text.slice(sp.start, start) + text.slice(end, sp.end));
+  for (const [start, end] of bare) {
+    if (!numbers.some((sp) => sp.start < end && start < sp.end && digitOutside(sp, start, end))) mark(k, start, end);
+  }
   return k;
+}
+
+/** The trade code's pattern for `keep`, or a RangeError. */
+function keepCode(keep: Keep): RegExp {
+  const code = normalizeTradeCode(keep.tradeCode);
+  if (code === null) throw new RangeError('keep.tradeCode is not a trade code');
+  return codePattern(code);
 }
 
 /**
@@ -656,10 +698,11 @@ function amountKept(text: string, keep: Keep): boolean[] {
  * merging never cover the amount either (owner 2026-11-02).
  */
 export function amountBoxes(words: OcrWord[], keep: Keep): Box[] {
+  const codeRe = keepCode(keep);
   const out: Box[] = [];
   for (const l of linesOf(words)) {
     const n = normalize(l.text);
-    const k = toOriginal(n, new Array<Span | null>(n.text.length).fill(null), amountKept(n.text, keep)).keep;
+    const k = toOriginal(n, new Array<Span | null>(n.text.length).fill(null), amountKept(n.text, keep, codeRe)).keep;
     for (const { word, start, end } of l.words) {
       const charW = (word.x1 - word.x0) / (end - start);
       for (let c = start; c < end; ) {
@@ -689,17 +732,15 @@ export function amountBoxes(words: OcrWord[], keep: Keep): Box[] {
  */
 export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOptions = {}): Region[] {
   const upi = opts.upiIds ?? UPI_IDS;
-  const code = normalizeTradeCode(keep.tradeCode);
-  if (code === null) throw new RangeError('keep.tradeCode is not a trade code');
-  const codeRe = codePattern(code);
+  const codeRe = keepCode(keep);
   const lines = linesOf(words);
   // Detection reads the normalised text; results are carried back to the words through its map.
   const norms = lines.map((l) => normalize(l.text));
   const texts = norms.map((n) => n.text);
-  const kept = texts.map((text) => {
-    const k = amountKept(text, keep);
-    markDates(text, k);
-    for (const m of text.matchAll(codeRe)) mark(k, m.index, m.index + m[0].length);
+  const amounts = texts.map((text) => amountKept(text, keep, codeRe));
+  const kept = texts.map((text, i) => {
+    const k = [...amounts[i]!];
+    markDatesAndCode(text, k, codeRe);
     return k;
   });
   const spans: Span[][] = lines.map(() => []);
@@ -731,6 +772,8 @@ export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOption
     const back = toOriginal(norms[i]!, visible(texts[i]!, resolve(texts[i]!.length, spans[i]!, kept[i]!)), kept[i]!);
     const best = back.best;
     const k = back.keep;
+    // The amount alone (not dates or the code): the extra width below stops only at it (review RV4-M2).
+    const amt = toOriginal(norms[i]!, [], amounts[i]!).keep;
     let open: Region | null = null;
     const flush = (): void => {
       if (open) out.push(open);
@@ -777,10 +820,11 @@ export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOption
         let d = c;
         while (d < end && best[d] && best[d]!.kind === kind) d++;
         out.push({
-          // Never reaching into a kept character: the amount wins over the extra width (owner 2026-11-02).
-          x0: Math.max(word.x0, Math.floor(word.x0 + charW * (c - start - (c > start && !k[c - 1] ? 1 : 0)))),
+          // Never reaching into the amount: it wins over the extra width (owner 2026-11-02). Next to a
+          // date or the trade code the extra width stays, as review M8 set it (review RV4-M2).
+          x0: Math.max(word.x0, Math.floor(word.x0 + charW * (c - start - (c > start && !amt[c - 1] ? 1 : 0)))),
           y0: word.y0,
-          x1: Math.min(word.x1, Math.ceil(word.x0 + charW * (d - start + (d < end && !k[d] ? 1 : 0)))),
+          x1: Math.min(word.x1, Math.ceil(word.x0 + charW * (d - start + (d < end && !amt[d] ? 1 : 0)))),
           y1: word.y1,
           kind,
         });

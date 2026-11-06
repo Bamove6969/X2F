@@ -101,7 +101,7 @@ describe('redact (P5-A26)', () => {
 
 describe('padAndMerge', () => {
   it('pads by 4 px by default and clamps to the image', () => {
-    expect(padAndMerge([{ x0: 2, y0: 10, x1: 12, y1: 18, kind: 'email' }], 100, 20)).toEqual([
+    expect(padAndMerge([{ x0: 2, y0: 10, x1: 12, y1: 18, kind: 'email' }], 100, 20, [])).toEqual([
       { x0: 0, y0: 6, x1: 16, y1: 20, kind: 'email' },
     ]);
   });
@@ -116,6 +116,7 @@ describe('padAndMerge', () => {
       ],
       100,
       100,
+      [],
       3,
     );
     expect(out).toEqual([
@@ -132,15 +133,23 @@ describe('padAndMerge', () => {
       ],
       100,
       100,
+      [],
       0,
     );
     expect(out).toEqual([{ x0: 0, y0: 0, x1: 15, y1: 15, kind: 'name' }]);
   });
 
+  it('review RV4-M1: the amount boxes are a required argument (no silent default that lets padding cover the amount)', () => {
+    const loose = padAndMerge as unknown as (...a: unknown[]) => Region[];
+    expect(() => loose([], 100, 100)).toThrow(RangeError);
+    expect(() => loose([], 100, 100, 4)).toThrow(RangeError);
+    expect(padAndMerge([], 100, 100, [])).toEqual([]);
+  });
+
   it('drops empty regions and refuses bad input', () => {
-    expect(padAndMerge([{ x0: 200, y0: 0, x1: 300, y1: 5, kind: 'manual' }], 100, 100, 0)).toEqual([]);
-    expect(() => padAndMerge([{ x0: 0, y0: 0, x1: Infinity, y1: 1, kind: 'manual' }], 100, 100)).toThrow(RangeError);
-    expect(() => padAndMerge([], 100, 100, -1)).toThrow(RangeError);
+    expect(padAndMerge([{ x0: 200, y0: 0, x1: 300, y1: 5, kind: 'manual' }], 100, 100, [], 0)).toEqual([]);
+    expect(() => padAndMerge([{ x0: 0, y0: 0, x1: Infinity, y1: 1, kind: 'manual' }], 100, 100, [])).toThrow(RangeError);
+    expect(() => padAndMerge([], 100, 100, [], -1)).toThrow(RangeError);
   });
 });
 
@@ -162,7 +171,7 @@ describe('padAndMerge: the amount stays clear and automatic blur is only ever ad
   it('padding never reaches into the amount', () => {
     const amount = { x0: 82, y0: 0, x1: 152, y1: 16 };
     const auto: Region = { x0: 0, y0: 0, x1: 80, y1: 16, kind: 'account' };
-    const out = padAndMerge([auto], 400, 100, 4, [amount]);
+    const out = padAndMerge([auto], 400, 100, [amount]);
     for (const o of out) expect(hits(o, amount)).toBe(false);
     expect(stillCovered(out, auto)).toBe(true);
   });
@@ -173,8 +182,8 @@ describe('padAndMerge: the amount stays clear and automatic blur is only ever ad
     const name: Region = { x0: 0, y0: 0, x1: 200, y1: 16, kind: 'name' };
     const email: Region = { x0: 150, y0: 20, x1: 300, y1: 36, kind: 'email' };
     // Without the amount box the union swallows it (why the box is passed).
-    expect(padAndMerge([name, email], 400, 100).some((o) => hits(o, amount))).toBe(true);
-    const out = padAndMerge([name, email], 400, 100, 4, [amount]);
+    expect(padAndMerge([name, email], 400, 100, []).some((o) => hits(o, amount))).toBe(true);
+    const out = padAndMerge([name, email], 400, 100, [amount]);
     for (const o of out) expect(hits(o, amount)).toBe(false);
     expect(stillCovered(out, name)).toBe(true);
     expect(stillCovered(out, email)).toBe(true);
@@ -184,7 +193,7 @@ describe('padAndMerge: the amount stays clear and automatic blur is only ever ad
     const amount = { x0: 82, y0: 0, x1: 152, y1: 16 };
     const manual: Region = { x0: 60, y0: 0, x1: 160, y1: 16, kind: 'manual' };
     const auto: Region = { x0: 0, y0: 0, x1: 80, y1: 16, kind: 'account' };
-    const out = padAndMerge([auto, manual], 400, 100, 4, [amount]);
+    const out = padAndMerge([auto, manual], 400, 100, [amount]);
     expect(stillCovered(out, manual)).toBe(true);
     expect(stillCovered(out, auto)).toBe(true);
   });
@@ -203,7 +212,7 @@ describe('padAndMerge: the amount stays clear and automatic blur is only ever ad
       [{ x0: 0, y0: 0, x1: 300, y1: 100, kind: 'manual' }],
     ];
     for (const m of manuals) {
-      const out = padAndMerge([...auto, ...m], 300, 100, 4, [amount]);
+      const out = padAndMerge([...auto, ...m], 300, 100, [amount]);
       for (const a of auto) expect(stillCovered(out, a, [amount])).toBe(true);
       for (const r of m) expect(stillCovered(out, r)).toBe(true);
     }
