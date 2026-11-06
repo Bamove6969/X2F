@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { hasPanes, useFoldLayout } from '../../ui/fold.js';
 import { Panes } from '../../ui/Panes.js';
 import { BUY_QUOTE_COPY } from '../quote/BuyQuote.js';
 import { QuoteScreen } from '../quote/Quote.js';
+import { forgetQuote } from '../quote/quoteKept.js';
 import { quotePath } from '../quote/quoteModel.js';
 import { SELL_QUOTE_COPY } from '../quote/SellQuote.js';
 import { adSide, currencyFrom, type Offer, type Side } from './api.js';
@@ -38,6 +39,16 @@ export function OffersRoute({ side, copy }: { side: Side; copy: BrowseCopy }) {
   const currency = currencyFrom(search);
   const quoteCopy = side === 'buy' ? BUY_QUOTE_COPY : SELL_QUOTE_COPY;
   const onTrade = (o: Offer) => void navigate(quotePath(adSide(side), methodId, o.id, currency));
+  // Back from a quote to the list undoes the pick (lead review 2026-11-06 m1): the quote of the
+  // offer shown unpicked starts afresh (a new instance, its kept entry forgotten), so a fold
+  // can't lose it again and its next first input picks it again. Not while its take is in flight.
+  const [fresh, setFresh] = useState(0);
+  const wasPicked = useRef(offerId !== undefined);
+  useLayoutEffect(() => {
+    const back = wasPicked.current && offerId === undefined;
+    wasPicked.current = offerId !== undefined;
+    if (back && first !== null && forgetQuote(first)) setFresh((n) => n + 1);
+  }, [offerId, first]);
 
   if (!hasPanes(layout)) {
     return <Panes layout={layout} main={offerId !== undefined ? <QuoteScreen copy={quoteCopy} /> : <OfferList side={side} copy={copy} onTrade={onTrade} />} />;
@@ -61,7 +72,7 @@ export function OffersRoute({ side, copy }: { side: Side; copy: BrowseCopy }) {
     <Panes
       layout={layout}
       main={<OfferList side={side} copy={copy} onTrade={onTrade} pick={{ id: shown, onPick, onFirst: setFirst }} />}
-      side={shown !== null ? <QuoteScreen key={shown} copy={quoteCopy} pane={{ methodId, offerId: shown, onFirstInput }} /> : null}
+      side={shown !== null ? <QuoteScreen key={`${shown}:${fresh}`} copy={quoteCopy} pane={{ methodId, offerId: shown, onFirstInput }} /> : null}
       sideLabel="Quote"
     />
   );
