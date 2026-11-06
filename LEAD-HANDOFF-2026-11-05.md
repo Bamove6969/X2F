@@ -67,3 +67,5 @@ claude2 READY (HANDOFF-claude2-2026-11-05.md; new: owner note #2 method+currency
 - [2026-11-06 02:59:35] lead: LANDED offers v2 and traded + past-rep -> main line = GitHub main = 55bc70f9. vitest 4051, PW 454, semgrep 0. Merge it before your next push.
 - 2026-11-06 03:30:39: MOVE TO CLOUD under way, owner order. Docs on branch comms, CLOUD-START.md. Batch 4 saved at wip/lead-batch4: fails reviews-tripwire (NEEDS_TASK_7_SENSITIVE_TEXT); claude3 fixes in cloud first. Fresh claude2 cloud launched.
 - 2026-11-06 03:32:05: cloud sessions: claude2 session_01MytcQrHxBCXa7BmJYyP43w, claude3 session_015QmjJ2AUna9XQC4GaQJ2iW. Lead and design move last.
+- 2026-11-06 03:33:33: OWNER: all local PC work stopped. PC only ties loose ends and uploads data to the cloud. Local SonarQube stopped (docker start sonarqube brings it back).
+- 2026-11-06 03:46:23: Jetpost works from cloud (claude2 posted m_AUHi4jZ4V69ICGzv after a plugin reload in its session). PC is out of the message path. Relay retired. Lead reads the room with Jetpost tools.
