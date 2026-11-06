@@ -57,3 +57,14 @@ READY TO CLEAR
 Handoff section 6 added: two jobs (three last board redesigns; design system artifact to v2) were started and stopped for the clear before touching any file. Branch and canvas v117 match. Next design session starts there.
 
 READY TO CLEAR
+
+## 6 Nov 2026, ~evening UTC
+
+**Handoff §6 job 1 pushed: the last three board redesigns.** Canvas v118.
+- **Ban-Notice (+Wide):** now a full-screen account notice built like Lien-Notice: close + "Account notice", danger hero (chip, headline, lead) with the Ends / Reason block inside it, "What this means" card, "Think this is a mistake?" with Matrix / Telegram rows (neutral icons, no moderator purple), pinned OK (site ban with open business adds "Log out" under it). `ends` tweak: dated "14 Nov 2026, 14:05 UTC" vs "Permanent · until a moderator lifts it". Both OPEN boxes kept (timed bans; Matrix/Telegram addresses). No more bottom sheet / centred dialog. Wide site ban keeps the logged-out header (no rail).
+- **SignupSecurity (+Wide):** setup context line "Set up your account · Takes about 2 minutes." and the five-bar stepper (done = ink) as on SetupUsername. This one screen covers steps 1 to 3 (username, login, password), so it reads "Steps 1–3 of 5" with three bars ink.
+- **FlexOffer-Quote (+Wide):** app in its own `position: relative` block (the CancelRequest-Wide wrapper) so the sheet / dialog scrim covers only the app; "Sellers and prices are examples." and the market line's "· Example" moved to Design notes below the app; the in-app line is now "You pay no X2F fee when you take an offer."; digits in every trader stats line are mono ("340 trades", "Seen 40 min ago").
+
+**COPY-UNSIGNED (Ban-Notice):** "Your account can't start or join new trades." · "You can use your account again when the ban ends." · "There is no end date." · "Account banned" (chip, permanent site ban) · "You can appeal. Message a moderator if you don't agree with this decision or feel it was made in error." · "Message a moderator on Matrix" · "Permanent · until a moderator lifts it".
+
+Next: job 2, the X2F design system artifact to v2.

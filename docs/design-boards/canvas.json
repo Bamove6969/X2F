@@ -586,7 +586,7 @@
       "x": 1910,
       "y": 15600,
       "w": 390,
-      "h": 2084,
+      "h": 2163,
       "page": "all",
       "title": "A2 \u00b7 Flexible offer: lists and quote",
       "is_interactive": true
@@ -595,7 +595,7 @@
       "x": 2380,
       "y": 15600,
       "w": 1280,
-      "h": 1174,
+      "h": 1292,
       "page": "all",
       "title": "A2 \u00b7 Flexible offer: lists and quote (wide)",
       "is_interactive": true
@@ -622,7 +622,7 @@
       "x": 3820,
       "y": 22800,
       "w": 390,
-      "h": 957,
+      "h": 1483,
       "page": "all",
       "title": "A11 \u00b7 Ban notices",
       "is_interactive": true
@@ -631,7 +631,7 @@
       "x": 4290,
       "y": 22800,
       "w": 1280,
-      "h": 895,
+      "h": 1055,
       "page": "all",
       "title": "A11 \u00b7 Ban notices (wide)",
       "is_interactive": true
@@ -820,7 +820,7 @@
       "x": 0,
       "y": 38900,
       "w": 390,
-      "h": 3282,
+      "h": 3366,
       "page": "all",
       "title": "H1 \u00b7 Signup: login strength",
       "is_interactive": true
@@ -937,7 +937,7 @@
       "x": 0,
       "y": 46360,
       "w": 1280,
-      "h": 2289,
+      "h": 2998,
       "page": "all",
       "title": "H1 \u00b7 Signup: login strength (wide)",
       "is_interactive": true
@@ -980,7 +980,7 @@
     },
     "TradeTechIssue-Wide.dc.html": {
       "x": 0,
-      "y": 48920,
+      "y": 49720,
       "w": 1280,
       "h": 1205,
       "page": "all",
@@ -989,7 +989,7 @@
     },
     "MemberApproval-Wide.dc.html": {
       "x": 1430,
-      "y": 48920,
+      "y": 49720,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -998,7 +998,7 @@
     },
     "CancelRequest-Wide.dc.html": {
       "x": 2860,
-      "y": 48920,
+      "y": 49720,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -1007,7 +1007,7 @@
     },
     "BuyerPaidWaiting-Wide.dc.html": {
       "x": 4290,
-      "y": 48920,
+      "y": 49720,
       "w": 1280,
       "h": 1234,
       "page": "all",
@@ -1016,7 +1016,7 @@
     },
     "InviteInvalid-Wide.dc.html": {
       "x": 5720,
-      "y": 48920,
+      "y": 49720,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -1160,7 +1160,7 @@
     },
     "Settings.dc.html": {
       "x": 0,
-      "y": 50497,
+      "y": 51297,
       "w": 390,
       "h": 2809,
       "page": "all",
@@ -1169,7 +1169,7 @@
     },
     "Settings-Wide.dc.html": {
       "x": 470,
-      "y": 50497,
+      "y": 51297,
       "w": 1280,
       "h": 1431,
       "page": "all",
@@ -1178,7 +1178,7 @@
     },
     "FAQ.dc.html": {
       "x": 1830,
-      "y": 50497,
+      "y": 51297,
       "w": 390,
       "h": 2235,
       "page": "all",
@@ -1187,7 +1187,7 @@
     },
     "FAQ-Wide.dc.html": {
       "x": 2300,
-      "y": 50497,
+      "y": 51297,
       "w": 1280,
       "h": 2069,
       "page": "all",
@@ -1351,7 +1351,7 @@
     },
     "settings1105": {
       "x": 0,
-      "y": 50197,
+      "y": 50997,
       "text": "Settings and FAQ \u00b7 5 Nov (draft copy)",
       "kind": "title1",
       "maxW": 1840

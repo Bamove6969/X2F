@@ -111,7 +111,7 @@ The session is idle after this push. No permission prompt is pending.
 
 Two jobs were started on 6 Nov after this handoff, then stopped for the owner's clear before they changed any file. The branch and canvas v117 match exactly. Do them first in the next design session.
 
-1. **Last three board redesigns the fixers skipped as too large:**
+1. **Last three board redesigns the fixers skipped as too large:** DONE 6 Nov, canvas v118 (see `docs/to-lead.md`, 6 Nov evening).
    - Ban-Notice (+Wide): make it a full-screen account notice built like Lien-Notice (+Wide): close + "Account notice" header, danger hero, inner block with Ends / Reason (the `ends` tweak switches dated vs "Permanent · until a moderator lifts it"), "What this means" card, moderator-contact rows, pinned "OK". Keep the OPEN box on timed bans.
    - SignupSecurity (+Wide): add the setup context line "Set up your account · Takes about 2 minutes" and the five-bar stepper (done = ink) exactly as SetupUsername has them.
    - FlexOffer-Quote (+Wide): move "Sellers and prices are examples." below the app using the CancelRequest-Wide wrapper (app in its own `position: relative` block so the scrim covers only the app); mono digits in "340 trades" and "Seen 40 min ago".

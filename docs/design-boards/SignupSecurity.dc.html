@@ -22,8 +22,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
     <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
       <a href="SetupWelcome.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
-      <span style="align-self: flex-start; padding: 4px 10px 0 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+      <span style="display: flex; align-items: center; gap: 12px; padding: 0 10px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span><span style="font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink-muted);">Steps <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; color: var(--ink);">1</span>–<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; color: var(--ink);">3</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">5</span></span></span>
     </div>
+    <div role="progressbar" aria-label="Setup progress" aria-valuemin="1" aria-valuemax="5" aria-valuenow="3" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px;">
+      <sc-for list="{{steps}}" as="b" hint-placeholder-count="5"><span style="{{b.style}}"></span></sc-for>
+    </div>
+    <span style="margin-top: 20px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Set up your account · Takes about 2 minutes.</span>
     <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Secure your account</h1>
     <p style="margin: 8px 0 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Pick how you&#39;ll prove it&#39;s you. The more ways you add, the harder your account is to break into.</p>
   </header>
@@ -233,7 +237,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":390,"height":3318}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":390,"height":3366}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props); }
   preset(p) {
@@ -359,8 +363,10 @@ class Component extends DCLogic {
     const extra = seconds;
 
     const vendor = this.props.accountType === 'vendor';
+    // Onboarding stepper, as on every Setup* board: this screen covers steps 1 to 3 (username, login, password), so three bars are ink.
+    const steps = Array.from({ length: 5 }, (_, i) => ({ style: 'display: block; height: 4px; border-radius: 999px; background: ' + (i < 3 ? 'var(--ink);' : 'var(--surface-raised);') }));
     // Screen height = sum of measured parts (night, fonts loaded) + the design-notes block under it.
-    const P = { base: 0, pw: 252, totp: 310, vendor: 72, notes: 1146, tier: { none: 1860, totp: 1860, weak: 1958, strong: 1919, strongNoPw: 1895, armored: 1971 } };
+    const P = { base: 48, pw: 252, totp: 310, vendor: 72, notes: 1146, tier: { none: 1860, totp: 1860, weak: 1958, strong: 1919, strongNoPw: 1895, armored: 1971 } };
     const frameH = Math.max(844, P.base + (hasPw ? P.pw : 0) + (totpNote ? P.totp : 0) + P.tier[tier === 'strong' && !hasPw ? 'strongNoPw' : tier] + (vendor ? P.vendor : 0));
     const H = frameH + P.notes;
     const frameStyle = 'position: relative; flex-shrink: 0; height: ' + frameH + 'px; display: flex; flex-direction: column; overflow: hidden;';
@@ -389,7 +395,7 @@ class Component extends DCLogic {
     }));
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     return {
-      rootStyle, frameStyle, methods, meter, bars, totpNote, yes: true,
+      rootStyle, frameStyle, methods, meter, bars, steps, totpNote, yes: true,
       tierHeroStyle, tierTone: TCOL, tierRule: 'color-mix(in srgb, ' + TCOL + ' 25%, transparent)', tierIconStyle: 'display: flex; color: ' + TCOL + ';',
       variantName: { none: 'no way to log in', totp: 'authenticator app only', weak: 'weak', strong: 'strong', armored: 'Armored vault' }[tier] + ' tier',
       idleTextStyle: idleSet ? "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 24px; font-weight: 500;" : 'font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink-muted);',

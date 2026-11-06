@@ -26,6 +26,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
   <main style="flex-grow: 1; display: flex; justify-content: center; padding: 24px 32px 48px;">
     <div style="width: 720px; display: flex; flex-direction: column; gap: 24px;">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+          <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Set up your account · Takes about 2 minutes.</span>
+          <span style="font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink-muted);">Steps <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; color: var(--ink);">1</span>–<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; color: var(--ink);">3</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">5</span></span>
+        </div>
+        <div role="progressbar" aria-label="Setup progress" aria-valuemin="1" aria-valuemax="5" aria-valuenow="3" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;">
+          <sc-for list="{{steps}}" as="b" hint-placeholder-count="5"><span style="{{b.style}}"></span></sc-for>
+        </div>
+      </div>
       <div style="display: flex; flex-direction: column; gap: 8px; max-width: 640px;">
         <div style="display: flex; align-items: center; gap: 8px; margin-left: -12px;">
           <a href="SetupWelcome.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
@@ -247,7 +256,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":1280,"height":2946}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":1280,"height":2998}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props); }
   preset(p) {
@@ -373,6 +382,8 @@ class Component extends DCLogic {
     const extra = seconds;
 
     const vendor = this.props.accountType === 'vendor';
+    // Onboarding stepper, as on every Setup* board: this screen covers steps 1 to 3 (username, login, password), so three bars are ink.
+    const steps = Array.from({ length: 5 }, (_, i) => ({ style: 'display: block; height: 4px; border-radius: 999px; background: ' + (i < 3 ? 'var(--ink);' : 'var(--surface-raised);') }));
     // Screen height = header + both stacked blocks (forms stay in one 720 column) (measured parts, night, fonts loaded) + the design-notes block under it.
     const P = { top: 250, left: 818, pw: 266, totp: 230, vendor: 72, notes: 955, tier: { none: 675, totp: 675, weak: 749, strong: 710, strongNoPw: 710, armored: 830 } };
     const leftH = P.left + (hasPw ? P.pw : 0) + (totpNote ? P.totp : 0);
@@ -406,7 +417,7 @@ class Component extends DCLogic {
     }));
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     return {
-      rootStyle, frameStyle, methods, meter, bars, totpNote, yes: true,
+      rootStyle, frameStyle, methods, meter, bars, steps, totpNote, yes: true,
       tierHeroStyle, tierTone: TCOL, tierRule: 'color-mix(in srgb, ' + TCOL + ' 25%, transparent)', tierIconStyle: 'display: flex; color: ' + TCOL + ';',
       variantName: { none: 'no way to log in', totp: 'authenticator app only', weak: 'weak', strong: 'strong', armored: 'Armored vault' }[tier] + ' tier',
       idleTextStyle: idleSet ? "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 24px; font-weight: 500;" : 'font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink-muted);',
