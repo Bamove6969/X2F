@@ -68,7 +68,7 @@ export interface BadgeFacts {
   stage: Stage;
   /** Released trades plus settled disputes whoever won (R38; Task 20 running totals). */
   completedTrades: number;
-  /** From revealed reviews only, leaving out disputed ("Under review") and removed ones. */
+  /** From submitted reviews, leaving out disputed ("Under review") and removed ones. */
   positivePct: number | null;
   /** Positive and negative reviews behind `positivePct` (`ratedReviewCount`). */
   ratedReviews: number;

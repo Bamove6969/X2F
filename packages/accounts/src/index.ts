@@ -18,11 +18,15 @@ export {
 } from './password.js';
 export { newLoginCode, newRecoveryCode, normalizeLoginCode, normalizeRecoveryCode } from './loginCode.js';
 export {
+  type InspectOptions,
   type KeyInspection,
   type KeyRefusal,
   MAX_ARMORED_KEY_BYTES,
   MAX_SUBKEYS,
+  PAST_REP_MIN_RSA_BITS,
+  PAST_REP_VERIFY_CONFIG,
   PGP_PURPOSE,
+  STRICT_CONFIG,
   challengeText,
   encryptChallenge,
   inspectPublicKey,

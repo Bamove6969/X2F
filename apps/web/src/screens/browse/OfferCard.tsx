@@ -65,6 +65,15 @@ function posterLine(offer: Offer, now: Date): string {
   return parts.join(' · ');
 }
 
+/**
+ * C12b: the trader's opt-in volume line. X is a step the trader has traded MORE than (owner
+ * 2026-11-03: exactly $10,000.00 shows nothing, $10,000.01 shows $10,000+). Owner: "along the lines of
+ * 'Over $90,000+'"; the exact words are Design's. COPY-UNSIGNED
+ */
+function tradedLine(usd: number): string {
+  return `$${usd.toLocaleString('en-US')}+ in trades to date`;
+}
+
 function marginLine(offer: Offer, currency: string, copy: BrowseCopy, market: bigint | null): { text: string; favourable: boolean } | null {
   if (offer.rate === null) return null;
   if (offer.pricing.mode === 'fixed') {
@@ -205,6 +214,7 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
             <span data-username>{name}</span>
           </span>
           <span className="x2f-offer__sub">{posterLine(offer, now)}</span>
+          {offer.poster.tradedOverUsd !== null ? <span className="x2f-offer__sub">{tradedLine(offer.poster.tradedOverUsd)}</span> : null}
           <Badges offer={offer} />
         </div>
         {!closed && !offer.poster.online ? (
