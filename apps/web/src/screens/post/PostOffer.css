@@ -23,38 +23,49 @@
   background: var(--x2f-ground);
 }
 
+/* Header (PostOffer board, v2): the close on its own 44 px row, then the screen title (the kit's
+   screen-title, 28/32 700). */
 .post-header {
   display: flex;
-  align-items: center;
-  gap: var(--x2f-space-2);
-  padding: var(--x2f-space-4);
-  border-bottom: 1px solid var(--x2f-surface-raised);
+  flex-direction: column;
+  align-items: flex-start;
+  padding: var(--x2f-space-2) var(--x2f-space-4) var(--x2f-space-4);
 }
 
 .post-header h1 {
-  margin: 0;
-  font-family: var(--x2f-title-family);
-  font-size: 22px;
-  font-weight: 600;
+  margin: var(--x2f-space-2) 0 0;
 }
 
+/* The close is the kit icon button; this only places it. */
 .post-close {
-  display: flex;
-  width: 44px;
   height: 44px;
-  align-items: center;
-  justify-content: center;
-  color: var(--x2f-ink);
+  margin: 0 -10px;
 }
 
 .post-main {
   flex-grow: 1;
   min-height: 0;
-  padding: var(--x2f-space-4);
+  padding: 0 var(--x2f-space-4) var(--x2f-space-6);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--x2f-space-4);
 }
+
+/* A group of the form on a 16 px surface card, 20 px padding (PostOffer board, v2). */
+.post-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-5);
+  border-radius: var(--x2f-radius-lg);
+  background: var(--x2f-surface);
+}
+
+/* A card that is also a form section keeps the card's 16 px gap. */
+.post-section.post-card {
+  gap: var(--x2f-space-4);
+}
+
 
 .post-section {
   display: flex;
@@ -63,9 +74,10 @@
 }
 
 .post-label {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-weight: var(--x2f-label-weight);
+  letter-spacing: var(--x2f-label-tracking);
   text-transform: uppercase;
   color: var(--x2f-ink-muted);
 }
@@ -82,14 +94,22 @@
   gap: var(--x2f-space-2);
 }
 
-/* The board's two-up choices (I want to, Your price), drawn by the shared RadioChips radio group. */
+/* The board's two-up choices (I want to, Your price), drawn by the shared RadioChips radio group:
+   the whole 48 px (44 px) box is drawn and tapped; the chosen one is a 2 px ink border on
+   surface-raised (the chip rule in browse.css), never orange. */
 .post-choices .x2f-chip-button {
   height: 48px;
+  margin: 0;
   padding: 0;
   border-radius: var(--x2f-radius-md);
   color: var(--x2f-ink-muted);
   font-size: 16px;
   font-weight: 600;
+}
+
+.post-choices .x2f-chip-button::before {
+  inset: 0;
+  border-radius: var(--x2f-radius-md);
 }
 
 .post-choices .x2f-chip-button[aria-checked='true'] {
@@ -103,9 +123,20 @@
 .post-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--x2f-space-2);
   font-size: 13px;
+  line-height: 16px;
   color: var(--x2f-ink-muted);
+}
+
+/* Field labels (and the methods-failed caption) read as the board's small uppercase labels. */
+.post-field > label,
+.post-field > .post-caption {
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-weight: var(--x2f-label-weight);
+  letter-spacing: var(--x2f-label-tracking);
+  text-transform: uppercase;
 }
 
 .post-load-failed {
@@ -132,11 +163,15 @@
 
 .post-field input {
   height: 48px;
-  padding: 0 12px;
+  box-sizing: border-box;
+  padding: 0 14px;
 }
 
 .post-field textarea {
-  padding: 10px 12px;
+  box-sizing: border-box;
+  min-height: 96px;
+  padding: 12px 14px;
+  line-height: 24px;
   resize: none;
 }
 
@@ -160,11 +195,12 @@
 }
 
 .post-inline select {
-  height: 40px;
+  height: 44px;
   padding: 0 10px;
   font-size: 15px;
 }
 
+/* The margin stepper: a 12 px surface-raised well inside the Your price card. */
 .post-margin {
   display: flex;
   align-items: center;
@@ -172,7 +208,19 @@
   gap: 12px;
   padding: 12px;
   border-radius: var(--x2f-radius-md);
-  background: var(--x2f-surface);
+  background: var(--x2f-surface-raised);
+}
+
+.post-margin .post-big {
+  font-size: 40px;
+  line-height: 44px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.post-margin .post-muted {
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .post-margin-value {
@@ -183,6 +231,7 @@
 }
 
 .post-step {
+  flex-shrink: 0;
   width: 44px;
   height: 44px;
   border-radius: var(--x2f-radius-pill);
@@ -210,6 +259,11 @@
   color: var(--x2f-ink-muted);
 }
 
+.post-card .post-note {
+  font-size: 14px;
+  line-height: 20px;
+}
+
 .post-ink {
   color: var(--x2f-ink);
 }
@@ -233,13 +287,21 @@
   line-height: 22px;
 }
 
+/* How others will see it: a dashed 16 px card, 20 px padding (PostOffer board, v2). */
 .post-preview {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: var(--x2f-space-4);
-  border-radius: var(--x2f-radius-md);
+  gap: var(--x2f-space-3);
+  padding: var(--x2f-space-5);
+  border-radius: var(--x2f-radius-lg);
   border: 1px dashed var(--x2f-line);
+}
+
+.post-preview .post-big {
+  font-size: var(--x2f-amount-size);
+  line-height: var(--x2f-amount-line);
+  font-weight: var(--x2f-amount-weight);
+  letter-spacing: -0.01em;
 }
 
 .post-preview-row {
@@ -259,8 +321,8 @@
 .post-footer {
   display: flex;
   flex-direction: column;
-  gap: var(--x2f-space-2);
-  padding: var(--x2f-space-4);
+  gap: var(--x2f-space-1);
+  padding: var(--x2f-space-4) var(--x2f-space-4) var(--x2f-space-2);
   border-top: 1px solid var(--x2f-surface-raised);
 }
 

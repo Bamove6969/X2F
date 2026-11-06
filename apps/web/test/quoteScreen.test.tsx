@@ -154,6 +154,15 @@ function pick(host: HTMLElement, walletId: string): void {
 const BUY = quotePath('sell', 'ZELLE', 'offer-ghost', 'USD');
 
 describe('BuyQuote', () => {
+  it('design v2 (offers batch 3): the title is the kit screen title, the footnote the kit info Notice', async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(host.querySelector('.x2f-screen-title')?.textContent).toBe('Buying from satoshi_ghost');
+    const note = host.querySelector('.x2f-outcome[data-tone="info"]');
+    expect(note?.textContent).toContain('Nothing changes after you tap Trade.');
+    expect(note?.getAttribute('role')).toBeNull();
+    expect(host.querySelector('.x2f-quote__figure .x2f-section-title')?.textContent).toBe('You receive');
+  });
+
   it('shows the board: title, range help, wallets, You receive, Rate, total and the footnote', async () => {
     const { host } = await open(`${BUY}&amount=412.50`);
     const text = host.textContent ?? '';
