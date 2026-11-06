@@ -17,8 +17,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { HOLD_MS, endHoldByModerator, extendHoldByModerator, lockAccount, settleDueHolds, withTx } from '../src/auth/hold.js';
-import { settleDueChanges } from '../src/auth/holdChanges.js';
+import { MAX_HOLD_CHANGES, settleDueChanges } from '../src/auth/holdChanges.js';
 import { RECOVERY_CODE_COUNT } from '../src/auth/recovery.js';
+import { syncHeldTradesJob } from '../src/trades/held.js';
+import { applyEvent, noPublish } from '../src/trades/store.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
 import { accountIdByLoginName } from './helpers/accounts.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
@@ -354,6 +356,24 @@ describe('a username + password session: changes are staged, reviewed, submitted
     expect((await holdView(b2)).changes.count).toBe(1);
   });
 
+  it(`at most ${MAX_HOLD_CHANGES} changes per account, drafts and waiting ones together (409 too-many-changes); nothing more is staged`, async () => {
+    const t = await passwordTrader();
+    const sessionId = await sessionOf(t.b);
+    for (let i = 0; i < MAX_HOLD_CHANGES; i++) {
+      await deps.db.query('insert into hold_changes (account_id, session_id, change, created_at) values ($1, $2, $3, $4)', [
+        t.id, sessionId, JSON.stringify({ kind: 'logout-timer', idleHours: 24 }), now,
+      ]);
+    }
+    const r = await changePassword(t.b, t.id);
+    expect(r.statusCode).toBe(409);
+    expect(r.json()).toEqual({ error: 'too-many-changes', max: MAX_HOLD_CHANGES });
+    const { rows } = await deps.db.query<{ n: number }>('select count(*)::int as n from hold_changes where account_id = $1', [t.id]);
+    expect(rows[0]!.n).toBe(MAX_HOLD_CHANGES);
+    // One cancelled makes room again.
+    await t.b.delete('/v1/account/hold/changes');
+    expect((await changePassword(t.b, t.id)).statusCode).toBe(202);
+  });
+
   it('a strong session (passkey) changes things at once, as before', async () => {
     const t = await ownerWithPasskey();
     const owner = new Browser(app);
@@ -475,6 +495,42 @@ describe('a recovery-code login', () => {
     const r = await deps.db.query<{ paused_at: Date | null }>('select paused_at from trades where code = $1', [s.code]);
     expect(r.rows[0]!.paused_at).toBeNull();
     expect((await partner.browser.get(`/v1/trades/${s.code}`)).json()).toMatchObject({ counterpartyProblem: false });
+  });
+
+  it("the partner's way out of a held funded trade stays open: the buyer's cancel goes through (paused or not)", async () => {
+    const t = await ownerWithCode();
+    const partner = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: t.id, buyerId: partner.id, poster: 'buyer' });
+    const s = await driveTo(deps, trade, 'secured');
+    expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
+    expect((await deps.db.query<{ paused_at: Date | null }>('select paused_at from trades where code = $1', [s.code])).rows[0]!.paused_at).not.toBeNull();
+    const r = await partner.browser.post(`/v1/trades/${s.code}/events`, { type: 'buyer-cancel' });
+    expect(r.statusCode, r.body).toBe(200);
+    const { rows } = await deps.db.query<{ state: string; settling: string | null }>('select state, settling from trades where code = $1', [s.code]);
+    expect(rows[0]).toEqual({ state: 'settling', settling: 'buyer-cancel' });
+  });
+
+  it("a trade marked for cancelling that the machine no longer lets cancel (Fund escrow tapped meanwhile) is paused instead, by the minute job", async () => {
+    const t = await ownerWithCode();
+    const partner = await trader();
+    expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
+    // The race the fallback is for: the row says `cancel` (written in the login's transaction), and
+    // the seller's "Fund escrow" lands before the sync applies it. Rebuilt here as that state.
+    const { trade } = await seedTrade(deps, { sellerId: t.id, buyerId: partner.id, poster: 'buyer' });
+    const g = await driveTo(deps, trade, 'funding');
+    await applyEvent(deps, g.code, { type: 'fund-started' }, 'seller');
+    await deps.db.query("insert into held_trades (code, account_id, action, held_at) values ($1, $2, 'cancel', $3)", [g.code, t.id, now]);
+    expect(await syncHeldTradesJob(noPublish).run(deps.db, now)).toBeGreaterThanOrEqual(1);
+    const { rows } = await deps.db.query<{ state: string; paused_at: Date | null }>('select state, paused_at from trades where code = $1', [g.code]);
+    expect(rows[0]!.state).toBe('funding');
+    expect(rows[0]!.paused_at).not.toBeNull();
+    expect((await deps.db.query<{ paused: string }>('select paused from held_trades where code = $1', [g.code])).rows[0]!.paused).toBe('paused');
+    // The hold's end resumes it.
+    later(HOLD_MS);
+    await settleDueHolds(deps.config, app.events).run(deps.db, now);
+    await syncHeldTradesJob(noPublish).run(deps.db, now);
+    expect((await deps.db.query<{ paused_at: Date | null }>('select paused_at from trades where code = $1', [g.code])).rows[0]!.paused_at).toBeNull();
+    expect((await deps.db.query('select 1 from held_trades where code = $1', [g.code])).rows).toHaveLength(0);
   });
 
   it("the held account's offers are not listed or taken", async () => {

@@ -632,6 +632,27 @@ describe('team members (Plan 2 Task 18, at its landing: was NEEDS_TASKS_16_17_ME
     expect((await a.login(name)).json()).toEqual({ status: 'ok' });
     expect(await approvals(accountId)).toBe(0);
   });
+
+  it("hold model v3: a recovery-code login logs the team's members out too; during the hold no member logs in (403 recovery-hold); after it they do", async () => {
+    const { a, name, accountId } = await signUp();
+    // Inside the sign-up window the code needs no confirm token.
+    const code = ((await a.post('/v1/account/recovery-codes', {})).json() as { codes: string[] }).codes[0]!;
+    const m = await memberOf(accountId);
+    const mb = new Browser();
+    expect(await memberLogin(mb, m.loginId)).toEqual({ status: 'ok' });
+    expect(await memberSessions(m.id)).toHaveLength(1);
+    const rec = await new Browser('Tor Browser').post('/v1/login/backup', { loginName: name, kind: 'recovery-code', code, deviceLabel: 'Tor Browser' });
+    expect(rec.json()).toMatchObject({ status: 'ok', level: 'recovery' });
+    const until = (rec.json() as { holdUntil: string }).holdUntil;
+    expect(await memberSessions(m.id)).toEqual([]);
+    expect((await mb.me()).statusCode).toBe(401);
+    // A member's login during the hold: refused, no session opens, on the member's own browser too.
+    expect(await memberLogin(mb, m.loginId)).toEqual({ error: 'recovery-hold', holdUntil: until });
+    expect(await memberSessions(m.id)).toEqual([]);
+    setNow(new Date(new Date(until).getTime() + 1000));
+    expect(await memberLogin(mb, m.loginId)).toEqual({ status: 'ok' });
+    expect(await memberSessions(m.id)).toHaveLength(1);
+  });
 });
 
 describe('one gate', () => {

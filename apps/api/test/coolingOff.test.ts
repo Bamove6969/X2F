@@ -808,6 +808,8 @@ describe('review round 2', () => {
     const thief = new Browser(app);
     expect((await backup(thief, o.name, code)).json()).toMatchObject({ level: 'recovery' });
     expect(await holdOf(deps, o.id)).toMatchObject({ reason: 'recovery-code' });
+    // A minute later, so the two `sessions-ended` alerts below have distinct times (a frozen clock ties them, then the random id orders them).
+    setNow(new Date(now.getTime() + 60_000));
     expect((await passkeyLogin(new Browser(app), o.auth)).json()).toEqual({ status: 'ok' });
     expect(await holdOf(deps, o.id)).toBeNull();
     expect((await thief.get('/v1/account/me')).statusCode).toBe(401);
