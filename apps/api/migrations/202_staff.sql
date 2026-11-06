@@ -7,12 +7,14 @@
 -- person (`GRANTABLE_PERMS`, Task 30); `can()` ignores anything else stored there, and the check
 -- below refuses it (RV5 m1): widen that list together with `GRANTABLE_PERMS`.
 --
--- Staff and owner accounts are never deleted (RV5 m6): `account_id` here (and `key_taps`, 203)
--- references `accounts` with no ON DELETE, so deleting such an account fails with a foreign-key
--- error. A staff member who leaves is switched off or removed (Task 7), never deleted; a later
--- account purge (Plan 7) must leave staff and owner accounts alone or decide otherwise first.
+-- `account_id` is `on delete restrict` (RV5 m6), written out rather than left to the default: a
+-- staff or owner account with a staff row cannot be deleted while the row exists. A cascade would
+-- let one `delete from accounts` silently drop someone's role, hours and switch-off together with
+-- the record of who they were; `set null` cannot apply to a primary key. A staff member who leaves
+-- is switched off (Task 7); Plan 7's account deletion or any purge must remove or keep the staff
+-- row on purpose first.
 create table staff_members (
-  account_id uuid primary key references accounts (id),
+  account_id uuid primary key references accounts (id) on delete restrict,
   role text not null check (role in ('owner', 'senior', 'mod', 'helper')),
   hours jsonb not null check (hours = '"any"'::jsonb or jsonb_typeof(hours) = 'object'),
   grants text[] not null default '{}' check (grants <@ array['tickets.handle']::text[]),
@@ -33,7 +35,9 @@ as $$
 declare
   k text;
 begin
-  select a.kind into k from accounts a where a.id = new.account_id;
+  -- `for share` waits for, and then reads, a concurrent `update accounts set kind` on this account,
+  -- whose own trigger (accounts_kind_staff, below) cannot see a staff row not yet committed.
+  select a.kind into k from accounts a where a.id = new.account_id for share;
   if k is null or (new.role = 'owner') <> (k = 'owner') or k not in ('owner', 'staff') then
     raise exception 'staff_members: the role does not match the account kind' using errcode = 'check_violation';
   end if;
@@ -47,7 +51,9 @@ create trigger staff_members_kind
 
 -- The same rule from the other side (RV5 m2): an account's kind may change only while it still
 -- matches its staff_members row, so no update of `accounts.kind` leaves a mod row on a trader or
--- the owner account, or the owner role (no hours, never switched off) on a staff account.
+-- the owner account, or the owner role (no hours, never switched off) on a staff account. The
+-- account row is already locked by the update when this runs, so a staff row being written at the
+-- same time waits on it (staff_members_kind's `for share`) and is checked against the new kind.
 create function accounts_kind_staff() returns trigger
   language plpgsql
   set search_path = pg_catalog, public

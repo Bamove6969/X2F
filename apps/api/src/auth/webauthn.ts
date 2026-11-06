@@ -137,11 +137,12 @@ interface CredentialRow {
   kind: CredentialKind;
   transports: string[] | null;
   attested: boolean;
+  aaguid: string | null;
   account_kind: AccountKind;
   webauthn_user_id: Buffer;
 }
 
-const CREDENTIAL_SELECT = `select c.id, c.account_id, c.credential_id, c.public_key, c.counter, c.kind, c.transports, c.attested,
+const CREDENTIAL_SELECT = `select c.id, c.account_id, c.credential_id, c.public_key, c.counter, c.kind, c.transports, c.attested, c.aaguid,
                                   a.kind as account_kind, a.webauthn_user_id
                              from webauthn_credentials c join accounts a on a.id = c.account_id`;
 
@@ -159,9 +160,16 @@ async function accountById(db: Queryable, accountId: string): Promise<AccountRow
   return rows[0];
 }
 
-async function credentialsOf(db: Queryable, accountId: string): Promise<Array<{ credential_id: Buffer; kind: CredentialKind; attested: boolean }>> {
-  const { rows } = await db.query<{ credential_id: Buffer; kind: CredentialKind; attested: boolean }>(
-    'select credential_id, kind, attested from webauthn_credentials where account_id = $1 order by created_at, id',
+interface CredentialSummary {
+  credential_id: Buffer;
+  kind: CredentialKind;
+  attested: boolean;
+  aaguid: string | null;
+}
+
+async function credentialsOf(db: Queryable, accountId: string): Promise<CredentialSummary[]> {
+  const { rows } = await db.query<CredentialSummary>(
+    'select credential_id, kind, attested, aaguid from webauthn_credentials where account_id = $1 order by created_at, id',
     [accountId],
   );
   return rows;
@@ -451,6 +459,22 @@ export async function verifyWebAuthnAssertion(
   return { credentialId: b64url(row.credential_id), kind: row.kind, attested: row.attested };
 }
 
+/**
+ * Plan 4 M1 (coordination.md; RV5 m5): false for a staff or owner security key whose stored AAGUID
+ * is not on the current allowlist for the account kind (the owner's list for the owner, staff's
+ * otherwise), true for anything else. The lists are applied when a key is registered; this applies
+ * a later change (a snapshot refresh that withdraws an AAGUID, or new list rules) at login too, with
+ * no data migration. An attested key with no stored AAGUID is never on a list.
+ */
+export function stillAllowlisted(
+  deps: Pick<Deps, 'attestation'>,
+  accountKind: AccountKind,
+  c: { kind: CredentialKind; aaguid: string | null },
+): boolean {
+  if (c.kind !== 'security-key' || (accountKind !== 'staff' && accountKind !== 'owner')) return true;
+  return c.aaguid !== null && deps.attestation.isAllowed(c.aaguid, 'packed', accountKind === 'owner' ? 'owner' : 'staff');
+}
+
 function allowed(accountKind: AccountKind, c: { kind: string; attested: boolean }): boolean {
   try {
     assertCredentialAllowed(accountKind, c);
@@ -557,6 +581,12 @@ interface LoginRouteOptions {
   afterAuthenticate?: (accountId: string) => Promise<void>;
   /** Route `config` for both routes (Plan 4's staff app marks them `{ perm: 'public-login' }`). */
   routeConfig?: Record<string, unknown>;
+  /**
+   * Plan 4 M1 (the staff app): a staff or owner security key no longer on its allowlist
+   * (`stillAllowlisted`) is not offered by `start` and is refused by `finish` with 403
+   * `method-not-allowed`, after the assertion verifies and before `afterAuthenticate`.
+   */
+  recheckAllowlist?: boolean;
 }
 
 function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discoverable: boolean }): void {
@@ -614,7 +644,11 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     // A team member logs in by the staff rule (Plan 2 Task 18): PGP + a passkey is a pair for them too.
     const withPasskeys = afterPgp && (found?.kind === 'staff' || found?.kind === 'member');
     let creds = (await credentialsOf(deps.db, found?.id ?? NIL_UUID)).filter(
-      (c) => found !== null && (c.kind === 'security-key' || (withPasskeys && c.kind === 'passkey')) && allowed(found.kind, c),
+      (c) =>
+        found !== null &&
+        (c.kind === 'security-key' || (withPasskeys && c.kind === 'passkey')) &&
+        allowed(found.kind, c) &&
+        (opts.recheckAllowlist !== true || stillAllowlisted(deps, found.kind, c)),
     );
     let account: { id: string; kind: AccountKind } | null = null;
     // Passkeys are in `creds` only after a staff member's PGP first factor (they may then be the only
@@ -627,7 +661,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     // already named the account.
     const lengths = await securityKeyIdLengths(deps.db);
     const decoys = decoyCredentialIds(deps, tag, Math.max(0, MAX_SECURITY_KEYS - creds.length), lengths);
-    creds = [...creds, ...decoys.map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false }))].sort((x, y) =>
+    creds = [...creds, ...decoys.map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false, aaguid: null }))].sort((x, y) =>
       Buffer.compare(x.credential_id, y.credential_id),
     );
     const options = await buildAssertionOptions(deps, creds);
@@ -673,6 +707,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     }
     assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });
     if (ch.payload.mode !== 'discoverable') assertListed(ch, row);
+    // A key withdrawn from its allowlist between start and finish (start no longer lists it).
+    if (opts.recheckAllowlist === true && !stillAllowlisted(deps, row.account_kind, row)) throw new ApiError(403, 'method-not-allowed');
     const result = await completeLogin(deps, req, reply, {
       account: { id: row.account_id, kind: row.account_kind },
       factor: { method: row.kind, credentialId: b64url(row.credential_id), attested: row.attested },
