@@ -3,9 +3,10 @@ import { randomBytes } from 'node:crypto';
 import type { LoginHours } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { Deps } from '../../src/app.js';
+import type { AttestationPolicy, Deps } from '../../src/app.js';
 import { requireStaff } from '../../src/staff/guard.js';
 import { buildStaffApi } from '../../src/staff/app.js';
+import { staffListenFromEnv } from '../../src/staff/main.js';
 import { sweepHours, startHoursSweeper } from '../../src/staff/sweeper.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from '../helpers/softAuthenticator.js';
 import {
@@ -43,20 +44,30 @@ let logs: string[];
 /** The one owner of this database (`one_owner`), shared by the tests. */
 let owner: { id: string; loginName: string };
 
+/** The allowlisted AAGUID every test key carries (on both lists), unless a test says otherwise. */
+const KEY_AAGUID = '0b0c0d0e-1111-4222-8333-444455556666';
+/** The current allowlists; a test may withdraw an AAGUID (a snapshot refresh) and must put it back. */
+const lists = { owner: new Set([KEY_AAGUID]), staff: new Set([KEY_AAGUID]) };
+const attestation: AttestationPolicy = {
+  async init() {},
+  isAllowed: (aaguid, fmt, kind) => fmt !== 'none' && lists[kind].has(aaguid.toLowerCase()),
+};
+
 beforeAll(async () => {
-  ({ app, trader, deps, setNow, close, logs } = await staffApps());
+  ({ app, trader, deps, setNow, close, logs } = await staffApps({ attestation }));
   setNow(MON_NOON);
   owner = await seedStaff(deps, { role: 'owner' });
 });
 afterAll(async () => close());
 beforeEach(() => setNow(MON_NOON));
 
-async function addKey(accountId: string): Promise<SoftAuthenticator> {
+/** An attested security key, stored as registration stores one; `aaguid` defaults to the allowlisted KEY_AAGUID. */
+async function addKey(accountId: string, aaguid: string | null = KEY_AAGUID): Promise<SoftAuthenticator> {
   const key = createSoftAuthenticator({ backedUp: false, userVerified: true });
   await deps.db.query(
-    `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, label, created_at)
-     values ($1, $2, $3, 0, 'security-key', false, 'singleDevice', true, 'k', $4)`,
-    [accountId, Buffer.from(key.credentialId, 'base64url'), key.cosePublicKey, deps.clock()],
+    `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, aaguid, label, created_at)
+     values ($1, $2, $3, 0, 'security-key', false, 'singleDevice', true, $4, 'k', $5)`,
+    [accountId, Buffer.from(key.credentialId, 'base64url'), key.cosePublicKey, aaguid, deps.clock()],
   );
   return key;
 }
@@ -223,6 +234,90 @@ describe('staff login with login hours', () => {
     const bare = await seedAccount(deps, { loginName: name, kind: 'staff' });
     const bareKey = await addKey(bare);
     expect(errorOf(await keyFirstStep(new StaffBrowser(app), name, bareKey))).toBe('account-disabled');
+  });
+});
+
+describe('the AAGUID allowlist at staff and owner login (Plan 4 M1, RV5 m5)', () => {
+  const OTHER = '99999999-8888-4777-8666-555544443333';
+  const listed = async (b: StaffBrowser, loginName: string, key: SoftAuthenticator) => {
+    const start = (await b.post('/staff/v1/login/security-key/start', { loginName })).json();
+    return start.options.allowCredentials.map((c: { id: string }) => c.id).includes(key.credentialId) as boolean;
+  };
+  const sessions = async (id: string) => (await deps.db.query('select 1 from sessions where account_id = $1', [id])).rows.length;
+
+  it('neither offers nor accepts a staff key whose AAGUID a refresh withdrew from the staff list', async () => {
+    const s = await seedStaff(deps, { role: 'mod' });
+    const key = await addKey(s.id);
+    expect(await listed(new StaffBrowser(app), s.loginName, key)).toBe(true);
+    lists.staff.delete(KEY_AAGUID);
+    try {
+      expect(await listed(new StaffBrowser(app), s.loginName, key)).toBe(false);
+      // Signed anyway against the start that left it out: Plan 2's refusal, as for any unlisted key.
+      expect(errorOf(await keyFirstStep(new StaffBrowser(app), s.loginName, key))).toBe('webauthn-failed');
+    } finally {
+      lists.staff.add(KEY_AAGUID);
+    }
+    expect(await sessions(s.id)).toBe(0);
+  });
+
+  it('refuses a key withdrawn between start and finish with method-not-allowed, at either step, before the hours check', async () => {
+    const s = await seedStaff(deps, { role: 'mod', hours: OFFICE });
+    const key = await addKey(s.id);
+    setNow(MON_1701); // outside the hours: the allowlist refusal still comes first
+    const b = new StaffBrowser(app);
+    const start = (await b.post('/staff/v1/login/security-key/start', { loginName: s.loginName })).json();
+    lists.staff.delete(KEY_AAGUID);
+    try {
+      const res = await b.post('/staff/v1/login/security-key/finish', {
+        challengeId: start.challengeId, response: key.authenticate(start.options, STAFF_ORIGIN), deviceLabel: 'Desk',
+      });
+      expect(res.statusCode).toBe(403);
+      expect(errorOf(res)).toBe('method-not-allowed');
+    } finally {
+      lists.staff.add(KEY_AAGUID);
+    }
+    // The second step after a PGP first factor too.
+    setNow(MON_NOON);
+    const b2 = new StaffBrowser(app);
+    const probe = (await b2.post('/staff/v1/login/security-key/start', { loginName: s.loginName })).json();
+    const { rows: dev } = await deps.db.query<{ device_hash: Buffer }>('select device_hash from challenges where id = $1', [probe.challengeId]);
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
+       values ($1, $2, 'second-factor', 'pair', $3, $4, $5) returning id`,
+      [s.id, dev[0]!.device_hash, JSON.stringify({ first: { method: 'pgp', fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] } }), deps.clock(), new Date(deps.clock().getTime() + 5 * MIN)],
+    );
+    const second = (await b2.post('/staff/v1/login/security-key/start', { pendingId: rows[0]!.id })).json();
+    lists.staff.delete(KEY_AAGUID);
+    try {
+      const res = await b2.post('/staff/v1/login/security-key/finish', {
+        challengeId: second.challengeId, response: key.authenticate(second.options, STAFF_ORIGIN), deviceLabel: 'Desk', pendingId: rows[0]!.id,
+      });
+      expect(errorOf(res)).toBe('method-not-allowed');
+    } finally {
+      lists.staff.add(KEY_AAGUID);
+    }
+    expect(await sessions(s.id)).toBe(0);
+    // Back on the list, the same key logs in again (no data migration either way).
+    expect((await fullLogin(new StaffBrowser(app), s.id, s.loginName, key)).json()).toEqual({ status: 'ok' });
+  });
+
+  it("checks the owner's keys against the owner's list, not staff's", async () => {
+    const key = await addKey(owner.id, OTHER);
+    lists.staff.add(OTHER);
+    try {
+      expect(await listed(new StaffBrowser(app), owner.loginName, key)).toBe(false);
+      lists.owner.add(OTHER);
+      expect(await listed(new StaffBrowser(app), owner.loginName, key)).toBe(true);
+    } finally {
+      lists.staff.delete(OTHER);
+      lists.owner.delete(OTHER);
+    }
+  });
+
+  it('never offers an attested key stored without an AAGUID', async () => {
+    const s = await seedStaff(deps, { role: 'senior' });
+    const key = await addKey(s.id, null);
+    expect(await listed(new StaffBrowser(app), s.loginName, key)).toBe(false);
   });
 });
 
@@ -448,6 +543,23 @@ describe('staff accounts log in only on the staff site (owner 2026-11-03, Q19; R
 });
 
 describe('the staff app shell', () => {
+  it('X2F_STAFF_ORIGIN takes https, and http only for 127.0.0.1, [::1] or localhost (RV5 m3)', () => {
+    const origin = (o: string) => staffListenFromEnv({ X2F_STAFF_ORIGIN: o })?.origin;
+    expect(origin('https://staff.example.org')).toBe('https://staff.example.org');
+    expect(origin('http://localhost:5174')).toBe('http://localhost:5174');
+    expect(origin('http://127.0.0.1:8082')).toBe('http://127.0.0.1:8082');
+    expect(origin('http://[::1]:8082')).toBe('http://[::1]:8082');
+    // The trader CSP's opt-in for clear text elsewhere does not reach the staff origin.
+    expect(() => staffListenFromEnv({ X2F_STAFF_ORIGIN: 'http://staff.example.org', X2F_ALLOW_INSECURE_ORIGINS: '1' })).toThrow(/X2F_STAFF_ORIGIN/);
+    for (const bad of [
+      'http://staff.example.org', 'http://staffx2f.onion', 'http://localhost.example.org', 'http://127.0.0.2', 'http://[::2]', 'ftp://localhost',
+      'https://staff.example.org/', 'https://staff.example.org/staff', 'https://u@staff.example.org',
+    ]) {
+      expect(() => staffListenFromEnv({ X2F_STAFF_ORIGIN: bad }), bad).toThrow(/X2F_STAFF_ORIGIN/);
+    }
+    expect(staffListenFromEnv({})).toBeNull();
+  });
+
   it('refuses a request whose Origin is the trader origin', async () => {
     const res = await new StaffBrowser(app, TRADER_ORIGIN).post('/staff/v1/logout');
     expect(res.statusCode).toBe(403);
@@ -518,6 +630,67 @@ describe('migration 202 (staff_members)', () => {
     await expect(
       deps.db.query(`insert into staff_members (account_id, role, hours, has_security_key, joined_at) values ($1, 'mod', '"any"', true, now())`, [traderId]),
     ).rejects.toMatchObject({ code: '23514' });
+  });
+
+  it('stores only grantable perms in grants (RV5 m1)', async () => {
+    const s = await seedStaff(deps, { role: 'mod' });
+    await deps.db.query("update staff_members set grants = '{tickets.handle}' where account_id = $1", [s.id]);
+    for (const bad of [['site.control'], ['tickets.handle', 'staff.manage'], ['owner'], ['']]) {
+      await expect(deps.db.query('update staff_members set grants = $2 where account_id = $1', [s.id, bad]), bad.join()).rejects.toMatchObject({ code: '23514' });
+    }
+  });
+
+  it('re-checks an account kind change against its staff_members row (RV5 m2)', async () => {
+    const s = await seedStaff(deps, { role: 'mod' });
+    // A staff account turned trader (or member) would keep a mod row on a non-staff account.
+    await expect(deps.db.query("update accounts set kind = 'trader' where id = $1", [s.id])).rejects.toMatchObject({ code: '23514' });
+    await expect(deps.db.query("update accounts set kind = 'member' where id = $1", [s.id])).rejects.toMatchObject({ code: '23514' });
+    // The owner account turned staff would keep the owner role (no hours) on a staff account.
+    await expect(deps.db.query("update accounts set kind = 'staff' where id = $1", [owner.id])).rejects.toMatchObject({ code: '23514' });
+    // An account with no staff row changes kind as before, and other columns of a staff account still update.
+    const t = await seedAccount(deps, { loginName: uniqueTrader(), kind: 'staff' });
+    await deps.db.query("update accounts set kind = 'trader' where id = $1", [t]);
+    await deps.db.query("update accounts set display_name = display_name where id = $1", [s.id]);
+  });
+
+  it('re-checks a staff row written while the account kind is being changed (RV5 m2, both orders)', async () => {
+    const pool = deps.db as unknown as import('pg').Pool;
+    const insert = `insert into staff_members (account_id, role, hours, has_security_key, joined_at) values ($1, 'mod', '"any"', true, now())`;
+    // The kind change first: the staff row waits for it and then sees a trader.
+    const a = await seedAccount(deps, { loginName: uniqueTrader(), kind: 'staff' });
+    const t1 = await pool.connect();
+    const t2 = await pool.connect();
+    try {
+      await t1.query('begin');
+      await t1.query("update accounts set kind = 'trader' where id = $1", [a]);
+      const late = t2.query(insert, [a]).then(() => 'inserted', (e: { code?: string }) => e.code);
+      await new Promise((r) => setTimeout(r, 200));
+      await t1.query('commit');
+      expect(await late).toBe('23514');
+      // The staff row first: the kind change waits for it and then sees the mod row.
+      const b = await seedAccount(deps, { loginName: uniqueTrader(), kind: 'staff' });
+      await t1.query('begin');
+      await t1.query(insert, [b]);
+      const change = t2.query("update accounts set kind = 'trader' where id = $1", [b]).then(() => 'changed', (e: { code?: string }) => e.code);
+      await new Promise((r) => setTimeout(r, 200));
+      await t1.query('commit');
+      expect(await change).toBe('23514');
+    } finally {
+      await t1.query('rollback').catch(() => {});
+      t1.release();
+      t2.release();
+    }
+  });
+
+  it('refuses to delete an account that has a staff row: the foreign key is on delete restrict (RV5 m6)', async () => {
+    const s = await seedStaff(deps, { role: 'helper' });
+    // PostgreSQL reports a restrict violation as 23503 too; the catalog tells restrict from no action.
+    await expect(deps.db.query('delete from accounts where id = $1', [s.id])).rejects.toMatchObject({ code: '23503', constraint: 'staff_members_account_id_fkey' });
+    const { rows } = await deps.db.query<{ confdeltype: string }>(
+      `select c.confdeltype from pg_constraint c
+        where c.conrelid = 'staff_members'::regclass and c.confrelid = 'accounts'::regclass and c.contype = 'f'`,
+    );
+    expect(rows).toEqual([{ confdeltype: 'r' }]);
   });
 });
 

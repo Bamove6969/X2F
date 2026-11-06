@@ -58,6 +58,10 @@ export const CANT_DO_CODES = [
   'review-pending',
   'lien',
   'trade-ban',
+  // Plan 4 Task 4: a staff member's login hours (a staff login, and a staff session when the
+  // window closes). Classified here for the error-code test; its words come with the staff web app
+  // (Plan 4 Task 16).
+  'outside-login-hours',
 ] as const;
 export type CantDoCode = (typeof CANT_DO_CODES)[number];
 
