@@ -84,6 +84,7 @@ describe('POST /v1/trades/:code/dispute', () => {
   it('opens a dispute once the window has ended: the trade, its event and the dispute row in one go', async () => {
     const { buyer, seller, t } = await tradeIn('paid');
     setNow(at(120 * MIN));
+    await relogin(buyer, seller);
     const note = 'I sent $412.50 by Zelle at 10:02 from my own account.';
     const res = await buyer.browser.post(dispute(t.code), { reason: 'paid', note });
     expect(res.statusCode).toBe(200);
@@ -272,6 +273,7 @@ describe('POST /v1/trades/:code/appeal', () => {
     const { seller, buyer, t } = await ruled();
     await rule(t.code, { outcome: 'refund-to-seller', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });
     setNow(at(2 * 60 * MIN));
+    await relogin(seller, buyer);
     const [a, b] = await Promise.all([
       seller.browser.post(appeal(t.code), { why: 'Please look again at this.' }),
       buyer.browser.post(appeal(t.code), { why: 'Please look again at this.' }),
@@ -287,6 +289,7 @@ describe('POST /v1/trades/:code/appeal', () => {
       await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });
       await deps.db.query(`update disputes set status = $2, closed_at = case when $2 = 'closed' then now() end where code = $1`, [t.code, status]);
       setNow(at(2 * 60 * MIN));
+      await relogin(seller);
       const res = await seller.browser.post(appeal(t.code), { why: 'Please look again at this.' });
       expect(res.statusCode, status).toBe(409);
       expect(errorOf(res), status).toBe('wrong-state');
@@ -300,6 +303,7 @@ describe('POST /v1/trades/:code/appeal', () => {
     const { seller, buyer, t } = await ruled();
     await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });
     setNow(at(2 * 60 * MIN));
+    await relogin(seller, buyer);
     expect((await seller.browser.post(appeal(t.code), { why: 'too short' })).statusCode).toBe(400);
     expect((await seller.browser.post(appeal(t.code), { why: '         x' })).statusCode).toBe(400);
     expect((await seller.browser.post(appeal(t.code), { why: 'Please look again at this.', extra: 1 })).statusCode).toBe(400);

@@ -99,7 +99,7 @@ describe('POST /v1/feedback', () => {
 
   it(`takes ${FEEDBACK_DAILY} a day per account; the next is still 202 but stores nothing; a new UTC day starts over`, async () => {
     setNow(new Date('2026-12-01T15:30:00Z'));
-    const { b } = await login('chatty1');
+    const { b, id } = await login('chatty1');
     const { b: other } = await login('chatty2');
     for (let i = 0; i < FEEDBACK_DAILY; i++) expect((await b.post('/v1/feedback', { mood: 'ok', note: `n${i}` })).statusCode).toBe(202);
     const over = await b.post('/v1/feedback', { mood: 'great', note: 'one more' });
@@ -109,6 +109,9 @@ describe('POST /v1/feedback', () => {
     expect((await other.post('/v1/feedback', { mood: 'great', note: 'other' })).statusCode).toBe(202);
     expect(await rows()).toHaveLength(FEEDBACK_DAILY + 1);
     setNow(new Date('2026-12-02T00:00:01Z'));
+    // That session has ended (session length, owner 2 Nov 2026: 2 hours until one is chosen), so log in
+    // again: the daily count is per account, not per session.
+    expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
     expect((await b.post('/v1/feedback', { mood: 'great', note: 'next day' })).statusCode).toBe(202);
     expect((await rows()).map((r) => r.note)).toContain('next day');
   });
