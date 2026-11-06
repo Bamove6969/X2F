@@ -122,4 +122,8 @@ Two jobs were started on 6 Nov after this handoff, then stopped for the owner's 
    - Live components with `preview.html` + `README.md`: KeyMark, StatusChip, HeroBlock, Button, Switch, Callout, OpenBox, Stepper, Timer, Amount, ListRow, FormField, Card, EmptyState, NavRail. Copy exact styles from BuyerPay, Refunded (+Wide), ProofBlur, Devices, CantDoThat. Keep the Cover.
    - Read the system's `SKILL.md` and `artifact-type/reference/format.md` first; publish only the `project/` files, `design-system.json` last.
 
+## 7. Working rule from the owner (6 Nov, late)
+
+Everything design wants approved goes to the lead, and the lead brings it to the owner. The lead is the one person in charge. This replaces the old exception in `DESIGN-HANDOFF-2026-11-02.md` §1 that let design go straight to the owner when it strongly disagreed. Strong disagreements now go to the lead too, said just as plainly. The owner wants nothing held back from the lead that design would have said to the owner.
+
 Other loose end: draft PR Bamove6969/X2F#4 adds `.claude/settings.json` (seven read-only MCP tools allowed). It is not design work; the owner can merge or close it.
