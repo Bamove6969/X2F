@@ -135,13 +135,28 @@ describe('createAuthApi requests', () => {
     await api.setPassword({ password: 'x' });
     await expect(api.setSessionLength({ hours: 6 })).resolves.toEqual(info);
     await expect(api.extendSession({ confirmToken: 't' })).resolves.toEqual(info);
+    // Owner Q73: the extend picks one of the login choices.
+    await expect(api.extendSession({ confirmToken: 'u', hours: 12 })).resolves.toEqual(info);
     expect(sent.map((s) => [s.init.method, s.url])).toEqual([
       ['PUT', '/v1/account/password'],
       ['PUT', '/v1/account/session/length'],
       ['POST', '/v1/account/session/extend'],
+      ['POST', '/v1/account/session/extend'],
     ]);
     expect(bodyOf(sent[1]!)).toEqual({ hours: 6 });
     expect(bodyOf(sent[2]!)).toEqual({ confirmToken: 't' });
+    expect(bodyOf(sent[3]!)).toEqual({ confirmToken: 'u', hours: 12 });
+  });
+
+  it('sets the idle reminder with PUT (owner Q75): minutes, or null for off', async () => {
+    const { sent, fetch } = recorder(() => Response.json({ idleReminderMinutes: 30 }));
+    const api = createAuthApi({ fetch });
+    await expect(api.setIdleReminder({ minutes: 30 })).resolves.toEqual({ idleReminderMinutes: 30 });
+    await api.setIdleReminder({ minutes: null });
+    expect(sent.map((s) => [s.init.method, s.url, bodyOf(s)])).toEqual([
+      ['PUT', '/v1/account/idle-reminder', { minutes: 30 }],
+      ['PUT', '/v1/account/idle-reminder', { minutes: null }],
+    ]);
   });
 
   it('returns the parsed JSON body of a 2xx and undefined for a 204', async () => {

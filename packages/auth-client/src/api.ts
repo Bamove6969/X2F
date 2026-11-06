@@ -196,6 +196,12 @@ export interface AccountOverview {
    * owner and backup sessions. Optional: older API builds do not send it.
    */
   session?: SessionInfo | null;
+  /**
+   * The person's idle reminder (owner, Q75, 6 Nov 2026): minutes without activity before the app
+   * reminds them (never a logout), or null when off (the default). A team member's is their own.
+   * Optional: older API builds do not send it.
+   */
+  idleReminderMinutes?: number | null;
 }
 
 /** Plan 2 Task 18: a team member's roles (spec 6.7). */
@@ -296,7 +302,7 @@ export interface SessionInfo {
   lengthHours: number | null;
   choices: number[];
   expiresAt: string;
-  /** False for a team member's session (it cannot extend; open owner question). */
+  /** True for every full trader session, a team member's included (owner Q73, 6 Nov 2026). */
   canExtend: boolean;
   /** The server's time as it answered (for `serverClock`). */
   serverNow: string;
@@ -420,8 +426,14 @@ export interface AuthApi {
   // Session length (owner, 2 Nov 2026). Full trader sessions only.
   /** This session's length: before it is chosen, from the login; after, shorter applies now, longer from the next extend. */
   setSessionLength(b: { hours: number }): Promise<SessionInfo>;
-  /** "Stay logged in": confirm `{ kind: 'extend-session' }` with any login method first. */
-  extendSession(b: Token): Promise<SessionInfo>;
+  /**
+   * "Stay logged in": confirm `{ kind: 'extend-session' }` with one of the person's own login methods
+   * first (a team member's own too). `hours`, one of `SessionInfo.choices`, becomes the length and
+   * counts from now (owner Q73); absent, the session's own length.
+   */
+  extendSession(b: Token & { hours?: number }): Promise<SessionInfo>;
+  /** The person's idle reminder (owner Q75): one of IDLE_REMINDER_MINUTES, or null for off. */
+  setIdleReminder(b: { minutes: number | null }): Promise<{ idleReminderMinutes: number | null }>;
 
   // Team members (Plan 2 Task 18). The account owner's side: a member gets 403 `owner-only`.
   getTeam(): Promise<{ members: TeamMember[]; max: number }>;
@@ -576,6 +588,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     removeWallet: (id) => done(call('DELETE', `/v1/wallets/${seg(id)}`)),
     setSessionLength: (b) => call('PUT', '/v1/account/session/length', b),
     extendSession: (b) => post('/v1/account/session/extend', b),
+    setIdleReminder: (b) => call('PUT', '/v1/account/idle-reminder', b),
 
     getTeam: () => get('/v1/team'),
     inviteMember: (b) => post('/v1/team/invites', b),

@@ -47,4 +47,6 @@ export {
 export { defaultDeviceLabel, teamInviteAction, teamRemoveAction, teamRolesAction, walletAction, walletsAction, withConfirm } from './confirm.js';
 export { checkDisplayName, checkLoginName, checkNames, checkPassword, describeAction, inspectPublicKey, normalizeLoginCode, normalizeRecoveryCode } from '@x2f/accounts';
 export type { ConfirmAction, MethodType, SessionAccountType } from '@x2f/accounts';
-export { MAX_WALLET_BATCH, SESSION_PROMPT_MS, UNCHOSEN_SESSION_HOURS, isSessionHours, sessionHoursFor } from '@x2f/accounts';
+export {
+  IDLE_REMINDER_MINUTES, MAX_WALLET_BATCH, SESSION_PROMPT_MS, UNCHOSEN_SESSION_HOURS, isIdleReminderMinutes, isSessionHours, sessionHoursFor,
+} from '@x2f/accounts';
