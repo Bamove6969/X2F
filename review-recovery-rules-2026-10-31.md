@@ -1,0 +1,49 @@
+# Review: recovery-code rules (`origin/wip/lead-p2-recovery-rules` @ 3cfe204, from main 3635fac)
+
+Reviewer: read-only security helper, 2026-10-31. Fresh eyes; threat model: account takeover.
+Commits: 42be99f note, 7a7fe94 red tests, 92b646f impl, fb48e50 docs, 3cfe204 auth-client.
+
+## Verdict: CHANGES REQUIRED
+
+The core is sound: every queue/apply/block/early-end path runs under the account lock (`lockAccount`, also taken by `requireLiveSessionInTx`), so apply-at-hold-end vs block cannot both win; an early end (owner login, strong cancel of the backup session that STARTED the hold) deletes the `account_holds` row and the FK cascade drops the queue; a recovery session cannot block (`requireSession()` refuses the recovery level, and `weakOf` treats it as weak); the new alerts are in `OWNER_WARNINGS`; the new route is classified in `LIVE_SESSION_ROUTES` and `WEAK_LIMITED_ROUTES`; hidden offers answer the same 404 as an unknown offer on list, page, take and chat. But a queued factor **outlives the revocation of the session that queued it**, which turns a noticed-and-kicked thief into a 24 h-delayed passkey (strong) takeover, and a password-only owner has no way at all to stop it.
+
+## Important
+
+**I1. Queued changes survive revoking the thief's session; a password-only owner cannot stop a queued passkey.**
+`apps/api/src/auth/hold.ts:179-213` (`holdInTx` applies every `hold_changes` row, never checks that the queuing session is still live), `apps/api/src/auth/recovery.ts:238-259` (`cancelRecovery`: a weak caller revokes the backup session but `endHoldOfSession` runs only `if (!waits(caller.strength))`), `apps/api/src/routes/account.ts:412` (`DELETE /v1/account/sessions/:id` revokes without touching the queue), `apps/api/src/auth/recovery.ts:~302` (`blockQueued`: `weakOf(caller)` → 403), migration `015_recovery_code_hold.sql:20` (`session_id ... on delete set null`: sessions are revoked, not deleted, so this never fires).
+Scenario A (weak owner, the common case now that weak = username + password): thief logs in with a stolen recovery code, immediately queues a passkey (202). The owner's phone gets `recovery-login`/`hold-change-queued`; the owner's older weak session cancels the backup session (allowed by R4-M1). The hold keeps running (fail closed) and the passkey row stays queued; the owner cannot block it (403 `weak-session`). 24 h later `settleDueHolds` applies it; passkey alone is STRONG (`STRONG_COMBOS`), so the thief logs in strongly and owns the account. Before this branch the same prompt cancel left the thief with nothing (a recovery session could only add a passkey after its own 24 h). This is a regression introduced by the queue.
+Scenario B (strong owner, extended hold): the owner's own weak new-device login started a hold (`started_by` = owner's session); the thief's recovery-code login extends it and sets `by_recovery_code` (`hold.ts:272-275`; `started_by` is not updated). Thief queues a passkey. The strong owner cancels the backup session: `endHoldOfSession` sees `startedBy !== thief` and does not end the hold, so the queue survives; the owner believes the thief is gone. Same 24 h strong takeover unless the owner separately finds and blocks each row (and the web UI for blocking is not built yet, see M1).
+Fix: any revocation of a session (cancelRecovery, DELETE sessions/:id, logout-all, approval kicks, endHoldIfOwner) deletes the `hold_changes` rows it queued, in the same transaction (alert `hold-change-blocked`); and/or `holdInTx` applies only rows whose `session_id` is still live. Consider letting a weak session older than the backup session block (the R4-M1 rule already used for cancel), since the owner's words were "those devices can BLOCK the changes", not "strong devices". Add tests for both scenarios.
+
+**I2. A queued (or post-hold) authenticator REPLACES the owner's existing one: a removal that the recovery-code rules otherwise refuse.**
+`apps/api/src/auth/totp.ts:302-310` (`applyTotp`: `on conflict (account_id) do update set secret_enc = ...`), `totp.ts:369,377` (TOTP start/finish now `allowRecovery` + `requireConfirm(..., { recovery: true })`).
+Scenario: owner has password + authenticator (strong). Thief with a recovery code queues a TOTP; nothing says it replaces anything (alert `hold-change-queued { method: 'totp' }`). At hold end the owner's authenticator secret is overwritten: the owner's password + TOTP login now fails (owner left with a weak login only), the thief holds the account's only authenticator and can use the authenticator-code backup login. Outside a hold the effect is immediate and new with this branch: a recovery session past its own 24 h replaces the authenticator with no confirm token (before, TOTP add needed a full session and a confirm). Removals are listed as "stays refused" in the design note (decision 3c). If replacing a lost authenticator is the intended "upgrade", say so explicitly (lead/owner call) and at least mark the queued change and its alert as `replaces: true` so the other devices see "your authenticator will be replaced"; otherwise refuse TOTP enrolment from a recovery session (and from the queue) while a TOTP already exists.
+
+**I3. Migration number clash with Task 18.** `apps/api/migrations/015_recovery_code_hold.sql` vs `015_team_members.sql` on `origin/wip/landing-p2-task18` (fd894b6) and `origin/wip/lead-p2-task18`. The runner keys on the full file name (`db/migrate.ts:8,17`), so both would apply (sorted `015_recovery...` before `015_team...`), but the numbering convention breaks and both branches rewrite the same three lists in `apps/api/test/schema.test.ts` (textual conflict). Whoever lands second renumbers to 016 and updates schema.test. Also, at merge: Task 18 member sessions are rows of the team account; check that a member session cannot reach the two-factor add routes and queue a factor for the team account (`requireSession` should refuse it, but the new `allowHeld`/`allowRecovery` options on the TOTP/WebAuthn routes are worth a test).
+
+## Minor
+
+**M1. No UI to block yet; until it lands the "other devices overrule" protection does not exist for users.** docs/coordination.md says the web list + Block button is a follow-up. Do not ship the queue to users before the block UI (or ship with queued additions refused).
+**M2. `GET /v1/account/hold` does not say which session/device queued each change** (`recovery.ts` `getHold` drops `session_id`). The owner cannot tell their own queued authenticator from the thief's, so they may block their own or leave the thief's. Return the device label of `session_id`.
+**M3. Unbounded queue / alert flood.** `gateChange` (`hold.ts:513`) inserts a row and an `OWNER_WARNINGS` alert per addition with no cap; a thief can queue hundreds of cheap software-passkey additions to bury the real one and fill the account's alert list. Cap rows per account (e.g. 5) and refuse beyond.
+**M4. `blockQueued` does not settle first.** Between `hold_until` and the next settle (≤ 1 min) a strong device can still block a row that by the rule should already have applied. Owner-favouring and harmless, but inconsistent with `getHold`, which settles; call `holdInTx` first or document.
+**M5. Offers stay hidden up to a minute after `hold_until`** (`holdSql.ts` checks the row's existence, not `hold_until > now()`). Documented; fine, noted for completeness.
+**M6. Red-test discipline:** the `myOffers.test.tsx` assertion for `hidden: 'recovery-hold'` arrived with the implementation (92b646f), not in 7a7fe94; it passes at 7a7fe94. The API red tests are fine (below).
+**M7. Migration comment** (`015_recovery_code_hold.sql:19`) "null once that session is gone" never happens (sessions are revoked, not deleted); tie to I1.
+
+## Checked, no finding
+- Apply-at-end vs block race: both under `lockAccount`; `settleDueHolds` locks per account; READ COMMITTED snapshot cannot apply a row a committed block removed.
+- Owner's early end discards the queue: `endHoldIfOwner` and `endHoldOfSession` delete `account_holds`, FK `on delete cascade` drops `hold_changes` (test at recoveryRules.test.ts:334 covers the strong cancel of the starter).
+- Recovery session cannot block (requireSession without `allowRecovery`; `weakOf` recovery = weak) and cannot mark the new alerts seen (`OWNER_WARNINGS`).
+- Authenticator-code backup hold: `requireNotHeldExceptTwoFactor` refuses (not `by_recovery_code`; session `hold_until` check), test at :232.
+- PGP not in `TWO_FACTOR_CHANGES` (Q52 owner: no) — consistent.
+- Offer hiding: public list (`offers/routes.ts:410,551`), offer page (`:569`, 404 like unknown, before the block check's own 404), take (`take.ts:118`, 404 before any other refusal), chat create (`chat/routes.ts:90-92,240`). There is no public profile/search route listing offers yet; when one is added it must use `LISTED`. No 404-vs-other-error or timing difference found.
+- Classification: `DELETE /v1/account/hold/changes/:id` in `LIVE_SESSION_ROUTES` and `WEAK_LIMITED_ROUTES`; `GET /v1/account/hold` is a GET (no class needed); TOTP/WebAuthn finish already in the class audit.
+- Open owner questions 49-57 not flagged (note: Q50 answer "block = also log it out" and Q54 "work at once" will need code; Q56 "all holds" widens the hiding).
+
+## Tests (own worktree `~/x2f-worktrees/rv-recov` @ 3cfe204, `npm ci`, under flock)
+- tsc --noEmit: apps/api exit 0, apps/web exit 0, packages/auth-client exit 0.
+- vitest api: recoveryRules, recovery, coolingOff, offers, take: 5 files, 191/191 passed.
+- vitest web myOffers: 11/11 passed.
+- Red check at 7a7fe94: recoveryRules 8 failed (the new behaviour tests; the sign-up/username/strength pins and the open-trade test pass, as expected for "no change, pin it"), coolingOff 20 failed (the new class-audit row and table tripwire; the other rows fail with it in the shared setup), myOffers passes (M6).
+Worktree removed.

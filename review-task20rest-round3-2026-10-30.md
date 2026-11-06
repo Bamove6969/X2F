@@ -1,0 +1,45 @@
+# Review round 3: Plan 3 Task 20 "rest" (end-to-end encrypted trade chat)
+
+- Branch: `origin/wip/second-p3-task20-rest` @ **38bbb6c** (= 204780f round-2 fixes + merge of main line 5c4d35b).
+- Main line: origin/claude/compassionate-johnson-k95ssr = 5c4d35b. `git merge-tree --write-tree <main> 38bbb6c` is clean.
+- Earlier rounds: `review-task20rest-2026-10-29.md`, `review-task20rest-round2-2026-10-30.md`. Reviewer: read-only, 2026-10-30.
+- Tests: none re-run. The lead's full check on 38bbb6c is green (tsc 5 projects; vitest api 1249, web 1055, auth-client 70, trade 328, moderation 11; Playwright chat/fold/dispute-room/refund/release 91). The one new finding is a narrow timing case, shown by reading the code; it did not need a run to prove it.
+
+## Verdict: APPROVED WITH MINOR
+
+Every round-2 finding is fixed, and the fixes are tested in a way that would fail without them. The merge 38bbb6c is sound: its only conflict was in schema.test.ts and was resolved correctly, and I found no semantic clash with Tasks 38-40. One new Minor (n1) and two notes, none blocking.
+
+## Round-2 findings: check results
+
+- **I1: fixed.** `fixtures/payChat.tsx`: `installPayFixtures(realChat)` skips `setTradeChat(BoardChat)` when `window.__x2fRealChat` is true. `fixtures/index.ts:55` passes the flag, which only `e2e/chat.spec.ts` sets (openRoom's init script). `fixtures/` is loaded only under `__X2F_FIXTURES__` (main.tsx:11, constant-folded), so a production build cannot be switched by the global. chat.spec now finds the chat with `getByRole('dialog', { name: 'Chat with …' })` (phone sheet). It adds a two-pane case (840x900: the real panel in `[data-pane=side]`, the composer focused, no sheet) and a wide case (1280x800: the real chat in the sheet). The header comment is updated. The lead's run shows it green.
+- **I2: fixed.** `TradeRoom.tsx` `ChatHash`: in the wide layout `#chat` opens the Sheet unless the current screen draws its own chat aside (`[data-pane='main'] .x2f-room__chat-panel`: BuyerPay and SellerWaiting through `WideRoom`), in which case it focuses that aside's composer, so there is never a second panel. refund.spec and release.spec gain 1280x800 cases (the Chat link → `#chat` → the sheet; Escape drops the hash). coordination.md records it. One timing hole in the aside detection is n1.
+- **m1: fixed.** `chat/retention.ts` `deleteChats`: `select … for update` on the doomed chats (in code order, as the app role, before `set local role x2f_purge`, which has no update right). The facts are then read again in a new statement (READ COMMITTED, so it sees whatever the lock waited for), `due` runs again, and the delete still skips disputed chats. Posts take the same row lock (`locked()`, routes.ts:151) and a take's `linkChatToTrade` updates the row, so both are serialised with the purge. I found no deadlock: the purge locks only chat rows, in a fixed order; posts lock one chat. Both new chat.test race cases (`raceThePurge`, which waits on `pg_stat_activity` in the file's own database) would fail on the old code: the old delete waited on the lock, then deleted anyway.
+- **m2: fixed.** block-tripwires.test.ts: a permanent guard runs on every `chat/*routes*` file and asserts there is at least one such file, so the guard cannot pass vacuously. Like the take's guard it is file-level: a new route added inside routes.ts itself would pass. That is acceptable, and chat.test "blocks (Task 37)" covers the behaviour.
+- **m3: fixed.** `focusComposerWhenReady`: a MutationObserver focuses the composer when ChatPanel renders it at `ready`, never takes focus the user moved elsewhere in the meantime, and is cleaned up by the effect. Unit tests are in tradeRoom.test.tsx; the e2e two-pane case checks it with the real panel.
+- **m4: fixed.** coordination.md: the Task 5 line says it landed and that `chat-unavailable` is now dead. The Blocks note reads "This chat has been closed." (matches ChatPanel.tsx:47).
+- **m5: fixed.** routes.ts: `chatPost.take` runs after `checkChatEnvelope` (`structural checks only, no signature check, so unbudgeted 400s cost almost nothing`). A new chat.test case sends 35 malformed posts, then a valid post gets 201.
+- **m6: fixed (recorded).** coordination.md has a "Seam with Plan 7 retention" note: keep `purgeChatsJob` **before `purgeFeedbackForm` and before `purgeTradesJob`**, and keep 106's `delete on chats` grant to `x2f_purge`. At 38bbb6c `RETENTION_JOBS` (retentionJobs.ts:15) is `[purgeExpired, purgeRemovedWalletAddresses, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeFeedbackForm]` and purge.test.ts:149 pins it, so whoever lands Plan 7 second will see a red test if the job is dropped.
+
+## Merge 38bbb6c (main 5c4d35b: Tasks 38-39, the fold test fix)
+
+- `--remerge-diff`: the only conflict was schema.test.ts, and all three migration lists now hold both `106_chat.sql` and `116_fund_started.sql`, matching the migrations directory. Nothing else needed a hand edit.
+- **Task 38 warning sheets (role `alertdialog`).** chat.spec matches `role=dialog` with the name "Chat with …", so an alertdialog never matches it, and the chat sheet is plain `Sheet` (role dialog). The fold.spec change (find `.x2f-sheet` by class) is main's own; it does not touch the chat.
+- **Task 39 screens.** `SellerCancelConfirm` (seller, `settling`/`refunded` buyer-cancel) has no `#chat` link and no wide aside, so on wide `#chat` opens the sheet there as on other screens. `return-confirmed` events and the new `cancel-confirm` push are fixed texts that name no trade or chat (push/send.ts, sw.js), so nothing chat-related reaches a push.
+- **48-hour refund disputes (Task 39).** `open-dispute` after a refund sets `closedAt: null` (machine.ts:410, :487). The chat then (a) counts as `disputeOpen` and is never purged, and (b) is again "linked to an open trade", so the block exception lets both traders use the trade chat during the dispute. Retention after close (`CHAT_AFTER_CLOSE_DAYS = 90`) is far longer than the 48 h window, so a chat is never gone before a refund dispute could open.
+- **Foldable layout (Task 40).** `chat` is still null for `disputed` (DisputeRoom renders TradeChatPanel itself) and for a broken trade. Panes / `chatPaneFor` are unchanged.
+
+## Privacy, keys, moderator, CantDoThat (rechecked against 204780f + merge)
+
+- 204780f adds no log line and no stored field. The server still holds only envelopes (sealed slots + ciphertext + signature), device public keys and the moderation attestation. The purge's re-read selects only the same retention facts (code, trade_code, timestamps, trade state).
+- Keys: no change. Device identity stays in IndexedDB in the escrow worker, and the attestation is checked against the build-pinned moderation key. The real-chat flag only chooses which component the fixtures build installs; it does not touch keys.
+- Moderator: no change. The mod slot is sealed in every envelope (the notice says so), and the moderation service reads only for an open dispute. M2/M10 limits remain as recorded in coordination.md.
+- CantDoThat: no new refusal codes. Unchanged from round 2 (`own-offer` → CantDoThat, the rest classified in `NOT_REFUSAL_CODES`).
+
+## Minor
+
+- **n1. The wide room's "does this screen have its own chat aside?" is recomputed only on a state/role change, but the screen can change by time within one state.** `apps/web/src/screens/trade/TradeRoom.tsx:301` (`screen={`${view.state}:${view.role}`}`) and `:366-368` (the `useLayoutEffect` deps `[wanted, wide, screen]`). The seller in `secured` sees SellerWaiting (wide aside) until `payBy`, then SellerRefund (no aside, *has* a `#chat` link; refundScreens.ts:29 `when: sellerRefundOpen`) with the same state and role. Failure scenario: a seller on a laptop has `/trade/X#chat` open while SellerWaiting is shown (a reload, the Back button, or a saved URL). `aside` = true, so ChatHash shows no sheet and only watches the aside. `payBy` passes, the deadline refresh switches the screen to SellerRefund, and `aside` stays true. The hash is still `#chat`, so tapping SellerRefund's Chat link pushes the same hash: no sheet opens, and the observer waits for an aside that no longer exists. The seller has no way to reach the chat from that screen until they reload or change the hash. Rare, because SellerWaiting itself has no `#chat` link. Fix: key the effect on the chosen screen, e.g. pass `Screen` (the component) or a `screenFor` id instead of `state:role`. Or skip the cached state: in a layout effect that runs on every render, re-check `document.querySelector(ASIDE_CHAT)` and set state only when the result changes.
+
+## Notes, not findings
+
+- N3. While `#chat` is wanted and the chat never becomes ready (e.g. "open on another device", which has no composer), `focusComposerWhenReady` keeps a subtree MutationObserver on `document.body`. It stops when the hash, layout or route changes. This is harmless, but it is one extra observer on every DOM mutation of the room, which polls.
+- Round-2 notes N1/N2 (the open-trade exception lasts until `closed_at`; a blocked pre-trade chat answers 404 at once) still stand as decided.

@@ -1,0 +1,11 @@
+# Owner answers to the lead, 2 Nov 2026
+[2026-11-02 07:48:26] Task 34: offers are market ± % ONLY, no fixed-price offers at all. (confirmed)
+[2026-11-02 07:48:26] Task 34: amount bands are whole units; the next band starts at +1 (500 then 501), as design drew. (confirmed)
+[2026-11-02 07:48:26] Past-rep: imported LocalMonero volume counts toward the opt-in 'Completed over $X' line through a MODERATOR-VERIFIED $ field (the mod checks the trader's proof and enters the figure). (confirmed)
+[2026-11-02 07:58:30] TRADING HOLD (replaces spec 2.3 "during any dispute a mod can pause the other party"): open disputes NEVER block trading by themselves. A moderator places a trading freeze only when a party IGNORES a dispute (no reply in the dispute chat for ~48 h) or ignores a ruling against them (e.g. ordered to pay and doesn't). The mod writes in the dispute that the person is ignoring the instructions, and what they must do to get control back (e.g. pay X to Y). When the person has done it, they message the mod, who verifies and lifts the freeze. NO end time on a hold: it lasts until the mod lifts it. (Owner drew this from LocalCoinSwap.) Spec + Plan 4 to update in the docs pass.
+[2026-11-02 07:59:30] Owner clarified the freeze wording: once the person has done what was asked, they MESSAGE THE MODS (in the dispute), and the mods verify it and lift the freeze.
+[2026-11-02 08:12:28] Freeze is ONLY a separate, later action (after the person actually ignored the dispute ~48 h or the ruling). It is NOT an option on the ruling card.
+[2026-11-02 08:12:28] Proof blur: the uploader can only ADD blur, never remove an automatic one ("unless we get good feedback as to why to backtrack").
+[2026-11-02 08:12:28] "Stay logged in?" prompt: 2 minutes (SESSION_PROMPT_MS = 2 min confirmed).
+[2026-11-02 08:12:28] Blur warning on amount/memo: owner asked whether it would warn on every proof or only on proofs with known issues -> lead clarifying.
+[2026-11-02 08:17:45] BLUR RULE (final): the automatic blur NEVER hides the amount. If the UPLOADER's own added blur covers the amount or memo, warn: "The amount is hidden, so the seller may not be able to check your payment." (COPY-UNSIGNED draft); they can still post.
