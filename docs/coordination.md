@@ -529,3 +529,10 @@ Review: `~/x2f-comms/review-task40-2026-10-29.md`. Built: the app shell (one tre
 - M-2 (landing): migration 202 changed in place again (M-3). Any database that ran an older 202 must be rebuilt; main has no 202.
 - M-3: 202 ends every trader-app session of a staff or owner account.
 - Owner Q13: the owner is refused on the trader site like an unknown name or key (`TRADER_LOGIN_KINDS` = trader, member). Price health is `GET /staff/v1/price-health` (stats.read). Caveat: the owner's price-health Web Push still subscribes through the trader API (`pushRoutes` kinds trader, owner), which the owner can no longer reach; staff-site push is for Task 16 / Plan 6. The alerts still go to the owner's notifications.
+### Task 5: RV5 minors (claude3, 6 Nov)
+- m8: `purgeKeyTaps(db, now)` deletes taps never finished or never used, 24 h after they started. Used taps stay until the owner sets keep times (RV5 Q6). Not wired to a timer yet: the staff app's sweeper (Task 4 `staff/sweeper.ts`) should call it once the two are merged.
+- m9: `consumeKeyTap` refuses a tap whose answering security key is no longer registered to the account. The AAGUID allowlist is still checked at start and finish only (it lives in code, not SQL); finish to consume is at most 2 minutes.
+- m10: `key_taps.session_id` (migration 203 edited in place: rebuild any database that ran the old 203). `startKeyTap(..., { sessionId })` and `keyTapRoutes({ sessionOf })` bind a tap to its session; `consumeKeyTap(..., { sessionId })` must then match. At the Task 4/7 merge: mount with `sessionOf: (req) => req.auth.sessionId` and pass `{ sessionId: req.auth.sessionId }` in every action route's consume (invites, members, ownerKeys, settings, site).
+- m11: a NUL in a tap answer is 400 `bad-request` before the assertion is checked.
+- m12: at most 5 open (unfinished, unexpired) taps per account; the 6th is 429 `slow-down`.
+- m7 (taps/start checks the intent's perm) is done with Task 7, where the routes are mounted.
