@@ -167,7 +167,7 @@ describe('rulingAllowsCosign: a moderator-built transaction is co-signed only th
   // A stand-in with the rule Task 12's cosignPolicy applies to a mod-built set (exact payouts), so
   // the gate is exercised against it until the real one lands (NEEDS_TASK_12 tripwire).
   const exactPolicy = (role: 'buyer' | 'seller') => (o: SettleOutcome) =>
-    same(o.to, payoutsFor({ ...facts, kind: role === 'buyer' ? 'release' : 'mutual-cancel' }));
+    same(o.to, payoutsFor({ ...facts, kind: role === 'buyer' ? 'dispute-buyer' : 'dispute-seller' }));
   const buyerWin: SettleOutcome = { kind: 'release', to: payoutsFor({ ...facts, kind: 'release' }), builder: 'mod', cosigner: 'buyer' };
   const final = new Date(T0 + (400 + 48 * 60) * MIN);
 
