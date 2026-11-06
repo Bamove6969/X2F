@@ -7,6 +7,7 @@ import { useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
+import { Notice } from '../../ui/Notice.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import type { DisputeTrade, Reason } from './api.js';
 import { DisputeIcon } from './icons.js';
@@ -81,6 +82,13 @@ export function DisputeOpen({
               : `A moderator looks at what happened and decides where the ${xmrInText(trade.amountAtomic)} XMR goes. It stays locked in escrow until then.`}
           </p>
         </section>
+
+        {/* Owner Q20 (2026-11-03): talk to the other trader first, then accept or dispute. A nudge,
+            never a block. COPY-UNSIGNED; DESIGNER-REVIEW (no board: the kit's Notice, plain). */}
+        <Notice tone="plain" icon="info" live="off" title={`Talk to ${trade.counterparty} first`} data-part="talk-first">
+          Most problems are sorted out in the trade chat. Tell them what went wrong and give them a chance to put it right. If you still
+          don't agree, open a dispute. <Link to={back}>Go to the chat</Link>
+        </Notice>
 
         {entry.kind === 'wait' ? (
           <p className="dispute-wait" role="status">

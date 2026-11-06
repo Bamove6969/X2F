@@ -17,10 +17,31 @@ import { dayTime, inTime, repliedIn, xmrInText } from './rules.js';
 import { DisputeSystemCards, systemCardsFor, tradeProofs, UnblurredRequest } from './seams.js';
 import './dispute.css';
 
-/** "Replied in 38 min · ruling due by Fri 16 Oct, 10:14 (in 23 h)" (board), or the waiting form. */
+/**
+ * The board's "Replied in 38 min · ruling due by Fri 16 Oct, 10:14 (in 23 h)", on Plan 4 Task 10's
+ * view. Before anyone replies: "First reply due by … · You're number N in the queue" (Task 15).
+ * Round 1 aims to be ruled within 24 hours (owner 2026-11-03), a goal and never a deadline, so until
+ * `goalAt` the line says "aiming to rule by …" (COPY-UNSIGNED); past it, the hard `dueAt`.
+ */
 function DeadlineLine({ dispute, now }: { dispute: DisputeView; now: Date }) {
   const replied = repliedIn(dispute);
+  if (replied === null && dispute.replyDueAt) {
+    return (
+      <span className="dispute-deadline">
+        First reply due by <span className="dispute-ink">{dayTime(new Date(dispute.replyDueAt))}</span>
+        {dispute.queuePosition ? <> · You're number {dispute.queuePosition} in the queue</> : null}
+      </span>
+    );
+  }
   const first = replied !== null ? `Replied in ${replied}` : 'A moderator usually replies within 4 hours'; // COPY-UNSIGNED (from DisputeOpen)
+  const goal = dispute.goalAt ? new Date(dispute.goalAt) : null;
+  if (goal !== null && now.getTime() < goal.getTime()) {
+    return (
+      <span className="dispute-deadline">
+        {first} · aiming to rule by <span className="dispute-ink">{dayTime(goal)}</span> ({inTime(goal.getTime() - now.getTime())}) {/* COPY-UNSIGNED */}
+      </span>
+    );
+  }
   if (dispute.dueAt === null) return <span className="dispute-deadline">{first}.</span>;
   const due = new Date(dispute.dueAt);
   return (

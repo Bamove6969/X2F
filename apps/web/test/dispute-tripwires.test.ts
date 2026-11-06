@@ -63,4 +63,23 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     const view = readFileSync(ROOT + 'apps/api/src/trades/view.ts', 'utf8');
     expect(/refund_reason/.test(migrations) || /refundReason/.test(view), 'refund_reason landed: switch rules.ts refundReason to view.refundReason').toBe(false);
   });
+  it('NEEDS_TASK_12_FEES_OWED: the ruling page shows the owed-fee line only when the dispute view carries feeOwedAtomic', () => {
+    // Revision 2026-10-29c "Fees on settled disputes": Task 12's publish writes fees_owed and the
+    // trader view tells the debtor. Task 10's view has no such field yet, so DisputeRuling (via
+    // parseDispute's optional feeOwedAtomic) shows nothing. When the API sends it: check the name and
+    // shape (a digit string, only in the debtor's view) against api.ts parseDispute, check that the
+    // collection the line promises ("deducted automatically from your future trades": feeOwedAtomic in
+    // the next trades' signed terms) is built, or change the line, and delete this.
+    const routes = readFileSync(ROOT + 'apps/api/src/disputes/routes.ts', 'utf8');
+    expect(/feeOwed|fees_owed/.test(routes), 'the dispute view sends the owed fee: check parseDispute against it').toBe(false);
+  });
+
+  it('NEEDS_TASK_12_TX_PROOF: the seller-sends-xmr proof form is shown only with a handler', () => {
+    // Plan 4 Task 15 (A6/A8): the seller sends the XMR and proves it (tx hash, tx key). No API route
+    // takes the proof yet, and the view does not carry the buyer's address, so DisputeScreen passes no
+    // onTxProof and the ruling shows the amount and the time only. When the route lands: pass
+    // onTxProof from DisputeScreen and DisputeSlot, show the buyer's address, and delete this.
+    const routes = readFileSync(ROOT + 'apps/api/src/disputes/routes.ts', 'utf8');
+    expect(/tx-proof|txKey|tx_key/.test(routes), 'the tx-proof route landed: wire onTxProof and the buyer address').toBe(false);
+  });
 });

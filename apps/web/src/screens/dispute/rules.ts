@@ -349,3 +349,17 @@ export function rulingAllowsCosign(a: {
     return false;
   }
 }
+
+/**
+ * Revision 2026-10-29c "Fees on settled disputes": the party who lost a dispute with no money in the
+ * escrow still owes the 1%. The sentence is the plan's, COPY-UNSIGNED beyond the owner's meaning.
+ * Shown only when the server's dispute view says this side owes it (NEEDS_TASK_12_FEES_OWED).
+ */
+export function feeOwedLine(atomic: string): string {
+  return `This also means you still owe the 1% fee for this trade, equal to ${xmrInText(atomic)} XMR, which will be deducted automatically from your future trades.`;
+}
+
+/** A Monero transaction ID or transaction key: 64 lowercase hex characters. */
+export function isTxHex(s: string): boolean {
+  return /^[0-9a-f]{64}$/.test(s);
+}

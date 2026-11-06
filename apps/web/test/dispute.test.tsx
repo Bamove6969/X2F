@@ -403,3 +403,109 @@ describe('DisputeRuling appeal form', () => {
     expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Appeal this ruling')).toBe(false);
   });
 });
+
+// Plan 4 Task 15 on Task 10's trader view (goalAt, replyDueAt, queuePosition, complyBy) and the
+// owner's rules: the 24 h is a goal, not a deadline (owner 2026-11-03); talk to the other trader
+// first (owner Q20, 2026-11-03); one appeal only, and it is final.
+describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
+  const view = (over: Record<string, unknown> = {}) => ({
+    ...dispute(),
+    goalAt: iso(130 + 24 * 60),
+    replyDueAt: iso(130 + 4 * 60),
+    firstReplyAt: null,
+    queuePosition: 3,
+    round: 1,
+    complyBy: null,
+    ...over,
+  });
+
+  it('reads the goal, the first-reply time, the queue place, complyBy and an owed fee; absent ones read as null', () => {
+    const d = parseDispute(view({ complyBy: iso(900), feeOwedAtomic: '12500000000' }));
+    expect(d).toMatchObject({ goalAt: iso(130 + 24 * 60), replyDueAt: iso(130 + 4 * 60), queuePosition: 3, complyBy: iso(900), feeOwedAtomic: '12500000000' });
+    const old = parseDispute(dispute());
+    expect(old).toMatchObject({ goalAt: null, replyDueAt: null, queuePosition: null, complyBy: null, feeOwedAtomic: null });
+    expect(() => parseDispute(view({ goalAt: 'soon' }))).toThrow();
+    expect(() => parseDispute(view({ queuePosition: '3' }))).toThrow();
+    expect(() => parseDispute(view({ feeOwedAtomic: '-1' }))).toThrow();
+    expect(() => parseDispute(view({ feeOwedAtomic: 125 }))).toThrow();
+  });
+
+  it('before a moderator replies: the first-reply time and the place in the queue', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const d = parseDispute(view());
+    const { host } = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={d} serverClock={at(200)} />));
+    expect(host.textContent).toContain(`First reply due by ${dayTime(new Date(T0 + (130 + 240) * MIN))}`);
+    expect(host.textContent).toContain("You're number 3 in the queue");
+  });
+
+  it('the 24 hours are a goal, never a deadline; past the goal the room shows the hard deadline', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const d = parseDispute(view({ dueAt: iso(130 + 48 * 60), queuePosition: null, firstReplyAt: iso(168), moderator: { name: 'sarah.v', joinedAt: iso(168) } }));
+    const before = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={d} serverClock={at(200)} />));
+    const text = before.host.textContent ?? '';
+    expect(text).toContain(`Replied in 38 min · aiming to rule by ${dayTime(new Date(T0 + (130 + 24 * 60) * MIN))} (in 22 h)`);
+    expect(text).not.toMatch(/due by/);
+    const after = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={d} serverClock={at(130 + 25 * 60)} />));
+    expect(after.host.textContent).toContain(`ruling due by ${dayTime(new Date(T0 + (130 + 48 * 60) * MIN))} (in 23 h)`);
+  });
+
+  it('DisputeOpen asks the trader to talk to the other side first, with a way back to the chat (owner Q20)', () => {
+    const { host } = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(121)} onOpen={async () => undefined} />));
+    const notice = host.querySelector('[data-part="talk-first"]')!;
+    expect(notice.textContent).toContain('Talk to satoshi_ghost first');
+    expect(notice.querySelector('a')?.getAttribute('href')).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    // A nudge, never a block: the dispute can still be opened.
+    expect(host.querySelector<HTMLButtonElement>('[data-primary]')!.disabled).toBe(false);
+  });
+
+  it('says there is one appeal only and its decision is final', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled()} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(host.textContent).toContain('There is one appeal per dispute, and its decision is final.');
+  });
+
+  it('tells the party the server says owes the fee, with the amount; nobody else (Revision 2026-10-29c)', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const line = 'This also means you still owe the 1% fee for this trade, equal to 0.0125 XMR, which will be deducted automatically from your future trades.';
+    const owes = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={{ ...ruled({ outcome: 'refund-to-seller', destination: null }), feeOwedAtomic: '12500000000' }} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(owes.host.textContent).toContain(line);
+    const not = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled({ outcome: 'refund-to-seller', destination: null })} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(not.host.textContent).not.toContain('owe the 1% fee');
+  });
+
+  it('seller-sends-xmr: the seller reads the amount and the time to send it; the tx-proof form needs a 64-hex hash and key', async () => {
+    const t = trade({ role: 'seller', counterparty: 'mira.k', state: 'refunded', dispute: { by: 'buyer', at: iso(130) } });
+    const d = { ...ruled({ outcome: 'seller-sends-xmr', destination: null }, { afterRefund: true, status: 'final' as const }), complyBy: iso(2000) };
+    const plain = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(plain.host.textContent).toContain('You must send mira.k 1.25 XMR');
+    expect(plain.host.textContent).toContain(`Send it by ${dayTime(new Date(T0 + 2000 * MIN))}.`);
+    // No proof route yet (NEEDS_TASK_12_TX_PROOF): no form without a handler.
+    expect(plain.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
+
+    const onTxProof = vi.fn(async () => undefined);
+    const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} />));
+    const form = host.querySelector('[aria-label="Transfer proof"]')!;
+    const [hash, key] = [...form.querySelectorAll<HTMLInputElement>('input')];
+    const type = (el: HTMLInputElement, v: string) =>
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    const send = () => form.querySelector<HTMLButtonElement>('button')!;
+    type(hash!, 'a'.repeat(64));
+    type(key!, 'b'.repeat(63));
+    expect(send().disabled).toBe(true);
+    type(key!, 'g'.repeat(64));
+    expect(send().disabled).toBe(true);
+    type(key!, ` ${'B'.repeat(64)} `);
+    expect(send().disabled).toBe(false);
+    await act(async () => {
+      send().click();
+    });
+    expect(onTxProof).toHaveBeenCalledWith('a'.repeat(64), 'b'.repeat(64));
+    // The buyer only reads what the seller must do.
+    const buyer = render(inRouter(<DisputeRuling trade={{ ...t, role: 'buyer', counterparty: 'satoshi_ghost' }} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} />));
+    expect(buyer.host.textContent).toContain('satoshi_ghost must send you 1.25 XMR');
+    expect(buyer.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
+  });
+});

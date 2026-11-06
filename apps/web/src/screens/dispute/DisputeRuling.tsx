@@ -9,12 +9,13 @@ import { Link } from 'react-router';
 import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
+import { Notice } from '../../ui/Notice.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import type { DisputeTrade, DisputeView } from './api.js';
 import { TradeTitle } from './DisputeOpen.js';
 import { DisputeIcon } from './icons.js';
 import { ModeratorTag } from './ModeratorTag.js';
-import { APPEAL_MIN, APPEAL_WINDOW_H, appealSentText, dayTime, overturnLien, rulingCopy, rulingFinal } from './rules.js';
+import { APPEAL_MIN, APPEAL_WINDOW_H, appealSentText, dayTime, feeOwedLine, isTxHex, overturnLien, rulingCopy, rulingFinal } from './rules.js';
 import './dispute.css';
 
 function AppealSection({
@@ -89,6 +90,8 @@ function AppealSection({
       <p className="dispute-muted">
         Either of you can appeal until {dayTime(until)} ({APPEAL_WINDOW_H} h). An appeal goes to a senior moderator or the owner who hasn't seen this case.
         {overturnLien(r.outcome, me, other)}
+        {/* The owner's rule: one appeal only, binding. COPY-UNSIGNED */}
+        {' There is one appeal per dispute, and its decision is final.'}
       </p>
       {writing ? (
         <div className="dispute-stack-8">
@@ -127,18 +130,81 @@ function AppealSection({
   );
 }
 
+/**
+ * The after-refund `seller-sends-xmr` proof (Plan 4 Task 15, A6/A8): the transaction ID and its
+ * transaction key, 64 hex characters each, so a moderator can check the payment. Shown only with a
+ * handler: no API route takes it yet (NEEDS_TASK_12_TX_PROOF). COPY-UNSIGNED; DESIGNER-REVIEW (no board).
+ */
+function TxProofForm({ onTxProof }: { onTxProof: (txHash: string, txKey: string) => Promise<void> }) {
+  const [hash, setHash] = useState('');
+  const [key, setKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const hashId = useId();
+  const keyId = useId();
+  const h = hash.trim().toLowerCase();
+  const k = key.trim().toLowerCase();
+  const ready = isTxHex(h) && isTxHex(k);
+  const send = async () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onTxProof(h, k);
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (sent) {
+    return (
+      <Notice tone="plain" icon="check" live="status" data-part="tx-proof-sent">
+        Proof sent. A moderator will check the payment.
+      </Notice>
+    );
+  }
+  return (
+    <section aria-label="Transfer proof" className="dispute-stack-8">
+      <h2 className="dispute-strong-15">Prove you sent it</h2>
+      <p className="dispute-muted">Your wallet shows the transaction ID and the transaction key once the XMR is sent.</p>
+      <label htmlFor={hashId} className="dispute-strong-15">
+        Transaction ID
+      </label>
+      <input id={hashId} value={hash} onChange={(e) => setHash(e.target.value)} autoComplete="off" spellCheck={false} className="dispute-textarea dispute-mono" />
+      <label htmlFor={keyId} className="dispute-strong-15">
+        Transaction key
+      </label>
+      <input id={keyId} value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" spellCheck={false} className="dispute-textarea dispute-mono" />
+      <Button variant="primary" disabled={!ready || busy} onClick={() => void send()}>
+        Send proof
+      </Button>
+      {error !== null ? (
+        <p className="dispute-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 export function DisputeRuling({
   trade,
   methodName,
   dispute,
   serverClock,
   onAppeal,
+  onTxProof,
 }: {
   trade: DisputeTrade;
   methodName: string;
   dispute: DisputeView;
   serverClock: () => Date;
   onAppeal: (why: string) => Promise<void>;
+  /** The seller's proof of a `seller-sends-xmr` payment; none until the API takes it (NEEDS_TASK_12_TX_PROOF). */
+  onTxProof?: (txHash: string, txKey: string) => Promise<void>;
 }) {
   const r = dispute.ruling;
   if (r === null) throw new Error('DisputeRuling needs a ruling');
@@ -177,6 +243,14 @@ export function DisputeRuling({
                 .
               </span>
             ) : null}
+            {r.outcome === 'seller-sends-xmr' && dispute.complyBy ? (
+              <span className="dispute-muted-14">
+                {/* COPY-UNSIGNED */}
+                {trade.role === 'seller' ? 'Send it by ' : `${trade.counterparty} has until `}
+                <span className="dispute-ink">{dayTime(new Date(dispute.complyBy))}</span>
+                {trade.role === 'seller' ? '.' : ' to send it.'}
+              </span>
+            ) : null}
           </div>
           <div className="dispute-stack-6">
             <h2 className="dispute-strong-15">Reason</h2>
@@ -196,6 +270,13 @@ export function DisputeRuling({
             </div>
           ) : null}
         </section>
+        {dispute.feeOwedAtomic ? (
+          // Revision 2026-10-29c: only the side the server says owes the fee gets this line (Task 12's fees_owed).
+          <Notice tone="caution" live="off" data-part="fee-owed">
+            {feeOwedLine(dispute.feeOwedAtomic)}
+          </Notice>
+        ) : null}
+        {r.outcome === 'seller-sends-xmr' && trade.role === 'seller' && onTxProof ? <TxProofForm onTxProof={onTxProof} /> : null}
         <AppealSection dispute={dispute} me={trade.role} other={trade.counterparty} serverClock={serverClock} onAppeal={onAppeal} />
         <p className="dispute-footnote">{copy.footer}</p>
       </div>
