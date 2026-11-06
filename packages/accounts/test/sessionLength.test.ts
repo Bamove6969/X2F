@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import { SESSION_PROMPT_MS, UNCHOSEN_SESSION_HOURS, describeAction, isSessionHours, sessionHoursFor } from '@x2f/accounts';
+import {
+  IDLE_REMINDER_MINUTES, SESSION_CHOICE_WINDOW_MS, SESSION_PROMPT_MS, UNCHOSEN_SESSION_HOURS, describeAction, isIdleReminderMinutes, isSessionHours, sessionHoursFor,
+} from '@x2f/accounts';
 
 describe('session length choices (owner, 2 Nov 2026)', () => {
   test('traders choose 2, 4, 6 or 12 hours; vendors 2, 6, 12 or 24', () => {
@@ -23,8 +25,18 @@ describe('session length choices (owner, 2 Nov 2026)', () => {
     expect(Math.min(...sessionHoursFor('trader'), ...sessionHoursFor('vendor'))).toBe(UNCHOSEN_SESSION_HOURS);
   });
 
-  test('the "Stay logged in?" prompt waits 2 minutes (draft; an open owner question)', () => {
-    expect(SESSION_PROMPT_MS).toBe(2 * 60_000);
+  test('the "Stay logged in?" warning comes 5 minutes before the end (owner, Q73, 6 Nov 2026)', () => {
+    expect(SESSION_PROMPT_MS).toBe(5 * 60_000);
+  });
+
+  test('the free first choice of a length is open only right after the login (10 minutes)', () => {
+    expect(SESSION_CHOICE_WINDOW_MS).toBe(10 * 60_000);
+  });
+
+  test('the idle reminder (owner, Q75): off, or one of these intervals in minutes', () => {
+    expect(IDLE_REMINDER_MINUTES).toEqual([10, 15, 30, 60, 120]);
+    for (const m of IDLE_REMINDER_MINUTES) expect(isIdleReminderMinutes(m)).toBe(true);
+    for (const v of [0, 5, 20, 45, 90, 240, 15.5, -15, '15', null, undefined, true, [15]]) expect(isIdleReminderMinutes(v)).toBe(false);
   });
 
   test('extending is its own confirm action', () => {

@@ -5,9 +5,12 @@
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
+import { SESSION_CHOICE_WINDOW_MS } from '@x2f/accounts';
 import { issueConfirmToken } from '../src/auth/confirm.js';
+import { insertPgpKey } from '../src/auth/pgp.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
-import { seedAccount } from './helpers/accounts.js';
+import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { testApp } from './helpers/app.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
@@ -89,7 +92,7 @@ describe('choosing the session length', () => {
 
   it('the chosen length counts from the login, and using the session never moves the end', async () => {
     const { b } = await trader();
-    at(30 * MIN);
+    at(5 * MIN);
     const res = await setLength(b, 6);
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json()).toMatchObject({ lengthHours: 6, expiresAt: iso(6 * HOUR) });
@@ -125,6 +128,32 @@ describe('choosing the session length', () => {
     const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id) });
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json()).toMatchObject({ lengthHours: 12, expiresAt: iso(14 * HOUR - MIN) });
+  });
+
+  it('the free first choice is open only right after the login: later, a longer length adds no time without a proof', async () => {
+    // Lead decision 6 Nov 2026 (risk 1 of the sessions review): a stolen cookie must not stretch an
+    // unchosen 2-hour session to 12 hours. Inside SESSION_CHOICE_WINDOW_MS the question after the
+    // login sets the end from the login; after it the length is recorded for the next extend only.
+    const early = await trader();
+    at(SESSION_CHOICE_WINDOW_MS - 1);
+    expect((await setLength(early.b, 12)).json()).toMatchObject({ lengthHours: 12, expiresAt: iso(12 * HOUR) });
+
+    setNow(T0);
+    const late = await trader();
+    at(SESSION_CHOICE_WINDOW_MS);
+    const res = await setLength(late.b, 12);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ lengthHours: 12, expiresAt: iso(2 * HOUR) });
+    at(2 * HOUR);
+    expect((await late.b.get('/v1/account/me')).statusCode).toBe(401);
+  });
+
+  it('after the window, the length chosen still applies from the next "Stay logged in"', async () => {
+    const { id, b } = await trader();
+    at(HOUR);
+    expect((await setLength(b, 6)).json()).toMatchObject({ lengthHours: 6, expiresAt: iso(2 * HOUR) });
+    const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id) });
+    expect(res.json()).toMatchObject({ lengthHours: 6, expiresAt: iso(7 * HOUR) });
   });
 
   it('changes only the calling session', async () => {
@@ -202,6 +231,27 @@ describe('"Stay logged in?": extending the session', () => {
     expect((await b.post('/v1/account/session/extend', { confirmToken: token })).statusCode).toBe(401);
   });
 
+  it('extends for any of the choices offered at login (owner, Q73): the chosen one becomes the length', async () => {
+    const { id, b } = await trader();
+    expect((await setLength(b, 2)).statusCode).toBe(200);
+    at(2 * HOUR - 4 * MIN);
+    const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id), hours: 6 });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ lengthHours: 6, expiresAt: iso(8 * HOUR - 4 * MIN) });
+    expect(await sessionOf(b)).toMatchObject({ lengthHours: 6, expiresAt: iso(8 * HOUR - 4 * MIN) });
+  });
+
+  it('refuses hours that are not a choice, before the token is spent', async () => {
+    const { id, b } = await trader();
+    const token = await extendToken(b, id);
+    for (const bad of [0, 3, 24, '6', null, true, [6]]) {
+      const res = await b.post('/v1/account/session/extend', { confirmToken: token, hours: bad });
+      expect(res.statusCode, String(bad)).toBe(400);
+      expect(errorOf(res)).toBe('bad-request');
+    }
+    expect((await b.post('/v1/account/session/extend', { confirmToken: token, hours: 4 })).json()).toMatchObject({ lengthHours: 4, expiresAt: iso(4 * HOUR) });
+  });
+
   it('a session whose length was never chosen extends by the shortest choice', async () => {
     const { id, b } = await trader();
     at(HOUR);
@@ -228,18 +278,123 @@ describe('who has a session length', () => {
     expect(errorOf(await b.post('/v1/account/session/extend', {}))).toBe('recovery-session');
   });
 
-  it('a team member chooses the length of their own session, but cannot extend it (open owner question)', async () => {
+  async function member(roles: string[] = ['trades']) {
     const { id: teamId } = await trader();
     const loginId = await seedAccount(deps, { loginName: `mlen${++n}x`, displayName: `m-len-${n}`, kind: 'member' });
     const now = deps.clock();
     await deps.db.query(
       `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
-      [teamId, `Member${n}`, `member${n}`, ['trades'], now, loginId],
+      [teamId, `Member${n}`, `member${n}`, roles, now, loginId],
+    );
+    return { teamId, loginId, m: await loggedIn(loginId) };
+  }
+
+  it('a team member chooses the length of their own session and extends it (owner, Q73)', async () => {
+    const { teamId, m } = await member();
+    expect(await sessionOf(m)).toMatchObject({ lengthHours: null, choices: [2, 4, 6, 12], canExtend: true });
+    expect((await setLength(m, 4)).json()).toMatchObject({ lengthHours: 4, expiresAt: iso(4 * HOUR) });
+    expect(errorOf(await m.post('/v1/account/session/extend', {}))).toBe('confirm-required');
+    at(4 * HOUR - 4 * MIN);
+    const res = await m.post('/v1/account/session/extend', { confirmToken: await extendToken(m, teamId), hours: 2 });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ lengthHours: 2, expiresAt: iso(6 * HOUR - 4 * MIN), canExtend: true });
+  });
+
+  it("a team member proves it's them with their own PGP key, never the owner's, and only to stay logged in", async () => {
+    const { teamId, loginId, m } = await member();
+    const own = await genKey();
+    const owners = await genKey();
+    await insertPgpKey(deps.db, deps.config, { accountId: loginId, fingerprint: own.fingerprint, armored: own.publicKey, now: deps.clock() });
+    await insertPgpKey(deps.db, deps.config, { accountId: teamId, fingerprint: owners.fingerprint, armored: owners.publicKey, now: deps.clock() });
+    // Any other confirm stays the account owner's (Task 18: members get owner-only).
+    expect(errorOf(await m.post('/v1/confirm/pgp/start', { action: { kind: 'set-password' } }))).toBe('owner-only');
+    at(2 * HOUR - 4 * MIN);
+    const start = await m.post('/v1/confirm/pgp/start', { action: { kind: 'extend-session' } });
+    expect(start.statusCode, start.body).toBe(200);
+    const { challengeId, encryptedMessage } = start.json() as { challengeId: string; encryptedMessage: string };
+    // Encrypted to the member's own key only.
+    await expect(decrypt(encryptedMessage, owners.privateKey)).rejects.toThrow();
+    const code = codeOf(await decrypt(encryptedMessage, own.privateKey));
+    const fin = await m.post('/v1/confirm/pgp/finish', { challengeId, code });
+    expect(fin.statusCode, fin.body).toBe(200);
+    const { confirmToken } = fin.json() as { confirmToken: string };
+    expect(await confirmTokenMethod(deps, confirmToken)).toBe('pgp');
+    const res = await m.post('/v1/account/session/extend', { confirmToken, hours: 4 });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ lengthHours: 4, expiresAt: iso(6 * HOUR - 4 * MIN) });
+  });
+
+  it('a team member with no PGP key of their own gets method-not-allowed, even when the owner has one', async () => {
+    const { teamId, m } = await member();
+    const owners = await genKey();
+    await insertPgpKey(deps.db, deps.config, { accountId: teamId, fingerprint: owners.fingerprint, armored: owners.publicKey, now: deps.clock() });
+    expect(errorOf(await m.post('/v1/confirm/pgp/start', { action: { kind: 'extend-session' } }))).toBe('method-not-allowed');
+    expect(errorOf(await m.post('/v1/confirm/webauthn/start', { action: { kind: 'extend-session' } }))).toBe('method-not-allowed');
+    // A member has no password: that confirm stays the owner's.
+    expect(errorOf(await m.post('/v1/confirm/password', { password: GOOD, action: { kind: 'extend-session' } }))).toBe('owner-only');
+  });
+
+});
+
+describe('the idle reminder (owner, Q75): a reminder in personal settings, never a logout', () => {
+  const setReminder = (b: Browser, minutes: unknown) => b.put('/v1/account/idle-reminder', { minutes });
+  const reminderOf = async (b: Browser) => ((await b.get('/v1/account/me')).json() as { idleReminderMinutes: number | null }).idleReminderMinutes;
+
+  it('is off by default; turned on with one of the intervals, and off again with null', async () => {
+    const { b } = await trader();
+    expect(await reminderOf(b)).toBeNull();
+    const on = await setReminder(b, 30);
+    expect(on.statusCode, on.body).toBe(200);
+    expect(on.json()).toEqual({ idleReminderMinutes: 30 });
+    expect(await reminderOf(b)).toBe(30);
+    expect((await setReminder(b, null)).json()).toEqual({ idleReminderMinutes: null });
+    expect(await reminderOf(b)).toBeNull();
+  });
+
+  it('is the person\'s own: every session of the account sees it, and it never moves the session end', async () => {
+    const { id, b } = await trader();
+    const other = await loggedIn(id);
+    expect((await setReminder(b, 15)).statusCode).toBe(200);
+    expect(await reminderOf(other)).toBe(15);
+    expect((await sessionOf(b))!.expiresAt).toBe(iso(2 * HOUR));
+  });
+
+  it('refuses anything but an interval or null', async () => {
+    const { b } = await trader();
+    for (const bad of [0, 5, 20, 240, 15.5, '15', true, [15], undefined]) {
+      const res = await setReminder(b, bad);
+      expect(res.statusCode, String(bad)).toBe(400);
+      expect(errorOf(res)).toBe('bad-request');
+    }
+    expect((await b.put('/v1/account/idle-reminder', {})).statusCode).toBe(400);
+    expect(await reminderOf(b)).toBeNull();
+  });
+
+  it("a team member's reminder is their own, not the account owner's", async () => {
+    const { id: teamId, b: owner } = await trader();
+    const loginId = await seedAccount(deps, { loginName: `midle${++n}x`, displayName: `m-idle-${n}`, kind: 'member' });
+    const now = deps.clock();
+    await deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, $2, $3, $4, $5, $6, $5, $5)`,
+      [teamId, `Member${n}`, `member${n}`, ['offers'], now, loginId],
     );
     const m = await loggedIn(loginId);
-    expect(await sessionOf(m)).toMatchObject({ lengthHours: null, choices: [2, 4, 6, 12], canExtend: false });
-    expect((await setLength(m, 4)).json()).toMatchObject({ lengthHours: 4, expiresAt: iso(4 * HOUR) });
-    expect(errorOf(await m.post('/v1/account/session/extend', {}))).toBe('owner-only');
+    expect((await setReminder(m, 60)).statusCode).toBe(200);
+    expect(await reminderOf(m)).toBe(60);
+    expect(await reminderOf(owner)).toBeNull();
+    expect((await setReminder(owner, 10)).statusCode).toBe(200);
+    expect(await reminderOf(m)).toBe(60);
+  });
+
+  it('staff, owner and backup sessions have none', async () => {
+    for (const kind of ['staff', 'owner'] as const) {
+      const { b } = await trader(kind);
+      expect(errorOf(await setReminder(b, 30))).toBe('wrong-account-kind');
+    }
+    const id = await seedAccount(deps, { loginName: `irec${String(++n).padStart(4, '0')}x` });
+    const r = await loggedIn(id, { level: 'recovery' });
+    expect(errorOf(await setReminder(r, 30))).toBe('recovery-session');
   });
 });
