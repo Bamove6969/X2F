@@ -194,8 +194,8 @@ test('DisputeRoom: rose In dispute chip, locked amount, deadline line and the jo
   await expect(page.getByText('1.25 XMR locked in escrow')).toBeVisible();
   await expect(page.getByText('Replied in 38 min · ruling due by 16 Oct 2026, 10:14 UTC (in 23 h)')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Moderator joined' })).toContainText('Moderator sarah.v joined this dispute');
-  await expect(page.getByText('10:14 · You opened a dispute: I paid, but the seller hasn\'t released')).toBeVisible();
-  await expect(page.getByText('10:52 · Moderator sarah.v joined this dispute')).toBeVisible();
+  await expect(page.getByText('10:14 UTC · You opened a dispute: I paid, but the seller hasn\'t released')).toBeVisible();
+  await expect(page.getByText('10:52 UTC · Moderator sarah.v joined this dispute')).toBeVisible();
   await expect(page.getByText('Chats are encrypted. If a dispute is opened, a moderator can read this conversation.')).toBeVisible();
 });
 
@@ -245,7 +245,7 @@ test('DisputeRuling: the winner sees where the XMR goes; past the window there i
   await expect(page.getByText('Goes to Cake Wallet, address ending …k3Fz.')).toBeVisible();
   await expect(page.getByText('Sent to', { exact: false })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Appeal this ruling' })).toHaveCount(0);
-  await expect(page.getByText('The appeal window closed on Sat 17 Oct, 14:30.')).toBeVisible();
+  await expect(page.getByText('The appeal window closed on 17 Oct 2026, 14:30 UTC.')).toBeVisible();
 });
 
 test('an appeal refused as too late shows the refusal', async ({ page }) => {
