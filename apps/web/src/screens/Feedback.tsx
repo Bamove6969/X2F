@@ -33,6 +33,12 @@ export const FEEDBACK_ANON_HINT = "Sent without your username. We don't record w
 /** A 400 from the form. COPY-UNSIGNED */
 export const FEEDBACK_BAD_TEXT = 'Your comment has a hidden character the form does not take. Retype it, or paste it as plain text.';
 
+/**
+ * Owner Q67 (6 Nov 2026): at most 10 sends a day, and the 11th says the limit is there to stop spam.
+ * COPY-UNSIGNED, DESIGNER-REVIEW: design words it (the owner asked design to).
+ */
+export const FEEDBACK_DAILY_LIMIT = "You've sent 10 today, the most for one day. The limit helps keep spam out. You can send more tomorrow.";
+
 /** The owner's wording, exactly (2026-10-29). copy-lint lets this one sentence keep its "!". */
 export const FEEDBACK_THANKS = 'Thank you! Each and every comment is appreciated and reviewed to help make this community a better place for us all.';
 
@@ -106,6 +112,7 @@ export function Feedback() {
       setState({ kind: 'sent' });
     } catch (err) {
       if (err instanceof ApiCallError && err.status === 401) setState({ kind: 'signed-out' });
+      else if (err instanceof ApiCallError && err.status === 429 && err.extra.limit === 'daily') setState({ kind: 'failed', message: FEEDBACK_DAILY_LIMIT });
       else if (err instanceof ApiCallError && (err.status === 429 || err.status === 503)) setState({ kind: 'failed', message: waitSentence(err.retryAfterSeconds) });
       // COPY-UNSIGNED. A 400: the text holds a character the form does not take (a hidden control
       // or direction mark), which retrying would never fix.
