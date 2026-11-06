@@ -10,6 +10,7 @@ import { Link } from 'react-router';
 import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { heldNote, holdSentence } from '../auth/refusals.js';
+import { IDLE_COPY, IDLE_REMINDER_PATH } from '../auth/sessionCopy.js';
 import { Icon } from '../../ui/icons.js';
 import { Alerts } from './Alerts.js';
 import { BLOCKED_PATH } from './BlockAction.js';
@@ -90,6 +91,12 @@ function SecurityScreen() {
             <li className="x2f-list__row">
               <Link className="x2f-button x2f-button--quiet" to={BLOCKED_PATH}>
                 {BLOCK_COPY.title}
+              </Link>
+            </li>
+            {/* Owner Q75: the idle reminder, until a board places it (DESIGN: placement). */}
+            <li className="x2f-list__row">
+              <Link className="x2f-button x2f-button--quiet" to={IDLE_REMINDER_PATH} data-part="idle-reminder-link">
+                {IDLE_COPY.link}
               </Link>
             </li>
             {/* Plan 2 Task 18: the way to the Team screen until a board places it (NEEDS_DESIGN_TEAM). */}

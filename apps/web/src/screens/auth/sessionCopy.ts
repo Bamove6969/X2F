@@ -3,6 +3,8 @@
 // Draft copy, so every sentence here is COPY-UNSIGNED until the owner signs them off.
 
 export const SESSION_LENGTH_PATH = '/session-length';
+/** The idle reminder setting (owner Q75): IdleReminderSettings.tsx. */
+export const IDLE_REMINDER_PATH = '/settings/idle-reminder';
 
 // COPY-UNSIGNED (all of SESSION_COPY).
 export const SESSION_COPY = {
@@ -23,7 +25,9 @@ export const SESSION_COPY = {
   saveFailed: 'Could not save that. Try again.',
   // SessionExtend board
   extendTitle: 'Stay logged in?',
-  extendBody: (h: number) => `Your ${h}-hour session is up. Confirm it's you to stay logged in for another ${h} hours.`,
+  // DESIGN: wording (owner Q73, 6 Nov 2026: the warning comes 5 minutes before the end; the person
+  // picks how long from the login choices). Replaces the board's "is up" sentence.
+  extendBody: (h: number, minutes: number) => `Your ${h}-hour session ends in ${minutes} minutes. Confirm it's you to stay logged in.`,
   loggingOutIn: 'Logging out in ',
   stayLoggedIn: 'Stay logged in',
   // The "Log out" words stay beside the logOut(env) call in SessionPrompt.tsx (test/logout-tripwire.test.ts).
@@ -36,4 +40,24 @@ export const SESSION_COPY = {
   // Devices board. Not on the board: when a longer time starts (the safe default, an owner question).
   longerLater: "A longer time starts the next time you confirm it's you.",
   saved: 'Saved.',
+} as const;
+
+/** "1 hour", "2 hours", "15 minutes": an idle-reminder interval in words. */
+const interval = (m: number): string => (m % 60 === 0 ? (m === 60 ? '1 hour' : `${m / 60} hours`) : `${m} minutes`);
+
+// DESIGN: wording (all of IDLE_COPY; owner Q75, 6 Nov 2026: an idle reminder in the person's own
+// settings, on or off, their own interval; a reminder, never a logout). No board yet.
+export const IDLE_COPY = {
+  title: 'Idle reminder',
+  hint: "We'll remind you when you haven't used X2F for a while. It's only a reminder: you stay logged in.",
+  label: 'Remind me after',
+  off: 'Off',
+  option: interval,
+  saved: 'Saved.',
+  // Not a board sentence (a fault): the choice did not save.
+  saveFailed: 'Could not save that. Try again.',
+  reminderTitle: 'Still there?',
+  reminderBody: (m: number) => `You haven't used X2F for ${interval(m)}. You're still logged in.`,
+  dismiss: "I'm here",
+  link: 'Idle reminder',
 } as const;

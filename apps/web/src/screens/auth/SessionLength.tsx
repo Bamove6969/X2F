@@ -16,7 +16,7 @@ import { publishSessionInfo } from '../../session/sessionWatch.js';
 import { Button } from '../../ui/Button.js';
 import { DEVICES_PATH } from '../settings/devicesCopy.js';
 import { authApi } from './authApi.js';
-import { SESSION_COPY as C, SESSION_LENGTH_PATH } from './sessionCopy.js';
+import { IDLE_COPY, IDLE_REMINDER_PATH, SESSION_COPY as C, SESSION_LENGTH_PATH } from './sessionCopy.js';
 import '../screens.css';
 
 export { SESSION_LENGTH_PATH };
@@ -30,11 +30,14 @@ export function SessionLengthField({
   value,
   onChange,
   disabled = false,
+  hints = true,
 }: {
   choices: readonly number[];
   value: number | null;
   onChange: (hours: number) => void;
   disabled?: boolean;
+  /** The two hints under the field (the login question and Devices); "Stay logged in?" leaves them out. */
+  hints?: boolean;
 }) {
   const id = useId();
   return (
@@ -62,8 +65,12 @@ export function SessionLengthField({
           </option>
         ))}
       </select>
-      <p className="x2f-fine">{C.sleepHint}</p>
-      <p className="x2f-fine">{C.askHint}</p>
+      {hints ? (
+        <>
+          <p className="x2f-fine">{C.sleepHint}</p>
+          <p className="x2f-fine">{C.askHint}</p>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -125,6 +132,13 @@ export function SessionLengthScreen() {
         {C.changeBefore}
         <Link to={DEVICES_PATH}>{C.changeLink}</Link>
         {C.changeAfter}
+      </p>
+      {/* DESIGN: placement (owner Q75): the way to the idle reminder for everyone, a team member
+          included (members have no Security screen), until a board places it. */}
+      <p className="x2f-fine">
+        <Link to={IDLE_REMINDER_PATH} data-part="idle-reminder-link">
+          {IDLE_COPY.link}
+        </Link>
       </p>
       {error !== null ? (
         <p className="x2f-error" role="alert">
