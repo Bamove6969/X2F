@@ -294,7 +294,8 @@ const SESSION_HOOK = Symbol('requireSession');
  * One recorded exception (owner, 2026-10-29; Plan 5 Task 21): `POST /v1/feedback/form` sets
  * `allowHeld` although it writes a row, because the owner wants everyone who is refused, a held
  * backup session included, to be able to say so. It changes nothing about the account: a feedback
- * row, at most FEEDBACK_FORM_DAILY a day. Tested in apps/api/test/feedbackForm.test.ts.
+ * row, at most FEEDBACK_FORM_DAILY a day and one per FEEDBACK_FORM_MIN_GAP_S. Tested in
+ * apps/api/test/feedbackForm.test.ts.
  */
 export function requireSession(
   opts: {

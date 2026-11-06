@@ -1,0 +1,33 @@
+# SonarQube Cloud scan of main (owner 2026-11-06). It stays off until the repo variables
+# SONAR_ORGANIZATION and SONAR_PROJECT_KEY and the secret SONAR_TOKEN are set.
+# In SonarQube Cloud, turn Automatic Analysis off for this project: it cannot run alongside CI analysis.
+name: SonarQube
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonarqube
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    if: vars.SONAR_PROJECT_KEY != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history, so new-code and blame data are right
+          persist-credentials: false
+      - uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
