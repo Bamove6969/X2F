@@ -1,7 +1,7 @@
 /**
  * "Stay logged in?" (owner, 2 Nov 2026; SessionExtend board on wip/design-brief). Mounted once by
  * the app shell; it watches the signed-in session (`useSessionWatch`). SESSION_PROMPT_MS before the
- * session's end (an open owner question, draft 2 minutes) it asks the person to confirm it's them
+ * session's end (2 minutes, owner-confirmed 2 Nov) it asks the person to confirm it's them
  * with any login method the account has (passkey, security key, PGP key, or the password with its
  * authenticator code when there is one). The proof is a confirm token for `extend-session`, checked
  * on the server, which then extends the session by its length; with no answer by the end the person

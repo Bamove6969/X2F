@@ -36,8 +36,8 @@ export function isSessionHours(type: SessionAccountType, v: unknown): v is numbe
 export const UNCHOSEN_SESSION_HOURS = 2;
 
 /**
- * How long "Stay logged in?" waits for an answer before the person is logged out. OPEN, an owner
- * question (board SessionExtend; draft 2 minutes). The prompt opens this long before the session's
+ * How long "Stay logged in?" waits for an answer before the person is logged out. 2 minutes, confirmed
+ * by the owner on 2 Nov 2026 (board SessionExtend). The prompt opens this long before the session's
  * end, so a session never runs past its chosen length without a login method.
  */
 export const SESSION_PROMPT_MS = 2 * 60_000;
