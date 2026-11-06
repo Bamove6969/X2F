@@ -66,6 +66,11 @@ test('Buy and Sell show one Site news bell on the phone and on the Desktop layou
     // The desktop header's bell is the one; Buy/Sell's own header keeps it hidden there.
     await expect(page.locator('[data-part="news-bell"]:visible')).toHaveCount(1);
     await expect(page.locator('.x2f-desktop__header [data-part="news-bell"]')).toBeVisible();
+    // Opened straight at desktop width too, and a screen reader hears one bell, not two.
+    await page.goto(path);
+    await expect(page.locator('.x2f-browse__header')).toBeVisible();
+    await expect(page.locator('[data-part="news-bell"]:visible')).toHaveCount(1);
+    await expect(page.getByRole('link', { name: /^Site news/ })).toHaveCount(1);
   }
 });
 

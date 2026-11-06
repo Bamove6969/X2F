@@ -1923,6 +1923,13 @@
 }
 
 .x2f-timer__label {
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-weight: var(--x2f-label-weight);
+  letter-spacing: var(--x2f-label-tracking);
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
 
 /* Tick box: a 24 px native checkbox in ink inside a 44×44 label (the tap target). */
 .x2f-tickbox {
@@ -2062,6 +2069,12 @@
   letter-spacing: var(--x2f-label-tracking);
   text-transform: uppercase;
   color: var(--x2f-ink-muted);
+}
+
+.x2f-select-card__title {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
 }
 
 .x2f-timer__value {
@@ -2221,7 +2234,6 @@
   line-height: 20px;
   color: var(--x2f-ink-muted);
 }
-
 
 .x2f-select-card__mono {
   font-family: var(--x2f-font-mono);
