@@ -179,7 +179,7 @@ describe('PUT /v1/account/type (switch to vendor)', () => {
     expect(errorOf(res)).toBe('method-not-allowed');
   });
 
-  it('switching back to trader is not built (OPEN, owner): 400 bad-request; an unknown type too', async () => {
+  it('there is no switching back to trader (owner answer Q77, 2026-11-06: open a new account): 400 bad-request; an unknown type too', async () => {
     const t = await withKey();
     await makeVendor(deps, t.id);
     for (const type of ['trader', 'staff', 1, null]) {

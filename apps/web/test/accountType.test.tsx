@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfirmSheet } from '../src/screens/auth/ConfirmSheet.js';
 import { PostOffer } from '../src/screens/PostOffer.js';
 import { AccountType, hasVendorKey } from '../src/screens/settings/AccountType.js';
+import { ACCOUNT_TYPE_COPY } from '../src/screens/settings/accountTypeCopy.js';
 import { accountTypeOf, mayPostOffers } from '../src/session/member.js';
 import { refreshSession, type Session } from '../src/session/useSession.js';
 import { fire, render } from './render.js';
@@ -84,6 +85,9 @@ describe('Settings > Account type', () => {
     click(byPart(host, 'switch'));
     await settle();
     expect(byPart(document, 'switch-sheet')?.textContent).toContain('You pay the 1% fee on completed trades.');
+    // Owner answer Q77 (2026-11-06): the switch is one way, and an unused vendor account closes.
+    expect(byPart(document, 'switch-sheet')?.textContent).toContain(ACCOUNT_TYPE_COPY.noSwitchBack);
+    expect(byPart(document, 'switch-sheet')?.textContent).toContain(ACCOUNT_TYPE_COPY.inactiveCloses);
     click(byPart(document, 'switch-confirm'));
     await settle();
     expect(calls.find((c) => c.url === '/v1/account/type')).toEqual({ url: '/v1/account/type', method: 'PUT', body: { type: 'vendor' } });
@@ -124,6 +128,10 @@ describe('Settings > Account type', () => {
     expect(byPart(host, 'switch')).toBeNull();
     expect(byPart(host, 'post')?.getAttribute('href')).toBe('/post');
     expect(host.querySelectorAll('[data-primary]').length).toBe(1);
+    // Owner answer Q77 (2026-11-06): no way back to trader (a new account instead), and the 60 days.
+    expect(byPart(host, 'no-switch-back')?.textContent).toBe(ACCOUNT_TYPE_COPY.noSwitchBack);
+    expect(byPart(host, 'inactive-closes')?.textContent).toBe(ACCOUNT_TYPE_COPY.inactiveCloses);
+    expect(host.textContent).not.toContain('comes later');
   });
 });
 

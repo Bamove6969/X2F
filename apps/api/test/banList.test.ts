@@ -131,6 +131,19 @@ describe('a banned name can never be used again', () => {
     expect(rows.length).toBeGreaterThan(0);
   });
 
+  it('only the exact name (case aside): a look-alike of a banned name is free (owner answer Q79, 2026-11-06)', async () => {
+    // Owner: "similar looking names to a banned account should not be banned as well". The
+    // look-alike folding (0/o, 1/l/i, rn/m) stays for staff and owner names only.
+    const b = await banned();
+    const alike = b.display.replace(/0/g, 'O').replace(/1/g, 'l');
+    expect(alike).not.toBe(b.display);
+    const loginAlike = b.login.replace(/0/g, 'o').replace(/1/g, 'l');
+    expect(loginAlike).not.toBe(b.login);
+    const fresh = names(alike, loginAlike);
+    expect(await codeOfError(assertDisplayNameFree(deps.db, fresh, deps.config))).toBe('ok');
+    expect(await codeOfError(create(fresh))).toBe('ok');
+  });
+
   it('through the sign-up route: POST /v1/register/pgp/start with a banned display name → 409 display-name-taken', async () => {
     const b = await banned();
     const key = await genKey();
