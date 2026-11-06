@@ -52,10 +52,11 @@ export function OffersRoute({ side, copy }: { side: Side; copy: BrowseCopy }) {
   };
   // From the list, a step forward (Back returns to the list, as on a phone); between quotes, a swap.
   const onPick = (o: Offer) => goTo(o.id, new URLSearchParams(search), offerId !== undefined);
-  // Nothing picked yet, so the pane shows `first` on the list's URL: the first input there picks it
-  // in place, with the quote's own params (review 2026-11-06 m2), so a fold keeps the quote and its
-  // take. Not a step: Back still leaves the list.
-  const onFirstInput = offerId === undefined && first !== null ? (params: URLSearchParams) => goTo(first, params, true) : undefined;
+  // Nothing picked yet, so the pane shows `first` on the list's URL: the first input there picks it,
+  // with the quote's own params (review 2026-11-06 m2), so a fold keeps the quote and its take. A
+  // step forward, like a pick from the list: the list's entry stays, so Back (after a fold, or after
+  // picking another row, which swaps) returns to the list.
+  const onFirstInput = offerId === undefined && first !== null ? (params: URLSearchParams) => goTo(first, params, false) : undefined;
   return (
     <Panes
       layout={layout}
