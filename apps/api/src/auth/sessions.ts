@@ -27,6 +27,18 @@ export interface SessionRealm {
 export const TRADER_REALM: SessionRealm = { cookie: SESSION_COOKIE, app: 'trader' };
 export const STAFF_REALM: SessionRealm = { cookie: STAFF_SESSION_COOKIE, app: 'staff' };
 
+/**
+ * The account kinds the trader API's login mounts serve (`/v1/login/webauthn`, `/v1/login/pgp`).
+ * Owner 2026-11-03 (Q19): staff have two separate logins, an ordinary trader account for trading and
+ * the staff account, which logs in only on the staff API (`staffLoginRoutes`). A staff account is
+ * not in these kinds, so the lookup treats it as not found (security review RV5 I1): start and
+ * finish answer exactly as for a login name or key that does not exist (decoy options or message,
+ * then 401 `webauthn-failed` / `code-invalid`), and nothing tells that the account is there. Team
+ * members are vendor-side and stay. The owner is refused here the same way (owner Q13, 6 Nov: "the
+ * owner uses only the staff site"); the owner's Price health moved to `GET /staff/v1/price-health`.
+ */
+export const TRADER_LOGIN_KINDS: readonly AccountKind[] = ['trader', 'member'];
+
 /** The realm the request's app decorated (`buildApi`: trader; `buildStaffApi`: staff). */
 export function realmOf(req: FastifyRequest): SessionRealm {
   return (req.server as { sessionRealm?: SessionRealm }).sessionRealm ?? TRADER_REALM;

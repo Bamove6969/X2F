@@ -1,12 +1,24 @@
 // Plan 4 Task 4: every route of the staff API, the table the privilege matrix (matrix.test.ts)
 // walks. Each later staff task appends its routes here; the matrix test fails while a registered
 // route is missing from this table, or a listed one no longer exists.
+import type { StaffRole } from '@x2f/staff';
 import type { StaffRoutePerm } from '../../src/staff/guard.js';
+
+const EVERY_ROLE = ['owner', 'senior', 'mod', 'helper'] as const satisfies readonly StaffRole[];
+const OWNER = ['owner'] as const satisfies readonly StaffRole[];
 
 export interface StaffRouteRow {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   url: string;
   perm: StaffRoutePerm;
+  /**
+   * The roles that reach the handler, written out by hand (RV5 m4): the matrix checks the app
+   * against this column, never against `can()`, so a wrong grant in `@x2f/staff`'s table fails here
+   * too. 'public' for the public routes. A route of a grantable perm (`GRANTABLE_PERMS`) also sets
+   * `grantable`: a member holding it as a grant then reaches the handler whatever the role.
+   */
+  allowed: readonly StaffRole[] | 'public';
+  grantable?: true;
   /** The request body (a valid one where the route needs it, so allowed roles reach the handler). */
   body?: unknown;
   /**
@@ -19,30 +31,34 @@ export interface StaffRouteRow {
 
 export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Task 4: the shell, staff login, logout and me.
-  { method: 'GET', url: '/healthz', perm: 'public-login' },
-  { method: 'POST', url: '/staff/v1/login/security-key/start', perm: 'public-login', body: {} },
-  { method: 'POST', url: '/staff/v1/login/security-key/finish', perm: 'public-login', body: {} },
-  { method: 'POST', url: '/staff/v1/login/pgp/start', perm: 'public-login', body: {} },
-  { method: 'POST', url: '/staff/v1/login/pgp/finish', perm: 'public-login', body: {} },
-  { method: 'POST', url: '/staff/v1/logout', perm: 'public-login', body: {} },
-  { method: 'GET', url: '/staff/v1/me', perm: 'self' },
+  { method: 'GET', url: '/healthz', perm: 'public-login', allowed: 'public' },
+  { method: 'POST', url: '/staff/v1/login/security-key/start', perm: 'public-login', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/login/security-key/finish', perm: 'public-login', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/login/pgp/start', perm: 'public-login', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/login/pgp/finish', perm: 'public-login', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/logout', perm: 'public-login', allowed: 'public', body: {} },
+  { method: 'GET', url: '/staff/v1/me', perm: 'self', allowed: EVERY_ROLE },
   // Plan 4 Task 5: security-key taps (the body is the intent; a sample tap id finishes nothing).
-  { method: 'POST', url: '/staff/v1/taps/start', perm: 'self', body: { kind: 'emergency-stop' }, allowedAnswer: { status: 403, error: 'method-not-allowed' } },
-  { method: 'POST', url: '/staff/v1/taps/:id/finish', perm: 'self', body: { response: {} }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
+  { method: 'POST', url: '/staff/v1/taps/start', perm: 'self', allowed: EVERY_ROLE, body: { kind: 'emergency-stop' }, allowedAnswer: { status: 403, error: 'method-not-allowed' } },
+  { method: 'POST', url: '/staff/v1/taps/:id/finish', perm: 'self', allowed: EVERY_ROLE, body: { response: {} }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
   // Plan 4 Task 8: the owner's settings and the site controls (a sample tap id is never valid).
-  { method: 'GET', url: '/staff/v1/settings', perm: 'settings.write' },
-  { method: 'PUT', url: '/staff/v1/settings', perm: 'settings.write', body: { firstResponseH: 5 } },
-  { method: 'GET', url: '/staff/v1/site', perm: 'site.control' },
-  { method: 'POST', url: '/staff/v1/site/stop', perm: 'site.control', body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
-  { method: 'POST', url: '/staff/v1/site/resume', perm: 'site.control', body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
-  { method: 'PUT', url: '/staff/v1/site/banner', perm: 'site.control', body: { text: 'Matrix is down for an hour.', kind: 'info' } },
-  { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control' },
-  { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', body: { on: false } },
+  { method: 'GET', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER },
+  { method: 'PUT', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER, body: { firstResponseH: 5 } },
+  { method: 'GET', url: '/staff/v1/site', perm: 'site.control', allowed: OWNER },
+  { method: 'POST', url: '/staff/v1/site/stop', perm: 'site.control', allowed: OWNER, body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
+  { method: 'POST', url: '/staff/v1/site/resume', perm: 'site.control', allowed: OWNER, body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
+  { method: 'PUT', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER, body: { text: 'Matrix is down for an hour.', kind: 'info' } },
+  { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER },
+  { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', allowed: OWNER, body: { on: false } },
   // Plan 4 Task 28: News, written by the owner.
-  { method: 'POST', url: '/staff/v1/news', perm: 'site.control', body: { title: 'Matrix', body: 'A message.' } },
-  { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', body: { title: 'Matrix', body: 'Edited.' } },
-  { method: 'DELETE', url: '/staff/v1/news/:id', perm: 'site.control' },
+  { method: 'POST', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'A message.' } },
+  { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'Edited.' } },
+  { method: 'DELETE', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER },
+  // Owner Q13 (6 Nov): the owner's Price health, moved from the trader API.
+  { method: 'GET', url: '/staff/v1/price-health', perm: 'stats.read', allowed: OWNER },
+  // Plan 5 Task 10 (owner 2026-11-02): a past-rep claim's verified dollar figure.
+  { method: 'PUT', url: '/staff/v1/past-rep/:id/verified-usd', perm: 'reputation.verify', allowed: ['owner', 'senior'], body: { usdCents: 100 } },
   // Plan 5 Tasks 4 and 21: platform feedback and the feedback form, read by the owner.
-  { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read' },
-  { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read' },
+  { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: OWNER },
+  { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: OWNER },
 ];

@@ -20,6 +20,8 @@ const GRANTS: Record<Perm, Record<StaffRole, boolean>> = {
   'accounts.freeze': { owner: true, senior: true, mod: false, helper: false },
   'accounts.ban': { owner: true, senior: true, mod: false, helper: false },
   'reputation.review': { owner: true, senior: true, mod: true, helper: false },
+  // Owner 2026-11-02: only senior moderators and the owner enter a verified past-rep figure.
+  'reputation.verify': { owner: true, senior: true, mod: false, helper: false },
   'tickets.handle': { owner: true, senior: false, mod: false, helper: false },
   'feedback.read': { owner: true, senior: false, mod: false, helper: false },
   'training.read': { owner: true, senior: true, mod: true, helper: false },

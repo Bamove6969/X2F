@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { LISTEN_OPTIONS, type Deps } from '../app.js';
+import { LOOPBACK_HOSTS } from '../static/serve.js';
 import { buildStaffApi, type ModerationClient } from './app.js';
 import { startHoursSweeper } from './sweeper.js';
 
@@ -20,8 +21,12 @@ export function staffListenFromEnv(env: Record<string, string | undefined>): Sta
   } catch {
     throw new Error('config: X2F_STAFF_ORIGIN is malformed (an exact origin such as https://staff.example.org)');
   }
-  if (url.origin !== origin || (url.protocol !== 'https:' && url.protocol !== 'http:')) {
-    throw new Error('config: X2F_STAFF_ORIGIN is malformed (an exact origin such as https://staff.example.org)');
+  // Plain http only on this machine (RV5 m3), the loopback hosts the web CSP allows in clear text
+  // (static/serve.ts), and with no opt-out: the `__Host-` staff cookie needs Secure, and a staff
+  // origin served over http anywhere else would invite renaming the cookie to make it work.
+  const loopback = LOOPBACK_HOSTS.has(url.hostname);
+  if (url.origin !== origin || !(url.protocol === 'https:' || (url.protocol === 'http:' && loopback))) {
+    throw new Error('config: X2F_STAFF_ORIGIN is malformed (an exact https origin such as https://staff.example.org; http only for 127.0.0.1, [::1] or localhost)');
   }
   const raw = env.X2F_STAFF_PORT || '8082';
   const port = Number(raw);

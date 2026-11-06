@@ -59,6 +59,13 @@ export const CANT_DO_CODES = [
   // ban): check them when those land.
   'lien',
   'trade-ban',
+  // Plan 4 Task 4: a staff member's login hours (a staff login, and a staff session when the
+  // window closes). Classified here for the error-code test; its words come with the staff web app
+  // (Plan 4 Task 16).
+  'outside-login-hours',
+  // Plan 5 Task 10 on the staff API: the claim whose figure staff set is no longer live. Its words
+  // come with the staff web app (Plan 4 Task 16).
+  'not-live',
   // Plan 5 Task 10 (P5-A21, P5-A24): one live past-reputation claim per site, and a PGP key backs
   // one account. No popup words yet (Task 12's PastRepClaim screen); lead question.
   'site-claimed',

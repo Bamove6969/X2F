@@ -120,6 +120,8 @@ export type ApiErrorCode =
   | 'member-cannot-sign'
   // Plan 4, Task 4: staff login hours (a login, or an open session, outside the window).
   | 'outside-login-hours'
+  // Plan 5 Task 10 on the staff API: the past-rep claim is no longer live (revoked, removed, rejected).
+  | 'not-live'
   // Plan 5, Task 10: past reputation claims.
   | 'bad-site'
   | 'bad-url'

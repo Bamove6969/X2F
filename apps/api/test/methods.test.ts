@@ -18,9 +18,10 @@ import {
   passwordAllowed,
 } from '../src/auth/methods.js';
 import { hashPassword } from '../src/auth/password.js';
-import { insertPgpKey } from '../src/auth/pgp.js';
+import { insertPgpKey, pgpLoginRoutes } from '../src/auth/pgp.js';
 import { SESSION_COOKIE, startSession } from '../src/auth/sessions.js';
 import { sealSecret } from '../src/auth/totp.js';
+import { securityKeyLoginRoutes } from '../src/auth/webauthn.js';
 import { ApiError } from '../src/errors.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
@@ -34,6 +35,9 @@ const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 const GOOD = 'Correct-Horse-9';
+/** The trader API's login mounts, and the staff API's as mounted here (kinds staff and owner). */
+const TRADER_LOGIN = '/v1/login';
+const STAFF_LOGIN = '/s/login';
 const OTHER_GOOD = 'Battery-Staple-7';
 
 let app: FastifyInstance;
@@ -70,6 +74,9 @@ beforeAll(async () => {
       account: rows[0]!, factor: b.factor, deviceLabel: 'Forced', ...(b.pendingId ? { pendingId: b.pendingId } : {}),
     });
   });
+  // The staff API's login mounts (kinds staff and owner): staff log in only there (owner 2026-11-03).
+  await app.register(securityKeyLoginRoutes, { prefix: `${STAFF_LOGIN}/webauthn`, kinds: ['staff', 'owner'] });
+  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: ['staff', 'owner'] }), { prefix: `${STAFF_LOGIN}/pgp` });
   keys = await Promise.all([genKey(), genKey(), genKey()]);
 });
 
@@ -682,18 +689,18 @@ describe('staff and owner: no password, TOTP or recovery codes (R2)', () => {
 // Two factors for staff and the owner (R1)
 
 /** A PGP login step: by the pasted key (`_username` is kept for symmetry with `keyStep`; PGP login needs no name). */
-async function pgpStep(b: Browser, _username: string, key: Pair, pendingId?: string) {
-  const s = await b.post('/v1/login/pgp/start', { key: key.publicKey, ...(pendingId ? { pendingId } : {}) });
+async function pgpStep(b: Browser, _username: string, key: Pair, pendingId?: string, mount = TRADER_LOGIN) {
+  const s = await b.post(`${mount}/pgp/start`, { key: key.publicKey, ...(pendingId ? { pendingId } : {}) });
   expect(s.statusCode).toBe(200);
   const code = codeOf(await decrypt(s.json().encryptedMessage, key.privateKey));
-  return b.post('/v1/login/pgp/finish', { challengeId: s.json().challengeId, code, deviceLabel: 'Desk', ...(pendingId ? { pendingId } : {}) });
+  return b.post(`${mount}/pgp/finish`, { challengeId: s.json().challengeId, code, deviceLabel: 'Desk', ...(pendingId ? { pendingId } : {}) });
 }
 
-async function keyStep(b: Browser, username: string, auth: SoftAuthenticator, pendingId?: string) {
-  const s = await b.post('/v1/login/webauthn/start', { loginName: username, ...(pendingId ? { pendingId } : {}) });
+async function keyStep(b: Browser, username: string, auth: SoftAuthenticator, pendingId?: string, mount = TRADER_LOGIN) {
+  const s = await b.post(`${mount}/webauthn/start`, { loginName: username, ...(pendingId ? { pendingId } : {}) });
   expect(s.statusCode).toBe(200);
   const { challengeId, options } = s.json();
-  const res = await b.post('/v1/login/webauthn/finish', {
+  const res = await b.post(`${mount}/webauthn/finish`, {
     challengeId, response: auth.authenticate(options, ORIGIN), deviceLabel: 'Desk', ...(pendingId ? { pendingId } : {}),
   });
   return { res, options };
@@ -701,20 +708,21 @@ async function keyStep(b: Browser, username: string, auth: SoftAuthenticator, pe
 
 const hasSessionCookie = (res: LightMyRequestResponse) => res.cookies.some((c) => c.name === SESSION_COOKIE);
 
+// Staff and owner steps go to the staff API's mounts (`STAFF_LOGIN`): neither logs in on the trader API (owner Q13).
 describe('two factors for staff and the owner (R1)', () => {
   it('owner: security key, then PGP with the pendingId → a full session', async () => {
     const { id, username } = await account('owner');
     const { auth } = await addCredential(id, 'security-key', true);
     await addPgp(id, keys[0]!);
     const b = new Browser();
-    const { res: first } = await keyStep(b, username, auth);
+    const { res: first } = await keyStep(b, username, auth, undefined, STAFF_LOGIN);
     expect(first.statusCode).toBe(200);
     const body = first.json();
     expect(body).toEqual({ status: 'second-factor', pendingId: expect.any(String), needs: ['pgp'] });
     expect(hasSessionCookie(first)).toBe(false);
     expect(await sessionCount(id)).toBe(0);
 
-    const second = await pgpStep(b, username, keys[0]!, body.pendingId);
+    const second = await pgpStep(b, username, keys[0]!, body.pendingId, STAFF_LOGIN);
     expect(second.statusCode).toBe(200);
     expect(second.json()).toEqual({ status: 'ok' });
     expect(hasSessionCookie(second)).toBe(true);
@@ -723,7 +731,7 @@ describe('two factors for staff and the owner (R1)', () => {
     expect(await alertsOf(id, 'new-login')).toEqual([{ method: 'pgp', deviceLabel: 'Desk' }]);
 
     // The pending login was used up.
-    const again = await keyStep(new Browser(), username, auth, body.pendingId);
+    const again = await keyStep(new Browser(), username, auth, body.pendingId, STAFF_LOGIN);
     expect(again.res.statusCode).toBe(400);
   });
 
@@ -732,10 +740,10 @@ describe('two factors for staff and the owner (R1)', () => {
     const { auth } = await addCredential(id, 'security-key', true);
     await addPgp(id, keys[0]!);
     const b = new Browser();
-    const first = await pgpStep(b, username, keys[0]!);
+    const first = await pgpStep(b, username, keys[0]!, undefined, STAFF_LOGIN);
     expect(first.json()).toEqual({ status: 'second-factor', pendingId: expect.any(String), needs: ['security-key'] });
     expect(hasSessionCookie(first)).toBe(false);
-    const { res } = await keyStep(b, username, auth, first.json().pendingId);
+    const { res } = await keyStep(b, username, auth, first.json().pendingId, STAFF_LOGIN);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ status: 'ok' });
     expect(hasSessionCookie(res)).toBe(true);
@@ -746,9 +754,9 @@ describe('two factors for staff and the owner (R1)', () => {
     await addPgp(id, keys[0]!);
     const { auth } = await addCredential(id, 'passkey', false, createSoftAuthenticator({ backedUp: true, userVerified: true }));
     const b = new Browser();
-    const first = await pgpStep(b, username, keys[0]!);
+    const first = await pgpStep(b, username, keys[0]!, undefined, STAFF_LOGIN);
     expect(first.json()).toMatchObject({ status: 'second-factor', needs: ['pgp', 'security-key', 'passkey'] });
-    const { res } = await keyStep(b, username, auth, first.json().pendingId);
+    const { res } = await keyStep(b, username, auth, first.json().pendingId, STAFF_LOGIN);
     expect(res.json()).toEqual({ status: 'ok' });
     expect(hasSessionCookie(res)).toBe(true);
   });
@@ -758,17 +766,17 @@ describe('two factors for staff and the owner (R1)', () => {
     await addPgp(id, keys[0]!, new Date(now.getTime() - 2 * MIN));
     await addPgp(id, keys[1]!, new Date(now.getTime() - MIN));
     const b = new Browser();
-    const s1 = await b.post('/v1/login/pgp/start', { key: keys[0]!.publicKey });
+    const s1 = await b.post(`${STAFF_LOGIN}/pgp/start`, { key: keys[0]!.publicKey });
     await expect(decrypt(s1.json().encryptedMessage, keys[1]!.privateKey)).rejects.toThrow();
     const c1 = codeOf(await decrypt(s1.json().encryptedMessage, keys[0]!.privateKey));
-    const first = await b.post('/v1/login/pgp/finish', { challengeId: s1.json().challengeId, code: c1, deviceLabel: 'Desk' });
+    const first = await b.post(`${STAFF_LOGIN}/pgp/finish`, { challengeId: s1.json().challengeId, code: c1, deviceLabel: 'Desk' });
     const pendingId = first.json().pendingId as string;
     expect(first.json().status).toBe('second-factor');
 
-    const s2 = await b.post('/v1/login/pgp/start', { key: keys[1]!.publicKey, pendingId });
+    const s2 = await b.post(`${STAFF_LOGIN}/pgp/start`, { key: keys[1]!.publicKey, pendingId });
     await expect(decrypt(s2.json().encryptedMessage, keys[0]!.privateKey)).rejects.toThrow();
     const c2 = codeOf(await decrypt(s2.json().encryptedMessage, keys[1]!.privateKey));
-    const second = await b.post('/v1/login/pgp/finish', { challengeId: s2.json().challengeId, code: c2, deviceLabel: 'Desk', pendingId });
+    const second = await b.post(`${STAFF_LOGIN}/pgp/finish`, { challengeId: s2.json().challengeId, code: c2, deviceLabel: 'Desk', pendingId });
     expect(second.json()).toEqual({ status: 'ok' });
     expect(hasSessionCookie(second)).toBe(true);
   });
@@ -778,10 +786,10 @@ describe('two factors for staff and the owner (R1)', () => {
     await addPgp(id, keys[0]!);
     await addCredential(id, 'passkey', false);
     const b = new Browser();
-    const first = await pgpStep(b, username, keys[0]!);
+    const first = await pgpStep(b, username, keys[0]!, undefined, STAFF_LOGIN);
     const pendingId = first.json().pendingId as string;
     // The same key for the second PGP step: a decoy (bound to no account), whose code never works.
-    const s2 = await b.post('/v1/login/pgp/start', { key: keys[0]!.publicKey, pendingId });
+    const s2 = await b.post(`${STAFF_LOGIN}/pgp/start`, { key: keys[0]!.publicKey, pendingId });
     expect(s2.statusCode).toBe(200);
     expect((await deps.db.query('select account_id from challenges where id = $1', [s2.json().challengeId])).rows).toEqual([{ account_id: null }]);
     // Forced through completeLogin, the same key is no pair.
@@ -802,19 +810,19 @@ describe('two factors for staff and the owner (R1)', () => {
     const pk = await addCredential(id, 'passkey', false);
     await addPgp(id, keys[0]!);
     const b = new Browser();
-    const first = await keyStep(b, username, k1.auth);
+    const first = await keyStep(b, username, k1.auth, undefined, STAFF_LOGIN);
     expect(first.res.json()).toMatchObject({ status: 'second-factor', needs: ['pgp'] });
     const pendingId = first.res.json().pendingId as string;
     // A passkey is offered only after PGP (Task 8), so its answer fails the WebAuthn check first.
-    const viaPasskey = await keyStep(b, username, pk.auth, pendingId);
+    const viaPasskey = await keyStep(b, username, pk.auth, pendingId, STAFF_LOGIN);
     expect(viaPasskey.options.allowCredentials.map((c: { id: string }) => c.id)).not.toContain(pk.auth.credentialId);
     expect(viaPasskey.res.statusCode).toBe(401);
     // Forced through completeLogin, security key + passkey is refused by the pairing rule.
     const forced = await b.post('/t/complete', { accountId: id, factor: { method: 'passkey', credentialId: pk.auth.credentialId, attested: false }, pendingId });
     expect(errorOf(forced)).toBe('method-not-allowed');
 
-    const again = (await keyStep(b, username, k1.auth)).res.json().pendingId as string;
-    const second = await keyStep(b, username, k2.auth, again);
+    const again = (await keyStep(b, username, k1.auth, undefined, STAFF_LOGIN)).res.json().pendingId as string;
+    const second = await keyStep(b, username, k2.auth, again, STAFF_LOGIN);
     expect(second.res.statusCode).toBe(403);
     expect(errorOf(second.res)).toBe('method-not-allowed');
     expect(await sessionCount(id)).toBe(0);
@@ -830,24 +838,25 @@ describe('two factors for staff and the owner (R1)', () => {
 
     // Another device.
     const a = new Browser();
-    const p1 = (await pgpStep(a, username, keys[0]!)).json().pendingId as string;
-    const elsewhere = await keyStep(new Browser(), username, auth, p1);
+    const p1 = (await pgpStep(a, username, keys[0]!, undefined, STAFF_LOGIN)).json().pendingId as string;
+    const elsewhere = await keyStep(new Browser(), username, auth, p1, STAFF_LOGIN);
     expect(elsewhere.res.statusCode).toBe(400);
     expect(errorOf(elsewhere.res)).toBe('challenge-expired');
     expect(hasSessionCookie(elsewhere.res)).toBe(false);
 
     // Another account (same browser).
-    const p2 = (await pgpStep(a, username, keys[0]!)).json().pendingId as string;
-    const cross = await keyStep(a, crew.username, crewKey.auth, p2);
+    const p2 = (await pgpStep(a, username, keys[0]!, undefined, STAFF_LOGIN)).json().pendingId as string;
+    // The staff member's key on the staff API's mount (staff never log in on the trader API).
+    const cross = await keyStep(a, crew.username, crewKey.auth, p2, STAFF_LOGIN);
     expect(errorOf(cross.res)).toBe('challenge-expired');
 
     // At exactly 5:00.
     const t = now;
-    const p3 = (await pgpStep(a, username, keys[0]!)).json().pendingId as string;
+    const p3 = (await pgpStep(a, username, keys[0]!, undefined, STAFF_LOGIN)).json().pendingId as string;
     setNow(new Date(t.getTime() + 4 * MIN));
-    const s = await a.post('/v1/login/webauthn/start', { loginName: username, pendingId: p3 });
+    const s = await a.post(`${STAFF_LOGIN}/webauthn/start`, { loginName: username, pendingId: p3 });
     setNow(new Date(t.getTime() + 5 * MIN));
-    const late = await a.post('/v1/login/webauthn/finish', {
+    const late = await a.post(`${STAFF_LOGIN}/webauthn/finish`, {
       challengeId: s.json().challengeId, response: auth.authenticate(s.json().options, ORIGIN), deviceLabel: 'Desk', pendingId: p3,
     });
     expect(late.statusCode).toBe(400);
@@ -861,15 +870,15 @@ describe('two factors for staff and the owner (R1)', () => {
     const { auth } = await addCredential(id, 'security-key', true);
     await addPgp(id, keys[0]!);
     const b = new Browser();
-    const pendingId = (await pgpStep(b, username, keys[0]!)).json().pendingId as string;
+    const pendingId = (await pgpStep(b, username, keys[0]!, undefined, STAFF_LOGIN)).json().pendingId as string;
     // Started without one: finishing with one is refused, and the pending login is untouched.
-    const s = await b.post('/v1/login/webauthn/start', { loginName: username });
-    const res = await b.post('/v1/login/webauthn/finish', {
+    const s = await b.post(`${STAFF_LOGIN}/webauthn/start`, { loginName: username });
+    const res = await b.post(`${STAFF_LOGIN}/webauthn/finish`, {
       challengeId: s.json().challengeId, response: auth.authenticate(s.json().options, ORIGIN), deviceLabel: 'Desk', pendingId,
     });
     expect(res.statusCode).toBe(400);
     expect(errorOf(res)).toBe('challenge-expired');
-    const ok = await keyStep(b, username, auth, pendingId);
+    const ok = await keyStep(b, username, auth, pendingId, STAFF_LOGIN);
     expect(ok.res.json()).toEqual({ status: 'ok' });
   });
 
@@ -880,15 +889,15 @@ describe('two factors for staff and the owner (R1)', () => {
     const crew = await account('staff');
     await addPgp(crew.id, keys[1]!);
     const a = new Browser();
-    const pendingId = (await pgpStep(a, username, keys[0]!)).json().pendingId as string;
-    expect(errorOf((await keyStep(new Browser(), username, auth, pendingId)).res)).toBe('challenge-expired');
+    const pendingId = (await pgpStep(a, username, keys[0]!, undefined, STAFF_LOGIN)).json().pendingId as string;
+    expect(errorOf((await keyStep(new Browser(), username, auth, pendingId, STAFF_LOGIN)).res)).toBe('challenge-expired');
     const cross = await a.post('/t/complete', {
       accountId: crew.id, factor: { method: 'security-key', credentialId: 'k', attested: true }, pendingId,
     });
     expect(errorOf(cross)).toBe('challenge-expired');
     const { rows } = await deps.db.query('select used_at from challenges where id = $1', [pendingId]);
     expect(rows[0].used_at).toBeNull();
-    const ok = await keyStep(a, username, auth, pendingId);
+    const ok = await keyStep(a, username, auth, pendingId, STAFF_LOGIN);
     expect(ok.res.json()).toEqual({ status: 'ok' });
     expect(await sessionCount(crew.id)).toBe(0);
   });
@@ -917,14 +926,14 @@ describe('two factors for staff and the owner (R1)', () => {
     await addPgp(id, keys[1]!, new Date(now.getTime() - MIN));
     const passkey = await addCredential(id, 'passkey', false);
     const b = new Browser();
-    const pendingId = (await pgpStep(b, username, keys[0]!)).json().pendingId as string;
+    const pendingId = (await pgpStep(b, username, keys[0]!, undefined, STAFF_LOGIN)).json().pendingId as string;
     await deps.db.query(`update challenges set method = 'totp' where id = $1`, [pendingId]);
     // WebAuthn: no PGP first factor is seen, so the passkey is not listed (decoy options).
-    const w = await b.post('/v1/login/webauthn/start', { loginName: username, pendingId });
+    const w = await b.post(`${STAFF_LOGIN}/webauthn/start`, { loginName: username, pendingId });
     const listed = (w.json().options.allowCredentials as Array<{ id: string }>).map((c) => c.id);
     expect(listed).not.toContain(passkey.auth.credentialId);
     // PGP: a decoy, not a challenge to the other key.
-    const s = await b.post('/v1/login/pgp/start', { key: keys[1]!.publicKey, pendingId });
+    const s = await b.post(`${STAFF_LOGIN}/pgp/start`, { key: keys[1]!.publicKey, pendingId });
     expect(s.statusCode).toBe(200);
     expect((await deps.db.query('select account_id from challenges where id = $1', [s.json().challengeId])).rows).toEqual([{ account_id: null }]);
   });
