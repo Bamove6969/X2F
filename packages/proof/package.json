@@ -1,0 +1,15 @@
+{
+  "name": "@x2f/proof",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@x2f/core": "0.0.0"
+  }
+}
