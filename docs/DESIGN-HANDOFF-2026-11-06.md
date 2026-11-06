@@ -116,7 +116,7 @@ Two jobs were started on 6 Nov after this handoff, then stopped for the owner's 
    - SignupSecurity (+Wide): add the setup context line "Set up your account · Takes about 2 minutes" and the five-bar stepper (done = ink) exactly as SetupUsername has them.
    - FlexOffer-Quote (+Wide): move "Sellers and prices are examples." below the app using the CancelRequest-Wide wrapper (app in its own `position: relative` block so the scrim covers only the app); mono digits in "340 trades" and "Seen 40 min ago".
 
-2. **Bring the X2F design system artifact up to v2** (https://claude.ai/artifact/Bywqtsd4FKmYPHta6wQNPM; it still holds only the 14 Oct tokens, README and cover):
+2. **Bring the X2F design system artifact up to v2** DONE 6 Nov, design system version 6 (see `docs/to-lead.md`). (https://claude.ai/artifact/Bywqtsd4FKmYPHta6wQNPM; it still holds only the 14 Oct tokens, README and cover):
    - `tokens.json`: add colours `mod`, `team`, `scrim`; type styles `screen-title`, `result-headline`, `sheet-title`, `hero-number`, `meta`; spacing `space-3` 12, `space-5` 20, `space-8` 32; radius `radius-lg` 16; version 2. Values are in `docs/design-visual-system-v2.md` and the THEMES of any board.
    - `README.md`: rewrite to v2 (no shadows, surface steps, one hero, ink selection, state three ways, key mark placements, wide rail and grid, dates and durations, terms list, no email, Draft copy and OPEN conventions).
    - Live components with `preview.html` + `README.md`: KeyMark, StatusChip, HeroBlock, Button, Switch, Callout, OpenBox, Stepper, Timer, Amount, ListRow, FormField, Card, EmptyState, NavRail. Copy exact styles from BuyerPay, Refunded (+Wide), ProofBlur, Devices, CantDoThat. Keep the Cover.

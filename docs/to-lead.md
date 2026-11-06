@@ -68,3 +68,91 @@ READY TO CLEAR
 **COPY-UNSIGNED (Ban-Notice):** "Your account can't start or join new trades." · "You can use your account again when the ban ends." · "There is no end date." · "Account banned" (chip, permanent site ban) · "You can appeal. Message a moderator if you don't agree with this decision or feel it was made in error." · "Message a moderator on Matrix" · "Permanent · until a moderator lifts it".
 
 Next: job 2, the X2F design system artifact to v2.
+
+## Owner questions 6 Nov
+
+Every open owner question design holds, as of canvas v118. Nothing on this list has been answered yet. Each has an OPEN box on its board. BLOCKING means a board can't be final, or the build can't copy it, until the owner answers.
+
+**1. Member-permission presets: BLOCKING**
+- Question: what does each of the four team presets switch on?
+- Options: the draft mapping on MemberPermissions (Chat only = chat; Offers manager = chat + offers; Trade handler = chat + accept trades + mark paid; Everything allowed = all, including Release XMR), or the owner's own mapping.
+- Recommendation: the draft mapping. Keep Release XMR only in Everything allowed, with its warning.
+- Blocks: MemberPermissions (+Wide) and building team permissions.
+
+**2. Blur templates: also blank the trade code, amount and time? LATER**
+- Question: should the stored blur templates also blank the trade code, amount and time, as well as names and account numbers?
+- Options: yes, blank all three; or blank names and account numbers only.
+- Recommendation: yes. A template should hold no detail from any real trade.
+- Blocks: the ProofBlur template note and the template database. Nothing on screen changes.
+
+**3. SetupTerms step count: BLOCKING**
+- Question: does agreeing to the Terms count as an onboarding step?
+- Options: "of 5" (Terms is a gate before step 1) or "of 6" (Terms is step 1).
+- Recommendation: "of 5". Terms is a yes/no gate, not setup work.
+- Blocks: the step label on every Setup* board, SignupSecurity and SetupPgpChallenge ("3 of 5 · part 2").
+
+**4. Incident ID: LATER**
+- Question: what does an incident ID look like, and does the held account also see the incident pop-up?
+- Options: format, a short code like `INC-7Q4K` (drawn) or a date-based one like `2026-11-06-014`. Pop-up, partners only (drawn) or partners and the held account.
+- Recommendation: the short code; partners only. The held account already gets the hold notice.
+- Blocks: TradeTechIssue copy only.
+
+**5. Bans with an end date: BLOCKING**
+- Question: does a ban end on a date, or last until a moderator lifts it?
+- Options: timed ("Ends 14 Nov 2026, 14:05 UTC", the current default); or not timed ("Permanent · until a moderator lifts it"); or both, chosen per ban by the moderator.
+- Recommendation: both, per ban. A moderator picks timed or permanent when banning. Ban-Notice already draws both (`ends` tweak).
+- Blocks: Ban-Notice (+Wide) and the moderator ban tool.
+
+**6. Badge visibility middle option: LATER**
+- Question: what is the middle choice between always showing and hiding a badge?
+- Options: "On hover" (the spec's word), "On tap" (phones can't hover), or drop the middle option.
+- Recommendation: drop it. Hover and tap behave differently, and two choices are clearer.
+- Blocks: BadgeSettings only.
+
+**7. Matrix and Telegram addresses: LATER**
+- Question: what are X2F's real Matrix and Telegram addresses?
+- Options: none. The owner supplies them. `#x2f-help:example.org` and `@x2f_help` are examples.
+- Recommendation: none. We need the real ones before launch.
+- Blocks: Ban-Notice, HoldChange, TradeTechIssue and Maintenance copy, at launch.
+
+**8. Password-only changes after 24 h: BLOCKING**
+- Question: after the 24 h wait, do password-only changes to login methods, wallets or team apply on their own?
+- Options: apply on their own; or need a moderator or the recovery code to confirm.
+- Recommendation: apply on their own, as HoldChange shows. Anyone logged in can cancel during the 24 h, and the owner is alerted on every channel.
+- Blocks: HoldChange (+Wide) and the hold logic in the build.
+
+**9. Which "Post an offer" ships: BLOCKING**
+- Question: which offer form do we build?
+- Options: PostOffer (one price ± % per currency, simpler) or FlexOffer-Post (bands per currency, each with its own ± %).
+- Recommendation: FlexOffer-Post. The owner's band rules (whole units, next band +1, up to 5 currencies) only fit there.
+- Blocks: building offer posting; question 11 depends on it.
+
+**10. Session length: tiles or drop-down: LATER**
+- Question: the owner said "drop-down, nothing pre-selected". Design drew four tiles instead. Which one?
+- Options: tiles (one tap, choices visible), or a drop-down (the owner's word).
+- Recommendation: tiles, still with nothing pre-selected. This is a visual call, but it changes the owner's word, so we're asking.
+- Blocks: SessionLength (+Wide), SignupSecurity, Devices. The build can start with either one.
+
+**11. New: pairing payment methods with currencies: BLOCKING (with 9)**
+- Question: when a vendor posts an offer, do they pick payment methods first and then the currencies each one takes, or currencies first and then the methods for each?
+- Options: method-first (a card per method, the currencies it takes ticked inside, instructions per currency only where they differ); or currency-first (a USD | EUR switch, with methods and instructions under each currency, as FlexOffer-Post draws now).
+- Recommendation: method-first, the same as claude2. Instructions belong to the method and differ by currency only sometimes (bank transfer: USD routing vs EUR IBAN). Bands stay per currency in their own section with the USD | EUR switch.
+- Blocks: FlexOffer-Post (+Wide) redraw (design, about 1 day after the answer) and the offer form build.
+
+**12. New: the glance says "Pay now" while the trade room says wait for escrow: BLOCKING (build fix, rule check)**
+- Question: may a trade glance (Desktop list, Fold cover, notifications) ever say "Pay now" before escrow is secured?
+- Options: no, the glance always shows the trade room's own state ("Securing escrow" first, "Pay now" only once escrow is secured); or keep a separate, earlier glance.
+- Recommendation: no. The glance must mirror the trade room. Telling a buyer to pay before the coins are locked is the one mistake that loses them money. The boards already draw it this way: "Pay now" is the escrow-secured state on Desktop and the Fold boards. This is a build bug to fix, and the owner only needs to confirm the rule.
+- Blocks: the glance in the build. No board change is needed.
+
+**Still COPY-UNSIGNED** (unchanged until signed): every COPY-UNSIGNED line in the five `fixed-*.md` files, all of Settings and FAQ, and the Ban-Notice lines listed above (6 Nov evening).
+
+## 6 Nov 2026, late
+
+**Handoff §6 job 2 done: X2F design system is at v2** (https://claude.ai/artifact/Bywqtsd4FKmYPHta6wQNPM, version 6).
+- `tokens.json` v2: added colours `mod`, `team`, `scrim`; type styles `screen-title`, `result-headline`, `sheet-title`, `hero-number`, `meta`; spacing `space-3`, `space-5`, `space-8`; `radius-lg`. Usage notes were rewritten to match v2 (selection in ink, orange only for the primary, the XMR unit and links).
+- `README.md` rewritten to v2: no shadows and surface steps, one hero, ink selection, state shown three ways, key-mark placements, the wide rail and grid, dates and durations, the terms table, no email, Draft copy and OPEN, design notes below the app.
+- 15 live components, each with a guideline and a night + day preview whose styles are copied from the boards: KeyMark, StatusChip, HeroBlock, Button, Switch, Callout, OpenBox, Stepper, Timer, Amount, ListRow, FormField, Card, EmptyState, NavRail. The Cover is unchanged.
+- Not done: no React bundle. The cards are static HTML and boards copy their inline styles, as before. The cover still draws the v1 palette, which is unchanged in v2.
+
+Section 6 of the handoff is complete. Next: the proof pop-ups (63/64/65) when you send them.
