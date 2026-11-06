@@ -11,7 +11,7 @@ import { glancePill, glanceStep, glanceTimer, glanceWarning, TradeGlance, utcDat
 import type { TradeScreenProps } from '../src/screens/trade/TradeRoom.js';
 import { PAY_NOW, PAY_SECURED } from '../src/fixtures/payBoard.js';
 import { Sheet } from '../src/ui/Sheet.js';
-import { GIFT_CARD_WARNING } from '../src/screens/trade/paySeams.js';
+import { GIFT_CARD_WARNING, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
 import { fire, render } from './render.js';
 
 const none = { tabletop: false, three: false, two: false, panes: false, wide: false, cover: false };
@@ -246,6 +246,30 @@ describe('TradeGlance from the Fold-Tabletop and Fold-Cover boards', () => {
     expect(host.querySelector('[data-glance-pay]')?.textContent).toContain('Send exactly');
     expect(host.querySelector('[data-glance-memo]')?.textContent).toContain(PAY_SECURED.code);
     expect(controls(host)).toBe(0);
+  });
+
+  // Review 2026-11-06 m3: the tabletop hides the pay screen's card, so the glance carries its
+  // "where to send" row, including the card's fallback while the seller's details are unknown.
+  it('tabletop: with no seller details known, "where to send" points to the chat, as the pay card does (m3)', () => {
+    setPaymentDetailsSource(null);
+    const { host } = render(<TradeGlance view={PAY_SECURED} escrow={escrow()} serverClock={clock} layout="tabletop" />);
+    expect(host.querySelector('[data-glance-pay]')?.textContent).toContain('Zelle to Ask in the chat');
+  });
+
+  it("tabletop: with the seller's details known, they replace the chat pointer (m3)", async () => {
+    setPaymentDetailsSource((_code, onDetails) => {
+      onDetails([{ label: 'Zelle to', value: 'mira@example.com' }]);
+      return () => undefined;
+    });
+    try {
+      const { host } = render(<TradeGlance view={PAY_SECURED} escrow={escrow()} serverClock={clock} layout="tabletop" />);
+      await act(async () => undefined);
+      const pay = host.querySelector('[data-glance-pay]')?.textContent ?? '';
+      expect(pay).toContain('Zelle to mira@example.com');
+      expect(pay).not.toContain('Ask in the chat');
+    } finally {
+      setPaymentDetailsSource(null);
+    }
   });
 
   it('a warning replaces the pill and the payment details: nothing tells the buyer to pay', () => {

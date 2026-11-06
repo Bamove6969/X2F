@@ -106,7 +106,7 @@ function rateOf(q: Quote): Price | null {
  * Trade tap hands it the quote's params instead, so the offer and its amount go into the URL in one
  * step and a fold keeps this quote (fold review 2026-11-06 m2).
  */
-export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId: string; offerId: string; onFirstInput?: (params: URLSearchParams) => void } }) {
+export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId: string; offerId: string; onFirstInput?: ((params: URLSearchParams) => void) | undefined } }) {
   const route = useParams();
   const methodId = pane?.methodId ?? route.methodId ?? '';
   const offerId = pane?.offerId ?? route.offerId ?? '';
