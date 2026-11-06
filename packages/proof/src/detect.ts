@@ -248,7 +248,8 @@ function dayMonth(a: number, b: number): boolean {
   return (a >= 1 && a <= 12 && b >= 1 && b <= 31) || (a >= 1 && a <= 31 && b >= 1 && b <= 12);
 }
 
-function markDates(text: string, keep: boolean[]): void {
+/** Marks every date and time in a normalised line in `keep` (exported for Task 9's date check). */
+export function markDates(text: string, keep: boolean[]): void {
   for (const re of DATE_TEXT) for (const m of text.matchAll(re)) mark(keep, m.index, m.index + m[0].length);
   const sortCode = SORT_CODE.test(text);
   for (const m of text.matchAll(DATE_NUMERIC)) {
@@ -264,8 +265,8 @@ function markDates(text: string, keep: boolean[]): void {
   }
 }
 
-/** A pattern for one trade code as OCR may show it: any case, O for 0, I or L for 1, any grouping. */
-function codePattern(normalized: string): RegExp {
+/** A pattern for one trade code as OCR may show it: any case, O for 0, I or L for 1, any grouping (also Task 9's reference check). */
+export function codePattern(normalized: string): RegExp {
   const chars = [...normalized.replace(/-/g, '')].map((c) => {
     if (c === '0') return '[0Oo]';
     if (c === '1') return '[1IiLl]';
@@ -659,13 +660,14 @@ function markDatesAndCode(text: string, k: boolean[], codeRe: RegExp): void {
  * marker can sit between a group and the real amount: in `… 1111 - 1111 $1,111.00` the `$` is also
  * read as a marker after the last group). An amount with decimals is always kept.
  */
-function amountKept(text: string, keep: Keep, codeRe: RegExp): boolean[] {
+function amountKept(text: string, keep: Keep, codeRe: RegExp, unmarkedOnly = false): boolean[] {
   const k: boolean[] = new Array<boolean>(text.length).fill(false);
-  const bare: Array<[number, number]> = [];
+  // [start, end, has a currency marker]
+  const bare: Array<[number, number, boolean]> = [];
   for (const a of findAmounts(text, keep.exponent)) {
     if (a.value !== keep.fiatCents) continue;
     if (a.decimals) mark(k, a.start, a.end);
-    else if (a.marker !== null || AMOUNT_LABEL.test(text.slice(0, a.start)) || standsAlone(text, a.start, a.end)) bare.push([a.start, a.end]);
+    else if (a.marker !== null || AMOUNT_LABEL.test(text.slice(0, a.start)) || standsAlone(text, a.start, a.end)) bare.push([a.start, a.end, a.marker !== null]);
   }
   const unit = 10n ** BigInt(keep.exponent);
   if (keep.fiatCents % unit === 0n) {
@@ -673,18 +675,30 @@ function amountKept(text: string, keep: Keep, codeRe: RegExp): boolean[] {
     for (const m of text.matchAll(LONG_DIGITS)) {
       const end = m.index + m[0].length;
       if (m[0].replace(/^0+(?=\d)/, '') !== whole) continue;
-      if (AMOUNT_LABEL.test(text.slice(0, m.index)) || standsAlone(text, m.index, end)) bare.push([m.index, end]);
+      if (AMOUNT_LABEL.test(text.slice(0, m.index)) || standsAlone(text, m.index, end)) bare.push([m.index, end, false]);
     }
   }
-  if (bare.length === 0) return k;
+  if (bare.length === 0) return unmarkedOnly ? k.fill(false) : k;
   const others = [...k];
   markDatesAndCode(text, others, codeRe);
   const numbers = moneySpans(blanked(text, others), false, UPI_IDS);
   const digitOutside = (sp: Span, start: number, end: number): boolean => /\d/.test(text.slice(sp.start, start) + text.slice(end, sp.end));
-  for (const [start, end] of bare) {
-    if (!numbers.some((sp) => sp.start < end && start < sp.end && digitOutside(sp, start, end))) mark(k, start, end);
+  const out = unmarkedOnly ? new Array<boolean>(text.length).fill(false) : k;
+  for (const [start, end, marked] of bare) {
+    if (unmarkedOnly && marked) continue;
+    if (!numbers.some((sp) => sp.start < end && start < sp.end && digitOutside(sp, start, end))) mark(out, start, end);
   }
-  return k;
+  return out;
+}
+
+/**
+ * Whether one line shows the trade amount as a whole number with no currency marker that
+ * `detectSensitive` keeps clear: after an amount label (`Total 250000`) or on its own (owner Q17),
+ * and never a group of a longer number (review RV4-I1). For Task 9's amount check (review RV4-M4),
+ * so the smart check never reports "not found" for an amount the automatic blur left visible.
+ */
+export function showsWholeAmount(line: string, keep: Keep): boolean {
+  return amountKept(normalize(line).text, keep, keepCode(keep), true).some(Boolean);
 }
 
 /** The trade code's pattern for `keep`, or a RangeError. */
