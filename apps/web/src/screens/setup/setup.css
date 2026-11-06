@@ -85,7 +85,7 @@
 }
 
 .x2f-start__seg[data-on='true'] {
-  background: var(--x2f-monero);
+  background: var(--x2f-ink);
 }
 
 .x2f-start__time {
@@ -292,7 +292,8 @@
 }
 
 .x2f-start__choice[aria-checked='true'] {
-  border-color: var(--x2f-monero-ink);
+  border-color: var(--x2f-ink);
+  background: var(--x2f-surface-raised);
 }
 
 .x2f-start__choice-head {
@@ -376,7 +377,7 @@
 }
 
 .x2f-start__option[aria-checked='true'] .x2f-start__dot {
-  border: 6px solid var(--x2f-monero-ink);
+  border: 6px solid var(--x2f-ink);
 }
 
 /* Wallet app chips (SetupWallet). */
@@ -399,7 +400,7 @@
 }
 
 .x2f-start__chip[aria-checked='true'] {
-  border-color: var(--x2f-monero-ink);
+  border: 2px solid var(--x2f-ink);
   background: var(--x2f-surface-raised);
   font-weight: 600;
 }
@@ -605,7 +606,6 @@
   width: 22px;
   height: 22px;
   margin: 0;
-  accent-color: var(--x2f-monero);
 }
 
 .x2f-check input:disabled + span {

@@ -9,6 +9,14 @@ const SHAPES = {
   'chevron-right': <path d="M9 6l6 6-6 6" />,
   'chevron-down': <path d="M6 9l6 6 6-6" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
+  // Main board: the search box; BuyQuote board: the Chat button.
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-4-4" />
+    </>
+  ),
+  chat: <path d="M4 5h16v11H9l-5 4z" />,
   clock: (
     <>
       <circle cx="12" cy="12" r="9" />
@@ -36,13 +44,6 @@ const SHAPES = {
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="M8 12l3 3 5-6" />
-    </>
-  ),
-  // LoginApprove board: the caution notes.
-  'info-circle': (
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 8v5M12 16v.5" />
     </>
   ),
   // Devices board: a phone and a computer in the device list, the team members card.
@@ -178,13 +179,14 @@ export function Icon({ name, size = 24, stroke = 1.5 }: { name: IconName; size?:
 export type IconTone = 'escrow' | 'danger' | 'caution' | 'muted';
 
 /**
- * A state icon above a heading (LoginApprove board: the 32 px escrow check for a login let in, the
- * danger shield for a blocked one). Decorative: the heading says what happened.
+ * A state icon above a heading (LoginApprove board: the escrow check for a login let in, the danger
+ * shield for a blocked one): visual system v2, a 28 px icon at stroke 1.75 in a 56 px tinted tile
+ * (ui.css). Decorative: the heading says what happened.
  */
-export function StatusIcon({ name, tone, size = 32 }: { name: IconName; tone: IconTone; size?: number }) {
+export function StatusIcon({ name, tone, size = 28 }: { name: IconName; tone: IconTone; size?: number }) {
   return (
     <span className="x2f-status-icon" data-icon-tone={tone}>
-      <Icon name={name} size={size} />
+      <Icon name={name} size={size} stroke={1.75} />
     </span>
   );
 }

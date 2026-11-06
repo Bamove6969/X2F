@@ -541,6 +541,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'DELETE /v1/account/hold/changes',
   'DELETE /v1/account/hold/changes/:id',
   'POST /v1/account/recovery-code/reveal',
+  // Plan 5 Task 10 review round 1 M3: the claim insert re-checks the session and the hold under the
+  // account lock (as Task 18's ownerWriteGate).
+  'POST /v1/account/past-rep/finish',
 ];
 
 /**
@@ -572,11 +575,22 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/chats/:chat/identity': "the caller's chat identity key for one chat; no account, session, approval or security state",
   'POST /v1/trades/:code/chat': "a participant's chat for an open trade (R42: finishing open trades stays allowed); no new obligation",
   'POST /v1/feedback/form': 'a feedback row only, open to held sessions on purpose (owner 2026-10-29)',
+  // Plan 5 Task 3 (reviews), classified at its merge with Tasks 16-17.
+  'POST /v1/trades/:code/review': "a participant's one review of their own finished trade (a reviews row only); no account, session, approval or security state, no new obligation",
+  'POST /v1/trades/:code/review/skip': "a participant's Skip review of their own finished trade (a review_skips row only); no account, session, approval or security state, no new obligation",
+  // C12b (owner 2026-11-01/02): the opt-in "traded to date" profile line.
+  'PUT /v1/account/profile/traded-total': "the caller's own profile display preference (one accounts column); no session, approval or security state, no obligation",
+  // Plan 5 Task 4 (platform feedback), classified at its merge with Tasks 16-17.
+  'POST /v1/feedback': 'a platform-feedback row only, holding nothing about the sender; no account, session, approval or security state, no obligation',
   'POST /v1/trades/:code/dispute': 'finishes an open trade (R42); creates no new obligation',
   'POST /v1/trades/:code/appeal': 'finishes an open trade (R42); creates no new obligation',
   'POST /v1/trades/:code/identity': "a participant's identity for an open trade; no new obligation",
   'POST /v1/trades/:code/wallet': "the poster's payout wallet for an open trade, from the account's own usable wallets",
   'POST /v1/trades/:code/final-alert-seen': 'review round 5 X1, an owner question; unchanged here',
+  // Plan 5 Task 10: past reputation. No login, session, approval, security or trading state: the
+  // caller's own claim rows only (a moderator approves before anything shows).
+  'POST /v1/account/past-rep/start': "writes only a past-rep challenge bound to the caller's account; its finish re-checks it",
+  'DELETE /v1/account/past-rep/:id': "sets the caller's own past-rep claim to removed",
 };
 
 /**
@@ -615,6 +629,10 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   // Hold model v3: during a recovery-code hold every session of the account is logged out, so only
   // the held recovery session could ask; refused (see team/members.ts `ownerWriteGate`).
   'DELETE /v1/team/members/:id',
+  // Plan 5 Task 10 (owner 1 Nov: during a hold the account is offline to everyone). Listing and
+  // removing one's own claims stay open.
+  'POST /v1/account/past-rep/start',
+  'POST /v1/account/past-rep/finish',
 ];
 
 /**

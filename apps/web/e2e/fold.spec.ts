@@ -6,9 +6,11 @@
 // chat (src/fixtures/payChat.tsx), the API stubbed as in pay.spec.ts.
 import { expect, test, type CDPSession, type Page } from '@playwright/test';
 import type { FastifyInstance } from 'fastify';
+import { BOARD_SELL_LIVE_USD, BOARD_SELL_OFFERS, boardSellOffers } from '../src/fixtures/boards.js';
 import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { PAY_SECURED } from '../src/fixtures/payBoard.js';
 import type { TradeView } from '../src/screens/trade/payTypes.js';
+import { stubBrowseApi } from './browse-stub.js';
 import { startFixtures } from './fixtures-serve.js';
 import { FOLD_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 import { sellerView } from './refundViews.js';
@@ -202,6 +204,17 @@ test.describe('width rules (Safari on the iPhone Fold, and any browser without s
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.locator('[data-pane="side"] #msg')).toBeFocused();
   });
+
+  test('the chat pane is a whole screen tall, its composer at the bottom and Send off the edge (design review 51, 52)', async ({ page }) => {
+    await page.setViewportSize({ width: 884, height: 1104 });
+    await openRoom(page);
+    const aside = await box(page, '[data-pane="side"] .x2f-room__aside');
+    expect(aside.y).toBeLessThanOrEqual(0.5);
+    expect(aside.y + aside.height).toBeGreaterThanOrEqual(1104 - 0.5);
+    const send = await box(page, '[data-pane="side"] button:text-is("Send")');
+    expect(send.y + send.height).toBeGreaterThan(1104 - 100);
+    expect(send.x + send.width).toBeLessThanOrEqual(884 - 15.5);
+  });
 });
 
 test.describe('a book fold open: two segments (Chrome on Android)', () => {
@@ -266,6 +279,16 @@ test.describe('tabletop: half folded', () => {
     expect(controls.filter((c) => c.top < 428 - 0.5)).toEqual([]);
     await expect(page.locator('[data-pane="side"] input#msg')).toBeVisible();
     expect(await crossing(page, 'y', 412, 428)).toEqual([]);
+    // Fold-Tabletop (design review 56): "I've paid" is on screen in the bottom half, and what the
+    // glance shows is not shown again below it.
+    const paid = await box(page, '[data-primary]');
+    expect(paid.y).toBeGreaterThanOrEqual(428 - 0.5);
+    expect(paid.y + paid.height).toBeLessThanOrEqual(840 + 0.5);
+    await expect(page.locator('[data-primary]')).toHaveText("I've paid");
+    await expect(glance).toContainText('Waiting for your payment');
+    await expect(glance.locator('[data-glance-pay]')).toContainText('Send exactly');
+    await expect(glance.locator('[data-glance-memo]')).toContainText(PAY_SECURED.code);
+    for (const part of ['header', 'timer', 'pay']) await expect(page.locator(`[data-pane="main"] [data-fold-glance="${part}"]`)).toBeHidden();
     // A sheet opens in the bottom half.
     await page.locator('[data-primary]').first().click();
     expect((await box(page, '.x2f-sheet')).y).toBeGreaterThanOrEqual(428 - 0.5);
@@ -297,9 +320,17 @@ test.describe('the flip cover screen', () => {
     const card = page.locator('[data-pane="glance"]');
     await expect(card).toContainText('Buying from');
     await expect(card).toContainText('$412.50');
-    // Information only, and the device's own figures; never the API's escrow chip.
-    expect(await card.locator('a, button, input, select, textarea').count()).toBe(0);
-    await expect(card.locator('.x2f-chip')).toHaveCount(0);
+    // Fold-Cover: "X2F", the pill from the trade's state (never the API's escrow chip), and one
+    // button, which takes no trade action.
+    await expect(card).toContainText('X2F');
+    await expect(card.locator('.x2f-chip')).toHaveText('Pay now');
+    expect(await card.locator('a, input, select, textarea').count()).toBe(0);
+    await expect(card.locator('button')).toHaveCount(1);
+    await card.getByRole('button', { name: 'Open on main screen' }).click();
+    await expect(card.getByRole('status')).toHaveText('Open your phone to keep going.');
+    // The card fills the cover screen: nothing of the room shows under it (design review 55).
+    expect((await box(page, '[data-pane="glance"]')).height).toBeGreaterThanOrEqual(380 - 0.5);
+    expect((await box(page, '[data-pane="main"] .x2f-pay')).y).toBeGreaterThanOrEqual(380 - 0.5);
     // A wrong guess costs nothing: the room and its primary action are right under the card.
     await expect(page.locator('[data-pane="main"] .x2f-pay[data-layout="phone"]')).toBeAttached();
     await page.locator('[data-primary]').first().scrollIntoViewIfNeeded();
@@ -424,5 +455,70 @@ test.describe('folding keeps the screen, the scroll position and typed text', ()
       await expect(amount).toHaveValue('41');
     }
     expect(new URL(page.url()).pathname).toBe(`/buy/${B.method.id}/${B.offer.id}`);
+  });
+});
+
+test.describe('screens with two panes: nothing across the hinge (design review 53, 54)', () => {
+  async function offers(page: Page): Promise<void> {
+    await stubBrowseApi(page, { signedIn: true, live: { USD: BOARD_SELL_LIVE_USD }, offers: (c) => (c === 'USD' ? boardSellOffers() : []), market: { USD: BOARD_SELL_OFFERS.marketCentsPerXmr } });
+    await page.route('**/v1/wallets', (r) => r.fulfill({ json: [...B.wallets] }));
+    await page.route('**/v1/wallets/rule', (r) => r.fulfill({ json: { firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 } }));
+  }
+
+  for (const hingeReported of [false, true]) {
+    test(`Fold-Offers: the list picks, the quote beside it has the one Trade${hingeReported ? ' (hinge reported)' : ''}`, async ({ page }) => {
+      const size = hingeReported ? { width: 840, height: 900 } : { width: 884, height: 1104 };
+      const gap = hingeReported ? [HINGE.offset, HINGE.offset + HINGE.mask] : [size.width / 2 - 8, size.width / 2 + 8];
+      await page.setViewportSize(size);
+      if (hingeReported) await hinge(page, size, 'vertical', HINGE.offset);
+      await offers(page);
+      await page.goto(`${ORIGIN}/sell/ZELLE`);
+      if (hingeReported) await needSegments(page, '(horizontal-viewport-segments: 2)');
+      expect(await fold(page)).toBe('two');
+      const rows = page.locator('[data-pane="main"] button[aria-pressed]');
+      await expect(rows.first()).toHaveAttribute('aria-pressed', 'true');
+      const side = page.locator('[data-pane="side"]');
+      await expect(side.locator('#quote-amount')).toBeVisible();
+      await expect(page.locator('[data-primary]')).toHaveCount(1);
+      await expect(side.locator('[data-primary]')).toHaveText('Trade');
+      // The list's own back link stays; the quote's is left out (the list is beside it).
+      await expect(side.getByRole('link', { name: /^Back to/ })).toHaveCount(0);
+      expect(await crossing(page, 'x', gap[0]!, gap[1]!)).toEqual([]);
+      await expectPhoneLayout(page);
+      // Picking another row shows its quote, keeps the typed amount, and folding shows that quote.
+      await side.locator('#quote-amount').fill('100');
+      const second = rows.nth(1);
+      const who = (await second.locator('[data-username]').textContent())!;
+      await second.click();
+      await expect(second).toHaveAttribute('aria-pressed', 'true');
+      await expect(side).toContainText(who);
+      await expect(side.locator('#quote-amount')).toHaveValue('100');
+      expect(new URL(page.url()).pathname).toMatch(/^\/sell\/ZELLE\/[^/]+$/);
+      if (!hingeReported) {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await expect(page.locator('[data-screen="quote"]')).toContainText(who);
+        await expect(page.locator('[data-pane="side"]')).toHaveCount(0);
+        await page.goBack();
+        await expect(page.locator('.x2f-browse')).toBeVisible();
+      }
+    });
+  }
+
+  test('Fold-MyOffers: the list, and the picked offer\'s details with its switch beside it', async ({ page }) => {
+    await page.setViewportSize({ width: 884, height: 1104 });
+    const list = [
+      { id: '11111111-1111-4111-8111-111111111111', side: 'sell', methodId: 'ZELLE', methodName: 'Zelle', currency: 'USD', rate: '33165', pricing: { mode: 'market', marginBps: 50 }, minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0, status: 'live', createdAt: '2026-10-29T10:00:00.000Z' },
+      { id: '22222222-2222-4222-8222-222222222222', side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '30000', pricing: { mode: 'fixed', centsPerXmr: '30000' }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5, status: 'paused', createdAt: '2026-10-29T09:00:00.000Z' },
+    ];
+    await page.route('**/v1/account/me', (r) => r.fulfill({ json: { displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true } }));
+    await page.route('**/v1/account/offers', (r) => r.fulfill({ json: list }));
+    await page.goto(`${ORIGIN}/profile/offers`);
+    const side = page.locator('[data-pane="side"]');
+    await expect(side).toContainText('Selling XMR · USD');
+    await page.locator('[data-pane="main"] button[aria-pressed]').nth(1).click();
+    await expect(side).toContainText('Buying XMR · EUR');
+    await expect(side.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+    expect(await crossing(page, 'x', 884 / 2 - 8, 884 / 2 + 8)).toEqual([]);
+    await expectPhoneLayout(page);
   });
 });

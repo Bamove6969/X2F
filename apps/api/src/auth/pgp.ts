@@ -14,7 +14,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import { readFile } from 'node:fs/promises';
 import {
   PGP_PURPOSE, actionHash, challengeText, describeAction, encryptChallenge, inspectPublicKey,
-  newLoginCode, normalizeLoginCode, pastedRecipientStillValid, type AccountKind, type ConfirmAction, type KeyInspection,
+  newLoginCode, normalizeLoginCode, pastedRecipientStillValid, type AccountKind, type ConfirmAction, type InspectOptions, type KeyInspection,
 } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import * as openpgp from 'openpgp';
@@ -93,38 +93,46 @@ const ARMOR_CONFIG: openpgp.Config = { ...openpgp.config, showComment: false, sh
  * removed when the key stays usable without them (v6 keys, whose direct-key signature carries the
  * key's settings): the stripped key must pass `inspectPublicKey` at `now` with the same
  * fingerprint and expiry. Otherwise (v4) the key is kept whole. Either way it is re-armored with
- * no Comment or Version header and then stored only encrypted.
+ * no Comment or Version header and then stored only encrypted. `options` are `inspectPublicKey`'s
+ * (login's rules by default; past reputation passes its own, Plan 5 Task 10, so a signing-only v6
+ * key passes the check and loses its user IDs).
  */
-export async function storableKey(armored: string, now: Date): Promise<string> {
+export async function storableKey(armored: string, now: Date, options: InspectOptions = {}): Promise<string> {
   const key = await openpgp.readKey({ armoredKey: armored });
   const whole = key.armor(ARMOR_CONFIG);
   if (key.keyPacket.version !== 6 || key.users.length === 0) return whole;
   const stripped = await openpgp.readKey({ armoredKey: whole });
   stripped.users = [];
   const candidate = stripped.armor(ARMOR_CONFIG);
-  const [before, after] = await Promise.all([inspectPublicKey(whole, now), inspectPublicKey(candidate, now)]);
+  const [before, after] = await Promise.all([inspectPublicKey(whole, now, options), inspectPublicKey(candidate, now, options)]);
   const same =
     before.ok && after.ok && before.fingerprint === after.fingerprint &&
     (before.expiresAt?.getTime() ?? null) === (after.expiresAt?.getTime() ?? null);
   return same ? candidate : whole;
 }
 
-const aad = (fingerprint: string) => Buffer.from(`x2f/pgp-key/${fingerprint}`, 'utf8');
+/** The AAD label of login keys (`pgp_keys`); past reputation seals under its own (Plan 5 Task 10). */
+export const PGP_KEY_AAD = 'x2f/pgp-key/';
 
-/** AES-256-GCM under `subkey('pgp-key')`, bound to the fingerprint: nonce (12) ‖ ciphertext ‖ tag (16). */
-export function sealKey(config: Config, armored: string, fingerprint: string): Buffer {
+const aad = (label: string, fingerprint: string) => Buffer.from(`${label}${fingerprint}`, 'utf8');
+
+/**
+ * AES-256-GCM under `subkey('pgp-key')`, bound to `label` + the fingerprint: nonce (12) ‖
+ * ciphertext ‖ tag (16). A key sealed under one label does not open under another.
+ */
+export function sealKey(config: Config, armored: string, fingerprint: string, label: string = PGP_KEY_AAD): Buffer {
   const nonce = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', subkey(config, 'pgp-key'), nonce, { authTagLength: 16 });
-  cipher.setAAD(aad(fingerprint));
+  cipher.setAAD(aad(label, fingerprint));
   const body = Buffer.concat([cipher.update(armored, 'utf8'), cipher.final()]);
   return Buffer.concat([nonce, body, cipher.getAuthTag()]);
 }
 
 /** Decrypts a stored key in memory (only to encrypt a challenge to it). */
-export function openKey(config: Config, sealed: Buffer, fingerprint: string): string {
+export function openKey(config: Config, sealed: Buffer, fingerprint: string, label: string = PGP_KEY_AAD): string {
   if (sealed.length < 12 + 16) throw new Error('stored PGP key is malformed');
   const decipher = createDecipheriv('aes-256-gcm', subkey(config, 'pgp-key'), sealed.subarray(0, 12), { authTagLength: 16 });
-  decipher.setAAD(aad(fingerprint));
+  decipher.setAAD(aad(label, fingerprint));
   decipher.setAuthTag(sealed.subarray(sealed.length - 16));
   return Buffer.concat([decipher.update(sealed.subarray(12, sealed.length - 16)), decipher.final()]).toString('utf8');
 }
