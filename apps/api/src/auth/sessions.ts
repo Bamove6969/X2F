@@ -184,6 +184,9 @@ export async function openSession(
     ],
   );
   const sessionId = rows[0]!.id;
+  // Owner answer Q77 (6 Nov 2026): a vendor account not logged into for 60 days closes
+  // (vendorInactivity.ts). Every login counts; a member's login counts for the team account.
+  await db.query('update accounts set last_login_at = $2 where id = $1', [member ? member.teamId : a.accountId, now]);
   // A member's device is trusted for the member's own login only, never for the account owner's.
   if (device) await trustDevice({ db, clock: deps.clock }, a.accountId, device);
   if (member) {

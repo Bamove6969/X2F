@@ -22,7 +22,7 @@
  * A session strength is not asked for (unlike team invites): the confirm with a passkey, security
  * key or PGP key is the requirement the owner set.
  *
- * Switching back to trader is not built (OPEN, owner: what happens to live offers and the team):
+ * There is no switching back to trader (owner answer Q77, 6 Nov 2026: open a new account instead):
  * any `type` but 'vendor' is 400 `bad-request`.
  */
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';

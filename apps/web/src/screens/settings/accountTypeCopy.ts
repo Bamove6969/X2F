@@ -4,7 +4,8 @@
 // not-vendor, a password confirm) are CantDoThat's, worded in ui/cantDoCodes.ts.
 //
 // Left out on purpose: the board's "Session length" row (per-type session lengths are not built
-// yet) and its "Switching back" sheet (OPEN, owner: what happens to live offers and the team).
+// yet). The board's "Switching back" sheet is gone: owner answer Q77 (6 Nov 2026), there is no
+// switching back (a new account instead), and a vendor account not logged into for 60 days closes.
 
 export const ACCOUNT_TYPE_PATH = '/settings/account-type';
 
@@ -35,11 +36,15 @@ export const ACCOUNT_TYPE_COPY = {
   switchButton: 'Switch to a vendor account',
   sheetTitle: 'Switch to a vendor account?',
   sheetLines: ['You can post offers and add team members.', 'You pay the 1% fee on completed trades.', 'You confirm with your passkey, security key or PGP key.'] as const,
+  // DESIGN: wording (owner answer Q77, 6 Nov 2026; not on the BecomeVendor board): shown in the
+  // switch sheet and on a vendor's Account type card.
+  noSwitchBack: 'The switch is one way. To be a trader again, open a new account.',
+  // DESIGN: wording (owner answer Q77, 6 Nov 2026).
+  inactiveCloses: 'A vendor account that no one logs into for 60 days is closed automatically.',
   sheetConfirm: 'Switch to vendor',
   cancel: 'Cancel',
   switched: 'Your account is now a vendor account.',
   postOffer: 'Post an offer',
-  switchBack: 'Switching back to a trader account comes later.',
   loadFailed: 'Your account type could not be loaded. Try again.',
   saveFailed: 'Something went wrong and your account was not switched. Try again.',
   signedOut: 'Log in to see your account type.',

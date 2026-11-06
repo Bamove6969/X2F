@@ -3,7 +3,7 @@
  * offers, no fee) or Vendor (posts offers, may add team members, pays the 1% fee). The account
  * holder switches to vendor here: it needs a passkey, security key or PGP key on the account, a
  * "Switch to a vendor account?" sheet (it turns on the fee), and a confirm with one of those
- * (the confirm sheet offers no password for `become-vendor`). Switching back is not built (OPEN).
+ * (the confirm sheet offers no password for `become-vendor`). There is no switching back (owner answer Q77, 6 Nov 2026).
  *
  * Kit parts and existing classes only, no stylesheet of its own. A team member gets the
  * owner-only refusal (OwnerOnly); every API refusal goes through CantDoThat.
@@ -133,7 +133,8 @@ function AccountTypeScreen() {
                 <Link className="x2f-button x2f-button--primary" to="/post" state={{ from: ACCOUNT_TYPE_PATH }} data-primary="" data-part="post">
                   {C.postOffer}
                 </Link>
-                <p className="x2f-note">{C.switchBack}</p>
+                <p className="x2f-note" data-part="no-switch-back">{C.noSwitchBack}</p>
+                <p className="x2f-note" data-part="inactive-closes">{C.inactiveCloses}</p>
               </section>
             ) : (
               <section className="x2f-card" aria-label={C.becomeTitle} data-part="become">
@@ -172,6 +173,8 @@ function AccountTypeScreen() {
                 {l}
               </p>
             ))}
+            <p className="x2f-sheet__body">{C.noSwitchBack}</p>
+            <p className="x2f-sheet__body">{C.inactiveCloses}</p>
             <Button variant="primary" onClick={() => void switchNow()} data-part="switch-confirm">
               {C.sheetConfirm}
             </Button>
