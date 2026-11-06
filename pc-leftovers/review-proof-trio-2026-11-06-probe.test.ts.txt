@@ -1,0 +1,39 @@
+import { describe, expect, it } from 'vitest';
+import { amountBoxes, detectSensitive, detectSensitiveText, padAndMerge, type OcrWord } from '../src/index.js';
+import { covered, ocr } from './ocr.js';
+const KEEP = { tradeCode: 'K7M2-9QXA-4FTR-8WPN', fiatCents: 41250n, exponent: 2 };
+const mt = (w: OcrWord[], keep = KEEP) => detectSensitive(w, keep).flatMap((r) => covered(w, r).map((t) => `${t}:${r.kind}`));
+describe('rv4 probes', () => {
+  it('prints', () => {
+    const at = (c: bigint) => ({ ...KEEP, fiatCents: c });
+    const rows: Array<[string, unknown]> = [
+      ['spaced-dash card, amount=1111', mt(ocr('Card 4111 - 1111 - 1111 - 1111'), at(111100n))],
+      ['spaced-dash card, default amount', mt(ocr('Card 4111 - 1111 - 1111 - 1111'))],
+      ['spaced-dash phone, default amount', mt(ocr('Tel 555 - 201 - 3344'))],
+      ['spaced-dash card amount=1000', mt(ocr('Card 4000 - 1234 - 5678 - 1000'), at(100000n))],
+      ['spaced emdash IBAN-ish', mt(ocr('IBAN DE89 – 3704 – 0044 – 0532 – 0130 – 00'), at(370400n))],
+      ['ascii dash card, amount=1111', mt(ocr('Card 4111-1111-1111-1111'), at(111100n))],
+      ['spaced-dash phone, amount=3344', mt(ocr('Tel 555 - 201 - 3344'), at(334400n))],
+      ['spaced-dash phone amount=201', mt(ocr('Tel 555 - 201 - 3344'), at(20100n))],
+      ['dot-space phone amount=78', mt(ocr('Tel 06. 12. 34. 56. 78'), at(7800n))],
+      ['card ending 1234 amount=1234', mt(ocr('Visa ending 1234'), at(123400n))],
+      ['card ****1234 amount=1234', mt(ocr('Card **** 1234'), at(123400n))],
+      ['card ...1234 amount=1234', mt(ocr('Card ...1234'), at(123400n))],
+      ['acct 12345678 amount', mt(ocr('Account number: 12345678'), at(1234567800n))],
+      ['decomposed Empfa\\u0308nger', mt(ocr('Empfänger: Max Mustermann'))],
+      ['NFC Empfänger', mt(ocr('Empfänger: Max Mustermann'))],
+      ['para over-mask', mt(ocr('Para su seguridad no comparta K7M2-9QXA-4FTR-8WPN'))],
+      ['nombre', mt(ocr('Nombre del banco: Santander'))],
+      ['notes PL phone', detectSensitiveText('zadzwon 512 345 678')],
+      ['notes CZ phone', detectSensitiveText('volejte 601 123 456')],
+      ['notes 9-digit acct grouped', detectSensitiveText('acct 123 456 789')],
+      ['notes comma card', detectSensitiveText('card 4,111,111,111,111,111')],
+    ];
+    const w = ocr('Acct 12345678 $412.50');
+    rows.push(['padAndMerge no keepClear covers amount?', padAndMerge(detectSensitive(w, KEEP), 1000, 100).map((r) => [r.x0, r.x1])]);
+    rows.push(['amountBoxes', amountBoxes(w, KEEP)]);
+    const out: string[] = [];
+    for (const [k, v] of rows) out.push(`PROBE ${k} => ${JSON.stringify(v, (_, x) => (typeof x === 'bigint' ? String(x) : x))}`);
+    expect(out).toEqual([]);
+  });
+});

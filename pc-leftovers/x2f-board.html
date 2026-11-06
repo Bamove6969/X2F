@@ -1,0 +1,147 @@
+<title>X2F Build Board</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+:root{--bg:#f5f4ef;--card:#fff;--fg:#1c1f23;--mute:#5d646d;--line:#dcd8cd;--ok:#1f7a4d;--ok-bg:#e1f2e8;--run:#2d55b5;--run-bg:#e3e9fb;--wait:#a1560a;--wait-bg:#fbecd8;--block:#9b2335;--block-bg:#f8e0e4;--acc:#c9521a;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14161a;--card:#1c1f24;--fg:#ecebe5;--mute:#a0a7af;--line:#2e333a;--ok:#6fd3a0;--ok-bg:#16342a;--run:#9fb4ff;--run-bg:#1e2547;--wait:#f0b46a;--wait-bg:#3a2a14;--block:#f08a9a;--block-bg:#3d1c22;--acc:#ff8a4c;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14161a;--card:#1c1f24;--fg:#ecebe5;--mute:#a0a7af;--line:#2e333a;--ok:#6fd3a0;--ok-bg:#16342a;--run:#9fb4ff;--run-bg:#1e2547;--wait:#f0b46a;--wait-bg:#3a2a14;--block:#f08a9a;--block-bg:#3d1c22;--acc:#ff8a4c;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+main{max-width:1060px;margin:0 auto;padding-block:28px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:26px}
+h1{font-size:30px;margin:4px 0 0;text-wrap:balance}h2{font-size:19px;margin:0 0 12px;text-wrap:balance}
+.eyebrow{font:500 12px "IBM Plex Mono",monospace;color:var(--mute);letter-spacing:.04em}
+.sub{color:var(--mute);margin:6px 0 0;max-width:70ch}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.stat b{display:block;font:600 26px "IBM Plex Mono",monospace;color:var(--acc)}
+.stat span{color:var(--mute);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;min-width:0}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top;font-size:14px}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);font-weight:600}
+.k{font:500 12.5px "IBM Plex Mono",monospace}
+.pill{display:inline-block;font:500 11.5px/1 "IBM Plex Mono",monospace;padding:5px 7px;border-radius:6px;white-space:nowrap}
+.ok{background:var(--ok-bg);color:var(--ok)}.run{background:var(--run-bg);color:var(--run)}.wait{background:var(--wait-bg);color:var(--wait)}.block{background:var(--block-bg);color:var(--block)}
+ul{margin:0;padding-left:20px}li{margin:5px 0}
+.who{color:var(--mute);font-size:13px}
+footer{color:var(--mute);font-size:13px}
+</style>
+<main>
+<header>
+<span class="eyebrow">Bamove6969/X2F · main = main line @ 850052d</span>
+<h1>X2F Build Board</h1>
+<p class="sub">Peer-to-peer Monero for fiat with 2-of-3 escrow. Status as of Monday 2 November 2026, about 1:30 am Pacific. Hand-updated by the lead.</p>
+</header>
+
+<section class="stats">
+<div class="stat"><b>7</b><span>landings since 1 Nov: team members, staff core, device screens, escrow save fix, 2 test fixes, SonarQube fixes</span></div>
+<div class="stat"><b>13</b><span>agents working now: claude2 + helpers, claude3 + helpers, lead helpers and reviewers</span></div>
+<div class="stat"><b>4</b><span>design v2 batches published by the design session (login, dialogs, offers, setup)</span></div>
+<div class="stat"><b>0</b><span>vulnerabilities in the first local SonarQube scan (cloud scanner removed)</span></div>
+</section>
+
+<section class="card">
+<h2>Landed (main line and GitHub main)</h2>
+<div class="tw"><table>
+<thead><tr><th>Commit</th><th>What</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td class="k">850052d</td><td>New-device approval + Devices and sessions screens</td><td>Built to the design boards; "Log out all team members"; same security calls as before</td></tr>
+<tr><td class="k">0c0f9ac</td><td>Escrow: a tap is kept only after it's saved</td><td>No "cancel" or "I've paid" stored if its message never left</td></tr>
+<tr><td class="k">bd5a077</td><td>Flaky trade test fixed</td><td>Root cause in the test; closed a gap too</td></tr>
+<tr><td class="k">e7dd94c</td><td>SonarQube findings</td><td>Slow web-address cleanup, settings crash, empty test</td></tr>
+<tr><td class="k">d77134d</td><td>Flaky My offers test fixed</td><td>Proven over 3 full runs</td></tr>
+<tr><td class="k">52b7a0e</td><td>Staff core (roles, disputes, tamper-proof log)</td><td>Plan 4 Tasks 1–3</td></tr>
+<tr><td class="k">9b26423</td><td>Team members</td><td>Invites and roles need a strong login</td></tr>
+</tbody></table></div>
+</section>
+
+<section class="card">
+<h2>Working now</h2>
+<div class="tw"><table>
+<thead><tr><th>Work</th><th>Who</th><th>State</th><th>Next</th></tr></thead>
+<tbody>
+<tr><td>My offers rebuild (switches, tick boxes, trading-hold label)</td><td class="who">lead helper</td><td><span class="pill run">Finishing</span></td><td>Merge devices, unify shared parts, land next</td></tr>
+<tr><td>Foldables (two panes, tabletop, cover card)</td><td class="who">lead helper</td><td><span class="pill wait">Fixing</span></td><td>Safety fix: never "Pay now" when the phone says don't pay</td></tr>
+<tr><td>Result screens (Refunded, after "I've paid", Block, Feedback, News, one date format)</td><td class="who">lead helper</td><td><span class="pill run">Finishing</span></td><td>Design calls + dispute 30 min after "I've paid"</td></tr>
+<tr><td>Cancel/dispute wording + shared "can't do that" dialog</td><td class="who">claude3</td><td><span class="pill run">In review</span></td><td>Land after review</td></tr>
+<tr><td>Reviews: no dollar weighting, Skip review, show on completion, "$X traded" line</td><td class="who">claude3 + helper</td><td><span class="pill run">Building</span></td><td>Then review</td></tr>
+<tr><td>Feedback: remove the daily cap</td><td class="who">claude3 + helper</td><td><span class="pill run">Building</span></td><td>Then land</td></tr>
+<tr><td>Login approval in v2 style</td><td class="who">claude2 + helper</td><td><span class="pill run">Building</span></td><td>Then review</td></tr>
+<tr><td>No orange for selection, app-wide</td><td class="who">claude2</td><td><span class="pill run">Building</span></td><td>Then review</td></tr>
+<tr><td>Ad cap 3 buy + 3 sell; dispute 30 min after "I've paid"</td><td class="who">claude2</td><td><span class="pill run">Queued</span></td><td>Server rules</td></tr>
+<tr><td>Flexible offers: many currencies + payment types per ad</td><td class="who">claude2</td><td><span class="pill wait">Next</span></td><td>Design note first, then build</td></tr>
+<tr><td>Session length at every login + "Stay logged in?"</td><td class="who">lead helper</td><td><span class="pill run">Building</span></td><td>API + screens</td></tr>
+<tr><td>Hold model v3 (changes wait 24 h; recovery code logs everyone out)</td><td class="who">lead helper</td><td><span class="pill run">Building</span></td><td>API first</td></tr>
+<tr><td>Trader vs Vendor accounts + ban list</td><td class="who">lead helper</td><td><span class="pill run">Building</span></td><td>API + Settings</td></tr>
+<tr><td>Design v2 visual pass on every board</td><td class="who">design session</td><td><span class="pill run">Batches 1–4 done</span></td><td>Trades, holds, team, disputes, staff</td></tr>
+</tbody></table></div>
+</section>
+
+<section class="two">
+<div class="card">
+<h2>Built, waiting on your answers</h2>
+<ul>
+<li><b>Proof blurring, encryption, smart check:</b> items 29–30, 34–37, 62–65</li>
+<li><b>Past reputation claims:</b> items 70–76</li>
+<li><b>30-day self-destruct:</b> items 42–43</li>
+<li><b>Watcher (Tasks 9, 9-view, 10):</b> on hold, to discuss</li>
+<li><b>Docs pass:</b> one update once the open questions settle</li>
+</ul>
+</div>
+<div class="card">
+<h2>Decided this weekend</h2>
+<ul>
+<li>One ad lists many currencies and payment types; buyer picks both; cap 3 buy + 3 sell</li>
+<li>Tier amounts converted into the buyer's currency</li>
+<li>Buyer can dispute 30 minutes after "I've paid"; buyer can cancel (trade stays open until XMR is back)</li>
+<li>Reviews show on completion; Skip shows nothing; optional "Completed over $X in trades"</li>
+<li>One 16-character recovery code, required at signup</li>
+<li>Password-only changes wait 24 h; recovery-code login logs everyone out</li>
+<li>Session length picked at every login; vendors up to 24 h</li>
+<li>Trader vs Vendor accounts; per-member permissions; ban list</li>
+</ul>
+</div>
+</section>
+
+<section class="card">
+<h2>Done since the start (14 Oct → today)</h2>
+<div class="tw"><table>
+<thead><tr><th>When</th><th>What got built</th></tr></thead>
+<tbody>
+<tr><td class="k">14–17 Oct</td><td><b>Plan 1, escrow core:</b> 2-of-3 Monero multisig escrow, protocol envelopes, regtest test rig, signed node hashes</td></tr>
+<tr><td class="k">18–23 Oct</td><td><b>Plan 2, accounts:</b> sign-up and login with password, PGP, passkeys and security keys, authenticator and recovery codes, staff two-factor rules, account overview, devices and alerts, payout wallets, browser login toolkit, security review</td></tr>
+<tr><td class="k">21–25 Oct</td><td><b>Plan 3 foundations:</b> payout maths, trade state machine, node proxy, web shell with strict security headers, UI kit, trade store and events, incoming-funds checks, nudges</td></tr>
+<tr><td class="k">24 Oct</td><td>Plans 5 (reputation) and 6 (hardening) drafted; password pepper, keyed recovery codes, TOTP key rotation; wallet address book</td></tr>
+<tr><td class="k">26–28 Oct</td><td><b>Trading screens:</b> payment methods and price feed, board-parity harness, Sell/Buy browse, PostOffer, quotes and the Trade button, browser escrow runtime, refunds and extensions, login screens, live events and push, moderation service (identities, signed trade terms), TradeFund, FIDO metadata</td></tr>
+<tr><td class="k">29 Oct</td><td>Offers API, taking an offer, wallets, getting started, BuyerPay, SellerConfirm, trader disputes, News inbox, feedback form + "can't do that" popup, trader-to-trader block, two rounds of owner + design decisions written into the plans</td></tr>
+<tr><td class="k">30 Oct</td><td>My offers, login names as keyed tags, reputation core (review rules, stats, badges), foldable phones, cancel rules + warning popups + two-step "I've paid", <b>device approval + 24 h hold</b>, <b>encrypted chat</b></td></tr>
+<tr><td class="k">1–2 Nov</td><td><b>Team members</b>, <b>staff core</b> (roles, dispute steps, tamper-proof log), escrow save fix, local SonarQube + fixes, test fixes, new-device approval and Devices screens</td></tr>
+</tbody></table></div>
+<p class="sub">About 240 commits on the main line; every feature went through at least one independent review before landing (security features up to 5 rounds).</p>
+</section>
+
+<section class="card">
+<h2>Roadmap: what's left and rough time</h2>
+<p class="sub">Estimates assume the current team (3 builders plus helpers) and quick owner answers. They exclude lawyers, an outside security audit and app-store review.</p>
+<div class="tw"><table>
+<thead><tr><th>Stage</th><th>What</th><th>Rough time</th><th>State</th></tr></thead>
+<tbody>
+<tr><td class="k">1</td><td>Land tonight's design fixes (My offers, foldables, result screens, cancel/dispute wording, selection colour, v2 login)</td><td>2–3 days</td><td><span class="pill run">Running</span></td></tr>
+<tr><td class="k">2</td><td>Land built work waiting on answers: reviews, proofs, past reputation, feedback, self-destruct</td><td>2–3 days after answers</td><td><span class="pill wait">Your answers</span></td></tr>
+<tr><td class="k">3</td><td>New account rules: session length + extend, hold model v3, Trader/Vendor + ban list, per-member permissions, ad cap + dispute timing</td><td>1.5–2 weeks</td><td><span class="pill run">Started</span></td></tr>
+<tr><td class="k">4</td><td>Flexible offers: many currencies and methods per ad, price tiers, the ad page</td><td>1 week</td><td><span class="pill run">Started</span></td></tr>
+<tr><td class="k">5</td><td>Watcher (escrow checking, auto-refunds) — needs your decision first</td><td>3–5 days after decision</td><td><span class="pill block">On hold</span></td></tr>
+<tr><td class="k">6</td><td>Team members inside trades (member escrow keys, Task 42)</td><td>1 week</td><td><span class="pill wait">Designed</span></td></tr>
+<tr><td class="k">7</td><td>Staff tools (Plan 4 Tasks 4–20): moderator queue, case view, rulings, appeals, staff pay, owner pages</td><td>2–2.5 weeks</td><td><span class="pill wait">Core done</span></td></tr>
+<tr><td class="k">8</td><td>Rest of reputation (profiles, badges, proof screens, image pipeline, end-to-end flows)</td><td>1.5 weeks</td><td><span class="pill wait">Half built</span></td></tr>
+<tr><td class="k">9</td><td>Privacy and public site (Plan 7): self-destruct, alerts incl. Jabber over Tor, notifications, FAQ, guides, download page, delete account</td><td>1.5–2 weeks</td><td><span class="pill wait">Part built</span></td></tr>
+<tr><td class="k">10</td><td>Design v2 restyle of every built screen</td><td>~1 week, alongside</td><td><span class="pill run">Boards ready</span></td></tr>
+<tr><td class="k">11</td><td>Hardening and launch prep (Plan 6): Tor onion, servers, encrypted backups, key vault, monitoring, reproducible build, Android/iOS apps</td><td>2.5–3 weeks</td><td><span class="pill wait">Planned</span></td></tr>
+<tr><td class="k">12</td><td>Full two-browser trades on regtest, stagenet run, load check, final security review</td><td>1 week</td><td><span class="pill wait">Planned</span></td></tr>
+</tbody></table></div>
+<p class="sub"><b>Overall:</b> with stages running in parallel, roughly <b>6–8 weeks</b> to launch-ready (mid to late December 2026), plus whatever time the lawyers and an outside audit need.</p>
+</section>
+
+<footer>States come from git against origin, review files and worker reports in ~/x2f-comms. Full handoff: LEAD-HANDOFF-2026-11-01-night.md.</footer>
+</main>

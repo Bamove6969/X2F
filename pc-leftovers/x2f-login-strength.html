@@ -1,0 +1,92 @@
+<title>X2F Login Strength</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--fg:#1d1f22;--mute:#5f6670;--line:#dedad0;--strong:#1f7a4d;--strong-bg:#e2f3e9;--weak:#a5560b;--weak-bg:#fbecd9;--rec:#9b2335;--rec-bg:#f8e1e4;--ask:#3a4fb0;--ask-bg:#e4e8fb;--no:#6b6f75;--no-bg:#ecebe7;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15171a;--card:#1d2024;--fg:#eceae4;--mute:#a1a7af;--line:#2f333a;--strong:#6fd3a0;--strong-bg:#173527;--weak:#f0b46a;--weak-bg:#3a2a14;--rec:#f08a9a;--rec-bg:#3d1c22;--ask:#9fb0ff;--ask-bg:#1f2547;--no:#a1a7af;--no-bg:#2a2d31;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#15171a;--card:#1d2024;--fg:#eceae4;--mute:#a1a7af;--line:#2f333a;--strong:#6fd3a0;--strong-bg:#173527;--weak:#f0b46a;--weak-bg:#3a2a14;--rec:#f08a9a;--rec-bg:#3d1c22;--ask:#9fb0ff;--ask-bg:#1f2547;--no:#a1a7af;--no-bg:#2a2d31;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding-block:28px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:28px}
+h1{font-size:28px;margin:0;text-wrap:balance}h2{font-size:19px;margin:0 0 10px;text-wrap:balance}
+.sub{color:var(--mute);margin:4px 0 0;max-width:68ch}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;min-width:0}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:13px;color:var(--mute)}
+.pill{display:inline-block;font:500 12px/1 "IBM Plex Mono",monospace;padding:6px 8px;border-radius:6px;white-space:nowrap;letter-spacing:.02em}
+.s{background:var(--strong-bg);color:var(--strong)}.w{background:var(--weak-bg);color:var(--weak)}.r{background:var(--rec-bg);color:var(--rec)}.q{background:var(--ask-bg);color:var(--ask)}.x{background:var(--no-bg);color:var(--no)}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:640px}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);font-weight:600}
+td.combo{font-weight:500}td.num{font:600 15px "IBM Plex Mono",monospace;color:var(--mute);width:2.5em}td small{display:block;color:var(--mute);font-weight:400}
+.k{font-family:"IBM Plex Mono",monospace;font-size:13px}
+ul{margin:6px 0 0;padding-left:20px}li{margin:4px 0}
+</style>
+<main>
+<header>
+<h1>Strong vs weak logins</h1>
+<p class="sub">How each way of logging into X2F counts today, and under your corrected 1 Nov rule: <b>username + password together are the first factor</b>, and a passkey, security key or PGP key is the second. Blue cells still need your answer.</p>
+</header>
+
+<div class="legend">
+<span><span class="pill s">STRONG</span> no wait; can change security at once</span>
+<span><span class="pill w">WEAK</span> can trade; security changes wait 24 h</span>
+<span><span class="pill r">RECOVERY</span> 24 h hold on everything, offers hidden</span>
+<span><span class="pill x">NOT ALLOWED</span> can't log in this way</span>
+<span><span class="pill q">MEDIUM / YOU DECIDE</span></span>
+</div>
+
+<section class="card">
+<h2>The chart, numbered</h2>
+<p class="sub">Your answers of 1 Nov, rows 1–13. "Signup message" is what the person sees when they pick that combination. Claude Design will write the final wording.</p>
+<div class="tw"><table>
+<thead><tr><th>#</th><th>Login with…</th><th>Strength</th><th>Signup message</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td class="combo">Username + password</td><td><span class="pill w">WEAK</span></td><td>Weak</td></tr>
+<tr><td class="num">2</td><td class="combo">Username + password + passkey</td><td><span class="pill s">STRONG</span></td><td>Strong</td></tr>
+<tr><td class="num">3</td><td class="combo">Username + password + security key</td><td><span class="pill s">STRONG</span></td><td>Strong</td></tr>
+<tr><td class="num">4</td><td class="combo">Username + password + PGP key</td><td><span class="pill s">STRONG</span></td><td>Strong</td></tr>
+<tr><td class="num">5</td><td class="combo">Username + password + authenticator app</td><td><span class="pill s">STRONG</span></td><td>Strong</td></tr>
+<tr><td class="num">6</td><td class="combo">Username + password + two or more of: passkey, security key, PGP, authenticator</td><td><span class="pill s">STRONG</span></td><td>Armored vault!</td></tr>
+<tr><td class="num">7</td><td class="combo">Username + passkey (no password)</td><td><span class="pill s">STRONG</span></td><td>Strong</td></tr>
+<tr><td class="num">8</td><td class="combo">Username + security key (no password)</td><td><span class="pill s">STRONG</span></td><td>Strong</td></tr>
+<tr><td class="num">9</td><td class="combo">Username + PGP key (no password)</td><td><span class="pill s">STRONG</span></td><td>Strong</td></tr>
+<tr><td class="num">10</td><td class="combo">Username + PGP + passkey or security key (no password)</td><td><span class="pill s">STRONG</span></td><td>Strong</td></tr>
+<tr><td class="num">11</td><td class="combo">Username + authenticator code only (no password)</td><td><span class="pill q">MEDIUM</span></td><td>Medium: we recommend adding at least a password or another option</td></tr>
+<tr><td class="num">12</td><td class="combo">Username only, no security method</td><td><span class="pill r">EXTREMELY WEAK</span></td><td>Extremely weak: are you sure? (still open with the lead)</td></tr>
+<tr><td class="num">13</td><td class="combo">Display name only, no username</td><td><span class="pill x">NOT ALLOWED</span></td><td>Not allowed: everyone sets a username and a display name</td></tr>
+</tbody></table></div>
+</section>
+
+<section class="card">
+<h2>Recovery code: not a login combination</h2>
+<p class="sub">Everyone should have one, whatever their security level. It's the way back in if every other method is compromised, so keep it somewhere none of your other methods are: buried in the back yard, written on paper inside a fake rock, or in separate online storage. The wording can be funny; Claude Design will help. Using it to log in starts the 24-hour recovery hold.</p>
+<p class="sub"><b>Required at signup.</b> The person ticks "I've written it down", then the next screen asks them to type it back to prove they did.</p>
+</section>
+
+<section class="card">
+<h2>The cookie-theft measures you sent</h2>
+<p class="sub">What X2F already has, what's missing, and my view on each.</p>
+<div class="tw"><table>
+<thead><tr><th>Measure</th><th>X2F today</th><th>Lead's view</th></tr></thead>
+<tbody>
+<tr><td class="combo">HttpOnly, Secure, SameSite cookies</td><td><span class="pill s">DONE</span></td><td>Every X2F cookie has all three, plus the stricter <span class="k">__Host-</span> prefix and SameSite=Strict.</td></tr>
+<tr><td class="combo">HTTPS + HSTS</td><td><span class="pill w">HTTPS YES, HSTS TO ADD</span></td><td>Cheap. I'll add the HSTS header at deploy. It's a technical fix.</td></tr>
+<tr><td class="combo">New session ID at login, short timeouts</td><td><span class="pill s">DONE</span></td><td>Each login makes a new session. Traders choose a 2–12 h idle logout (max 30 days in total). Staff get 2 h idle and 12 h in total.</td></tr>
+<tr><td class="combo">Device-bound sessions (DBSC)</td><td><span class="pill q">NOT YET</span></td><td><b>The real fix for item 47.</b> The browser holds a key that can't be copied, and the server checks it. A stolen cookie then doesn't work on the thief's computer. Chrome supports DBSC natively. For other browsers we can do the same ourselves with a key the browser keeps uncopyable. Suggest it as a new task before mainnet.</td></tr>
+<tr><td class="combo">IP / browser fingerprint checks</td><td><span class="pill x">NOT USED</span></td><td>Clashes with X2F's privacy promise and with Tor users, whose IP changes all the time. My recommendation: don't store IPs.</td></tr>
+<tr><td class="combo">WAF / CASB</td><td><span class="pill x">N/A</span></td><td>CASB is a tool for big companies watching their own staff, so it doesn't apply. A basic WAF can come with hosting later.</td></tr>
+</tbody></table></div>
+</section>
+
+<section class="card">
+<h2>Questions this page needs answered</h2>
+<ul>
+<li><b>Accounts with no password:</b> what is username + passkey (or security key)? Strong, weak, or must they set a password?</li>
+<li><b>Authenticator app as a second factor</b> (with username + password): strong?</li>
+<li><b>Authenticator code alone:</b> keep it as a weak backup login, or remove it?</li>
+<li><b>Item 47:</b> until device-bound sessions exist, should inviting a team member need a strong login? Lead recommends yes, then add device-bound sessions as a task.</li>
+<li><b>Device-bound sessions:</b> add them as a task before mainnet?</li>
+</ul>
+</section>
+</main>

@@ -1,0 +1,87 @@
+/home/flem/x2f                                    a779ef97 [compassionate-johnson-k95ssr]
+/home/flem/x2f-worktrees/lead-design-fold         e02c1e98 [wip/lead-design-fold]
+/home/flem/x2f-worktrees/lead-design-myoffers     15260559 [wip/lead-design-myoffers]
+/home/flem/x2f-worktrees/lead-design-results      83f32fac [wip/lead-design-results]
+/home/flem/x2f-worktrees/lead-design-shots        0d09d64b [wip/design-screens-2026-11-01]
+/home/flem/x2f-worktrees/lead-fix-intent          ddd9e013 [wip/lead-fix-intent]
+/home/flem/x2f-worktrees/lead-hold-v3             a8da2eac [wip/lead-hold-v3]
+/home/flem/x2f-worktrees/lead-land                16f37629 [wip/lead-land]
+/home/flem/x2f-worktrees/lead-land-feedback       fa5542b9 [wip/landing-p5-feedback]
+/home/flem/x2f-worktrees/lead-land-staff          221044b6 [wip/landing-p4-staff-core]
+/home/flem/x2f-worktrees/lead-land-t18b           98dbdc1b [lead-land-t18b]
+/home/flem/x2f-worktrees/lead-p2-t16              2a815228 [wip/lead-p2-task17]
+/home/flem/x2f-worktrees/lead-p2-t18              0765d184 [wip/lead-p2-task18]
+/home/flem/x2f-worktrees/lead-p4-staff-fix        bfe1d9e4 (detached HEAD)
+/home/flem/x2f-worktrees/lead-p7-retention        c06d549d [wip/lead-p7-retention]
+/home/flem/x2f-worktrees/lead-recovery-rules      03114fa3 [wip/lead-p2-recovery-rules]
+/home/flem/x2f-worktrees/lead-sessions            eb8b6f4d [wip/lead-sessions]
+/home/flem/x2f-worktrees/lead-sonar-fixes         db8472a1 [wip/lead-sonar-fixes]
+/home/flem/x2f-worktrees/lead-t20fix              23c81044 (detached HEAD)
+/home/flem/x2f-worktrees/lead-t29                 6eafc77f [wip/t3-p3-task29]
+/home/flem/x2f-worktrees/lead-task42-design       827c03cb [wip/lead-docs-task42-design]
+/home/flem/x2f-worktrees/lead-vendor              0930fa19 [wip/lead-vendor]
+/home/flem/x2f-worktrees/p3-task28                651d84a6 [wip/t3-p3-task28]
+/home/flem/x2f-worktrees/review-c2-all            e01754a4 (detached HEAD)
+/home/flem/x2f-worktrees/review-c2-cap            83f814fd (detached HEAD)
+/home/flem/x2f-worktrees/review-c2-login          3e9a906d (detached HEAD)
+/home/flem/x2f-worktrees/review-c2-sel            22a36ebc (detached HEAD)
+/home/flem/x2f-worktrees/review-c3-feedback       04a45156 (detached HEAD)
+/home/flem/x2f-worktrees/review-c3-reviews        8cb4ea2c (detached HEAD)
+/home/flem/x2f-worktrees/review-devices-design    9f23e559 (detached HEAD)
+/home/flem/x2f-worktrees/review-fold-design       a0552eeb (detached HEAD)
+/home/flem/x2f-worktrees/review-myoffers-design   e5ac0176 (detached HEAD)
+/home/flem/x2f-worktrees/review-p5-task10         8ddbd4de (detached HEAD)
+/home/flem/x2f-worktrees/review-p5-task8          d85f859a (detached HEAD)
+/home/flem/x2f-worktrees/review-results-design    8e29b9f9 (detached HEAD)
+/home/flem/x2f-worktrees/review-third-c11         f068665b (detached HEAD)
+/home/flem/x2f-worktrees/rv-fold2                 e02c1e98 (detached HEAD)
+/home/flem/x2f-worktrees/rv-fold2b                e02c1e98 (detached HEAD)
+/home/flem/x2f-worktrees/rv-formlimit             5fee6823 (detached HEAD)
+/home/flem/x2f-worktrees/rv-p4                    ddb56891 (detached HEAD)
+/home/flem/x2f-worktrees/rv-pastrep               315142b9 (detached HEAD)
+/home/flem/x2f-worktrees/rv-proof                 1e54d3f5 (detached HEAD)
+/home/flem/x2f-worktrees/rv-staff2                21d17548 (detached HEAD)
+/home/flem/x2f-worktrees/rv-t16                   21061899 (detached HEAD)
+/home/flem/x2f-worktrees/second-api-cap           286c6654 [wip/second-api-cap-dispute]
+/home/flem/x2f-worktrees/second-design-devices    4e65c4ce [wip/second-design-devices]
+/home/flem/x2f-worktrees/second-design-la-v2      3e9a906d [wip/second-design-loginapprove-v2]
+/home/flem/x2f-worktrees/second-design-offers-v2  8252e887 [wip/second-design-offers-v2]
+/home/flem/x2f-worktrees/second-design-selection  67336d49 [wip/second-design-selection]
+/home/flem/x2f-worktrees/second-docs1030          e286489b [wip/second-docs-1030-answers]
+/home/flem/x2f-worktrees/second-flake             30b17943 [wip/second-fix-myoffers-flake]
+/home/flem/x2f-worktrees/second-fud               0c2f6799 [wip/second-p2-fud]
+/home/flem/x2f-worktrees/second-land-t18          fd894b62 [wip/landing-p2-task18]
+/home/flem/x2f-worktrees/second-price-feeds       f1dea13d [wip/second-price-feeds]
+/home/flem/x2f-worktrees/second-t10               305124b7 [wip/second-p3-task10]
+/home/flem/x2f-worktrees/second-t20rest           5902d944 [wip/second-p3-task20-rest]
+/home/flem/x2f-worktrees/second-t24               6b602978 [wip/lead-p3-task24]
+/home/flem/x2f-worktrees/second-t27               ef50dfa9 [wip/lead-p3-task27]
+/home/flem/x2f-worktrees/second-t34               c2d1006c [wip/second-p3-task34]
+/home/flem/x2f-worktrees/second-t34-web           499a78ba [wip/second-p3-task34-web]
+/home/flem/x2f-worktrees/second-t9io              7346fc00 [wip/second-p3-task9-io]
+/home/flem/x2f-worktrees/second-t9view            99ba09fc [w2-t9view]
+/home/flem/x2f-worktrees/third-design-a           aacb2fd2 [wip/third-design-fixes-a]
+/home/flem/x2f-worktrees/third-feedback-land      04a45156 (detached HEAD)
+/home/flem/x2f-worktrees/third-flake              ae3a8772 [wip/third-fix-attestation-flake]
+/home/flem/x2f-worktrees/third-form-limit         5fee6823 [wip/third-feedback-form-limit]
+/home/flem/x2f-worktrees/third-p4-staff           d6b29498 [wip/third-p4-staff-core]
+/home/flem/x2f-worktrees/third-p4-task10          3d678a33 [wip/third-p4-task10]
+/home/flem/x2f-worktrees/third-p4-task11          e2169670 [wip/third-p4-task11]
+/home/flem/x2f-worktrees/third-p4-task15          b1d7e425 [wip/third-p4-task15]
+/home/flem/x2f-worktrees/third-p4-task16          f7c178e4 [wip/third-p4-task16]
+/home/flem/x2f-worktrees/third-p4-task4           ddb56891 [wip/third-p4-task4]
+/home/flem/x2f-worktrees/third-p4-task5           896b8e47 [wip/third-p4-task5]
+/home/flem/x2f-worktrees/third-p4-task6           6d23e637 [wip/third-p4-task6]
+/home/flem/x2f-worktrees/third-p4-task7           1d1c65e9 [wip/third-p4-task7]
+/home/flem/x2f-worktrees/third-p4-task8           ac472caf [wip/third-p4-task8]
+/home/flem/x2f-worktrees/third-p5-check           1e54d3f5 [wip/third-p5-smart-check]
+/home/flem/x2f-worktrees/third-p5-envelope        e49c62a1 [wip/third-p5-proof-envelope]
+/home/flem/x2f-worktrees/third-p5-feedback        b01186c6 [wip/third-p5-feedback]
+/home/flem/x2f-worktrees/third-p5-pastrep         4a687f94 [wip/third-p5-past-rep]
+/home/flem/x2f-worktrees/third-p5-proof           4d39fc76 [wip/third-p5-proof-core]
+/home/flem/x2f-worktrees/third-p5-rep             67122fc2 [wip/third-p5-reputation-core]
+/home/flem/x2f-worktrees/third-p5-reviews         a7a38fdf [wip/third-p5-reviews-api]
+/home/flem/x2f-worktrees/third-proof-popups       f2cce854 [wip/third-p5-proof-popups]
+/home/flem/x2f-worktrees/third-staff-split        2e11f616 [wip/third-p4-staff-trader-split]
+/home/flem/x2f-worktrees/third-t20rest            e614c213 [third-t20rest-local]
+/home/flem/x2f-worktrees/third-traded-pastrep     315142b9 [wip/third-p5-traded-pastrep]
