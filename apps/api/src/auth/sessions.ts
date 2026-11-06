@@ -29,13 +29,30 @@ export const STAFF_REALM: SessionRealm = { cookie: STAFF_SESSION_COOKIE, app: 's
 
 /**
  * The account kinds the trader API's login mounts serve (`/v1/login/webauthn`, `/v1/login/pgp`).
- * Owner 2026-11-03 (Q19): staff have two separate logins, an ordinary trader account for trading and
- * the staff account, which logs in only on the staff API (`staffLoginRoutes`). A staff account is
- * not served here, so it gets the same decoy answers as a name or key that does not exist. Team
- * members are vendor-side and stay. OWNER-Q: the owner is still served here (the owner's
- * price-health page lives on the trader API) until the owner decides otherwise.
+ * Staff are served so their credential is checked like anyone's; `traderSiteLoginCheck` then
+ * refuses them. Owner 2026-11-03 (Q19): staff have two separate logins, an ordinary trader account
+ * for trading and the staff account, which logs in only on the staff API (`staffLoginRoutes`).
  */
-export const TRADER_LOGIN_KINDS: readonly AccountKind[] = ['trader', 'owner', 'member'];
+export const TRADER_LOGIN_KINDS: readonly AccountKind[] = ['trader', 'staff', 'owner', 'member'];
+
+/**
+ * The kinds the trader API refuses at login (Q19): staff only. OWNER-Q 19a: the owner still logs in
+ * on the trader API (the price-health page lives there) until the owner decides otherwise.
+ */
+export const STAFF_SITE_ONLY_KINDS: readonly AccountKind[] = ['staff'];
+
+/**
+ * The trader API's `afterAuthenticate` for its login mounts (Q19). It runs only after the key or
+ * the PGP code verified (`completeLogin`), so someone without the credential gets Plan 2's ordinary
+ * refusal and cannot learn that a name or key is a staff account's. A staff account (any step,
+ * first or second): 403 `wrong-account-kind`, before any pending login or session is made.
+ */
+export function traderSiteLoginCheck(db: Queryable): (accountId: string) => Promise<void> {
+  return async (accountId) => {
+    const { rows } = await db.query<{ kind: AccountKind }>('select kind from accounts where id = $1', [accountId]);
+    if (rows[0] && STAFF_SITE_ONLY_KINDS.includes(rows[0].kind)) throw new ApiError(403, 'wrong-account-kind');
+  };
+}
 
 /** The realm the request's app decorated (`buildApi`: trader; `buildStaffApi`: staff). */
 export function realmOf(req: FastifyRequest): SessionRealm {

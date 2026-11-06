@@ -32,7 +32,7 @@ import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
 import { requestOrigin } from './origin.js';
 import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
-import { TRADER_LOGIN_KINDS, requireSession, startSession } from './sessions.js';
+import { TRADER_LOGIN_KINDS, requireSession, startSession, traderSiteLoginCheck } from './sessions.js';
 import { NIL_UUID } from './throttle.js';
 
 // ---------------------------------------------------------------------------------------------
@@ -527,8 +527,8 @@ export interface PgpLoginOptions {
 
 /**
  * Registers `POST start` and `POST finish` for PGP login under the plugin's prefix. `buildApi`
- * mounts it at `/v1/login/pgp` for `TRADER_LOGIN_KINDS` (no staff); Plan 4 mounts it on the staff
- * app. `start` takes `{ key, pendingId? }`: `key` is the person's whole armored public key
+ * mounts it at `/v1/login/pgp` for `TRADER_LOGIN_KINDS` with `traderSiteLoginCheck` (staff refused
+ * once verified, Q19); Plan 4 mounts it on the staff app. `start` takes `{ key, pendingId? }`: `key` is the person's whole armored public key
  * (`loginStart`). A key whose account's kind is not in `kinds` is treated as an unknown key
  * (decoy). Both finish through `completeLogin`.
  */
@@ -863,7 +863,7 @@ export async function applyPgpKey(db: Queryable, accountId: string, fingerprint:
 
 /**
  * Every PGP route: `GET /v1/pgp/signing-key`, register, login (mounted at `/v1/login/pgp` for
- * `TRADER_LOGIN_KINDS`: never staff, owner 2026-11-03), confirm, and adding a key to the account.
+ * `TRADER_LOGIN_KINDS`, staff refused by `traderSiteLoginCheck`, owner 2026-11-03), confirm, and adding a key to the account.
  */
 export async function pgpRoutes(app: FastifyInstance): Promise<void> {
   app.get('/v1/pgp/signing-key', async (req) => ({
@@ -874,7 +874,7 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/register/pgp/start', { bodyLimit: PGP_BODY_LIMIT }, registerStart);
   app.post('/v1/register/pgp/finish', registerFinish);
 
-  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...TRADER_LOGIN_KINDS] }), { prefix: '/v1/login/pgp' });
+  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...TRADER_LOGIN_KINDS], afterAuthenticate: traderSiteLoginCheck(app.deps.db) }), { prefix: '/v1/login/pgp' });
 
   app.post('/v1/confirm/pgp/start', { preHandler: requireSession() }, confirmStart);
   app.post('/v1/confirm/pgp/finish', { preHandler: requireSession() }, confirmFinish);

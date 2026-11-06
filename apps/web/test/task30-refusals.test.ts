@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
-import { KEY_EXPIRED, KEY_REVOKED, LOGIN_NAME_SET, SECURITY_KEY_LIMIT, STEP_EXPIRED, holdSentence, isExpired, localTime, refusalText, waitSentence } from '../src/screens/auth/refusals.js';
+import { KEY_EXPIRED, KEY_REVOKED, LOGIN_NAME_SET, SECURITY_KEY_LIMIT, STAFF_SITE_ONLY, STEP_EXPIRED, holdSentence, isExpired, localTime, refusalText, waitSentence } from '../src/screens/auth/refusals.js';
 
 const NOW = new Date('2026-10-26T15:00:00Z');
 const FALLBACK = 'Could not do that. Try again.';
@@ -76,5 +76,13 @@ describe('isOnlyLogin (item 7: refused before any confirm)', () => {
     expect(isOnlyLogin(e('passkey'), [e('passkey'), e('password')])).toBe(false);
     expect(isOnlyLogin(e('totp'), [e('passkey'), e('totp')])).toBe(false);
     expect(isOnlyLogin(e('pgp', 'a'), [e('pgp', 'a'), e('pgp', 'b')])).toBe(false);
+  });
+});
+
+describe('a staff account on the trader site (owner 2026-11-03, Q19)', () => {
+  it('a login step words 403 wrong-account-kind as the staff site; elsewhere it keeps the fallback', () => {
+    const e = new AuthApiError(403, 'wrong-account-kind');
+    expect(refusalText(e, FALLBACK, { login: true })).toBe(STAFF_SITE_ONLY);
+    expect(refusalText(e, FALLBACK)).toBe(FALLBACK);
   });
 });

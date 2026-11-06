@@ -343,14 +343,15 @@ describe('a flood of bad passwords against a two-factor username (Review Focus 2
     ]);
   });
 
-  it('staff: the trader site answers a staff username as an unknown one (password, security key, PGP)', async () => {
+  it('staff: the trader site refuses a staff account with 403 wrong-account-kind once its key verifies (password: as unknown)', async () => {
     const { username, soft, key } = await staffWithKeyAndPgp(srv);
     const browser: AuthApi = jar().api;
+    // Staff have no password: answered as for any wrong password.
     expect(apiError(await failure(browser.loginPassword({ loginName: username, password: WRONG, deviceLabel: LABEL }))).code).toBe('credentials-invalid');
-    expect(apiError(await failure(loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft))))).toMatchObject({ status: 401, code: 'webauthn-failed' });
+    expect(apiError(await failure(loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft))))).toMatchObject({ status: 403, code: 'wrong-account-kind' });
     const start = await browser.loginPgpStart({ key: key.publicKey });
     expect(apiError(await failure(browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL }))))
-      .toMatchObject({ status: 401, code: 'code-invalid' });
+      .toMatchObject({ status: 403, code: 'wrong-account-kind' });
     await expect(browser.listMethods()).rejects.toMatchObject({ status: 401 });
   });
 });

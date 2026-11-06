@@ -170,7 +170,7 @@ function SecondStepKey({ kind, primary, pendingId, onLoggedIn, onWait, onCantDo 
       // not-a-refusal: an account state this screen cannot handle; staff support helps
       else setError('This account needs another step that this screen cannot do. Ask X2F staff support.');
     } catch (e) {
-      if (!onCantDo(e)) setError(refusalText(e, `That ${name} did not work. Try again.`, { expired: 'That login step has expired. Choose another way and start again.' }));
+      if (!onCantDo(e)) setError(refusalText(e, `That ${name} did not work. Try again.`, { expired: 'That login step has expired. Choose another way and start again.', login: true }));
     } finally {
       setBusy(false);
     }
@@ -224,7 +224,7 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first }: Go & { pen
       setError(
         isExpired(e)
           ? 'That message has expired. Send a new message and try again.'
-          : refusalText(e, 'That code did not work. It may have expired: send a new message and try again.'),
+          : refusalText(e, 'That code did not work. It may have expired: send a new message and try again.', { login: true }),
       );
     } finally {
       setBusy(false);
@@ -345,7 +345,7 @@ function SecurityKeyLogin({ onLoggedIn, onWait, onCantDo }: Go) {
       // Staff and the owner: the second step is whatever the server needs (often PGP), never the same key again.
       else setPending({ pendingId: result.pendingId, needs: result.needs });
     } catch (e) {
-      if (!onCantDo(e)) setError(refusalText(e, 'That security key did not work. Try again, or use another way in.'));
+      if (!onCantDo(e)) setError(refusalText(e, 'That security key did not work. Try again, or use another way in.', { login: true }));
     } finally {
       setBusy(false);
     }

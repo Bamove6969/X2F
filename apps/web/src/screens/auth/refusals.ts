@@ -118,10 +118,21 @@ export function isExpired(e: unknown): boolean {
   return refusalOf(e)?.code === 'challenge-expired';
 }
 
-/** The sentence for a refusal the person can act on, else `fallback`. */
-export function refusalText(e: unknown, fallback: string, o: { expired?: string; now?: Date } = {}): string {
+/**
+ * 403 `wrong-account-kind` at a login step (owner 2026-11-03, Q19): a staff account logs in only on
+ * the staff site; a staff person who trades has a separate trader account. The API answers it only
+ * after the key or code verified. COPY-UNSIGNED
+ */
+export const STAFF_SITE_ONLY = 'This is a staff account. Staff accounts log in on the staff site. To trade, log in with your own trader account.';
+
+/**
+ * The sentence for a refusal the person can act on, else `fallback`. `login`: the caller is a login
+ * step, where 403 `wrong-account-kind` means a staff account on the trader site (`STAFF_SITE_ONLY`).
+ */
+export function refusalText(e: unknown, fallback: string, o: { expired?: string; now?: Date; login?: boolean } = {}): string {
   const r = refusalOf(e);
   if (r === null) return fallback;
+  if (o.login === true && r.code === 'wrong-account-kind') return STAFF_SITE_ONLY;
   // cant-do-that-todo: shown inline by every security screen through refusalText
   if (r.code === 'recovery-hold') return holdSentence(r.holdUntil);
   if (r.status === 429) return waitSentence(r.retryAfterSeconds, o.now);
