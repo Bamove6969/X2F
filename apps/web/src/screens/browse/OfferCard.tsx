@@ -226,13 +226,8 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
           ) : null}
         </div>
         <span className="x2f-offer__limits">
-          {range}
-          {time === null ? null : (
-            <>
-              <br />
-              {time}
-            </>
-          )}
+          <span className="x2f-offer__range">{range}</span>
+          {time === null ? null : <span>{time}</span>}
         </span>
       </div>
       {action}
