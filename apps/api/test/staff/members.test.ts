@@ -1,9 +1,13 @@
 // Plan 4 Task 7: staff management (members, invites, switch off and on, hours, roles, removal).
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { keyCheckCode, type LoginHours } from '@x2f/staff';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { startDispute } from '../../src/disputes/store.js';
 import { verifyLogChain } from '../../src/log/verify.js';
+import { applyEvent } from '../../src/trades/store.js';
+import { seedAccount } from '../helpers/accounts.js';
+import { driveTo, seedTrade } from '../helpers/trades.js';
 import { codeOf, decrypt, genKey, type Pair } from '../helpers/pgpKeys.js';
 import type { SoftAuthenticator } from '../helpers/softAuthenticator.js';
 import { STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedStaff } from '../helpers/staffApp.js';
@@ -321,17 +325,57 @@ describe('members', () => {
   });
 });
 
+describe('open cases (Task 11: disputes.assignee)', () => {
+  let n = 0;
+  /** A disputed trade whose current dispute is assigned to `assignee`, in `status`. */
+  async function caseFor(assignee: string, status: 'open' | 'appealed' | 'closed' = 'open'): Promise<string> {
+    const seller = await seedAccount(t.deps, { loginName: `cs${++n}${Date.now().toString(36)}` });
+    const buyer = await seedAccount(t.deps, { loginName: `cb${n}${Date.now().toString(36)}` });
+    const { trade } = await seedTrade(t.deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
+    await driveTo(t.deps, trade, 'secured');
+    await applyEvent(t.deps, trade.code, { type: 'open-dispute' }, 'buyer', async (client, prev, _next, now) => {
+      await startDispute(client, prev, { openedBy: 'buyer', reason: 'paid', note: '', afterRefund: false, now, prices: null });
+    });
+    await t.deps.db.query(
+      `update disputes set assignee = $2, status = $3, closed_at = case when $3 = 'closed' then opened_at end where code = $1`,
+      [trade.code, assignee, status],
+    );
+    return trade.code;
+  }
+
+  it('the list counts each member\'s open cases; switch-off and removal unassign them, logged by the system', async () => {
+    const mod = await staffWithKeys(t, { role: 'mod' });
+    const other = await staffWithKeys(t, { role: 'mod' });
+    const open1 = await caseFor(mod.id);
+    const open2 = await caseFor(mod.id, 'appealed');
+    const closed = await caseFor(mod.id, 'closed');
+    const theirs = await caseFor(other.id);
+    const count = async (id: string) =>
+      ((await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string; openCases: number }>).find((r) => r.accountId === id)!.openCases;
+    expect(await count(mod.id)).toBe(2);
+    expect(await count(other.id)).toBe(1);
+
+    expect((await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {})).statusCode).toBe(200);
+    const assignee = async (code: string) => (await t.deps.db.query<{ a: string | null }>('select assignee::text as a from disputes where code = $1', [code])).rows[0]!.a;
+    expect([await assignee(open1), await assignee(open2), await assignee(closed), await assignee(theirs)]).toEqual([null, null, mod.id, other.id]);
+    expect(await count(mod.id)).toBe(0);
+    // One system entry per case, naming the member (never the owner: R37 counts staff entries).
+    const { rows } = await t.deps.db.query<{ trade_code: string; actor_kind: string; detail: string }>(
+      `select trade_code, actor_kind, detail from activity_log where action = 'dispute.unassigned' and trade_code = any($1) order by id`,
+      [[open1, open2, closed, theirs]],
+    );
+    expect(rows.map((r) => r.trade_code).sort()).toEqual([open1, open2].sort());
+    expect(rows.every((r) => r.actor_kind === 'system' && r.detail === JSON.stringify({ staffId: mod.id }))).toBe(true);
+    expect(await verifyLogChain(t.deps.db)).toMatchObject({ ok: true });
+
+    // Removing a member who is still on, too.
+    expect((await owner.browser.send('DELETE', `/staff/v1/members/${other.id}`)).statusCode).toBe(204);
+    expect(await assignee(theirs)).toBeNull();
+  });
+});
+
 describe('Task 7 tripwires (local tree only)', () => {
   const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
-  const migrations = (): string => readdirSync(`${ROOT}apps/api/migrations`).map((f) => readFileSync(`${ROOT}apps/api/migrations/${f}`, 'utf8')).join('\n');
-
-  it('NEEDS_P4_CASE_ASSIGNEE: switch-off unassigns open cases and the list counts them', () => {
-    // When Tasks 10-12 add `disputes.assignee` (coordination "Columns on disputes"): in
-    // staff/members.ts make `unassignOpenCases` clear it for the switched-off member (one
-    // `dispute.assigned`-style log entry per case) and make `openCases` count them; test both.
-    expect(/\bassignee\b/.test(migrations()), 'disputes.assignee landed: wire unassignOpenCases and openCases (see this test)').toBe(false);
-  });
-
   it('NEEDS_P4_MODERATION_REVOKE: switch-off tells the moderation process', () => {
     // When Task 13's gate lands (apps/moderation/src/gate): give ModerationClient a revoke call and
     // make `switchOff` call it after the commit (revocation needs no signature).

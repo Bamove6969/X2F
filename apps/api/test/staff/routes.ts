@@ -67,4 +67,14 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Plan 5 Tasks 4 and 21: platform feedback and the feedback form, read by the owner.
   { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read' },
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read' },
+  // Plan 4 Task 11: the moderator's queue and case (a sample uuid is no trade code: 404 past the guard).
+  { method: 'GET', url: '/staff/v1/disputes', perm: 'disputes.handle' },
+  { method: 'POST', url: '/staff/v1/disputes/next', perm: 'disputes.handle', body: {} },
+  { method: 'POST', url: '/staff/v1/disputes/:code/take', perm: 'disputes.handle', body: {} },
+  { method: 'GET', url: '/staff/v1/disputes/:code', perm: 'disputes.handle' },
+  { method: 'POST', url: '/staff/v1/disputes/:code/chat', perm: 'disputes.handle', body: {} },
+  { method: 'POST', url: '/staff/v1/disputes/:code/messages', perm: 'disputes.handle', body: { text: 'Hello' } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/proof-request', perm: 'disputes.handle', body: { side: 'buyer' } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/proof', perm: 'disputes.handle', body: {} },
+  { method: 'POST', url: '/staff/v1/disputes/:code/freeze', perm: 'disputes.handle', body: { side: 'seller', on: true, reason: 'no-reply' } },
 ];
