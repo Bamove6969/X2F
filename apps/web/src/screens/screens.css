@@ -66,8 +66,8 @@
 }
 
 .x2f-input:focus-visible {
-  outline: 2px solid var(--x2f-monero-ink);
-  outline-offset: 1px;
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
 }
 
 .x2f-textarea {
@@ -127,7 +127,6 @@
   width: 24px;
   height: 24px;
   margin: 0;
-  accent-color: var(--x2f-monero);
 }
 
 .x2f-error {
@@ -205,8 +204,9 @@
 }
 
 .x2f-segmented__on {
-  border-color: var(--x2f-monero-ink);
-  color: var(--x2f-monero-ink);
+  border: 2px solid var(--x2f-ink);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
 }
 
 .x2f-codes {
