@@ -1676,9 +1676,11 @@
   font-weight: 600;
 }
 
-.x2f-panel > .x2f-button,
-.x2f-panel > a.x2f-button,
-.x2f-panel > .x2f-chip {
+/* In the trade room's panels (BuyerPaidWaiting, Refunded) a button or chip keeps its own width.
+   Scoped to .x2f-pay: other screens' panels (Devices' "Log out all" buttons) span the panel. */
+.x2f-pay .x2f-panel > .x2f-button,
+.x2f-pay .x2f-panel > a.x2f-button,
+.x2f-pay .x2f-panel > .x2f-chip {
   align-self: flex-start;
 }
 

@@ -934,7 +934,8 @@ test('61-63 CantDoThat on PostOffer, the feedback form, the thank-you', async ({
   await expect(page.getByRole('heading', { level: 1, name: 'Tell us what you think' })).toBeVisible();
   await page.getByRole('radio', { name: 'Complaint' }).check();
   await page.getByLabel('Your message').fill('A hold should say how long it lasts.');
-  await shot(page, '62-feedback-form');
+  // Full page: FlowScreen's footer is not pinned, so Send sits below a 915 px screen.
+  await shot(page, '62-feedback-form', { fullPage: true });
   await page.getByRole('button', { name: 'Send' }).click();
   await expect(page.locator('[data-part="feedback-thanks"]')).toBeVisible();
   await shot(page, '63-feedback-thanks');

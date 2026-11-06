@@ -400,6 +400,16 @@ for (const viewport of PHONE_VIEWPORTS) {
     await expect(page.getByRole('button', { name: 'Log out desk_ana on Safari on macOS' })).toBeVisible();
     await expectPhoneLayout(page);
     await expectAtLeast44(page, '[aria-label="Back to settings"], [role="switch"], [data-part="end-session"], [data-part="end-others"], [data-part="end-team"]');
+    // The two "Log out all" buttons span their panel (Devices board), whatever other screens' panels do.
+    for (const part of ['end-others', 'end-team']) {
+      const gap = await page.locator(`[data-part="${part}"]`).evaluate((b) => {
+        const p = b.parentElement!;
+        const cs = getComputedStyle(p);
+        const inner = p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        return Math.abs(inner - b.getBoundingClientRect().width);
+      });
+      expect(gap, part).toBeLessThan(1);
+    }
     // The back control is the first thing a keyboard reaches.
     await page.keyboard.press('Tab');
     await expect(page.locator(':focus')).toHaveAttribute('aria-label', 'Back to settings');
