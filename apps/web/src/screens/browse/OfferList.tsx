@@ -85,7 +85,7 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge, pick }: Off
           </Link>
           <div className="x2f-browse__head-text">
             {/* Never the method id from the URL: until the API names the method, the bare title. */}
-            <span className="x2f-browse__head-title">{row ? copy.offersTitle(row.name) : copy.offersTitleBare}</span>
+            <span className="x2f-browse__head-title x2f-screen-title">{row ? copy.offersTitle(row.name) : copy.offersTitleBare}</span>
             {row ? <span className="x2f-browse__head-sub">{copy.offersCount(row.offers, currency)}</span> : null}
           </div>
         </div>

@@ -7,6 +7,7 @@ import { BlockAction } from '../settings/BlockAction.js';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { Icon } from '../../ui/icons.js';
+import { Notice } from '../../ui/Notice.js';
 import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
 import type { ConfirmedTrade } from './confirmed.js';
 import { STAGE_NAMES, amountText, currencySign, fiatWhole, formatMinor, quote, quoteExponent, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
@@ -267,7 +268,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
           </Link>
         )}
         <div className="x2f-quote__head-text">
-          <span className="x2f-quote__title">{copy.title(posterName)}</span>
+          <span className="x2f-quote__title x2f-screen-title">{copy.title(posterName)}</span>
           <span className="x2f-quote__muted-sm">
             {methodName} · {o.currency}
             {rate ? ` · ${perXmr(rate.centsPerXmr, o.currency, exponent)}` : ''}
@@ -279,6 +280,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
           aria-disabled, not disabled, so it stays focusable and reads its hint; a tap shows the hint.
         */}
         <button type="button" className="x2f-quote__chat" aria-disabled="true" aria-describedby="quote-chat-hint" onClick={() => keep({ chatHint: true })}>
+          <Icon name="chat" size={18} stroke={1.75} />
           Chat
         </button>
       </header>
@@ -331,7 +333,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
 
         <section aria-label="What you get" className="x2f-quote__card">
           <div className="x2f-quote__figure">
-            <span className="x2f-quote__label">{copy.headline}</span>
+            <span className="x2f-section-title">{copy.headline}</span>
             <span className="x2f-quote__xmr">
               {xmrText(ok ? copy.headlineXmr(ok) : 0n)} <span className="x2f-quote__xmr-unit">XMR</span>
             </span>
@@ -367,7 +369,9 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             ) : null}
           </div>
         </section>
-        <p className="x2f-quote__fine">{copy.footnote(poster)}</p>
+        <Notice tone="info">
+          {copy.footnote(poster)}
+        </Notice>
         {signedIn === true && myName !== null && myName !== poster ? (
           <BlockAction displayName={poster} onBlocked={() => keep({ blockedPoster: true })} />
         ) : null}
