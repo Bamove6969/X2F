@@ -652,3 +652,11 @@ main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
   padding: 3px 8px;
   line-height: 16px;
 }
+
+/* In the trade room's panels (BuyerPaidWaiting, Refunded) a button or chip keeps its own width.
+   Here, not in ui.css: other screens' panels (Devices' "Log out all" buttons) span the panel. */
+.x2f-pay .x2f-panel > .x2f-button,
+.x2f-pay .x2f-panel > a.x2f-button,
+.x2f-pay .x2f-panel > .x2f-chip {
+  align-self: flex-start;
+}

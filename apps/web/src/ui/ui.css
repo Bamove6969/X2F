@@ -1676,14 +1676,6 @@
   font-weight: 600;
 }
 
-/* In the trade room's panels (BuyerPaidWaiting, Refunded) a button or chip keeps its own width.
-   Scoped to .x2f-pay: other screens' panels (Devices' "Log out all" buttons) span the panel. */
-.x2f-pay .x2f-panel > .x2f-button,
-.x2f-pay .x2f-panel > a.x2f-button,
-.x2f-pay .x2f-panel > .x2f-chip {
-  align-self: flex-start;
-}
-
 /* Facts in rows (ui/Facts.tsx layout="rows"; Refunded, BuyerPaidWaiting): the key muted on the
    left, the value mono on the right, no box of its own. The stacked layout is the base rule. */
 .x2f-facts[data-layout='rows'] {
