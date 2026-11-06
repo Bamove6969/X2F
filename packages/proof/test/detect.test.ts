@@ -1066,7 +1066,9 @@ describe('review RV4-M3: name labels', () => {
 
   it('(b) `para` is a label only with a colon (it is the commonest Spanish and Portuguese preposition)', () => {
     expect(maskedTexts(ocr('Para su seguridad no comparta K7M2-9QXA-4FTR-8WPN'))).toEqual([]);
-    expect(maskedTexts(ocr('Enviado para revisão'))).toEqual([]);
+    expect(maskedTexts(ocr('Para sua segurança, não compartilhe'))).toEqual([]);
+    // `enviado para` ("sent to") stays a full label.
+    expect(maskedTexts(ocr('Enviado para Ana Souza'))).toEqual(['Ana', 'Souza']);
     expect(maskedTexts(ocr('Para: Juan Pérez'))).toEqual(['Juan', 'Pérez']);
     expect(maskedTexts(ocr('Transferencia Para: Juan Pérez'))).toEqual(['Juan', 'Pérez']);
   });

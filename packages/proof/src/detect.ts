@@ -650,20 +650,22 @@ function markDatesAndCode(text: string, k: boolean[], codeRe: RegExp): void {
 /**
  * Per character of a normalised line: whether it is part of the trade amount.
  *
- * A bare whole number (no currency marker, no decimals; kept for an amount label or owner Q17) is
- * kept only when it is not part of a longer detected number. THE BINDING RULE (review RV4-I1): the
- * amount staying clear never exposes a card, phone, IBAN or account number. Detection runs first
- * without the bare candidates kept; a candidate inside a detected span that holds any other digit
+ * A whole number (no decimals; kept for a currency marker, an amount label or owner Q17) is kept
+ * only when it is not part of a longer detected number. THE BINDING RULE (review RV4-I1): the amount
+ * staying clear never exposes a card, phone, IBAN or account number. Detection runs first without
+ * these candidates kept; a candidate inside a detected span that holds any other digit
  * is that number's group (`4111 - 1111 - 1111 - 1111`, `555 / 201 / 3344`, `06. 12. 34. 56. 78`), so
- * it is masked with the rest. An amount with a marker or decimals is always kept.
+ * it is masked with the rest. A whole amount with a currency marker is checked the same way (a
+ * marker can sit between a group and the real amount: in `… 1111 - 1111 $1,111.00` the `$` is also
+ * read as a marker after the last group). An amount with decimals is always kept.
  */
 function amountKept(text: string, keep: Keep, codeRe: RegExp): boolean[] {
   const k: boolean[] = new Array<boolean>(text.length).fill(false);
   const bare: Array<[number, number]> = [];
   for (const a of findAmounts(text, keep.exponent)) {
     if (a.value !== keep.fiatCents) continue;
-    if (a.marker !== null || a.decimals) mark(k, a.start, a.end);
-    else if (AMOUNT_LABEL.test(text.slice(0, a.start)) || standsAlone(text, a.start, a.end)) bare.push([a.start, a.end]);
+    if (a.decimals) mark(k, a.start, a.end);
+    else if (a.marker !== null || AMOUNT_LABEL.test(text.slice(0, a.start)) || standsAlone(text, a.start, a.end)) bare.push([a.start, a.end]);
   }
   const unit = 10n ** BigInt(keep.exponent);
   if (keep.fiatCents % unit === 0n) {
