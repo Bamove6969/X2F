@@ -40,9 +40,16 @@ export interface OfferListProps {
   onTrade?: (offer: Offer) => void;
   onMessage?: (offer: Offer) => void;
   onNudge?: (offer: Offer) => void;
+  /**
+   * Two panes (Fold-Offers): the offers are rows that pick the quote the next pane shows, and the
+   * list has no orange Trade (the quote has the one). `id` is the offer picked (null: none yet);
+   * `onFirst` hears which offer the quote shows before one is picked: the one that would carry
+   * the orange Trade on a phone.
+   */
+  pick?: { id: string | null; onPick: (offer: Offer) => void; onFirst: (id: string | null) => void };
 }
 
-export function OfferList({ side, copy, onTrade, onMessage, onNudge }: OfferListProps) {
+export function OfferList({ side, copy, onTrade, onMessage, onNudge, pick }: OfferListProps) {
   const { methodId = '' } = useParams();
   const { search } = useLocation();
   const currency = currencyFrom(search);
@@ -63,6 +70,11 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge }: OfferList
   const list = offers.kind === 'ready' ? sortOffers(offers.value, sort, side) : [];
   const market = price.kind === 'ready' ? price.value.centsPerXmr : null;
   const primaryId = list.find((o) => o.opensAt === undefined && o.poster.online)?.id;
+  const onFirst = pick?.onFirst;
+  const firstId = offers.kind === 'ready' ? (primaryId ?? null) : undefined;
+  useEffect(() => {
+    if (onFirst && firstId !== undefined) onFirst(firstId);
+  }, [onFirst, firstId]);
 
   return (
     <div className="x2f-browse">
@@ -109,12 +121,13 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge }: OfferList
             offer={o}
             currency={currency}
             copy={copy}
-            primary={o.id === primaryId}
+            primary={pick ? false : o.id === primaryId}
             now={now}
             market={market}
             {...(onTrade ? { onTrade } : {})}
             {...(onMessage ? { onMessage } : {})}
             {...(onNudge ? { onNudge } : {})}
+            {...(pick ? { pick: { pressed: o.id === pick.id, onPick: pick.onPick } } : {})}
           />
         ))}
         {copy.offersFooter !== undefined && offers.kind === 'ready' ? <p className="x2f-browse__footer">{copy.offersFooter}</p> : null}

@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { ApiCallError, safeReturnTo } from '../../api/client.js';
 import { useSession } from '../../session/useSession.js';
 import { takeOffer, type TakeRequest } from './api.js';
 import { storeConfirmed, type ConfirmedTrade } from './confirmed.js';
+import { dropIfLeft, readQuote, updateQuote, useQuoteKept } from './quoteKept.js';
 
 // The Trade button's action (plan Task 18). Logged out, it goes to setup with `returnTo` = the
 // quote with `resume=<nonce>` and a pending-take marker in this tab (pendingTake.ts). Setup (Task 28)
@@ -18,6 +19,10 @@ import { storeConfirmed, type ConfirmedTrade } from './confirmed.js';
 // what was confirmed (confirmed.ts), its deal at the rate that locked: stored in this tab first,
 // then carried as `{ state: { confirmed } }`. 403 terms-required and 409 no-wallet are sent on by the API client
 // (Task 13) with this page as `returnTo`.
+//
+// The take's state (in flight, and the last error) is kept per offer above the component
+// (quoteKept.ts, review 2026-11-01 M1): a fold or unfold mounts a new quote, which must show the
+// take still in flight, never send a second one, and show the refusal when it answers.
 
 /** Where a logged-out Trade goes first. */
 export const SETUP_START = '/setup';
@@ -70,40 +75,43 @@ export function useTake(
 } {
   const session = useSession();
   const navigate = useNavigate();
-  const [state, setState] = useState<TakeState>({ busy: false, error: null });
-  const inFlight = useRef(false);
+  const [kept] = useQuoteKept(offerId);
+  const state: TakeState = { busy: kept.busy, error: kept.error };
   const signedIn = session.status === 'loading' ? null : session.status !== 'signed-out';
 
   const take = useCallback(
     (a: TakeArgs) => {
-      if (inFlight.current) return;
+      if (readQuote(offerId).busy) return;
       if (session.status === 'signed-out') {
         void navigate(setupHref(a.resumeHref()));
         return;
       }
       if (a.walletId === null || a.confirmed === null) return;
       const confirmed = a.confirmed;
-      inFlight.current = true;
-      setState({ busy: true, error: null });
+      updateQuote(offerId, { busy: true, error: null });
       takeOffer(offerId, { ...a.quote, walletId: a.walletId }).then(
         (taken) => {
-          inFlight.current = false;
           if (!lockedWithinQuote(a.quote.centsPerXmr, taken.centsPerXmr)) {
-            setState({ busy: false, error: new LockedRateError() });
+            updateQuote(offerId, { busy: false, error: new LockedRateError() });
+            dropIfLeft(offerId);
             return;
           }
+          updateQuote(offerId, { busy: false });
+          dropIfLeft(offerId);
           const locked: ConfirmedTrade = { ...confirmed, deal: { ...confirmed.deal, centsPerXmr: taken.centsPerXmr } };
           storeConfirmed(taken.code, locked);
           void navigate(`/trade/${encodeURIComponent(taken.code)}`, { state: { confirmed: locked } });
         },
         (error: unknown) => {
-          inFlight.current = false;
           if (error instanceof ApiCallError && error.status === 401) {
+            updateQuote(offerId, { busy: false });
+            dropIfLeft(offerId);
             void navigate(setupHref(a.resumeHref()));
             return;
           }
           if (isPriceChanged(error)) onPriceChanged?.();
-          setState({ busy: false, error });
+          updateQuote(offerId, { busy: false, error });
+          dropIfLeft(offerId);
         },
       );
     },
