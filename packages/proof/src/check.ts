@@ -3,7 +3,7 @@
 // (Task 16); nothing here trusts a value from the buyer except the `hidden` list it is given.
 import { normalizeTradeCode } from '@x2f/core';
 import { findAmounts, parseAmounts } from './amounts.js';
-import { type HiddenKind, codePattern, markDates, normalizeText } from './detect.js';
+import { type HiddenKind, codePattern, markDates, normalizeText, showsWholeAmount } from './detect.js';
 import { type OcrWord, linesOf } from './ocr.js';
 
 /** What the screenshot shows next to what the trade expects (spec 4.2: amount, date, reference, payer name). */
@@ -57,7 +57,8 @@ const HOUR = 60 * 60 * 1000;
  * words have `conf >= 60`; an unreadable screenshot then reports nothing found (its name is still
  * `hidden` when the buyer hid one). Every check reads the text after Task 7's `normalizeText`
  * (Unicode digits, dashes and spaces as ASCII). The amount matches when any amount in the trade's
- * currency is the trade amount; otherwise `seen` is the amount closest to it (the first of a tie),
+ * currency is the trade amount, or when a line shows it as a whole number with no marker that Task 7
+ * keeps clear (`showsWholeAmount`: after an amount label or on its own, review RV4-M4); otherwise `seen` is the amount closest to it (the first of a tie),
  * so a fee or `$0.00` is not reported (review N2). The reference matches the trade code in any
  * grouping or case, with Crockford look-alikes (O for 0, I or L for 1), as Task 7 keeps it, also
  * with spaces around its dashes and wrapped onto the next line (review N1). A date is in range when
@@ -78,14 +79,18 @@ export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: Hi
   }
 
   const normalized = words.map((w) => ({ ...w, text: normalizeText(w.text) }));
+  const texts = linesOf(normalized).map((l) => l.text);
   const amounts = parseAmounts(normalized, expected.currency, expected.exponent);
+  // A whole amount with no marker that Task 7 keeps clear (`Total 250000`, owner Q17) is the amount
+  // too, read by Task 7's own rule (review RV4-M4).
+  const keep = { tradeCode: expected.tradeCode, fiatCents: expected.fiatCents, exponent: expected.exponent };
+  if (!amounts.includes(expected.fiatCents) && texts.some((t) => showsWholeAmount(t, keep))) amounts.push(expected.fiatCents);
   const amount: ProofCheck['amount'] = amounts.includes(expected.fiatCents)
     ? { status: 'match', seen: expected.fiatCents }
     : amounts.length > 0
       ? { status: 'mismatch', seen: closest(amounts, expected.fiatCents) }
       : { status: 'not-found', seen: null };
 
-  const texts = linesOf(normalized).map((l) => l.text);
   const codeRe = codePattern(code);
   const reference = codeCandidates(texts).some((t) => hasMatch(t, codeRe)) ? 'match' : 'not-found';
 
@@ -124,8 +129,10 @@ function codeCandidates(texts: string[]): string[] {
 }
 
 // Sender labels only (review N3): a recipient label (`To`, `Paid to`, `Recipient`, ...) names the
-// seller, not the sender. Same shapes as Task 7's name labels: at the start of a line with or without
-// a colon, or later in the line with a colon.
+// seller, not the sender. Matched like Task 7's name labels (at the start of a line with or without a
+// colon, or later in the line with a colon), but English only on purpose: Task 7's labels are
+// multilingual data (`nameLabels.ts`), and a name after a foreign label is auto-blurred anyway, so the
+// OCR of the blurred image cannot read it (review RV4-M4 nit).
 const SENDER = ['sent\\s+by', 'sender', 'payer', 'from'].join('|');
 const SENDER_START = new RegExp(`^\\s*(?:${SENDER})(?::|(?=\\s)|$)\\s*`, 'i');
 const SENDER_COLON = new RegExp(`(?<![A-Za-z])(?:${SENDER}):\\s*`, 'gi');
