@@ -1,6 +1,7 @@
 import type { Queryable } from '../db/pool.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
-import { tradedOverUsd, tradedTotalSql } from './tradedTotal.js';
+import { verifiedPastRepBySite } from '../pastrep/store.js';
+import { importedLines, tradedOverXmr, tradedXmrSql, type ImportedLine } from './tradedTotal.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, stageFor, type Stage, type StarterSettings } from './stage.js';
 
 /**
@@ -23,12 +24,13 @@ export interface TraderSummary {
   /** The starter-limits stage (spec 2.3; plan Task 4 Revision 2026-10-26): the New badge shows until 'graduated'. */
   stage: Stage;
   /**
-   * C12b (owner 2026-11-01/02): the "$X+ in trades to date" line, X in whole US dollars rounded
-   * down (@x2f/reputation `tradedBucketUsd`); null unless the trader opted in and has traded MORE
-   * than $10,000 (owner 2026-11-03: exactly $10,000.00 shows nothing, $10,000.01 shows $10,000+).
-   * Never the exact total.
+   * Owner Q63 (6 Nov 2026; was C12b's dollars): the "X+ XMR traded to date" line, X in whole XMR
+   * rounded down (@x2f/reputation `tradedBucketXmr`); null unless the trader opted in and has traded
+   * MORE than 10 XMR. Never the exact total.
    */
-  tradedOverUsd: number | null;
+  tradedOverXmr: number | null;
+  /** Owner Q64: verified imported volume, one line per site (opt-in like the XMR line; [] when off). */
+  imported: ImportedLine[];
 }
 
 /** Someone counts as online when one of their sessions was used this recently (to the 5-minute bucket: see `onlineSince`). */
@@ -80,11 +82,12 @@ export async function traderSummaries(
     `select a.id, a.${PUBLIC_NAME_COLUMN} as name, a.created_at,
             ${COMPLETED_TRADES_SQL} as completed,
             ${lastSeenSql('a.id', '$2::uuid')} as last_seen,
-            a.show_traded_total as show_traded, ${tradedTotalSql('a.id')} as traded
+            a.show_traded_total as show_traded, ${tradedXmrSql('a.id')}::text as traded
        from accounts a where a.id = any($1::uuid[])`,
     [ids, viewerId],
   );
   const since = onlineSince(now).getTime();
+  const sites = await verifiedPastRepBySite(q, rows.filter((r) => r.show_traded).map((r) => r.id));
   for (const r of rows) {
     const completed = Number(r.completed);
     out.set(r.id, {
@@ -97,7 +100,8 @@ export async function traderSummaries(
       positivePct: null,
       badges: [],
       stage: stageFor(s, completed, r.created_at, now),
-      tradedOverUsd: tradedOverUsd(r.show_traded, r.traded),
+      tradedOverXmr: tradedOverXmr(r.show_traded, r.traded),
+      imported: r.show_traded ? importedLines(sites.get(r.id)) : [],
     });
   }
   return out;

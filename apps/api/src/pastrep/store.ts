@@ -78,3 +78,31 @@ export async function verifiedPastRepUsdCents(q: Queryable, accountId: string): 
   const { rows } = await q.query<{ total: string }>(`select ${verifiedPastRepUsdSql('$1::uuid')}::text as total`, [accountId]);
   return Number(rows[0]!.total);
 }
+
+/** One site's verified imported volume: the site and its moderator-verified figure in US cents. */
+export interface VerifiedSiteVolume {
+  site: string;
+  usdCents: bigint;
+}
+
+/**
+ * Owner Q64 (6 Nov 2026): imported volume shows as a separate line per site with proof. The
+ * APPROVED claims of `accountIds` that carry a verified figure, per account, ordered by site. Read
+ * live: a claim revoked, removed or rejected, or a figure cleared, drops out at once.
+ */
+export async function verifiedPastRepBySite(q: Queryable, accountIds: readonly string[]): Promise<Map<string, VerifiedSiteVolume[]>> {
+  const out = new Map<string, VerifiedSiteVolume[]>();
+  if (accountIds.length === 0) return out;
+  const { rows } = await q.query<{ account_id: string; site: string; cents: string }>(
+    `select pr.account_id, pr.site, pr.verified_usd_cents::text as cents from past_reputation pr
+      where pr.account_id = any($1::uuid[]) and pr.status = '${COUNTS}' and pr.verified_usd_cents is not null
+      order by pr.account_id, pr.site`,
+    [[...new Set(accountIds)]],
+  );
+  for (const r of rows) {
+    const list = out.get(r.account_id) ?? [];
+    list.push({ site: r.site, usdCents: BigInt(r.cents) });
+    out.set(r.account_id, list);
+  }
+  return out;
+}
