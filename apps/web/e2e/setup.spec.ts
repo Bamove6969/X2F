@@ -66,7 +66,6 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
           methods: s.methods,
           hasBackup: s.methods.length > 1,
           suggestions: [],
-          logoutTimer: { idleHours: 12, adjustable: true },
           termsCurrent: s.termsCurrent,
         })(r)
       : json({ error: 'not-authenticated' }, 401)(r),
@@ -441,7 +440,7 @@ test('raising the Terms version sends a logged-in trader to /terms and back to t
   await page.route('**/v1/account/me', (r) =>
     accepted === null
       ? json({ error: 'terms-required', version: TERMS_VERSION }, 403)(r)
-      : json({ displayName: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: ['pgp'], hasBackup: false, suggestions: [], logoutTimer: { idleHours: 12, adjustable: true }, termsCurrent: true })(r),
+      : json({ displayName: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: ['pgp'], hasBackup: false, suggestions: [], termsCurrent: true })(r),
   );
   await page.route('**/v1/account/terms', (r) => {
     accepted = JSON.parse(r.request().postData() ?? 'null');
