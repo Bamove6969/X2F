@@ -69,7 +69,8 @@ function disputeView(o: Record<string, unknown> = {}) {
     reason: 'paid',
     openedAt: T('10:14'),
     afterRefund: false,
-    dueAt: T('10:14', 16),
+    goalAt: T('10:14', 16),
+    dueAt: T('10:14', 17),
     status: 'open',
     moderator: { name: 'sarah.v', joinedAt: T('10:52') },
     ruling: null,
@@ -186,13 +187,16 @@ test('the seller sees the seller\'s reasons', async ({ page }) => {
   await expect(page.getByText('Selling to', { exact: false })).toBeVisible();
 });
 
-test('DisputeRoom: rose In dispute chip, locked amount, deadline line and the join banner from the server', async ({ page }) => {
+test('DisputeRoom: rose In dispute chip, locked amount, deadline line, hourglass and the join banner from the server', async ({ page }) => {
   await stub(page, { trade: disputed(), dispute: disputeView() });
   await open(page);
   const chip = page.locator('.x2f-chip[data-tone="danger"]');
   await expect(chip).toHaveText('In dispute');
   await expect(page.getByText('1.25 XMR locked in escrow')).toBeVisible();
-  await expect(page.getByText('Replied in 38 min · ruling due by Fri 16 Oct, 10:14 (in 23 h)')).toBeVisible();
+  await expect(page.getByText('Replied in 38 min.', { exact: true })).toBeVisible();
+  // Owner Q38: the 24-hour hourglass; the 48-hour deadline is never shown to traders.
+  await expect(page.locator('[data-part="hourglass"]')).toContainText("That's the longest before a moderator steps in. It's usually much quicker.");
+  await expect(page.getByText(/ruling due by/)).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Moderator joined' })).toContainText('Moderator sarah.v joined this dispute');
   await expect(page.getByText('10:14 · You opened a dispute: I paid, but the seller hasn\'t released')).toBeVisible();
   await expect(page.getByText('10:52 · Moderator sarah.v joined this dispute')).toBeVisible();

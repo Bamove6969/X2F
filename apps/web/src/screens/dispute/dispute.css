@@ -326,6 +326,19 @@
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
+/* Owner Q38 hourglass (no board yet: DESIGNER-REVIEW). */
+.dispute-hourglass {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  border: 1px solid var(--x2f-surface-raised);
+}
+.dispute-hourglass .x2f-countdown {
+  font-variant-numeric: tabular-nums;
+}
 .dispute-joined {
   display: flex;
   gap: 10px;

@@ -175,6 +175,14 @@ describe('rulingAllowsCosign: a moderator-built transaction is co-signed only th
     expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: buyerWin, cosignPolicy: exactPolicy('buyer') })).toBe(true);
   });
 
+  it('co-signs at the ruling, inside the appeal window and during an appeal (owner Q37: a lien covers a reversal)', () => {
+    const atRuling = new Date(T0 + 401 * MIN);
+    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: atRuling, outcome: buyerWin, cosignPolicy: exactPolicy('buyer') })).toBe(true);
+    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({}, { appeal: { by: 'seller', at: iso(500) } }), now: final, outcome: buyerWin, cosignPolicy: exactPolicy('buyer') })).toBe(true);
+    // Still only the exact set: the policy decides inside the window as well.
+    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: atRuling, outcome: buyerWin, cosignPolicy: () => false })).toBe(false);
+  });
+
   it('refuses a mod-built set paying the counterparty from this side\'s share', () => {
     const skim: SettleOutcome = {
       ...buyerWin,
@@ -185,15 +193,15 @@ describe('rulingAllowsCosign: a moderator-built transaction is co-signed only th
     expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: fee, cosignPolicy: exactPolicy('buyer') })).toBe(false);
   });
 
-  it('refuses whatever the policy says when the ruling is not final or pays the other side', () => {
+  it('refuses whatever the policy says when there is no ruling or it pays the other side', () => {
     const yes = () => true;
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: new Date(final.getTime() - 1), outcome: buyerWin, cosignPolicy: yes })).toBe(false);
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({}, { appeal: { by: 'seller', at: iso(500) } }), now: final, outcome: buyerWin, cosignPolicy: yes })).toBe(false);
     expect(rulingAllowsCosign({ role: 'seller', dispute: ruled(), now: final, outcome: { ...buyerWin, cosigner: 'seller' }, cosignPolicy: yes })).toBe(false);
     expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({ outcome: 'refund-to-seller' }), now: final, outcome: buyerWin, cosignPolicy: yes })).toBe(false);
     expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: { ...buyerWin, builder: 'seller' }, cosignPolicy: yes })).toBe(false);
     expect(rulingAllowsCosign({ role: 'buyer', dispute: dispute(), now: final, outcome: buyerWin, cosignPolicy: yes })).toBe(false);
     expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: buyerWin, cosignPolicy: () => { throw new Error('x'); } })).toBe(false);
+    // An after-refund ruling moves nothing from the escrow.
+    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({}, { afterRefund: true }), now: final, outcome: buyerWin, cosignPolicy: yes })).toBe(false);
     // The appeal round is final at once.
     expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({ round: 2, appealUntil: null }), now: new Date(T0), outcome: buyerWin, cosignPolicy: yes })).toBe(true);
     expect(rulingFinal(ruled({ round: 2, appealUntil: null }), new Date(T0))).toBe(true);
@@ -438,15 +446,27 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     expect(host.textContent).toContain("You're number 3 in the queue");
   });
 
-  it('the 24 hours are a goal, never a deadline; past the goal the room shows the hard deadline', () => {
+  it('an hourglass counts down from 24 hours, the most before a moderator steps in; traders never see the 48-hour deadline (owner Q38)', () => {
     const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const d = parseDispute(view({ dueAt: iso(130 + 48 * 60), queuePosition: null, firstReplyAt: iso(168), moderator: { name: 'sarah.v', joinedAt: iso(168) } }));
     const before = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={d} serverClock={at(200)} />));
+    const glass = before.host.querySelector('[data-part="hourglass"]')!;
+    expect(glass.getAttribute('data-state')).toBe('running');
+    expect(glass.querySelector('[role="timer"]')?.textContent).toBe('22 h 50 min');
+    expect(glass.textContent).toContain("22 h 50 min at mostThat's the longest before a moderator steps in. It's usually much quicker.");
     const text = before.host.textContent ?? '';
-    expect(text).toContain(`Replied in 38 min · aiming to rule by ${dayTime(new Date(T0 + (130 + 24 * 60) * MIN))} (in 22 h)`);
-    expect(text).not.toMatch(/due by/);
+    expect(text).toContain('Replied in 38 min.');
+    expect(text).not.toMatch(/due by|aiming|48 h|48 hours/);
+    // Past the 24 hours: an empty hourglass, still no 48-hour deadline.
     const after = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={d} serverClock={at(130 + 25 * 60)} />));
-    expect(after.host.textContent).toContain(`ruling due by ${dayTime(new Date(T0 + (130 + 48 * 60) * MIN))} (in 23 h)`);
+    const over = after.host.querySelector('[data-part="hourglass"]')!;
+    expect(over.getAttribute('data-state')).toBe('over');
+    expect(over.textContent).toContain('Taking longer than usual');
+    expect(after.host.textContent).not.toMatch(/due by|48 h|48 hours/);
+    // Gone once there is a ruling, and absent when the view has no goal.
+    const ruledView = parseDispute(view({ status: 'ruled', ruling: ruled().ruling }));
+    expect(render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={ruledView} serverClock={at(500)} />)).host.querySelector('[data-part="hourglass"]')).toBeNull();
+    expect(render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={parseDispute(dispute())} serverClock={at(200)} />)).host.querySelector('[data-part="hourglass"]')).toBeNull();
   });
 
   it('DisputeOpen asks the trader to talk to the other side first, with a way back to the chat (owner Q20)', () => {

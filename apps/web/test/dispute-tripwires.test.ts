@@ -21,13 +21,12 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
   });
 
   it('NEEDS_PLAN_4_RULING_PAYOUT: the ruling page says where the XMR goes until the API reports the payout executed', () => {
-    // C11 review I1. Spec / Plan 4 ("A1 dropped", Revision 2026-10-29c): the coins move at the ruling.
-    // Today nothing executes a ruling's payout and rulingAllowsCosign (screens/dispute/rules.ts) holds
-    // the co-sign until the ruling is final, so DisputeRuling says "Goes to …" and the appeal line does
-    // not say the XMR has moved. Plan 4's execution task owns the gate change (coins move at the
-    // ruling, with or without an appeal, still through cosignPolicy; update dispute.test.tsx's
-    // rulingAllowsCosign cases) and an executed flag on the dispute view. When the view reports the
-    // payout executed: show the board's "Sent to …" once it is, and delete this check.
+    // C11 review I1. Spec / Plan 4 ("A1 dropped", Revision 2026-10-29c) and owner Q37 (6 Nov): the
+    // coins move at the ruling. rulingAllowsCosign (screens/dispute/rules.ts) allows the co-sign from
+    // the ruling on (Task 15), but nothing executes a ruling's payout yet, so DisputeRuling says
+    // "Goes to …" and the appeal line does not say the XMR has moved. Plan 4's execution task adds an
+    // executed flag on the dispute view. When the view reports the payout executed: show the board's
+    // "Sent to …" once it is, and delete this check.
     const view = readFileSync(ROOT + 'apps/web/src/screens/dispute/api.ts', 'utf8');
     const routes = readFileSync(ROOT + 'apps/api/src/disputes/routes.ts', 'utf8');
     expect(/executed|payoutTx|paidOutAt/i.test(view + routes), 'the dispute view reports the payout executed: flip the ruling copy to "Sent to …"').toBe(false);

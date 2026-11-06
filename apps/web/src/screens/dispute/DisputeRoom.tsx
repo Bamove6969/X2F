@@ -7,23 +7,24 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { TradeChatPanel } from '../../chat/ChatPanel.js';
+import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import type { DisputeTrade, DisputeView } from './api.js';
 import { TradeTitle } from './DisputeOpen.js';
 import { DisputeIcon } from './icons.js';
-import { dayTime, inTime, repliedIn, xmrInText } from './rules.js';
+import { dayTime, repliedIn, xmrInText } from './rules.js';
 import { DisputeSystemCards, systemCardsFor, tradeProofs, UnblurredRequest } from './seams.js';
 import './dispute.css';
 
 /**
- * The board's "Replied in 38 min · ruling due by Fri 16 Oct, 10:14 (in 23 h)", on Plan 4 Task 10's
- * view. Before anyone replies: "First reply due by … · You're number N in the queue" (Task 15).
- * Round 1 aims to be ruled within 24 hours (owner 2026-11-03), a goal and never a deadline, so until
- * `goalAt` the line says "aiming to rule by …" (COPY-UNSIGNED); past it, the hard `dueAt`.
+ * The board's "Replied in 38 min", on Plan 4 Task 10's view. Before anyone replies: "First reply due
+ * by … · You're number N in the queue" (Task 15). The ruling's timing is the hourglass below, not
+ * this line: traders never see the 48-hour hard deadline (owner Q38, 6 Nov: start with the 24 hours
+ * only; the 48-hour part is decided later, OWNER-Q).
  */
-function DeadlineLine({ dispute, now }: { dispute: DisputeView; now: Date }) {
+function DeadlineLine({ dispute }: { dispute: DisputeView }) {
   const replied = repliedIn(dispute);
   if (replied === null && dispute.replyDueAt) {
     return (
@@ -34,20 +35,39 @@ function DeadlineLine({ dispute, now }: { dispute: DisputeView; now: Date }) {
     );
   }
   const first = replied !== null ? `Replied in ${replied}` : 'A moderator usually replies within 4 hours'; // COPY-UNSIGNED (from DisputeOpen)
-  const goal = dispute.goalAt ? new Date(dispute.goalAt) : null;
-  if (goal !== null && now.getTime() < goal.getTime()) {
-    return (
-      <span className="dispute-deadline">
-        {first} · aiming to rule by <span className="dispute-ink">{dayTime(goal)}</span> ({inTime(goal.getTime() - now.getTime())}) {/* COPY-UNSIGNED */}
-      </span>
-    );
-  }
-  if (dispute.dueAt === null) return <span className="dispute-deadline">{first}.</span>;
-  const due = new Date(dispute.dueAt);
+  return <span className="dispute-deadline">{first}.</span>;
+}
+
+/**
+ * Owner Q38 (6 Nov): once a dispute is filed, an hourglass counts down from 24 hours: the most it
+ * takes before a moderator steps in, and it is usually much quicker. It counts to Task 10's `goalAt`
+ * (opened + 24 h) on the server clock and stays until the ruling. Past the 24 hours it reads as
+ * empty and says a moderator steps in as soon as they can; it never shows the 48-hour deadline.
+ * COPY-UNSIGNED and DESIGNER-REVIEW: design words it (owner: "get design toward that").
+ */
+export function DisputeHourglass({ dispute, now, serverClock }: { dispute: DisputeView; now: Date; serverClock: () => Date }) {
+  if (dispute.ruling !== null || !dispute.goalAt) return null;
+  const goal = new Date(dispute.goalAt);
+  const over = now.getTime() >= goal.getTime();
   return (
-    <span className="dispute-deadline">
-      {first} · ruling due by <span className="dispute-ink">{dayTime(due)}</span> ({inTime(due.getTime() - now.getTime())})
-    </span>
+    <div className="dispute-hourglass" data-part="hourglass" data-state={over ? 'over' : 'running'}>
+      <DisputeIcon name={over ? 'hourglassEmpty' : 'hourglass'} size={28} stroke={1.5} />
+      <span className="dispute-stack">
+        {over ? (
+          <>
+            <span className="dispute-strong">Taking longer than usual</span>
+            <span className="dispute-muted">A moderator will step in as soon as they can.</span>
+          </>
+        ) : (
+          <>
+            <span className="dispute-strong">
+              <Countdown deadline={goal} serverClock={serverClock} format="minutes" /> at most
+            </span>
+            <span className="dispute-muted">That's the longest before a moderator steps in. It's usually much quicker.</span>
+          </>
+        )}
+      </span>
+    </div>
   );
 }
 
@@ -87,7 +107,8 @@ export function DisputeRoom({
             </span>
           )}
         </div>
-        <DeadlineLine dispute={dispute} now={now} />
+        <DeadlineLine dispute={dispute} />
+        <DisputeHourglass dispute={dispute} now={now} serverClock={serverClock} />
       </section>
 
       <div className="dispute-main dispute-main--room">
