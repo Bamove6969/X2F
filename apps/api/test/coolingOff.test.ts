@@ -9,8 +9,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import {
-  HOLD_BLOCKED_ROUTES, HOLD_MS, LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES, LIVE_SESSION_TRADING_ROUTES, SECURITY_CHANGE_ROUTES, WEAK_LIMITED_ROUTES, endHoldIfOwner, gateChange, lockAccount, settleDueHolds, withTx,
+  HOLD_BLOCKED_ROUTES, HOLD_MS, LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES, LIVE_SESSION_TRADING_ROUTES, SECURITY_CHANGE_ROUTES, WEAK_LIMITED_ROUTES, endHoldIfOwner, gateChange, lockAccount, settleDueHolds, startHold, withTx,
 } from '../src/auth/hold.js';
+import { OWNER_WARNINGS } from '../src/routes/account.js';
 import { settleDueChanges } from '../src/auth/holdChanges.js';
 import { APPROVAL_DECISION_BUCKET, SECURITY_CHANGE_BUCKET } from '../src/limits.js';
 import { hashPassword } from '../src/auth/password.js';
@@ -718,19 +719,40 @@ describe('review round 2', () => {
   const live = async (accountId: string) =>
     (await deps.db.query('select 1 from sessions where account_id = $1 and revoked_at is null', [accountId])).rows.length;
 
+  /**
+   * Hold model v3: only a recovery-code login starts a hold, and it logs every session out, so a
+   * weak session living through a hold is left only in a hold of an older reason still running at
+   * deploy. The tests of a weak session racing the owner's proof start one through the real
+   * `startHold`, started by the session in `b` (its methods are the account's now).
+   */
+  async function legacyHoldBy(accountId: string, b: Browser, reason: 'weak-change' | 'weak-new-device' = 'weak-change') {
+    const startedBy = await sessionOf(b);
+    await withTx(deps.db, async (db) => {
+      await lockAccount(db, accountId);
+      await startHold(db, accountId, now, { reason, startedBy });
+    });
+    expect(await holdOf(deps, accountId)).toMatchObject({ reason });
+  }
+
+  /** The account's one recovery code, made from the owner's strong session in `b`. */
+  async function recoveryCodeOf(o: { b: Browser; id: string }): Promise<string> {
+    const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'new-recovery-codes' });
+    const { codes } = (await o.b.post('/v1/account/recovery-codes', { confirmToken })).json() as { codes: string[] };
+    expect(codes).toHaveLength(1);
+    return codes[0]!;
+  }
+
   describe('N-C1: a password alone cannot fill the device limit and lock the owner out of ending the hold', () => {
-    it("the review's reproduction: copies of the thief's trusted device cookie open nothing; the owner's passkey ends the hold, the thief's session and the pending removal", async () => {
+    it("the review's reproduction (model v3: the thief's way in is the recovery code): copies of the thief's trusted device cookie open nothing; the owner's passkey ends the hold and the thief's session", async () => {
       const o = await passkeyWithPassword();
       const passkeyId = (await methodsOf(o.b)).find((m) => m.type === 'passkey')!.id;
+      const code = await recoveryCodeOf(o);
       await o.b.post('/v1/logout');
-      // 2. The thief logs in with the password on a new browser: nothing is logged in, so a session and the hold.
-      const send = vi.spyOn(app.push, 'send');
+      // 2. The thief logs in with the recovery code: a recovery session and the account's hold.
       const thief = new Browser(app);
-      expect((await passwordLogin(thief, o.name)).json()).toEqual({ status: 'ok' });
-      expect(await holdOf(deps, o.id)).toMatchObject({ reason: 'weak-new-device' });
-      // The hold's warning is pushed to the account's devices (N-I2).
-      expect(send).toHaveBeenCalledWith(o.id, 'alert', { exceptSession: await sessionOf(thief) });
-      // 3. Copies of the device cookie: trusted, but a waiting login opens no session during the hold.
+      expect((await backup(thief, o.name, code)).json()).toMatchObject({ level: 'recovery' });
+      expect(await holdOf(deps, o.id)).toMatchObject({ reason: 'recovery-code' });
+      // 3. Copies of the device cookie: a login opens no session during the hold.
       for (let i = 0; i < 2; i++) {
         const copy = copyDevice(thief);
         expect((await passwordLogin(copy, o.name)).json()).toEqual({ error: 'recovery-hold', holdUntil: in24h() });
@@ -742,7 +764,7 @@ describe('review round 2', () => {
       expect((await passkeyLogin(owner, o.auth)).json()).toEqual({ status: 'ok' });
       expect(await holdOf(deps, o.id)).toBeNull();
       expect((await thief.get('/v1/account/me')).statusCode).toBe(401);
-      expect(await alertsOf(deps, o.id, 'sessions-ended')).toEqual([{ count: 1, reason: 'owner-login' }]);
+      expect(await alertsOf(deps, o.id, 'sessions-ended')).toContainEqual({ count: 1, reason: 'owner-login' });
       // 5-7. The owner's proof also forgot the account's trusted devices, so the thief's copied cookie
       // trusts nothing: with the owner's strong session open, a new weak login needs the owner's
       // approval; the passkey stays.
@@ -752,14 +774,13 @@ describe('review round 2', () => {
       expect((await deps.db.query('select 1 from webauthn_credentials where id = $1', [passkeyId])).rows).toHaveLength(1);
     });
 
-    it('with "One device at a time" the thief\'s one session fills the limit: the owner\'s passkey still gets in (no 409)', async () => {
+    it('with "One device at a time" the thief\'s one weak session fills the limit under a hold of an older reason: the owner\'s passkey still gets in (no 409)', async () => {
       const o = await passkeyWithPassword();
       await deps.db.query('update accounts set one_device = true where id = $1', [o.id]);
+      const thief = await approvedThief(o.b, o.name);
       await o.b.post('/v1/logout');
-      const thief = new Browser(app);
-      expect((await passwordLogin(thief, o.name)).json()).toEqual({ status: 'ok' });
-      expect(await holdOf(deps, o.id)).not.toBeNull();
-      // A removal from the thief's session would need the hold to end by time; it is refused now anyway.
+      await legacyHoldBy(o.id, thief, 'weak-new-device');
+      expect(await live(o.id)).toBe(1);
       const owner = new Browser(app);
       expect((await passkeyLogin(owner, o.auth)).json()).toEqual({ status: 'ok' });
       expect(await holdOf(deps, o.id)).toBeNull();
@@ -770,9 +791,9 @@ describe('review round 2', () => {
     it("the owner's proof wins over strong sessions too: at the limit the least recently seen is logged out", async () => {
       const o = await passkeyWithPassword();
       await deps.db.query('update accounts set one_device = true where id = $1', [o.id]);
-      // A weak session approved by the owner changes something: the hold starts (two sessions, one strong).
+      // A weak session approved by the owner, then a hold of an older reason started by it (two sessions, one strong).
       const thief = await approvedThief(o.b, o.name);
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      await legacyHoldBy(o.id, thief);
       expect((await passkeyLogin(new Browser(app), o.auth)).json()).toEqual({ status: 'ok' });
       expect((await thief.get('/v1/account/me')).statusCode).toBe(401);
       expect((await o.b.get('/v1/account/me')).statusCode).toBe(401);
@@ -783,15 +804,15 @@ describe('review round 2', () => {
 
   it('N-I1: the owner ending a backup login\'s hold ends that backup session too; 24 h later it changes nothing', async () => {
     const o = await passkeyWithPassword();
-    const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'new-recovery-codes' });
-    const { codes } = (await o.b.post('/v1/account/recovery-codes', { confirmToken })).json() as { codes: string[] };
+    const code = await recoveryCodeOf(o);
     const thief = new Browser(app);
-    expect((await thief.post('/v1/login/backup', { loginName: o.name, kind: 'recovery-code', code: codes[0]!, deviceLabel: 'X' })).json()).toMatchObject({ level: 'recovery' });
-    expect(await holdOf(deps, o.id)).toMatchObject({ reason: 'weak-backup-login' });
+    expect((await backup(thief, o.name, code)).json()).toMatchObject({ level: 'recovery' });
+    expect(await holdOf(deps, o.id)).toMatchObject({ reason: 'recovery-code' });
     expect((await passkeyLogin(new Browser(app), o.auth)).json()).toEqual({ status: 'ok' });
     expect(await holdOf(deps, o.id)).toBeNull();
     expect((await thief.get('/v1/account/me')).statusCode).toBe(401);
-    expect(await alertsOf(deps, o.id, 'sessions-ended')).toEqual([{ count: 1, reason: 'owner-login' }]);
+    // Model v3: the recovery-code login logged the owner's session out; the owner's proof ended the backup session.
+    expect(await alertsOf(deps, o.id, 'sessions-ended')).toEqual([{ count: 1, reason: 'recovery-code' }, { count: 1, reason: 'owner-login' }]);
     // 24 hours later the backup session would be past its own hold: it is gone, so nothing applies.
     setNow(new Date(now.getTime() + HOLD_MS + 60_000));
     expect((await thief.put('/v1/account/password', { password: NEW_PASSWORD })).statusCode).toBe(401);
@@ -827,9 +848,11 @@ describe('review round 2', () => {
       const after = await endpoints(o.id);
       expect(after).toContain(mine.endpoint);
       expect(after.length).toBeLessThanOrEqual(PUSH_SUBSCRIPTION_CAP);
-      // The thief's change waits and its warning is pushed to the account (the owner's subscription is still there).
+      // The thief's change is staged; submitted, it waits and its warning is pushed to the account (the owner's subscription is still there).
       send.mockClear();
-      expect((await changePassword(deps, thief, o.id)).statusCode).toBe(202);
+      const staged = await changePassword(deps, thief, o.id);
+      expect(staged.json()).toMatchObject({ status: 'staged' });
+      expect((await submit(thief, [changeIdOf(staged)])).statusCode).toBe(200);
       expect(send).toHaveBeenCalledWith(o.id, 'alert');
       // The owner's own unsubscribe still works.
       expect((await unsubscribe(o.b)).statusCode).toBe(204);
@@ -852,7 +875,7 @@ describe('review round 2', () => {
       const w = (await passwordLogin(thief, o.name)).json() as { approvalId: string; number: number };
       expect((await o.b.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toEqual({ outcome: 'approved' });
       expect((await thief.post(`/v1/login/approval/${w.approvalId}/poll`)).json()).toMatchObject({ status: 'ok' });
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      await legacyHoldBy(o.id, thief);
       expect((await thief.delete(`/v1/account/sessions/${await sessionOf(o.b)}`)).json()).toEqual({ error: 'weak-session' });
       expect((await o.b.get('/v1/account/me')).statusCode).toBe(200);
     });
@@ -880,20 +903,22 @@ describe('review round 2', () => {
     });
   });
 
-  it('N-I4 (lead decision 2026-10-30): a PGP-alone session adding a wallet with a PGP confirm waits out the hold; a strong session does not', async () => {
+  it('N-I4 (lead decision 2026-10-30; model v3, open question 1): a PGP-alone session adding a wallet with a PGP confirm is staged and waits 24 h once submitted; a strong session does not', async () => {
     const { b, id } = await pgpTrader();
     const address = fakeAddress();
     const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionOf(b), accountId: id, action: walletAction(address), method: 'pgp' });
     const send = vi.spyOn(app.push, 'send');
     const res = await b.post('/v1/wallets', { app: 'feather', label: 'Main', address, confirmToken });
     expect(res.statusCode).toBe(202);
-    expect(res.json()).toEqual({ status: 'held', holdUntil: in24h() });
+    expect(res.json()).toEqual({ status: 'staged', changeId: expect.any(String) });
+    expect((await b.get('/v1/wallets')).json()).toEqual([]);
+    expect(await holdOf(deps, id)).toBeNull();
+    expect((await submit(b, [changeIdOf(res)])).json()).toEqual({ status: 'queued', count: 1, takesEffectAt: in24h() });
     expect(send).toHaveBeenCalledWith(id, 'alert');
     expect((await b.get('/v1/wallets')).json()).toEqual([]);
-    expect(await holdOf(deps, id)).toEqual({ until: in24h(), reason: 'weak-change', pending: 'wallets' });
     setNow(new Date(now.getTime() + HOLD_MS));
-    await settleDueHolds(deps.config, app.events).run(deps.db, now);
-    expect(await alertsOf(deps, id, 'hold-ended')).toEqual([{ reason: 'time', change: 'wallets', applied: true }]);
+    await settleDueChanges(deps.config, app.events).run(deps.db, now);
+    expect(await alertsOf(deps, id, 'hold-changes-applied')).toEqual([{ applied: ['wallets'], dropped: [] }]);
     const { rows } = await deps.db.query<{ address: string; usable_from: Date }>('select address, usable_from from wallets where account_id = $1', [id]);
     expect(rows).toEqual([{ address, usable_from: now }]);
 
@@ -926,49 +951,56 @@ describe('review round 2', () => {
     const legacy = async (id: string) =>
       (await deps.db.query<{ legacy_login_name: boolean }>('select legacy_login_name from accounts where id = $1', [id])).rows[0]!.legacy_login_name;
 
-    it('is held, counts as taken in both namespaces meanwhile, and applies at the end', async () => {
+    it('is staged, counts as taken in both namespaces meanwhile, and applies 24 h after its submission', async () => {
       const t = await legacyWeak();
       const name = unique('pend');
       const res = await setName(t, name);
-      expect(res.statusCode).toBe(202);
-      expect(await holdOf(deps, t.id)).toMatchObject({ pending: 'login-name' });
+      expect(res.json()).toMatchObject({ status: 'staged' });
+      expect(await changesOf(t.id)).toEqual([{ kind: 'login-name', submitted: false }]);
       expect(await legacy(t.id)).toBe(true);
       // Nobody can take it meanwhile, as a display name or as a login name.
       const asDisplay = await new Browser(app).post('/v1/register/password', { displayName: name, loginName: unique('other'), password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS });
       expect(errorOf(asDisplay)).toBe('names-unavailable');
       const asLogin = await new Browser(app).post('/v1/register/password', { displayName: `P${unique('d')}`, loginName: name, password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS });
       expect(errorOf(asLogin)).toBe('names-unavailable');
+      expect((await submit(t.b, [changeIdOf(res)])).statusCode).toBe(200);
       setNow(new Date(now.getTime() + HOLD_MS));
-      await settleDueHolds(deps.config, app.events).run(deps.db, now);
-      expect(await alertsOf(deps, t.id, 'hold-ended')).toEqual([{ reason: 'time', change: 'login-name', applied: true }]);
+      await settleDueChanges(deps.config, app.events).run(deps.db, now);
+      expect(await alertsOf(deps, t.id, 'hold-changes-applied')).toEqual([{ applied: ['login-name'], dropped: [] }]);
       expect(await legacy(t.id)).toBe(false);
       expect(await accountIdByLoginName(deps, name)).toBe(t.id);
     });
 
     it('is dropped when its key is no longer the current one', async () => {
       const t = await legacyWeak();
-      expect((await setName(t, unique('pend'))).statusCode).toBe(202);
-      await deps.db.query(`update account_holds set pending_change = jsonb_set(pending_change, '{keyId}', '999') where account_id = $1`, [t.id]);
+      const res = await setName(t, unique('pend'));
+      expect(res.statusCode).toBe(202);
+      expect((await submit(t.b, [changeIdOf(res)])).statusCode).toBe(200);
+      await deps.db.query(`update hold_changes set change = jsonb_set(change, '{keyId}', '999') where account_id = $1`, [t.id]);
       setNow(new Date(now.getTime() + HOLD_MS));
-      await settleDueHolds(deps.config, app.events).run(deps.db, now);
-      expect(await alertsOf(deps, t.id, 'hold-ended')).toEqual([{ reason: 'time', change: 'login-name', applied: false }]);
+      await settleDueChanges(deps.config, app.events).run(deps.db, now);
+      expect(await alertsOf(deps, t.id, 'hold-changes-applied')).toEqual([{ applied: [], dropped: ['login-name'] }]);
       expect(await legacy(t.id)).toBe(true);
     });
   });
 
-  it('N-M2: a pending change that fails with a fault is dropped and logged; logins go on (no 500 on every login)', async () => {
+  it('N-M2: a waiting change that fails with a fault is dropped and logged; reads and logins go on (no 500)', async () => {
     const { b, name, id } = await passwordTrader();
     await weakAgain(b, name, id);
-    expect((await changePassword(deps, b, id)).statusCode).toBe(202);
+    const staged = await changePassword(deps, b, id);
+    expect(staged.statusCode).toBe(202);
+    expect((await submit(b, [changeIdOf(staged)])).statusCode).toBe(200);
     await deps.db.query('insert into t_fail_passwords values ($1)', [id]);
     try {
       setNow(new Date(now.getTime() + HOLD_MS));
-      // The trusted browser logs in again (nothing else is logged in, so no new hold).
-      const res = await passwordLogin(b, name);
-      expect(res.json()).toEqual({ status: 'ok' });
-      expect(await holdOf(deps, id)).toBeNull();
-      expect(await alertsOf(deps, id, 'hold-ended')).toEqual([{ reason: 'time', change: 'password', applied: false }]);
-      expect(logs.some((l) => l.includes('pending change failed'))).toBe(true);
+      // The minute job settles them: the faulty one is dropped, the job goes on.
+      await settleDueChanges(deps.config, app.events, app.log).run(deps.db, now);
+      expect(await changesOf(id)).toEqual([]);
+      expect(await alertsOf(deps, id, 'hold-changes-applied')).toEqual([{ applied: [], dropped: ['password'] }]);
+      expect(logs.some((l) => l.includes('waiting change failed'))).toBe(true);
+      // The trusted browser logs in again.
+      await b.post('/v1/logout');
+      expect((await passwordLogin(b, name)).json()).toEqual({ status: 'ok' });
       // Fails closed: the old password still logs in, the held one does not.
       expect(errorOf(await passwordLogin(new Browser(app), name, NEW_PASSWORD))).toBe('credentials-invalid');
     } finally {
@@ -979,18 +1011,22 @@ describe('review round 2', () => {
   it("N-M3: a weak session cannot mark the hold's or the login alerts seen; others it can", async () => {
     const o = await passkeyWithPassword();
     const thief = await approvedThief(o.b, o.name);
-    expect((await changePassword(deps, thief, o.id)).statusCode).toBe(202);
-    const list = (await thief.get('/v1/account/alerts')).json() as Array<{ id: string; kind: string }>;
-    for (const kind of ['hold-started', 'new-login']) {
+    const staged = await changePassword(deps, thief, o.id);
+    expect(staged.statusCode).toBe(202);
+    expect((await submit(thief, [changeIdOf(staged)])).statusCode).toBe(200);
+    // A hold's own alert too (one of an older reason).
+    await legacyHoldBy(o.id, thief);
+    const list = (await o.b.get('/v1/account/alerts')).json() as Array<{ id: string; kind: string }>;
+    for (const kind of ['hold-changes-submitted', 'hold-started', 'new-login']) {
       const a = list.find((x) => x.kind === kind)!;
       expect((await thief.post(`/v1/account/alerts/${a.id}/seen`)).json()).toEqual({ error: 'weak-session' });
     }
-    const plain = list.find((x) => !['hold-started', 'hold-ended', 'new-login', 'recovery-login', 'login-approval', 'login-blocked', 'logged-out-by-new-device', 'sessions-ended'].includes(x.kind))!;
+    const plain = list.find((x) => !OWNER_WARNINGS.includes(x.kind))!;
     expect((await thief.post(`/v1/account/alerts/${plain.id}/seen`)).statusCode).toBe(204);
-    const seen = await deps.db.query("select 1 from alerts where account_id = $1 and kind = 'hold-started' and seen_at is not null", [o.id]);
+    const seen = await deps.db.query("select 1 from alerts where account_id = $1 and kind in ('hold-started', 'hold-changes-submitted') and seen_at is not null", [o.id]);
     expect(seen.rows).toEqual([]);
     // The owner's strong session can.
-    const hs = list.find((x) => x.kind === 'hold-started')!;
+    const hs = list.find((x) => x.kind === 'hold-changes-submitted')!;
     expect((await o.b.post(`/v1/account/alerts/${hs.id}/seen`)).statusCode).toBe(204);
   });
 
@@ -1005,25 +1041,27 @@ describe('review round 2', () => {
       const o = await passkeyWithPassword();
       const thief = await approvedThief(o.b, o.name);
       const w = await sessionOf(thief);
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      await legacyHoldBy(o.id, thief);
       expect((await passkeyLogin(new Browser(app), o.auth)).json()).toEqual({ status: 'ok' });
       expect(await holdOf(deps, o.id)).toBeNull();
       expect((await thief.get('/v1/account/me')).statusCode).toBe(401);
-      // The thief's request read its session before the owner's commit and reaches the gate after it.
+      // The thief's request read its session before the owner's commit and reaches the gate after it: nothing is staged.
       await expect(gateAs(o.id, w)).rejects.toMatchObject({ status: 401, code: 'not-authenticated' });
       expect(await holdOf(deps, o.id)).toBeNull();
+      expect(await changesOf(o.id)).toEqual([]);
       // An expired session is refused the same way.
       const t2 = await approvedThief(o.b, o.name);
       const s2 = await sessionOf(t2);
       await deps.db.query('update sessions set expires_at = $2 where id = $1', [s2, now]);
       await expect(gateAs(o.id, s2)).rejects.toMatchObject({ status: 401 });
       expect(await holdOf(deps, o.id)).toBeNull();
+      expect(await changesOf(o.id)).toEqual([]);
     });
 
     it('R3-I1: PUT /v1/account/password is throttled per session (a refused loop runs dry: 429 slow-down)', async () => {
       const o = await passkeyWithPassword();
       const thief = await approvedThief(o.b, o.name);
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      await legacyHoldBy(o.id, thief);
       const confirmToken = await tokenFor(deps, thief, o.id, { kind: 'set-password' });
       for (let i = 0; i < SECURITY_CHANGE_BUCKET.capacity; i++) {
         expect(errorOf(await thief.put('/v1/account/password', { password: NEW_PASSWORD, confirmToken }))).toBe('recovery-hold');
@@ -1048,7 +1086,7 @@ describe('review round 2', () => {
       const t2 = new Browser(app);
       const w = (await passwordLogin(t2, o.name)).json() as { approvalId: string; number: number };
       expect((await o.b.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toEqual({ outcome: 'approved' });
-      expect((await o.b.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      await legacyHoldBy(o.id, o.b);
       const before = await live(o.id);
       const res = await t2.post(`/v1/login/approval/${w.approvalId}/poll`);
       expect(res.statusCode).toBe(403);
@@ -1063,7 +1101,7 @@ describe('review round 2', () => {
       const t2 = new Browser(app);
       const w = (await passwordLogin(t2, o.name)).json() as { approvalId: string; number: number };
       expect((await thief.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toEqual({ outcome: 'approved' });
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      await legacyHoldBy(o.id, thief);
       // The owner's proof, statement by statement as `endHoldIfOwner` runs them, with the poll in between.
       const owner = await deps.db.connect();
       let polled: Promise<LightMyRequestResponse> | undefined;
@@ -1097,21 +1135,17 @@ describe('review round 2', () => {
         expect((await t2.delete(`/v1/account/sessions/${await sessionOf(t2)}`)).statusCode).toBe(204);
       });
 
-      it("it cannot cancel a backup session either; the owner's strong session can", async () => {
+      it("model v3: the recovery-code login logs both out, so neither cancels the backup session; the owner's passkey ends it", async () => {
         const o = await passkeyWithPassword();
         const thief = await approvedThief(o.b, o.name);
-        const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'new-recovery-codes' });
-        const { codes } = (await o.b.post('/v1/account/recovery-codes', { confirmToken })).json() as { codes: string[] };
-        expect((await new Browser(app).post('/v1/login/backup', { loginName: o.name, kind: 'recovery-code', code: codes[0]!, deviceLabel: 'X' })).statusCode).toBe(200);
-        const rec = ((await o.b.get('/v1/account/sessions')).json() as Array<{ id: string; level: string }>).find((s) => s.level === 'recovery')!;
-        // Review round 4 R4-M1 (lead decision 2026-10-30): only a weak session younger than the
-        // backup session is refused (the older direction is round 4's test).
-        await deps.db.query(
-          "update sessions set created_at = (select created_at from sessions where id = $2) + interval '1 second' where id = $1",
-          [await sessionOf(thief), rec.id],
-        );
-        expect((await thief.delete(`/v1/account/recovery-sessions/${rec.id}`)).json()).toEqual({ error: 'weak-session' });
-        expect((await o.b.delete(`/v1/account/recovery-sessions/${rec.id}`)).json()).toEqual({ ok: true });
+        const code = await recoveryCodeOf(o);
+        const rb = new Browser(app);
+        expect((await backup(rb, o.name, code)).statusCode).toBe(200);
+        const rec = await sessionOf(rb);
+        expect((await thief.delete(`/v1/account/recovery-sessions/${rec}`)).statusCode).toBe(401);
+        expect((await o.b.delete(`/v1/account/recovery-sessions/${rec}`)).statusCode).toBe(401);
+        expect((await passkeyLogin(new Browser(app), o.auth)).json()).toEqual({ status: 'ok' });
+        expect((await rb.get('/v1/account/me')).statusCode).toBe(401);
       });
     });
   });
@@ -1134,7 +1168,7 @@ describe('review round 2', () => {
       const b2 = new Browser(app);
       const a = (await passwordLogin(b2, o.name)).json() as { approvalId: string; number: number };
       expect(typeof a.approvalId).toBe('string');
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      await legacyHoldBy(o.id, thief);
       const proven = await ownerPasskey(o.id);
       // The owner's login transaction holds the approval and account locks while the thief's
       // decision (past its preHandler) waits on them; then `endHoldIfOwner` runs and commits.
@@ -1165,7 +1199,7 @@ describe('review round 2', () => {
       const thief = await approvedThief(o.b, o.name);
       const b2 = new Browser(app);
       const a = (await passwordLogin(b2, o.name)).json() as { approvalId: string; number: number };
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      await legacyHoldBy(o.id, thief);
       expect((await passkeyLogin(new Browser(app), o.auth)).json()).toEqual({ status: 'ok' });
       const { rows } = await deps.db.query<{ outcome: string | null }>('select outcome from login_approvals where id = $1', [a.approvalId]);
       expect(rows).toEqual([{ outcome: 'expired' }]);
@@ -1178,7 +1212,7 @@ describe('review round 2', () => {
       const thief = await approvedThief(o.b, o.name);
       const b2 = new Browser(app);
       const a = (await passwordLogin(b2, o.name)).json() as { approvalId: string; number: number };
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      await legacyHoldBy(o.id, thief);
       for (let i = 0; i < APPROVAL_DECISION_BUCKET.capacity; i++) {
         expect(errorOf(await thief.post(`/v1/account/approvals/${a.approvalId}`, { choice: a.number }))).toBe('recovery-hold');
       }
@@ -1208,36 +1242,40 @@ describe('review round 2', () => {
     });
 
     describe('R4-M1 (lead decision 2026-10-30): a weak full session may cancel a backup session only when it is older', () => {
-      /** A password-only owner whose sign-up session (weak, set-up window over) made recovery codes. */
-      async function weakOwnerWithCodes() {
+      /** A password-only owner whose sign-up session (weak, set-up window over) made the recovery code. */
+      async function weakOwnerWithCode() {
         const o = await passwordTrader();
         await onboarding(deps, o.id, new Date(now.getTime() + HOUR));
         const { codes } = (await o.b.post('/v1/account/recovery-codes', {})).json() as { codes: string[] };
-        expect(codes.length).toBeGreaterThan(1);
+        expect(codes).toHaveLength(1);
         await onboarding(deps, o.id, null);
-        return { ...o, codes };
+        return { ...o, code: codes[0]! };
       }
       const backupLogin = async (name: string, code: string) => {
         const b = new Browser(app);
-        expect((await b.post('/v1/login/backup', { loginName: name, kind: 'recovery-code', code, deviceLabel: 'X' })).statusCode).toBe(200);
+        expect((await backup(b, name, code)).statusCode).toBe(200);
         return sessionOf(b);
       };
 
-      it("the owner's older weak session cancels a thief's later backup session; the hold stays (fail closed)", async () => {
-        const o = await weakOwnerWithCodes();
+      it("model v3: no older weak session is left to cancel it (the recovery-code login logged the owner's out); the hold stays", async () => {
+        const o = await weakOwnerWithCode();
         setNow(new Date(now.getTime() + 60_000));
-        const rec = await backupLogin(o.name, o.codes[0]!);
-        expect((await o.b.delete(`/v1/account/recovery-sessions/${rec}`)).json()).toEqual({ ok: true });
-        const { rows } = await deps.db.query('select 1 from sessions where id = $1 and revoked_at is not null', [rec]);
+        const rec = await backupLogin(o.name, o.code);
+        expect((await o.b.delete(`/v1/account/recovery-sessions/${rec}`)).statusCode).toBe(401);
+        const { rows } = await deps.db.query('select 1 from sessions where id = $1 and revoked_at is null', [rec]);
         expect(rows).toHaveLength(1);
-        expect(await holdOf(deps, o.id)).toMatchObject({ reason: 'weak-backup-login' });
+        expect(await holdOf(deps, o.id)).toMatchObject({ reason: 'recovery-code' });
       });
 
-      it('a weak session younger than the backup session is refused (403 weak-session) and the backup session stays', async () => {
-        const o = await weakOwnerWithCodes();
+      it('after the hold, a weak session younger than the backup session is refused (403 weak-session) and the backup session stays', async () => {
+        const o = await weakOwnerWithCode();
         setNow(new Date(now.getTime() + 60_000));
-        const rec = await backupLogin(o.name, o.codes[0]!);
-        await deps.db.query("update sessions set created_at = $2::timestamptz + interval '1 second' where id = $1", [await sessionOf(o.b), now]);
+        const rec = await backupLogin(o.name, o.code);
+        setNow(new Date(now.getTime() + HOLD_MS + 60_000));
+        await settleDueHolds(deps.config, app.events).run(deps.db, now);
+        expect(await holdOf(deps, o.id)).toBeNull();
+        // The trusted sign-up browser logs in again with the password: a weak session opened after the backup login.
+        expect((await passwordLogin(o.b, o.name)).json()).toEqual({ status: 'ok' });
         expect((await o.b.delete(`/v1/account/recovery-sessions/${rec}`)).json()).toEqual({ error: 'weak-session' });
         const { rows } = await deps.db.query('select 1 from sessions where id = $1 and revoked_at is null', [rec]);
         expect(rows).toHaveLength(1);
@@ -1274,9 +1312,16 @@ describe('review round 2', () => {
       /** Everything of the account a route could write, but the calling session's own row (its touch) and one-shot tokens. */
       async function stateOf(accountId: string, caller: string): Promise<unknown> {
         const agg = (from: string) => `select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text), '[]'::jsonb) as j from ${from}`;
-        const tables = ['alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices', 'team_members', 'team_audit'];
+        const tables = [
+          'alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices', 'team_members', 'team_audit',
+          'recovery_code_reveals', 'held_trades',
+        ];
         const out: Record<string, unknown> = {};
         for (const t of tables) out[t] = (await deps.db.query<{ j: unknown }>(`${agg(`${t} t`)} where account_id = $1`, [accountId])).rows[0]!.j;
+        // Model v3: the calling session's own drafts die with it (migration 016's trigger), so they are left out.
+        out.hold_changes = (await deps.db.query<{ j: unknown }>(
+          `${agg('hold_changes t')} where account_id = $1 and (submitted_at is not null or session_id is distinct from $2)`, [accountId, caller],
+        )).rows[0]!.j;
         out.sessions = (await deps.db.query<{ j: unknown }>(`${agg('sessions t')} where account_id = $1 and id <> $2`, [accountId, caller])).rows[0]!.j;
         out.account = (await deps.db.query<{ j: unknown }>(`${agg('accounts t')} where id = $1`, [accountId])).rows[0]!.j;
         return out;
@@ -1292,6 +1337,14 @@ describe('review round 2', () => {
       }
 
       type Prepared = { b: Browser; accountId: string; fire: () => Promise<LightMyRequestResponse> };
+      /** A password-only trader whose weak session staged a password change (model v3). */
+      async function weakStaged() {
+        const t = await passwordTrader();
+        await weakAgain(t.b, t.name, t.id);
+        const r = await changePassword(deps, t.b, t.id);
+        expect(r.json()).toMatchObject({ status: 'staged' });
+        return { ...t, changeId: changeIdOf(r) };
+      }
       const del = async (b: Browser, url: string, payload?: unknown) =>
         b.keep(await app.inject({ method: 'DELETE', url, headers: { origin: ORIGIN }, cookies: b.cookies, ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }) }));
 
@@ -1380,13 +1433,18 @@ describe('review round 2', () => {
           return { b: o.b, accountId: o.id, fire: () => o.b.delete(`/v1/account/sessions/${other}`) };
         },
         'DELETE /v1/account/recovery-sessions/:id': async () => {
+          // Model v3: the recovery-code login logs everyone out and the owner's proof would end the
+          // backup session, so the caller is the owner's passkey session opened after the hold's 24 h.
           const o = await passkeyWithPassword();
-          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'new-recovery-codes' });
-          const { codes } = (await o.b.post('/v1/account/recovery-codes', { confirmToken })).json() as { codes: string[] };
+          const code = await recoveryCodeOf(o);
           const rb = new Browser(app);
-          expect((await rb.post('/v1/login/backup', { loginName: o.name, kind: 'recovery-code', code: codes[0]!, deviceLabel: 'X' })).statusCode).toBe(200);
+          expect((await backup(rb, o.name, code)).statusCode).toBe(200);
           const rec = await sessionOf(rb);
-          return { b: o.b, accountId: o.id, fire: () => o.b.delete(`/v1/account/recovery-sessions/${rec}`) };
+          setNow(new Date(now.getTime() + HOLD_MS + 60_000));
+          await settleDueHolds(deps.config, app.events).run(deps.db, now);
+          const ob = new Browser(app);
+          expect((await passkeyLogin(ob, o.auth)).json()).toEqual({ status: 'ok' });
+          return { b: ob, accountId: o.id, fire: () => ob.delete(`/v1/account/recovery-sessions/${rec}`) };
         },
         'POST /v1/account/push': async () => {
           const o = await passkeyWithPassword();
@@ -1425,6 +1483,30 @@ describe('review round 2', () => {
           const mid = await teamInvite(o);
           const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-remove', memberId: mid });
           return { b: o.b, accountId: o.id, fire: () => del(o.b, `/v1/team/members/${mid}`, { confirmToken }) };
+        },
+        // Hold model v3: submitting and cancelling the waiting changes, and showing the renewed recovery code.
+        'POST /v1/account/hold/changes/submit': async () => {
+          const t = await weakStaged();
+          return { b: t.b, accountId: t.id, fire: () => submit(t.b, [t.changeId]) };
+        },
+        'DELETE /v1/account/hold/changes': async () => {
+          const t = await weakStaged();
+          expect((await submit(t.b, [t.changeId])).statusCode).toBe(200);
+          return { b: t.b, accountId: t.id, fire: () => del(t.b, '/v1/account/hold/changes') };
+        },
+        'DELETE /v1/account/hold/changes/:id': async () => {
+          const t = await weakStaged();
+          expect((await submit(t.b, [t.changeId])).statusCode).toBe(200);
+          return { b: t.b, accountId: t.id, fire: () => del(t.b, `/v1/account/hold/changes/${t.changeId}`) };
+        },
+        'POST /v1/account/recovery-code/reveal': async () => {
+          const o = await passkeyWithPassword();
+          const code = await recoveryCodeOf(o);
+          expect((await backup(new Browser(app), o.name, code)).statusCode).toBe(200);
+          // The owner's proof ends the hold; the new code is due to this session.
+          const ob = new Browser(app);
+          expect((await passkeyLogin(ob, o.auth)).json()).toEqual({ status: 'ok' });
+          return { b: ob, accountId: o.id, fire: () => ob.post('/v1/account/recovery-code/reveal') };
         },
       };
 
