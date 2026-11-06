@@ -87,7 +87,7 @@ describe('who may review which trade', () => {
     expect(refusal(await review(buyer, t.code, { neutral: true, stars: 3 }))).toEqual({ status: 400, error: 'neutral-with-details' });
     expect(refusal(await review(buyer, t.code, { ...GOOD, note: 'a\nb' }))).toEqual({ status: 400, error: 'note-multiline' });
     expect(refusal(await review(buyer, t.code, { ...GOOD, note: 'x'.repeat(121) }))).toEqual({ status: 400, error: 'note-too-long' });
-    // NEEDS_TASK_7_SENSITIVE_TEXT: the local stand-in for @x2f/proof's detectSensitiveText.
+    // @x2f/proof's detectSensitiveText (Task 7); the owner's note rules case by case are in reviews-sensitive.test.ts.
     for (const note of ['mail me at bob@example.com', 'call +1 555 123 4567', 'IBAN DE89 3704 0044 0532 0130 00', `4${'A'.repeat(94)}`]) {
       expect(refusal(await review(buyer, t.code, { ...GOOD, note })), note).toEqual({ status: 400, error: 'note-personal-details' });
     }
