@@ -79,3 +79,11 @@ create trigger accounts_kind_staff
 -- when its value is sent under the other cookie name. Existing sessions are trader-app sessions.
 alter table sessions add column app text not null default 'trader' check (app in ('trader', 'staff'));
 create index sessions_staff_live on sessions (account_id) where app = 'staff' and revoked_at is null;
+
+-- Lead review M-3 (6 Nov): staff and the owner log in only on the staff API (owner Q19, Q13), so
+-- every trader-app session such an account still has from before this migration ends here; it
+-- would otherwise live on for up to 12 hours on the trader origin. Their pushes stop with them
+-- (a push goes only to a live session's subscription).
+update sessions s set revoked_at = now()
+  from accounts a
+ where a.id = s.account_id and a.kind in ('staff', 'owner') and s.app = 'trader' and s.revoked_at is null;

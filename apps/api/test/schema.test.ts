@@ -52,6 +52,47 @@ describe('migrations', () => {
     }
   });
 
+  it('202: ends the trader-site sessions staff and the owner had before the split (lead review M-3)', async () => {
+    const db = await emptyDb();
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
+    try {
+      const all = await readdir(MIGRATIONS_DIR);
+      for (const f of all.filter((n) => n < '202')) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
+      await migrate(db, dir);
+      const account = async (kind: string, n: number) =>
+        (
+          await db.query<{ id: string }>(
+            `insert into accounts (display_name, display_key, login_tag, login_tag_key_id, legacy_login_name, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at)
+             values ($1, $2, $3, 1, true, $4, $5, $6, $7, now()) returning id`,
+            [`M3.${kind}${n}`, `m3.${kind}${n}`, randomBytes(32), kind, randomBytes(32), kind === 'trader' ? '2026-10-17' : null, kind === 'trader' ? new Date() : null],
+          )
+        ).rows[0]!.id;
+      const session = async (accountId: string, revoked: Date | null = null) =>
+        (
+          await db.query<{ id: string }>(
+            `insert into sessions (account_id, token_hash, level, device_label, created_at, last_seen_at, expires_at, revoked_at)
+             values ($1, $2, 'full', 'D', now(), now(), now() + interval '12 hours', $3) returning id`,
+            [accountId, randomBytes(32), revoked],
+          )
+        ).rows[0]!.id;
+      const mod = await session(await account('staff', 1));
+      const own = await session(await account('owner', 1));
+      const trader = await session(await account('trader', 1));
+      const earlier = new Date('2026-11-01T00:00:00Z');
+      const already = await session(await account('staff', 2), earlier);
+      await migrate(db);
+      const { rows } = await db.query<{ id: string; revoked_at: Date | null; app: string }>('select id, revoked_at, app from sessions');
+      const of = (id: string) => rows.find((r) => r.id === id)!;
+      expect(of(mod).revoked_at).not.toBeNull();
+      expect(of(own).revoked_at).not.toBeNull();
+      expect(of(trader).revoked_at).toBeNull();
+      expect(of(already).revoked_at).toEqual(earlier);
+      expect(rows.every((r) => r.app === 'trader')).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('009: an existing username becomes the display name and, until the person picks one, the login name too (review I3)', async () => {
     const db = await emptyDb();
     const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
