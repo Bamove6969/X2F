@@ -181,3 +181,33 @@ describe('badges on the card', () => {
     expect(host.querySelector('button[aria-label^="Show all"]')).toBeNull();
   });
 });
+
+describe('OfferCard as a pick row (two panes, Fold-Offers)', () => {
+  it('an online offer is one button that picks it, pressed when picked, with no Trade of its own', () => {
+    const picked: string[] = [];
+    const mira = byName('mira.k');
+    const { host } = render(
+      <MemoryRouter>
+        <OfferCard offer={mira} currency="USD" copy={SELL_COPY} primary={false} now={NOW} pick={{ pressed: true, onPick: (o) => picked.push(o.id) }} />
+      </MemoryRouter>,
+    );
+    const rows = host.querySelectorAll('button');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.getAttribute('aria-pressed')).toBe('true');
+    expect(rows[0]!.textContent).toContain('mira.k');
+    expect(host.querySelector('[data-primary]')).toBeNull();
+    fire(rows[0]!, new MouseEvent('click', { bubbles: true }));
+    expect(picked).toEqual([mira.id]);
+  });
+
+  it("an offline poster's offer stays as on the phone: Message, no pick", () => {
+    const off = offers().find((o) => !o.poster.online && o.opensAt === undefined)!;
+    const { host } = render(
+      <MemoryRouter>
+        <OfferCard offer={off} currency="USD" copy={SELL_COPY} primary={false} now={NOW} pick={{ pressed: false, onPick: () => undefined }} />
+      </MemoryRouter>,
+    );
+    expect(host.querySelector('[aria-pressed]')).toBeNull();
+    expect(buttons(host)).toContain(`Message ${off.poster.displayName}`);
+  });
+});
