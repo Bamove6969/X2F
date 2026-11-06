@@ -21,7 +21,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 export const BOARDS_DIR = fileURLToPath(new URL('../../../design/x2f-app/', import.meta.url));
 
@@ -551,9 +551,17 @@ export async function expectParity(
   const refsDir = o.refsDir ?? `${BOARDS_DIR}refs`;
   const failures: string[] = [];
 
-  const primaries = await page
-    .locator('[data-primary]')
-    .evaluateAll((els) => els.filter((e) => e.checkVisibility({ visibilityProperty: true, opacityProperty: true })).length);
+  const countPrimaries = () =>
+    page
+      .locator('[data-primary]')
+      .evaluateAll((els) => els.filter((e) => e.checkVisibility({ visibilityProperty: true, opacityProperty: true })).length);
+  // The page as it settles: a check right after `toHaveURL` sometimes caught the next setup step
+  // with no visible primary yet (found 0; 1 in 10 runs of setup.spec's PGP path on 03299d38 too,
+  // 6 Nov 2026; the exact cause is not pinned down). Wait, bounded, for the count the board expects;
+  // a page that never gets there still fails below with its real count, so nothing is loosened.
+  const want = o.primary === false ? 0 : 1;
+  await expect.poll(countPrimaries, { timeout: 10_000 }).toBe(want).catch(() => undefined);
+  const primaries = await countPrimaries();
   if (o.primary === false) {
     if (primaries !== 0) failures.push(`no [data-primary] on a board without a primary action, found ${primaries}`);
   } else if (primaries !== 1) {
