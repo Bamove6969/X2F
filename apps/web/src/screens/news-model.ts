@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { api } from '../api/client.js';
+import type { NewsItem } from './NewsMessage.js';
 
 /**
  * Plan 4 Task 28: the News inbox (owner, 2026-10-29; spec 6.6). `GET /v1/news` lists the messages
@@ -9,13 +10,7 @@ import { api } from '../api/client.js';
  * safe side for what may be X2F's only channel to users.
  */
 
-export interface NewsItem {
-  id: number;
-  title: string;
-  body: string;
-  publishedAt: string;
-  editedAt: string | null;
-}
+export type { NewsItem } from './NewsMessage.js';
 
 export interface NewsList {
   items: NewsItem[];
@@ -47,10 +42,7 @@ export function unseenOf(items: readonly NewsItem[], lastSeen: number): NewsItem
   return items.filter((i) => i.id > lastSeen);
 }
 
-/** "29 Oct 2026, 09:00" in the reader's own locale and time zone. */
-export function postedDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-}
+export { postedDate } from './NewsMessage.js';
 
 /** Reads `GET /v1/news`, keeping only well-formed items (newest first, as the server sends them). */
 export async function fetchNews(signal?: AbortSignal): Promise<NewsList> {
