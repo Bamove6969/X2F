@@ -1,0 +1,5 @@
+- [Defer to lead](defer-to-lead.md) — blocked actions/decisions go to the lead via to-lead.log, not the owner
+- [Second-session handoff](second-session-handoff.md) — read ~/x2f-comms/HANDOFF-SECOND.md first after a clear
+- [Owner calls rule](owner-calls-rule.md) — product/security/money/copy calls go to the lead with options; technical choices stay mine; brief helpers with it
+- [Helper model rule](helper-model-rule.md) — sonnet only for mechanical helper jobs, opus for reviews/money/auth/building
+- [Cloud move](cloud-move.md) — 6 Nov: claude2 work moved to a cloud session; local stays idle unless the lead reactivates it

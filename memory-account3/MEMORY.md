@@ -1,0 +1,1 @@
+- [X2F third session role](x2f-third-session-role.md) — claude3 role; team channel = Jetpost "X2F Team Room" (log relay retired 11-06); local session stopped, cloud claude3 works
