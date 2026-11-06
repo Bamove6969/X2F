@@ -44,19 +44,23 @@ export function OffersRoute({ side, copy }: { side: Side; copy: BrowseCopy }) {
   }
 
   const shown = offerId ?? first;
-  const onPick = (o: Offer) => {
-    const now = new URLSearchParams(search);
-    const next = new URLSearchParams(KEPT.flatMap((k) => (now.get(k) !== null ? [[k, now.get(k)!]] : [])));
+  const goTo = (id: string, from: URLSearchParams, replace: boolean) => {
+    const next = new URLSearchParams(KEPT.flatMap((k) => (from.get(k) !== null ? [[k, from.get(k)!]] : [])));
     if (!next.has('currency')) next.set('currency', currency);
-    const path = quotePath(adSide(side), methodId, o.id, currency).split('?')[0]!;
-    // From the list, a step forward (Back returns to the list, as on a phone); between quotes, a swap.
-    void navigate(`${path}?${next}`, { replace: offerId !== undefined });
+    const path = quotePath(adSide(side), methodId, id, currency).split('?')[0]!;
+    void navigate(`${path}?${next}`, { replace });
   };
+  // From the list, a step forward (Back returns to the list, as on a phone); between quotes, a swap.
+  const onPick = (o: Offer) => goTo(o.id, new URLSearchParams(search), offerId !== undefined);
+  // Nothing picked yet, so the pane shows `first` on the list's URL: the first input there picks it
+  // in place, with the quote's own params (review 2026-11-06 m2), so a fold keeps the quote and its
+  // take. Not a step: Back still leaves the list.
+  const onFirstInput = offerId === undefined && first !== null ? (params: URLSearchParams) => goTo(first, params, true) : undefined;
   return (
     <Panes
       layout={layout}
       main={<OfferList side={side} copy={copy} onTrade={onTrade} pick={{ id: shown, onPick, onFirst: setFirst }} />}
-      side={shown !== null ? <QuoteScreen key={shown} copy={quoteCopy} pane={{ methodId, offerId: shown }} /> : null}
+      side={shown !== null ? <QuoteScreen key={shown} copy={quoteCopy} pane={{ methodId, offerId: shown, onFirstInput }} /> : null}
       sideLabel="Quote"
     />
   );
