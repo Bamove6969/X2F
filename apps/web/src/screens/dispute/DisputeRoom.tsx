@@ -61,7 +61,7 @@ export function DisputeHourglass({ dispute, now, serverClock }: { dispute: Dispu
         ) : (
           <>
             <span className="dispute-strong">
-              <Countdown deadline={goal} serverClock={serverClock} format="minutes" /> at most
+              <Countdown deadline={goal} serverClock={serverClock} format="minutes" /> at most{/* not-a-refusal: the time left on the hourglass */}
             </span>
             <span className="dispute-muted">That's the longest before a moderator steps in. It's usually much quicker.</span>
           </>
