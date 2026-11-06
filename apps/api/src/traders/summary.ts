@@ -24,8 +24,9 @@ export interface TraderSummary {
   stage: Stage;
   /**
    * C12b (owner 2026-11-01/02): the "$X+ in trades to date" line, X in whole US dollars rounded
-   * down (@x2f/reputation `tradedBucketUsd`); null unless the trader opted in and has reached at
-   * least $10,000 (owner 2026-11-02: exactly $10,000 counts). Never the exact total.
+   * down (@x2f/reputation `tradedBucketUsd`); null unless the trader opted in and has traded MORE
+   * than $10,000 (owner 2026-11-03: exactly $10,000.00 shows nothing, $10,000.01 shows $10,000+).
+   * Never the exact total.
    */
   tradedOverUsd: number | null;
 }

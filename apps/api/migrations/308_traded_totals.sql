@@ -1,6 +1,7 @@
--- C12b (owner 2026-11-01/02, via the lead): the opt-in "Completed over $X in trades to date" line,
--- and a buyer-cancel count for moderators. The smallest per-account running totals; a SEAM for
--- Plan 5 Task 20's account_totals (fold these columns into it, or keep this table beside it).
+-- C12b (owner 2026-11-01/02, via the lead): the opt-in "$X+ in trades to date" line (shown only
+-- for MORE than $X, owner 2026-11-03), and a buyer-cancel count for moderators. The smallest
+-- per-account running totals; a SEAM for Plan 5 Task 20's account_totals (fold these columns into
+-- it, or keep this table beside it).
 --
 -- 1. account_traded_totals: one row per account, created on its first counted trade.
 --    - own_usd_cents: the sum of trades.usd_cents (the take-time USD value) of the account's

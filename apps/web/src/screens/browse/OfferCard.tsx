@@ -65,8 +65,8 @@ function posterLine(offer: Offer, now: Date): string {
 }
 
 /**
- * C12b: the trader's opt-in volume line. X is a step the trader has REACHED (owner 2026-11-02:
- * at least $X), so the "+" form stays true at exactly $X. Owner: "along the lines of
+ * C12b: the trader's opt-in volume line. X is a step the trader has traded MORE than (owner
+ * 2026-11-03: exactly $10,000.00 shows nothing, $10,000.01 shows $10,000+). Owner: "along the lines of
  * 'Over $90,000+'"; the exact words are Design's. COPY-UNSIGNED
  */
 function tradedLine(usd: number): string {

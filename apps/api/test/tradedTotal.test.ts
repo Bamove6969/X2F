@@ -11,7 +11,8 @@ import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, seedReviews, seedTrade } from './helpers/trades.js';
 
-// C12b (owner 2026-11-01/02, via the lead): the opt-in "Completed over $X in trades to date" line.
+// C12b (owner 2026-11-01/02, via the lead): the opt-in "$X+ in trades to date" line (shown only
+// for MORE than $X, owner 2026-11-03).
 // Completed trades only (released, or refunded to settle a dispute), valued at the take-time USD
 // value (trades.usd_cents), kept in a per-account running total that survives the trade purge,
 // shown only as a rounded-down bucket and only when the trader opted in. Also a buyer-cancel count

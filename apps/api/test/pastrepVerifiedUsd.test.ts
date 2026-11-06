@@ -1,5 +1,5 @@
 // Owner order 2 Nov 2026 (lead 07:48): imported past-reputation volume counts toward the traded total
-// ("Completed over $X") ONLY through a moderator-verified dollar figure. Migration 310 adds
+// ("$X+ in trades to date") ONLY through a moderator-verified dollar figure. Migration 310 adds
 // `past_reputation.verified_usd_cents` (bigint, null = not verified); only a moderator sets it,
 // through `setVerifiedPastRepUsd` (the staff route and screen are Plan 4's); the traded total reads
 // `verifiedPastRepUsdCents`, which sums APPROVED claims with a figure (owner 2026-11-02). Null, a signed
@@ -88,6 +88,30 @@ describe('migration 310: past_reputation.verified_usd_cents', () => {
     const own = await owner();
     await set(own, T0, 200);
     expect(await row(id)).toEqual({ verified_usd_cents: '200', verified_usd_by: own, verified_usd_at: T0 });
+  });
+
+  it('review M1: re-pointing who verified a figure to a non-staff account is refused (figure and time unchanged)', async () => {
+    const trader = await account();
+    const staff = await account('staff');
+    const id = await claim(trader);
+    await deps.db.query('update past_reputation set verified_usd_cents = 100, verified_usd_by = $2, verified_usd_at = $3 where id = $1', [id, staff, T0]);
+    const repoint = (by: string) => deps.db.query('update past_reputation set verified_usd_by = $2 where id = $1', [id, by]);
+    await expect(repoint(trader)).rejects.toMatchObject({ code: '42501' });
+    await expect(repoint(await account('member'))).rejects.toMatchObject({ code: '42501' });
+    await expect(repoint(await account('staff', true))).rejects.toMatchObject({ code: '42501' });
+    expect(await row(id)).toEqual({ verified_usd_cents: '100', verified_usd_by: staff, verified_usd_at: T0 });
+    // Re-pointing to another enabled staff account passes the full check.
+    const other = await account('staff');
+    await repoint(other);
+    expect((await row(id)).verified_usd_by).toBe(other);
+  });
+
+  it('deleting the staff account that verified a figure nulls verified_usd_by and keeps the figure (on delete set null)', async () => {
+    const staff = await account('staff');
+    const id = await claim(await account());
+    await deps.db.query('update past_reputation set verified_usd_cents = 300, verified_usd_by = $2, verified_usd_at = $3 where id = $1', [id, staff, T0]);
+    await deps.db.query('delete from accounts where id = $1', [staff]);
+    expect(await row(id)).toEqual({ verified_usd_cents: '300', verified_usd_by: null, verified_usd_at: T0 });
   });
 });
 

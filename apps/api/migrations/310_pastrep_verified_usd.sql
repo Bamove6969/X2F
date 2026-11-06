@@ -1,6 +1,6 @@
 -- Owner order 2 Nov 2026 (relayed by the lead): imported past reputation counts toward the traded
--- total ("Completed over $X") ONLY through a dollar figure a moderator verified. Null = not verified,
--- and an unverified or dead (rejected, removed, revoked) claim adds nothing.
+-- total ("$X+ in trades to date") ONLY through a dollar figure a moderator verified. Null = not
+-- verified, and an unverified or dead (rejected, removed, revoked) claim adds nothing.
 --
 -- `verified_usd_cents` is whole US cents. Only `setVerifiedPastRepUsd` (apps/api/src/pastrep/store.ts)
 -- writes it; the moderator route and screen are Plan 4's (tripwire NEEDS_P4_PASTREP_VERIFIED_USD).
@@ -25,8 +25,10 @@ begin
     return new;
   end if;
   -- A staff account's deletion only nulls `verified_usd_by` (on delete set null): let that through.
+  -- Only that: re-pointing `verified_usd_by` to another account takes the full check below (review M1).
   if tg_op = 'UPDATE' and new.verified_usd_cents is not distinct from old.verified_usd_cents
-     and new.verified_usd_at is not distinct from old.verified_usd_at then
+     and new.verified_usd_at is not distinct from old.verified_usd_at
+     and (new.verified_usd_by is null or new.verified_usd_by is not distinct from old.verified_usd_by) then
     return new;
   end if;
   if new.verified_usd_at is null or new.verified_usd_by is null or not exists (
