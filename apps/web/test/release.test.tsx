@@ -13,6 +13,7 @@ import type { ReleaseEscrow, ReleaseTrade } from '../src/screens/trade/release/v
 import '../src/screens/trade/screens.js';
 import { screenFor, TradeRoom } from '../src/screens/trade/TradeRoom.js';
 import { POLL_MS, setTradeEscrowHook, type TradeEscrow } from '../src/screens/trade/seams.js';
+import { TIMERS } from '@x2f/trade';
 import { advance, pointer, render } from './render.js';
 import { resetWarned, setWarned } from '../src/screens/trade/warned.js';
 
@@ -135,6 +136,13 @@ describe('SellerConfirm', () => {
     for (const el of s.host.querySelectorAll('[data-username]')) expect(el.textContent).toBe('mira.k');
     expect(s.host.querySelectorAll('[data-username]').length).toBeGreaterThanOrEqual(2);
     expect(s.host.querySelectorAll('[data-primary]')).toHaveLength(1);
+  });
+
+  it('the confirm-window tip says the buyer can ask a moderator from TIMERS.buyerDisputeAfterPaidMin after marking paid (cap-dispute I1)', () => {
+    const s = sellerConfirm(trade());
+    const tip = s.host.querySelector('#x2f-confirm-tip')!.textContent!.replace(/\s+/g, ' ');
+    expect(tip).toContain(`mira.k can ask a moderator to step in from ${TIMERS.buyerDisputeAfterPaidMin} minutes after marking paid.`);
+    expect(tip).not.toContain('If time runs out');
   });
 
   it('the release warning (Task 38, board Warn-Release) opens first and keeps the hold locked until "It\'s in my account", once per trade', () => {

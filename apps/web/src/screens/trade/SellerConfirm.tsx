@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
+import { TIMERS } from '@x2f/trade';
 import { ApiCallError, useServerClock } from '../../api/client.js';
 import { postTradeEvent } from '../../api/trade.js';
 import { Button } from '../../ui/Button.js';
@@ -369,8 +370,10 @@ function ConfirmWindow({ deadline, clock, buyer, place }: { deadline: string; cl
       </button>
       <span id="x2f-confirm-tip" role="tooltip" className="x2f-release__tip" hidden={!open}>
         Time you have to check {place} and release, or report that the money didn&apos;t arrive. Instant apps like Zelle get 2 hours;
-        bank wires get up to 24. If time runs out, {buyer} can ask a moderator to step in. Nothing is released without you or a
-        moderator.
+        bank wires get up to 24.{' '}
+        {/* COPY-UNSIGNED (cap-dispute review I1): owner wording pending for the 30-minute dispute rule. */}
+        {buyer} can ask a moderator to step in from {TIMERS.buyerDisputeAfterPaidMin} minutes after marking paid. Nothing is
+        released without you or a moderator.
       </span>
     </>
   );
