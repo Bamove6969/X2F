@@ -22,8 +22,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <div style="{{appStyle}}">
 
   <sc-if value="{{isWrite}}" hint-placeholder-val="{{true}}">
-    <header style="display: flex; flex-direction: column; gap: 4px; padding: 20px 16px 8px;">
-      <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">You bought <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> XMR ($412.50) from satoshi_ghost · Zelle</span>
+    <header style="display: flex; flex-direction: column; gap: 4px; padding: 8px 16px 8px;">
+      <div style="display: flex; align-items: center; height: 44px; margin: 0 -10px 4px;">
+        <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      </div>
+      <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">You bought <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$412.50</span>) from satoshi_ghost · Zelle</span>
       <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Review the trade</h1>
     </header>
     <main style="flex-grow: 1; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
@@ -219,7 +222,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"view":{"editor":"enum","options":["write","profile"],"default":"write"},"$preview":{"width":390,"height":1638}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"view":{"editor":"enum","options":["write","profile"],"default":"write"},"$preview":{"width":390,"height":1678}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -242,7 +245,7 @@ class Component extends DCLogic {
     const max = 5;
     const s = this.state;
     // App area height (measured, min 844), plus the design-notes strip below it.
-    const appH = view === 'profile' ? 1211 : (s.submitted ? 844 : 1433);
+    const appH = view === 'profile' ? 1211 : (s.submitted ? 844 : 1473);
     const NOTES = 205;
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (appH + NOTES) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + appH + 'px; display: flex; flex-direction: column; overflow: hidden;';
@@ -273,7 +276,7 @@ class Component extends DCLogic {
       return {
         label, on: on ? 'true' : 'false',
         style: on
-          ? chipBase + 'border: 2px solid ' + tone + '; background: color-mix(in srgb, ' + tone + ' 14%, var(--surface-raised)); color: ' + tone + '; font-weight: 600;'
+          ? chipBase + 'border: 2px solid var(--ink); background: var(--surface-raised); color: ' + tone + '; font-weight: 600;'
           : chipBase + 'border: 1px solid var(--line); background: transparent; color: var(--ink);',
         toggle: () => this.setState({ phrases: Object.assign({}, s.phrases, { [label]: !on }) })
       };

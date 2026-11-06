@@ -63,7 +63,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1; min-width: 0; padding-top: 12px;">
           <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{o.title}}</span>
           <span style="font-size: 16px; line-height: 22px; font-weight: 600; {{o.textStyle}}">{{o.methods}}</span>
-          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; {{o.textStyle}}">{{o.price}}</span> · {{o.priceSub}}</span>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; {{o.textStyle}}">{{o.priceFrom}}</span><sc-if value="{{o.hasTo}}" hint-placeholder-val="{{true}}"> to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; {{o.textStyle}}">{{o.priceTo}}</span></sc-if> · {{o.priceSub}}</span>
           <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.limits}}</span> per trade</span>
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px;">
             <sc-if value="{{notHold}}" hint-placeholder-val="{{true}}">
@@ -131,11 +131,11 @@ class Component extends DCLogic {
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + (hold ? 1851 : 1705) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     const OFFERS = [
-      { id: 'o1', side: 'Selling XMR', cur: 'USD · CAD', methods: 'Zelle · PayPal +2.0%', price: '+0.4% to +0.8%', priceSub: '2 tiers · follows the market', limits: '$50 – $2,000' },
-      { id: 'o2', side: 'Selling XMR', cur: 'USD', methods: 'Cash by mail', price: '+1.5%', priceSub: '1 tier · follows the market', limits: '$100 – $1,000' },
-      { id: 'o3', side: 'Buying XMR', cur: 'USD · CAD', methods: 'Zelle · Cash App', price: '−0.5%', priceSub: '1 tier · follows the market', limits: '$50 – $800' },
-      { id: 'o4', side: 'Selling XMR', cur: 'EUR · GBP', methods: 'SEPA bank transfer · Revolut +1.0%', price: '+0.6% to +1.2%', priceSub: '3 tiers · follows the market', limits: '€50 – €3,000' },
-      { id: 'o5', side: 'Buying XMR', cur: 'EUR · GBP · USD', methods: 'Wise', price: '−0.3%', priceSub: '1 tier · follows the market', limits: '€100 – €1,500' }
+      { id: 'o1', side: 'Selling XMR', cur: 'USD · CAD', methods: 'Zelle · PayPal +2.0%', priceFrom: '+0.4%', priceTo: '+0.8%', priceSub: '2 bands · follows the market', limits: '$50 – $2,000' },
+      { id: 'o2', side: 'Selling XMR', cur: 'USD', methods: 'Cash by mail', priceFrom: '+1.5%', priceTo: '', priceSub: '1 band · follows the market', limits: '$100 – $1,000' },
+      { id: 'o3', side: 'Buying XMR', cur: 'USD · CAD', methods: 'Zelle · Cash App', priceFrom: '−0.5%', priceTo: '', priceSub: '1 band · follows the market', limits: '$50 – $800' },
+      { id: 'o4', side: 'Selling XMR', cur: 'EUR · GBP', methods: 'SEPA bank transfer · Revolut +1.0%', priceFrom: '+0.6%', priceTo: '+1.2%', priceSub: '3 bands · follows the market', limits: '€50 – €3,000' },
+      { id: 'o5', side: 'Buying XMR', cur: 'EUR · GBP · USD', methods: 'Wise', priceFrom: '−0.3%', priceTo: '', priceSub: '1 band · follows the market', limits: '€100 – €1,500' }
     ];
     const on = this.state.on;
     const nOn = OFFERS.filter((o) => on[o.id]).length;
@@ -156,9 +156,9 @@ class Component extends DCLogic {
       // Ticked card = 2px ink ring on --surface-raised (selection is never orange).
       const look = ticked
         ? 'padding: 4px; background: var(--surface-raised); border: 2px solid var(--ink);'
-        : (v ? 'padding: 4px; background: var(--surface); border: 2px solid transparent;' : 'padding: 5px; background: transparent; border: 1px dashed var(--line);');
+        : (v ? 'padding: 4px; background: var(--surface); border: 2px solid transparent;' : 'padding: 5px; background: transparent; border: 1px solid var(--line);');
       return {
-        ...o,
+        ...o, hasTo: o.priceTo !== '',
         title: o.side + ' · ' + o.cur,
         isOn: v, isOff: !v,
         onStr: v ? 'true' : 'false',

@@ -75,26 +75,30 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 4px;">
-        <span style="display: inline-flex; align-items: baseline; gap: 8px;"><span id="oa-price" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">{{priceText}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">/ XMR</span></span>
+        <span style="display: inline-flex; align-items: baseline; gap: 8px;"><span id="oa-price" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">{{priceText}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">/ <span style="color: var(--monero-ink);">XMR</span></span></span>
         <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 15px; line-height: 20px; font-weight: 600;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{vsIcon}}"/></svg><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{vsPct}}</span> {{vsWord}} market</span><sc-if value="{{hasMethodAdj}}" hint-placeholder-val="{{false}}"><span style="font-weight: 400; color: var(--ink-muted);">· incl. {{method.name}}</span></sc-if></span>
         <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 00-14.9-4"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0014.9 4"/><path d="M20 20v-4h-4"/></svg><span>Market <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{marketText}}</span> · updates live</span></span>
       </div>
 
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-          <label for="oa-cur" style="position: relative; display: flex; align-items: flex-end; height: 60px; box-sizing: border-box; border-radius: 6px; background: var(--surface-raised); border: 1px solid var(--line); cursor: pointer;">
-            <span style="position: absolute; left: 14px; top: 9px; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted); pointer-events: none;">Currency</span>
-            <select id="oa-cur" onChange="{{onCur}}" style="flex-grow: 1; min-width: 0; height: 58px; padding: 22px 40px 0 14px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; appearance: none; -webkit-appearance: none; cursor: pointer;">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="oa-cur" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Currency</label>
+          <span style="position: relative; display: flex;">
+            <select id="oa-cur" onChange="{{onCur}}" style="flex-grow: 1; min-width: 0; height: 48px; padding: 0 40px 0 14px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; appearance: none; -webkit-appearance: none; cursor: pointer;">
               <sc-for list="{{curOptions}}" as="o" hint-placeholder-count="4"><option value="{{o.code}}" selected="{{o.sel}}">{{o.label}}</option></sc-for>
             </select>
-            <svg style="position: absolute; right: 12px; top: 19px; pointer-events: none; color: var(--ink);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-          </label>
-        <label for="oa-method" style="position: relative; display: flex; align-items: flex-end; height: 60px; box-sizing: border-box; border-radius: 6px; background: var(--surface-raised); border: 1px solid var(--line); cursor: pointer;">
-          <span style="position: absolute; left: 14px; top: 9px; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted); pointer-events: none;">{{ad.methodLabel}}</span>
-          <select id="oa-method" onChange="{{onMethod}}" style="flex-grow: 1; min-width: 0; height: 58px; padding: 22px 40px 0 14px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; appearance: none; -webkit-appearance: none; text-overflow: ellipsis; cursor: pointer;">
-            <sc-for list="{{methodOptions}}" as="o" hint-placeholder-count="6"><option value="{{o.id}}" selected="{{o.sel}}">{{o.label}}</option></sc-for>
-          </select>
-          <svg style="position: absolute; right: 12px; top: 19px; pointer-events: none; color: var(--ink);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-        </label>
+            <svg style="position: absolute; right: 12px; top: 14px; pointer-events: none; color: var(--ink);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label for="oa-method" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{ad.methodLabel}}</label>
+          <span style="position: relative; display: flex;">
+            <select id="oa-method" onChange="{{onMethod}}" style="flex-grow: 1; min-width: 0; height: 48px; padding: 0 40px 0 14px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; appearance: none; -webkit-appearance: none; text-overflow: ellipsis; cursor: pointer;">
+              <sc-for list="{{methodOptions}}" as="o" hint-placeholder-count="6"><option value="{{o.id}}" selected="{{o.sel}}">{{o.label}}</option></sc-for>
+            </select>
+            <svg style="position: absolute; right: 12px; top: 14px; pointer-events: none; color: var(--ink);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </span>
+        </div>
         <sc-if value="{{fromSearch}}" hint-placeholder-val="{{true}}">
           <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg>Opened on your search: {{searchText}}</span>
         </sc-if>
@@ -132,7 +136,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
               <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{r.name}}</span>
               <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{r.winPre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{r.win}}</span> {{r.unit}}{{r.winPost}}</span>
-              <sc-if value="{{r.hasLimit}}" hint-placeholder-val="{{false}}"><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{r.limitPre}} <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{r.limitVal}}</span>{{r.limitUnit}}</span></sc-if>
+              <sc-if value="{{r.hasLimit}}" hint-placeholder-val="{{false}}"><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{r.limitPre}} <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{r.limitVal}}</span><span style="font-weight: 600; color: var(--monero-ink);">{{r.limitUnit}}</span></span></sc-if>
             </span>
             <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; text-align: right;">
               <span style="{{r.adjStyle}}">{{r.adjText}}</span>
@@ -160,41 +164,48 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </section>
 
     <a href="#" style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box; border-radius: 16px; background: var(--surface); color: var(--ink); text-decoration: none;">
-      <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 14%, transparent);"><svg style="color: var(--escrow);" width="32" height="8" viewBox="0 0 32 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="currentColor"/><circle cx="16" cy="4" r="4" fill="currentColor"/><circle cx="28" cy="4" r="3.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span>
+      <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span>
       <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
         <span style="font-size: 16px; line-height: 22px; font-weight: 600;">2-of-3 escrow</span>
         <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">X2F never holds your coins. Any two of you, {{ad.vendor}} and X2F can move them.</span>
       </span>
       <svg style="flex-shrink: 0; color: var(--ink-muted);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
     </a>
+
+    <section aria-labelledby="oa-start" style="display: flex; flex-direction: column; gap: 8px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <h2 id="oa-start" style="margin: 0 0 4px; font-size: 18px; line-height: 24px; font-weight: 600;">Start a trade</h2>
+      <div role="group" aria-label="Which amount you type" style="display: flex; gap: 8px; margin: -6px 0 -2px;">
+        <sc-for list="{{toggles}}" as="t" hint-placeholder-count="2">
+          <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{t.style}}">{{t.label}}</span></button>
+        </sc-for>
+      </div>
+      <label for="oa-amt" style="{{amtBoxStyle}}">
+        <sc-if value="{{inPrefix}}" hint-placeholder-val="{{true}}"><span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; color: var(--ink-muted);">{{inPrefix}}</span></sc-if>
+        <input id="oa-amt" type="text" inputmode="decimal" value="{{amount}}" onChange="{{onAmount}}" aria-label="{{amtLabel}}" aria-describedby="oa-conv" style="flex-grow: 1; min-width: 0; height: 46px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; outline-offset: 6px;">
+        <span style="{{inSuffixStyle}}">{{inSuffix}}</span>
+      </label>
+      <sc-if value="{{valid}}" hint-placeholder-val="{{true}}">
+        <span id="oa-conv" style="display: flex; justify-content: space-between; gap: 8px; min-height: 28px; align-items: center; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span>{{convPre}} <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500; color: var(--ink);">{{convVal}}</span> <span style="{{convUnitStyle}}">{{convUnit}}</span></span><span>at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{priceText}}</span></span></span>
+      </sc-if>
+      <sc-if value="{{invalid}}" hint-placeholder-val="{{false}}">
+        <span id="oa-conv" role="alert" style="display: flex; align-items: center; gap: 6px; min-height: 28px; font-size: 13px; line-height: 18px; color: var(--danger);"><svg style="flex-shrink: 0;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg><span>{{errText}}</span></span>
+      </sc-if>
+      <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">No fee for you. The vendor pays the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span>.</span>
+    </section>
   </main>
 
   <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
-    <div role="group" aria-label="Which amount you type" style="display: flex; gap: 8px; margin: -6px 0 -2px;">
-      <sc-for list="{{toggles}}" as="t" hint-placeholder-count="2">
-        <button type="button" aria-pressed="{{t.pressed}}" onClick="{{t.pick}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{t.style}}">{{t.label}}</span></button>
-      </sc-for>
-    </div>
-    <label for="oa-amt" style="{{amtBoxStyle}}">
-      <sc-if value="{{inPrefix}}" hint-placeholder-val="{{true}}"><span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; color: var(--ink-muted);">{{inPrefix}}</span></sc-if>
-      <input id="oa-amt" type="text" inputmode="decimal" value="{{amount}}" onChange="{{onAmount}}" aria-label="{{amtLabel}}" aria-describedby="oa-conv" style="flex-grow: 1; min-width: 0; height: 46px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; outline-offset: 6px;">
-      <span style="{{inSuffixStyle}}">{{inSuffix}}</span>
-    </label>
     <sc-if value="{{valid}}" hint-placeholder-val="{{true}}">
-      <span id="oa-conv" style="display: flex; justify-content: space-between; gap: 8px; min-height: 28px; align-items: center; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span>{{convPre}} <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500; color: var(--ink);">{{convVal}}</span> <span style="{{convUnitStyle}}">{{convUnit}}</span></span><span>at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{priceText}}</span></span></span>
+      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">{{ad.cta}}</a>
     </sc-if>
     <sc-if value="{{invalid}}" hint-placeholder-val="{{false}}">
-      <span id="oa-conv" role="alert" style="display: flex; align-items: center; gap: 6px; min-height: 28px; font-size: 13px; line-height: 18px; color: var(--danger);"><svg style="flex-shrink: 0;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg><span>{{errText}}</span></span>
+      <button type="button" disabled style="height: 56px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">{{ad.cta}}</button>
     </sc-if>
-    <sc-if value="{{valid}}" hint-placeholder-val="{{true}}">
-      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 56px; margin-top: 4px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">{{ad.cta}}</a>
-    </sc-if>
-    <sc-if value="{{invalid}}" hint-placeholder-val="{{false}}">
-      <button type="button" disabled style="height: 56px; margin-top: 4px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">{{ad.cta}}</button>
-    </sc-if>
-    <div style="display: flex; flex-direction: column; align-items: center;">
-      <a href="#" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 8px; color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Message {{ad.vendor}}</a>
-      <span style="padding-bottom: 4px; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">No fee for you. The vendor pays the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span>.</span>
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 66px;">
+      <sc-if value="{{invalid}}" hint-placeholder-val="{{false}}">
+        <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">Enter an amount in the range above to send a request.</span>
+      </sc-if>
+      <a href="#" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 8px; color: var(--ink-muted); font-size: 15px; font-weight: 600; text-decoration: none;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Message {{ad.vendor}}</a>
     </div>
   </footer>
   </div>
@@ -202,7 +213,6 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <section data-m="notes" aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; padding: 24px 16px 32px; border-top: 1px solid var(--line);">
     <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">
       <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
     </div>
     <p style="margin: 0; font-size: 14px; line-height: 20px;">The public page of one ad, opened from the offers list. Same anatomy on both sides of the coin; the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">side</span> tweak flips the words, the units of the limits and the button. Showing: <strong>{{sideName}}</strong>.</p>
     <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 18px; color: var(--ink);">
@@ -213,8 +223,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <li><strong>Limits.</strong> Selling side in fiat per trade; buying side in XMR with the fiat equivalent under it. A method's own limit narrows the range and the label says so.</li>
       <li><strong>All ways {{waysWord}} (kept).</strong> A drop-down hides the adjustments until it's opened, so a compact list stays for scanning and comparing. Tapping a row is the same as picking it in the drop-down; selection is the 2px ink border, never orange.</li>
       <li><strong>Terms.</strong> The vendor's own words, quoted, plus the line for the chosen method. The info callout says every trade is accepted by the vendor.</li>
-      <li><strong>Escrow row.</strong> Small 2-of-3 key mark in escrow tone. This is a new, fourth place for the mark (system v2 §1 lists three); needs sign-off.</li>
-      <li><strong>Footer.</strong> Type either side of the trade ({{toggleNames}}); the other side converts live at the price shown. Out-of-range amounts get an inline error and a disabled button. Button: <strong>{{ad.cta}}</strong>, not "{{ad.ctaShort}}": the vendor still has to accept, so the button asks rather than promises an instant trade, and still names the side. Message is a tertiary link under it so the pinned footer stays short; the fee line closes it.</li>
+      <li><strong>Escrow row.</strong> Neutral 40px shield tile. The 2-of-3 key mark stays reserved for the three places in system v2 §1, so this row doesn't use it.</li>
+      <li><strong>Start a trade card and footer.</strong> The last card holds the amount: type either side of the trade ({{toggleNames}}); the other side converts live at the price shown. Out-of-range amounts get an inline error, a disabled button and a one-line hint. The pinned footer is only the primary and the Message tertiary. Button: <strong>{{ad.cta}}</strong>, not "{{ad.ctaShort}}": the vendor still has to accept, so the button asks rather than promises an instant trade, and still names the side.</li>
     </ol>
     <aside aria-label="Decided by the owner" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov 2026</span>
@@ -229,7 +239,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["selling","buying"],"default":"selling"},"volumeLine":{"editor":"enum","options":["on","off"],"default":"on"},"$preview":{"width":390,"height":3743}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["selling","buying"],"default":"selling"},"volumeLine":{"editor":"enum","options":["on","off"],"default":"on"},"$preview":{"width":390,"height":3897}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -246,7 +256,7 @@ class Component extends DCLogic {
     const volumeOn = this.props.volumeLine !== 'off';
     // Measured with lead/offerad-tools/measure.js: screen block per side and currency (method count differs),
     // +VOL_H when the volume line shows; notes block per side.
-    const SCREEN_H = { selling: { USD: 2258, CAD: 2154, EUR: 2186, GBP: 2112 }, buying: { USD: 2246, EUR: 2190, GBP: 2116 } };
+    const SCREEN_H = { selling: { USD: 2412, CAD: 2282, EUR: 2314, GBP: 2240 }, buying: { USD: 2400, EUR: 2344, GBP: 2270 } };
     const VOL_H = 30;
     const NOTES_H = volumeOn ? 1455 : 1437;
 
@@ -344,7 +354,7 @@ class Component extends DCLogic {
 
     const cur = ad.currencies.find((c) => c.code === s.cur) || ad.currencies.find((c) => c.code === ad.searched.cur) || ad.currencies[0];
     cur.label = cur.code + ' · ' + cur.name;
-    const screenH = (SCREEN_H[side][cur.code] || 2258) + (volumeOn ? VOL_H : 0);
+    const screenH = (SCREEN_H[side][cur.code] || 2412) + (volumeOn ? VOL_H : 0);
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (screenH + NOTES_H) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const screenStyle = 'position: relative; flex-shrink: 0; height: ' + screenH + 'px; display: flex; flex-direction: column;';
     const method = cur.methods.find((m) => m.id === s.method) || cur.methods.find((m) => m.id === ad.searched.method) || cur.methods[0];

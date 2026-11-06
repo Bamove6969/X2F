@@ -20,7 +20,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </helmet>
 <div style="{{rootStyle}}">
   <header style="display: flex; align-items: center; justify-content: center; padding: 56px 32px 0;">
-    <span role="img" aria-label="X2F" style="font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true">X<span style="color: var(--monero-ink);">2</span>F</span></span>
+    <span role="img" aria-label="X2F" style="font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true" style="color: var(--ink);">X2F</span></span>
   </header>
   <main style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; padding: 32px 32px 64px;">
    <div style="width: 480px; display: flex; flex-direction: column; gap: 24px;">
@@ -48,7 +48,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Logging in as</span>
           <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{uname}}</span>
         </span>
-        <button type="button" onClick="{{change}}" style="display: inline-flex; align-items: center; height: 44px; padding: 0 12px; border: 0; border-radius: 12px; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Change</button>
+        <button type="button" onClick="{{change}}" style="display: inline-flex; align-items: center; height: 44px; padding: 0 12px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Change</button>
       </div>
       <sc-if value="{{isPgp}}" hint-placeholder-val="{{true}}">
         <section aria-label="Encrypted message" style="display: flex; flex-direction: column; gap: 16px;">
@@ -59,7 +59,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </ol>
           <div style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
             <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 0 14px;">
-              <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Expires in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">4:12</span></span>
+              <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Expires in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">4</span> min <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">12</span> s</span>
               <button type="button" onClick="{{copy}}" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/></svg>{{copyLabel}}</button>
             </div>
             <pre style="margin: 0; padding: 12px 14px 14px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 17px; color: var(--ink-muted); white-space: pre-wrap; word-break: break-all;">-----BEGIN PGP MESSAGE-----
@@ -74,9 +74,11 @@ Wm3nR8yXp1…
           </div>
           <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
             <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
-            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Check before you paste: your PGP app should show a good signature from the official X2F key, and the message should name X2F and today&#39;s date and time. If not, stop. Someone may be trying to phish you.</p>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <h2 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">Check the signature before you paste</h2>
+              <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Your PGP app should show a good signature from the official X2F key, and the message should name X2F and today&#39;s date and time. If not, stop. Someone may be trying to phish you.</p>
+            </div>
           </div>
-          <button type="button" style="display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; height: 44px; margin: -8px 0 -8px -8px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 5v6h-6"/></svg>Get a new message</button>
         </section>
       </sc-if>
       <sc-if value="{{isPasskey}}" hint-placeholder-val="{{false}}">
@@ -110,13 +112,18 @@ Wm3nR8yXp1…
       </sc-if>
       <sc-if value="{{isCodeStep}}" hint-placeholder-val="{{false}}">
         <div style="display: flex; flex-direction: column; gap: 12px;">
-          <label for="li-totp" style="font-size: 16px; line-height: 24px; font-weight: 600;">Enter the 6-digit code from your authenticator app</label>
+          <label for="li-totp" style="font-size: 16px; line-height: 24px; font-weight: 600;">Enter the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">6</span>-digit code from your authenticator app</label>
           <input id="li-totp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="height: 56px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 24px; letter-spacing: 0.3em; text-align: center;">
-          <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">The code changes every <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> seconds.</p>
+          <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">The code changes every <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> s.</p>
         </div>
       </sc-if>
     </sc-if>
-    <sc-if value="{{showCta}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{go}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 48px; margin-top: 4px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">{{cta}}</button></sc-if>
+    <sc-if value="{{showCta}}" hint-placeholder-val="{{true}}">
+      <div style="display: flex; align-items: center; gap: 12px; margin-top: 4px;">
+        <button type="button" onClick="{{go}}" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 160px; height: 48px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">{{cta}}</button>
+        <sc-if value="{{showRenew}}" hint-placeholder-val="{{true}}"><button type="button" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 5v6h-6"/></svg>Get a new message</button></sc-if>
+      </div>
+    </sc-if>
     </div>
     <div style="display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center;">
       <a href="Login-Backup-Wide.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; font-size: 15px; font-weight: 600; text-decoration: none;">Can&#39;t log in? Use a backup</a>
@@ -126,7 +133,7 @@ Wm3nR8yXp1…
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "method": {"editor": "enum", "options": ["pgp", "passkey", "security-key", "password"], "default": "pgp"}, "$preview": {"width": 1280, "height": 1121}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "method": {"editor": "enum", "options": ["pgp", "passkey", "security-key", "password"], "default": "pgp"}, "$preview": {"width": 1280, "height": 1101}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { askName: false, uname: 'nightowl_44', pwStep: 'pw', pw: '', pwShown: false, copied: false, done: false }; }
   componentDidUpdate(prev) { if (prev.method !== this.props.method) this.setState({ pwStep: 'pw', done: false, askName: false }); }
@@ -148,6 +155,7 @@ class Component extends DCLogic {
       askName: s.askName && !s.done,
       showMethod,
       showCta: !s.done,
+      showRenew: showMethod && m === 'pgp',
       uname: s.uname,
       onName: (e) => this.setState({ uname: e.target.value }),
       change: () => this.setState({ askName: true }),

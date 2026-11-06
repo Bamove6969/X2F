@@ -25,7 +25,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <svg style="{{markStyle}}" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
     </div>
     <div style="display: flex; flex-direction: column; gap: 2px;">
-      <h1 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Buying from nightowl_44</h1>
+      <h1 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Buying from satoshi_ghost</h1>
       <span style="display: inline-flex; align-items: baseline; flex-wrap: wrap; column-gap: 10px;"><span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em;">$412.50</span><span style="font-size: 14px; font-weight: 600; color: var(--ink-muted);">USD</span></span><span style="font-size: 14px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span></span></span>
     </div>
     <div style="{{dividerStyle}}"></div>
@@ -33,7 +33,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{iconStyle}}"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
       <div style="display: flex; flex-direction: column; min-width: 0;">
         <span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{t.a}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 500;">{{t.n1}}</span>{{t.b}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 500;">{{t.n2}}</span>{{t.c}}</span>
-        <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{timerNote}}</span>
+        <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{n.a}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{n.n1}}</span>{{n.b}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{n.n2}}</span>{{n.c}}</span>
       </div>
     </div>
   </section>
@@ -61,10 +61,12 @@ class Component extends DCLogic {
     const rootStyle = THEMES[theme] + "position: relative; width: 360px; height: 380px; box-sizing: border-box; overflow: hidden; border-radius: 40px; padding: 24px 20px 20px; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column; gap: 12px;";
     const V = {
       'waiting-payment': { label: 'Pay now', tone: 'var(--caution)', timer: '62 min left', note: "Send by Zelle, then tap I've paid" },
-      paid: { label: 'You paid', tone: 'var(--escrow)', timer: '1 h 58 min', note: 'Left for nightowl_44 to check and release' },
-      dispute: { label: 'Dispute open', tone: 'var(--danger)', timer: 'Opened 12 min ago', note: 'A moderator usually replies within 4 hours' }
+      paid: { label: 'You paid', tone: 'var(--escrow)', timer: '1 h 58 min', note: 'Left for satoshi_ghost to check and release' },
+      dispute: { label: 'Dispute open', tone: 'var(--danger)', timer: 'Opened 12 min ago', note: 'A moderator usually replies within 4 h' }
     };
     const v = V[this.props.variant] || V['waiting-payment'];
+    // Digits in mono, words in body: '1 h 58 min' -> parts (also used for the note line).
+    const parts = (str) => { const m = str.match(/^(\D*)(\d+)?(\D*)(\d+)?(.*)$/); return { a: m[1], n1: m[2] || '', b: m[3], n2: m[4] || '', c: m[5] }; };
     return {
       rootStyle,
       statusLabel: v.label,
@@ -73,9 +75,8 @@ class Component extends DCLogic {
       markStyle: 'flex-shrink: 0; color: ' + v.tone + ';',
       dividerStyle: 'height: 1px; background: color-mix(in srgb, ' + v.tone + ' 25%, transparent);',
       iconStyle: 'flex-shrink: 0; color: ' + v.tone + ';',
-      // Digits in mono, words in body: '1 h 58 min' -> parts.
-      t: (function (str) { const m = str.match(/^(\D*)(\d+)?(\D*)(\d+)?(.*)$/); return { a: m[1], n1: m[2] || '', b: m[3], n2: m[4] || '', c: m[5] }; })(v.timer),
-      timerNote: v.note,
+      t: parts(v.timer),
+      n: parts(v.note),
       asked: this.state.asked,
       open: () => this.setState({ asked: true })
     };

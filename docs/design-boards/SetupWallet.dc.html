@@ -60,7 +60,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
     <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
       <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">This first wallet works right away. Any wallet you add later asks you to confirm it&#39;s you, and we always show an alert. Want extra protection? In Security settings, you can make newly added addresses wait <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours before they can be paid.</p>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <h2 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">Adding wallets later</h2>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">This first wallet works right away. Any wallet you add later asks you to confirm it&#39;s you, and we always show an alert. Want extra protection? In Security settings, you can make newly added addresses wait <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h before they can be paid.</p>
+      </div>
     </div>
   </main>
 
@@ -69,7 +72,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":871}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":895}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { app: 'Cake Wallet' }; }
   renderVals() {
@@ -80,7 +83,7 @@ class Component extends DCLogic {
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const app = this.state.app;
     // Measured: Edge adds its privacy callout.
-    const H = app === 'Edge' ? 977 : 871;
+    const H = app === 'Edge' ? 1001 : 895;
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const STEP = 5, TOTAL = 5;
     const bars = Array.from({ length: TOTAL }, (_, i) => ({ style: 'display: block; height: 4px; border-radius: 999px; background: ' + (i < STEP ? 'var(--ink);' : 'var(--surface-raised);') }));

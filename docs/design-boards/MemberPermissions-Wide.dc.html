@@ -30,11 +30,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <main style="flex-grow: 1; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
     <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; width: 944px;">
       <div style="display: flex; flex-direction: column; gap: 4px;">
-        <div style="display: flex; align-items: center; gap: 4px; margin-left: -12px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-left: -12px;">
           <a href="Team-Wide.dc.html" aria-label="Back to Team" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
-          <nav aria-label="Breadcrumb" style="display: flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><a href="#" style="display: inline-flex; align-items: center; height: 44px; color: var(--ink-muted);">Settings</a><span aria-hidden="true">/</span><a href="Team-Wide.dc.html" style="display: inline-flex; align-items: center; height: 44px; color: var(--ink-muted);">Team</a></nav>
+          <div style="display: flex; flex-direction: column;">
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Settings · Team</span>
+            <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">What desk_ana can do</h1>
+          </div>
         </div>
-        <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">What desk_ana can do</h1>
         <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Choose exactly what this member can do for you. Nothing changes until you save.</p>
       </div>
       <span style="flex-shrink: 0; padding-top: 14px; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
@@ -83,6 +85,16 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               </sc-if>
             </section>
           </sc-for>
+          <div role="group" aria-label="Save" style="display: flex; flex-direction: column; gap: 12px;">
+              <p style="display: flex; gap: 8px; margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Saving needs your passkey, security key or PGP key.</span></p>
+              <sc-if value="{{hasNote}}" hint-placeholder-val="{{false}}">
+                <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span style="font-size: 14px; line-height: 20px;">{{note}}</span></div>
+              </sc-if>
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <button type="button" disabled="{{clean}}" onClick="{{save}}" style="{{saveStyle}}">Save permissions</button>
+                <button type="button" onClick="{{cancelEdits}}" style="height: 48px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Cancel</button>
+              </div>
+            </div>
       </div>
       <div style="display: flex; flex-direction: column; gap: 24px;">
           <section aria-label="desk_ana, team member" style="display: flex; flex-direction: column; gap: 16px; padding: 28px; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--team) 45%, transparent); background: color-mix(in srgb, var(--team) 10%, var(--surface));">
@@ -96,16 +108,6 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               <sc-for list="{{segs}}" as="g" hint-placeholder-count="19"><span style="{{g.style}}"></span></sc-for>
             </span>
             <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{laterN}}</span> of these can&#39;t be turned on yet. Account-wide settings always stay with you.</p>
-            <div style="display: flex; flex-direction: column; gap: 12px; padding-top: 16px; border-top: 1px solid color-mix(in srgb, var(--team) 25%, transparent);">
-              <p style="display: flex; gap: 8px; margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Changing permissions or adding a member needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key.</span></p>
-              <sc-if value="{{hasNote}}" hint-placeholder-val="{{false}}">
-                <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span style="font-size: 14px; line-height: 20px;">{{note}}</span></div>
-              </sc-if>
-              <div style="display: flex; align-items: center; gap: 12px;">
-                <button type="button" disabled="{{clean}}" onClick="{{save}}" style="{{saveStyle}}">Save permissions</button>
-                <button type="button" onClick="{{cancelEdits}}" style="height: 48px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Cancel</button>
-              </div>
-            </div>
           </section>
           <sc-for list="{{groupsR}}" as="g" hint-placeholder-count="5">
             <section aria-labelledby="{{g.hid}}" style="display: flex; flex-direction: column; border-radius: 16px; background: var(--surface);">
@@ -223,7 +225,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"preset":{"editor":"enum","options":["chat-only","offers","trades","everything","custom"],"default":"trades"},"$preview":{"width":1280,"height":2472}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"preset":{"editor":"enum","options":["chat-only","offers","trades","everything","custom"],"default":"trades"},"$preview":{"width":1280,"height":2700}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { on: null, saved: null, ask: null, note: '', verify: false }; }
   renderVals() {
@@ -262,7 +264,7 @@ class Component extends DCLogic {
       { id: 'dOpen', g: 'disputes', name: 'Open a dispute', desc: 'Ask a moderator to step in on a trade.' },
       { id: 'dReply', g: 'disputes', name: 'Reply and add evidence in a dispute', desc: 'Answer the moderator and add files.' },
       { id: 'rLeave', g: 'reviews', name: 'Leave reviews after a trade', desc: 'Rate the other trader when a trade ends.' },
-      { id: 'rReply', g: 'reviews', name: 'Reply to reviews / dispute a review', desc: 'Answer a review, or ask a moderator to check it.' },
+      { id: 'rReply', g: 'reviews', name: 'Reply to or dispute a review', desc: 'Answer a review, or ask a moderator to check it.' },
       { id: 'rBlock', g: 'reviews', name: 'Block a trader', desc: 'Stop a trader from trading with you.' }
     ];
     const LATER = ['kTake', 'kPaid', 'kProof'];
@@ -318,9 +320,9 @@ class Component extends DCLogic {
 
     const mapping = PRESETS.map((p) => ({ label: p.label, list: p.id === 'everything' ? 'every switch except the “Coming later” ones' : clean(p.ids).map(nameOf).join(', ') }));
 
-    // Member switches use --team when on (members are always --team); "Coming later" switches are dashed and inert.
-    const swTrack = (v, dis) => 'display: flex; align-items: center; width: 52px; height: 32px; flex-shrink: 0; box-sizing: border-box; padding: 3px; border-radius: 999px; border: 1px solid ' + (dis ? 'var(--surface-raised); background: transparent; justify-content: flex-start;' : (v ? 'var(--team); background: var(--team); justify-content: flex-end;' : 'var(--line); background: var(--surface-raised); justify-content: flex-start;'));
-    const swKnob = (v, dis) => 'width: 24px; height: 24px; box-sizing: border-box; border-radius: 999px; ' + (dis ? 'border: 1px dashed var(--line);' : (v ? 'background: var(--ground);' : 'background: var(--ink-muted);'));
+    // Switches: on = ink track, ground knob; off = raised track, muted knob; "Coming later" = off look, disabled and inert (--team is for member identity only).
+    const swTrack = (v, dis) => 'display: flex; align-items: center; width: 52px; height: 32px; flex-shrink: 0; box-sizing: border-box; padding: 3px; border-radius: 999px; border: 1px solid ' + (dis ? 'var(--surface-raised); background: var(--surface-raised); justify-content: flex-start;' : (v ? 'var(--ink); background: var(--ink); justify-content: flex-end;' : 'var(--line); background: var(--surface-raised); justify-content: flex-start;'));
+    const swKnob = (v, dis) => 'width: 24px; height: 24px; box-sizing: border-box; border-radius: 999px; ' + (dis ? 'background: var(--ink-muted); opacity: 0.5;' : (v ? 'background: var(--ground);' : 'background: var(--ink-muted);'));
 
     const groups = GROUPS.map((g) => {
       const list = avail.filter((p) => p.g === g.id);
@@ -374,8 +376,9 @@ class Component extends DCLogic {
     if (askPreset) askText = (one ? '“' + askPreset.label + '” turns this on. ' + one.line : '“' + askPreset.label + '” turns these on:');
 
     // Board height = measured content height (night, fonts loaded) for the default state,
-    // plus the saved note in the right column (the left column, with or without the Custom chip, is shorter), so nothing is clipped and no empty band is left.
-    const H = Math.max(800, 2472
+    // plus the saved note or the Custom chip row in the left column (now the taller one, with Save under it), so nothing is clipped and no empty band is left.
+    const H = Math.max(800, 2700
+      + (match ? 0 : 52)
       + (s.note ? 58 : 0));
 
     return {
@@ -383,15 +386,15 @@ class Component extends DCLogic {
       allowedN: String(on.length), totalN: String(availIds.length), laterN: String(LATER.length),
       segs: segStyles,
       chips, mapping, locked,
-      groupsL: groups.filter((g) => g.hid === 'mp-offers-h' || g.hid === 'mp-trades-h'),
-      groupsR: groups.filter((g) => g.hid !== 'mp-offers-h' && g.hid !== 'mp-trades-h'),
+      groupsL: groups.filter((g) => g.hid !== 'mp-taker-h'),
+      groupsR: groups.filter((g) => g.hid === 'mp-taker-h'),
       presetName: startPreset ? startPreset.label : 'Custom',
       clean: !dirty,
-      saveStyle: 'display: flex; flex-grow: 1; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (dirty ? 'background: var(--monero); color: var(--on-monero); cursor: pointer;' : 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
-      // Owner, 2 Nov: changing permissions always needs a two-factor method already set up. Save asks first, like Devices.
+      saveStyle: 'display: flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (dirty ? 'background: var(--monero); color: var(--on-monero); cursor: pointer;' : 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
+      // Owner, 2 Nov: changing permissions always needs a passkey, security key or PGP key. Save asks first, like Devices.
       save: () => { if (dirty) this.setState({ verify: true }); },
       verifying: s.verify && dirty,
-      verifyText: 'Saving lets desk_ana do ' + on.length + ' of ' + availIds.length + ' things. Changing permissions needs a two-factor method you’ve already set up: a passkey, security key or PGP key.',
+      verifyText: 'Saving lets desk_ana do ' + on.length + ' of ' + availIds.length + ' things. Saving needs your passkey, security key or PGP key.',
       methods: ['Use my passkey', 'Use my security key'].map((label) => ({ label, use: () => this.setState({ verify: false, saved: on, note: 'Saved. desk_ana can now do ' + on.length + ' of ' + availIds.length + ' things.' }) })),
       verifyCancel: () => this.setState({ verify: false }),
       cancelEdits: () => this.setState({ on: saved, note: '' }),

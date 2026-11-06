@@ -32,7 +32,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </header>
 
   <main style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
-    <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">We recommend it. X2F has no email address or phone number for you, so if you lose your key or forget your password, we have no way to let you back in.</p>
+    <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">We recommend it. X2F has no way to reach you, so if you lose your key or forget your password, we have no way to let you back in.</p>
     <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
       <svg style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>
       <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you&#39;ve built on it, but you are never at risk of losing your funds.</p>
@@ -76,7 +76,7 @@ class Component extends DCLogic {
     const STEP = 4, TOTAL = 5;
     const bars = Array.from({ length: TOTAL }, (_, i) => ({ style: 'display: block; height: 4px; border-radius: 999px; background: ' + (i < STEP ? 'var(--ink);' : 'var(--surface-raised);') }));
     const defs = [
-      { id: 'totp', name: 'Authenticator App (TOTP)', short: 'authenticator app', desc: 'Six-digit codes from any authenticator app.' },
+      { id: 'totp', name: 'Authenticator app', short: 'authenticator app', desc: 'Six-digit codes from any authenticator app.' },
       { id: 'key', name: 'Security key', short: 'security key', desc: 'A YubiKey or similar that you keep somewhere safe.' },
       { id: 'pgp2', name: 'Second PGP key', short: 'second PGP key', desc: 'A spare PGP key stored separately from your main one.' },
       { id: 'codes', name: 'Printed recovery codes', short: 'recovery codes', desc: 'Ten one-time codes to print or write down.' }

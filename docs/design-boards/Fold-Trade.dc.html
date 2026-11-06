@@ -26,7 +26,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </a>
       </div>
       <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
-      <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Buying from nightowl_44</h1>
+      <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Buying from satoshi_ghost</h1>
     </header>
 
     <ol aria-label="Trade progress" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0; padding: 0 16px 16px; list-style: none;">
@@ -50,7 +50,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <sc-if value="{{cancelled}}" hint-placeholder-val="{{false}}">
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">Trade cancelled</span>
-            <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">The escrow is unlocking. <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> goes back to nightowl_44 once the network confirms it. Nothing was paid.</p>
+            <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">The escrow is unlocking. <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> goes back to satoshi_ghost once the network confirms it. Nothing was paid.</p>
           </div>
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <div style="display: flex; justify-content: space-between; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span>Confirmations</span><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">3</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">10</span></span></div>
@@ -100,7 +100,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <span style="display: inline-flex; align-items: baseline; gap: 8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500;">$412.50</span><span style="font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">USD</span></span>
         </div>
         <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
-          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Zelle to</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">[SELLER ZELLE ID]</dd></div>
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Zelle to</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">(•••) •••-4821</dd></div>
           <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 6px 0 14px; font-size: 14px; line-height: 20px;">
             <dt style="color: var(--ink-muted);">Memo</dt>
@@ -117,6 +117,14 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Pay from an account in your own name. Payments from someone else's account may be rejected or frozen. Use at your own risk.</p>
         </div>
       </section>
+      <label for="ft-proof" style="position: relative; display: flex; align-items: center; gap: 14px; min-height: 64px; box-sizing: border-box; padding: 16px; border-radius: 16px; border: 1.5px dashed var(--line); cursor: pointer;">
+        <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/></svg></span>
+        <span style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 16px; line-height: 22px; font-weight: 600;">Add payment proof</span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Private details are blurred for you to check next. Location and device info are removed.</span>
+        </span>
+        <input id="ft-proof" type="file" accept="image/*" style="position: absolute; width: 1px; height: 1px; opacity: 0;">
+      </label>
       </sc-if>
     </main>
 
@@ -159,10 +167,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <section role="dialog" aria-modal="true" aria-labelledby="cancel-title" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
           <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
           <h2 id="cancel-title" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Cancel this trade?</h2>
-          <p style="margin: 0; font-size: 16px; line-height: 24px;">You haven't paid, so you can cancel on your own. The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> in escrow goes back to nightowl_44. Don't send any money after this.</p>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">You haven't paid, so you can cancel on your own. The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> in escrow goes back to satoshi_ghost. Don't send any money after this.</p>
           <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
             <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
-            <p style="margin: 0; font-size: 14px; line-height: 20px;">Already sent the money? Don't cancel. Tap I've paid instead, so nightowl_44 can release.</p>
+            <p style="margin: 0; font-size: 14px; line-height: 20px;">Already sent the money? Don't cancel. Tap I've paid instead, so satoshi_ghost can release.</p>
           </div>
           <button type="button" onClick="{{sendCancel}}" style="height: 56px; border: 1px solid var(--danger); border-radius: 12px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Cancel trade</button>
           <button type="button" onClick="{{closeSheet}}" style="height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Keep trading</button>
@@ -173,11 +181,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
   <div aria-hidden="true" style="display: flex; justify-content: center;"><span style="width: 1px; background: var(--surface-raised);"></span></div>
 
-  <section aria-label="Chat with nightowl_44" style="position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
-    <header style="display: flex; align-items: center; gap: 12px; padding: 16px; min-height: 44px; border-bottom: 1px solid var(--surface-raised);">
+  <section aria-label="Chat with satoshi_ghost" style="position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+    <header style="display: flex; align-items: center; gap: 12px; padding: 16px; min-height: 44px;">
       <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
-        <h2 style="margin: 0; display: flex; align-items: center; gap: 6px; font-size: 16px; line-height: 22px; font-weight: 600;"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 999px; background: var(--escrow);"></span>nightowl_44</h2>
-        <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Online · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">212</span> trades · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">99%</span> positive</span>
+        <h2 style="margin: 0; display: flex; align-items: center; gap: 6px; font-size: 16px; line-height: 22px; font-weight: 600;"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 999px; background: var(--escrow);"></span>satoshi_ghost</h2>
+        <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Online · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">412</span> trades · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">99%</span> positive</span>
       </div>
       <span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow); border: 1px solid var(--escrow); border-radius: 999px; padding: 3px 8px;">Trusted</span>
     </header>
@@ -185,14 +193,14 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="align-self: center; text-align: center; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Encrypted. If a dispute is opened, a moderator can read this conversation.</span>
       <sc-for list="{{messages}}" as="m" hint-placeholder-count="3">
         <div style="{{m.wrapStyle}}">
+          <span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{m.meta}}</span>
           <p style="{{m.bubbleStyle}}">{{m.text}}</p>
-          <span style="font-size: 12px; color: var(--ink-muted);">{{m.meta}}</span>
         </div>
       </sc-for>
     </div>
     <div role="group" aria-label="Write a message" style="display: flex; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
-      <label for="fold-msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Message nightowl_44</label>
-      <input id="fold-msg" type="text" value="{{draft}}" onChange="{{onDraft}}" onKeyDown="{{onKey}}" placeholder="Message nightowl_44" autocomplete="off" style="flex-grow: 1; min-width: 0; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+      <label for="fold-msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Message satoshi_ghost</label>
+      <input id="fold-msg" type="text" value="{{draft}}" onChange="{{onDraft}}" onKeyDown="{{onKey}}" placeholder="Message satoshi_ghost" autocomplete="off" style="flex-grow: 1; min-width: 0; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
       <button type="button" onClick="{{send}}" style="height: 48px; padding: 0 20px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Send</button>
     </div>
   </section>
@@ -238,7 +246,7 @@ class Component extends DCLogic {
     const tickBoxStyle = 'display: flex; align-items: flex-start; gap: 12px; padding: ' + (s.ticked ? '13px' : '14px') + '; border-radius: 12px; background: var(--surface-raised); border: ' + (s.ticked ? '2px solid var(--ink)' : '1px solid transparent') + '; font-size: 16px; line-height: 24px; cursor: pointer;';
     const messages = s.messages.map((m) => ({
       text: m.text,
-      meta: (m.me ? 'You' : 'nightowl_44') + ' · ' + m.time,
+      meta: (m.me ? 'You' : 'satoshi_ghost') + ' · ' + m.time,
       wrapStyle: 'display: flex; flex-direction: column; gap: 4px; max-width: 85%; align-self: ' + (m.me ? 'flex-end; align-items: flex-end;' : 'flex-start; align-items: flex-start;'),
       bubbleStyle: 'margin: 0; padding: 10px 14px; border-radius: 16px; ' + (m.me ? 'background: transparent; border: 1px solid var(--line);' : 'background: var(--surface-raised);')
     }));
@@ -250,7 +258,7 @@ class Component extends DCLogic {
     return {
       rootStyle, steps, tickBoxStyle, heroStyle, statusStyle, returnPills,
       markStyle: 'flex-shrink: 0; color: ' + tone + ';',
-      statusLabel: s.cancelled ? 'Returning XMR to the seller' : 'You pay by Zelle',
+      statusLabel: s.cancelled ? 'Returning XMR to the seller' : 'Pay now',
       cancelled: s.cancelled,
       live: !s.cancelled,
       messages,

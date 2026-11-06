@@ -1157,6 +1157,42 @@
       "page": "all",
       "title": "G9 \u00b7 Settings: profile visibility",
       "is_interactive": true
+    },
+    "Settings.dc.html": {
+      "x": 0,
+      "y": 50497,
+      "w": 390,
+      "h": 2809,
+      "page": "all",
+      "title": "Settings",
+      "is_interactive": true
+    },
+    "Settings-Wide.dc.html": {
+      "x": 470,
+      "y": 50497,
+      "w": 1280,
+      "h": 1431,
+      "page": "all",
+      "title": "Settings-Wide",
+      "is_interactive": true
+    },
+    "FAQ.dc.html": {
+      "x": 1830,
+      "y": 50497,
+      "w": 390,
+      "h": 2235,
+      "page": "all",
+      "title": "FAQ",
+      "is_interactive": true
+    },
+    "FAQ-Wide.dc.html": {
+      "x": 2300,
+      "y": 50497,
+      "w": 1280,
+      "h": 2069,
+      "page": "all",
+      "title": "FAQ-Wide",
+      "is_interactive": true
     }
   },
   "createdOnFiles": {
@@ -1312,6 +1348,13 @@
       "kind": "title1",
       "maxW": 7480,
       "page": "all"
+    },
+    "settings1105": {
+      "x": 0,
+      "y": 50197,
+      "text": "Settings and FAQ \u00b7 5 Nov (draft copy)",
+      "kind": "title1",
+      "maxW": 1840
     }
   },
   "order": [
@@ -1442,7 +1485,11 @@
     "ProofBlur-Wide.dc.html",
     "OfferAd.dc.html",
     "OfferAd-Wide.dc.html",
-    "ProfileVisibility.dc.html"
+    "ProfileVisibility.dc.html",
+    "Settings.dc.html",
+    "Settings-Wide.dc.html",
+    "FAQ.dc.html",
+    "FAQ-Wide.dc.html"
   ],
   "pages": [
     {

@@ -38,7 +38,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </section>
       <section aria-labelledby="stop-title" style="{{heroStyle}}">
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-          <h2 id="stop-title" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Emergency stop</h2>
+          <h2 id="stop-title" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Emergency stop</h2>
           <span style="{{chipStyle}}">
             <sc-if value="{{live}}" hint-placeholder-val="{{true}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg></sc-if>
             <sc-if value="{{confirming}}" hint-placeholder-val="{{false}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2"/></svg></sc-if>
@@ -48,21 +48,21 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </div>
         <sc-if value="{{live}}" hint-placeholder-val="{{true}}">
           <div style="display: flex; flex-direction: column; gap: 8px;">
-            <p style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">X2F is live. New trades are open.</p>
+            <p style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">X2F is live. New trades are open.</p>
             <p style="margin: 0; max-width: 720px; font-size: 15px; line-height: 22px; color: var(--ink-muted);">If something goes wrong, such as an attack or a serious bug, pause every new trade and offer at once. Trades already in escrow can still be released, refunded or disputed, so nobody's coins get stuck.</p>
           </div>
-          <div><button type="button" onClick="{{askStop}}" style="height: 48px; padding: 0 24px; border: 1px solid var(--danger); border-radius: 12px; background: transparent; color: var(--danger); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Pause all new trades</button></div>
+          <div style="margin: -4px 0 -8px;"><button type="button" onClick="{{askStop}}" style="display: inline-flex; align-items: center; gap: 4px; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Pause all new trades<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button></div>
         </sc-if>
         <sc-if value="{{confirming}}" hint-placeholder-val="{{false}}">
           <div style="display: flex; flex-direction: column; gap: 8px;">
-            <p style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">Tap your security key to pause all new trades.</p>
+            <p style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Tap your security key to pause all new trades.</p>
             <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Everyone will see a notice until you resume.</p>
           </div>
           <div style="display: flex; align-items: center; gap: 12px;"><button type="button" onClick="{{doStop}}" style="display: inline-flex; align-items: center; gap: 8px; height: 48px; min-width: 160px; justify-content: center; padding: 0 24px; border: 1px solid var(--danger); border-radius: 12px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2"/></svg>Tap key and pause</button><button type="button" onClick="{{cancel}}" style="height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Cancel</button></div>
         </sc-if>
         <sc-if value="{{paused}}" hint-placeholder-val="{{false}}">
           <div style="display: flex; flex-direction: column; gap: 8px;">
-            <p style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">New trades are paused since <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">01:20</span> UTC.</p>
+            <p style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">New trades are paused since <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">01:20</span> UTC.</p>
             <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Trades in escrow are carrying on.</p>
           </div>
           <div><button type="button" onClick="{{resume}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Tap key and resume trading</button></div>

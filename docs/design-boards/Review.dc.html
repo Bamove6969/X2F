@@ -21,6 +21,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 <div style="{{rootStyle}}">
   <div style="{{appStyle}}">
   <div style="display: flex; justify-content: flex-end; align-items: center; height: 28px; padding: 8px 16px 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span></div>
+  <header style="display: flex; align-items: center; gap: 6px; padding: 0 16px 8px 6px;">
+    <a href="#" aria-label="Back to trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
+      <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Buying from satoshi_ghost</span>
+      <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
+    </div>
+  </header>
   <main style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 0 16px 24px;">
     <section aria-labelledby="rv-title" style="display: flex; flex-direction: column; gap: 20px; padding: 24px 20px 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--escrow) 14%, var(--surface)) 0%, var(--surface) 160px); border: 1px solid color-mix(in srgb, var(--escrow) 35%, transparent);">
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
@@ -31,15 +38,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <svg style="flex-shrink: 0; color: var(--escrow);" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
       </div>
       <div style="display: flex; flex-direction: column; gap: 10px;">
-        <h1 id="rv-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; letter-spacing: -0.03em;">1.237500</span> XMR is yours</h1>
+        <h1 id="rv-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; letter-spacing: -0.03em;">1.237500</span> <span style="color: var(--monero-ink);">XMR</span> is yours</h1>
         <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Released by you and satoshi_ghost. It's on its way to your external wallet ending <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">…k3Fz</span>.</p>
       </div>
       <dl aria-label="What you receive" style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Trade amount</dt><dd style="margin: 0; font-size: 15px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1.250000</span> XMR</dd></div>
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Trade amount</dt><dd style="margin: 0; font-size: 15px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span></dd></div>
         <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">X2F fee (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span>%, your ad)</dt><dd style="margin: 0; font-size: 15px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">−0.012500</span> XMR</dd></div>
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">X2F fee (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span>%, your ad)</dt><dd style="margin: 0; font-size: 15px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">−0.012500</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span></dd></div>
         <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 16px; line-height: 24px; font-weight: 600;"><dt>You receive</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1.237500</span> <span style="color: var(--monero-ink);">XMR</span></dd></div>
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 16px; line-height: 24px; font-weight: 600;"><dt>You receive</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1.237500</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span></dd></div>
       </dl>
       <div style="display: flex; flex-direction: column; gap: 8px;">
         <div style="display: flex; justify-content: space-between; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span>Confirmations</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; color: var(--ink);">1 of 10</span></div>
@@ -54,28 +61,53 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </section>
 
     <sc-if value="{{rating}}" hint-placeholder-val="{{true}}">
-    <section aria-labelledby="rv-rate" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
-      <div style="display: flex; flex-direction: column; gap: 4px;">
-        <h2 id="rv-rate" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">How was trading with satoshi_ghost?</h2>
-        <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Your review is visible right away.</span>
-      </div>
-      <div role="radiogroup" aria-label="Stars" style="display: flex; gap: 4px; margin: 0 -4px;">
-        <sc-for list="{{stars}}" as="s" hint-placeholder-count="5">
-          <button type="button" aria-label="{{s.label}}" onClick="{{s.pick}}" style="width: 52px; height: 52px; border: 0; border-radius: 12px; background: transparent; padding: 4px; cursor: pointer;">
-            <svg width="40" height="40" viewBox="0 0 24 24" aria-hidden="true"><path style="color: var(--caution);" d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="{{s.fill}}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-          </button>
-        </sc-for>
-      </div>
-      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-        <sc-for list="{{tags}}" as="t" hint-placeholder-count="8">
-          <button type="button" aria-pressed="{{t.on}}" onClick="{{t.toggle}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; margin: -2px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{t.style}}">{{t.label}}</span></button>
-        </sc-for>
-      </div>
-      <label for="note" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">
-        One-line note (optional)
-        <input id="note" type="text" maxlength="120" placeholder="Smooth trade, would do again" style="height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
-      </label>
-    </section>
+      <section aria-labelledby="rv-q" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h2 id="rv-q" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">How was trading with satoshi_ghost?</h2>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Your review shows on satoshi_ghost's profile straight away.</span>
+        </div>
+        <div role="radiogroup" aria-labelledby="rv-q" style="display: flex; gap: 4px; margin: 0 -6px;">
+          <sc-for list="{{pickStars}}" as="st" hint-placeholder-count="5">
+            <button type="button" role="radio" aria-checked="{{st.checked}}" aria-label="{{st.label}}" onClick="{{st.pick}}" style="display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border: 0; border-radius: 12px; background: transparent; padding: 0; cursor: pointer;">
+              <svg width="42" height="42" viewBox="0 0 24 24" aria-hidden="true" style="{{st.style}}"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="{{st.fill}}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+            </button>
+          </sc-for>
+        </div>
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{ratingLabel}}</span>
+      </section>
+
+      <section aria-labelledby="rv-phr" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h2 id="rv-phr" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What stood out?</h2>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Tap any that fit.</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <sc-for list="{{phrases}}" as="t" hint-placeholder-count="8">
+            <button type="button" aria-pressed="{{t.on}}" onClick="{{t.toggle}}" style="{{t.style}}">{{t.label}}</button>
+          </sc-for>
+        </div>
+      </section>
+
+      <section aria-labelledby="rv-bdg" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px;">
+            <h2 id="rv-bdg" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Describe this trade</h2>
+            <span style="flex-shrink: 0; font-size: 13px; color: var(--ink-muted);">{{badgeCount}}</span>
+          </div>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Pick up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> badges. They're counted on satoshi_ghost's profile.</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <sc-for list="{{badges}}" as="b" hint-placeholder-count="6">
+            <button type="button" aria-pressed="{{b.on}}" aria-disabled="{{b.disabled}}" onClick="{{b.toggle}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.icon}}"/></svg>{{b.label}}</button>
+          </sc-for>
+        </div>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 8px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <label for="rv-note" style="font-size: 18px; line-height: 24px; font-weight: 600;">In your own words <span style="font-size: 14px; font-weight: 400; color: var(--ink-muted);">(optional)</span></label>
+        <textarea id="rv-note" rows="3" maxlength="200" value="{{note}}" onChange="{{onNote}}" placeholder="What should other traders know?" style="box-sizing: border-box; width: 100%; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: none;"></textarea>
+        <span style="align-self: flex-end; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; color: var(--ink-muted);">{{noteCount}}</span>
+      </section>
     </sc-if>
 
     <sc-if value="{{thanks}}" hint-placeholder-val="{{false}}">
@@ -105,7 +137,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
   <sc-if value="{{rating}}" hint-placeholder-val="{{true}}">
   <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
-    <button type="button" onClick="{{submit}}" style="height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Submit rating</button>
+    <button type="button" onClick="{{submit}}" style="height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Submit review</button>
     <button type="button" onClick="{{skip}}" style="height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Skip review</button>
   </footer>
   </sc-if>
@@ -126,11 +158,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1403}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":2191}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { rating: 5, picked: { 'Fast release': true, 'Clear instructions': true }, submitted: false, skipped: false, mood: null };
+    this.state = { r5: 4, phrases: { 'Fast release': true, 'Clear instructions': true }, badges: { 'Smooth trade': true }, note: '', submitted: false, skipped: false, mood: null };
   }
   renderVals() {
     const THEMES = {
@@ -139,7 +171,7 @@ class Component extends DCLogic {
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     // Measured app heights (the design notes sit below the app screen).
-    const APP_H = this.state.submitted ? 1202 : 1228;
+    const APP_H = this.state.submitted ? 1202 : 2016;
     const NOTES_H = 175;
     const rootStyle = THEMES[theme] + 'position: relative; overflow: hidden; width: 390px; height: ' + (APP_H + NOTES_H) + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + APP_H + 'px; display: flex; flex-direction: column;';
@@ -161,28 +193,64 @@ class Component extends DCLogic {
       submit: () => this.setState({ submitted: true, skipped: false }),
       skip: () => this.setState({ submitted: true, skipped: true })
     };
-    const rating = this.state.rating;
-    const stars = [1, 2, 3, 4, 5].map((n) => ({
-      label: n + (n === 1 ? ' star' : ' stars'),
-      fill: n <= rating ? 'var(--caution)' : 'none',
-      pick: () => this.setState({ rating: n })
-    }));
+    // The form below is the same as Reviews.dc.html (write view): stars, phrases, badges, note.
+    const s = this.state;
+    const max = 5;
+    const rating = s.r5;
+    const pickStars = [];
+    for (let n = 1; n <= max; n++) {
+      pickStars.push({
+        label: n + ' of ' + max,
+        checked: n === rating ? 'true' : 'false',
+        fill: n <= rating ? 'currentColor' : 'none',
+        style: 'color: ' + (n <= rating ? 'var(--caution)' : 'var(--line)') + ';',
+        pick: () => this.setState({ r5: n })
+      });
+    }
     const good = ['Fast release', 'Friendly', 'Clear instructions', 'Would trade again'];
     const bad = ['Slow', 'Went quiet', 'Asked for ID', 'Payment didn’t match'];
-    // Selection is never orange: a picked tag gets a 2px ink border on --surface-raised; its text keeps the tone (escrow = good, danger = bad).
-    const base = 'display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 40px; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 14px; ';
-    const tags = good.concat(bad).map((label) => {
-      const on = !!this.state.picked[label];
+    // Selection is never orange or a tone ring: a picked chip gets a 2px ink border on --surface-raised; its text keeps the tone (escrow = good, danger = bad).
+    const chipBase = 'min-height: 44px; box-sizing: border-box; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 15px; cursor: pointer; ';
+    const phrases = good.concat(bad).map((label) => {
+      const on = !!s.phrases[label];
       const isBad = bad.indexOf(label) >= 0;
-      const style = on
-        ? base + 'border: 2px solid var(--ink); background: var(--surface-raised); color: ' + (isBad ? 'var(--danger)' : 'var(--escrow)') + '; font-weight: 600;'
-        : base + 'border: 1px solid var(--line); background: transparent; color: var(--ink);';
+      const tone = isBad ? 'var(--danger)' : 'var(--escrow)';
       return {
-        label, on: on ? 'true' : 'false', style,
-        toggle: () => this.setState({ picked: Object.assign({}, this.state.picked, { [label]: !on }) })
+        label, on: on ? 'true' : 'false',
+        style: on
+          ? chipBase + 'border: 2px solid var(--ink); background: var(--surface-raised); color: ' + tone + '; font-weight: 600;'
+          : chipBase + 'border: 1px solid var(--line); background: transparent; color: var(--ink);',
+        toggle: () => this.setState({ phrases: Object.assign({}, s.phrases, { [label]: !on }) })
       };
     });
-    return Object.assign({ rootStyle, appStyle, confs, stars, tags }, flow);
+    const badgeDefs = [
+      ['Smooth trade', 'M5 12l4 4 10-10'],
+      ['Great communication', 'M4 5h16v11H8l-4 4z'],
+      ['Patient with a newcomer', 'M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 15c0-3-2-5-6-5 0 3 2 5 6 5z'],
+      ['Exact amount and memo', 'M4 7h16M4 12h16M4 17h10'],
+      ['Easy cash handover', 'M3 7h18v10H3zM12 10a2 2 0 100 4 2 2 0 000-4z'],
+      ['Went the extra mile', 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z']
+    ];
+    const pickedCount = badgeDefs.filter((b) => s.badges[b[0]]).length;
+    const badges = badgeDefs.map(([label, icon]) => {
+      const on = !!s.badges[label];
+      const disabled = !on && pickedCount >= 3;
+      return {
+        label, icon, on: on ? 'true' : 'false',
+        disabled,
+        style: chipBase + 'display: inline-flex; align-items: center; gap: 6px; ' + (on
+          ? 'border: 2px solid var(--ink); background: var(--surface-raised); color: var(--ink); font-weight: 600;'
+          : 'border: 1px solid var(--line); background: transparent; color: ' + (disabled ? 'var(--ink-muted)' : 'var(--ink)') + '; opacity: ' + (disabled ? '0.5' : '1') + ';'),
+        toggle: () => { if (!disabled) this.setState({ badges: Object.assign({}, s.badges, { [label]: !on }) }); }
+      };
+    });
+    return Object.assign({ rootStyle, appStyle, confs,
+      pickStars, ratingLabel: rating + ' of ' + max,
+      phrases, badges,
+      badgeCount: pickedCount + ' of 3 picked',
+      note: s.note, noteCount: s.note.length + ' / 200',
+      onNote: (e) => this.setState({ note: e.target.value.slice(0, 200) })
+    }, flow);
   }
 }
 </script>

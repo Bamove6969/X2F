@@ -37,7 +37,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <h1 style="margin: 12px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">How do you want to get paid?</h1>
   </header>
 
-  <main style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 16px;">
+  <main style="flex-grow: 1; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 16px;">
     <section aria-labelledby="mkt-label" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--ink-muted) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--ink-muted) 35%, transparent);">
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
         <span id="mkt-label" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Market price</span>
@@ -46,7 +46,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <option>USD</option><option>EUR</option><option>GBP</option><option>CAD</option><option>BRL</option><option>INR</option>
         </select>
       </div>
-      <span style="display: inline-flex; align-items: baseline; gap: 8px; margin-top: -8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">$329.90</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">/ XMR</span></span>
+      <span style="display: inline-flex; align-items: baseline; gap: 8px; margin-top: -8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">$329.90</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">/ <span style="color: var(--monero-ink);">XMR</span></span></span>
       <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Offers set their price from this, plus or minus their margin.</p>
     </section>
 
@@ -113,7 +113,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </nav>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1180}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":6038}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -125,7 +125,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 1180px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 6038px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     // [name, group, example USD buyers, example best USD rate]. Names: Haveno's method list (data/payment-methods.json).
     const data = [
       ["Uphold", "Payment apps", 0, 0.00],

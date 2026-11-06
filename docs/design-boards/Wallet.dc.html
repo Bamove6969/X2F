@@ -20,8 +20,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </helmet>
 <div style="{{rootStyle}}">
   <header style="display: flex; flex-direction: column; padding: 8px 16px 0;">
-    <div style="display: flex; align-items: center; height: 44px; margin: 0 -10px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
       <a href="Main.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <span style="padding-right: 10px; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
     </div>
     <h1 style="margin: 8px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Your wallets</h1>
   </header>
@@ -81,15 +82,18 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);"><span style="font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1</span> escrow key on this device</span> for trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">K7M2-9QXA-4FTR-8WPN</span>. It holds no coins, is backed up to your PGP key and is deleted when the trade closes.</p>
     </section>
 
-    <p style="margin: 0; padding: 0 4px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Addresses are examples.</p>
   </main>
 
   <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
     <button type="button" style="height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Save wallet</button>
   </footer>
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Addresses and wallet names are examples. The intro sentence and the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour helper are COPY-UNSIGNED.</p>
+  </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1193}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1253}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -103,7 +107,7 @@ class Component extends DCLogic {
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const app = this.state.app;
     // Measured content height; Edge adds its privacy callout.
-    const H = app === 'Edge' ? 1295 : 1193;
+    const H = app === 'Edge' ? 1355 : 1253;
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const chip = (tone) => 'display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: color-mix(in srgb, ' + tone + ' 14%, transparent); color: ' + tone + ';';
     const ready = chip('var(--escrow)');

@@ -37,7 +37,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Staff</h1>
           <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Everyone who helps run X2F. Only you can add or remove people.</p>
         </section>
-        <button type="button" onClick="{{openAdd}}" style="{{addBtnStyle}}">Add staff member</button>
+        <sc-if value="{{closed}}" hint-placeholder-val="{{false}}"><button type="button" onClick="{{openAdd}}" style="{{addBtnStyle}}">Add staff member</button></sc-if>
       </header>
 
       <sc-if value="{{adding}}" hint-placeholder-val="{{true}}">
@@ -63,8 +63,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             </sc-for>
           </div>
           <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 15px;">
-            <label for="from" style="color: var(--ink-muted);">From</label><input id="from" type="time" value="09:00" style="height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px;">
-            <label for="to" style="color: var(--ink-muted);">to</label><input id="to" type="time" value="17:00" style="height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px;">
+            <label for="from" style="color: var(--ink-muted);">From</label><input id="from" type="text" inputmode="numeric" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" placeholder="HH:MM" value="09:00" style="width: 96px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px;">
+            <label for="to" style="color: var(--ink-muted);">to</label><input id="to" type="text" inputmode="numeric" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" placeholder="HH:MM" value="17:00" style="width: 96px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px;">
             <label for="tz" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Time zone</label>
             <select id="tz" style="height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;"><option>UTC</option><option>America/Los_Angeles</option><option>America/New_York</option><option>Europe/Berlin</option></select>
           </div>
@@ -78,7 +78,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </sc-if>
         <sc-if value="{{hasLink}}" hint-placeholder-val="{{true}}">
           <div style="display: flex; flex-direction: column; gap: 8px;">
-            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Invite link for a new {{roleName}}. Send it to them privately. It works once and expires in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">24</span> hours.</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Invite link for a new {{roleName}}. Send it to them privately. It works once and expires in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">24</span> h.</span>
             <div style="display: flex; gap: 8px;">
               <input aria-label="Invite link" type="text" readonly value="https://staff.x2f.example/invite/Hq7v2KpX9mTw" style="flex-grow: 1; min-width: 0; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px;">
               <button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 20px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Copy link</button>
@@ -108,12 +108,16 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </sc-for>
         </div>
       </section>
-      <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Names and numbers are examples. Switching someone off takes effect immediately; everything they did stays in the activity log.</p>
+      <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Switching someone off takes effect immediately; everything they did stays in the activity log.</p>
     </div>
+    <section aria-label="Design notes" style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px; padding-top: 24px; border-top: 1px solid var(--line);">
+      <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+      <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Names and numbers are examples. Login hours are typed as 24-hour UTC times (HH:MM), matching the table.</p>
+    </section>
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1126}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1229}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { adding: true, role: 'mod', link: false, off: {}, days: { Mon: true, Tue: true, Wed: true, Thu: true, Fri: true } }; }
   renderVals() {
@@ -122,7 +126,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "width: 1280px; min-height: 1126px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;";
+    const rootStyle = THEMES[theme] + "width: 1280px; min-height: 1229px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;";
     const VIOLET = 'var(--mod)';
     const defs = [
       { id: 'senior', name: 'Senior moderator', desc: 'Handles disputes and appeals, co-approves rulings above your size limit, and can freeze or ban accounts.' },
@@ -146,9 +150,9 @@ class Component extends DCLogic {
       const off = !!this.state.off[p.id];
       const pending = p.id === 'd';
       return { ...p,
-        // Moderator identity is --mod: senior = tinted chip with a solid ring, moderator = tinted chip, helper = neutral chip.
-        roleStyle: chip(p.role === 'Helper' ? 'background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink);' : (p.role === 'Senior moderator' ? 'background: color-mix(in srgb, ' + VIOLET + ' 16%, transparent); box-shadow: none; outline: 1px solid ' + VIOLET + '; outline-offset: -1px; color: ' + VIOLET + ';' : 'background: color-mix(in srgb, ' + VIOLET + ' 16%, transparent); color: ' + VIOLET + ';')),
-        nameStyle: 'white-space: nowrap; font-size: 15px; font-weight: 600; ' + (pending ? 'color: var(--ink-muted);' : "font-family: 'Atkinson Hyperlegible Mono', monospace;"),
+        // Moderator identity is --mod: senior and moderator = tinted chip, helper = neutral chip. Chips are fill-only.
+        roleStyle: chip(p.role === 'Helper' ? 'background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink);' : 'background: color-mix(in srgb, ' + VIOLET + ' 16%, transparent); color: ' + VIOLET + ';'),
+        nameStyle: 'white-space: nowrap; font-size: 15px; font-weight: 600; ' + (pending ? 'color: var(--ink-muted);' : ''),
         status: pending ? 'Waiting' : (off ? 'Switched off' : 'Active'),
         dotStyle: 'display: block; flex-shrink: 0; width: 8px; height: 8px; border-radius: 999px; background: ' + (pending ? 'var(--caution)' : (off ? 'var(--danger)' : 'var(--escrow)')) + ';',
         action: pending ? 'Cancel invite' : (off ? 'Switch on' : 'Switch off'),
@@ -164,7 +168,7 @@ class Component extends DCLogic {
     const cols = 'display: grid; grid-template-columns: 92px 152px 104px minmax(150px, 1fr) 100px 84px 40px 112px; column-gap: 10px; align-items: center; padding: 0 20px;';
     const gridHead = cols + ' min-height: 40px; font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink-muted);';
     const gridRow = cols + ' min-height: 64px; padding-top: 10px; padding-bottom: 10px; box-sizing: border-box; border-top: 1px solid var(--surface-raised); font-size: 15px;';
-    return { rootStyle, gridHead, gridRow, roles, staff, days, addBtnStyle: this.state.adding ? 'display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;' : 'display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;', adding: this.state.adding, noLink: !this.state.link, hasLink: this.state.link,
+    return { rootStyle, gridHead, gridRow, roles, staff, days, addBtnStyle: this.state.adding ? 'display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;' : 'display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;', adding: this.state.adding, closed: !this.state.adding, noLink: !this.state.link, hasLink: this.state.link,
       roleName: defs.find((d) => d.id === role).name.toLowerCase(),
       openAdd: () => this.setState({ adding: true, link: false }), makeLink: () => this.setState({ link: true }) };
   }

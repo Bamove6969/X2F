@@ -33,12 +33,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <div style="display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 8px; align-items: end;">
         <label for="amt" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">You pay
           <span style="{{amtStyle}}">
-            <span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 22px; font-weight: 400; color: var(--ink-muted);">$</span>
-            <input id="amt" type="text" inputmode="decimal" value="{{amount}}" onChange="{{onAmount}}" aria-describedby="amt-help" style="flex-grow: 1; min-width: 0; height: 52px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 22px; font-weight: 500; letter-spacing: 0; outline: none;">
+            <span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 400; color: var(--ink-muted);">$</span>
+            <input id="amt" type="text" inputmode="decimal" value="{{amount}}" onChange="{{onAmount}}" aria-describedby="amt-help" style="flex-grow: 1; min-width: 0; height: 44px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 500; letter-spacing: 0; outline: none;">
+            <span style="font-size: 16px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink-muted);">USD</span>
           </span>
         </label>
         <label for="pay-with" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Pay with
-          <select id="pay-with" value="{{method}}" onChange="{{onMethod}}" style="height: 56px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
+          <select id="pay-with" value="{{method}}" onChange="{{onMethod}}" style="height: 48px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
             <option value="zelle">Zelle</option><option value="paypal">PayPal</option><option value="cashapp">Cash App</option><option value="ach">Bank transfer (ACH)</option>
           </select>
         </label>
@@ -61,7 +62,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </div>
           <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;">
             <div style="display: flex; flex-direction: column; gap: 2px;">
-              <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="{{c.priceStyle}}">{{c.priceText}}</span><span style="font-size: 14px; color: var(--ink-muted);">/ XMR</span></span>
+              <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="{{c.priceStyle}}">{{c.priceText}}</span><span style="font-size: 14px; color: var(--ink-muted);">/ <span style="font-weight: 600; color: var(--monero-ink);">XMR</span></span></span>
               <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{c.vsText}}</span>
             </div>
             <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right;">
@@ -69,7 +70,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{c.xmrText}}</span> <span style="font-size: 14px; font-weight: 600; color: var(--monero-ink);">XMR</span></span>
             </div>
           </div>
-          <span style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span>{{c.tierText}} · {{c.speed}}</span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;"><span>Takes</span><sc-for list="{{c.chips}}" as="m" hint-placeholder-count="2"><span style="{{m.style}}">{{m.label}}</span></sc-for></span></span>
+          <span style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span>{{c.tierText}} · Releases in about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{c.rel}}</span> min</span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;"><span>Takes</span><sc-for list="{{c.chips}}" as="m" hint-placeholder-count="2"><span style="{{m.style}}">{{m.label}}</span></sc-for></span></span>
           <sc-if value="{{c.notOk}}" hint-placeholder-val="{{false}}">
             <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
               <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>
@@ -77,7 +78,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             </div>
           </sc-if>
           <sc-if value="{{c.ok}}" hint-placeholder-val="{{true}}">
-            <button type="button" onClick="{{c.open}}" aria-label="{{c.tradeLabel}}" style="height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Trade</button>
+            <button type="button" onClick="{{c.open}}" aria-label="{{c.tradeLabel}}" style="{{c.btnStyle}}">Trade</button>
           </sc-if>
         </article>
       </sc-for>
@@ -146,32 +147,32 @@ class Component extends DCLogic {
 
     const MARKET = 329.90, MINE = 3;
     const OFFERS = [
-      { id: 'sg', name: 'satoshi_ghost', online: true, stats: 'Online · 340 trades · 99% positive', speed: 'Releases in ~8 min',
+      { id: 'sg', name: 'satoshi_ghost', online: true, stats: 'Online · 340 trades · 99% positive', rel: 8,
         tiers: [{ from: 20, to: 500, m: 1.0, min: 0 }, { from: 500.01, to: 1500, m: 0.6, min: 0 }],
         methods: [
           { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle to the phone number in the trade room. Put the trade code in the memo.' },
           { id: 'paypal', name: 'PayPal', adj: 2, max: 500, instr: 'Send from a PayPal account in your own name. Put the trade code in the note.' },
           { id: 'cashapp', name: 'Cash App', adj: 0.5, instr: 'Cash App to the $cashtag in the trade room. Trade code in the note.' }
         ] },
-      { id: 'mk', name: 'mira.k', online: true, stats: 'Online · 212 trades · 99% positive', speed: 'Releases in ~6 min',
+      { id: 'mk', name: 'mira.k', online: true, stats: 'Online · 212 trades · 99% positive', rel: 6,
         tiers: [{ from: 50, to: 300, m: 0.8, min: 0 }, { from: 300.01, to: 2000, m: 0.3, min: 10 }],
         methods: [
           { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle from a bank account in your own name. Trade code in the memo, nothing else.' },
           { id: 'ach', name: 'Bank transfer (ACH)', adj: -0.2, instr: 'ACH to the account in the trade room. It can take 1 to 3 business days.' }
         ] },
-      { id: 'km', name: 'kettle.moss', online: false, stats: 'Seen 40 min ago · 96 trades · 98% positive', speed: 'Releases in ~20 min',
+      { id: 'km', name: 'kettle.moss', online: false, stats: 'Seen 40 min ago · 96 trades · 98% positive', rel: 20,
         tiers: [{ from: 100, to: 3000, m: 0.5, min: 0 }],
         methods: [
           { id: 'zelle', name: 'Zelle', adj: 0.3, instr: 'Zelle only. Put the trade code in the memo.' },
           { id: 'paypal', name: 'PayPal', adj: 2.5, instr: 'PayPal from your own account. Trade code in the note.' }
         ] },
-      { id: 'nw', name: 'nightowl_44', online: false, stats: 'Seen 2 h ago · 58 trades · 97% positive', speed: 'Releases in ~15 min',
+      { id: 'nw', name: 'nightowl_44', online: false, stats: 'Seen 2 h ago · 58 trades · 97% positive', rel: 15,
         tiers: [{ from: 50, to: 250, m: 0.2, min: 0 }, { from: 250.01, to: 5000, m: 0.1, min: 25 }],
         methods: [
           { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle to the number in the trade room. Trade code in the memo.' },
           { id: 'cashapp', name: 'Cash App', adj: 0, instr: 'Cash App to the $cashtag in the trade room.' }
         ] },
-      { id: 'lt', name: 'lowtide_rx', online: true, stats: 'Online · 12 trades · 100% positive', speed: 'Releases in ~30 min',
+      { id: 'lt', name: 'lowtide_rx', online: true, stats: 'Online · 12 trades · 100% positive', rel: 30,
         tiers: [{ from: 20, to: 400, m: 0.9, min: 0 }],
         methods: [
           { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle with the trade code in the memo.' },
@@ -212,14 +213,14 @@ class Component extends DCLogic {
       }
       const ok = !reason;
       return {
-        id: o.id, name: o.name, stats: o.stats, speed: o.speed, ok, notOk: !ok, reason,
+        id: o.id, name: o.name, stats: o.stats, rel: o.rel, ok, notOk: !ok, reason,
         dotStyle: 'width: 8px; height: 8px; border-radius: 999px; box-sizing: border-box; flex-shrink: 0; ' + (o.online ? 'background: var(--escrow);' : 'border: 1.5px solid var(--line);'),
         cardStyle: 'display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; ' + (ok ? 'background: var(--surface); border: 1px solid transparent;' : 'background: transparent; border: 1px dashed var(--line);'),
         nameStyle: 'display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 22px; font-weight: 600; ' + (ok ? 'color: var(--ink);' : 'color: var(--ink-muted);'),
         priceStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em; " + (ok ? 'color: var(--ink);' : 'color: var(--ink-muted);'),
         priceText: usd2(q.price),
         vsText: vsMarket(q.total) + (q.meth.adj ? ' · incl. ' + methodTag(q.meth) : ''),
-        tierText: q.tier ? 'Tier ' + money(q.tier.from) + ' – ' + money(q.tier.to) : 'No tier for this amount',
+        tierText: q.tier ? 'Band ' + money(q.tier.from) + ' – ' + money(q.tier.to) : 'No band for this amount',
         xmrText: q.xmr.toFixed(6),
         chips: o.methods.map((x) => ({ label: inRange(x) ? methodTag(x) : rangeText(x), style: CHIP + (inRange(x) ? 'border: 1px solid var(--line); color: var(--ink);' : 'border: 1px dashed var(--line); color: var(--ink-muted);') })),
         tradeLabel: 'Trade with ' + o.name,
@@ -228,6 +229,9 @@ class Component extends DCLogic {
       };
     });
     const okCards = cards.filter((c) => c.ok).sort((a, b) => a.price - b.price);
+    // One primary per screen: the first available offer's Trade (best price); the rest stay secondary.
+    const BTN = 'border-radius: 12px; font-family: inherit; font-weight: 600; cursor: pointer; ';
+    okCards.forEach((c, i) => { c.btnStyle = BTN + (i === 0 ? 'height: 56px; border: 0; background: var(--monero); color: var(--on-monero); font-size: 18px;' : 'height: 48px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-size: 16px;'); });
     const badCards = cards.filter((c) => !c.ok);
     const shown = variant === 'hidden' ? okCards : okCards.concat(badCards);
     const hiddenCount = variant === 'hidden' ? badCards.length : 0;
@@ -246,7 +250,7 @@ class Component extends DCLogic {
         xmr: tq.xmr.toFixed(6),
         instrTitle: taking.name + '’s instructions for ' + tq.meth.name,
         instr: tq.meth.instr,
-        tier: tq.tier ? vsMarket(tq.total) + ' · tier ' + money(tq.tier.from) + ' – ' + money(tq.tier.to) : ''
+        tier: tq.tier ? vsMarket(tq.total) + ' · band ' + money(tq.tier.from) + ' – ' + money(tq.tier.to) : ''
       };
     }
     const methodName = { zelle: 'Zelle', paypal: 'PayPal', cashapp: 'Cash App', ach: 'Bank transfer (ACH)' }[s.method];
@@ -255,7 +259,7 @@ class Component extends DCLogic {
       rootStyle,
       amount: s.amount, method: s.method, valid, invalid: !valid,
       amtBorder: valid ? 'var(--line)' : 'var(--danger)',
-      amtStyle: 'display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); border: 1px solid ' + (valid ? 'var(--line)' : 'var(--danger)') + ';',
+      amtStyle: 'display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 14px; box-sizing: border-box; border-radius: 6px; background: var(--surface-raised); border: 1px solid ' + (valid ? 'var(--line)' : 'var(--danger)') + ';',
       onAmount: (e) => this.setState({ amount: e.target.value }),
       onMethod: (e) => this.setState({ method: e.target.value }),
       forLine: valid ? 'Prices for ' + usd2(amt) + ' via ' + methodName : '',

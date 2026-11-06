@@ -24,6 +24,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
     <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
     <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</a>
+    <a href="Support-Wide.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.7-2.5 2-2.5 3.5"/><path d="M12 17h.01"/></svg>Help</a>
   </nav>
   <main style="flex-grow: 1; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
     <div style="display: flex; align-items: center; gap: 8px; max-width: 944px; margin-left: -12px;">
@@ -31,7 +33,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <div style="display: flex; flex-direction: column; flex-grow: 1;">
         <sc-if value="{{isEditor}}" hint-placeholder-val="{{true}}">
           <h1 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Check your payment proof</h1>
-          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Step <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span>, You pay · Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle</span>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">You pay · Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle</span>
         </sc-if>
         <sc-if value="{{isSent}}" hint-placeholder-val="{{false}}">
           <h1 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Buying from satoshi_ghost</h1>
@@ -40,6 +42,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </div>
       <span style="flex-shrink: 0; align-self: flex-start; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
     </div>
+
+    <ol aria-label="Trade progress" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 944px; margin: -8px 0 0; padding: 0; list-style: none;">
+      <sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
+        <li aria-current="{{s.current}}" style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="display: block; height: 4px; border-radius: 999px; background: var(--surface-raised); overflow: hidden;"><span style="{{s.barStyle}}"></span></span>
+          <span style="{{s.labelStyle}}">{{s.label}}</span>
+        </li>
+      </sc-for>
+    </ol>
 
     <sc-if value="{{isEditor}}" hint-placeholder-val="{{true}}">
       <div style="display: grid; grid-template-columns: 560px 360px; gap: 24px; align-items: start;">
@@ -61,7 +72,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               <dl style="display: grid; grid-template-columns: 96px 1fr; column-gap: 12px; row-gap: 10px; margin: 0; font-size: 15px; line-height: 22px;">
                 <dt style="color: var(--ink-muted);">To</dt>
                 <dd style="margin: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
-                  <span onClick="{{b.to.add}}" style="{{b.to.wrapStyle}}"><span style="{{b.to.textStyle}}">[SELLER NAME]</span><sc-if value="{{b.to.on}}" hint-placeholder-val="{{true}}"><button type="button" aria-label="{{b.to.aria}}" onClick="{{b.to.tap}}" style="{{b.to.boxStyle}}"><sc-if value="{{b.to.tag}}" hint-placeholder-val="{{true}}"><span style="{{tagStyle}}">{{b.to.tagText}}<sc-if value="{{b.to.removable}}" hint-placeholder-val="{{false}}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></sc-if></span></sc-if></button></sc-if></span>
+                  <span onClick="{{b.to.add}}" style="{{b.to.wrapStyle}}"><span style="{{b.to.textStyle}}">Sam Ortega</span><sc-if value="{{b.to.on}}" hint-placeholder-val="{{true}}"><button type="button" aria-label="{{b.to.aria}}" onClick="{{b.to.tap}}" style="{{b.to.boxStyle}}"><sc-if value="{{b.to.tag}}" hint-placeholder-val="{{true}}"><span style="{{tagStyle}}">{{b.to.tagText}}<sc-if value="{{b.to.removable}}" hint-placeholder-val="{{false}}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></sc-if></span></sc-if></button></sc-if></span>
                   <span onClick="{{b.phone.add}}" style="{{b.phone.wrapStyle}}"><span style="{{b.phone.textStyle}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">(555) 010-4477</span></span><sc-if value="{{b.phone.on}}" hint-placeholder-val="{{true}}"><button type="button" aria-label="{{b.phone.aria}}" onClick="{{b.phone.tap}}" style="{{b.phone.boxStyle}}"><sc-if value="{{b.phone.tag}}" hint-placeholder-val="{{true}}"><span style="{{tagStyle}}">{{b.phone.tagText}}<sc-if value="{{b.phone.removable}}" hint-placeholder-val="{{false}}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></sc-if></span></sc-if></button></sc-if></span>
                 </dd>
                 <dt style="color: var(--ink-muted);">Memo</dt>
@@ -70,7 +81,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
                 </dd>
                 <dt style="color: var(--ink-muted);">From</dt>
                 <dd style="margin: 0;">
-                  <span onClick="{{b.from.add}}" style="{{b.from.wrapStyle}}"><span style="{{b.from.textStyle}}">[YOUR NAME]</span><sc-if value="{{b.from.on}}" hint-placeholder-val="{{true}}"><button type="button" aria-label="{{b.from.aria}}" onClick="{{b.from.tap}}" style="{{b.from.boxStyle}}"><sc-if value="{{b.from.tag}}" hint-placeholder-val="{{true}}"><span style="{{tagStyle}}">{{b.from.tagText}}<sc-if value="{{b.from.removable}}" hint-placeholder-val="{{false}}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></sc-if></span></sc-if></button></sc-if></span>
+                  <span onClick="{{b.from.add}}" style="{{b.from.wrapStyle}}"><span style="{{b.from.textStyle}}">Alex Rivera</span><sc-if value="{{b.from.on}}" hint-placeholder-val="{{true}}"><button type="button" aria-label="{{b.from.aria}}" onClick="{{b.from.tap}}" style="{{b.from.boxStyle}}"><sc-if value="{{b.from.tag}}" hint-placeholder-val="{{true}}"><span style="{{tagStyle}}">{{b.from.tagText}}<sc-if value="{{b.from.removable}}" hint-placeholder-val="{{false}}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></sc-if></span></sc-if></button></sc-if></span>
                 </dd>
                 <dt style="color: var(--ink-muted);">Account</dt>
                 <dd style="margin: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
@@ -187,7 +198,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               <span style="display: inline-flex; align-items: baseline; gap: 8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">$412.50</span><span style="font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">USD</span></span>
             </div>
             <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
-              <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Zelle to</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">[SELLER ZELLE ID]</dd></div>
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Zelle to</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">•••-•••-4471</dd></div>
               <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
               <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Memo</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">K7M2-9QXA-4FTR-8WPN</dd></div>
             </dl>
@@ -235,7 +246,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <span style="font-weight: 600;">Proof is cleaned on the device before anything is sent.</span>
             <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
               <li>Photo metadata (EXIF: location, device) is stripped on the phone.</li>
-              <li>Likely private details are pre-blurred: account and card numbers, full names, addresses, phone numbers, email addresses.</li>
+              <li>Likely private details are pre-blurred: account and card numbers, full names, addresses, phone numbers and other contact details.</li>
               <li>The buyer reviews, adds blur where needed, then sends. Auto-blur is best-effort, and the screen says so.</li>
               <li>The seller only gets the blurred version. A moderator sees the unblurred original only in a dispute.</li>
             </ul>
@@ -266,7 +277,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               <li>Preview as seller hides outlines and tags and turns the other tools off, so the image is exactly what is sent.</li>
               <li>Each blur is a button for screen readers; its tap area grows to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">44</span> px. Add blur: tap a line or drag a box.</li>
               <li>Wide: the Blurred details list is the keyboard path. Every blur can be shown or removed from there.</li>
-              <li>The receipt is a CSS stand-in for the buyer&#39;s own screenshot.</li>
+              <li>The receipt is a CSS stand-in for the buyer&#39;s own screenshot; the names and numbers on it are examples.</li>
             </ul>
           </aside>
 
@@ -346,6 +357,15 @@ class Component extends DCLogic {
     const H_EDIT = 1478;
     const H_SENT = 1364;
     const ROWS_FIT = 4;
+    // Stepper: Escrow done, You pay current.
+    const STEP_LABELS = ['Escrow', 'You pay', 'Seller checks', 'Released'];
+    const stepCur = 1;
+    const steps = STEP_LABELS.map((label, i) => ({
+      label,
+      current: i === stepCur ? 'step' : 'false',
+      barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < stepCur ? 'width: 100%; background: var(--escrow);' : i === stepCur ? 'width: 50%; background: var(--caution);' : 'width: 0;'),
+      labelStyle: 'font-size: 13px; line-height: 16px; ' + (i === stepCur ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
+    }));
 
     // Board height = measured content height (night, fonts loaded). The editor's left column is the taller one
     // until the Blurred details list passes 4 rows; each extra row is 49 px (the 5th uses 12 px of slack).
@@ -412,7 +432,7 @@ class Component extends DCLogic {
       (off ? 'background: transparent; color: var(--ink-muted); border: 2px solid transparent; cursor: not-allowed;' : sel ? 'background: var(--surface-raised); color: var(--ink); border: 2px solid var(--ink); cursor: pointer;' : 'background: transparent; color: var(--ink); border: 2px solid transparent; cursor: pointer;');
     const undoOff = c.hist.length === 0 || c.preview;
 
-    const REVEAL = { to: ['Recipient name', '[SELLER NAME]'], phone: ['Recipient phone', '(555) 010-4477'], from: ['Your name', '[YOUR NAME]'], acct: ['Account digits', '••••4821'] };
+    const REVEAL = { to: ['Recipient name', 'Sam Ortega'], phone: ['Recipient phone', '(555) 010-4477'], from: ['Your name', 'Alex Rivera'], acct: ['Account digits', '••••4821'] };
     const sheetId = REVEAL[c.sheet] ? c.sheet : null;
     const sheetOpen = !!sheetId && !c.preview && !c.sent;
 
@@ -439,6 +459,7 @@ class Component extends DCLogic {
 
     return {
       rootStyle, rows, b, tagStyle, tagInline, drawStyle, handleTL, handleBR, touchStyle, canvasStyle, hint,
+      steps,
       isEditor: !c.sent,
       isSent: c.sent,
       stepName: c.sent ? STEP_NAMES.sent : STEP_NAMES[step === 'sent' ? 'review' : step],

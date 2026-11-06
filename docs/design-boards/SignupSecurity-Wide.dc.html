@@ -19,13 +19,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </helmet>
 <div style="{{rootStyle}}">
   <div style="{{frameStyle}}">
-  <header style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 24px 32px 0;">
-    <span aria-label="X2F" style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true">X<span style="color: var(--monero-ink);">2</span>F</span></span>
-    <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+  <header style="position: relative; display: flex; align-items: center; justify-content: center; padding: 56px 32px 0;">
+    <span role="img" aria-label="X2F" style="font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true" style="color: var(--ink);">X2F</span></span>
+    <span style="position: absolute; top: 24px; right: 32px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
   </header>
 
   <main style="flex-grow: 1; display: flex; justify-content: center; padding: 24px 32px 48px;">
-    <div style="width: 944px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="width: 720px; display: flex; flex-direction: column; gap: 24px;">
       <div style="display: flex; flex-direction: column; gap: 8px; max-width: 640px;">
         <div style="display: flex; align-items: center; gap: 8px; margin-left: -12px;">
           <a href="SetupWelcome.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
@@ -34,7 +34,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Pick how you&#39;ll prove it&#39;s you. The more ways you add, the harder your account is to break into.</p>
       </div>
 
-      <div style="display: grid; grid-template-columns: 560px 360px; gap: 24px; align-items: start;">
+      <div style="display: flex; flex-direction: column; gap: 24px;">
         <div data-m="L" style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
         <section aria-labelledby="ss-names" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
           <h2 id="ss-names" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your names</h2>
@@ -71,7 +71,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
                 <h3 id="ss-totp-t" style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">What an authenticator app can&#39;t do on its own</h3>
                 <p style="margin: 0;">It&#39;s fine for logging in with your password. But some sensitive actions need a passkey, security key or PGP key instead:</p>
                 <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px;">
-                  <li>Ending a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold early</li>
+                  <li>Ending a <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</span> hold early</li>
                   <li>Logging in on a new device when your other devices aren&#39;t with you</li>
                   <li>Adding team members, changing their roles or switching them on and off</li>
                   <li>Switching to a vendor account</li>
@@ -102,20 +102,6 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </section>
         </sc-if>
 
-        <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
-          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
-          <p style="margin: 0; font-size: 14px; line-height: 20px;">Next you&#39;ll set up recovery. Everyone needs it. It isn&#39;t a way to log in: it&#39;s for when every other way is lost.</p>
-        </div>
-
-          <div style="display: flex; align-items: center; gap: 24px;">
-            <sc-if value="{{canGo}}" hint-placeholder-val="{{true}}">
-              <a href="RecoveryCode-Wide.dc.html" style="display: flex; flex-shrink: 0; align-items: center; justify-content: center; min-width: 160px; height: 48px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">Continue</a>
-            </sc-if>
-            <sc-if value="{{cantGo}}" hint-placeholder-val="{{false}}">
-              <button type="button" disabled="{{yes}}" aria-describedby="ss-why" style="display: flex; flex-shrink: 0; align-items: center; justify-content: center; min-width: 160px; height: 48px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 16px; font-weight: 600; cursor: not-allowed;">Continue</button>
-            </sc-if>
-            <p id="ss-why" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{footNote}}</p>
-          </div>
         </div>
 
         <div data-m="R" style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
@@ -152,12 +138,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
                   </div>
                 </div>
                 <p style="margin: 0; font-size: 16px; line-height: 24px;">{{armoredMsg}}</p>
-                <p style="margin: 0; padding-top: 12px; border-top: 1px dashed color-mix(in srgb, var(--escrow) 45%, transparent); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{sealFooter}}</p>
+                <p style="margin: 0; padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--escrow) 25%, transparent); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{sealFooter}}</p>
               </div>
             </sc-if>
             <sc-if value="{{notArmored}}" hint-placeholder-val="{{true}}">
               <div style="display: flex; flex-direction: column; gap: 8px;">
-                <h3 style="display: flex; align-items: center; gap: 10px; margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span style="{{tierIconStyle}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>{{tierTitle}}</h3>
+                <h3 style="display: flex; align-items: center; gap: 10px; margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;"><span style="{{tierIconStyle}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>{{tierTitle}}</h3>
                 <sc-for list="{{tierLines}}" as="t" hint-placeholder-count="2">
                   <p style="margin: 0; font-size: 15px; line-height: 22px;">{{t.text}}</p>
                 </sc-for>
@@ -188,6 +174,20 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <p id="ss-idle-note" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">When this time is up, we&#39;ll ask you to confirm it&#39;s you to stay logged in. If you don&#39;t, you&#39;re logged out.</p>
         </section>
         </div>
+        <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+          <p style="margin: 0; font-size: 14px; line-height: 20px;">Next you&#39;ll set up recovery. Everyone needs it. It isn&#39;t a way to log in: it&#39;s for when every other way is lost.</p>
+        </div>
+
+        <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 8px;">
+            <sc-if value="{{canGo}}" hint-placeholder-val="{{true}}">
+              <a href="RecoveryCode-Wide.dc.html" style="display: flex; flex-shrink: 0; align-items: center; justify-content: center; min-width: 160px; height: 48px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">Continue</a>
+            </sc-if>
+            <sc-if value="{{cantGo}}" hint-placeholder-val="{{false}}">
+              <button type="button" disabled="{{yes}}" aria-describedby="ss-why" style="display: flex; flex-shrink: 0; align-items: center; justify-content: center; min-width: 160px; height: 48px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 16px; font-weight: 600; cursor: not-allowed;">Continue</button>
+            </sc-if>
+            <p id="ss-why" style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{footNote}}</p>
+        </div>
       </div>
     </div>
   </main>
@@ -200,7 +200,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
       <span style="font-weight: 600;">When does a password count as strong?</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>A: 12+ chars with 3 of 4 types, or 16+ with 2 types</li>
+        <li>A (spec, shown by default): at least 10 characters with upper and lower case letters, a number and a symbol. Same sentence as SetupPassword.</li>
         <li>B: length only, 14+</li>
         <li>C: zxcvbn-style score ≥ 3</li>
       </ul>
@@ -247,7 +247,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":1280,"height":2289}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":1280,"height":2946}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props); }
   preset(p) {
@@ -282,14 +282,14 @@ class Component extends DCLogic {
       { id: 'passkey', name: 'Passkey', desc: 'Your face, fingerprint or phone PIN.' },
       { id: 'key', name: 'Security key', desc: 'Tap a YubiKey or similar key.' },
       { id: 'pgp', name: 'PGP key', desc: 'Decrypt a short message in your PGP app.', tag: 'Recommended', tagColor: 'var(--escrow)' },
-      { id: 'totp', name: 'Authenticator app', desc: 'A 6-digit code that changes every 30 seconds.', tag: 'Login only', tagColor: 'var(--ink-muted)' }
+      { id: 'totp', name: 'Authenticator app', desc: 'A 6-digit code that changes every 30 s.', tag: 'Login only', tagColor: 'var(--ink-muted)' }
     ];
     const rowStyle = (o) => 'display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box; border-radius: 16px; cursor: pointer; ' + (o ? 'background: var(--surface-raised); border: 2px solid var(--ink);' : 'background: var(--surface); border: 2px solid transparent;');
     const methods = DEFS.map((d) => ({
       name: d.name, desc: d.desc, on: !!on[d.id], style: rowStyle(!!on[d.id]),
       isPw: d.id === 'pw', isPasskey: d.id === 'passkey', isKey: d.id === 'key', isPgp: d.id === 'pgp', isTotp: d.id === 'totp',
       hasTag: !!d.tag, tag: d.tag || '',
-      tagStyle: 'display: inline-flex; padding: 2px 10px; border-radius: 999px; background: ' + (d.id === 'pgp' ? 'color-mix(in srgb, var(--escrow) 14%, transparent)' : 'color-mix(in srgb, var(--ink-muted) 16%, transparent)') + '; font-size: 12px; line-height: 18px; font-weight: 600; color: ' + (d.tagColor || 'var(--ink-muted)') + ';',
+      tagStyle: 'display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; ' + (d.id === 'pgp' ? 'background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);' : 'background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink);'),
       toggle: () => this.setState({ on: Object.assign({}, on, { [d.id]: !on[d.id] }) })
     }));
 
@@ -309,13 +309,12 @@ class Component extends DCLogic {
       const score = bits < 40 ? 1 : (bits < 60 ? 2 : (bits < 80 ? 3 : 4));
       if (pw.length > 0) level = score >= 3 ? 3 : (score === 2 ? 2 : 1);
     } else {
-      if (pw.length >= 12 && kinds >= 3) level = 3;
-      else if (pw.length >= 16 && kinds >= 2) level = 3;
+      if (pw.length >= 10 && kinds >= 4) level = 3;
       else if (pw.length >= 8 && kinds >= 2) level = 2;
       else if (pw.length > 0) level = 1;
     }
     const RULES = {
-      A: { name: 'A', text: 'Use 12 or more characters with 3 of these: small letters, capitals, numbers, symbols. Or use 16 or more with 2 of them. It has to reach strong.', mid: 'Getting there. Add length, numbers or symbols.' },
+      A: { name: 'A (spec)', text: 'At least 10 characters, with upper and lower case letters, a number and a symbol.', mid: 'Getting there. Add upper and lower case, a number and a symbol.' },
       B: { name: 'B', text: 'Use 14 or more characters. Any characters count. It has to reach strong.', mid: 'Getting there. Make it longer.' },
       C: { name: 'C', text: 'We score how hard it is to guess. It has to reach strong.', mid: 'Getting there. Make it longer or less predictable.' }
     };
@@ -353,14 +352,14 @@ class Component extends DCLogic {
       return {
         label, cur: cur ? 'true' : 'false', vault,
         caret: 'display: flex; justify-content: center; height: 9px; color: ' + (cur ? TCOL : 'transparent') + ';',
-        bar: 'display: flex; align-items: center; justify-content: center; width: 100%; height: ' + HEIGHTS[i] + 'px; flex-shrink: 0; box-sizing: border-box; border-radius: 8px 8px 4px 4px; ' + (filled ? 'background: ' + TCOL + ';' : 'background: transparent; border: 1.5px dashed var(--line);') + (vault ? ' border: 2px solid var(--ink); color: var(--surface);' : ''),
+        bar: 'display: flex; align-items: center; justify-content: center; width: 100%; height: ' + HEIGHTS[i] + 'px; flex-shrink: 0; box-sizing: border-box; border-radius: 8px 8px 4px 4px; ' + (filled ? 'background: ' + TCOL + ';' : 'background: transparent; border: 1px solid var(--line);') + (vault ? ' border: 2px solid var(--ink); color: var(--surface);' : ''),
         labelStyle: 'font-size: 12px; line-height: 16px; text-align: center; ' + (cur ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
       };
     });
     const T = {
       none: { title: 'Not allowed yet', lines: ['A username alone can’t prove it’s you, and your display name can’t be used to log in.', 'Pick at least one way to log in.'] },
       totp: { title: 'Not allowed', lines: ['An authenticator app alone isn’t enough.', 'Add at least a password, but we recommend the other options.'] },
-      weak: { title: 'Weak', lines: ['If your account is ever broken into, it’s harder and slower to prove it’s you.', 'While we check, a 24-hour cooling-off applies to you too.', 'Harden it with a passkey, security key or PGP key.'] },
+      weak: { title: 'Weak', lines: ['If your account is ever broken into, it’s harder and slower to prove it’s you.', 'While we check, a 24 h cooling-off applies to you too.', 'Harden it with a passkey, security key or PGP key.'] },
       strong: { title: 'Strong', lines: ['This stops simple guessing, and you can act right away.'] }
     };
     const t = T[tier] || T.strong;
@@ -374,13 +373,14 @@ class Component extends DCLogic {
     const extra = seconds;
 
     const vendor = this.props.accountType === 'vendor';
-    // Screen height = header + the taller column (measured parts, night, fonts loaded) + the design-notes block under it.
+    // Screen height = header + both stacked blocks (forms stay in one 720 column) (measured parts, night, fonts loaded) + the design-notes block under it.
     const P = { top: 250, left: 818, pw: 266, totp: 230, vendor: 72, notes: 955, tier: { none: 675, totp: 675, weak: 749, strong: 710, strongNoPw: 710, armored: 830 } };
     const leftH = P.left + (hasPw ? P.pw : 0) + (totpNote ? P.totp : 0);
     const rightH = P.tier[tier === 'strong' && !hasPw ? 'strongNoPw' : tier] + (vendor ? P.vendor : 0);
-    const frameH = Math.max(800, P.top + Math.max(leftH, rightH));
+    const frameH = 800;
     const H = frameH + P.notes;
-    const frameStyle = 'position: relative; flex-shrink: 0; height: ' + frameH + 'px; display: flex; flex-direction: column; overflow: hidden;';
+    // One 720 column, so the frame is content-sized (min 800) and the root grows with it; $preview = measured default.
+    const frameStyle = 'position: relative; flex-shrink: 0; min-height: 800px; display: flex; flex-direction: column;';
 
     // Footer
     const uname = (s.uname || '').trim();
@@ -404,7 +404,7 @@ class Component extends DCLogic {
       pick: () => this.setState({ idle: h }),
       style: 'height: 48px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; color: var(--ink); ' + (idle === h ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 1px solid var(--line); background: transparent;')
     }));
-    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     return {
       rootStyle, frameStyle, methods, meter, bars, totpNote, yes: true,
       tierHeroStyle, tierTone: TCOL, tierRule: 'color-mix(in srgb, ' + TCOL + ' 25%, transparent)', tierIconStyle: 'display: flex; color: ' + TCOL + ';',

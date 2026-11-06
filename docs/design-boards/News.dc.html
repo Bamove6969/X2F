@@ -17,6 +17,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
+  <div style="position: relative; flex-shrink: 0; min-height: 844px; display: flex; flex-direction: column; overflow: hidden;">
   <sc-if value="{{open}}" hint-placeholder-val="{{true}}">
     <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
       <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
@@ -59,7 +60,6 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </sc-if>
         </article>
       </sc-for>
-      <span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">Posts are examples.</span>
     </main>
 
     <footer style="display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
@@ -84,9 +84,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <button type="button" onClick="{{reopen}}" style="margin-top: auto; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Show News again</button>
     </main>
   </sc-if>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink);">Posts are examples.</p>
+  </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["plain","with-dont-show-again"],"default":"plain"},"$preview":{"width":390,"height":844}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["plain","with-dont-show-again"],"default":"plain"},"$preview":{"width":390,"height":939}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -98,7 +104,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const data = [
       ['n1', '28 Oct 2026', 'Offers can now have price tiers', 'Sellers can set different prices for different amounts and accept several payment methods in one offer. Buyers see the final price for the amount they type.'],
       ['n2', '21 Oct 2026', 'Planned maintenance on 2 Nov', 'X2F will be down for about 30 minutes on 2 Nov 2026 from 03:00 UTC. Payment timers pause while we are down, so no trade runs out of time.'],

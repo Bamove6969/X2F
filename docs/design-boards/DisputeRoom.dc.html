@@ -40,7 +40,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <div style="display: flex; flex-direction: column; gap: 4px;">
         <span style="display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em;">1.250000</span><span style="font-size: 15px; font-weight: 600; color: var(--monero-ink);">XMR</span><span style="display: inline-flex; align-items: center; gap: 4px; font-size: 15px; font-weight: 600; color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>locked in escrow</span></span>
       </div>
-      <p style="margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px; color: var(--ink-muted);">Replied in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">38</span> min · ruling due by <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">Fri 16 Oct, 10:14</span> (in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">23</span> h)</p>
+      <p style="margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px; color: var(--ink-muted);">Replied in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">38</span> min · ruling due by <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">30 Oct 2026, 10:14 UTC</span> (in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">23</span> h)</p>
     </section>
 
     <section aria-label="Moderator joined" style="display: flex; gap: 14px; align-items: flex-start; padding: 20px; border-radius: 16px; background: color-mix(in srgb, var(--mod) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--mod) 40%, transparent);">
@@ -90,9 +90,6 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
       <section aria-label="Request from the moderator" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 16px; background: color-mix(in srgb, var(--mod) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--mod) 40%, transparent);">
         <span style="display: flex; gap: 10px; align-items: flex-start; font-size: 15px; line-height: 22px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--mod);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg><span><span style="color: var(--mod); font-weight: 600;">sarah.v</span> asked you for the unblurred proof. Only she will see it. satoshi_ghost won't.</span></span>
-        <sc-if value="{{notSent}}" hint-placeholder-val="{{true}}">
-          <button type="button" onClick="{{send}}" style="height: 48px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Send unblurred proof to sarah.v</button>
-        </sc-if>
         <sc-if value="{{sent}}" hint-placeholder-val="{{false}}">
           <span style="display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Sent to sarah.v at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10:58</span></span>
         </sc-if>
@@ -104,16 +101,21 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </div>
   </main>
 
-  <footer style="display: flex; align-items: center; gap: 8px; padding: 16px 16px 12px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
-    <label for="msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Message</label>
-    <input id="msg" type="text" placeholder="Message satoshi_ghost and sarah.v" style="flex-grow: 1; min-width: 0; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
-    <button type="button" aria-label="Send message" style="display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12l16-8-6 16-2-7z"/></svg>
-    </button>
+  <footer style="display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 12px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+    <sc-if value="{{notSent}}" hint-placeholder-val="{{true}}">
+      <button type="button" onClick="{{send}}" style="height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Send unblurred proof to sarah.v</button>
+    </sc-if>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <label for="msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Message</label>
+      <input id="msg" type="text" placeholder="Message satoshi_ghost and sarah.v" style="flex-grow: 1; min-width: 0; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+      <button type="button" aria-label="Send message" style="display: flex; flex-shrink: 0; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12l16-8-6 16-2-7z"/></svg>
+      </button>
+    </div>
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1237}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1245}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -125,7 +127,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const H = this.state.sent ? 1319 : 1237;
+    const H = this.state.sent ? 1319 : 1245;
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     return { rootStyle,
       sent: this.state.sent,

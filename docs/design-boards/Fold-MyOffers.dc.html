@@ -12,11 +12,13 @@
 <style>
 body{margin:0}
 button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
   <section aria-label="My offers" style="position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
-    <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
+    <header style="display: flex; align-items: center; gap: 8px; padding: 16px;">
       <a href="Main.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; color: var(--ink);">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
       </a>
@@ -26,8 +28,8 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
       </div>
     </header>
 
-    <div style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
-      <div style="display: flex; align-items: center; gap: 4px; padding: 6px 16px 6px 4px; border-radius: 12px; border: 1px solid var(--line);">
+    <div style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; align-items: center; gap: 4px; padding: 6px 16px 6px 4px; border-radius: 12px; background: var(--surface);">
         <label style="position: relative; display: flex; width: 44px; height: 44px; flex-shrink: 0; align-items: center; justify-content: center; cursor: pointer;">
           <input id="fmo-all" type="checkbox" checked="{{allChecked}}" aria-describedby="fmo-all-hint" onChange="{{toggleAll}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); cursor: pointer;">
           <sc-if value="{{allMixed}}" hint-placeholder-val="{{false}}">
@@ -82,7 +84,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
   <div aria-hidden="true" style="display: flex; justify-content: center;"><span style="width: 1px; background: var(--surface-raised);"></span></div>
 
   <section aria-label="{{paneLabel}}" style="position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
-    <header style="display: flex; align-items: center; gap: 8px; padding: 16px; min-height: 44px; border-bottom: 1px solid var(--surface-raised);">
+    <header style="display: flex; align-items: center; gap: 8px; padding: 16px; min-height: 44px;">
       <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
         <h2 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 600;">{{d.title}}</h2>
         <span style="font-size: 13px; color: var(--ink-muted);">Last edited <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{d.edited}}</span></span>
@@ -186,7 +188,7 @@ class Component extends DCLogic {
       const v = !!on[o.id];
       const shown = o.id === shownId;
       const ring = sel[o.id] ? ' box-shadow: inset 0 0 0 2px var(--ink);' : '';
-      const bg = shown ? 'background: var(--surface-raised); border: 1px solid ' + (v ? 'transparent' : 'var(--line)') + ';' : (v ? 'background: var(--surface); border: 1px solid transparent;' : 'background: transparent; border: 1px dashed var(--line);');
+      const bg = shown ? 'background: var(--surface-raised); border: 1px solid ' + (v ? 'transparent' : 'var(--line)') + ';' : (v ? 'background: var(--surface); border: 1px solid transparent;' : 'background: transparent; border: 1px solid var(--line);');
       return {
         title: o.side + ' · ' + o.cur,
         methods: o.methods, price: o.price, limits: o.limits,
@@ -216,7 +218,7 @@ class Component extends DCLogic {
       status: statusOf(sv),
       statusStyle: 'font-size: 16px; line-height: 24px; font-weight: 600; ' + (sv ? 'color: var(--ink);' : 'color: var(--ink-muted);'),
       statusSub: sv ? 'Shown in the ' + s.cur + ' lists for ' + s.methods.split(' · ').map((m) => m.replace(/ [+−-][0-9.]+%$/, '')).join(' and ') + '.' : 'Nobody can see it until you turn it back on.',
-      statusBox: 'display: flex; align-items: center; gap: 12px; padding: 12px 8px 12px 16px; border-radius: 12px; ' + (sv ? 'background: var(--surface); border: 1px solid transparent;' : 'background: transparent; border: 1px dashed var(--line);'),
+      statusBox: 'display: flex; align-items: center; gap: 12px; padding: 12px 8px 12px 16px; border-radius: 12px; ' + (sv ? 'background: var(--surface); border: 1px solid transparent;' : 'background: transparent; border: 1px solid var(--line);'),
       onStr: sv ? 'true' : 'false',
       switchLabel: s.side + ' in ' + s.cur + ' via ' + s.methods,
       trackStyle: track(sv), thumbStyle: thumb(sv),

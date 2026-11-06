@@ -62,7 +62,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <h3 id="ss-totp-t" style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">What an authenticator app can&#39;t do on its own</h3>
             <p style="margin: 0;">It&#39;s fine for logging in with your password. But some sensitive actions need a passkey, security key or PGP key instead:</p>
             <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px;">
-              <li>Ending a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold early</li>
+              <li>Ending a <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</span> hold early</li>
               <li>Logging in on a new device when your other devices aren&#39;t with you</li>
               <li>Adding team members, changing their roles or switching them on and off</li>
               <li>Switching to a vendor account</li>
@@ -126,12 +126,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               </div>
             </div>
             <p style="margin: 0; font-size: 16px; line-height: 24px;">{{armoredMsg}}</p>
-            <p style="margin: 0; padding-top: 12px; border-top: 1px dashed color-mix(in srgb, var(--escrow) 45%, transparent); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{sealFooter}}</p>
+            <p style="margin: 0; padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--escrow) 25%, transparent); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{sealFooter}}</p>
           </div>
         </sc-if>
         <sc-if value="{{notArmored}}" hint-placeholder-val="{{true}}">
           <div style="display: flex; flex-direction: column; gap: 8px;">
-            <h3 style="display: flex; align-items: center; gap: 10px; margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.02em;"><span style="{{tierIconStyle}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>{{tierTitle}}</h3>
+            <h3 style="display: flex; align-items: center; gap: 10px; margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;"><span style="{{tierIconStyle}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>{{tierTitle}}</h3>
             <sc-for list="{{tierLines}}" as="t" hint-placeholder-count="2">
               <p style="margin: 0; font-size: 15px; line-height: 22px;">{{t.text}}</p>
             </sc-for>
@@ -168,14 +168,14 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </div>
   </main>
 
-  <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
     <sc-if value="{{canGo}}" hint-placeholder-val="{{true}}">
       <a href="RecoveryCode.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; text-decoration: none; cursor: pointer;">Continue</a>
     </sc-if>
     <sc-if value="{{cantGo}}" hint-placeholder-val="{{false}}">
       <button type="button" disabled="{{yes}}" aria-describedby="ss-why" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">Continue</button>
     </sc-if>
-    <p id="ss-why" style="margin: 0; padding-bottom: 4px; text-align: center; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{footNote}}</p>
+    <p id="ss-why" style="margin: 0; padding-bottom: 4px; text-align: center; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{footNote}}</p>
   </footer>
   </div>
 
@@ -186,7 +186,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
       <span style="font-weight: 600;">When does a password count as strong?</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>A: 12+ chars with 3 of 4 types, or 16+ with 2 types</li>
+        <li>A (spec, shown by default): at least 10 characters with upper and lower case letters, a number and a symbol. Same sentence as SetupPassword.</li>
         <li>B: length only, 14+</li>
         <li>C: zxcvbn-style score ≥ 3</li>
       </ul>
@@ -233,7 +233,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":390,"height":3282}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":390,"height":3318}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props); }
   preset(p) {
@@ -268,14 +268,14 @@ class Component extends DCLogic {
       { id: 'passkey', name: 'Passkey', desc: 'Your face, fingerprint or phone PIN.' },
       { id: 'key', name: 'Security key', desc: 'Tap a YubiKey or similar key.' },
       { id: 'pgp', name: 'PGP key', desc: 'Decrypt a short message in your PGP app.', tag: 'Recommended', tagColor: 'var(--escrow)' },
-      { id: 'totp', name: 'Authenticator app', desc: 'A 6-digit code that changes every 30 seconds.', tag: 'Login only', tagColor: 'var(--ink-muted)' }
+      { id: 'totp', name: 'Authenticator app', desc: 'A 6-digit code that changes every 30 s.', tag: 'Login only', tagColor: 'var(--ink-muted)' }
     ];
     const rowStyle = (o) => 'display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box; border-radius: 16px; cursor: pointer; ' + (o ? 'background: var(--surface-raised); border: 2px solid var(--ink);' : 'background: var(--surface); border: 2px solid transparent;');
     const methods = DEFS.map((d) => ({
       name: d.name, desc: d.desc, on: !!on[d.id], style: rowStyle(!!on[d.id]),
       isPw: d.id === 'pw', isPasskey: d.id === 'passkey', isKey: d.id === 'key', isPgp: d.id === 'pgp', isTotp: d.id === 'totp',
       hasTag: !!d.tag, tag: d.tag || '',
-      tagStyle: 'display: inline-flex; padding: 2px 10px; border-radius: 999px; background: ' + (d.id === 'pgp' ? 'color-mix(in srgb, var(--escrow) 14%, transparent)' : 'color-mix(in srgb, var(--ink-muted) 16%, transparent)') + '; font-size: 12px; line-height: 18px; font-weight: 600; color: ' + (d.tagColor || 'var(--ink-muted)') + ';',
+      tagStyle: 'display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; ' + (d.id === 'pgp' ? 'background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);' : 'background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink);'),
       toggle: () => this.setState({ on: Object.assign({}, on, { [d.id]: !on[d.id] }) })
     }));
 
@@ -295,13 +295,12 @@ class Component extends DCLogic {
       const score = bits < 40 ? 1 : (bits < 60 ? 2 : (bits < 80 ? 3 : 4));
       if (pw.length > 0) level = score >= 3 ? 3 : (score === 2 ? 2 : 1);
     } else {
-      if (pw.length >= 12 && kinds >= 3) level = 3;
-      else if (pw.length >= 16 && kinds >= 2) level = 3;
+      if (pw.length >= 10 && kinds >= 4) level = 3;
       else if (pw.length >= 8 && kinds >= 2) level = 2;
       else if (pw.length > 0) level = 1;
     }
     const RULES = {
-      A: { name: 'A', text: 'Use 12 or more characters with 3 of these: small letters, capitals, numbers, symbols. Or use 16 or more with 2 of them. It has to reach strong.', mid: 'Getting there. Add length, numbers or symbols.' },
+      A: { name: 'A (spec)', text: 'At least 10 characters, with upper and lower case letters, a number and a symbol.', mid: 'Getting there. Add upper and lower case, a number and a symbol.' },
       B: { name: 'B', text: 'Use 14 or more characters. Any characters count. It has to reach strong.', mid: 'Getting there. Make it longer.' },
       C: { name: 'C', text: 'We score how hard it is to guess. It has to reach strong.', mid: 'Getting there. Make it longer or less predictable.' }
     };
@@ -339,14 +338,14 @@ class Component extends DCLogic {
       return {
         label, cur: cur ? 'true' : 'false', vault,
         caret: 'display: flex; justify-content: center; height: 9px; color: ' + (cur ? TCOL : 'transparent') + ';',
-        bar: 'display: flex; align-items: center; justify-content: center; width: 100%; height: ' + HEIGHTS[i] + 'px; flex-shrink: 0; box-sizing: border-box; border-radius: 8px 8px 4px 4px; ' + (filled ? 'background: ' + TCOL + ';' : 'background: transparent; border: 1.5px dashed var(--line);') + (vault ? ' border: 2px solid var(--ink); color: var(--surface);' : ''),
+        bar: 'display: flex; align-items: center; justify-content: center; width: 100%; height: ' + HEIGHTS[i] + 'px; flex-shrink: 0; box-sizing: border-box; border-radius: 8px 8px 4px 4px; ' + (filled ? 'background: ' + TCOL + ';' : 'background: transparent; border: 1px solid var(--line);') + (vault ? ' border: 2px solid var(--ink); color: var(--surface);' : ''),
         labelStyle: 'font-size: 12px; line-height: 16px; text-align: center; ' + (cur ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
       };
     });
     const T = {
       none: { title: 'Not allowed yet', lines: ['A username alone can’t prove it’s you, and your display name can’t be used to log in.', 'Pick at least one way to log in.'] },
       totp: { title: 'Not allowed', lines: ['An authenticator app alone isn’t enough.', 'Add at least a password, but we recommend the other options.'] },
-      weak: { title: 'Weak', lines: ['If your account is ever broken into, it’s harder and slower to prove it’s you.', 'While we check, a 24-hour cooling-off applies to you too.', 'Harden it with a passkey, security key or PGP key.'] },
+      weak: { title: 'Weak', lines: ['If your account is ever broken into, it’s harder and slower to prove it’s you.', 'While we check, a 24 h cooling-off applies to you too.', 'Harden it with a passkey, security key or PGP key.'] },
       strong: { title: 'Strong', lines: ['This stops simple guessing, and you can act right away.'] }
     };
     const t = T[tier] || T.strong;
@@ -361,7 +360,7 @@ class Component extends DCLogic {
 
     const vendor = this.props.accountType === 'vendor';
     // Screen height = sum of measured parts (night, fonts loaded) + the design-notes block under it.
-    const P = { base: 0, pw: 252, totp: 310, vendor: 72, notes: 1111, tier: { none: 1860, totp: 1860, weak: 1958, strong: 1919, strongNoPw: 1895, armored: 1971 } };
+    const P = { base: 0, pw: 252, totp: 310, vendor: 72, notes: 1146, tier: { none: 1860, totp: 1860, weak: 1958, strong: 1919, strongNoPw: 1895, armored: 1971 } };
     const frameH = Math.max(844, P.base + (hasPw ? P.pw : 0) + (totpNote ? P.totp : 0) + P.tier[tier === 'strong' && !hasPw ? 'strongNoPw' : tier] + (vendor ? P.vendor : 0));
     const H = frameH + P.notes;
     const frameStyle = 'position: relative; flex-shrink: 0; height: ' + frameH + 'px; display: flex; flex-direction: column; overflow: hidden;';

@@ -36,9 +36,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <main style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 0 16px 24px;">
     <section aria-label="Amount" style="display: flex; flex-direction: column; gap: 8px;">
       <label for="amt" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">You pay</label>
-      <div style="display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 14px; box-sizing: border-box; border-radius: 12px; border: 1px solid {{amtBorder}}; background: var(--surface-raised);">
-        <span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 24px; color: var(--ink-muted);">$</span>
-        <input id="amt" type="text" inputmode="decimal" value="{{amount}}" onChange="{{onAmount}}" aria-describedby="amt-help" style="flex-grow: 1; min-width: 0; height: 52px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 24px; font-weight: 500; outline: none;">
+      <div style="display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 14px; box-sizing: border-box; border-radius: 6px; border: 1px solid {{amtBorder}}; background: var(--surface-raised);">
+        <span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; color: var(--ink-muted);">$</span>
+        <input id="amt" type="text" inputmode="decimal" value="{{amount}}" onChange="{{onAmount}}" aria-describedby="amt-help" style="flex-grow: 1; min-width: 0; height: 44px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 500; outline: none;">
         <span style="font-size: 16px; font-weight: 600; color: var(--ink-muted);">USD</span>
       </div>
       <span id="amt-help" style="{{helpStyle}}"><sc-if value="{{notOk}}" hint-placeholder-val="{{false}}"><svg style="flex-shrink: 0; margin-top: 1px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16h.01"/></svg></sc-if>{{help}}</span>
@@ -77,7 +77,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
     <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
       <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Nothing changes after you tap Trade. satoshi_ghost then has <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> minutes to lock the XMR in escrow. You only pay once it's locked.</p>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Nothing changes after you tap Trade. satoshi_ghost then has <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> min to lock the XMR in escrow. You only pay once it's locked.</p>
     </div>
   </main>
 
@@ -92,7 +92,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1150}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1142}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -104,7 +104,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 1150px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 1142px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const RATE = 330.00, MIN = 50, MAX = 1500;
     const raw = String(this.state.amount).replace(/[^0-9.]/g, '');
     const usd = parseFloat(raw);

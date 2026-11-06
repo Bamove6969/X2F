@@ -21,10 +21,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <div style="display: flex; flex-grow: 1;">
   <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
     <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; padding: 0 12px 20px;">X2F</span>
-    <a href="FlexOffer-Quote-Wide.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
-    <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>My offers</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
+    <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
     <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
     <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</a>
+    <a href="Support-Wide.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.7-2.5 2-2.5 3.5"/><path d="M12 17h.01"/></svg>Help</a>
   </nav>
 
   <span style="position: absolute; top: 12px; right: 24px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
@@ -95,7 +97,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <span style="font-size: 16px; line-height: 22px; font-weight: 600; {{o.textStyle}}">{{o.methods}}</span>
           </span>
           <span role="cell" style="display: flex; flex-direction: column; gap: 2px;">
-            <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; {{o.textStyle}}">{{o.price}}</span>
+            <span style="font-size: 14px; line-height: 20px; {{o.textStyle}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; {{o.textStyle}}">{{o.priceFrom}}</span><sc-if value="{{o.hasTo}}" hint-placeholder-val="{{true}}"> to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; {{o.textStyle}}">{{o.priceTo}}</span></sc-if></span>
             <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{o.priceSub}}</span>
           </span>
           <span role="cell" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; color: var(--ink-muted); white-space: nowrap;">{{o.limits}}</span>
@@ -129,7 +131,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <li>Offer limit (owner, 2 Nov): <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> buying and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> selling offers per vendor; one offer covers all the currencies it lists (shown on each card, e.g. USD · CAD). The limit sentence is draft copy.</li>
         <li>A ticked offer row gets a 2px ink ring on --surface-raised.</li>
         <li>During a moderator trading hold, every offer shows a caution chip "Paused · trading hold", the switches (and Turn on / Turn off) are disabled, and one caution notice explains the hold. Preview with the hold tweak. Owner, 2 Nov: a hold has no end time, so the notice shows no date; open disputes never pause trading, only ignoring a dispute or a ruling does.</li>
-        <li>The current tab is --surface-raised with ink text and a 2px ink inset line.</li>
+        <li>The current nav item is "Post offer" (offer boards live under it): --surface-raised with ink text and a 2px ink inset line.</li>
       </ul>
     </aside>
   </section>
@@ -151,11 +153,11 @@ class Component extends DCLogic {
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + (hold ? 1174 : 1060) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     const OFFERS = [
-      { id: 'o1', side: 'Selling XMR', cur: 'USD · CAD', methods: 'Zelle · PayPal +2.0%', price: '+0.4% to +0.8%', priceSub: '2 tiers · follows the market', limits: '$50 – $2,000' },
-      { id: 'o2', side: 'Selling XMR', cur: 'USD', methods: 'Cash by mail', price: '+1.5%', priceSub: '1 tier · follows the market', limits: '$100 – $1,000' },
-      { id: 'o3', side: 'Buying XMR', cur: 'USD · CAD', methods: 'Zelle · Cash App', price: '−0.5%', priceSub: '1 tier · follows the market', limits: '$50 – $800' },
-      { id: 'o4', side: 'Selling XMR', cur: 'EUR · GBP', methods: 'SEPA bank transfer · Revolut +1.0%', price: '+0.6% to +1.2%', priceSub: '3 tiers · follows the market', limits: '€50 – €3,000' },
-      { id: 'o5', side: 'Buying XMR', cur: 'EUR · GBP · USD', methods: 'Wise', price: '−0.3%', priceSub: '1 tier · follows the market', limits: '€100 – €1,500' }
+      { id: 'o1', side: 'Selling XMR', cur: 'USD · CAD', methods: 'Zelle · PayPal +2.0%', priceFrom: '+0.4%', priceTo: '+0.8%', priceSub: '2 bands · follows the market', limits: '$50 – $2,000' },
+      { id: 'o2', side: 'Selling XMR', cur: 'USD', methods: 'Cash by mail', priceFrom: '+1.5%', priceTo: '', priceSub: '1 band · follows the market', limits: '$100 – $1,000' },
+      { id: 'o3', side: 'Buying XMR', cur: 'USD · CAD', methods: 'Zelle · Cash App', priceFrom: '−0.5%', priceTo: '', priceSub: '1 band · follows the market', limits: '$50 – $800' },
+      { id: 'o4', side: 'Selling XMR', cur: 'EUR · GBP', methods: 'SEPA bank transfer · Revolut +1.0%', priceFrom: '+0.6%', priceTo: '+1.2%', priceSub: '3 bands · follows the market', limits: '€50 – €3,000' },
+      { id: 'o5', side: 'Buying XMR', cur: 'EUR · GBP · USD', methods: 'Wise', priceFrom: '−0.3%', priceTo: '', priceSub: '1 band · follows the market', limits: '€100 – €1,500' }
     ];
     const on = this.state.on;
     const nOn = OFFERS.filter((o) => on[o.id]).length;
@@ -176,9 +178,9 @@ class Component extends DCLogic {
       // Ticked row = 2px ink ring on --surface-raised (selection is never orange).
       const look = ticked
         ? 'padding: 10px 16px 10px 8px; background: var(--surface-raised); border: 2px solid var(--ink);'
-        : (v ? 'padding: 10px 16px 10px 8px; background: var(--surface); border: 2px solid transparent;' : 'padding: 11px 17px 11px 9px; background: transparent; border: 1px dashed var(--line);');
+        : (v ? 'padding: 10px 16px 10px 8px; background: var(--surface); border: 2px solid transparent;' : 'padding: 11px 17px 11px 9px; background: transparent; border: 1px solid var(--line);');
       return {
-        ...o,
+        ...o, hasTo: o.priceTo !== '',
         title: o.side + ' · ' + o.cur,
         isOn: v, isOff: !v,
         onStr: v ? 'true' : 'false',

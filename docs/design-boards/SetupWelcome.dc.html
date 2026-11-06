@@ -60,9 +60,9 @@ class Component extends DCLogic {
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 844px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
-    // End of the onboarding sequence: every bar done, in escrow (finished), not orange.
+    // End of the onboarding sequence: every bar done, in ink like the other setup boards.
     const STEP = 5, TOTAL = 5;
-    const bars = Array.from({ length: TOTAL }, () => ({ style: 'display: block; height: 4px; border-radius: 999px; background: var(--escrow);' }));
+    const bars = Array.from({ length: TOTAL }, () => ({ style: 'display: block; height: 4px; border-radius: 999px; background: var(--ink);' }));
     return { rootStyle, bars, step: String(STEP), total: String(TOTAL) };
   }
 }

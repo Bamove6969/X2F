@@ -13,7 +13,7 @@
 body{margin:0}
 a{color:var(--monero-ink)}a:hover{color:var(--ink)}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-input::placeholder{color:var(--ink-muted)}
+input::placeholder{color:var(--ink-muted);font-family:'Atkinson Hyperlegible Next',system-ui,sans-serif}
 button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
 @media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
@@ -59,10 +59,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Staff pay</h2>
           <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Paid in XMR at the end of each shift, when the staff member logs out. Amounts to be decided; check with the lawyer before the first payment.</span>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
+        <div style="display: grid; grid-template-columns: 1fr; gap: 20px; align-items: start;">
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <label for="pay-senior" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Senior moderator, per case</label>
-            <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-senior" type="text" value="[RATE]" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">USD in XMR</span></span>
+            <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-senior" type="text" value="6" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">USD in XMR</span></span>
             <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Includes co-approving large rulings.</span>
           </div>
           <div style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 12px; background: var(--surface-raised);">
@@ -75,12 +75,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </div>
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <label for="pay-mod" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Moderator, per case</label>
-          <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-mod" type="text" value="[RATE]" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">USD in XMR</span></span>
+          <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-mod" type="text" value="4" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">USD in XMR</span></span>
           <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">A ruling overturned on appeal earns nothing.</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <label for="pay-helper" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Helper, per month</label>
-          <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-helper" type="text" value="[RATE]" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">USD in XMR</span></span>
+          <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-helper" type="text" value="300" style="width: 160px; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;"><span style="font-size: 15px; line-height: 20px; color: var(--ink-muted);">USD in XMR</span></span>
           <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Flat rate, since questions don't come in cases.</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 12px; padding-top: 20px; border-top: 1px solid var(--surface-raised);">
@@ -95,10 +95,23 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </section>
       <div><button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Save settings</button></div>
     </div>
+    <section aria-label="Design notes" style="display: flex; flex-direction: column; gap: 12px; max-width: 720px; margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line);">
+      <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+      <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">The pay figures (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">300</span> USD) are examples so the fields read as real; nothing is decided.</p>
+      <aside aria-label="Open for the owner: staff pay rates" style="display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">Open · owner to choose</span>
+        <span style="font-weight: 600;">Per-case and monthly pay rates: what are the real amounts?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>Senior moderator per case, moderator per case and helper per month, in USD paid as XMR</li>
+          <li>Whether the large-trade bonus (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.5%</span>) and its optional cap stay</li>
+          <li>To be settled with the lawyer before the first payout</li>
+        </ul>
+      </aside>
+    </section>
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1527}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1868}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { hold: true }; }
   renderVals() {
@@ -107,7 +120,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "width: 1280px; min-height: 1527px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;";
+    const rootStyle = THEMES[theme] + "width: 1280px; min-height: 1868px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;";
     const hold = this.state.hold !== false;
     const holdStyle = 'display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: ' + (hold ? '13px' : '14px') + '; border-radius: 12px; background: var(--surface-raised); border: ' + (hold ? '2px solid var(--ink)' : '1px solid transparent') + '; font-size: 14px; line-height: 20px; cursor: pointer;';
     return { rootStyle, hold, holdStyle, toggleHold: () => this.setState({ hold: !hold }) };

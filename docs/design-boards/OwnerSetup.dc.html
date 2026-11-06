@@ -19,8 +19,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <main style="flex: 1 1 100%; display: flex; justify-content: center; padding: 64px 24px 48px;">
-    <div style="width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 24px;">
+  <header style="flex: 1 1 100%; display: flex; align-items: center; justify-content: center; padding: 56px 32px 0;">
+    <span role="img" aria-label="X2F" style="font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink);"><span aria-hidden="true">X2F</span></span>
+  </header>
+  <main style="flex: 1 1 100%; display: flex; justify-content: center; padding: 24px 32px 64px;">
+    <div style="width: 100%; max-width: 720px; display: flex; flex-direction: column; gap: 24px;">
       <section style="display: flex; flex-direction: column; gap: 12px;">
         <span style="display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--mod) 16%, transparent); color: var(--mod); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>First-time setup</span>
         <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Create the owner account</h1>
@@ -41,7 +44,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">2</span><h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">2. </span>Your username</h2></div>
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <label for="ou" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Shown to staff, never to traders</label>
-          <input id="ou" type="text" value="lumen.k" spellcheck="false" style="height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px;">
+          <input id="ou" type="text" value="lumen.k" spellcheck="false" style="height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
         </div>
       </section>
 
@@ -63,18 +66,18 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <section aria-label="PGP key" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; border: 1px solid var(--line);">
         <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">4</span><h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">4. </span>PGP key <span style="font-size: 14px; font-weight: 400; color: var(--ink-muted);">(optional)</span></h2></div>
         <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Add your PGP public key to receive encrypted staff alerts and to sign important rulings.</p>
-        <a href="#" style="display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; height: 44px; margin: -4px 0 -8px; font-size: 15px; font-weight: 600;">Add PGP key<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; height: 44px; margin: -4px 0 -8px; font-size: 15px; font-weight: 600; text-decoration: none;">Add PGP key<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
       </section>
 
-      <div style="display: flex; align-items: center; gap: 16px;">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; align-self: flex-start;">
         <button type="button" disabled="{{locked}}" style="{{ctaStyle}}">Create owner account</button>
-        <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{ctaNote}}</span>
+        <span style="font-size: 13px; line-height: 18px; text-align: center; color: var(--ink-muted);">{{ctaNote}}</span>
       </div>
     </div>
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1295}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1313}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { keys: 1 }; }
   renderVals() {
@@ -83,7 +86,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "width: 1280px; min-height: 1295px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;";
+    const rootStyle = THEMES[theme] + "width: 1280px; min-height: 1313px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap; align-content: flex-start;";
     const n = this.state.keys;
     const keys = [
       { name: 'Main key', note: 'The one you carry' },

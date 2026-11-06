@@ -19,7 +19,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 <div style="{{rootStyle}}">
   <div style="position: relative; flex-shrink: 0; height: 844px; display: flex; flex-direction: column; overflow: hidden;">
     <header style="display: flex; align-items: center; gap: 8px; padding: 8px 16px;">
-      <span aria-label="X2F" style="display: flex; align-items: center; height: 44px; padding: 0 4px; font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true">X<span style="color: var(--monero-ink);">2</span>F</span></span>
+      <span aria-label="X2F" style="display: flex; align-items: center; height: 44px; padding: 0 4px; font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true" style="color: var(--ink);">X2F</span></span>
       <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
         <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 600; color: var(--ink-muted);">Trade</span>
       </sc-if>
@@ -33,19 +33,20 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <p style="margin: 0; font-size: 14px; line-height: 20px;">You’re logged in as mira.k.</p>
         </div>
 
-        <span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; margin-top: 16px; border-radius: 16px; background: var(--surface-raised); color: var(--ink);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
 
         <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">How long should this session stay logged in?</h1>
 
-        <section style="display: flex; flex-direction: column; gap: 16px; margin-top: 8px; padding: 20px; border-radius: 16px; background: var(--surface);">
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            <label for="sl-time" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Stay logged in for</label>
-            <select id="sl-time" value="{{selValue}}" onChange="{{onPick}}" aria-describedby="sl-vendor sl-rule" style="width: 100%; height: 48px; box-sizing: border-box; padding: 0 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">
-              <option value="" disabled="{{yes}}">Choose a time</option>
+        <section style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+          <div role="group" aria-labelledby="sl-l" aria-describedby="sl-vendor sl-rule" style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+              <span id="sl-l" style="font-size: 16px; line-height: 24px; font-weight: 600;">Stay logged in for</span>
+              <span style="{{pickValStyle}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{pickNum}}</span>{{pickUnit}}</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
               <sc-for list="{{opts}}" as="o" hint-placeholder-count="4">
-                <option value="{{o.val}}">{{o.label}}</option>
+                <button type="button" onClick="{{o.pick}}" aria-pressed="{{o.pressed}}" aria-label="{{o.aria}}" style="{{o.style}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{o.num}}</span> h</button>
               </sc-for>
-            </select>
+            </div>
           </div>
 
           <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}">
@@ -61,11 +62,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You can change this any time in <a href="Devices.dc.html" style="color: var(--monero-ink); padding: 12px 0;">Devices and sessions</a>.</p>
       </main>
 
-      <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
-        <sc-if value="{{noPick}}" hint-placeholder-val="{{true}}">
-          <p id="sl-why" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted); text-align: center;">Pick a time to continue.</p>
-        </sc-if>
+      <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
         <button type="button" disabled="{{noPick}}" aria-describedby="sl-why" onClick="{{go}}" style="{{goStyle}}">Continue</button>
+        <sc-if value="{{noPick}}" hint-placeholder-val="{{true}}">
+          <p id="sl-why" style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">Pick a time to continue.</p>
+        </sc-if>
       </footer>
     </sc-if>
 
@@ -88,6 +89,14 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <section id="sl-notes" aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
     <p style="margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink);">Showing: {{accountTypeName}} account</p>
+    <aside aria-label="Open for the owner: tiles or a drop-down" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to confirm</span>
+      <span style="font-weight: 600;">The time is now picked from four tiles, the same control as Devices and sessions. The 2 Nov note mentioned a drop-down.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Keep the tiles (one tap, matches Devices)</li>
+        <li>Go back to a drop-down</li>
+      </ul>
+    </aside>
     <aside aria-label="Decided by the owner: session length by account type" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
       <span style="font-weight: 600;">Asked on every login, with nothing pre-selected. The times depend on the account type:</span>
@@ -110,7 +119,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","done"],"default":"ask"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"$preview":{"width":390,"height":1453}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","done"],"default":"ask"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"$preview":{"width":390,"height":1607}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { pick: null, pickFor: '', stepOver: null, stepFor: '' }; }
   renderVals() {
@@ -124,7 +133,7 @@ class Component extends DCLogic {
     // Tweaks. Local state only applies while the tweak it was made under is unchanged.
     const propStep = this.props.step === 'done' ? 'done' : 'ask';
     const step = (s.stepOver && s.stepFor === propStep) ? s.stepOver : propStep;
-    // Owner, 2 Nov: asked on every login, nothing pre-selected, chosen from a drop-down.
+    // Owner, 2 Nov: asked on every login, nothing pre-selected. Picked from four tiles like Devices (OPEN box: the 2 Nov note said drop-down).
     // Session length is 2, 4, 6 or 12 h for traders and 2, 6, 12 or 24 h for vendors. When it is up we ask for a
     // passkey, security key, PGP key or the password (+ code if set up) to extend by the same time; otherwise logged out. No fixed maximum.
     const vendor = this.props.accountType === 'vendor';
@@ -133,25 +142,28 @@ class Component extends DCLogic {
     const pick = (s.pick && s.pickFor === acct && TIMES.indexOf(s.pick) >= 0) ? s.pick : null;
 
     // Board = 844 px phone screen + the design-notes block under it (measured).
-    const NOTES_H = 609;
+    const NOTES_H = 763;
     const H = 844 + NOTES_H;
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
-    const opts = TIMES.map((h) => ({ val: String(h), label: h + ' hours' }));
+    const opts = TIMES.map((h) => ({
+      num: String(h), aria: h + ' hours', pressed: pick === h ? 'true' : 'false',
+      pick: () => this.setState({ pick: h, pickFor: acct }),
+      style: 'height: 48px; box-sizing: border-box; border-radius: 6px; font-family: inherit; font-size: 16px; cursor: pointer; color: var(--ink); ' + (pick === h ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 1px solid var(--line); background: var(--surface);')
+    }));
 
     const noPick = !pick;
     const goStyle = 'height: 56px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; ' + 'border: 0; ' + (noPick ? 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;' : 'background: var(--monero); color: var(--on-monero); cursor: pointer;');
 
     return {
       rootStyle,
-      yes: true,
       isAsk: step === 'ask',
       isDone: step === 'done',
       isVendor: vendor,
       accountTypeName: vendor ? 'vendor' : 'trader',
       opts,
-      selValue: pick ? String(pick) : '',
-      onPick: (e) => this.setState({ pick: parseInt(e.target.value, 10) || null, pickFor: acct }),
+      pickNum: pick ? String(pick) : '', pickUnit: pick ? ' h' : 'Not set',
+      pickValStyle: 'flex-shrink: 0; font-size: 16px; line-height: 24px; color: ' + (pick ? 'var(--ink);' : 'var(--ink-muted);'),
       noPick,
       goStyle,
       go: () => { if (pick) this.setState({ stepOver: 'done', stepFor: propStep, pick: pick, pickFor: acct }); },

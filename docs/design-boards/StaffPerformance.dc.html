@@ -48,7 +48,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </div>
           <sc-for list="{{people}}" as="p" hint-placeholder-count="3">
           <div role="row" style="{{p.rowStyle}}">
-            <span role="cell" style="font-weight: 600; font-family: 'Atkinson Hyperlegible Mono', monospace;">{{p.name}}</span>
+            <span role="cell" style="font-weight: 600;">{{p.name}}</span>
             <span role="cell"><span style="{{p.roleStyle}}">{{p.role}}</span></span>
             <span role="cell" style="text-align: right; font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{p.cases}}</span>
             <span role="cell" style="text-align: right;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{p.firstN1}}</span><span style="font-size: 14px; color: var(--ink-muted);">{{p.firstU1}}</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{p.firstN2}}</span><span style="font-size: 14px; color: var(--ink-muted);">{{p.firstU2}}</span></span>
@@ -65,7 +65,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <sc-if value="{{hasChart}}" hint-placeholder-val="{{true}}">
       <section aria-label="{{who}} charts" style="display: flex; flex-direction: column; gap: 20px; padding: 20px; border-radius: 16px; background: var(--surface);">
         <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px;">
-          <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{who}}</span>, last <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">8</span> weeks</h2>
+          <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{who}}, last <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">8</span> weeks</h2>
           <button type="button" onClick="{{toggleTable}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 20px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">{{tableBtn}}</button>
         </div>
         <dl style="display: grid; grid-template-columns: repeat(3, 1fr); margin: 0; border-radius: 12px; background: var(--surface-raised);">
@@ -127,7 +127,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
       <div role="note" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
         <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
-        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">dmitri_k</span> had <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> rulings overturned on appeal this month and replied within the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span>-hour deadline <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">82%</span> of the time. Their overturned cases are a good place to start a coaching chat, and they earn no pay under the current rules.</p>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">dmitri_k had <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> rulings overturned on appeal this month and replied within the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h deadline <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">82%</span> of the time. Their overturned cases are a good place to start a coaching chat, and they earn no pay under the current rules.</p>
       </div>
       <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Typical means the middle value, so one slow case doesn't skew it. Figures are examples.</p>
     </div>

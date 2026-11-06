@@ -47,7 +47,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <span style="display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Current</span>
           </span>
           <sc-if value="{{isTrader}}" hint-placeholder-val="{{true}}"><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">You take offers that vendors post. You pay no fee.</span></sc-if>
-          <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}"><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">You post offers and can add team members. You pay the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span> fee on completed trades.</span></sc-if>
+          <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}"><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">You post offers and can add team members. You pay the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span>% fee on completed trades.</span></sc-if>
         </span>
       </div>
     </section>
@@ -83,7 +83,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <tr>
             <th scope="row" style="padding: 12px 8px 12px 0; border-top: 1px solid var(--surface-raised); text-align: left; vertical-align: top; font-weight: 600;">Fee on completed trades</th>
             <td style="{{tdTrader}}">None</td>
-            <td style="{{tdVendor}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span></td>
+            <td style="{{tdVendor}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span>%</td>
           </tr>
         </tbody>
       </table>
@@ -131,7 +131,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}">
       <a href="PostOffer.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Post an offer</a>
     </sc-if>
-    <p id="bv-why" style="display: flex; align-items: center; justify-content: center; min-height: 36px; margin: 0; text-align: center; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{footNote}}</p>
+    <p id="bv-why" style="display: flex; align-items: center; justify-content: center; min-height: 32px; margin: 0; text-align: center; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{footNote}}</p>
   </footer>
 
   <sc-if value="{{askingSwitch}}" hint-placeholder-val="{{false}}">
@@ -141,7 +141,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <h2 id="bv-sw-t" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Switch to a vendor account?</h2>
         <ul style="margin: 0; padding: 4px 14px; list-style: none; border-radius: 12px; background: var(--surface-raised); display: flex; flex-direction: column; font-size: 15px; line-height: 22px;">
           <li style="padding: 10px 0;">You can post offers and add team members.</li>
-          <li style="padding: 10px 0; border-top: 1px solid var(--surface);">You pay the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span> fee on completed trades.</li>
+          <li style="padding: 10px 0; border-top: 1px solid var(--surface);">You pay the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span>% fee on completed trades.</li>
           <li style="padding: 10px 0; border-top: 1px solid var(--surface);">Session length: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h.</li>
         </ul>
         <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -192,7 +192,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
       <span style="font-weight: 600;">Any other requirements, e.g. a number of completed trades?</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>No: a two-factor method (passkey, security key or PGP key) is enough</li>
+        <li>No: a passkey, security key or PGP key is enough</li>
         <li>Yes: also a number of completed trades (example shown: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span>)</li>
         <li>Something else (owner to name)</li>
       </ul>
@@ -221,7 +221,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"state":{"editor":"enum","options":["not-met","met","switched"],"default":"not-met"},"extraReq":{"editor":"enum","options":["strong-login-only","plus-completed-trades"],"default":"strong-login-only"},"switchBack":{"editor":"enum","options":["blocked-while-live","pause-offers","remove-offers"],"default":"blocked-while-live"},"$preview":{"width":390,"height":2194}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"state":{"editor":"enum","options":["not-met","met","switched"],"default":"not-met"},"extraReq":{"editor":"enum","options":["strong-login-only","plus-completed-trades"],"default":"strong-login-only"},"switchBack":{"editor":"enum","options":["blocked-while-live","pause-offers","remove-offers"],"default":"blocked-while-live"},"$preview":{"width":390,"height":2152}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { mode: null, ask: null, note: '' }; }
   renderVals() {
@@ -233,7 +233,7 @@ class Component extends DCLogic {
     const s = this.state;
 
     // Owner, 2 Nov: Trader (default) and Vendor accounts. Becoming a vendor = a switch in settings.
-    // Confirmed requirement: a two-factor method already set up (passkey, security key or PGP key) on the account holder (team lead).
+    // Confirmed requirement: a two-factor method already set up (passkey, security key or PGP key) on the owner.
     const STATES = ['not-met', 'met', 'switched'];
     const mode = s.mode || (STATES.indexOf(this.props.state) >= 0 ? this.props.state : 'not-met');
     const vendor = mode === 'switched';
@@ -242,8 +242,8 @@ class Component extends DCLogic {
     const tradesDone = mode === 'not-met' ? 4 : 12;
 
     const reqs = [{
-      title: 'Two-factor method set up (passkey, security key or PGP key)', met: strong, hasAction: !strong,
-      pre: strong ? 'A passkey is set up for the account holder (team lead).' : 'The account holder (team lead) needs a passkey, security key or PGP key. A username and password alone isn’t enough.',
+      title: 'A passkey, security key or PGP key', met: strong, hasAction: !strong,
+      pre: strong ? 'A passkey is set up for the owner.' : 'The owner needs one. A username and password alone isn’t enough.',
       n1: '', mid: '', n2: '', post: ''
     }];
     if (extra) reqs.push({
@@ -261,9 +261,9 @@ class Component extends DCLogic {
       rowStyle: 'display: flex; align-items: flex-start; gap: 14px; padding: 16px 0;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '')
     }));
 
-    // Current column gets a quiet raised background with an ink top line; never orange.
+    // Current column gets a quiet raised background with a 2px ink top line; never orange.
     const cell = (cur) => 'padding: 12px 8px; border-top: 1px solid var(--surface-raised); vertical-align: top; color: var(--ink);' + (cur ? ' background: var(--surface-raised);' : '');
-    const head = (cur) => 'padding: 10px 8px; text-align: left; vertical-align: top; font-size: 15px; font-weight: 600; color: var(--ink);' + (cur ? ' background: var(--surface-raised); box-shadow: inset 0 2px 0 var(--ink); border-radius: 6px 6px 0 0;' : '');
+    const head = (cur) => 'padding: 10px 8px; text-align: left; vertical-align: top; font-size: 15px; font-weight: 600; color: var(--ink);' + (cur ? ' background: var(--surface-raised); border-top: 2px solid var(--ink); border-radius: 6px 6px 0 0;' : '');
 
     // OPEN: switching back while offers are live. Each option previews in the dialog.
     const SB = { 'blocked-while-live': 'not while offers are live', 'pause-offers': 'allowed, live offers are paused', 'remove-offers': 'allowed, live offers are removed' };
@@ -277,7 +277,7 @@ class Component extends DCLogic {
 
     const hasNote = s.note !== '' || (vendor && s.mode === null);
     // Board = phone screen (measured per state) + the design-notes block under it (measured).
-    const APP = { 'not-met': 1365, 'met': 1251, 'switched': 1393 }[mode] + (extra ? 111 : 0) + (hasNote && !vendor ? 62 : 0);
+    const APP = { 'not-met': 1323, 'met': 1229, 'switched': 1371 }[mode] + (extra ? 111 : 0) + (hasNote && !vendor ? 62 : 0);
     const NOTES_H = 829;
     const H = APP + NOTES_H;
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
@@ -289,7 +289,7 @@ class Component extends DCLogic {
       hasNote, note: s.note !== '' ? s.note : 'You’re a vendor. You can post offers.',
       thTrader: head(!vendor), thVendor: head(vendor), tdTrader: cell(!vendor), tdVendor: cell(vendor),
       reqs: reqRows,
-      extraName: extra ? 'Two-factor method and 10 completed trades (example)' : 'Two-factor method only',
+      extraName: extra ? 'A passkey, security key or PGP key, and 10 completed trades (example)' : 'A passkey, security key or PGP key only',
       backText: vendor ? 'You can go back to a trader account. You’ll stop posting offers.' : 'After you switch, you can go back to a trader account here.',
       switchBackName: SB[sb],
       canSwitch: !vendor && allMet, cantSwitch: !vendor && !allMet, footNote,

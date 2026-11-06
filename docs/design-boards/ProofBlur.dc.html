@@ -18,7 +18,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <div style="position: relative; flex-shrink: 0; height: 844px; display: flex; flex-direction: column; overflow: hidden;">
+  <div style="position: relative; flex-shrink: 0; height: 880px; display: flex; flex-direction: column; overflow: hidden;">
 
     <sc-if value="{{isEditor}}" hint-placeholder-val="{{true}}">
       <header style="display: flex; align-items: center; gap: 4px; padding: 8px 16px 12px;">
@@ -27,10 +27,18 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </a>
         <div style="display: flex; flex-direction: column; min-width: 0;">
           <h1 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">Check your payment proof</h1>
-          <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Step <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span>, You pay · Zelle</span>
+          <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">You pay · Zelle</span>
         </div>
         <span style="margin-left: auto; align-self: flex-start; padding-top: 4px; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
       </header>
+      <ol aria-label="Trade progress" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0; padding: 0 16px 12px; list-style: none;">
+        <sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
+          <li aria-current="{{s.current}}" style="display: flex; flex-direction: column; gap: 6px;">
+            <span style="display: block; height: 4px; border-radius: 999px; background: var(--surface-raised); overflow: hidden;"><span style="{{s.barStyle}}"></span></span>
+            <span style="{{s.labelStyle}}">{{s.label}}</span>
+          </li>
+        </sc-for>
+      </ol>
 
       <main style="flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 0 16px 12px;">
         <figure aria-label="Your payment proof: Zelle receipt" style="position: relative; margin: 0; padding: 8px; border-radius: 16px; background: var(--surface-raised);">
@@ -50,7 +58,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <dl style="display: grid; grid-template-columns: 64px 1fr; column-gap: 8px; row-gap: 6px; margin: 0; font-size: 13px; line-height: 18px;">
               <dt style="color: var(--ink-muted);">To</dt>
               <dd style="margin: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
-                <span onClick="{{b.to.add}}" style="{{b.to.wrapStyle}}"><span style="{{b.to.textStyle}}">[SELLER NAME]</span><sc-if value="{{b.to.on}}" hint-placeholder-val="{{true}}"><button type="button" aria-label="{{b.to.aria}}" onClick="{{b.to.tap}}" style="{{b.to.boxStyle}}"><sc-if value="{{b.to.tag}}" hint-placeholder-val="{{true}}"><span style="{{tagStyle}}">{{b.to.tagText}}<sc-if value="{{b.to.removable}}" hint-placeholder-val="{{false}}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></sc-if></span></sc-if></button></sc-if></span>
+                <span onClick="{{b.to.add}}" style="{{b.to.wrapStyle}}"><span style="{{b.to.textStyle}}">Sam Ortega</span><sc-if value="{{b.to.on}}" hint-placeholder-val="{{true}}"><button type="button" aria-label="{{b.to.aria}}" onClick="{{b.to.tap}}" style="{{b.to.boxStyle}}"><sc-if value="{{b.to.tag}}" hint-placeholder-val="{{true}}"><span style="{{tagStyle}}">{{b.to.tagText}}<sc-if value="{{b.to.removable}}" hint-placeholder-val="{{false}}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></sc-if></span></sc-if></button></sc-if></span>
                 <span onClick="{{b.phone.add}}" style="{{b.phone.wrapStyle}}"><span style="{{b.phone.textStyle}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">(555) 010-4477</span></span><sc-if value="{{b.phone.on}}" hint-placeholder-val="{{true}}"><button type="button" aria-label="{{b.phone.aria}}" onClick="{{b.phone.tap}}" style="{{b.phone.boxStyle}}"><sc-if value="{{b.phone.tag}}" hint-placeholder-val="{{true}}"><span style="{{tagStyle}}">{{b.phone.tagText}}<sc-if value="{{b.phone.removable}}" hint-placeholder-val="{{false}}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></sc-if></span></sc-if></button></sc-if></span>
               </dd>
               <dt style="color: var(--ink-muted);">Memo</dt>
@@ -59,7 +67,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               </dd>
               <dt style="color: var(--ink-muted);">From</dt>
               <dd style="margin: 0;">
-                <span onClick="{{b.from.add}}" style="{{b.from.wrapStyle}}"><span style="{{b.from.textStyle}}">[YOUR NAME]</span><sc-if value="{{b.from.on}}" hint-placeholder-val="{{true}}"><button type="button" aria-label="{{b.from.aria}}" onClick="{{b.from.tap}}" style="{{b.from.boxStyle}}"><sc-if value="{{b.from.tag}}" hint-placeholder-val="{{true}}"><span style="{{tagStyle}}">{{b.from.tagText}}<sc-if value="{{b.from.removable}}" hint-placeholder-val="{{false}}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></sc-if></span></sc-if></button></sc-if></span>
+                <span onClick="{{b.from.add}}" style="{{b.from.wrapStyle}}"><span style="{{b.from.textStyle}}">Alex Rivera</span><sc-if value="{{b.from.on}}" hint-placeholder-val="{{true}}"><button type="button" aria-label="{{b.from.aria}}" onClick="{{b.from.tap}}" style="{{b.from.boxStyle}}"><sc-if value="{{b.from.tag}}" hint-placeholder-val="{{true}}"><span style="{{tagStyle}}">{{b.from.tagText}}<sc-if value="{{b.from.removable}}" hint-placeholder-val="{{false}}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></sc-if></span></sc-if></button></sc-if></span>
               </dd>
               <dt style="color: var(--ink-muted);">Account</dt>
               <dd style="margin: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
@@ -195,7 +203,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <span style="display: inline-flex; align-items: baseline; gap: 8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">$412.50</span><span style="font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">USD</span></span>
           </div>
           <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
-            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Zelle to</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">[SELLER ZELLE ID]</dd></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Zelle to</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">•••-•••-4471</dd></div>
             <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Memo</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">K7M2-9QXA-4FTR-8WPN</dd></div>
           </dl>
@@ -232,7 +240,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-weight: 600;">Proof is cleaned on the device before anything is sent.</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
         <li>Photo metadata (EXIF: location, device) is stripped on the phone.</li>
-        <li>Likely private details are pre-blurred: account and card numbers, full names, addresses, phone numbers, email addresses.</li>
+        <li>Likely private details are pre-blurred: account and card numbers, full names, addresses, phone numbers and other contact details.</li>
         <li>The buyer reviews, adds blur where needed, then sends. Auto-blur is best-effort, and the screen says so.</li>
         <li>The seller only gets the blurred version. A moderator sees the unblurred original only in a dispute.</li>
       </ul>
@@ -261,7 +269,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <li>Blur box: frosted fill, 1px dashed escrow outline, small Auto tag (Added for boxes the buyer draws).</li>
         <li>Preview as seller hides outlines and tags and turns the other tools off, so the image is exactly what is sent.</li>
         <li>Each blur is a button for screen readers; its tap area grows to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">44</span> px. Add blur: tap a line or drag a box.</li>
-        <li>The receipt is a CSS stand-in for the buyer&#39;s own screenshot.</li>
+        <li>The receipt is a CSS stand-in for the buyer&#39;s own screenshot; the names and numbers on it are examples.</li>
       </ul>
     </aside>
 
@@ -285,7 +293,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["review","drawing","removing","preview","sent"],"default":"review"},"removeAuto":{"editor":"enum","options":["add-only","confirm-to-show"],"default":"add-only"},"protect":{"editor":"enum","options":["warn","no-warning"],"default":"warn"},"$preview":{"width":390,"height":2353}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["review","drawing","removing","preview","sent"],"default":"review"},"removeAuto":{"editor":"enum","options":["add-only","confirm-to-show"],"default":"add-only"},"protect":{"editor":"enum","options":["warn","no-warning"],"default":"warn"},"$preview":{"width":390,"height":2347}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -316,8 +324,8 @@ class Component extends DCLogic {
     const push = (boxes, extra) => set(Object.assign({ boxes: boxes, hist: c.hist.concat([c.boxes]) }, extra || {}));
 
     // Board = 844 px phone screen + the design-notes block under it (measured, night, fonts loaded).
-    const NOTES_H = 1509;
-    const H = 844 + NOTES_H;
+    const NOTES_H = 1467;
+    const H = 880 + NOTES_H;
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     // Stepper: Escrow done, You pay current.
@@ -390,7 +398,7 @@ class Component extends DCLogic {
       (off ? 'background: var(--surface-raised); color: var(--ink-muted); border: 2px solid transparent; cursor: not-allowed;' : sel ? 'background: var(--surface-raised); color: var(--ink); border: 2px solid var(--ink); cursor: pointer;' : 'background: var(--surface); color: var(--ink); border: 2px solid transparent; cursor: pointer;');
     const undoOff = c.hist.length === 0 || c.preview;
 
-    const REVEAL = { to: ['Recipient name', '[SELLER NAME]'], phone: ['Recipient phone', '(555) 010-4477'], from: ['Your name', '[YOUR NAME]'], acct: ['Account digits', '••••4821'] };
+    const REVEAL = { to: ['Recipient name', 'Sam Ortega'], phone: ['Recipient phone', '(555) 010-4477'], from: ['Your name', 'Alex Rivera'], acct: ['Account digits', '••••4821'] };
     const sheetId = REVEAL[c.sheet] ? c.sheet : null;
     const sheetOpen = !!sheetId && !c.preview && !c.sent;
 

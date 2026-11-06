@@ -21,9 +21,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
     <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; padding: 0 12px 20px;">X2F</span>
     <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
-    <a href="MyOffers-Wide.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>My offers</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
     <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
     <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</a>
+    <a href="Support-Wide.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.7-2.5 2-2.5 3.5"/><path d="M12 17h.01"/></svg>Help</a>
   </nav>
 
   <main style="flex-grow: 1; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
@@ -35,13 +37,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <div style="display: flex; align-items: flex-end; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
       <label for="amt-w" style="display: flex; flex-direction: column; gap: 8px; width: 240px; flex-shrink: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">You pay
         <span style="{{amtStyle}}">
-          <span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 22px; font-weight: 400; color: var(--ink-muted);">$</span>
-          <input id="amt-w" type="text" inputmode="decimal" value="{{amount}}" onChange="{{onAmount}}" aria-describedby="amt-help-w" style="flex-grow: 1; min-width: 0; height: 52px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 22px; font-weight: 500; letter-spacing: 0; outline: none;">
-          <span style="font-size: 14px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink-muted);">USD</span>
+          <span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 400; color: var(--ink-muted);">$</span>
+          <input id="amt-w" type="text" inputmode="decimal" value="{{amount}}" onChange="{{onAmount}}" aria-describedby="amt-help-w" style="flex-grow: 1; min-width: 0; height: 44px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 500; letter-spacing: 0; outline: none;">
+          <span style="font-size: 16px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink-muted);">USD</span>
         </span>
       </label>
       <label for="pay-with-w" style="display: flex; flex-direction: column; gap: 8px; width: 220px; flex-shrink: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Pay with
-        <select id="pay-with-w" value="{{method}}" onChange="{{onMethod}}" style="height: 56px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
+        <select id="pay-with-w" value="{{method}}" onChange="{{onMethod}}" style="height: 48px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
           <option value="zelle">Zelle</option><option value="paypal">PayPal</option><option value="cashapp">Cash App</option><option value="ach">Bank transfer (ACH)</option>
         </select>
       </label>
@@ -56,7 +58,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <sc-if value="{{valid}}" hint-placeholder-val="{{true}}">
       <div role="table" aria-label="Offers" style="display: flex; flex-direction: column; gap: 8px;">
         <div role="row" style="display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.6fr) 120px; gap: 16px; padding: 0 21px 4px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">
-          <span role="columnheader">Trader</span><span role="columnheader">Your price</span><span role="columnheader">You get</span><span role="columnheader">Tier and methods</span><span role="columnheader"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Action</span></span>
+          <span role="columnheader">Trader</span><span role="columnheader">Your price</span><span role="columnheader">You get</span><span role="columnheader">Band and methods</span><span role="columnheader"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Action</span></span>
         </div>
         <sc-for list="{{cards}}" as="c" hint-placeholder-count="4">
           <div role="row" style="{{c.cardStyle}}">
@@ -71,12 +73,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               </span>
               <span role="cell" style="display: flex; flex-direction: column; gap: 2px;">
                 <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 500;">{{c.xmrText}}</span> <span style="font-size: 14px; font-weight: 600; color: var(--monero-ink);">XMR</span></span>
-                <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{c.speed}}</span>
+                <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Releases in about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{c.rel}}</span> min</span>
               </span>
               <span role="cell" style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span>{{c.tierText}}</span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;"><span>Takes</span><sc-for list="{{c.chips}}" as="m" hint-placeholder-count="2"><span style="{{m.style}}">{{m.label}}</span></sc-for></span></span>
               <span role="cell" style="display: flex; justify-content: flex-end;">
                 <sc-if value="{{c.ok}}" hint-placeholder-val="{{true}}">
-                  <button type="button" onClick="{{c.open}}" aria-label="{{c.tradeLabel}}" style="width: 120px; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Trade</button>
+                  <button type="button" onClick="{{c.open}}" aria-label="{{c.tradeLabel}}" style="{{c.btnStyle}}">Trade</button>
                 </sc-if>
                 <sc-if value="{{c.notOk}}" hint-placeholder-val="{{false}}">
                   <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink-muted);">Not available</span>
@@ -141,7 +143,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["greyed","hidden"],"default":"greyed"},"$preview":{"width":1280,"height":1174}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["greyed","hidden"],"default":"greyed"},"$preview":{"width":1280,"height":1173}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -157,32 +159,32 @@ class Component extends DCLogic {
 
     const MARKET = 329.90, MINE = 3;
     const OFFERS = [
-      { id: 'sg', name: 'satoshi_ghost', online: true, stats: 'Online · 340 trades · 99% positive', speed: 'Releases in ~8 min',
+      { id: 'sg', name: 'satoshi_ghost', online: true, stats: 'Online · 340 trades · 99% positive', rel: 8,
         tiers: [{ from: 20, to: 500, m: 1.0, min: 0 }, { from: 500.01, to: 1500, m: 0.6, min: 0 }],
         methods: [
           { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle to the phone number in the trade room. Put the trade code in the memo.' },
           { id: 'paypal', name: 'PayPal', adj: 2, max: 500, instr: 'Send from a PayPal account in your own name. Put the trade code in the note.' },
           { id: 'cashapp', name: 'Cash App', adj: 0.5, instr: 'Cash App to the $cashtag in the trade room. Trade code in the note.' }
         ] },
-      { id: 'mk', name: 'mira.k', online: true, stats: 'Online · 212 trades · 99% positive', speed: 'Releases in ~6 min',
+      { id: 'mk', name: 'mira.k', online: true, stats: 'Online · 212 trades · 99% positive', rel: 6,
         tiers: [{ from: 50, to: 300, m: 0.8, min: 0 }, { from: 300.01, to: 2000, m: 0.3, min: 10 }],
         methods: [
           { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle from a bank account in your own name. Trade code in the memo, nothing else.' },
           { id: 'ach', name: 'Bank transfer (ACH)', adj: -0.2, instr: 'ACH to the account in the trade room. It can take 1 to 3 business days.' }
         ] },
-      { id: 'km', name: 'kettle.moss', online: false, stats: 'Seen 40 min ago · 96 trades · 98% positive', speed: 'Releases in ~20 min',
+      { id: 'km', name: 'kettle.moss', online: false, stats: 'Seen 40 min ago · 96 trades · 98% positive', rel: 20,
         tiers: [{ from: 100, to: 3000, m: 0.5, min: 0 }],
         methods: [
           { id: 'zelle', name: 'Zelle', adj: 0.3, instr: 'Zelle only. Put the trade code in the memo.' },
           { id: 'paypal', name: 'PayPal', adj: 2.5, instr: 'PayPal from your own account. Trade code in the note.' }
         ] },
-      { id: 'nw', name: 'nightowl_44', online: false, stats: 'Seen 2 h ago · 58 trades · 97% positive', speed: 'Releases in ~15 min',
+      { id: 'nw', name: 'nightowl_44', online: false, stats: 'Seen 2 h ago · 58 trades · 97% positive', rel: 15,
         tiers: [{ from: 50, to: 250, m: 0.2, min: 0 }, { from: 250.01, to: 5000, m: 0.1, min: 25 }],
         methods: [
           { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle to the number in the trade room. Trade code in the memo.' },
           { id: 'cashapp', name: 'Cash App', adj: 0, instr: 'Cash App to the $cashtag in the trade room.' }
         ] },
-      { id: 'lt', name: 'lowtide_rx', online: true, stats: 'Online · 12 trades · 100% positive', speed: 'Releases in ~30 min',
+      { id: 'lt', name: 'lowtide_rx', online: true, stats: 'Online · 12 trades · 100% positive', rel: 30,
         tiers: [{ from: 20, to: 400, m: 0.9, min: 0 }],
         methods: [
           { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle with the trade code in the memo.' },
@@ -223,14 +225,14 @@ class Component extends DCLogic {
       }
       const ok = !reason;
       return {
-        id: o.id, name: o.name, stats: o.stats, speed: o.speed, ok, notOk: !ok, reason,
+        id: o.id, name: o.name, stats: o.stats, rel: o.rel, ok, notOk: !ok, reason,
         dotStyle: 'width: 8px; height: 8px; border-radius: 999px; box-sizing: border-box; flex-shrink: 0; ' + (o.online ? 'background: var(--escrow);' : 'border: 1.5px solid var(--line);'),
         cardStyle: 'display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; ' + (ok ? 'background: var(--surface); border: 1px solid transparent;' : 'background: transparent; border: 1px dashed var(--line);'),
         nameStyle: 'display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 22px; font-weight: 600; ' + (ok ? 'color: var(--ink);' : 'color: var(--ink-muted);'),
         priceStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em; " + (ok ? 'color: var(--ink);' : 'color: var(--ink-muted);'),
         priceText: usd2(q.price),
         vsText: vsMarket(q.total) + (q.meth.adj ? ' · incl. ' + methodTag(q.meth) : ''),
-        tierText: q.tier ? 'Tier ' + money(q.tier.from) + ' – ' + money(q.tier.to) : 'No tier for this amount',
+        tierText: q.tier ? 'Band ' + money(q.tier.from) + ' – ' + money(q.tier.to) : 'No band for this amount',
         xmrText: q.xmr.toFixed(6),
         chips: o.methods.map((x) => ({ label: inRange(x) ? methodTag(x) : rangeText(x), style: CHIP + (inRange(x) ? 'border: 1px solid var(--line); color: var(--ink);' : 'border: 1px dashed var(--line); color: var(--ink-muted);') })),
         tradeLabel: 'Trade with ' + o.name,
@@ -239,6 +241,9 @@ class Component extends DCLogic {
       };
     });
     const okCards = cards.filter((c) => c.ok).sort((a, b) => a.price - b.price);
+    // One primary per screen: the first available offer's Trade (best price); the rest stay secondary.
+    const BTN = 'width: 120px; height: 48px; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; ';
+    okCards.forEach((c, i) => { c.btnStyle = BTN + (i === 0 ? 'border: 0; background: var(--monero); color: var(--on-monero);' : 'border: 1px solid var(--line); background: transparent; color: var(--ink);'); });
     const badCards = cards.filter((c) => !c.ok);
     const shown = variant === 'hidden' ? okCards : okCards.concat(badCards);
     const hiddenCount = variant === 'hidden' ? badCards.length : 0;
@@ -257,7 +262,7 @@ class Component extends DCLogic {
         xmr: tq.xmr.toFixed(6),
         instrTitle: taking.name + '’s instructions for ' + tq.meth.name,
         instr: tq.meth.instr,
-        tier: tq.tier ? vsMarket(tq.total) + ' · tier ' + money(tq.tier.from) + ' – ' + money(tq.tier.to) : ''
+        tier: tq.tier ? vsMarket(tq.total) + ' · band ' + money(tq.tier.from) + ' – ' + money(tq.tier.to) : ''
       };
     }
     const methodName = { zelle: 'Zelle', paypal: 'PayPal', cashapp: 'Cash App', ach: 'Bank transfer (ACH)' }[s.method];
@@ -266,7 +271,7 @@ class Component extends DCLogic {
       rootStyle,
       amount: s.amount, method: s.method, valid, invalid: !valid,
       amtBorder: valid ? 'var(--line)' : 'var(--danger)',
-      amtStyle: 'display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); border: 1px solid ' + (valid ? 'var(--line)' : 'var(--danger)') + ';',
+      amtStyle: 'display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 14px; box-sizing: border-box; border-radius: 6px; background: var(--surface-raised); border: 1px solid ' + (valid ? 'var(--line)' : 'var(--danger)') + ';',
       onAmount: (e) => this.setState({ amount: e.target.value }),
       onMethod: (e) => this.setState({ method: e.target.value }),
       forLine: valid ? 'Prices for ' + usd2(amt) + ' via ' + methodName : '',
