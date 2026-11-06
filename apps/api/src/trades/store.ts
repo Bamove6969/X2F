@@ -6,6 +6,7 @@ import type { Queryable } from '../db/pool.js';
 import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
+import { countTradeTotals } from '../traders/tradedTotal.js';
 
 /**
  * Called after an event is committed (the app passes Task 19's `tradeEventPublisher`: SSE, Web
@@ -81,6 +82,12 @@ export interface TradeRow {
   buyer_payout: string | null;
   seller_refund: string | null;
   seller_wallet_app: string | null;
+  /**
+   * Migration 301 (Plan 5 Task 3): the trade's US-dollar value at take, in cents (bigint as a
+   * string), written once by the take; null before 301 or with no quote. Read only for a review's
+   * weight, never returned.
+   */
+  usd_cents: string | null;
 }
 
 const big = (s: string): bigint => BigInt(s);
@@ -184,7 +191,11 @@ function stateColumns(t: Trade): [string, unknown][] {
  * Inserts a new trade (Task 5's take, and tests). Fields fixed at take (offer, parties, method,
  * locked rate, confirm window, offer limits, taken_at) are written only here.
  */
-export async function insertTrade(q: Queryable, t: Trade, sides: TradeSides): Promise<void> {
+/**
+ * Inserts a new trade. `usdCents` is the take's US-dollar value (301; the starter-limit check's
+ * number, null with no quote), kept only to weigh the trade's reviews (Plan 5 Task 3).
+ */
+export async function insertTrade(q: Queryable, t: Trade, sides: TradeSides, usdCents: bigint | null = null): Promise<void> {
   const cols: [string, unknown][] = [
     ['code', t.code],
     ['offer_id', t.offerId],
@@ -202,6 +213,7 @@ export async function insertTrade(q: Queryable, t: Trade, sides: TradeSides): Pr
     ['buyer_payout', sides.buyerPayout],
     ['seller_refund', sides.sellerRefund],
     ['seller_wallet_app', sides.sellerWalletApp],
+    ['usd_cents', usdCents === null ? null : usdCents.toString()],
   ];
   // Column names are the fixed literals above, never input.
   await q.query(
@@ -350,6 +362,9 @@ export async function applyEvent(
       // Task 27: a system escalation writes its dispute row with the trade (a trader's own
       // opening writes it through `within`, with the reason they gave).
       if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, code, now);
+      // C12b: a completed trade adds its take-time USD value to both sides' running totals, a settled
+      // buyer cancel to the buyer's cancel count (idempotent per trade; traders/tradedTotal.ts).
+      if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) await countTradeTotals(client, code);
       if (within) await within(client, prev, next, now);
       // Plan 4 Task 3: one activity-log entry per stored event, in the same transaction. It is the
       // last statement before the commit (M2): the log lock serialises every append on the site,
