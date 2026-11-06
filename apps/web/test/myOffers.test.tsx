@@ -152,6 +152,9 @@ describe('the model', () => {
     // Design session 2 Nov 2026: one caution chip, on or off.
     expect(statusLine(a, true)).toEqual({ text: 'Paused · trading hold', tone: 'caution' });
     expect(statusLine(b, true)).toEqual({ text: 'Paused · trading hold', tone: 'caution' });
+    // Plan 5 Task 3 review M3: hidden until the poster rates their last trade.
+    expect(statusLine({ ...a, hidden: 'review-pending' })).toEqual({ text: 'On, hidden until you rate your last trade', tone: 'caution' });
+    expect(parseMyOffers([{ ...RAW[0], hidden: 'review-pending' }])[0]!.hidden).toBe('review-pending');
     expect(countLine([a, b, c])).toBe('1 of 3 offers on');
     expect(countLine([a, b, c], true)).toBe('Trading hold · all offers paused');
     expect(isHeld([a, b], false)).toBe(false);

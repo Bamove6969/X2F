@@ -5,6 +5,7 @@ import { createECDH, createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { addressEnd, type ConfirmAction } from '@x2f/accounts';
 import type { FastifyInstance, FastifyRequest, LightMyRequestResponse } from 'fastify';
+import * as openpgp from 'openpgp';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
@@ -1255,7 +1256,7 @@ describe('review round 2', () => {
       /** Everything of the account a route could write, but the calling session's own row (its touch) and one-shot tokens. */
       async function stateOf(accountId: string, caller: string): Promise<unknown> {
         const agg = (from: string) => `select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text), '[]'::jsonb) as j from ${from}`;
-        const tables = ['alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices', 'team_members', 'team_audit'];
+        const tables = ['alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices', 'team_members', 'team_audit', 'past_reputation'];
         const out: Record<string, unknown> = {};
         for (const t of tables) out[t] = (await deps.db.query<{ j: unknown }>(`${agg(`${t} t`)} where account_id = $1`, [accountId])).rows[0]!.j;
         out.sessions = (await deps.db.query<{ j: unknown }>(`${agg('sessions t')} where account_id = $1 and id <> $2`, [accountId, caller])).rows[0]!.j;
@@ -1412,6 +1413,20 @@ describe('review round 2', () => {
           const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-remove', memberId: mid });
           return { b: o.b, accountId: o.id, fire: () => del(o.b, `/v1/team/members/${mid}`, { confirmToken }) };
         },
+        // Plan 5 Task 10 review round 1 M3: finish re-checks the session under the account lock.
+        'POST /v1/account/past-rep/finish': async () => {
+          const o = await passkeyWithPassword();
+          const key = await genKey();
+          const s = await o.b.post('/v1/account/past-rep/start', {
+            site: 'Bisq', url: 'https://archive.ph/AbCd1', claimedTrades: 5, publicKey: key.publicKey,
+          });
+          expect(s.statusCode, s.body).toBe(200);
+          const { challengeId, text } = s.json() as { challengeId: string; text: string };
+          const signed = await openpgp.sign({
+            message: await openpgp.createCleartextMessage({ text }), signingKeys: await openpgp.readPrivateKey({ armoredKey: key.privateKey }), date: deps.clock(),
+          });
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/past-rep/finish', { challengeId, signed }) };
+        },
       };
 
       it('the table covers exactly LIVE_SESSION_ROUTES (the trading ones in take.test.ts)', () => {
@@ -1470,6 +1485,8 @@ describe('the route lists', () => {
     expect(src('routes/team.ts').split(', requireNotHeld, requireConfirm(').length - 1).toBe(1);
     expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: true });').length - 1).toBe(2);
     expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: false });').length - 1).toBe(1);
+    // Plan 5 Task 10 (owner 1 Nov): past-rep start and finish check the hold; list and delete do not.
+    expect(src('pastrep/routes.ts').split('preHandler: [requireTrader, requireNotHeld] }').length - 1).toBe(2);
     // The trade-finishing routes stay open during the hold, to backup sessions too.
     for (const f of ['trades/routes.ts', 'disputes/routes.ts']) {
       expect(src(f)).not.toContain('requireNotHeld');

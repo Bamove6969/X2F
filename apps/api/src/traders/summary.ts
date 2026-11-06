@@ -1,5 +1,6 @@
 import type { Queryable } from '../db/pool.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
+import { tradedOverUsd, tradedTotalSql } from './tradedTotal.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, stageFor, type Stage, type StarterSettings } from './stage.js';
 
 /**
@@ -21,6 +22,13 @@ export interface TraderSummary {
   badges: string[];
   /** The starter-limits stage (spec 2.3; plan Task 4 Revision 2026-10-26): the New badge shows until 'graduated'. */
   stage: Stage;
+  /**
+   * C12b (owner 2026-11-01/02): the "$X+ in trades to date" line, X in whole US dollars rounded
+   * down (@x2f/reputation `tradedBucketUsd`); null unless the trader opted in and has traded MORE
+   * than $10,000 (owner 2026-11-03: exactly $10,000.00 shows nothing, $10,000.01 shows $10,000+).
+   * Never the exact total.
+   */
+  tradedOverUsd: number | null;
 }
 
 /** Someone counts as online when one of their sessions was used this recently (to the 5-minute bucket: see `onlineSince`). */
@@ -68,10 +76,11 @@ export async function traderSummaries(
   if (ids.length === 0) return out;
   const s = settings ?? (await loadStarterSettings(q));
   // The name column is a constant, never input.
-  const { rows } = await q.query<{ id: string; name: string; created_at: Date; completed: string; last_seen: Date | null }>(
+  const { rows } = await q.query<{ id: string; name: string; created_at: Date; completed: string; last_seen: Date | null; show_traded: boolean; traded: string }>(
     `select a.id, a.${PUBLIC_NAME_COLUMN} as name, a.created_at,
             ${COMPLETED_TRADES_SQL} as completed,
-            ${lastSeenSql('a.id', '$2::uuid')} as last_seen
+            ${lastSeenSql('a.id', '$2::uuid')} as last_seen,
+            a.show_traded_total as show_traded, ${tradedTotalSql('a.id')} as traded
        from accounts a where a.id = any($1::uuid[])`,
     [ids, viewerId],
   );
@@ -88,6 +97,7 @@ export async function traderSummaries(
       positivePct: null,
       badges: [],
       stage: stageFor(s, completed, r.created_at, now),
+      tradedOverUsd: tradedOverUsd(r.show_traded, r.traded),
     });
   }
   return out;
