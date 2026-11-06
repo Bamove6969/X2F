@@ -7,7 +7,7 @@ Written by the design session (cloud, session_01XZAz2tn1YbpoyEtNYuAJim) before a
 ## 0. State at handover
 
 - **Canvas:** https://claude.ai/artifact/NRhrWVvBrSwJ1Dt8oxp4eH, version 117. 130 live boards (126 + Settings, Settings-Wide, FAQ, FAQ-Wide), plus BlockQueued (superseded) and Artboard-5odu (stray).
-- **Branch head:** `wip/design-brief` at 8a955ad8. Everything is pushed; nothing is in flight.
+- **Branch head:** `wip/design-brief` at 88b90fa5 (the cohesion commit) or later. Everything is pushed; nothing is in flight.
 - **Local working copy:** `/tmp/claude-0/-home-user-X2F/e5516970-d0c8-5c45-96e2-44b38e46c984/scratchpad/design/lead/project/` (cloud container; lost when it goes). Rebuild from `docs/design-boards/`.
 - **Progress page for the owner:** https://claude.ai/artifact/Bvxf8BQHTkb2xaQZxhvz1t (private; written 2 Nov, numbers now behind this file).
 - **Owed to the lead:** nothing beyond this file and `docs/to-lead.md`.
