@@ -10,7 +10,7 @@ import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { DUMMY_HASH, hashPassword, pepperedPassword } from '../src/auth/password.js';
 import { SESSION_COOKIE, requireSession } from '../src/auth/sessions.js';
 import { ARGON2_SLOTS, Semaphore } from '../src/limits.js';
-import { accountIdByLoginName, seedAccount } from './helpers/accounts.js';
+import { accountIdByLoginName, seedAccount, trustedDevice } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { spySql } from './helpers/sqlSpy.js';
@@ -273,12 +273,12 @@ describe('POST /v1/login/password', () => {
     await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [
       id, legacyHash.hash, legacyHash.pepperId, now,
     ]);
-    const first = await login('Legacy.Acct', GOOD);
+    // Hold model v3: with nothing logged in, a password alone gets in only on a trusted device.
+    const dev = { [DEVICE_COOKIE]: await trustedDevice(deps, id) };
+    const first = await login('Legacy.Acct', GOOD, dev);
     expect(first.statusCode).toBe(200);
     const session = cookie(first, SESSION_COOKIE)!;
-    // A password alone on a new device with nothing logged in starts the 24-hour hold (Task 17,
-    // coolingOff.test.ts), and this session would wait; here it counts as strong and unheld.
-    await deps.db.query('delete from account_holds where account_id = $1', [id]);
+    // A password alone's changes would be staged (coolingOff.test.ts); here it counts as strong.
     await deps.db.query("update sessions set strength = 'strong' where account_id = $1", [id]);
     // The creating session's onboarding window does not apply: a login session needs a confirm token.
     const { rows: s } = await deps.db.query<{ id: string }>('select id from sessions where account_id = $1', [id]);
@@ -287,7 +287,7 @@ describe('POST /v1/login/password', () => {
     expect(set.statusCode).toBe(200);
     // The old name no longer logs in; the new one does.
     expect((await login('Legacy.Acct', GOOD)).json()).toMatchObject({ error: 'credentials-invalid' });
-    expect((await login('legacy.private', GOOD)).statusCode).toBe(200);
+    expect((await login('legacy.private', GOOD, { ...dev, [SESSION_COOKIE]: session })).statusCode).toBe(200);
   });
 
   it('never shows a wait: after 10 misses the name is quietly not checked for 15 minutes, with the same answer', async () => {
@@ -560,7 +560,9 @@ describe('pepper (FU-C, ASVS 2.4.5)', () => {
     expect((await login('legacypw1', 'Wrong-Horse-9')).statusCode).toBe(401);
     expect(await row(id)).toEqual({ hash: legacy, pepper_id: null, updated_at: changed });
     const verify = vi.spyOn(argon2, 'verify');
-    const ok = await login('legacypw1', GOOD);
+    // Hold model v3: with nothing logged in, a password alone gets in only on a trusted device.
+    const dev = { [DEVICE_COOKIE]: await trustedDevice(deps, id) };
+    const ok = await login('legacypw1', GOOD, dev);
     expect(ok.statusCode).toBe(200);
     expect(verify).toHaveBeenCalledTimes(1);
     expect(verify).toHaveBeenCalledWith(legacy, normalizePassword(GOOD));
@@ -572,9 +574,8 @@ describe('pepper (FU-C, ASVS 2.4.5)', () => {
     expect(await argon2.verify(r.hash, hmac(keys.get(current)!, GOOD))).toBe(true);
     // The next login checks the peppered hash and does not hash again.
     const hash = vi.spyOn(argon2, 'hash');
-    // In the same browser: the first login started the 24-hour hold, during which only a browser
-    // already logged in may log in again (Task 17 review round 2 N-C1).
-    const jar = Object.fromEntries(ok.cookies.map((c) => [c.name, c.value]));
+    // In the same browser (logged in now, so no approval is asked).
+    const jar = { ...dev, ...Object.fromEntries(ok.cookies.map((c) => [c.name, c.value])) };
     expect((await login('legacypw1', GOOD, jar)).statusCode).toBe(200);
     expect(hash).not.toHaveBeenCalled();
     expect((await row(id)).hash).toBe(r.hash);
@@ -587,7 +588,7 @@ describe('pepper (FU-C, ASVS 2.4.5)', () => {
     const oldHash = await argon2.hash(hmac(old, GOOD), ARGON2_PLAIN);
     await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, 4, $3)', [id, oldHash, now]);
     await withPeppers({ current: 5, keys: new Map([[5, newer], [4, old]]) }, async () => {
-      expect((await login('rotatepw1', GOOD)).statusCode).toBe(200);
+      expect((await login('rotatepw1', GOOD, { [DEVICE_COOKIE]: await trustedDevice(deps, id) })).statusCode).toBe(200);
       const r = await row(id);
       expect(r.pepper_id).toBe(5);
       expect(await argon2.verify(r.hash, hmac(newer, GOOD))).toBe(true);
@@ -632,6 +633,7 @@ describe('pepper (FU-C, ASVS 2.4.5)', () => {
     const legacy = await argon2.hash(normalizePassword(GOOD), ARGON2_PLAIN);
     await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, null, $3)', [id, legacy, now]);
     const changed = await hashPassword(deps.config, 'Other-Horse-9');
+    const dev = await trustedDevice(deps, id);
     const query = deps.db.query.bind(deps.db) as (text: string, values?: unknown[]) => Promise<unknown>;
     let raced = false;
     vi.spyOn(deps.db, 'query').mockImplementation((async (text: string, values?: unknown[]) => {
@@ -641,7 +643,7 @@ describe('pepper (FU-C, ASVS 2.4.5)', () => {
       }
       return query(text, values);
     }) as never);
-    expect((await login('racerh001', GOOD)).statusCode).toBe(200);
+    expect((await login('racerh001', GOOD, { [DEVICE_COOKIE]: dev })).statusCode).toBe(200);
     vi.restoreAllMocks();
     expect(raced).toBe(true);
     expect(await row(id)).toMatchObject({ hash: changed.hash, pepper_id: changed.pepperId });

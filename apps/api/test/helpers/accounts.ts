@@ -1,7 +1,9 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import type { AccountKind } from '@x2f/accounts';
 import { loginTag } from '../../src/accounts.js';
 import type { Deps } from '../../src/app.js';
+import { trustDevice } from '../../src/auth/device.js';
+import { subkey } from '../../src/config.js';
 
 /** A login name's tag under the current `X2F_LOGIN_NAME_KEYS` key (or under key `keyId` of the ring). */
 export function currentLoginTag(deps: Pick<Deps, 'config'>, loginName: string, keyId = deps.config.loginNameKeys.current): Buffer {
@@ -51,4 +53,15 @@ export async function confirmTokenMethod(deps: Pick<Deps, 'db'>, token: string):
     createHash('sha256').update(token).digest(),
   ]);
   return rows[0]?.method;
+}
+
+/**
+ * A device cookie value already trusted for the account (tests only): hold model v3 lets a
+ * password log in with nothing else logged in only on a trusted device (a new one gets 403
+ * `approval-unavailable`). Set it as the `__Host-x2f_dev` cookie.
+ */
+export async function trustedDevice(deps: Pick<Deps, 'db' | 'clock' | 'config'>, accountId: string): Promise<string> {
+  const value = randomBytes(32).toString('base64url');
+  await trustDevice(deps, accountId, createHmac('sha256', subkey(deps.config, 'device')).update(value).digest());
+  return value;
 }

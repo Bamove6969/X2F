@@ -117,6 +117,8 @@ async function waitFor(b: Browser, name: string): Promise<Wait> {
   return body;
 }
 
+const approvalCount = async (accountId: string) => (await deps.db.query('select 1 from login_approvals where account_id = $1', [accountId])).rowCount;
+
 const wrongOf = (choices: number[], right: number) => choices.find((c) => c !== right)!;
 
 async function alerts(accountId: string, kind: string) {
@@ -158,12 +160,17 @@ describe('when a login waits for approval', () => {
     expect((await a.me()).statusCode).toBe(200);
   });
 
-  it('an account with no open session logs in as today (the no-device case is OPEN)', async () => {
-    const { a, name } = await signUp();
+  it('an account with no open session: a trusted browser logs in; a new one with a password is refused (hold model v3: approval-unavailable)', async () => {
+    const { a, name, accountId } = await signUp();
     await a.post('/v1/logout');
     const b = new Browser();
-    expect((await b.login(name)).json()).toEqual({ status: 'ok' });
-    expect((await b.me()).statusCode).toBe(200);
+    const res = await b.login(name);
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'approval-unavailable' });
+    expect((await b.me()).statusCode).toBe(401);
+    expect(await approvalCount(accountId)).toBe(0);
+    expect((await a.login(name)).json()).toEqual({ status: 'ok' });
+    expect((await a.me()).statusCode).toBe(200);
   });
 
   it('a trusted browser under the limit needs no approval; the same browser re-logging in needs none', async () => {
@@ -180,7 +187,9 @@ describe('when a login waits for approval', () => {
     const { a, name, accountId } = await signUp();
     await deps.db.query(`update sessions set level = 'recovery' where account_id = $1`, [accountId]);
     expect((await a.get('/v1/account/approvals')).json()).toMatchObject({ error: 'recovery-session' });
-    expect((await new Browser().login(name)).json()).toEqual({ status: 'ok' });
+    // Nothing is logged in to approve it: a password on a new device is refused (hold model v3), no approval opens.
+    expect((await new Browser().login(name)).json()).toEqual({ error: 'approval-unavailable' });
+    expect(await approvalCount(accountId)).toBe(0);
   });
 });
 
@@ -617,8 +626,10 @@ describe('team members (Plan 2 Task 18, at its landing: was NEEDS_TASKS_16_17_ME
     await a.post('/v1/logout');
     const m = await memberOf(accountId);
     expect(await memberLogin(new Browser(), m.loginId)).toEqual({ status: 'ok' });
+    // Hold model v3: a password on a new device with no owner device to approve it is refused; on the owner's trusted browser it gets in.
     const d = new Browser('Chrome on Windows');
-    expect((await d.login(name)).json()).toEqual({ status: 'ok' });
+    expect((await d.login(name)).json()).toEqual({ error: 'approval-unavailable' });
+    expect((await a.login(name)).json()).toEqual({ status: 'ok' });
     expect(await approvals(accountId)).toBe(0);
   });
 });

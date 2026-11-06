@@ -182,21 +182,21 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
     const codeId = rows[0]?.id;
     if (accountId === null || normalized === null || codeId === undefined) return refuse(key);
     await assertNotDisabled(deps.db, accountId);
-    const used = await deps.db.query('update recovery_codes set used_at = $2 where id = $1 and used_at is null', [codeId, deps.clock()]);
-    if ((used.rowCount ?? 0) === 0) return refuse(key);
+    // Hold model v3: the account's 24-hour hold starts with the session (`backupSession`). The code
+    // is spent in that same transaction, so a failure there leaves the account's one code unused.
+    const holdUntil = new Date(deps.clock().getTime() + RECOVERY_HOLD_MS);
+    if (!(await backupSession(req, reply, accountId, codeId, deviceLabel, holdUntil))) return refuse(key);
     await throttleReset(deps, key);
     await retagLoginName(deps, found!, name.candidates.current);
-    // Hold model v3: the account's 24-hour hold starts with the session (`backupSession`).
-    const holdUntil = new Date(deps.clock().getTime() + RECOVERY_HOLD_MS);
-    await backupSession(req, reply, accountId, deviceLabel, holdUntil);
     return { status: 'ok' as const, level: 'recovery' as const, holdUntil: holdUntil.toISOString() };
   }
   throw new ApiError(400, 'bad-request');
 }
 
 /**
- * A recovery-code login (hold model v3), in one transaction with the account locked: a hold whose
- * time is up settles first; every session of the account (the owner's and the team members') is
+ * A recovery-code login (hold model v3), in one transaction with the account locked: the code is
+ * spent (false when a parallel use spent it first: nothing else happens); a hold whose time is up
+ * settles first; every session of the account (the owner's and the team members') is
  * logged out (alert `sessions-ended` `{ count, reason: 'recovery-code' }`) and every open login
  * approval expires; the account's waiting and staged changes are discarded; the held recovery
  * session opens (`openSession` writes alert `recovery-login`); the account's hold starts (reason
@@ -204,11 +204,14 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
  * a new one (`renewRecoveryCode`). After the commit the ended sessions' streams close and the held
  * trades are paused (`syncHeldTrades`).
  */
-async function backupSession(req: FastifyRequest, reply: FastifyReply, accountId: string, deviceLabel: string, holdUntil: Date): Promise<void> {
+async function backupSession(req: FastifyRequest, reply: FastifyReply, accountId: string, codeId: string, deviceLabel: string, holdUntil: Date): Promise<boolean> {
   const deps = req.server.deps;
   const now = deps.clock();
   const opened = await withTx(deps.db, async (db) => {
     await lockAccount(db, accountId);
+    // The code is spent here, under the account lock: of two parallel uses only one finds it unused.
+    const used = await db.query('update recovery_codes set used_at = $2 where id = $1 and used_at is null', [codeId, now]);
+    if ((used.rowCount ?? 0) === 0) return null;
     await holdInTx(db, settleOf(req), accountId, now);
     const ended = await db.query<{ id: string }>('update sessions set revoked_at = $2 where account_id = $1 and revoked_at is null returning id', [accountId, now]);
     await db.query(
@@ -226,9 +229,11 @@ async function backupSession(req: FastifyRequest, reply: FastifyReply, accountId
     await renewRecoveryCode(db, deps.config, accountId, now);
     return s;
   });
+  if (opened === null) return false;
   opened.after();
   req.server.events.closeAccount(accountId, opened.sessionId);
   await syncHeldTrades({ db: deps.db, clock: deps.clock, publish: req.server.tradePublish }, accountId);
+  return true;
 }
 
 const revealContext = (accountId: string) => `x2f/recovery-code-reveal/${accountId}`;

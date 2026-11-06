@@ -6,7 +6,7 @@
 //   PGP key the account held before they were submitted discards them;
 // - a recovery-code login logs everyone out and holds the account 24 h: logins are refused except
 //   the owner's pre-existing passkey, security key or PGP key (which ends it); unfunded trades are
-//   marked for cancelling, funded ones paused, and the partner sees only that the other account has
+//   cancelled, funded ones paused, and the partner sees only that the other account has
 //   a temporary problem; the code used is replaced by a new one, shown once at the next login;
 // - a new device with nothing logged in to approve it: only a passkey, security key or PGP key gets
 //   in; anything else is refused, and nothing is held.
@@ -94,7 +94,7 @@ const onboarding = (accountId: string, until: Date | null) =>
 
 /** A password trader signed up in `b`, its set-up window over. */
 async function passwordTrader(b = new Browser(app)) {
-  const name = unique('holdv');
+  const name = unique('hv3');
   const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
   expect(res.statusCode).toBe(201);
   const id = (await accountIdByLoginName(deps, name))!;
@@ -426,7 +426,7 @@ describe('a recovery-code login', () => {
     expect(await alertsOf(t.id, 'hold-changes-discarded')).toEqual([{ count: 1, changes: [{ kind: 'password' }], reason: 'recovery-code' }]);
   });
 
-  it("trades: unfunded ones are marked for cancelling, funded ones paused; the partner sees only the other account's problem", async () => {
+  it("trades: unfunded ones are cancelled, funded ones paused; the partner sees only the other account's problem", async () => {
     const t = await ownerWithCode();
     const partner = await trader();
     const partner2 = await trader();
@@ -438,12 +438,17 @@ describe('a recovery-code login', () => {
     expect(rows).toEqual([{ code: unfunded.code, action: 'cancel' }, { code: funded.code, action: 'pause' }]);
     const paused = await deps.db.query<{ paused_at: Date | null }>('select paused_at from trades where code = $1', [funded.code]);
     expect(paused.rows[0]!.paused_at).not.toBeNull();
+    // The unfunded one is cancelled by the machine's system-cancel, right after the login's commit.
+    const cancelled = await deps.db.query<{ state: string; closed_at: Date | null }>('select state, closed_at from trades where code = $1', [unfunded.code]);
+    expect(cancelled.rows[0]).toMatchObject({ state: 'cancelled' });
+    expect(cancelled.rows[0]!.closed_at).not.toBeNull();
+    expect((await deps.db.query<{ paused: string }>('select paused from held_trades where code = $1', [unfunded.code])).rows[0]!.paused).toBe('cancelled');
     // The partner's view: a flag, and never the words hold, security or vendor.
     const v = await partner2.browser.get(`/v1/trades/${funded.code}`);
     expect(v.json()).toMatchObject({ counterpartyProblem: true });
     // Keys and fixed words only (random codes and addresses are left out of the check).
     const words = JSON.stringify(v.json(), (k, val) => (typeof val === 'string' && /^[0-9A-Za-z-]{12,}$/.test(val) ? '' : val));
-    expect(words.match(/.{40}(hold|security|vendor).{40}/i)?.[0] ?? null).toBeNull();
+    expect(words.match(/.{0,40}(hold|security|vendor).{0,40}/i)?.[0] ?? null).toBeNull();
     expect((await partner.browser.get(`/v1/trades/${unfunded.code}`)).json()).toMatchObject({ counterpartyProblem: true });
     // The partner cannot move a held trade forward; leaving an unfunded one stays possible.
     expect(errorOf(await partner2.browser.post(`/v1/trades/${funded.code}/events`, { type: 'mark-paid', fiatCents: FIAT.toString() }))).toBe('counterparty-unavailable');

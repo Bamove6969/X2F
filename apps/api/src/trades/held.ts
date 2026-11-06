@@ -16,13 +16,13 @@
  *   released in that transaction (`releaseHeldTrades`); the sync then resumes each trade it paused
  *   (unless the site is in maintenance, whose own loop resumes it) and deletes the rows.
  *
- * SEAM (trade engine, not done here): the trade machine has no system event that cancels a trade,
- * so a `cancel` row is not cancelled yet: the trade stays as it was, the partner sees the flag and
- * can leave it (buyer's cancel, seller's walk-away), and its own timers lapse it. A system cancel
- * event (`packages/trade` machine, its STORED entry in store.ts, protocol, web) is needed for the
- * owner's "unfunded trades are cancelled". Also: the trade timer loop (timerLoop.ts) is not running
- * in the API yet; when it lands, its "maintenance off: resume every paused trade" must skip trades
- * with an open `held_trades` row.
+ * - A `cancel` row's trade gets the machine's system `system-cancel` (the same sync, after the
+ *   commit): the trade closes as cancelled. Should the machine refuse it (coins seen or "Fund
+ *   escrow" tapped since the login), the trade is paused instead, as a `pause` row's.
+ *
+ * SEAM (not done here): the trade timer loop (timerLoop.ts) is not running in the API yet; when it
+ * lands, its "maintenance off: resume every paused trade" must skip trades with an open
+ * `held_trades` row.
  */
 import { TradeRuleError } from '@x2f/trade';
 import type pg from 'pg';
@@ -55,7 +55,8 @@ export async function releaseHeldTrades(db: Queryable, accountId: string, now: D
 }
 
 /**
- * Applies what the rows say (of one account, or all): `pause` to each trade not yet paused by its
+ * Applies what the rows say (of one account, or all): `system-cancel` to each `cancel` row's trade
+ * (`pause` when the machine refuses it), `pause` to each `pause` row's trade not yet paused by its
  * hold, `resume` to each released trade its hold paused (not during maintenance), then deletes the
  * released rows. Each trade in its own transaction (trade row lock first, as every trade event); a
  * trade the machine refuses (closed meanwhile, already paused by maintenance) is skipped. Returns
@@ -63,17 +64,29 @@ export async function releaseHeldTrades(db: Queryable, accountId: string, now: D
  */
 export async function syncHeldTrades(deps: Pick<Deps, 'db' | 'clock'> & { publish?: TradePublisher }, accountId?: string): Promise<number> {
   const store = { db: deps.db, clock: deps.clock, publish: deps.publish ?? noPublish };
-  const { rows } = await deps.db.query<{ code: string; account_id: string; paused: string; released: boolean }>(
-    `select code, account_id, paused, released_at is not null as released from held_trades
-      where ($1::uuid is null or account_id = $1) and ((action = 'pause' and paused = 'todo' and released_at is null) or released_at is not null)`,
+  const { rows } = await deps.db.query<{ code: string; account_id: string; action: string; paused: string; released: boolean }>(
+    `select code, account_id, action, paused, released_at is not null as released from held_trades
+      where ($1::uuid is null or account_id = $1) and ((paused = 'todo' and released_at is null) or released_at is not null)`,
     [accountId ?? null],
   );
   const maintenance = (await deps.db.query<{ on: boolean }>('select maintenance_since is not null as on from site_flags')).rows[0]?.on ?? false;
   let n = 0;
   for (const r of rows) {
     if (!r.released) {
-      const mark = async (c: pg.PoolClient, state: 'paused' | 'skipped') =>
+      const mark = async (c: pg.PoolClient, state: 'paused' | 'cancelled') =>
         c.query("update held_trades set paused = $3 where code = $1 and account_id = $2 and paused = 'todo'", [r.code, r.account_id, state]);
+      if (r.action === 'cancel') {
+        try {
+          await applyEvent(store, r.code, { type: 'system-cancel' }, 'system', async (c) => {
+            await mark(c, 'cancelled');
+          });
+          n++;
+          continue;
+        } catch (e) {
+          if (!(e instanceof ApiError) && !(e instanceof TradeRuleError)) throw e;
+          // Funded or being funded since the login: paused instead, below.
+        }
+      }
       try {
         await applyEvent(store, r.code, { type: 'pause' }, 'system', async (c) => {
           await mark(c, 'paused');

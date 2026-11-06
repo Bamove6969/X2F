@@ -91,6 +91,7 @@ const sampleEvent: Record<TradeEvent['type'], TradeEvent> = {
   escalate: { type: 'escalate' },
   pause: { type: 'pause' },
   resume: { type: 'resume' },
+  'system-cancel': { type: 'system-cancel' },
   tick: { type: 'tick' },
 };
 
@@ -845,6 +846,29 @@ describe('escalate', () => {
     const t = apply(released, chain(7n, 0n, 0), 'system', at(70));
     expect(t.state).toBe('released');
     expect(t.receivedAtomic).toBe(7n);
+  });
+});
+
+describe('system-cancel (hold model v3: an unfunded trade of a recovery-code hold)', () => {
+  test('cancels in setup and in funding before Fund escrow and before any coins, paused or not', () => {
+    const a = apply(taken(), { type: 'system-cancel' }, 'system', at(5));
+    expect(a.state).toBe('cancelled');
+    expect(a.closedAt).toEqual(at(5));
+    expect(apply(funding(), { type: 'system-cancel' }, 'system', at(6)).state).toBe('cancelled');
+    const paused = apply(funding(), { type: 'pause' }, 'system', at(6));
+    expect(apply(paused, { type: 'system-cancel' }, 'system', at(7)).state).toBe('cancelled');
+  });
+
+  test('refused once the seller tapped Fund escrow, once coins were seen, and in every later state', () => {
+    const started = apply(funding(), { type: 'fund-started' }, 'seller', at(2));
+    expect(rule(() => apply(started, { type: 'system-cancel' }, 'system', at(3)))).toBe('wrong-state');
+    const seen = apply(funding(), chain(1n, 0n, 0), 'system', at(2));
+    expect(rule(() => apply(seen, { type: 'system-cancel' }, 'system', at(3)))).toBe('wrong-state');
+    for (const t of [securing(), secured(), paid(), settling(), refunded()]) {
+      expect(rule(() => apply(t, { type: 'system-cancel' }, 'system', at(200)))).toBe('wrong-state');
+    }
+    const cancelled = apply(taken(), { type: 'system-cancel' }, 'system', at(5));
+    expect(rule(() => apply(cancelled, { type: 'system-cancel' }, 'system', at(6)))).toBe('wrong-state');
   });
 });
 

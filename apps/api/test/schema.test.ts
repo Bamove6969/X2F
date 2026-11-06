@@ -13,6 +13,8 @@ import { emptyDb, testDb } from './helpers/db.js';
 import { testApp, testConfig } from './helpers/app.js';
 import { hashPassword } from '../src/auth/password.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
+import { DEVICE_COOKIE } from '../src/auth/device.js';
+import { trustedDevice } from './helpers/accounts.js';
 import { VAPID_ENV } from './helpers/vapid.js';
 
 const VAPID = VAPID_ENV;
@@ -90,8 +92,10 @@ describe('migrations', () => {
       expect((await db.query('select key, kind from name_keys')).rows).toEqual([{ key: 'old.trader', kind: 'display' }]);
       const pw = await hashPassword(deps.config, 'Correct-Horse-9');
       await db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, now())', [inserted[0]!.id, pw.hash, pw.pepperId]);
+      // Hold model v3: with nothing logged in, a password alone gets in only on a trusted device.
       const login = await app.inject({
         method: 'POST', url: '/v1/login/password', headers: { origin: 'https://x2f.test' },
+        cookies: { [DEVICE_COOKIE]: await trustedDevice(deps, inserted[0]!.id) },
         payload: { loginName: 'Old.Trader', password: 'Correct-Horse-9', deviceLabel: 'Old browser' },
       });
       expect(login.statusCode).toBe(200);

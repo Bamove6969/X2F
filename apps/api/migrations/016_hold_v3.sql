@@ -53,7 +53,7 @@ create trigger hold_change_drafts_die_with_session after update of revoked_at on
 
 -- 3. The trades of an account in a recovery-code hold (one row per trade and held account):
 -- `cancel` for a trade not yet funded, `pause` for one whose escrow is or may be funded. `paused`
--- records whether this hold applied the trade machine's `pause` (so only those are resumed). No
+-- records what this hold applied: the machine's `pause` (only those are resumed) or `system-cancel`. No
 -- foreign key to `trades` on purpose: inserting one would take a key-share lock on the trade row
 -- inside the login's account-locked transaction, the reverse of the trade routes' lock order
 -- (trade row, then account). Rows go when the hold ends and the trade has been resumed.
@@ -62,7 +62,7 @@ create table held_trades (
   account_id uuid not null references accounts (id) on delete cascade,
   action text not null check (action in ('cancel', 'pause')),
   held_at timestamptz not null,
-  paused text not null default 'todo' check (paused in ('todo', 'paused', 'skipped')),
+  paused text not null default 'todo' check (paused in ('todo', 'paused', 'skipped', 'cancelled')),
   released_at timestamptz,
   primary key (code, account_id)
 );

@@ -14,7 +14,7 @@
  * 2. **A recovery-code login holds the account 24 h** (`account_holds`, reason `recovery-code`;
  *    recovery.ts `backupSession`, all in the login's transaction): every session of the account
  *    (the owner's and the team members') is logged out, waiting changes are discarded, open trades
- *    are held (trades/held.ts: unfunded ones marked for cancelling, funded ones paused, the
+ *    are held (trades/held.ts: unfunded ones cancelled, funded ones paused, the
  *    partner told only that the other account has a temporary problem), the code used is replaced
  *    by a new one shown once at the next login. During it no login opens a session (traderLogin;
  *    members: sessions.ts `openSession`) except the owner's proof, and the recovery session itself

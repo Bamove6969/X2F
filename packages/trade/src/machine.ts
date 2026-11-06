@@ -126,9 +126,16 @@ export type TradeEvent =
   | { type: 'escalate' }
   | { type: 'pause' }
   | { type: 'resume' }
+  /**
+   * The server cancels a trade whose escrow is not funded and cannot be yet (hold model v3, owner
+   * 1-2 Nov 2026: a recovery-code login cancels the account's unfunded trades). Only in `setup`, or
+   * in `funding` before the seller tapped "Fund escrow" and before any coins were seen: the same
+   * bounds as the seller's walk-away. Accepted while paused.
+   */
+  | { type: 'system-cancel' }
   | { type: 'tick' };
 
-export const SYSTEM_EVENTS = ['setup-done', 'chain', 'settled', 'escalate', 'pause', 'resume', 'tick', 'return-confirmed'] as const;
+export const SYSTEM_EVENTS = ['setup-done', 'chain', 'settled', 'escalate', 'pause', 'resume', 'tick', 'return-confirmed', 'system-cancel'] as const;
 export const CLIENT_EVENTS = [
   'mark-paid',
   'extend',
@@ -469,6 +476,11 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
 
     case 'resume':
       return onResume(t, now);
+
+    case 'system-cancel':
+      if (s === 'setup') return close(t, 'cancelled', now);
+      if (s === 'funding' && t.fundStartedAt === null && t.receivedAtomic === 0n && t.fundingSeenAt === null) return close(t, 'cancelled', now);
+      return fail('wrong-state');
 
     case 'settled': {
       if (typeof e.txHash !== 'string' || e.txHash === '') throw new RangeError('bad tx hash');

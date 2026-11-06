@@ -250,6 +250,7 @@ const STORED = {
   escalate: {},
   pause: {},
   resume: {},
+  'system-cancel': {},
   tick: {},
 } as const satisfies { [T in TradeEvent['type']]: Record<FieldsOf<T>, Kept> };
 

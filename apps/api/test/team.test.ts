@@ -6,6 +6,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
+import { HOLD_MS } from '../src/auth/hold.js';
+import { settleDueChanges } from '../src/auth/holdChanges.js';
 import { EventBus, type StreamSink } from '../src/events/bus.js';
 import { tradeEventPublisher } from '../src/events/tradePublisher.js';
 import { ACTION_ROLE, auditMember } from '../src/team/audit.js';
@@ -952,16 +954,26 @@ describe('team changes need a strong session (owner 1 Nov 2026; landing review I
     });
   }
 
-  it("a weak session's role change gets weak-session (adding or dropping a role) and the roles stay", async () => {
+  it("hold model v3: a weak session's role change is staged (adding or dropping a role); the roles stay until 24 h after it is submitted", async () => {
     const owner = await team();
     const m = await member(owner.id, ['offers', 'trades']);
     await weaken(owner.browser, 'weak-single');
+    const ids: string[] = [];
     for (const roles of [['offers'], ['trades'], ['offers', 'trades']]) {
       const confirmToken = await confirmed(owner, { kind: 'team-roles', memberId: m.id, roles: roles.join(',') });
       const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { roles, confirmToken });
-      expect(err(res)).toEqual({ status: 403, error: 'weak-session' });
+      expect(res.statusCode, res.body).toBe(202);
+      expect(res.json()).toMatchObject({ status: 'staged' });
+      ids.push((res.json() as { changeId: string }).changeId);
     }
     expect((await teamOf(owner.id))[0]!.roles).toEqual(['offers', 'trades']);
+    // The first two submitted: 24 h later they apply in order (the third stays a draft).
+    expect((await owner.browser.post('/v1/account/hold/changes/submit', { ids: ids.slice(0, 2) })).statusCode).toBe(200);
+    const due = new Date(deps.clock().getTime() + HOLD_MS);
+    await settleDueChanges(deps.config, app.events).run(deps.db, new Date(due.getTime() - 1000));
+    expect((await teamOf(owner.id))[0]!.roles).toEqual(['offers', 'trades']);
+    await settleDueChanges(deps.config, app.events).run(deps.db, due);
+    expect((await teamOf(owner.id))[0]!.roles).toEqual(['trades']);
   });
 
   it("a weak session may still remove a member outside a hold (it only takes access away)", async () => {

@@ -76,7 +76,7 @@ export interface TradeView {
   serverNow: string;
   /**
    * Hold model v3: the other party's account has a temporary problem (a recovery-code hold; the
-   * trade is paused or marked for cancelling, trades/held.ts). The partner is told only that, never
+   * trade is paused or was cancelled, trades/held.ts). The partner is told only that, never
    * why. False when the view is built without it (live events).
    */
   counterpartyProblem: boolean;
