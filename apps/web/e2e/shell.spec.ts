@@ -55,6 +55,20 @@ test('at 1024 px and wider the desktop shell replaces the bottom nav', async ({ 
   await expect(page.locator('[data-shell="phone"]')).toHaveCount(0);
 });
 
+test('Buy and Sell show one Site news bell on the phone and on the Desktop layout (review I3)', async ({ page }) => {
+  for (const path of ['/buy', '/sell']) {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.goto(path);
+    await expect(page.locator('.x2f-browse__header')).toBeVisible();
+    await expect(page.locator('[data-part="news-bell"]:visible')).toHaveCount(1);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(page.locator('[data-shell="desktop"]')).toBeAttached();
+    // The desktop header's bell is the one; Buy/Sell's own header keeps it hidden there.
+    await expect(page.locator('[data-part="news-bell"]:visible')).toHaveCount(1);
+    await expect(page.locator('.x2f-desktop__header [data-part="news-bell"]')).toBeVisible();
+  }
+});
+
 test('a terms-required answer sends the page to /terms with returnTo', async ({ page }) => {
   await page.route('**/v1/account/me', (r) => r.fulfill({ status: 403, json: { error: 'terms-required', version: '2026-10-17' } }));
   await page.goto('/sell?currency=EUR');

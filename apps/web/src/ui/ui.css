@@ -2283,6 +2283,11 @@
   background: var(--x2f-escrow);
 }
 
+/* On the Desktop layout the shell header carries the bell, so Buy/Sell's own header hides its one. */
+[data-shell='desktop'] .x2f-browse__header .x2f-news-bell {
+  display: none;
+}
+
 /* The logo with the bell beside it. */
 .x2f-brand {
   display: inline-flex;
