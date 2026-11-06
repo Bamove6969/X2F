@@ -1,6 +1,6 @@
 // Plan 4 Task 5: security-key taps bound to one intent (start, finish, consume in the caller's
 // transaction), with the soft authenticator of Plan 2 Task 7 attested as an allowlisted AAGUID.
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,6 +18,9 @@ import {
   keyTapRoutes,
   parseKeyTapIntent,
   startKeyTap,
+  purgeKeyTaps,
+  MAX_OPEN_TAPS,
+  KEY_TAP_PURGE_MS,
 } from '../../src/staff/keyTap.js';
 import { seedAccount } from '../helpers/accounts.js';
 import { testApp } from '../helpers/app.js';
@@ -277,6 +280,87 @@ describe('finishKeyTap and consumeKeyTap', () => {
     const results = await Promise.allSettled([consume(tapId, id, STOP), consume(tapId, id, STOP)]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+  });
+});
+
+// RV5 Task 5 minors (6 Nov): m8 purge, m9 the key must still be registered at consume, m10 a tap
+// bound to its session, m11 a NUL in the response, m12 a cap on open taps.
+describe('RV5 Task 5 minors', () => {
+  it('m9: a key removed after the finish no longer authorises the action', async () => {
+    const { id, key } = await staffWith();
+    const tapId = await tapped(id, key, STOP);
+    await deps.db.query('delete from webauthn_credentials where account_id = $1', [id]);
+    await expect(consume(tapId, id, STOP)).rejects.toMatchObject(tapInvalid);
+  });
+
+  it('m10: a tap started in a session is consumed only with that session', async () => {
+    const { id, key } = await staffWith();
+    const session = randomUUID();
+    const { tapId, options } = await startKeyTap(deps, id, STOP, { sessionId: session });
+    await finishKeyTap(deps, id, tapId, key.authenticate(options, ORIGIN));
+    const withSession = async (sessionId?: string) => {
+      const client = await deps.db.connect();
+      try {
+        await client.query('begin');
+        const tap = await consumeKeyTap(client, tapId, id, STOP, deps.clock(), sessionId !== undefined ? { sessionId } : {});
+        await client.query('commit');
+        return tap;
+      } catch (e) {
+        await client.query('rollback');
+        throw e;
+      } finally {
+        client.release();
+      }
+    };
+    await expect(withSession()).rejects.toMatchObject(tapInvalid);
+    await expect(withSession(randomUUID())).rejects.toMatchObject(tapInvalid);
+    await expect(withSession('not-a-uuid')).rejects.toMatchObject(tapInvalid);
+    expect((await withSession(session)).id).toBe(tapId);
+    // A tap started with no session (a route without sessionOf) is bound to the account only.
+    const plain = await tapped(id, key, STOP);
+    expect((await consume(plain, id, STOP)).id).toBe(plain);
+  });
+
+  it('m11: a NUL anywhere in the response is a 400 before the assertion is checked', async () => {
+    const { id, key } = await staffWith();
+    const { tapId, options } = await startKeyTap(deps, id, STOP);
+    const answer = key.authenticate(options, ORIGIN) as unknown as Record<string, unknown>;
+    await expect(finishKeyTap(deps, id, tapId, { ...answer, extra: 'a\u0000b' })).rejects.toMatchObject({ status: 400, code: 'bad-request' });
+    // The tap is still open, and the clean answer finishes it.
+    await finishKeyTap(deps, id, tapId, answer);
+    expect((await consume(tapId, id, STOP)).id).toBe(tapId);
+  });
+
+  it('m12: at most 5 open taps per account; a finished or expired tap frees a place', async () => {
+    const { id, key } = await staffWith();
+    const started = [];
+    for (let i = 0; i < MAX_OPEN_TAPS; i++) started.push(await startKeyTap(deps, id, STOP));
+    await expect(startKeyTap(deps, id, STOP)).rejects.toMatchObject({ status: 429, code: 'slow-down' });
+    // Another account is not affected.
+    const other = await staffWith();
+    await startKeyTap(deps, other.id, STOP);
+    await finishKeyTap(deps, id, started[0]!.tapId, key.authenticate(started[0]!.options, ORIGIN));
+    await startKeyTap(deps, id, STOP);
+    await expect(startKeyTap(deps, id, STOP)).rejects.toMatchObject({ status: 429 });
+    setNow(new Date(deps.clock().getTime() + KEY_TAP_TTL_MS));
+    try {
+      await startKeyTap(deps, id, STOP);
+    } finally {
+      setNow(T0);
+    }
+  });
+
+  it('m8: unfinished and unused taps go a day after they start; used ones stay', async () => {
+    const { id, key } = await staffWith();
+    const unfinished = (await startKeyTap(deps, id, STOP)).tapId;
+    const unused = await tapped(id, key, STOP);
+    const used = await tapped(id, key, STOP);
+    await consume(used, id, STOP);
+    const left = async () => (await deps.db.query<{ id: string }>('select id from key_taps where id = any($1::uuid[])', [[unfinished, unused, used]])).rows.map((r) => r.id).sort();
+    expect(await purgeKeyTaps(deps.db, new Date(T0.getTime() + KEY_TAP_PURGE_MS - 1))).toBe(0);
+    expect(await left()).toEqual([unfinished, unused, used].sort());
+    expect(await purgeKeyTaps(deps.db, new Date(T0.getTime() + KEY_TAP_PURGE_MS + 1))).toBeGreaterThanOrEqual(2);
+    expect(await left()).toEqual([used]);
   });
 });
 
