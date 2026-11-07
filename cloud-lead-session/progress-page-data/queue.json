@@ -1,0 +1,11 @@
+[
+{"order":1,"item":"Proof batch (Plan 5 Tasks 7-9 + fix)","who":"claude3","state":"Checks passed","waiting_on":"Monero test counts from claude3"},
+{"order":2,"item":"Fold follow-ups","who":"claude2","state":"Built","waiting_on":"Full test run and a reviewer"},
+{"order":3,"item":"Plan 4 Task 15: trader dispute screens","who":"claude3","state":"Ready","waiting_on":"Merge with main"},
+{"order":4,"item":"Plan 4 Task 4 + staff site split","who":"claude3","state":"Fixing","waiting_on":"3 security fixes (I-1, M-1, M-3)"},
+{"order":5,"item":"Plan 4 Tasks 5 and 7 fixes","who":"claude3","state":"Fixing","waiting_on":"claude3"},
+{"order":6,"item":"Results, sessions, vendor, hold v3","who":"claude2","state":"Merging main","waiting_on":"Lead security review (vendor, hold v3)"},
+{"order":7,"item":"Dispute cap, price feeds, Task 34 offers","who":"claude2","state":"Built","waiting_on":"Owner answers"},
+{"order":8,"item":"Proof pop-ups","who":"design","state":"In review","waiting_on":"Design review"},
+{"order":9,"item":"Watcher Task 9 I/O, 9-view, Task 10","who":"-","state":"On hold","waiting_on":"Owner hold"}
+]

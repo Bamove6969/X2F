@@ -1,0 +1,9 @@
+[
+{"plan":1,"name":"Escrow core","tasks":10,"landed":10,"in_flight":0,"held":0,"skipped":0,"not_started":0,"note":"Built and approved 17 Oct"},
+{"plan":2,"name":"Accounts and login","tasks":18,"landed":17,"in_flight":0,"held":0,"skipped":1,"not_started":0,"note":"Task 13 skipped by design"},
+{"plan":3,"name":"Offers and the trade flow","tasks":42,"landed":35,"in_flight":1,"held":1,"skipped":0,"not_started":5,"note":"Task 9 landed only its pure parts; Task 10 on owner hold; Task 34 waits on owner answers"},
+{"plan":4,"name":"Disputes and staff tools","tasks":33,"landed":4,"in_flight":6,"held":0,"skipped":0,"not_started":23,"note":"Tasks 4, 5, 7, 11, 15, 16 being built or fixed"},
+{"plan":5,"name":"Reputation and proof","tasks":21,"landed":6,"in_flight":3,"held":0,"skipped":0,"not_started":12,"note":"Tasks 7-9 (proof) are the next landing"},
+{"plan":6,"name":"Hardening and launch prep","tasks":29,"landed":0,"in_flight":0,"held":0,"skipped":0,"not_started":29,"note":"Drafted, awaiting owner approval"},
+{"plan":7,"name":"Privacy controls and public site","tasks":17,"landed":0,"in_flight":0,"held":0,"skipped":0,"not_started":17,"note":"Drafted, awaiting owner approval"}
+]
