@@ -37,15 +37,17 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">How long should this session stay logged in?</h1>
 
         <section style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
-          <div role="group" aria-labelledby="sl-l" aria-describedby="sl-vendor sl-rule" style="display: flex; flex-direction: column; gap: 12px;">
-            <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
-              <span id="sl-l" style="font-size: 16px; line-height: 24px; font-weight: 600;">Stay logged in for</span>
-              <span style="{{pickValStyle}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{pickNum}}</span>{{pickUnit}}</span>
-            </div>
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
-              <sc-for list="{{opts}}" as="o" hint-placeholder-count="4">
-                <button type="button" onClick="{{o.pick}}" aria-pressed="{{o.pressed}}" aria-label="{{o.aria}}" style="{{o.style}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{o.num}}</span> h</button>
-              </sc-for>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <span id="sl-l" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Stay logged in for</span>
+            <div style="position: relative;">
+              <button type="button" id="sl-field" aria-haspopup="listbox" aria-expanded="{{menuExpanded}}" aria-controls="sl-list" aria-labelledby="sl-l sl-field" aria-describedby="sl-vendor sl-rule" onClick="{{toggleMenu}}" style="display: flex; align-items: center; gap: 10px; width: 100%; height: 48px; padding: 0 12px 0 14px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; text-align: left; cursor: pointer;"><span style="flex-grow: 1; min-width: 0;"><sc-if value="{{hasPick}}" hint-placeholder-val="{{false}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{pickNum}}</span> h</sc-if><sc-if value="{{noPick}}" hint-placeholder-val="{{true}}"><span style="color: var(--ink-muted);">Choose a length</span></sc-if></span><svg style="flex-shrink: 0;" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{menuChevron}}"/></svg></button>
+              <sc-if value="{{menuOpen}}" hint-placeholder-val="{{false}}">
+                <div id="sl-list" role="listbox" aria-labelledby="sl-l" style="position: absolute; top: 52px; left: 0; right: 0; z-index: 5; display: flex; flex-direction: column; gap: 2px; padding: 6px; box-sizing: border-box; border-radius: 12px; background: var(--surface); border: 1px solid var(--surface-raised);">
+                  <sc-for list="{{opts}}" as="o" hint-placeholder-count="4">
+                    <button type="button" role="option" aria-selected="{{o.ariaSel}}" aria-label="{{o.aria}}" onClick="{{o.pick}}" style="{{o.style}}"><span style="flex-grow: 1;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{o.num}}</span> h</span><sc-if value="{{o.sel}}" hint-placeholder-val="{{false}}"><svg style="flex-shrink: 0; color: var(--ink);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></sc-if></button>
+                  </sc-for>
+                </div>
+              </sc-if>
             </div>
           </div>
 
@@ -89,20 +91,21 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <section id="sl-notes" aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
     <p style="margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink);">Showing: {{accountTypeName}} account</p>
-    <aside aria-label="Open for the owner: tiles or a drop-down" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to confirm</span>
-      <span style="font-weight: 600;">The time is now picked from four tiles, the same control as Devices and sessions. The 2 Nov note mentioned a drop-down.</span>
+    <aside aria-label="Decided by the owner: a drop-down, asked after logging in" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G23, G24, G25)</span>
+      <span style="font-weight: 600;">The length is picked from a drop-down, with nothing pre-selected.</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>Keep the tiles (one tap, matches Devices)</li>
-        <li>Go back to a drop-down</li>
+        <li>Traders: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">8</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
+        <li>Vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</li>
+        <li>A new choice starts counting from now.</li>
+        <li>Asked after logging in, not at signup: after signup you go to the login screen, log in, then pick it.</li>
       </ul>
+      <span style="color: var(--ink-muted);">Preview the open list with the menu tweak.</span>
     </aside>
     <aside aria-label="Decided by the owner: session length by account type" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
-      <span style="font-weight: 600;">Asked on every login, with nothing pre-selected. The times depend on the account type:</span>
+      <span style="font-weight: 600;">Asked on every login, with nothing pre-selected. The times depend on the account type (current lists in the 7 Nov box above).</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>Traders: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
-        <li>Vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</li>
         <li>Session = the chosen time. At the end: confirm with a passkey, security key, PGP key or the password (plus authenticator code if set up) to extend by the same time; otherwise logged out (owner, 2 Nov). No fixed maximum.</li>
       </ul>
       <span style="color: var(--ink-muted);">Preview with the accountType tweak.</span>
@@ -119,9 +122,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","done"],"default":"ask"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"$preview":{"width":390,"height":1607}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","done"],"default":"ask"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"menu":{"editor":"enum","options":["closed","open"],"default":"closed"},"$preview":{"width":390,"height":1649}}'>
 class Component extends DCLogic {
-  constructor(props) { super(props); this.state = { pick: null, pickFor: '', stepOver: null, stepFor: '' }; }
+  constructor(props) { super(props); this.state = { pick: null, pickFor: '', stepOver: null, stepFor: '', menu: null, menuFor: '' }; }
   renderVals() {
     const THEMES = {
       night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
@@ -133,23 +136,25 @@ class Component extends DCLogic {
     // Tweaks. Local state only applies while the tweak it was made under is unchanged.
     const propStep = this.props.step === 'done' ? 'done' : 'ask';
     const step = (s.stepOver && s.stepFor === propStep) ? s.stepOver : propStep;
-    // Owner, 2 Nov: asked on every login, nothing pre-selected. Picked from four tiles like Devices (OPEN box: the 2 Nov note said drop-down).
-    // Session length is 2, 4, 6 or 12 h for traders and 2, 6, 12 or 24 h for vendors. When it is up we ask for a
+    // Owner, 2 Nov: asked on every login, nothing pre-selected. Owner, 7 Nov (G23, G24, G25): a drop-down; traders 2, 4, 8 or 12 h,
+    // vendors 2, 6, 12 or 24 h; a new choice counts from now; asked after logging in, not at signup. When it is up we ask for a
     // passkey, security key, PGP key or the password (+ code if set up) to extend by the same time; otherwise logged out. No fixed maximum.
     const vendor = this.props.accountType === 'vendor';
     const acct = vendor ? 'vendor' : 'non-vendor';
-    const TIMES = vendor ? [2, 6, 12, 24] : [2, 4, 6, 12];
+    const TIMES = vendor ? [2, 6, 12, 24] : [2, 4, 8, 12];
+    const propMenu = this.props.menu === 'open' ? 'open' : 'closed';
+    const menuOpen = (s.menu != null && s.menuFor === propMenu) ? s.menu : propMenu === 'open';
     const pick = (s.pick && s.pickFor === acct && TIMES.indexOf(s.pick) >= 0) ? s.pick : null;
 
     // Board = 844 px phone screen + the design-notes block under it (measured).
-    const NOTES_H = 763;
+    const NOTES_H = 805;
     const H = 844 + NOTES_H;
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     const opts = TIMES.map((h) => ({
-      num: String(h), aria: h + ' hours', pressed: pick === h ? 'true' : 'false',
-      pick: () => this.setState({ pick: h, pickFor: acct }),
-      style: 'height: 48px; box-sizing: border-box; border-radius: 6px; font-family: inherit; font-size: 16px; cursor: pointer; color: var(--ink); ' + (pick === h ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 1px solid var(--line); background: var(--surface);')
+      num: String(h), aria: h + ' hours', sel: pick === h, ariaSel: pick === h ? 'true' : 'false',
+      pick: () => this.setState({ pick: h, pickFor: acct, menu: false, menuFor: propMenu }),
+      style: 'display: flex; align-items: center; gap: 10px; width: 100%; height: 48px; padding: 0 10px; box-sizing: border-box; border-radius: 6px; font-family: inherit; font-size: 16px; line-height: 24px; text-align: left; cursor: pointer; color: var(--ink); ' + (pick === h ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 2px solid transparent; background: transparent;')
     }));
 
     const noPick = !pick;
@@ -162,8 +167,10 @@ class Component extends DCLogic {
       isVendor: vendor,
       accountTypeName: vendor ? 'vendor' : 'trader',
       opts,
-      pickNum: pick ? String(pick) : '', pickUnit: pick ? ' h' : 'Not set',
-      pickValStyle: 'flex-shrink: 0; font-size: 16px; line-height: 24px; color: ' + (pick ? 'var(--ink);' : 'var(--ink-muted);'),
+      pickNum: pick ? String(pick) : '', hasPick: !!pick,
+      menuOpen, menuExpanded: menuOpen ? 'true' : 'false',
+      menuChevron: menuOpen ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6',
+      toggleMenu: () => this.setState({ menu: !menuOpen, menuFor: propMenu }),
       noPick,
       goStyle,
       go: () => { if (pick) this.setState({ stepOver: 'done', stepFor: propStep, pick: pick, pickFor: acct }); },

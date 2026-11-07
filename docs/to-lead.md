@@ -453,3 +453,18 @@ The words to sign are steps 2 and 3. The rest was signed before or is unchanged.
 - **Middle option:** not on the card. A small "+2" shows instead, and a buyer taps it (phone) or points at it (desktop) to see those badges, each with one line on what it means ("Fast: replies in about 4 min on average.").
 - **Hidden:** nobody sees it, and there's no "+2".
 - **Design's recommendation:** keep the middle option and call it **"When tapped"** (it works on both phone and desktop), helper "Shows when someone taps the +N on your offer." Or, if the owner prefers fewer choices, drop it.
+
+## 7 Nov 2026: canvas v126 (badges proposal, session dropdown, link hover)
+
+**Badges, design's proposal** (new board "Badges"; pictures `docs/design-shots/2026-11-07/badges-night.png` and `badges-day.png`). The owner liked tap/hover showing more and asked design to make the card and badges look like part of the site. What's new:
+- **Seals.** Each badge is a small rounded seal, coloured by family: reputation (Trusted, Clean record, Veteran) in escrow teal; speed (Fast) in caution amber; security (PGP verified, Security key) and milestones (100 / 500 trades, with the number as the glyph) in ink; New in muted. Orange stays for actions only.
+- **Chips on the card.** A 30 px chip: the seal, then the badge name in sentence case, on surface-raised with a thin border in the family colour. Badges no longer look like status chips.
+- **Trader block on the offer card.** Avatar with an online dot (teal ring when Trusted), name with a small Vendor tag, "Online · replies in about 4 min", three stat tiles (trades, % positive, XMR traded), then up to 2 featured badges and "+3".
+- **Tap and hover** (G38 middle option). Phone: tapping "+3" or a badge opens a sheet listing all visible badges, each with what it means and when it was earned. Desktop: hovering opens the same list in a small card under the pointer.
+- Badge names, meanings and dates are examples (COPY-UNSIGNED). Once the owner likes it, design applies it to OfferAd, BuyOffers/SellOffers, Profile and BadgeSettings.
+
+**Session length (G23–G25):** SessionLength (+Wide) and Devices (+Wide) now use a dropdown with nothing pre-selected. Traders get 2/4/8/12 h, vendors 2/6/12/24 h, and a new choice counts from now. Signup no longer asks for a session length (SignupSecurity +Wide). SessionExtend notes now list 2/4/8/12. New copy: field "Stay logged in for", empty "Choose a length".
+
+**Link hover (G40):** every board's link hover rule is dark ink. Known gap: on 17 boards some links set their colour inline, which overrides the hover. The build should put link colour in CSS, not inline. The design follow-up is to move those inline colours into the shared rule.
+
+**Still in progress:** Ban-Notice wording (G39), no-date warnings (G16), cancel wording (G2), the hold before-and-after review (G29).

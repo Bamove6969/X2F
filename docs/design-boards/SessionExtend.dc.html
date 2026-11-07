@@ -104,7 +104,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
       <span style="font-weight: 600;">Session = the chosen time. At the end: confirm with a passkey, security key, PGP key or the password (plus authenticator code if set up) to extend by the same time; otherwise logged out (owner, 2 Nov). No fixed maximum.</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>Traders: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
+        <li>Traders: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">8</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
         <li>Vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</li>
         <li>No answer before the countdown ends: logged out</li>
       </ul>
@@ -120,12 +120,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <aside aria-label="Decided by the owner: the password can extend" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
       <span style="font-weight: 600;">The password also works for extending, plus the authenticator code when the account has one. Accounts with only a username and password can extend too.</span>
-      <span style="color: var(--ink-muted);">&#8220;It is a very low risk thing.&#8221; Preview with the methods tweak.</span>
+      <span style="color: var(--ink-muted);">“It is a very low risk thing.” Preview with the methods tweak.</span>
     </aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","extended","logged-out"],"default":"ask"},"accountType":{"editor":"enum","options":["trader","vendor"],"default":"trader"},"methods":{"editor":"enum","options":["strong","password+authenticator","username-password"],"default":"strong"},"$preview":{"width":390,"height":1479}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","extended","logged-out"],"default":"ask"},"accountType":{"editor":"enum","options":["trader","vendor"],"default":"trader"},"methods":{"editor":"enum","options":["strong","password+authenticator","username-password"],"default":"strong"},"$preview":{"width":390,"height":1459}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { stepOver: null, stepFor: '', pwOpen: false, pwFor: '', pw: '', code: '' }; }
   renderVals() {
@@ -145,7 +145,7 @@ class Component extends DCLogic {
     const step = (s.stepOver && s.stepFor === propStep) ? s.stepOver : propStep;
 
     // Board = 844 px phone screen + the design-notes block under it (measured, night, fonts loaded).
-    const NOTES_H = 635;
+    const NOTES_H = 615;
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + (844 + NOTES_H) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     // Owner, 2 Nov: extending also works with the password, plus the authenticator code when the account has one;

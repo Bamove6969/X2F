@@ -784,7 +784,7 @@
       "x": 1950,
       "y": 37900,
       "w": 390,
-      "h": 3671,
+      "h": 3679,
       "page": "all",
       "title": "G2 \u00b7 Devices and sessions",
       "is_interactive": true
@@ -793,7 +793,7 @@
       "x": 2420,
       "y": 37900,
       "w": 1280,
-      "h": 2231,
+      "h": 2239,
       "page": "all",
       "title": "G2 \u00b7 Devices and sessions (wide)",
       "is_interactive": true
@@ -820,7 +820,7 @@
       "x": 0,
       "y": 41700,
       "w": 390,
-      "h": 3366,
+      "h": 2492,
       "page": "all",
       "title": "H1 \u00b7 Signup: login strength",
       "is_interactive": true
@@ -937,7 +937,7 @@
       "x": 0,
       "y": 50360,
       "w": 1280,
-      "h": 2998,
+      "h": 2327,
       "page": "all",
       "title": "H1 \u00b7 Signup: login strength (wide)",
       "is_interactive": true
@@ -1027,7 +1027,7 @@
       "x": 5800,
       "y": 37900,
       "w": 390,
-      "h": 1453,
+      "h": 1649,
       "page": "all",
       "title": "G4 \u00b7 After login: session length",
       "is_interactive": true
@@ -1036,7 +1036,7 @@
       "x": 6340,
       "y": 37900,
       "w": 1280,
-      "h": 1289,
+      "h": 1449,
       "page": "all",
       "title": "G4 \u00b7 After login: session length (wide)",
       "is_interactive": true
@@ -1099,7 +1099,7 @@
       "x": 13680,
       "y": 37900,
       "w": 390,
-      "h": 1479,
+      "h": 1459,
       "page": "all",
       "title": "G8 \u00b7 Stay logged in? (extend session)",
       "is_interactive": true
@@ -1108,7 +1108,7 @@
       "x": 14220,
       "y": 37900,
       "w": 1280,
-      "h": 1351,
+      "h": 1331,
       "page": "all",
       "title": "G8 \u00b7 Stay logged in? (wide)",
       "is_interactive": true
@@ -1192,6 +1192,15 @@
       "h": 2069,
       "page": "all",
       "title": "FAQ-Wide",
+      "is_interactive": true
+    },
+    "Badges.dc.html": {
+      "x": 0,
+      "y": 58488,
+      "w": 1280,
+      "h": 2269,
+      "page": "all",
+      "title": "Badges \u00b7 design proposal, 7 Nov",
       "is_interactive": true
     }
   },
@@ -1355,6 +1364,13 @@
       "text": "Settings and FAQ \u00b7 5 Nov (draft copy)",
       "kind": "title1",
       "maxW": 1840
+    },
+    "badges-row": {
+      "x": 0,
+      "y": 58188,
+      "text": "Badges and the trader card \u00b7 7 Nov (design proposal)",
+      "kind": "title1",
+      "maxW": 1280
     }
   },
   "order": [
@@ -1489,7 +1505,8 @@
     "Settings.dc.html",
     "Settings-Wide.dc.html",
     "FAQ.dc.html",
-    "FAQ-Wide.dc.html"
+    "FAQ-Wide.dc.html",
+    "Badges.dc.html"
   ],
   "pages": [
     {
