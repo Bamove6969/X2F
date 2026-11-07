@@ -243,7 +243,8 @@ export function chatCantDoText(code: CantDoCode): string {
  * The offer cap the API enforces (owner 2026-11-01, C2-A1: 3 buying and 3 selling offers per
  * account; apps/api/src/offers/routes.ts OFFER_CAP_DEFAULTS), said wherever the cap is explained:
  * PostOffer's and My offers' CantDoThat for `too-many-offers` and the My offers footnote.
- * COPY-UNSIGNED
+ * PostOffer says the 409's own number (`offerCapLine`, review M2); the My offers footnote and its
+ * bulk turn-on refusal (whose per-offer result carries no cap) say this default. COPY-UNSIGNED
  */
 export const OFFER_CAP_LINE = 'You can have 3 buying and 3 selling offers.'; // COPY-UNSIGNED
 
