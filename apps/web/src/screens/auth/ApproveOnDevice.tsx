@@ -22,7 +22,7 @@ import { formatRemaining } from '../../ui/Countdown.js';
 import { Disclosure } from '../../ui/Disclosure.js';
 import { FlowScreen } from '../../ui/FlowScreen.js';
 import { Icon, StatusIcon } from '../../ui/icons.js';
-import { authApi } from './authApi.js';
+import { authApi, deviceLabel } from './authApi.js';
 import '../screens.css';
 
 export const POLL_MS = 2000;
@@ -125,6 +125,10 @@ export function ApproveOnDevice({
             You're in
           </h2>
           <p className="x2f-body">Your other device approved this login.</p>
+          {/* LoginApprove board (design build review 7 Nov). COPY-UNSIGNED */}
+          <p className="x2f-body" data-part="approve-now-yours">
+            {deviceLabel()} is now one of your devices.
+          </p>
           {loggedOut.length > 0 ? (
             <p className="x2f-fine" data-part="approve-logged-out">
               Logged out to make room: {loggedOut.join(', ')}.
