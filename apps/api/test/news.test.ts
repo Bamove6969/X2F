@@ -17,6 +17,7 @@ import {
 } from '../src/news/store.js';
 import { testApp } from './helpers/app.js';
 import { spySql } from './helpers/sqlSpy.js';
+import { MAINTENANCE_GATE_SQL } from '../src/site/routes.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-29T09:00:00Z');
@@ -83,7 +84,8 @@ describe('GET /v1/news', () => {
     const spy = spySql(deps.db);
     try {
       await app.inject({ method: 'GET', url: '/v1/news' });
-      expect(spy.sql()).toEqual(['select id, title, body, published_at, edited_at from news order by published_at desc, id desc limit $1']);
+      // Plan 4 Task 8's maintenance gate reads site_flags first (a read, on every /v1 route).
+      expect(spy.sql().filter((q) => q !== MAINTENANCE_GATE_SQL)).toEqual(['select id, title, body, published_at, edited_at from news order by published_at desc, id desc limit $1']);
     } finally {
       spy.restore();
     }
