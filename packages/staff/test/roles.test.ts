@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { GRANTABLE_PERMS, NAV, PERMS, STAFF_ROLES, can, type Perm, type StaffRole } from '@x2f/staff';
+import { GRANTABLE_PERMS, NAV, PERMS, STAFF_ROLES, can, navFor, type Perm, type StaffRole } from '@x2f/staff';
 
 // Every role × perm pair, written out so a grant change shows up in review (Plan 4 Task 1).
 // Revisions: `stats.read` (owner only, Revision 2026-10-28), `reputation.review` (mods and senior
@@ -20,8 +20,11 @@ const GRANTS: Record<Perm, Record<StaffRole, boolean>> = {
   'accounts.freeze': { owner: true, senior: true, mod: false, helper: false },
   'accounts.ban': { owner: true, senior: true, mod: false, helper: false },
   'reputation.review': { owner: true, senior: true, mod: true, helper: false },
+  // Owner 2026-11-02: only senior moderators and the owner enter a verified past-rep figure.
+  'reputation.verify': { owner: true, senior: true, mod: false, helper: false },
   'tickets.handle': { owner: true, senior: false, mod: false, helper: false },
-  'feedback.read': { owner: true, senior: false, mod: false, helper: false },
+  // Owner Q60 (6 Nov): senior moderators always; moderators and helpers only by grant.
+  'feedback.read': { owner: true, senior: true, mod: false, helper: false },
   'training.read': { owner: true, senior: true, mod: true, helper: false },
   'training.write': { owner: true, senior: false, mod: false, helper: false },
   self: { owner: true, senior: true, mod: true, helper: true },
@@ -52,7 +55,11 @@ describe('can', () => {
   });
 
   test('a per-person grant adds only a grantable perm', () => {
-    expect(GRANTABLE_PERMS).toEqual(['tickets.handle']);
+    expect(GRANTABLE_PERMS).toEqual(['tickets.handle', 'feedback.read']);
+    // Owner Q60: feedback for a moderator or a helper is a per-person checkbox.
+    expect(can('mod', 'feedback.read')).toBe(false);
+    expect(can('mod', 'feedback.read', ['feedback.read'])).toBe(true);
+    expect(can('helper', 'feedback.read', ['feedback.read'])).toBe(true);
     expect(can('helper', 'tickets.handle', ['tickets.handle'])).toBe(true);
     expect(can('mod', 'tickets.handle', ['tickets.handle'])).toBe(true);
     // A grant list can never widen a role beyond the grantable perms.
@@ -74,7 +81,13 @@ describe('NAV', () => {
   });
   test('senior and mod', () => {
     expect(NAV.mod).toEqual(['disputes', 'training', 'log']);
-    expect(NAV.senior).toEqual(['disputes', 'training', 'log']);
+    expect(NAV.senior).toEqual(['disputes', 'training', 'log', 'feedback']);
+  });
+  test('owner Q60: a feedback grant adds Feedback to a moderator\'s or helper\'s menu, once', () => {
+    expect(navFor('mod', ['feedback.read'])).toEqual(['disputes', 'training', 'log', 'feedback']);
+    expect(navFor('helper', ['feedback.read'])).toEqual(['feedback']);
+    expect(navFor('mod', ['tickets.handle'])).toEqual(['disputes', 'training', 'log']);
+    expect(navFor('senior', ['feedback.read'])).toEqual(['disputes', 'training', 'log', 'feedback']);
   });
   test('helper sees nothing', () => {
     expect(NAV.helper).toEqual([]);

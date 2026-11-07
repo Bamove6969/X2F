@@ -44,11 +44,52 @@ describe('migrations', () => {
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
         '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
         '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '015_team_members.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql',
-        '109_owner_settings.sql', '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '199_team_audit_trades.sql', '201_activity_log.sql', '301_reviews.sql', '302_feedback.sql', '304_past_reputation.sql', '306_feedback_form.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql',
+        '109_owner_settings.sql', '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '199_team_audit_trades.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '205_staff_invites.sql', '209_staff_grants.sql', '301_reviews.sql', '302_feedback.sql', '304_past_reputation.sql', '306_feedback_form.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
       await db.end();
+    }
+  });
+
+  it('202: ends the trader-site sessions staff and the owner had before the split (lead review M-3)', async () => {
+    const db = await emptyDb();
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
+    try {
+      const all = await readdir(MIGRATIONS_DIR);
+      for (const f of all.filter((n) => n < '202')) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
+      await migrate(db, dir);
+      const account = async (kind: string, n: number) =>
+        (
+          await db.query<{ id: string }>(
+            `insert into accounts (display_name, display_key, login_tag, login_tag_key_id, legacy_login_name, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at)
+             values ($1, $2, $3, 1, true, $4, $5, $6, $7, now()) returning id`,
+            [`M3.${kind}${n}`, `m3.${kind}${n}`, randomBytes(32), kind, randomBytes(32), kind === 'trader' ? '2026-10-17' : null, kind === 'trader' ? new Date() : null],
+          )
+        ).rows[0]!.id;
+      const session = async (accountId: string, revoked: Date | null = null) =>
+        (
+          await db.query<{ id: string }>(
+            `insert into sessions (account_id, token_hash, level, device_label, created_at, last_seen_at, expires_at, revoked_at)
+             values ($1, $2, 'full', 'D', now(), now(), now() + interval '12 hours', $3) returning id`,
+            [accountId, randomBytes(32), revoked],
+          )
+        ).rows[0]!.id;
+      const mod = await session(await account('staff', 1));
+      const own = await session(await account('owner', 1));
+      const trader = await session(await account('trader', 1));
+      const earlier = new Date('2026-11-01T00:00:00Z');
+      const already = await session(await account('staff', 2), earlier);
+      await migrate(db);
+      const { rows } = await db.query<{ id: string; revoked_at: Date | null; app: string }>('select id, revoked_at, app from sessions');
+      const of = (id: string) => rows.find((r) => r.id === id)!;
+      expect(of(mod).revoked_at).not.toBeNull();
+      expect(of(own).revoked_at).not.toBeNull();
+      expect(of(trader).revoked_at).toBeNull();
+      expect(of(already).revoked_at).toEqual(earlier);
+      expect(rows.every((r) => r.app === 'trader')).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
     }
   });
 
@@ -67,7 +108,7 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '015_team_members.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql',
-        '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '199_team_audit_trades.sql', '201_activity_log.sql', '301_reviews.sql', '302_feedback.sql', '304_past_reputation.sql', '306_feedback_form.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql',
+        '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '199_team_audit_trades.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '205_staff_invites.sql', '209_staff_grants.sql', '301_reviews.sql', '302_feedback.sql', '304_past_reputation.sql', '306_feedback_form.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql',
       ]);
       const { rows } = await db.query('select display_name, display_key, login_name, login_key, legacy_login_name from accounts');
       expect(rows).toEqual([{ display_name: 'Old.Trader', display_key: 'old.trader', login_name: 'Old.Trader', login_key: 'old.trader', legacy_login_name: true }]);
@@ -143,7 +184,7 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '015_team_members.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql',
-        '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '199_team_audit_trades.sql', '201_activity_log.sql', '301_reviews.sql', '302_feedback.sql', '304_past_reputation.sql', '306_feedback_form.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql',
+        '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '199_team_audit_trades.sql', '201_activity_log.sql', '202_staff.sql', '203_key_taps.sql', '205_staff_invites.sql', '209_staff_grants.sql', '301_reviews.sql', '302_feedback.sql', '304_past_reputation.sql', '306_feedback_form.sql', '308_traded_totals.sql', '309_overturned_reviews.sql', '310_pastrep_verified_usd.sql',
       ]);
 
       expect((await db.query('select method from confirm_tokens')).rows).toEqual([{ method: 'password' }]);
