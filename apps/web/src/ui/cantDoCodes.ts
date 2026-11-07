@@ -65,6 +65,13 @@ export const CANT_DO_CODES = [
   // ban): check them when those land.
   'lien',
   'trade-ban',
+  // Plan 4 Task 4: a staff member's login hours (a staff login, and a staff session when the
+  // window closes). Classified here for the error-code test; its words come with the staff web app
+  // (Plan 4 Task 16).
+  'outside-login-hours',
+  // Plan 5 Task 10 on the staff API: the claim whose figure staff set is no longer live. Its words
+  // come with the staff web app (Plan 4 Task 16).
+  'not-live',
   // Plan 5 Task 10 (P5-A21, P5-A24): one live past-reputation claim per site, and a PGP key backs
   // one account. No popup words yet (Task 12's PastRepClaim screen); lead question.
   'site-claimed',
@@ -74,6 +81,14 @@ export type CantDoCode = (typeof CANT_DO_CODES)[number];
 
 /** Every other code the web knows, with why it is not a "can't do that" refusal. */
 export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
+  // Plan 4 Tasks 5 and 7: staff-API answers traders never get (their words come with the staff web
+  // app, Plan 4 Task 16).
+  'tap-invalid': 'a staff security-key tap (staff app only)',
+  'invite-invalid': 'a staff invite link that is used, expired or cancelled (staff app only)',
+  'security-key-required': 'a staff sign-up step: a security key must be added (staff app only)',
+  'two-factors-required': 'a staff sign-up step: a second login method must be added (staff app only)',
+  'owner-protected': "the owner's own account in staff management (staff app only)",
+  'owner-needs-two-keys': 'the owner keeps at least two security keys (staff app only)',
   'bad-request': 'a malformed request (a fault)',
   // Hold model v3: the drafts submitted are not the ones there are (another tab changed them): reload and review again.
   'changes-changed': 'a state conflict: the list changed since it was reviewed',

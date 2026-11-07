@@ -9,6 +9,7 @@ import { PRICE_FEED_DEFAULTS, createPriceFeed, type PriceQuote, type PriceSource
 import { createFxRates, decimalToScaled, type FxHealth, type FxSource } from '../src/price/fx.js';
 import { PRICE_HEALTH_DEFAULTS, createAlertGrouper, type HealthSnapshot, type PriceAlert } from '../src/price/health.js';
 import { createMarketPrices } from '../src/price/market.js';
+import { priceHealthBody } from '../src/price/routes.js';
 import { FX_SETTING_KEYS, loadFxSettings } from '../src/price/settings.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
@@ -532,20 +533,15 @@ describe('with the database', () => {
     expect(gbp.json()).toEqual({ error: 'price-unavailable' });
   });
 
-  describe('GET /v1/owner/price-health', () => {
-    it('refuses no session (401), a trader and staff (403)', async () => {
-      expect((await app.inject({ method: 'GET', url: '/v1/owner/price-health' })).statusCode).toBe(401);
-      for (const id of [traderId, staffId]) {
-        const res = await app.inject({ method: 'GET', url: '/v1/owner/price-health', headers: { cookie: await cookieFor(id) } });
-        expect(res.statusCode).toBe(403);
-        expect(res.json()).toEqual({ error: 'wrong-account-kind' });
-      }
+  describe("the owner's Price health (staff API only, owner Q13)", () => {
+    it('is gone from the trader API: 404 for no session and for the owner', async () => {
+      expect((await app.inject({ method: 'GET', url: '/v1/owner/price-health' })).statusCode).toBe(404);
+      const res = await app.inject({ method: 'GET', url: '/v1/owner/price-health', headers: { cookie: await cookieFor(ownerId) } });
+      expect(res.statusCode).toBe(404);
     });
 
-    it('shows the owner every source, the paused currencies and the settings', async () => {
-      const res = await app.inject({ method: 'GET', url: '/v1/owner/price-health', headers: { cookie: await cookieFor(ownerId) } });
-      expect(res.statusCode).toBe(200);
-      const body = res.json();
+    it('priceHealthBody (served at GET /staff/v1/price-health) shows every source, the paused currencies and the settings', async () => {
+      const body = priceHealthBody(deps.prices);
       expect(body.xmr).toEqual([
         { name: 'kraken', lastGoodAt: T0.toISOString(), consecutiveFailures: 0, inUse: true },
         { name: 'bitfinex', lastGoodAt: T0.toISOString(), consecutiveFailures: 0, inUse: true },

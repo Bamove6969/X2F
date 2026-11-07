@@ -31,8 +31,8 @@ import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
 import { requestOrigin } from './origin.js';
-import { gateChange, stagedReply, requireNotHeld } from './hold.js';
-import { requireSession, startSession } from './sessions.js';
+import { gateChange, lockAccount, requireNotHeld, stagedReply, withTx } from './hold.js';
+import { TRADER_LOGIN_KINDS, realmOf, requireSession, startSession } from './sessions.js';
 import { NIL_UUID } from './throttle.js';
 
 // ---------------------------------------------------------------------------------------------
@@ -212,7 +212,9 @@ export const PGP_BODY_LIMIT = 64 * 1024;
 const START_WINDOW_MS = 5 * 60_000;
 const STARTS_PER_DEVICE = 5;
 
-type Purpose = 'register' | 'login' | 'confirm' | 'add-key' | 'team-join';
+type Purpose = 'register' | 'login' | 'confirm' | 'add-key' | 'team-join' | 'staff-join';
+/** The sign-ups that prove a pasted key before it is stored: a team member's (Plan 2 Task 18) and a staff invitee's (Plan 4 Task 7). */
+export type JoinPurpose = 'team-join' | 'staff-join';
 
 export interface IssuedChallenge {
   challengeId: string;
@@ -507,12 +509,13 @@ async function assertStartAllowed(db: Queryable, tag: string, device: Buffer, no
  * creates them): same account, same device, unused, unexpired. Read, not consumed;
  * `completeLogin` consumes it at `finish`. Null for anything else.
  */
-async function pendingFirstFactor(deps: Deps, pendingId: string, accountId: string, device: Buffer | null, now: Date) {
+async function pendingFirstFactor(deps: Deps, pendingId: string, accountId: string, device: Buffer | null, now: Date, app: 'trader' | 'staff') {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pendingId) || device === null) return null;
   const { rows } = await deps.db.query<{ payload: Record<string, unknown> }>(
     `select payload from challenges
-      where id = $1 and purpose = 'second-factor' and method = 'pair' and account_id = $2 and device_hash = $3 and used_at is null and expires_at > $4`,
-    [pendingId, accountId, device, now],
+      where id = $1 and purpose = 'second-factor' and method = 'pair' and account_id = $2 and device_hash = $3 and used_at is null and expires_at > $4
+        and payload->>'app' = $5`,
+    [pendingId, accountId, device, now, app],
   );
   return rows[0]?.payload ?? null;
 }
@@ -529,17 +532,20 @@ function usedFingerprints(payload: Record<string, unknown>): string[] {
 export interface PgpLoginOptions {
   kinds: AccountKind[];
   afterAuthenticate?: (accountId: string) => Promise<void>;
+  /** Route `config` for both routes (Plan 4's staff app marks them `{ perm: 'public-login' }`). */
+  routeConfig?: Record<string, unknown>;
 }
 
 /**
  * Registers `POST start` and `POST finish` for PGP login under the plugin's prefix. `buildApi`
- * mounts it at `/v1/login/pgp` for every kind; Plan 4 mounts it on the staff app. `start` takes
- * `{ key, pendingId? }`: `key` is the person's whole armored public key (`loginStart`). A key whose
- * account's kind is not in `kinds` is treated as an unknown key (decoy). Both finish through
- * `completeLogin`.
+ * mounts it at `/v1/login/pgp` for `TRADER_LOGIN_KINDS` (no staff); Plan 4 mounts it on the staff
+ * app. `start` takes `{ key, pendingId? }`: `key` is the person's whole armored public key
+ * (`loginStart`). A key whose account's kind is not in `kinds` is treated as an unknown key
+ * (decoy). Both finish through `completeLogin`.
  */
 export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): void {
-  app.post('/start', { bodyLimit: PGP_BODY_LIMIT }, async (req, reply) => {
+  const config = opts.routeConfig ?? {};
+  app.post('/start', { bodyLimit: PGP_BODY_LIMIT, config }, async (req, reply) => {
     const deps = req.server.deps;
     // Every answer, refusals included, gives the browser a device cookie (`loginStart` sets it before
     // binding the challenge).
@@ -551,7 +557,7 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
     }
   });
 
-  app.post('/finish', async (req, reply) => {
+  app.post('/finish', { config }, async (req, reply) => {
     const deps = req.server.deps;
     ensureDeviceCookie(req, reply);
     const b = body(req);
@@ -643,7 +649,7 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
   const recipientOk = await pastedRecipientStillValid(merged.pasted, merged.key, now);
   const { pending } = await pendingKey(deps.config, merged.armored, fingerprint, now);
   // The pending-step lookup runs whenever a pendingId is given, known key or not.
-  const pendingRow = pendingId !== undefined ? await pendingFirstFactor(deps, pendingId, account?.id ?? NIL_UUID, device, now) : undefined;
+  const pendingRow = pendingId !== undefined ? await pendingFirstFactor(deps, pendingId, account?.id ?? NIL_UUID, device, now, realmOf(req).app) : undefined;
   // The second step of a staff or owner login: this key's account's own pending login, from this
   // device, with a key other than the first step's.
   const pendingOk = pendingRow === undefined || (pendingRow !== null && !usedFingerprints(pendingRow).includes(fingerprint));
@@ -811,13 +817,14 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
 export async function issueTeamJoinChallenge(
   deps: Deps,
   req: FastifyRequest,
-  a: { accountId: string | null; publicKey: string; payload: Record<string, unknown> },
+  a: { accountId: string | null; publicKey: string; payload: Record<string, unknown>; purpose?: JoinPurpose },
 ): Promise<IssuedChallenge & { fingerprint: string }> {
+  const purpose = a.purpose ?? 'team-join';
   const now = deps.clock();
   const inspection = await inspectOrRefuse(a.publicKey, now);
   const { storable, pending } = await pendingKey(deps.config, a.publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {
-    accountId: a.accountId, sessionId: null, purpose: 'team-join', purposeText: PGP_PURPOSE['team-join'],
+    accountId: a.accountId, sessionId: null, purpose, purposeText: PGP_PURPOSE[purpose],
     armoredKeys: [storable], payload: { ...a.payload, key: pending },
   });
   return { ...issued, fingerprint: inspection.fingerprint };
@@ -834,8 +841,9 @@ export async function checkTeamJoinCode(
   challengeId: string,
   code: string,
   accountId: string | null,
+  purpose: JoinPurpose = 'team-join',
 ): Promise<{ payload: Record<string, unknown>; fingerprint: string; armored: string }> {
-  const row = await checkPgpCode(deps, req, challengeId, code, { purpose: 'team-join' });
+  const row = await checkPgpCode(deps, req, challengeId, code, { purpose });
   const device = deviceHash(req);
   const sameDevice = device !== null && row.device_hash !== null && row.device_hash.equals(device);
   if (row.account_id !== accountId || !sameDevice) throw new ApiError(400, 'challenge-expired');
@@ -866,8 +874,45 @@ export async function applyPgpKey(db: Queryable, accountId: string, fingerprint:
 }
 
 /**
- * Every PGP route: `GET /v1/pgp/signing-key`, register, login (mounted at `/v1/login/pgp` for all
- * kinds), confirm, and adding a key to the account.
+ * Lead re-review 6 Nov item 1: adding a PGP key to one's own account on the staff site (staff and
+ * the owner have no trader session). `POST <base>/start { publicKey }` checks the key and sends a
+ * challenge to it (as the trader route); `POST <base>/finish { challengeId, code, tapId }` checks the
+ * code, then in one transaction with the account locked runs `inTx` (the staff route consumes a
+ * security-key tap bound to the fingerprint and logs it) and stores the key. A refused tap stores
+ * nothing; the code is used up, so the person starts again. No hold: staff have none.
+ */
+export function pgpAddKeyRoutesAt(
+  app: FastifyInstance,
+  base: string,
+  o: {
+    preHandler: preHandlerAsyncHookHandler[];
+    config: Record<string, unknown>;
+    inTx(c: Queryable, req: FastifyRequest, fingerprint: string): Promise<void>;
+  },
+): void {
+  app.post(`${base}/start`, { bodyLimit: PGP_BODY_LIMIT, config: o.config, preHandler: [...o.preHandler, inspectNewKey] }, addKeyStart);
+  app.post(`${base}/finish`, { config: o.config, preHandler: o.preHandler }, async (req) => {
+    const deps = req.server.deps;
+    const b = body(req);
+    const row = await checkPgpCode(deps, req, str(b, 'challengeId'), str(b, 'code'), {
+      purpose: 'add-key', accountId: req.auth.accountId, sessionId: req.auth.sessionId,
+    });
+    const pending = readPendingKey(row.payload, 'key');
+    const sealed = Buffer.from(pending.keyEnc, 'base64');
+    openKey(deps.config, sealed, pending.fingerprint); // throws for a tampered or foreign payload
+    const now = deps.clock();
+    await withTx(deps.db, async (c) => {
+      await lockAccount(c, req.auth.accountId);
+      await o.inTx(c, req, pending.fingerprint);
+      await applyPgpKey(c, req.auth.accountId, pending.fingerprint, sealed, now);
+    });
+    return { fingerprint: pending.fingerprint };
+  });
+}
+
+/**
+ * Every PGP route: `GET /v1/pgp/signing-key`, register, login (mounted at `/v1/login/pgp` for
+ * `TRADER_LOGIN_KINDS`: never staff, owner 2026-11-03), confirm, and adding a key to the account.
  */
 export async function pgpRoutes(app: FastifyInstance): Promise<void> {
   app.get('/v1/pgp/signing-key', async (req) => ({
@@ -878,7 +923,7 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/register/pgp/start', { bodyLimit: PGP_BODY_LIMIT }, registerStart);
   app.post('/v1/register/pgp/finish', registerFinish);
 
-  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: ['trader', 'staff', 'owner', 'member'] }), { prefix: '/v1/login/pgp' });
+  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...TRADER_LOGIN_KINDS] }), { prefix: '/v1/login/pgp' });
 
   app.post('/v1/confirm/pgp/start', { preHandler: requireSession() }, confirmStart);
   app.post('/v1/confirm/pgp/finish', { preHandler: requireSession() }, confirmFinish);
