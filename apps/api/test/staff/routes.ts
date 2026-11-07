@@ -77,6 +77,9 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/price-health', perm: 'stats.read', allowed: OWNER },
   // Plan 5 Task 10 (owner 2026-11-02): a past-rep claim's verified dollar figure.
   { method: 'PUT', url: '/staff/v1/past-rep/:id/verified-usd', perm: 'reputation.verify', allowed: ['owner', 'senior'], body: { usdCents: 100 } },
+  // Lead hold v3 review (owner G35): a recovery-code hold extended or ended by staff, logged.
+  { method: 'POST', url: '/staff/v1/accounts/:id/hold/extend', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
+  { method: 'POST', url: '/staff/v1/accounts/:id/hold/end', perm: 'accounts.freeze', allowed: ['owner', 'senior'], body: {} },
   // Plan 5 Tasks 4 and 21: platform feedback and the feedback form, read by the owner.
   // Owner Q60: senior moderators by role, moderators and helpers by grant.
   { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },

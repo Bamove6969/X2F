@@ -92,6 +92,9 @@ export const LOG_ACTIONS = {
   'hold.placed': { accountId: 'uuid', side: 'id', kind: 'id' },
   'hold.lifted': { accountId: 'uuid', side: 'id', kind: 'id' },
   'account.frozen': { accountId: 'uuid' },
+  // A recovery-code hold extended or ended by staff (lead hold v3 review; owner G35).
+  'hold.extended': { accountId: 'uuid', holdUntil: 'iso' },
+  'hold.ended': { accountId: 'uuid' },
   'account.trade-banned': BAN,
   'account.site-banned': BAN,
   'account.ban-lifted': { accountId: 'uuid', kind: 'id' },

@@ -639,7 +639,7 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
 ];
 
 /**
- * Moderator hook (no route yet: the staff API comes later). Inside a transaction with the account
+ * Moderator hook (route: staff/holds.ts). Inside a transaction with the account
  * locked: moves the account hold's end to `until` (never earlier than it was) and the recovery
  * sessions' own holds with it. Alert `hold-extended` `{ holdUntil }`. False when no hold runs.
  */
@@ -659,7 +659,7 @@ export async function extendHoldByModerator(db: Queryable, accountId: string, un
 }
 
 /**
- * Moderator hook (no route yet): ends the account's hold now, in a transaction of its own with the
+ * Moderator hook (route: staff/holds.ts): ends the account's hold now, in a transaction of its own with the
  * account locked: the pending change of an older-model hold is discarded, the held trades are
  * released and resumed after the commit, alert `hold-ended` `{ reason: 'moderator' }`. Sessions
  * are left as they are (the moderator vetted the person in). False when no hold ran.
