@@ -22,3 +22,18 @@ A screen passes when someone who sees it for two seconds can say what's happenin
 ## Process per board
 
 Render night and day (every variant that changes layout). Score the board against 1–9: what's missing and what looks plain. Fix it in the board, re-measure the heights, then render again and look. Record a one-line "what changed" per board.
+
+## Cohesion rules for the craft pass (owner: cohesiveness is extremely important)
+
+Several designers work in parallel, so every upgrade must come from one shared kit. Don't invent a new look on one board.
+
+- **Person / trader identity:** the exact `avatar()` and `trader()` markup in `gen/badges.py`. Phone list size: a 40 px avatar; header and hero: 48 px. Online dot is teal; a ring only for Trusted. Team members use initials on `--team`; moderators use a `--mod` tile with the shield glyph, inside disputes only.
+- **Badges:** `chip()` / `seal()` / `more()` from `gen/badges.py`, unchanged.
+- **Stat tiles:** `stat()` from `gen/badges.py` (mono 16 value over a 12 muted label, surface-raised, radius 10), in a grid of 3.
+- **Icon tile:** 40×40, radius 12, 20 px stroke-1.75 icon. Neutral is surface-raised + ink; toned is the tone at 14–16% + tone. Nothing else.
+- **Inner block:** surface-raised, radius 12, rows min-height 48, padding 0 14, label 14/20 muted left, value mono 15/500 right, 1px surface dividers inset 14.
+- **Hero:** v2 §6 exactly (gradient wash 14% to 140/160 px, 35% border, chip + key mark row).
+- **Empty state:** v2 §16, plus at most three small blocks in family tones (radius tokens) above the title. Copy the first one made exactly; don't make a new one per board.
+- **Headers:** v2 §5 key-screen or compact header, exactly as on BuyerPay / Refunded.
+- **Pre-login screens:** the Login-Backup-Wide pattern (centred wordmark, single column).
+- **Anything genuinely new** (a component no board had): name it in your report so it can be made the shared version, and reuse your first version on every board you touch.
