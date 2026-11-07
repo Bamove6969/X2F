@@ -434,3 +434,7 @@ What matches: the Refunded dispute body copy follows v119, apart from the mono n
 - Should the "never available" list also name holds? Recommendation: yes. "Never available to members: wallets, holds, security, sessions, team settings, account type and deleting the account."
 
 **FlexOffer-Post (+Wide).** Each payment type's price change is now "Above market" / "Below market" / "Same as band", plus a typed % (max 50%), the same as the bands. New copy: "Price with Zelle" · "Same as band" · "Fix the field marked in red to post this offer." (was "…the band marked in red…").
+
+## 7 Nov 2026: canvas v124, final nudge sound
+
+BuyerPaidWaiting (+Wide) notes now name the final sound: the real two-blast "Ahooga", 3.76 s (blasts 1.30 s and 1.80 s), `assets/sound/x2f-nudge-final.wav` and `-soft` on comms, Freesound 480002 (CC0). It replaces the 1.84 s cut; to cut from the original WAV before launch.
