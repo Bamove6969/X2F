@@ -5,7 +5,7 @@ import { pgpAddKeyRoutesAt } from '../auth/pgp.js';
 import { ApiError } from '../errors.js';
 import { pushRoutesAt } from '../push/routes.js';
 import { requireStaff } from './guard.js';
-import { consumeKeyTap } from './keyTap.js';
+import { consumeKeyTap, consumeSecondOwnerTap } from './keyTap.js';
 import { attestedKeyCount, body, idParam, log, tapIdOf } from './members.js';
 import { THREE_METHOD_ROLES } from './login.js';
 
@@ -58,7 +58,8 @@ export function staffAccountRoutes(app: FastifyInstance): void {
     const now = clock();
     await withTx(db, async (c) => {
       await lockAccount(c, me);
-      await consumeKeyTap(c, tapId, me, { kind: 'remove-method', methodType, methodId: id }, now, { sessionId: req.auth.sessionId });
+      const intent = { kind: 'remove-method' as const, methodType, methodId: id };
+      const first = await consumeKeyTap(c, tapId, me, intent, now, { sessionId: req.auth.sessionId });
       if (methodType === 'security-key') {
         const { rows } = await c.query("select 1 from webauthn_credentials where id = $1 and account_id = $2 and kind = 'security-key' and attested", [id, me]);
         const keys = rows.length > 0 ? await attestedKeyCount(c, me) : Infinity;
@@ -66,6 +67,10 @@ export function staffAccountRoutes(app: FastifyInstance): void {
         // Lead review 7 Nov I-2: a moderator or senior moderator taps rulings with a security key;
         // without one they could never tap again.
         if ((req.staff.role === 'mod' || req.staff.role === 'senior') && keys <= 1) throw new ApiError(409, 'security-key-required');
+      }
+      // Owner G4: removing one of the owner's keys is tapped by both owner keys.
+      if (req.staff.role === 'owner' && methodType === 'security-key') {
+        await consumeSecondOwnerTap(c, body(req).secondTapId, first, intent, now, { sessionId: req.auth.sessionId });
       }
       // Owner G3 (7 Nov): a moderator or senior keeps all three methods; one of a kind may go only
       // while another of that kind stays.

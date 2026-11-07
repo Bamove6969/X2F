@@ -268,6 +268,26 @@ export async function consumeKeyTap(
 }
 
 /**
+ * Owner G4 (7 Nov): a major change to the owner's account (adding or removing one of the owner's
+ * security keys) needs both of the owner's keys: after the first tap is consumed, a second tap for
+ * the same intent by a different security key. 409 `both-owner-keys-required` when the second tap
+ * is missing or came from the same key; an invalid second tap is 403 `tap-invalid`.
+ */
+export async function consumeSecondOwnerTap(
+  client: Queryable,
+  secondTapId: unknown,
+  first: StoredTap,
+  expect: KeyTapIntent,
+  now: Date,
+  o: { sessionId?: string } = {},
+): Promise<StoredTap> {
+  if (typeof secondTapId !== 'string' || secondTapId === '') throw new ApiError(409, 'both-owner-keys-required');
+  const second = await consumeKeyTap(client, secondTapId, first.accountId, expect, now, o);
+  if (second.credentialId === first.credentialId) throw new ApiError(409, 'both-owner-keys-required');
+  return second;
+}
+
+/**
  * RV5 m8: deletes the taps that were never finished or never used, a day after they started
  * (`KEY_TAP_PURGE_MS`). Used taps stay: how long they are kept is the owner's (RV5 Q6; recommended:
  * a ruling's taps as long as the ruling record, others 90 days). Returns the number deleted.

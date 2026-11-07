@@ -104,10 +104,14 @@ describe('owner lockout', () => {
     const before = await list();
     expect(before).toHaveLength(2);
     // Removing a key goes through the tapped account route (lead review 7 Nov I-1).
-    const delKey = async (id: string) =>
-      owner.browser.send('DELETE', `/staff/v1/account/methods/security-key/${id}`, {
-        tapId: await tap(owner, { kind: 'remove-method', methodType: 'security-key', methodId: id }, owner.keys[1]),
+    // Owner G4: both owner keys tap (the second by keys[0] unless `second` is false).
+    const delKey = async (id: string, second = true) => {
+      const intent = { kind: 'remove-method' as const, methodType: 'security-key' as const, methodId: id };
+      return owner.browser.send('DELETE', `/staff/v1/account/methods/security-key/${id}`, {
+        tapId: await tap(owner, intent, owner.keys[1]),
+        ...(second ? { secondTapId: await tap(owner, intent, owner.keys[0]) } : {}),
       });
+    };
     expect((await owner.browser.send('DELETE', `/staff/v1/owner/keys/${before[0]!.id}`)).statusCode).toBe(404);
     // Two keys: removing either is refused.
     const del = await delKey(before[0]!.id);
@@ -124,8 +128,15 @@ describe('owner lockout', () => {
     expect(errorOf(noTap)).toBe('tap-invalid');
     const other = await tap(owner, { kind: 'add-owner-key', credentialId: third.credentialId, publicKeySha256: 'b'.repeat(64) });
     expect(errorOf(await owner.browser.post('/staff/v1/owner/keys/finish', { challengeId: start.json().challengeId, response, tapId: other }))).toBe('tap-invalid');
-    const tapId = await tap(owner, { kind: 'add-owner-key', credentialId: third.credentialId, publicKeySha256 }, owner.keys[1]);
-    const fin = await owner.browser.post('/staff/v1/owner/keys/finish', { challengeId: start.json().challengeId, response, tapId });
+    const addIntent = { kind: 'add-owner-key' as const, credentialId: third.credentialId, publicKeySha256 };
+    // Owner G4: one key's tap alone, or the same key twice, is not both keys.
+    const one = await tap(owner, addIntent, owner.keys[1]);
+    expect(errorOf(await owner.browser.post('/staff/v1/owner/keys/finish', { challengeId: start.json().challengeId, response, tapId: one }))).toBe('both-owner-keys-required');
+    const same = [await tap(owner, addIntent, owner.keys[1]), await tap(owner, addIntent, owner.keys[1])];
+    expect(errorOf(await owner.browser.post('/staff/v1/owner/keys/finish', { challengeId: start.json().challengeId, response, tapId: same[0], secondTapId: same[1] }))).toBe('both-owner-keys-required');
+    const tapId = await tap(owner, addIntent, owner.keys[1]);
+    const secondTapId = await tap(owner, addIntent, owner.keys[0]);
+    const fin = await owner.browser.post('/staff/v1/owner/keys/finish', { challengeId: start.json().challengeId, response, tapId, secondTapId });
     expect(fin.statusCode, fin.body).toBe(201);
     expect(fin.json()).toEqual({ id: expect.any(String), keyCheckCode: keyCheckCode(new Uint8Array(third.cosePublicKey)) });
     expect(await logEntries(t.deps, 'owner.key-added')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ credentialId: fin.json().id }) });
@@ -140,7 +151,7 @@ describe('owner lockout', () => {
     expect(before.map((k) => k.id)).toContain(gone);
     expect((await delKey(gone)).statusCode).toBe(204);
     expect(await logEntries(t.deps, 'staff.method-removed')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ method: 'security-key' }) });
-    expect(errorOf(await delKey(fin.json().id))).toBe('owner-needs-two-keys');
+    expect(errorOf(await delKey(fin.json().id, false))).toBe('owner-needs-two-keys');
   });
 
   it('the owner key routes are the owner\'s only', async () => {
