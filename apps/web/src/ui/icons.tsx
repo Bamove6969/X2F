@@ -122,6 +122,13 @@ const SHAPES = {
       <path d="M10.3 21a1.94 1.94 0 003.4 0" />
     </>
   ),
+  // Two ticks (News board "Mark all as read").
+  'check-double': (
+    <>
+      <path d="M2 12l5 5L18 6" />
+      <path d="M12 16l1 1 9-11" />
+    </>
+  ),
   // The ringing bell (SellerRefund board "Nudge mira.k").
   'bell-ring': (
     <>

@@ -153,6 +153,7 @@ export function News() {
       action={
         newCount > 0 ? (
           <button type="button" className="x2f-header-action" onClick={markAll} data-part="news-mark-all">
+            <Icon name="check-double" size={18} />
             Mark all as read
           </button>
         ) : undefined

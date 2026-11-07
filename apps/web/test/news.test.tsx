@@ -1,5 +1,8 @@
 // @vitest-environment happy-dom
 // Plan 4 Task 28: the News page, the device-only seen mark, and News opening after login.
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -162,7 +165,12 @@ describe('the News page', () => {
     const body = host.querySelector<HTMLElement>(`#${toggles()[1]!.getAttribute('aria-controls')}`)!;
     expect(body.hidden).toBe(true);
     expect(host.querySelector('[aria-label="Close News"]')).not.toBeNull();
-    fire(host.querySelector('[data-part="news-mark-all"]')!, new MouseEvent('click', { bubbles: true }));
+    // The board's pill: the double-tick icon, then the words (design review P1-8).
+    const markAll = host.querySelector('[data-part="news-mark-all"]')!;
+    expect(markAll.className).toBe('x2f-header-action');
+    expect(markAll.querySelector('svg')).not.toBeNull();
+    expect(markAll.textContent).toBe('Mark all as read');
+    fire(markAll, new MouseEvent('click', { bubbles: true }));
     expect(newTitles(host)).toEqual([]);
     expect(host.querySelector('[data-part="news-count"]')!.textContent).toBe('All read · 3 posts');
     expect(host.querySelector('[data-part="news-mark-all"]')).toBeNull();
@@ -273,5 +281,29 @@ describe('after login', () => {
     const go: string[] = [];
     await afterLogin((to) => go.push(to), '/wallets');
     expect(go).toEqual([`/terms?returnTo=${encodeURIComponent('/news?after=login&returnTo=%2Fwallets')}`]);
+  });
+});
+
+describe('the News board styles (design review P1-8)', () => {
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/ui/ui.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = (sel: string) => {
+    const at = css.indexOf(`${sel} {`);
+    expect(at, sel).toBeGreaterThanOrEqual(0);
+    return css.slice(at, css.indexOf('}', at));
+  };
+
+  it('a new post is the plain surface card: no inset edge, no box-shadow', () => {
+    const body = rule('.x2f-post[data-new]');
+    expect(body).toContain('background: var(--x2f-surface)');
+    expect(body).not.toContain('box-shadow');
+  });
+
+  it('Mark all as read is an ink pill on surface, never orange', () => {
+    const body = rule('.x2f-header-action');
+    expect(body).toContain('color: var(--x2f-ink)');
+    expect(body).toContain('background: var(--x2f-surface)');
+    expect(body).toContain('border-radius: var(--x2f-radius-pill)');
+    expect(body).toContain('font-weight: 600');
+    expect(body).not.toContain('monero');
   });
 });

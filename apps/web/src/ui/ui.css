@@ -1752,7 +1752,7 @@
   outline: none;
 }
 
-/* A collapsible post (News board): new ones on surface with an escrow edge, read ones outlined. */
+/* A collapsible post (News board): new ones on surface, read ones outlined. */
 .x2f-post {
   display: flex;
   flex-direction: column;
@@ -1760,10 +1760,10 @@
   border: 1px solid var(--x2f-surface-raised);
 }
 
+/* A new post is the surface card with no edge (News board; standard 17: no box-shadow but the nav's). */
 .x2f-post[data-new] {
   border-color: transparent;
   background: var(--x2f-surface);
-  box-shadow: inset 3px 0 0 var(--x2f-escrow);
 }
 
 .x2f-post__toggle {
@@ -1854,16 +1854,21 @@
   margin: 0;
 }
 
-/* A text action on the right of a page header (News "Mark all as read"). */
+/* A pill action on the right of a page header (News "Mark all as read"): ink on surface, never orange. */
 .x2f-header-action {
+  display: inline-flex;
   flex-shrink: 0;
+  align-items: center;
+  gap: var(--x2f-space-2);
   height: 44px;
-  padding: 0 var(--x2f-space-2);
+  padding: 0 14px;
   border: 0;
-  background: transparent;
-  color: var(--x2f-monero-ink);
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface);
+  color: var(--x2f-ink);
   font: inherit;
   font-size: 15px;
+  font-weight: 600;
   cursor: pointer;
 }
 

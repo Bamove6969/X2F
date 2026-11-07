@@ -58,8 +58,6 @@ const ORANGE_ALLOWED = [
   // Links and text buttons (boards: a { color: var(--monero-ink) }).
   'ui/ui.css .x2f-link',
   'ui/ui.css .x2f-link:hover',
-  // A page header's text action (News "Mark all as read").
-  'ui/ui.css .x2f-header-action',
   'screens/browse/browse.css .x2f-text-button',
   'screens/browse/browse.css .x2f-text-button:hover',
   'screens/setup/setup.css .x2f-start__textbutton',
