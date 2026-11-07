@@ -63,7 +63,9 @@ export function staffSiteRoutes(app: FastifyInstance): void {
       const b = bodyOf(req, ['tapId']);
       const now = req.server.deps.clock();
       return tx(req, async (c) => {
-        await consumeKeyTap(c, typeof b.tapId === 'string' ? b.tapId : '', req.staff.accountId, { kind: which === 'stop' ? 'emergency-stop' : 'resume-trading' }, now);
+        await consumeKeyTap(c, typeof b.tapId === 'string' ? b.tapId : '', req.staff.accountId, { kind: which === 'stop' ? 'emergency-stop' : 'resume-trading' }, now, {
+          sessionId: req.auth.sessionId, // RV5 m10 (lead re-review item 7)
+        });
         const { rowCount } =
           which === 'stop'
             ? await c.query('update site_flags set trading_paused = true, stopped_at = $1 where not trading_paused', [now])

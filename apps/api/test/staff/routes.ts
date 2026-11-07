@@ -38,9 +38,30 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/login/pgp/finish', perm: 'public-login', allowed: 'public', body: {} },
   { method: 'POST', url: '/staff/v1/logout', perm: 'public-login', allowed: 'public', body: {} },
   { method: 'GET', url: '/staff/v1/me', perm: 'self', allowed: EVERY_ROLE },
-  // Plan 4 Task 5: security-key taps (the body is the intent; a sample tap id finishes nothing).
-  { method: 'POST', url: '/staff/v1/taps/start', perm: 'self', allowed: EVERY_ROLE, body: { kind: 'emergency-stop' }, allowedAnswer: { status: 403, error: 'method-not-allowed' } },
-  { method: 'POST', url: '/staff/v1/taps/:id/finish', perm: 'self', allowed: EVERY_ROLE, body: { response: {} }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
+  // Task 5: security-key taps. The bodies stop at validation (400), so the matrix checks the guard
+  // alone; which intents each role may start (RV5 m7) is keyTap.test.ts's.
+  { method: 'POST', url: '/staff/v1/taps/start', perm: 'self', allowed: EVERY_ROLE, body: { kind: 'matrix' } },
+  { method: 'POST', url: '/staff/v1/taps/:id/finish', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  // Task 7: staff management (staff.manage), invite acceptance (public-invite), owner keys.
+  { method: 'GET', url: '/staff/v1/members', perm: 'staff.manage', allowed: OWNER },
+  { method: 'POST', url: '/staff/v1/invites', perm: 'staff.manage', allowed: OWNER, body: { role: 'mod', hours: 'any' } },
+  { method: 'DELETE', url: '/staff/v1/invites/:id', perm: 'staff.manage', allowed: OWNER },
+  { method: 'POST', url: '/staff/v1/members/:id/switch-off', perm: 'staff.manage', allowed: OWNER, body: {} },
+  { method: 'POST', url: '/staff/v1/members/:id/switch-on', perm: 'staff.manage', allowed: OWNER, body: {} },
+  { method: 'PUT', url: '/staff/v1/members/:id/hours', perm: 'staff.manage', allowed: OWNER, body: { hours: 'any' } },
+  { method: 'PUT', url: '/staff/v1/members/:id/role', perm: 'staff.manage', allowed: OWNER, body: { role: 'mod' } },
+  { method: 'DELETE', url: '/staff/v1/members/:id', perm: 'staff.manage', allowed: OWNER },
+  { method: 'GET', url: '/staff/v1/invites/accept/:token', perm: 'public-invite', allowed: 'public' },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { username: 'Matrix1', loginName: 'matrix1' } },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/key/start', perm: 'public-invite', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/key/finish', perm: 'public-invite', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/pgp/start', perm: 'public-invite', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/pgp/finish', perm: 'public-invite', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/finish', perm: 'public-invite', allowed: 'public', body: {} },
+  { method: 'GET', url: '/staff/v1/owner/keys', perm: 'self', allowed: OWNER },
+  { method: 'POST', url: '/staff/v1/owner/keys/start', perm: 'self', allowed: OWNER, body: {} },
+  { method: 'POST', url: '/staff/v1/owner/keys/finish', perm: 'self', allowed: OWNER, body: {} },
+  { method: 'DELETE', url: '/staff/v1/owner/keys/:id', perm: 'self', allowed: OWNER },
   // Plan 4 Task 8: the owner's settings and the site controls (a sample tap id is never valid).
   { method: 'GET', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER, body: { firstResponseH: 5 } },

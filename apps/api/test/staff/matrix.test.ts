@@ -104,6 +104,9 @@ describe('privilege matrix', () => {
           // Past the guard, the route's own check answers (e.g. no valid tap): exactly that, never a guard refusal.
           expect({ status: res.statusCode, error }, `${c}: ${res.body}`).toEqual(r.allowedAnswer);
         } else if (want === 'allowed') {
+          // Allowed: the handler ran. It may still refuse with its own code (a tap that does not
+          // exist is 403 `tap-invalid`, a target that is the owner 409 `owner-protected`), never
+          // with one of the guard's.
           expect(res.statusCode, `${c}: ${res.body}`).toBeLessThan(500);
           expect([401, 403], `${c}: ${res.body}`).not.toContain(res.statusCode);
           expect(REFUSALS, `${c}`).not.toContain(error);

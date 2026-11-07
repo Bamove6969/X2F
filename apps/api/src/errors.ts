@@ -120,6 +120,12 @@ export type ApiErrorCode =
   | 'member-cannot-sign'
   // Plan 4, Task 4: staff login hours (a login, or an open session, outside the window).
   | 'outside-login-hours'
+  // Plan 4, Task 7: staff invites and the owner's protections.
+  | 'invite-invalid'
+  | 'security-key-required'
+  | 'two-factors-required'
+  | 'owner-protected'
+  | 'owner-needs-two-keys'
   // Plan 5 Task 10 on the staff API: the past-rep claim is no longer live (revoked, removed, rejected).
   | 'not-live'
   // Plan 5, Task 10: past reputation claims.

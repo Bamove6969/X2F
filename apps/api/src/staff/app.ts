@@ -1,4 +1,5 @@
 import fastifyCookie from '@fastify/cookie';
+import { can } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import { installErrorAnswers, newFastify, type Deps } from '../app.js';
 import { originHook } from '../auth/origin.js';
@@ -7,8 +8,11 @@ import { EventBus } from '../events/bus.js';
 import { newBudgets } from '../limits.js';
 import { addSecurityHeaders } from '../static/serve.js';
 import { assertRoutePerm, requireStaff, type StaffRoutePerm } from './guard.js';
-import { staffFeedbackRoutes } from './feedback.js';
+import { staffInviteRoutes } from './invites.js';
 import { keyTapRoutes } from './keyTap.js';
+import { staffMemberRoutes } from './members.js';
+import { ownerKeyRoutes } from './ownerKeys.js';
+import { staffFeedbackRoutes } from './feedback.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffPastRepRoutes } from './pastrep.js';
@@ -111,8 +115,19 @@ export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { wr
 
   app.get('/healthz', { config: { perm: 'public-login' } }, async () => ({ ok: true }));
   await staffLoginRoutes(app);
-  // Plan 4 Task 5: security-key taps bound to an intent (each tapped action consumes its own).
-  keyTapRoutes(app, { guard: requireStaff('self'), accountOf: (req) => req.staff.accountId });
+  // Plan 4 Task 5: security-key taps, used by every tapped action (Tasks 7, 8, 12).
+  keyTapRoutes(app, {
+    guard: requireStaff('self'),
+    accountOf: (req) => req.staff.accountId,
+    // RV5 m10: a tap is used only from the session that started it (every consume passes it).
+    sessionOf: (req) => req.auth.sessionId,
+    // RV5 m7: a tap only for an action the member may take.
+    allows: (req, need) => (need === 'owner' ? req.staff.role === 'owner' : can(req.staff.role, need, req.staff.grants)),
+  });
+  // Plan 4 Task 7: staff management, invites and the owner's keys.
+  staffMemberRoutes(app);
+  staffInviteRoutes(app);
+  ownerKeyRoutes(app);
   // Plan 4 Task 8: the owner's settings (settings.write) and the site controls (site.control).
   staffSettingsRoutes(app);
   staffSiteRoutes(app);

@@ -8,6 +8,7 @@ import {
   tapChallenge,
   type AccountAction,
   type KeyTapIntent,
+  type Perm,
 } from '@x2f/staff';
 import type { AuthenticationResponseJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/server';
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
@@ -348,6 +349,31 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
 // ---------------------------------------------------------------------------------------------
 // Routes (they plug into Task 4's staff app)
 
+/**
+ * RV5 m7 (lead queue 6 Nov): what a staff member must hold to start a tap for an intent, so a
+ * signed approval never exists for someone who can't take the action. A ruling's proposal needs
+ * `disputes.handle`, its approval `rulings.approve`; the emergency stop and resume `site.control`;
+ * invites, switch-on and role changes `staff.manage`; settings `settings.write`; a new owner key
+ * the owner role itself. The action route still checks its own perm and re-derives the intent.
+ */
+export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
+  switch (i.kind) {
+    case 'ruling':
+      return i.step === 'approve' ? 'rulings.approve' : 'disputes.handle';
+    case 'emergency-stop':
+    case 'resume-trading':
+      return 'site.control';
+    case 'create-invite':
+    case 'switch-on':
+    case 'set-role':
+      return 'staff.manage';
+    case 'settings':
+      return 'settings.write';
+    case 'add-owner-key':
+      return 'owner';
+  }
+}
+
 export interface KeyTapRouteOptions {
   /** The staff app's `requireStaff('self')` (Task 4: an array of preHandlers, kept as is so its perm check sees it). */
   guard: preHandlerAsyncHookHandler | preHandlerAsyncHookHandler[];
@@ -358,10 +384,16 @@ export interface KeyTapRouteOptions {
    * session that started it, and the action route must pass the same `sessionId` to `consumeKeyTap`.
    */
   sessionOf?(req: FastifyRequest): string;
+  /**
+   * RV5 m7: whether the signed-in member holds `tapPermOf(intent)` (Task 4: `can(req.staff.role,
+   * perm, req.staff.grants)`, and the owner role for 'owner'). False → 403 `forbidden`, nothing stored.
+   */
+  allows(req: FastifyRequest, need: Perm | 'owner'): boolean;
 }
 
 /**
- * `POST /staff/v1/taps/start` (perm `self`): the body is the intent (`parseKeyTapIntent`) →
+ * `POST /staff/v1/taps/start` (perm `self`): the body is the intent (`parseKeyTapIntent`); the
+ * member must hold the intent's own perm (`tapPermOf`, RV5 m7; else 403 `forbidden`) →
  * `{ tapId, options }`. `POST /staff/v1/taps/:id/finish` (perm `self`) `{ response }` → `{ tapId }`.
  * The action route that needs the tap takes `tapId` and calls `consumeKeyTap` with the intent it
  * derives from its own input, so the client cannot get a tap for one action accepted by another.
@@ -371,6 +403,7 @@ export function keyTapRoutes(app: FastifyInstance, o: KeyTapRouteOptions): void 
   const config = { perm: 'self' as const };
   app.post('/staff/v1/taps/start', { config, preHandler: o.guard }, async (req) => {
     const intent = parseKeyTapIntent(req.body);
+    if (!o.allows(req, tapPermOf(intent))) throw new ApiError(403, 'forbidden');
     const sessionId = o.sessionOf?.(req);
     return startKeyTap(req.server.deps, o.accountOf(req), intent, sessionId !== undefined ? { sessionId } : {});
   });

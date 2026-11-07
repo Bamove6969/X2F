@@ -18,6 +18,7 @@ import {
   keyTapRoutes,
   parseKeyTapIntent,
   startKeyTap,
+  tapPermOf,
   purgeKeyTaps,
   MAX_OPEN_TAPS,
   KEY_TAP_PURGE_MS,
@@ -382,6 +383,8 @@ describe('keyTapRoutes', () => {
         if (typeof req.headers['x-test-account'] !== 'string') throw new ApiError(401, 'not-authenticated');
       },
       accountOf: (req) => req.headers['x-test-account'] as string,
+      // Stands in for Task 4's role check: the perms the test caller holds, comma-separated.
+      allows: (req, need) => String(req.headers['x-test-perms'] ?? 'site.control').split(',').includes(need),
     });
     await app.ready();
   });
@@ -409,6 +412,31 @@ describe('keyTapRoutes', () => {
     expect(finish.statusCode).toBe(200);
     expect(finish.json()).toEqual({ tapId });
     expect((await consume(tapId, id, STOP)).id).toBe(tapId);
+  });
+
+  it('RV5 m7: starting a tap needs the intent\'s own perm; nothing is stored when refused', async () => {
+    const { id } = await staffWith();
+    const count = async () => Number((await deps.db.query('select count(*) from key_taps where account_id = $1', [id])).rows[0].count);
+    const refused = await app.inject({ method: 'POST', url: '/staff/v1/taps/start', headers: { 'x-test-account': id, 'x-test-perms': 'self,disputes.handle' }, payload: STOP });
+    expect([refused.statusCode, refused.json()]).toEqual([403, { error: 'forbidden' }]);
+    const approve = await app.inject({ method: 'POST', url: '/staff/v1/taps/start', headers: { 'x-test-account': id, 'x-test-perms': 'self,disputes.handle' }, payload: { ...RULING, step: 'approve' } });
+    expect(approve.statusCode).toBe(403);
+    expect(await count()).toBe(0);
+    const propose = await app.inject({ method: 'POST', url: '/staff/v1/taps/start', headers: { 'x-test-account': id, 'x-test-perms': 'self,disputes.handle' }, payload: { ...RULING, step: 'propose' } });
+    expect(propose.statusCode).toBe(200);
+    expect(await count()).toBe(1);
+  });
+
+  it('RV5 m7: tapPermOf maps every intent kind to the perm its action needs', () => {
+    expect(tapPermOf({ ...RULING, step: 'propose' })).toBe('disputes.handle');
+    expect(tapPermOf({ ...RULING, step: 'approve' })).toBe('rulings.approve');
+    expect(tapPermOf({ kind: 'emergency-stop' })).toBe('site.control');
+    expect(tapPermOf({ kind: 'resume-trading' })).toBe('site.control');
+    expect(tapPermOf({ kind: 'create-invite', inviteId: RULING.rulingId, role: 'mod', tokenHash: 'a'.repeat(43), expiresAt: '2026-11-03T00:00:00Z' })).toBe('staff.manage');
+    expect(tapPermOf({ kind: 'switch-on', accountId: RULING.rulingId, role: 'mod' })).toBe('staff.manage');
+    expect(tapPermOf({ kind: 'set-role', accountId: RULING.rulingId, role: 'senior' })).toBe('staff.manage');
+    expect(tapPermOf({ kind: 'settings', largeTradeLimitUsd: 1, firstResponseH: 1, appealWindowH: 48 })).toBe('settings.write');
+    expect(tapPermOf({ kind: 'add-owner-key', credentialId: 'a'.repeat(22), publicKeySha256: 'b'.repeat(64) })).toBe('owner');
   });
 
   it('refuses without a session, a malformed intent and an oversized response', async () => {

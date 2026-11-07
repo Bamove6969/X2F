@@ -422,17 +422,24 @@ export async function verifyWebAuthnRegistrationOnly(
   response: unknown,
   expectedChallenge: string | Uint8Array,
   o: { kind?: CredentialKind; label?: string } = {},
-): Promise<{ credentialId: string; kind: CredentialKind; attested: boolean; aaguid: string | null; store(q: Queryable): Promise<void> }> {
+): Promise<{
+  credentialId: string;
+  kind: CredentialKind;
+  attested: boolean;
+  aaguid: string | null;
+  /** The verified COSE public key (Plan 4: `keyCheckCode`, the `add-owner-key` tap's hash). */
+  publicKey: Uint8Array;
+  /** Inserts the credential through `q`; returns its row id. */
+  store(q: Queryable): Promise<string>;
+}> {
   const account = await accountById(deps.db, accountId);
   const cred = await verifyRegistration(deps, {
     accountKind: account.kind, kind: o.kind ?? null, response, expectedChallenge: challengeString(expectedChallenge),
   });
   const label = cleanLabel(o.label, cred.kind);
   return {
-    credentialId: cred.credentialId, kind: cred.kind, attested: cred.attested, aaguid: cred.aaguid,
-    store: async (q) => {
-      await insertCredential(q, accountId, cred, label, deps.clock());
-    },
+    credentialId: cred.credentialId, kind: cred.kind, attested: cred.attested, aaguid: cred.aaguid, publicKey: cred.publicKey,
+    store: (q) => insertCredential(q, accountId, cred, label, deps.clock()),
   };
 }
 
