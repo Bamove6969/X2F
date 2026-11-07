@@ -194,9 +194,9 @@ test('DisputeRoom: rose In dispute chip, locked amount, deadline line, hourglass
   await expect(chip).toHaveText('In dispute');
   await expect(page.locator('[data-part="escrow-amount"]')).toContainText('1.250000 XMR');
   await expect(page.getByText('Replied in 38 min.', { exact: true })).toBeVisible();
-  // Owner Q38: the 24-hour hourglass; the 48-hour deadline is never shown to traders.
-  await expect(page.locator('[data-part="hourglass"]')).toContainText('Until a moderator steps in');
-  await expect(page.locator('[data-part="hourglass"]')).toContainText("A moderator steps in within 24 h at the most. Usually it's much sooner.");
+  // A moderator has joined: "Replied in" replaces the hourglass (lead review 7 Nov, board v119); the
+  // 48-hour deadline is never shown to traders (owner Q38).
+  await expect(page.locator('[data-part="hourglass"]')).toHaveCount(0);
   await expect(page.getByText(/ruling due by/)).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Moderator joined' })).toContainText('Moderator sarah.v joined this dispute');
   await expect(page.getByText('10:14 · You opened a dispute: I paid, but the seller hasn\'t released')).toBeVisible();
@@ -204,9 +204,12 @@ test('DisputeRoom: rose In dispute chip, locked amount, deadline line, hourglass
   await expect(page.getByText('Chats are encrypted. If a dispute is opened, a moderator can read this conversation.')).toBeVisible();
 });
 
-test('no moderator on record: no banner and no violet badge anywhere', async ({ page }) => {
+test('no moderator on record: no banner and no violet badge anywhere; the hourglass runs', async ({ page }) => {
   await stub(page, { trade: disputed(), dispute: disputeView({ moderator: null }) });
   await open(page);
+  // Owner Q38: the 24-hour hourglass until a moderator steps in.
+  await expect(page.locator('[data-part="hourglass"]')).toContainText('Until a moderator steps in');
+  await expect(page.locator('[data-part="hourglass"]')).toContainText("A moderator steps in within 24 h at the most. Usually it's much sooner.");
   await expect(page.getByText('In dispute', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Moderator joined' })).toHaveCount(0);
   await expect(page.locator('.x2f-moderator-badge')).toHaveCount(0);
