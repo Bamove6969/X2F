@@ -90,6 +90,16 @@ async function settle(): Promise<void> {
   }
 }
 
+/**
+ * Settles until `ready()` holds, for at most 2 s. Saving hashes the addresses with
+ * crypto.subtle.digest, which resolves from Node's thread pool rather than after a fixed number of
+ * timer ticks, so under load one settle() could end before the screen answered.
+ */
+async function until(ready: () => boolean): Promise<void> {
+  const deadline = Date.now() + 2000;
+  while (!ready() && Date.now() < deadline) await settle();
+}
+
 let where = '';
 let how = '';
 function Where() {
@@ -137,6 +147,14 @@ function dialog(title: string): HTMLElement | null {
   return [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].find((d) => d.textContent?.includes(title)) ?? null;
 }
 
+/** Taps Save wallet and waits until the screen has answered. */
+async function save(answered: () => boolean): Promise<void> {
+  await click('Save wallet');
+  await until(answered);
+}
+
+const confirmShown = () => dialog("Confirm it's you") !== null;
+
 /** Opens Add a wallet from the list and gets past the rule popup. */
 async function startAdding(): Promise<void> {
   await click('Add a wallet');
@@ -152,7 +170,7 @@ describe('Your wallets', () => {
     await mount();
     await startAdding();
     type('#wallet-address', ADDR_C);
-    await click('Save wallet');
+    await save(confirmShown);
 
     const sheet = dialog("Confirm it's you");
     expect(sheet).not.toBeNull();
@@ -178,7 +196,7 @@ describe('Your wallets', () => {
       await mount('/wallets?add=1&returnTo=%2Fbuy');
       await click('Continue', dialog('Before you add a wallet')!);
       type('#wallet-address', ADDR_C);
-      await click('Save wallet');
+      await save(confirmShown);
       type('#confirm-password', 'Correct-Horse-9!');
       await click('Confirm', dialog("Confirm it's you")!.querySelector('[data-method="password"]')!);
 
@@ -198,7 +216,7 @@ describe('Your wallets', () => {
       await mount('/wallets?add=1&returnTo=%2Fbuy');
       await click('Continue', dialog('Before you add a wallet')!);
       type('#wallet-address', ADDR_C);
-      await click('Save wallet');
+      await save(() => where === '/buy');
       expect(where).toBe('/buy');
       // Replaced, so the browser's Back does not reopen Add a wallet (round 2, M4).
       expect(how).toBe('REPLACE');
@@ -217,7 +235,7 @@ describe('Your wallets', () => {
     expect(primaries()).toEqual(['Save wallet']);
 
     type('#wallet-address', ADDR_C);
-    await click('Save wallet');
+    await save(confirmShown);
     expect(dialog("Confirm it's you")).not.toBeNull();
     expect(primaries()).toEqual(['Confirm']);
   });
@@ -239,7 +257,7 @@ describe('Your wallets', () => {
       await mount();
       await startAdding();
       type('#wallet-address', ADDR_C);
-      await click('Save wallet');
+      await save(() => alertText() !== '');
       expect(alertText()).toBe(RECOVERY_SESSION_WALLETS);
     });
 
@@ -249,7 +267,7 @@ describe('Your wallets', () => {
       await mount();
       await startAdding();
       type('#wallet-address', ADDR_C);
-      await click('Save wallet');
+      await save(confirmShown);
       type('#confirm-password', 'Correct-Horse-9!');
       await click('Confirm', dialog("Confirm it's you")!.querySelector('[data-method="password"]')!);
       expect(alertText()).toBe(CONFIRM_INVALID_WALLETS);
@@ -260,7 +278,7 @@ describe('Your wallets', () => {
       await mount();
       await startAdding();
       type('#wallet-address', ADDR_C);
-      await click('Save wallet');
+      await save(() => alertText() !== '');
       expect(alertText()).toBe('Too many tries. Try again in 2 minutes.');
     });
   });
