@@ -1,1 +1,2 @@
 Nudge sound, owner's pick (7 Nov 2026). Source: Freesound 480002 by craigsmith, "R18-31-Old Car Ahooga Horn", CC0 (https://freesound.org/people/craigsmith/sounds/480002/). Cut from the page's public HQ preview: first blast, 1.84 s. Replace with a cut from the original WAV before launch. Not the Timbre remix (non-commercial).
+Final (owner, 7 Nov): x2f-nudge-final.wav: the whole recording with both blasts, 1.3x at the same pitch, second horn stretched 0.5 s longer. -soft is the night version. Replaces the earlier single-blast cut.
