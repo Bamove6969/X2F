@@ -10,13 +10,14 @@ export const TIMERS = {
   lapseCosignMin: 30,
   /** Owner 2026-10-29: the buyer may dispute a refund (to prove they paid) for 48 hours after it lands (was 90 days). */
   disputeAfterRefundHours: 48,
-  /**
-   * In `paid` the buyer may open a dispute from this many minutes after marking paid, no longer
-   * only after the seller's confirm window (`confirmBy`) (owner 2026-11-01). Owner 2026-11-06 Q10:
-   * 60 minutes (was 30), and maintenance pauses it (`Trade.buyerDisputeFrom`).
-   */
-  buyerDisputeAfterPaidMin: 60,
 } as const;
+
+/**
+ * The longest seller confirm window and buyer dispute wait a trade may have, in minutes: 4 days
+ * (owner 2026-11-07 F9: slow payment types such as cash by mail; was 24 h). The buyer's wait in
+ * `paid` is per payment type (`Trade.buyerDisputeWaitMin`, from the method profile at take).
+ */
+export const MAX_TRADE_WINDOW_MIN = 4 * 24 * 60;
 
 /** Confirmations after which Monero coins unlock. */
 export const UNLOCK_CONFIRMATIONS = 10;

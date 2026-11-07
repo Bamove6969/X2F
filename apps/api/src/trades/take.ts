@@ -10,7 +10,7 @@ import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
 import { ownerDeviceOnly } from '../team/perms.js';
 import { acceptedEvent } from '../events/publicName.js';
-import { getProfile, isAvailable } from '../methods/profiles.js';
+import { isAvailable, tradeProfile } from '../methods/profiles.js';
 import { assertNoPendingReview, hasPendingReview } from '../reviews/gate.js';
 import type { MarketPrices } from '../price/market.js';
 import { assertNotBlocked } from '../traders/blocks.js';
@@ -48,8 +48,6 @@ const PRICE = /^[1-9][0-9]{0,19}$/;
 const CENTS = /^[1-9][0-9]{0,17}$/;
 /** The largest move of a market offer's rate between the quote and the take: 0.5% (5 per mille). */
 const TOLERANCE_PER_MILLE = 5n;
-/** The confirm window for a method without a profile of its own: the Custom method's. */
-const FALLBACK_PROFILE = 'CUSTOM';
 
 const bad = (): ApiError => new ApiError(400, 'bad-request');
 const notFound = (): ApiError => new ApiError(404, 'not-found');
@@ -290,8 +288,8 @@ export function takeRoutes(app: FastifyInstance): void {
       await checkStarterLimits(c, { takerId, posterId, usd: () => usd, now });
 
       const poster = posterRole(r.side);
-      const profile = getProfile(r.method_id) ?? getProfile(FALLBACK_PROFILE);
-      if (profile === null) throw new Error('no fallback method profile');
+      // The method's own timing, a gift card's, or the Custom method's (owner 2026-11-07 F9).
+      const profile = tradeProfile(r.method_id);
       const t = newTrade(
         {
           code: newTradeCode(),
@@ -303,6 +301,7 @@ export function takeRoutes(app: FastifyInstance): void {
           amountAtomic: b.amountAtomic,
           lockedRate: rate,
           confirmWindowMin: profile.confirmWindowMin,
+          buyerDisputeWaitMin: profile.buyerDisputeWaitMin,
           minFiatCents: BigInt(r.min_fiat_cents),
           maxFiatCents: BigInt(r.max_fiat_cents),
         },

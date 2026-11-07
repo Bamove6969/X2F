@@ -6,7 +6,7 @@
  */
 import { amountForFunds, escrowPlan, fiatCents as fiatFor, type Price } from './money.js';
 import { SETTLE_KINDS, type SettleKind } from './payouts.js';
-import { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS, addMin } from './timers.js';
+import { MAX_TRADE_WINDOW_MIN, SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS, addMin } from './timers.js';
 
 export type TradeState =
   | 'setup'
@@ -40,6 +40,11 @@ export interface Trade {
   /** Fixed at take (OD-5). */
   fiatCents: bigint;
   confirmWindowMin: number;
+  /**
+   * In `paid`, how long the buyer waits after marking paid before they may open a dispute, fixed at
+   * take from the method profile (owner 2026-11-07 F9: per payment type, 90 minutes for instant ones).
+   */
+  buyerDisputeWaitMin: number;
   /** The offer's limits at take, as fiat totals in lockedRate's currency; a grown trade stays within them. */
   minFiatCents: bigint;
   maxFiatCents: bigint;
@@ -75,8 +80,8 @@ export interface Trade {
   paidAt: Date | null;
   confirmBy: Date | null;
   /**
-   * In `paid`, when the buyer may open a dispute (owner 2026-11-06 Q10: 60 minutes after marking
-   * paid, `TIMERS.buyerDisputeAfterPaidMin`). A deadline like `confirmBy`: maintenance that starts
+   * In `paid`, when the buyer may open a dispute: `buyerDisputeWaitMin` after marking paid (owner
+   * 2026-11-07 F9). A deadline like `confirmBy` (owner 2026-11-06 Q10): maintenance that starts
    * while the wait runs moves it later by the paused time (`onResume`); once it has passed, a later
    * pause leaves it. Null until marked paid.
    */
@@ -186,8 +191,6 @@ const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
  * seller's "Fund escrow" record (it only takes the seller's walk-away away; their wallet opens anyway).
  */
 const WHILE_PAUSED: readonly string[] = ['mark-paid', 'buyer-cancel', 'fund-started'];
-/** The longest seller confirm window (wires, 24 h). */
-const MAX_CONFIRM_WINDOW_MIN = 1440;
 
 /** A new trade at take: amounts, fee and the fiat total are fixed here (OD-5). */
 export function newTrade(
@@ -201,14 +204,20 @@ export function newTrade(
     amountAtomic: bigint;
     lockedRate: Price;
     confirmWindowMin: number;
+    /** The buyer's dispute wait after marking paid, from the method profile (owner 2026-11-07 F9). */
+    buyerDisputeWaitMin: number;
     minFiatCents: bigint;
     maxFiatCents: bigint;
   },
   now: Date,
 ): Trade {
   checkNow(now);
-  if (!Number.isSafeInteger(a.confirmWindowMin) || a.confirmWindowMin <= 0 || a.confirmWindowMin > MAX_CONFIRM_WINDOW_MIN) {
+  if (!Number.isSafeInteger(a.confirmWindowMin) || a.confirmWindowMin <= 0 || a.confirmWindowMin > MAX_TRADE_WINDOW_MIN) {
     throw new RangeError('bad confirm window');
+  }
+  // Never past the seller's own window: at worst the buyer may dispute when it ends (the old rule).
+  if (!Number.isSafeInteger(a.buyerDisputeWaitMin) || a.buyerDisputeWaitMin <= 0 || a.buyerDisputeWaitMin > a.confirmWindowMin) {
+    throw new RangeError('bad buyer dispute wait');
   }
   if (a.sellerId === a.buyerId) throw new RangeError('seller and buyer must differ');
   const plan = escrowPlan({ amountAtomic: a.amountAtomic, poster: a.poster });
@@ -229,6 +238,7 @@ export function newTrade(
     lockedRate: { currency: a.lockedRate.currency, centsPerXmr: a.lockedRate.centsPerXmr },
     fiatCents: fiat,
     confirmWindowMin: a.confirmWindowMin,
+    buyerDisputeWaitMin: a.buyerDisputeWaitMin,
     minFiatCents: a.minFiatCents,
     maxFiatCents: a.maxFiatCents,
     grown: null,
@@ -424,8 +434,8 @@ function onDispute(t: Trade, by: Party, now: Date): Trade {
     case 'secured':
       return open();
     case 'paid':
-      // The buyer from 60 minutes after marking paid, frozen by maintenance (owner 2026-11-06 Q10;
-      // `buyerDisputeFrom`), the seller at once.
+      // The buyer from the trade's wait after marking paid (owner 2026-11-07 F9), frozen by
+      // maintenance (owner 2026-11-06 Q10; `buyerDisputeFrom`), the seller at once.
       if (by === 'buyer' && (t.buyerDisputeFrom === null || now.getTime() < t.buyerDisputeFrom.getTime())) return fail('too-early');
       return open();
     case 'settling':
@@ -516,7 +526,7 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
         state: 'paid',
         paidAt: now,
         confirmBy: addMin(base(t, now), t.confirmWindowMin),
-        buyerDisputeFrom: addMin(base(t, now), TIMERS.buyerDisputeAfterPaidMin),
+        buyerDisputeFrom: addMin(base(t, now), t.buyerDisputeWaitMin),
         finalAlertAt: null,
         // No cancel after "I've paid" (Revision 2026-10-29b): any open proposal is withdrawn here.
         cancelProposedBy: null,
