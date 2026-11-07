@@ -19,10 +19,9 @@ import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginRe
 export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult };
 
 /**
- * Plan 2 Task 17: a security change made from a login with just a username and password (202):
- * nothing changed yet (hold model v3 answers 202 `{ status: 'staged', changeId }` instead: not yet
- * ported here); the change waits until `holdUntil` (the account's 24-hour hold), and
- * a strong login with a method held before the hold cancels it.
+ * Plan 2 Task 17 (before hold model v3): a security change made from a login with just a username
+ * and password (202) that waited out the account's 24-hour hold until `holdUntil`. The v3 API no
+ * longer answers it (it stages the change: `Staged`); kept until the web screens move to v3.
  */
 export interface Held {
   status: 'held';
@@ -32,6 +31,49 @@ export interface Held {
 /** True for a change that waits out the 24-hour hold (202 `{ status: 'held', holdUntil }`). */
 export function isHeld(x: unknown): x is Held {
   return x !== null && typeof x === 'object' && (x as { status?: unknown }).status === 'held' && typeof (x as { holdUntil?: unknown }).holdUntil === 'string';
+}
+
+/**
+ * Hold model v3: a security change made from a login with just a username and password (202): nothing
+ * changed yet; it is a draft of this session (`changeId`) to review and submit (`submitHoldChanges`),
+ * then applies on its own 24 h after the account's latest submission (owner Q14). A login with a
+ * passkey, security key or PGP key held before discards it; any session of the owner cancels it.
+ */
+export interface Staged {
+  status: 'staged';
+  changeId: string;
+}
+
+/** True for a change staged by hold model v3 (202 `{ status: 'staged', changeId }`). */
+export function isStaged(x: unknown): x is Staged {
+  return x !== null && typeof x === 'object' && (x as { status?: unknown }).status === 'staged' && typeof (x as { changeId?: unknown }).changeId === 'string';
+}
+
+/** Hold model v3: what a staged or waiting change is (never a secret, an address or a key). */
+export interface HoldChangeSummary {
+  kind: string;
+  method?: string;
+  wallets?: number;
+  on?: boolean;
+  idleHours?: number;
+  memberId?: string;
+  roles?: string[];
+}
+
+/** Hold model v3: `GET /v1/account/hold`. */
+export interface HoldView {
+  /** The account's hold (a recovery-code login's), while one runs. */
+  accountHold: { until: string; reason: string } | null;
+  /** Every waiting (submitted) change of the account, one date for all. */
+  changes: {
+    count: number;
+    takesEffectAt: string | null;
+    items: Array<HoldChangeSummary & { id: string; createdAt: string; submittedAt: string; by: string | null; mine: boolean }>;
+  };
+  /** This session's drafts, to review and submit. */
+  drafts: Array<HoldChangeSummary & { id: string; createdAt: string }>;
+  /** This session's changes are staged instead of applied. */
+  changesWait: boolean;
 }
 
 /** A refused call: the HTTP status, the API's error code and the extra fields it sent. */
@@ -188,6 +230,12 @@ export interface AccountOverview {
   termsCurrent: boolean;
   /** Task 17: when the account's 24-hour hold ends, while one runs (any session of the account). Optional: older API builds do not send it. */
   accountHoldUntil?: string | null;
+  /** Hold model v3: the account's waiting changes (the banner), else null. Optional: older API builds do not send it. */
+  pendingChanges?: { count: number; takesEffectAt: string } | null;
+  /** Hold model v3: this session's changes are staged and wait 24 h. Optional: older API builds do not send it. */
+  changesWait?: boolean;
+  /** Hold model v3: a new recovery code may be shown once (`revealRecoveryCode`). Optional: older API builds do not send it. */
+  recoveryCodeToShow?: boolean;
   /**
    * Plan 2 Task 18: set when the caller is a team member (the overview is of the account they work
    * for, with their own login methods); null for the account owner. Optional: older API builds do not send it.
@@ -367,8 +415,18 @@ export interface AuthApi {
   /** `secret` (base32) and `otpauthUri` are for the authenticator app only: show them, never keep them. */
   addTotpStart(b: Token): Promise<{ challengeId: string; otpauthUri: string; secret: string }>;
   addTotpFinish(b: { challengeId: string; code: string }): Promise<Held | undefined>;
-  newRecoveryCodes(b: Token): Promise<{ codes: string[] } & Partial<Held>>;
+  newRecoveryCodes(b: Token): Promise<{ codes: string[] } & Partial<Held | Staged>>;
   cancelRecoverySession(id: string): Promise<void>;
+  /** Hold model v3: `POST /v1/account/recovery-code/reveal`, once, by a full session opened after a recovery-code login. */
+  revealRecoveryCode(): Promise<{ code: string }>;
+  /** Hold model v3: `GET /v1/account/hold`. */
+  holdView(): Promise<HoldView>;
+  /** Hold model v3: `POST /v1/account/hold/changes/submit`, exactly the drafts reviewed (409 `changes-changed` otherwise). */
+  submitHoldChanges(b: { ids: string[] }): Promise<{ status: 'queued'; count: number; takesEffectAt: string }>;
+  /** Hold model v3: `DELETE /v1/account/hold/changes`: cancels every waiting change (and this session's drafts). */
+  cancelHoldChanges(): Promise<void>;
+  /** Hold model v3: `DELETE /v1/account/hold/changes/:id`: one waiting change or one of this session's drafts. */
+  cancelHoldChange(id: string): Promise<void>;
   /** `GET /v1/account/methods` (Task 10). */
   listMethods(): Promise<MethodEntry[]>;
   /** `DELETE /v1/account/methods/:type/:id` (Task 10), the token in a JSON body (R17). */
@@ -545,6 +603,11 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     addTotpFinish: (b) => heldOrDone(post('/v1/account/totp/finish', b)),
     newRecoveryCodes: (b) => post('/v1/account/recovery-codes', b),
     cancelRecoverySession: (id) => done(call('DELETE', `/v1/account/recovery-sessions/${seg(id)}`)),
+    revealRecoveryCode: () => post('/v1/account/recovery-code/reveal'),
+    holdView: () => get('/v1/account/hold'),
+    submitHoldChanges: (b) => post('/v1/account/hold/changes/submit', b),
+    cancelHoldChanges: () => done(call('DELETE', '/v1/account/hold/changes')),
+    cancelHoldChange: (id) => done(call('DELETE', `/v1/account/hold/changes/${seg(id)}`)),
     listMethods: () => get('/v1/account/methods'),
     removeMethod: (type, id, b) => heldOrDone(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
 
