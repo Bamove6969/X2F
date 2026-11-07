@@ -582,7 +582,7 @@ export function BuyerPay(p: TradeScreenProps) {
     const actions = (
       <>
         {primary}
-        <PaidWaitingActions view={view} serverClock={serverClock} />
+        <PaidWaitingActions view={view} serverClock={serverClock} wide={wide} />
       </>
     );
     if (wide) {
@@ -596,6 +596,11 @@ export function BuyerPay(p: TradeScreenProps) {
               total={total}
               serverClock={serverClock}
               wide
+              actions={
+                <div className="x2f-paid-actions" data-part="paid-actions">
+                  {actions}
+                </div>
+              }
               chatAction={
                 <button type="button" className="x2f-inline-action" onClick={(e) => focusAsideChat(e.currentTarget)} data-part="paid-chat">
                   <Icon name="chat" size={20} />
@@ -603,7 +608,6 @@ export function BuyerPay(p: TradeScreenProps) {
                 </button>
               }
             />
-            <div className="x2f-stack" data-part="paid-actions">{actions}</div>
           </WideRoom>
           {sheets}
         </>

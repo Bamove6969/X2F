@@ -2213,9 +2213,23 @@
   cursor: pointer;
 }
 
-/* An outlined action in the caution colour (BuyerPaidWaiting "Nudge satoshi_ghost"). */
-.x2f-button--secondary[data-tone='caution'] {
+/* BuyerPaidWaiting "Nudge satoshi_ghost": an ink outlined button, only its bell in caution. */
+.x2f-button--secondary[data-part='nudge'] > svg {
   color: var(--x2f-caution);
+}
+
+/* The 56 px size at 18 (BuyerPaidWaiting's locked "Open dispute" on the phone). */
+.x2f-button[data-size='large'] {
+  height: 56px;
+  font-size: 18px;
+}
+
+.x2f-footnote[data-align='end'] {
+  text-align: right;
+}
+
+.x2f-footnote[data-align='start'] {
+  text-align: left;
 }
 
 /* A centred small line under the actions. */

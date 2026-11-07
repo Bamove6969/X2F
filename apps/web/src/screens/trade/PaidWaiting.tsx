@@ -14,7 +14,7 @@
  * escrow side: Finish marking as paid, the refusals and the stopped escrow come in as `notices`
  * and `primary`. Lines not on the board are COPY-UNSIGNED.
  */
-import { useState, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { formatXmr } from '@x2f/trade';
 import { sendNudge } from '../../nudge/useNudge.js';
@@ -90,6 +90,7 @@ export function PaidWaitingBody({
   serverClock,
   chatAction,
   wide,
+  actions,
 }: {
   view: TradeView;
   method: MethodInfo;
@@ -97,6 +98,8 @@ export function PaidWaitingBody({
   serverClock: () => Date;
   chatAction: ReactNode;
   wide: boolean;
+  /** Wide only: the actions go right under the hero (the Wide board's order; design review P2-10). */
+  actions?: ReactNode;
 }) {
   const details = usePaymentDetails(view.code);
   const { clock, paused } = roomClock(view, serverClock);
@@ -257,26 +260,55 @@ export function PaidWaitingBody({
     </section>
   );
 
-  if (wide) {
-    return (
-      <>
-        {status}
-        <div className="x2f-room__grid">{payment}</div>
-        {next}
-      </>
-    );
-  }
+  // The boards' order: the progress, the hero (timer inside), on wide the actions row, then What
+  // happens next and Your payment (design review P2-9, P2-10).
   return (
     <>
+      <PaidProgress view={view} serverClock={clock} />
       {status}
+      {wide ? actions : null}
       {next}
       {payment}
     </>
   );
 }
 
-/** The footer: Nudge, the dispute (waiting or open), and the no-cancel line. */
-export function PaidWaitingActions({ view, serverClock }: { view: TradeView; serverClock: () => Date }) {
+const PROGRESS = ['Escrow', 'You pay', 'Seller checks', 'Released'] as const;
+
+/**
+ * "Trade progress" (BuyerPaidWaiting and -Wide boards; design review P2-9): four bars, Escrow and
+ * You pay done in escrow, Seller checks current with a caution fill for the share of the seller's
+ * window that has run (all of it once it ended), Released still to come.
+ */
+export function PaidProgress({ view, serverClock }: { view: Pick<TradeView, 'paidAt' | 'confirmBy'>; serverClock: () => Date }) {
+  const win = confirmWindow(view, serverClock().getTime());
+  const run = win === null ? 0 : win.ended || win.lengthMs === 0 ? 1 : 1 - win.leftMs / win.lengthMs;
+  const fill = `${Math.round(Math.min(Math.max(run, 0), 1) * 100)}%`;
+  return (
+    <ol aria-label="Trade progress" className="x2f-paid-progress" data-part="paid-progress">
+      {PROGRESS.map((label, i) => {
+        const status = i < 2 ? 'done' : i === 2 ? 'current' : 'todo';
+        return (
+          <li key={label} data-status={status} aria-current={status === 'current' ? 'step' : undefined}>
+            <span className="x2f-paid-progress__track" aria-hidden="true">
+              <span className="x2f-paid-progress__fill" style={status === 'current' ? ({ '--x2f-fill': fill } as CSSProperties) : undefined} />
+            </span>
+            <span className="x2f-paid-progress__label">{label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/**
+ * The actions. Phone (the footer; design review P2-11): the dispute first (56 px, locked on
+ * surface-raised with "Available from … · in …" under it, or the danger outline once open), then
+ * Nudge, then the no-cancel line. Wide (P2-10): one row, Nudge left and the dispute right, the
+ * "Available from" line right-aligned under it, then the no-cancel line. Nudge is ink with only its
+ * bell in caution (P2-13).
+ */
+export function PaidWaitingActions({ view, serverClock, wide = false }: { view: TradeView; serverClock: () => Date; wide?: boolean }) {
   const name = publicName(view.counterparty);
   const { clock, paused } = roomClock(view, serverClock);
   const now = clock().getTime();
@@ -305,15 +337,17 @@ export function PaidWaitingActions({ view, serverClock }: { view: TradeView; ser
     }
   };
 
-  return (
+  const nudgeButton =
+    nudge === 'gone' ? null : (
+      <Button variant="secondary" disabled={busy} onClick={() => void onNudge()} data-part="nudge">
+        <Icon name="bell-ring" size={20} />
+        Nudge <Name view={view} />
+      </Button>
+    );
+  // Review N1 keeps the button after a send; the server's 10-minute limit answers a second tap.
+  // (Design review P2-14 asks to hide it and show only the line; that waits for the owner or design.)
+  const nudgeLines = (
     <>
-      {nudge === 'gone' ? null : (
-        <Button variant="secondary" data-tone="caution" disabled={busy} onClick={() => void onNudge()} data-part="nudge">
-          <Icon name="bell-ring" size={20} />
-          Nudge <Name view={view} />
-        </Button>
-      )}
-      {/* The button stays after a send (review N1); the server's 10-minute limit answers a second tap. */}
       {nudge === 'sent' ? (
         <p role="status" className="x2f-footnote" data-part="nudge-sent">
           Nudge sent. You can send another in <Duration ms={NUDGE_AGAIN_MS} />.
@@ -324,30 +358,64 @@ export function PaidWaitingActions({ view, serverClock }: { view: TradeView; ser
           That did not work. Try again.
         </p>
       ) : null}
-      {opensAt !== null && now >= opensAt ? (
-        <Link to={`/trade/${encodeURIComponent(view.code)}/dispute`} className="x2f-button x2f-button--danger-outline" data-size="medium" data-part="paid-dispute">
-          Open dispute
-        </Link>
-      ) : (
-        <>
-          {/* aria-disabled, not disabled: it stays focusable, so its "Available from" is reachable (review N4). */}
-          <Button variant="secondary" aria-disabled="true" aria-describedby={opensAt !== null ? 'paid-dispute-when' : undefined} data-part="paid-dispute">
-            Open dispute
-          </Button>
-          {opensAt !== null ? (
-            <p id="paid-dispute-when" className="x2f-footnote">
-              {/* COPY-UNSIGNED "after the maintenance" (owner Q10; design words it) */}
-              {paused ? 'Available after the maintenance, in ' : <>Available from <When at={opensAt} />, in </>}
-              <Countdown deadline={new Date(opensAt)} serverClock={clock} format="minutes" />.
-            </p>
-          ) : null}
-        </>
-      )}
-      <p className="x2f-footnote">
-        {/* not-a-refusal: says ahead of time what a paid trade allows; nothing is refused here (owner, Revision 2026-10-29b) */}
-        You can't cancel after marking as paid. Tapped it by mistake? Explain in chat or open a dispute.
+    </>
+  );
+  const open = opensAt !== null && now >= opensAt;
+  const disputeButton = open ? (
+    <Link
+      to={`/trade/${encodeURIComponent(view.code)}/dispute`}
+      className="x2f-button x2f-button--danger-outline"
+      data-size={wide ? 'medium' : undefined}
+      data-part="paid-dispute"
+    >
+      Open dispute
+    </Link>
+  ) : (
+    // aria-disabled, not disabled: it stays focusable, so its "Available from" is reachable (review N4).
+    <Button variant="secondary" aria-disabled="true" aria-describedby={opensAt !== null ? 'paid-dispute-when' : undefined} data-size={wide ? undefined : 'large'} data-part="paid-dispute">
+      Open dispute
+    </Button>
+  );
+  const disputeWhen =
+    open || opensAt === null ? null : (
+      <p id="paid-dispute-when" className="x2f-footnote" data-align={wide ? 'end' : undefined}>
+        {/* COPY-UNSIGNED "after the maintenance" (owner Q10; design words it) */}
+        {paused ? 'Available after the maintenance' : <>Available from <When at={opensAt} form="time" /></>}
+        {' · in '}
+        <Countdown deadline={new Date(opensAt)} serverClock={clock} format="minutes" />
       </p>
-      {nudgeLimit ? <CantDoThat title={CANT_DO_TITLE.nudge} body={NUDGE_TOO_SOON} from={NUDGE_TOO_SOON_CODE} onClose={() => setNudgeLimit(false)} /> : null}
+    );
+  const noCancel = (
+    <p className="x2f-footnote" data-align={wide ? 'start' : undefined}>
+      {/* not-a-refusal: says ahead of time what a paid trade allows; nothing is refused here (owner, Revision 2026-10-29b) */}
+      You can't cancel after marking as paid. Tapped it by mistake? Explain in chat or open a dispute.
+    </p>
+  );
+  const limit = nudgeLimit ? <CantDoThat title={CANT_DO_TITLE.nudge} body={NUDGE_TOO_SOON} from={NUDGE_TOO_SOON_CODE} onClose={() => setNudgeLimit(false)} /> : null;
+
+  if (wide) {
+    return (
+      <>
+        <div className="x2f-paid-actions__row">
+          {nudgeButton}
+          <span className="x2f-room__spacer" />
+          {disputeButton}
+        </div>
+        {disputeWhen}
+        {nudgeLines}
+        {noCancel}
+        {limit}
+      </>
+    );
+  }
+  return (
+    <>
+      {disputeButton}
+      {disputeWhen}
+      {nudgeButton}
+      {nudgeLines}
+      {noCancel}
+      {limit}
     </>
   );
 }

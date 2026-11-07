@@ -768,7 +768,8 @@ describe('review minors 1, 5 and 7', () => {
     // aria-disabled, so it keeps focus and its "Available from" (review N4).
     expect(waiting.getAttribute('aria-disabled')).toBe('true');
     // The server's rule is later here (confirmBy, machine.ts too-early), so that is the time; "in 1 h 59 min" keeps its space (review 39 "in2 h").
-    expect(document.getElementById(waiting.getAttribute('aria-describedby')!)?.textContent).toMatch(/^Available from \d+ \w{3} \d{4}, \d\d:\d\d UTC, in 1 h 59 min\.$/);
+    // The board's "Available from 15:35 UTC · in 88 min", the time alone and no full stop (design review P2-11).
+    expect(document.getElementById(waiting.getAttribute('aria-describedby')!)?.textContent).toMatch(/^Available from \d\d:\d\d UTC · in 1 h 59 min$/);
     r.unmount();
     mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     const open = document.querySelector('[data-part="paid-dispute"]')!;
@@ -818,7 +819,54 @@ describe('review minors 1, 5 and 7', () => {
     const waiting = document.querySelector<HTMLButtonElement>('[data-part="paid-dispute"]')!;
     expect(waiting.tagName).toBe('BUTTON');
     const when = document.getElementById(waiting.getAttribute('aria-describedby')!)!.textContent ?? '';
-    expect(when).toMatch(/^Available after the maintenance, in 1 h 50 min\.$/);
+    expect(when).toMatch(/^Available after the maintenance · in 1 h 50 min$/);
+  });
+
+  it('the phone footer (design review P2-11, P2-13): the dispute first at 56 px, then an ink Nudge with only its bell in caution', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const footer = document.querySelector('footer')!;
+    const parts = [...footer.querySelectorAll('[data-part="paid-dispute"], [data-part="nudge"]')].map((e) => e.getAttribute('data-part'));
+    expect(parts).toEqual(['paid-dispute', 'nudge']);
+    expect(footer.querySelector('[data-part="paid-dispute"]')?.getAttribute('data-size')).toBe('large');
+    const nudge = footer.querySelector('[data-part="nudge"]')!;
+    expect(nudge.hasAttribute('data-tone')).toBe(false);
+    expect(nudge.className).toBe('x2f-button x2f-button--secondary');
+  });
+
+  it('the open dispute on the phone is the 56 px danger outline, not the medium size', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const open = document.querySelector('[data-part="paid-dispute"]')!;
+    expect(open.className).toBe('x2f-button x2f-button--danger-outline');
+    expect(open.hasAttribute('data-size')).toBe(false);
+  });
+
+  it('Trade progress (design review P2-9): four bars, Seller checks current with the window share filled in caution', () => {
+    for (const wide of [false, true]) {
+      const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-30), confirmBy: at(90) }), escrow: fakeEscrow({ paidRecorded: true }), wide }));
+      const steps = [...document.querySelectorAll('[data-part="paid-progress"] > li')];
+      expect(document.querySelector('[data-part="paid-progress"]')?.getAttribute('aria-label')).toBe('Trade progress');
+      expect(steps.map((li) => [li.textContent, li.getAttribute('data-status')])).toEqual([
+        ['Escrow', 'done'],
+        ['You pay', 'done'],
+        ['Seller checks', 'current'],
+        ['Released', 'todo'],
+      ]);
+      expect(steps[2]!.getAttribute('aria-current')).toBe('step');
+      expect((steps[2]!.querySelector('.x2f-paid-progress__fill') as HTMLElement).style.getPropertyValue('--x2f-fill')).toBe('25%');
+      r.unmount();
+    }
+  });
+
+  it('the wide room in the Wide board\'s order (design review P2-10): hero, the actions row, What happens next, Your payment', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }), wide: true }));
+    const order = [...document.querySelectorAll('[data-part="paid-progress"], [data-part="paid-status"], [data-part="paid-actions"], [data-part="paid-next"], [data-part="paid-payment"]')].map((e) => e.getAttribute('data-part'));
+    expect(order).toEqual(['paid-progress', 'paid-status', 'paid-actions', 'paid-next', 'paid-payment']);
+    expect(document.querySelector('.x2f-room__grid')).toBeNull();
+    // Nudge left, the dispute right in one row; the hint right-aligned under it.
+    const row = document.querySelector('.x2f-paid-actions__row')!;
+    expect([...row.children].map((c) => c.getAttribute('data-part') ?? c.className)).toEqual(['nudge', 'x2f-room__spacer', 'paid-dispute']);
+    expect(row.querySelector('[data-part="paid-dispute"]')?.hasAttribute('data-size')).toBe(false);
+    expect(document.getElementById('paid-dispute-when')?.getAttribute('data-align')).toBe('end');
   });
 
   it('Nudge sent says when the next one can go, the 10 in mono (design review P1-4)', async () => {
