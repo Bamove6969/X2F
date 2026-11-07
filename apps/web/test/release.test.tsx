@@ -138,7 +138,7 @@ describe('SellerConfirm', () => {
     expect(s.host.querySelectorAll('[data-primary]')).toHaveLength(1);
   });
 
-  it('the confirm-window tip says the buyer can ask a moderator from the trade's own wait after marking paid (cap-dispute I1)', () => {
+  it("the confirm-window tip says the buyer can ask a moderator from the trade's own wait after marking paid (cap-dispute I1)", () => {
     const s = sellerConfirm(trade());
     const tip = s.host.querySelector('#x2f-confirm-tip')!.textContent!.replace(/\s+/g, ' ');
     // The trade's own wait (owner 2026-11-07 F9: per payment type; Zelle 90 minutes).

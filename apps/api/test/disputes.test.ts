@@ -73,7 +73,7 @@ async function rule(code: string, o: { outcome: string; round?: 1 | 2; ruledAt: 
 }
 
 describe('POST /v1/trades/:code/dispute', () => {
-  it('refuses the buyer before the trade's 90-minute wait after marking paid (89:59), and writes nothing (owner 2026-11-07 F9: instant types)', async () => {
+  it("refuses the buyer before the trade's 90-minute wait after marking paid (89:59), and writes nothing (owner 2026-11-07 F9: instant types)", async () => {
     const { buyer, t } = await tradeIn('paid');
     setNow(at(89 * MIN + 59_000));
     const res = await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
