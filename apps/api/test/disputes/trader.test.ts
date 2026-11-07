@@ -354,3 +354,17 @@ describe('tripwires (local tree only)', () => {
     expect(existsSync(src('disputes/lien.ts')), 'NEEDS_TASK_25_LIEN_ON_APPEAL').toBe(false);
   });
 });
+
+describe('dispute timers keep going past one bad dispute (lead review 7 Nov)', () => {
+  it('a dispute whose row cannot be read is reported after the pass; the others still close their window', async () => {
+    const good = await disputed();
+    const bad = await disputed();
+    await publishRuling(deps, good.t.code, { outcome: 'release-to-buyer' });
+    await publishRuling(deps, bad.t.code, { outcome: 'release-to-buyer' });
+    // A ruling with no id: closing its window fails (the log entry needs the id), not a rule refusal.
+    await deps.db.query(`update disputes set ruling = ruling - 'id' where code = $1`, [bad.t.code]);
+    setNow(new Date(START.getTime() + 49 * H));
+    await expect(tick()).rejects.toThrow(/dispute timers: 1 dispute\(s\) failed/);
+    expect((await loadDispute(deps.db, good.t.code))!.status).not.toBe('published');
+  });
+});

@@ -21,7 +21,8 @@ export const DISPUTE_TIMER_MS = 30_000;
  *    moved at the ruling (A1 dropped): this only ends the one chance to appeal.
  *
  * Each dispute is its own transaction (`withDispute`); one that fails is skipped and retried on the
- * next pass. Returns the number of disputes changed.
+ * next pass, and the others still run (lead review 7 Nov). The failures are thrown together once the
+ * pass is over, so the scheduler still reports them. Returns the number of disputes changed.
  */
 export async function runDisputeTimers(deps: DisputeDeps): Promise<number> {
   const now = deps.clock();
@@ -35,6 +36,8 @@ export async function runDisputeTimers(deps: DisputeDeps): Promise<number> {
     return r.rowCount ?? 0;
   }
   let n = 0;
+  const failures: unknown[] = [];
+  const step = (run: () => Promise<unknown>) => stepOne(run, failures);
   const paused = await deps.db.query<{ code: string; seq: number }>('select code, seq from disputes where paused_since is not null');
   for (const p of paused.rows) {
     if (await step(() => withDispute(deps, p, async (d, client, at, rec) => {
@@ -63,17 +66,21 @@ export async function runDisputeTimers(deps: DisputeDeps): Promise<number> {
       return next;
     }))) n++;
   }
+  if (failures.length > 0) throw new AggregateError(failures, `dispute timers: ${failures.length} dispute(s) failed`);
   return n;
 }
 
-/** Runs one dispute's change; a rule refusal (the state moved on meanwhile) counts as no change. */
-async function step(run: () => Promise<unknown>): Promise<boolean> {
+/**
+ * Runs one dispute's change; a rule refusal (the state moved on meanwhile) counts as no change, and
+ * any other error is kept in `failures` so the rest of the pass still runs.
+ */
+async function stepOne(run: () => Promise<unknown>, failures: unknown[]): Promise<boolean> {
   try {
     await run();
     return true;
   } catch (err) {
-    if (err instanceof DisputeRuleError) return false;
-    throw err;
+    if (!(err instanceof DisputeRuleError)) failures.push(err);
+    return false;
   }
 }
 

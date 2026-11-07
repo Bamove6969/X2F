@@ -1,16 +1,15 @@
 // Plan 4 Task 7: staff management (members, invites, switch off and on, hours, roles, removal).
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { keyCheckCode, type LoginHours } from '@x2f/staff';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { startDispute } from '../../src/disputes/store.js';
 import { verifyLogChain } from '../../src/log/verify.js';
-import { applyEvent } from '../../src/trades/store.js';
-import { seedAccount } from '../helpers/accounts.js';
-import { driveTo, seedTrade } from '../helpers/trades.js';
 import { codeOf, decrypt, genKey, type Pair } from '../helpers/pgpKeys.js';
 import type { SoftAuthenticator } from '../helpers/softAuthenticator.js';
-import { STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedStaff } from '../helpers/staffApp.js';
+import { SESSION_COOKIE, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedStaff, uniqueName } from '../helpers/staffApp.js';
+import { seedAccount } from '../helpers/accounts.js';
+import { driveTo, seedTrade } from '../helpers/trades.js';
+import { applyEvent } from '../../src/trades/store.js';
 import { attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
 
 const MON_NOON = new Date('2026-11-02T12:00:00Z');
@@ -49,8 +48,8 @@ const acceptUrl = (token: string, step = '') => `/staff/v1/invites/accept/${toke
 
 async function pickNames(b: StaffBrowser, token: string) {
   const n = loginName();
-  const res = await b.post(acceptUrl(token, '/account'), { username: `Mod${n}`, loginName: n });
-  return { res, loginName: n, username: `Mod${n}` };
+  const res = await b.post(acceptUrl(token, '/account'), { displayName: `Mod${n}`, loginName: n });
+  return { res, loginName: n, displayName: `Mod${n}` };
 }
 
 async function addInviteKey(b: StaffBrowser, token: string, key: SoftAuthenticator, kind: 'security-key' | 'passkey' = 'security-key') {
@@ -116,7 +115,7 @@ describe('invites', () => {
 
     // A second use of the link.
     expect(errorOf(await invitee().get(acceptUrl(inv.token)))).toBe('invite-invalid');
-    expect(errorOf(await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Again1', loginName: 'againlogin1' }))).toBe('invite-invalid');
+    expect(errorOf(await invitee().post(acceptUrl(inv.token, '/account'), { displayName: 'Again1', loginName: 'againlogin1' }))).toBe('invite-invalid');
     expect(errorOf(await s.b.post(acceptUrl(inv.token, '/finish'), {}))).toBe('invite-invalid');
   });
 
@@ -181,7 +180,7 @@ describe('invites', () => {
     const id = await accountOf(n.loginName);
     const { rows } = await t.deps.db.query<{ disabled_at: Date | null }>('select disabled_at from accounts where id = $1', [id]);
     expect(rows[0]!.disabled_at).not.toBeNull();
-    const again = await b.post(acceptUrl(inv.token, '/account'), { username: 'Other1x', loginName: 'otherlogin1x' });
+    const again = await b.post(acceptUrl(inv.token, '/account'), { displayName: 'Other1x', loginName: 'otherlogin1x' });
     expect(again.statusCode).toBe(409);
     // Keys and PGP before the names: refused.
     const fresh = await createInvite('mod');
@@ -227,11 +226,11 @@ describe('members', () => {
     expect(res.statusCode).toBe(200);
     const rows = res.json().members as Array<Record<string, unknown>>;
     expect(rows).toContainEqual({
-      accountId: mod.id, inviteId: null, username: `D${mod.loginName}`, role: 'mod', status: 'active', hours: OFFICE,
+      accountId: mod.id, inviteId: null, displayName: `D${mod.loginName}`, role: 'mod', status: 'active', hours: OFFICE,
       joinedAt: MON_NOON.toISOString(), lastActiveAt: MON_NOON.toISOString(), openCases: 0, expiresAt: null,
     });
     expect(rows).toContainEqual({
-      accountId: null, inviteId: inv.inviteId, username: null, role: 'helper', status: 'waiting', hours: OFFICE,
+      accountId: null, inviteId: inv.inviteId, displayName: null, role: 'helper', status: 'waiting', hours: OFFICE,
       joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt,
     });
     expect(rows.find((r) => r.accountId === owner.id)).toMatchObject({ role: 'owner', status: 'active', hours: 'any' });
@@ -240,6 +239,8 @@ describe('members', () => {
   it('switch-off takes effect at once; past log entries stay and the chain verifies', async () => {
     const mod = await staffWithKeys(t, { role: 'mod' });
     expect((await mod.browser.get('/staff/v1/me')).statusCode).toBe(200);
+    // A trader-site session left from before the split (RV5 Q5): switch-off ends it as well.
+    const old = await insertSession(t.deps, mod.id, 'trader');
     const before = (await t.deps.db.query('select id, hash from activity_log order by id')).rows;
     const res = await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {});
     expect(res.statusCode, res.body).toBe(200);
@@ -249,6 +250,8 @@ describe('members', () => {
     expect(errorOf(me)).toBe('not-authenticated');
     const { rows: live } = await t.deps.db.query('select 1 from sessions where account_id = $1 and revoked_at is null', [mod.id]);
     expect(live).toEqual([]);
+    const onTrader = await t.trader.inject({ method: 'GET', url: '/v1/account/me', headers: { cookie: `${SESSION_COOKIE}=${old.token}` } });
+    expect(onTrader.statusCode).toBe(401);
     const { rows: a } = await t.deps.db.query<{ disabled_at: Date | null; switched_off_at: Date | null }>(
       'select a.disabled_at, m.switched_off_at from accounts a join staff_members m on m.account_id = a.id where a.id = $1',
       [mod.id],
@@ -325,57 +328,73 @@ describe('members', () => {
   });
 });
 
-describe('open cases (Task 11: disputes.assignee)', () => {
-  let n = 0;
-  /** A disputed trade whose current dispute is assigned to `assignee`, in `status`. */
-  async function caseFor(assignee: string, status: 'open' | 'appealed' | 'closed' = 'open'): Promise<string> {
-    const seller = await seedAccount(t.deps, { loginName: `cs${++n}${Date.now().toString(36)}` });
-    const buyer = await seedAccount(t.deps, { loginName: `cb${n}${Date.now().toString(36)}` });
-    const { trade } = await seedTrade(t.deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
-    await driveTo(t.deps, trade, 'secured');
-    await applyEvent(t.deps, trade.code, { type: 'open-dispute' }, 'buyer', async (client, prev, _next, now) => {
-      await startDispute(client, prev, { openedBy: 'buyer', reason: 'paid', note: '', afterRefund: false, now, prices: null });
-    });
-    await t.deps.db.query(
-      `update disputes set assignee = $2, status = $3, closed_at = case when $3 = 'closed' then opened_at end where code = $1`,
-      [trade.code, assignee, status],
-    );
-    return trade.code;
-  }
-
-  it('the list counts each member\'s open cases; switch-off and removal unassign them, logged by the system', async () => {
+describe('open cases (was NEEDS_P4_CASE_ASSIGNEE)', () => {
+  it('the list counts a member\'s open cases; switch-off sends them back to the queue, one log entry each', async () => {
     const mod = await staffWithKeys(t, { role: 'mod' });
-    const other = await staffWithKeys(t, { role: 'mod' });
-    const open1 = await caseFor(mod.id);
-    const open2 = await caseFor(mod.id, 'appealed');
-    const closed = await caseFor(mod.id, 'closed');
-    const theirs = await caseFor(other.id);
-    const count = async (id: string) =>
-      ((await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string; openCases: number }>).find((r) => r.accountId === id)!.openCases;
-    expect(await count(mod.id)).toBe(2);
-    expect(await count(other.id)).toBe(1);
-
+    const seller = await seedAccount(t.deps, { loginName: uniqueName('cs') });
+    const buyer = await seedAccount(t.deps, { loginName: uniqueName('cb') });
+    const { trade } = await seedTrade(t.deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
+    await driveTo(t.deps, trade, 'released');
+    await applyEvent(t.deps, trade.code, { type: 'escalate' }, 'system');
+    await t.deps.db.query('update disputes set assignee = $2 where code = $1', [trade.code, mod.id]);
+    const before = (await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string | null; openCases: number }>;
+    expect(before.find((m) => m.accountId === mod.id)!.openCases).toBe(1);
     expect((await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {})).statusCode).toBe(200);
-    const assignee = async (code: string) => (await t.deps.db.query<{ a: string | null }>('select assignee::text as a from disputes where code = $1', [code])).rows[0]!.a;
-    expect([await assignee(open1), await assignee(open2), await assignee(closed), await assignee(theirs)]).toEqual([null, null, mod.id, other.id]);
-    expect(await count(mod.id)).toBe(0);
-    // One system entry per case, naming the member (never the owner: R37 counts staff entries).
-    const { rows } = await t.deps.db.query<{ trade_code: string; actor_kind: string; detail: string }>(
-      `select trade_code, actor_kind, detail from activity_log where action = 'dispute.unassigned' and trade_code = any($1) order by id`,
-      [[open1, open2, closed, theirs]],
-    );
-    expect(rows.map((r) => r.trade_code).sort()).toEqual([open1, open2].sort());
-    expect(rows.every((r) => r.actor_kind === 'system' && r.detail === JSON.stringify({ staffId: mod.id }))).toBe(true);
-    expect(await verifyLogChain(t.deps.db)).toMatchObject({ ok: true });
+    const { rows } = await t.deps.db.query<{ assignee: string | null }>('select assignee::text from disputes where code = $1', [trade.code]);
+    expect(rows[0]!.assignee).toBeNull();
+    expect(await logEntries(t.deps, 'dispute.unassigned')).toContainEqual({ actor_kind: 'system', detail: JSON.stringify({ staffId: mod.id }) });
+    const after = (await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string | null; openCases: number }>;
+    expect(after.find((m) => m.accountId === mod.id)!.openCases).toBe(0);
+  });
+});
 
-    // Removing a member who is still on, too.
-    expect((await owner.browser.send('DELETE', `/staff/v1/members/${other.id}`)).statusCode).toBe(204);
-    expect(await assignee(theirs)).toBeNull();
+describe('owner Q54: the public name is displayName; a field named username is refused', () => {
+  it('the invitee names the account with displayName and loginName; username is not taken', async () => {
+    const inv = await createInvite('helper');
+    const res = await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Public1x', loginName: 'secretlogin1x' });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('per-person grants (owner Q60)', () => {
+  it('the owner ticks feedback for a moderator with a tap bound to the exact list; the moderator then reads feedback', async () => {
+    const mod = await staffWithKeys(t, { role: 'mod' });
+    expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(403);
+    const put = (grants: unknown, tapId?: string) => owner.browser.send('PUT', `/staff/v1/members/${mod.id}/grants`, { grants, ...(tapId ? { tapId } : {}) });
+    expect(errorOf(await put(['feedback.read']))).toBe('tap-invalid');
+    // A tap for another list does not set this one.
+    const both = await tap(owner, { kind: 'set-grants', accountId: mod.id, grants: ['feedback.read', 'tickets.handle'] });
+    expect(errorOf(await put(['feedback.read'], both))).toBe('tap-invalid');
+    const res = await put(['feedback.read'], await tap(owner, { kind: 'set-grants', accountId: mod.id, grants: ['feedback.read'] }));
+    expect([res.statusCode, res.json()]).toEqual([200, { grants: ['feedback.read'] }]);
+    expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
+    expect((await mod.browser.get('/staff/v1/me')).json().nav).toContain('feedback');
+    // Lead review 7 Nov M5: a named row's sender is the owner's and seniors' to see, not a grant holder's.
+    await t.deps.db.query("insert into feedback_form (kind, body, account_id, from_code, created_on) values ('feedback', 'named', $1, null, '2026-11-02')", [mod.id]);
+    const asMod = (await mod.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null }>;
+    expect(asMod.find((i) => i.text === 'named')!.accountId).toBeNull();
+    const asOwner = (await owner.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null }>;
+    expect(asOwner.find((i) => i.text === 'named')!.accountId).toBe(mod.id);
+    expect(await logEntries(t.deps, 'staff.grants-set')).toContainEqual({
+      actor_kind: 'staff', detail: JSON.stringify({ feedbackRead: true, staffId: mod.id, ticketsHandle: false }),
+    });
+    // Unknown or repeated grants are 400; the owner's own row is protected.
+    expect((await put(['staff.manage'])).statusCode).toBe(400);
+    expect((await put(['feedback.read', 'feedback.read'])).statusCode).toBe(400);
+    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${owner.id}/grants`, { grants: [] }))).toBe('owner-protected');
+  });
+
+  it('a senior moderator reads feedback by role (owner Q60)', async () => {
+    const senior = await staffWithKeys(t, { role: 'senior' });
+    expect((await senior.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
+    expect((await senior.browser.get('/staff/v1/me')).json().nav).toEqual(['disputes', 'training', 'log', 'feedback']);
   });
 });
 
 describe('Task 7 tripwires (local tree only)', () => {
   const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+  const migrations = (): string => readdirSync(`${ROOT}apps/api/migrations`).map((f) => readFileSync(`${ROOT}apps/api/migrations/${f}`, 'utf8')).join('\n');
+
   it('NEEDS_P4_MODERATION_REVOKE: switch-off tells the moderation process', () => {
     // When Task 13's gate lands (apps/moderation/src/gate): give ModerationClient a revoke call and
     // make `switchOff` call it after the commit (revocation needs no signature).

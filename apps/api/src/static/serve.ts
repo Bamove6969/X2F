@@ -74,7 +74,7 @@ type ConnectOrigins = Pick<WebOptions, 'relayOrigin' | 'nodeProxyOrigin' | 'allo
 const CONNECT_SCHEMES = new Set(['https:', 'wss:', 'http:', 'ws:']);
 const SECURE_SCHEMES = new Set(['https:', 'wss:']);
 /** Hosts that never leave this machine, as `URL.hostname` spells them. */
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', 'localhost']);
+export const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]', 'localhost']);
 
 /** An exact origin, so nothing else can ride into the policy. */
 function origin(value: string, name: string, allowInsecure: boolean): string {

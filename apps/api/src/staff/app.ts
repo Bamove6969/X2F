@@ -1,4 +1,5 @@
 import fastifyCookie from '@fastify/cookie';
+import { can } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import { installErrorAnswers, newFastify, type Deps } from '../app.js';
 import { originHook } from '../auth/origin.js';
@@ -8,12 +9,16 @@ import { newBudgets } from '../limits.js';
 import { addSecurityHeaders } from '../static/serve.js';
 import { assertRoutePerm, requireStaff, type StaffRoutePerm } from './guard.js';
 import { staffInviteRoutes } from './invites.js';
+import { keyTapRoutes } from './keyTap.js';
 import { staffMemberRoutes } from './members.js';
 import { ownerKeyRoutes } from './ownerKeys.js';
+import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from '../push/send.js';
+import { staffAccountRoutes } from './account.js';
 import { staffFeedbackRoutes } from './feedback.js';
-import { keyTapRoutes } from './keyTap.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
+import { staffPastRepRoutes } from './pastrep.js';
+import { staffPriceHealthRoutes } from './priceHealth.js';
 import { staffSettingsRoutes } from './settings.js';
 import { staffSiteRoutes } from './site.js';
 
@@ -70,7 +75,10 @@ export const STAFF_CSP = [
  * WebAuthn uses the staff origin and relying party. Every route declares a perm in `config.perm`,
  * checked at startup (`assertRoutePerm`).
  */
-export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { write(line: string): void } } = {}): Promise<FastifyInstance> {
+export async function buildStaffApi(
+  deps: StaffDeps,
+  options: { logStream?: { write(line: string): void }; pushTransport?: PushTransport } = {},
+): Promise<FastifyInstance> {
   const origin = new URL(deps.staffOrigin);
   if (origin.origin !== deps.staffOrigin) throw new Error('config: X2F_STAFF_ORIGIN must be an exact origin such as https://staff.example.org');
   // The staff app's own view of the config: its origin is the only allowed one, and keys are
@@ -84,8 +92,12 @@ export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { wr
   app.decorate('budgets', newBudgets(deps.clock));
   // Staff have no live streams yet; ending a session still tells the (empty) bus.
   app.decorate('events', new EventBus());
-  // No staff push subscriptions yet (Plan 6): a new staff login pushes nothing.
-  app.decorate('push', { send: async () => false });
+  // Lead re-review 6 Nov item 2: real Web Push (staff subscribe at /staff/v1/account/push).
+  const transport = options.pushTransport ?? webPushTransport;
+  app.decorate('push', {
+    send: (accountId: string, kind: PushKind, opts?: PushOptions) =>
+      sendPush({ db: deps.db, clock: deps.clock, config: deps.config, transport, log: app.log }, accountId, kind, opts),
+  });
   app.decorate('sessionRealm', STAFF_REALM);
   app.decorate('sessionWriteRoutes', [] as string[]);
   app.decorateRequest('auth', null as never);
@@ -112,17 +124,30 @@ export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { wr
 
   app.get('/healthz', { config: { perm: 'public-login' } }, async () => ({ ok: true }));
   await staffLoginRoutes(app);
-  // Plan 4 Task 5: security-key taps bound to an intent (each tapped action consumes its own).
-  keyTapRoutes(app, { guard: requireStaff('self'), accountOf: (req) => req.staff.accountId });
-  // Plan 4 Task 8: the owner's settings (settings.write) and the site controls (site.control).
-  staffSettingsRoutes(app);
-  staffSiteRoutes(app);
+  // Lead re-review 6 Nov items 1-2: one's own login methods, sessions, alerts and push.
+  staffAccountRoutes(app);
+  // Plan 4 Task 5: security-key taps, used by every tapped action (Tasks 7, 8, 12).
+  keyTapRoutes(app, {
+    guard: requireStaff('self'),
+    accountOf: (req) => req.staff.accountId,
+    // RV5 m10: a tap is used only from the session that started it (every consume passes it).
+    sessionOf: (req) => req.auth.sessionId,
+    // RV5 m7: a tap only for an action the member may take.
+    allows: (req, need) => (need === 'owner' ? req.staff.role === 'owner' : can(req.staff.role, need, req.staff.grants)),
+  });
   // Plan 4 Task 7: staff management, invites and the owner's keys.
   staffMemberRoutes(app);
   staffInviteRoutes(app);
   ownerKeyRoutes(app);
+  // Plan 4 Task 8: the owner's settings (settings.write) and the site controls (site.control).
+  staffSettingsRoutes(app);
+  staffSiteRoutes(app);
   // Plan 4 Task 28: the owner writes News (site.control).
   staffNewsRoutes(app);
+  // Owner Q13 (6 Nov): the owner's Price health page, moved from the trader API.
+  staffPriceHealthRoutes(app);
+  // Plan 5 Task 10 (owner 2026-11-02): a claim's verified dollar figure (senior moderators and the owner).
+  staffPastRepRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
 

@@ -17,6 +17,9 @@ create table key_taps (
   started_at timestamptz not null,
   finished_at timestamptz,
   used_at timestamptz,
+  -- RV5 m10: the staff session that started the tap, when the route knows it; a consume must then
+  -- come from the same session. No foreign key: purging a session must not fail on its taps.
+  session_id uuid,
   -- Finished means answered: the credential and the response are set together, and only then.
   check ((finished_at is null) = (credential_id is null) and (finished_at is null) = (response is null)),
   -- Used means finished first.
@@ -24,3 +27,5 @@ create table key_taps (
 );
 
 create index key_taps_account on key_taps (account_id, started_at);
+-- RV5 m12: open taps per account are capped; this index serves that count.
+create index key_taps_open on key_taps (account_id, started_at) where finished_at is null;

@@ -13,6 +13,7 @@ import { currencyExponent } from '../price/currencies.js';
 import type { MarketPrices } from '../price/market.js';
 import { blockedEitherWaySql } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
+import { hasPendingReview, pendingReviewSql } from '../reviews/gate.js';
 import { lastSeenSql, onlineSince, traderSummaries, type TraderSummary } from '../traders/summary.js';
 import { usableWallets } from '../wallets/routes.js';
 
@@ -80,10 +81,10 @@ export interface MyOffer {
   status: 'live' | 'paused';
   /**
    * A live offer that nobody can see right now, and why (review M4): the site's emergency stop,
-   * the account's trading hold, or its method under legal review. Absent when the offer is listed
-   * or paused.
+   * the account's trading hold, a trade it has not rated yet (Plan 5 Task 3, P5-A4; review round 1
+   * M3), or its method under legal review. Absent when the offer is listed or paused.
    */
-  hidden?: 'trading-paused' | 'trading-hold' | 'method-unavailable';
+  hidden?: 'trading-paused' | 'trading-hold' | 'review-pending' | 'method-unavailable';
   createdAt: string;
 }
 
@@ -161,6 +162,13 @@ const OFFER_COLUMNS = `o.id, o.account_id, o.side, o.method_id, o.currency, o.pr
 const LISTED = `o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
   and not coalesce((select f.trading_paused from site_flags f), true)`;
+
+/**
+ * Plan 5 Task 3 (P5-A4): an offer whose poster has a pending review is left out of every list, count
+ * and single-offer read until they rate, so takers are never stranded (the take refuses it too).
+ * `now` is the SQL parameter bound from the clock.
+ */
+const posterRated = (now: string): string => `not ${pendingReviewSql('o.account_id', now)}`;
 
 /**
  * The offer's rate now in SQL, with the currency's market price bound as `param` (null while the feed
@@ -401,16 +409,16 @@ export async function viewer(app: FastifyInstance, req: FastifyRequest, reply: F
  * for a signed-in viewer, without the offers a block hides from them (Task 37 review I1), so the counts and best
  * rates match the lists they open.
  */
-export function liveOfferStats(deps: Pick<Deps, 'db' | 'prices'>): LiveOfferStats {
+export function liveOfferStats(deps: Pick<Deps, 'db' | 'prices' | 'clock'>): LiveOfferStats {
   return async ({ side, currency, viewerId = null }) => {
     const market = deps.prices.current(currency)?.centsPerXmr ?? null;
     const { rows } = await deps.db.query<{ method_id: string; offers: number; lo: string | null; hi: string | null }>(
       `select o.method_id, count(*)::int as offers, min(r.rate) as lo, max(r.rate) as hi
          from offers o join accounts a on a.id = o.account_id cross join lateral (select ${rateSql('$3')} as rate) r
-        where ${LISTED} and o.side = $1 and o.currency = $2
+        where ${LISTED} and ${posterRated('$5::timestamptz')} and o.side = $1 and o.currency = $2
           and not ${blockedEitherWaySql('o.account_id', '$4::uuid')}
         group by o.method_id`,
-      [side, currency, market === null ? null : market.toString(), viewerId],
+      [side, currency, market === null ? null : market.toString(), viewerId, deps.clock()],
     );
     return rows.map((r) => {
       // Buy ads pay the seller: the best is the highest. Sell ads charge the buyer: the lowest.
@@ -552,10 +560,10 @@ export function offerRoutes(app: FastifyInstance): void {
          cross join lateral (select ${rateSql('$4')} as rate) r
          cross join lateral (select coalesce(${lastSeenSql('a.id', '$6::uuid')} >= $5::timestamptz, false) as online) ls
          cross join lateral (select ${COMPLETED_TRADES_SQL} as completed) ct
-        where ${LISTED} and o.side = $1 and o.method_id = $2 and o.currency = $3
+        where ${LISTED} and ${posterRated('$7::timestamptz')} and o.side = $1 and o.method_id = $2 and o.currency = $3
           and not ${blockedEitherWaySql('o.account_id', '$6::uuid')}
         order by ${order}, o.created_at desc, o.id limit ${LIST_LIMIT}`,
-      [side, method, currency, market === null ? null : market.toString(), onlineSince(now), viewerId],
+      [side, method, currency, market === null ? null : market.toString(), onlineSince(now), viewerId, now],
     );
     const posters = await traderSummaries(deps.db, rows.map((r) => r.account_id), now, viewerId);
     const entries = rows.map((r) => ({ r, poster: posters.get(r.account_id)!, rate: rateOf(r, deps.prices) }));
@@ -570,9 +578,9 @@ export function offerRoutes(app: FastifyInstance): void {
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
     const viewerId = await viewer(app, req, reply);
     const { rows } = await deps.db.query<OfferRow & { listed: boolean; blocked: boolean }>(
-      `select ${OFFER_COLUMNS}, (${LISTED}) as listed, ${blockedEitherWaySql('o.account_id', '$2::uuid')} as blocked
+      `select ${OFFER_COLUMNS}, (${LISTED} and ${posterRated('$3::timestamptz')}) as listed, ${blockedEitherWaySql('o.account_id', '$2::uuid')} as blocked
          from offers o join accounts a on a.id = o.account_id where o.id = $1`,
-      [id, viewerId],
+      [id, viewerId, deps.clock()],
     );
     const r = rows[0];
     if (!r || r.status === 'removed') throw new ApiError(404, 'not-found');
@@ -603,7 +611,13 @@ export function offerRoutes(app: FastifyInstance): void {
               exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held`,
       [accountId],
     );
-    const accountHidden = why[0]!.paused ? 'trading-paused' : why[0]!.held ? 'trading-hold' : null;
+    const accountHidden = why[0]!.paused
+      ? 'trading-paused'
+      : why[0]!.held
+        ? 'trading-hold'
+        : (await hasPendingReview(deps.db, accountId, deps.clock()))
+          ? 'review-pending'
+          : null;
     return rows.map((r) => {
       const p = pricingOf(r);
       const rate = rateOf(r, deps.prices);

@@ -163,11 +163,21 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   ],
   // Task 27's dispute boards: parts other tasks build (Plan 5's evidence and unblurred proof, Task 20's chat).
   DisputeOpen: [
+    {
+      text: 'That includes your messages from before the trade started. They may also ask you for an unblurred copy of your proof. A moderator usually replies within 4 hours.',
+      why: 'Owner Q38 (6 Nov) via design (board v119, not in this repo yet): the 4-hour line is replaced by the hourglass line.',
+    },
     { text: 'Zelle screenshot', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
     { text: 'Already in this trade, blurred', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
     { text: 'Included', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
   ],
   DisputeRoom: [
+    { text: '1.25 XMR locked in escrow', why: 'Board v119 (design 7 Nov, not in this repo yet): the amount is an inner block, six decimals.' },
+    {
+      text: 'Replied in 38 min · ruling due by Fri 16 Oct, 10:14 (in 23 h)',
+      why: 'Owner Q38 (6 Nov): traders never see the 48-hour deadline; the hourglass is the one deadline (board v119).',
+    },
+    { text: 'Fri 16 Oct, 10:14', why: 'Owner Q38 (6 Nov): the ruling-due date is not shown (board v119).' },
     { text: 'Your Zelle screenshot', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
     {
       text: 'She can read this whole chat, including messages from before the trade. Moderators only ever contact you here.',
@@ -551,9 +561,13 @@ export async function expectParity(
   const refsDir = o.refsDir ?? `${BOARDS_DIR}refs`;
   const failures: string[] = [];
 
-  const primaries = await page
-    .locator('[data-primary]')
-    .evaluateAll((els) => els.filter((e) => e.checkVisibility({ visibilityProperty: true, opacityProperty: true })).length);
+  // One page.evaluate, not locator.evaluateAll: evaluateAll finds the elements in one round trip and
+  // runs the function in another, so a screen React swaps in between (a router navigation commits in a
+  // transition, after the URL has changed) left it checking the old screen's detached button: found 0.
+  const primaries = await page.evaluate(
+    () =>
+      [...document.querySelectorAll('[data-primary]')].filter((e) => e.checkVisibility({ visibilityProperty: true, opacityProperty: true })).length,
+  );
   if (o.primary === false) {
     if (primaries !== 0) failures.push(`no [data-primary] on a board without a primary action, found ${primaries}`);
   } else if (primaries !== 1) {

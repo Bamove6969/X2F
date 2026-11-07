@@ -43,9 +43,9 @@ const CONTROL_BUT_NEWLINE = new RegExp('[\\u0000-\\u0009\\u000b-\\u001f\\u007f-\
  *   `banner-too-long`; `DELETE /staff/v1/site/banner` → 204.
  * - `PUT /staff/v1/site/maintenance { on, message?, kind? }`: on sets `maintenance_since` (kept if
  *   already on, so the timers shift by the whole maintenance), the message and the kind
- *   (`planned` | `emergency`, default `emergency`); off clears all three. Plan 3's timer loop
- *   pauses and resumes the trade timers from `maintenance_since`; the trader API answers 503
- *   `maintenance` meanwhile (site/routes.ts).
+ *   (`planned` | `emergency`, default `emergency`); off clears all three. The trader API answers 503
+ *   `maintenance` meanwhile (site/routes.ts). Nothing pauses the trade timers yet (lead review 7 Nov:
+ *   `timerEvents` has no caller; the loop is on held work): the owner decides on the timer loop.
  * A request that changes nothing (stop while stopped, removing no banner) consumes its tap but
  * writes no log entry.
  */
@@ -63,7 +63,9 @@ export function staffSiteRoutes(app: FastifyInstance): void {
       const b = bodyOf(req, ['tapId']);
       const now = req.server.deps.clock();
       return tx(req, async (c) => {
-        await consumeKeyTap(c, typeof b.tapId === 'string' ? b.tapId : '', req.staff.accountId, { kind: which === 'stop' ? 'emergency-stop' : 'resume-trading' }, now);
+        await consumeKeyTap(c, typeof b.tapId === 'string' ? b.tapId : '', req.staff.accountId, { kind: which === 'stop' ? 'emergency-stop' : 'resume-trading' }, now, {
+          sessionId: req.auth.sessionId, // RV5 m10 (lead re-review item 7)
+        });
         const { rowCount } =
           which === 'stop'
             ? await c.query('update site_flags set trading_paused = true, stopped_at = $1 where not trading_paused', [now])

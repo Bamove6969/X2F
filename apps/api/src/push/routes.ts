@@ -1,5 +1,6 @@
 import { createECDH } from 'node:crypto';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest, preHandlerHookHandler } from 'fastify';
+import type pg from 'pg';
 import { requireLiveSessionInTx, weakOf, withTx } from '../auth/hold.js';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
@@ -74,11 +75,33 @@ function parseSubscription(body: unknown): { endpoint: string; p256dh: string; a
  * unsubscribe, or a disable.
  */
 export function pushRoutes(app: FastifyInstance): void {
-  const subscriber = requireSession({ kinds: ['trader', 'owner'] });
+  pushRoutesAt(app, '/v1/account/push', { preHandler: requireSession({ kinds: ['trader', 'owner'] }) });
+}
 
-  app.get('/v1/account/push', { preHandler: subscriber }, async () => ({ vapidPublic: app.deps.config.vapidPublic }));
+/**
+ * The same three routes at `path` behind `route` (its `preHandler` sets `req.auth`). The staff API
+ * mounts them at `/staff/v1/account/push` (lead re-review 6 Nov item 2: the owner and staff
+ * subscribe on the staff site, since neither has a trader session any more). A staff member's
+ * subscription belongs to their session, like a trader's; the owner's to the account.
+ */
+export function pushRoutesAt(
+  app: FastifyInstance,
+  path: string,
+  route: { preHandler: unknown; config?: Record<string, unknown> },
+  o: {
+    /** A bare DELETE drops only the calling session's subscriptions, the owner's too (staff site, lead review 7 Nov M1). */
+    sessionOnlyDelete?: boolean;
+    /** Runs in the unsubscribe's transaction (the staff site logs it). */
+    onDelete?(db: pg.PoolClient, req: FastifyRequest): Promise<void>;
+  } = {},
+): void {
+  const opts = route as { preHandler: preHandlerHookHandler | preHandlerHookHandler[]; config?: Record<string, unknown> };
+  // Only the owner's subscriptions belong to the account; everyone else's to the session.
+  const sessionScoped = (kind: string) => o.sessionOnlyDelete === true || kind !== 'owner';
 
-  app.post('/v1/account/push', { preHandler: subscriber }, async (req, reply) => {
+  app.get(path, opts, async () => ({ vapidPublic: app.deps.config.vapidPublic }));
+
+  app.post(path, opts, async (req, reply) => {
     const sub = parseSubscription(req.body);
     const { db, clock } = app.deps;
     const accountId = req.auth.accountId;
@@ -124,10 +147,10 @@ export function pushRoutes(app: FastifyInstance): void {
     return reply.code(204).send();
   });
 
-  app.delete('/v1/account/push', { preHandler: subscriber }, async (req, reply) => {
+  app.delete(path, opts, async (req, reply) => {
     const body: unknown = req.body;
-    // A trader's session drops only its own subscriptions (review round 2 N-I2); the owner's belong to the account.
-    const session = req.auth.kind === 'trader' ? req.auth.sessionId : null;
+    // A trader's (or staff member's) session drops only its own subscriptions (review round 2 N-I2); the owner's belong to the account.
+    const session = sessionScoped(req.auth.kind) ? req.auth.sessionId : null;
     let endpoint: string | null = null;
     if (body !== undefined && body !== null) {
       if (!isObject(body) || Object.keys(body).some((k) => k !== 'endpoint') || typeof body.endpoint !== 'string') refuse();
@@ -140,6 +163,7 @@ export function pushRoutes(app: FastifyInstance): void {
         'delete from push_subscriptions where account_id = $1 and ($2::text is null or endpoint = $2) and ($3::uuid is null or session_id = $3)',
         [req.auth.accountId, endpoint, session],
       );
+      if (o.onDelete) await o.onDelete(db, req);
     });
     return reply.code(204).send();
   });

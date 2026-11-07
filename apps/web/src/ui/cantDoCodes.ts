@@ -53,16 +53,36 @@ export const CANT_DO_CODES = [
   'forbidden',
   'too-many-members',
   'member-cannot-sign',
-  // Guessed for refusals whose API tasks are not on the main line yet (Plan 5 Task 3's review
-  // pending, Plan 4's lien and trade ban): check them when those land.
+  // Plan 5 Task 3: rate (or skip rating) your last trade first (the rate-first gate, spec 5.1).
   'review-pending',
+  // Guessed for refusals whose API tasks are not on the main line yet (Plan 4's lien and trade
+  // ban): check them when those land.
   'lien',
   'trade-ban',
+  // Plan 4 Task 4: a staff member's login hours (a staff login, and a staff session when the
+  // window closes). Classified here for the error-code test; its words come with the staff web app
+  // (Plan 4 Task 16).
+  'outside-login-hours',
+  // Plan 5 Task 10 on the staff API: the claim whose figure staff set is no longer live. Its words
+  // come with the staff web app (Plan 4 Task 16).
+  'not-live',
+  // Plan 5 Task 10 (P5-A21, P5-A24): one live past-reputation claim per site, and a PGP key backs
+  // one account. No popup words yet (Task 12's PastRepClaim screen); lead question.
+  'site-claimed',
+  'fingerprint-claimed',
 ] as const;
 export type CantDoCode = (typeof CANT_DO_CODES)[number];
 
 /** Every other code the web knows, with why it is not a "can't do that" refusal. */
 export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
+  // Plan 4 Tasks 5 and 7: staff-API answers traders never get (their words come with the staff web
+  // app, Plan 4 Task 16).
+  'tap-invalid': 'a staff security-key tap (staff app only)',
+  'invite-invalid': 'a staff invite link that is used, expired or cancelled (staff app only)',
+  'security-key-required': 'a staff sign-up step: a security key must be added (staff app only)',
+  'two-factors-required': 'a staff sign-up step: a second login method must be added (staff app only)',
+  'owner-protected': "the owner's own account in staff management (staff app only)",
+  'owner-needs-two-keys': 'the owner keeps at least two security keys (staff app only)',
   'bad-request': 'a malformed request (a fault)',
   'not-found': 'nothing there',
   'unsupported-media-type': 'a fault',
@@ -85,6 +105,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'key-revoked': 'the pasted key itself is revoked',
   'key-no-encryption': 'an input check on a pasted key',
   'key-not-yet-valid': 'the pasted key itself is not valid yet',
+  'key-no-signing': 'an input check on a pasted key (past reputation: it cannot sign)',
   'key-in-use': 'an input check on a pasted key',
   'challenge-expired': 'an expired step (start again)',
   'code-invalid': 'a wrong code',
@@ -109,8 +130,6 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'trading-paused': 'maintenance, with its own message (Plan 3 emergency stop)',
   // Plan 4 Tasks 5 and 8: staff-API answers (a security-key tap, the owner's banner limit) that
   // traders never get, and maintenance, which the app shows as the Maintenance screen.
-  'tap-invalid': 'a staff security-key tap (staff app only)',
-  'outside-login-hours': "a staff member's login hours (Plan 4 Task 4; staff app only)",
   'banner-too-long': "an input check on the owner's banner (staff app only)",
   maintenance: "the site is in maintenance: the Maintenance screen with the owner's message",
   'out-of-range': 'an input check on the amount',
@@ -130,6 +149,27 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'trade-closed': 'the trade has ended',
   'dispute-exists': 'a dispute is already open on this trade (the trade state)',
   'no-shared-context': 'nudges are only for a shared trade (the button is not offered)',
+  // Plan 5 Task 3: reviews.
+  'not-reviewable': 'the trade cannot be rated (its state: not released, or a dispute not yet over)',
+  'review-exists': 'already rated (a double submit)',
+  'bad-shape': 'an input check on the review form',
+  'bad-stars': 'an input check on the review form',
+  'bad-phrase': 'an input check on the review form',
+  'duplicate-phrase': 'an input check on the review form',
+  'bad-trade-badge': 'an input check on the review form',
+  'duplicate-trade-badge': 'an input check on the review form',
+  'note-too-long': 'an input check on the typed note',
+  'note-multiline': 'an input check on the typed note',
+  'note-bad-character': 'an input check on the typed note',
+  'note-personal-details': 'an input check on the typed note (remove personal details)',
+  'neutral-with-details': 'an input check on the review form',
+  // Plan 5 Task 10: past reputation, checks on what the trader pasted or a step already used.
+  'bad-site': 'an input check on the picked site',
+  'bad-url': 'an input check on the pasted archive link',
+  'bad-signature': 'an input check on the pasted signature',
+  'wrong-text': 'an input check: the pasted signature is not of the issued text',
+  'wrong-key': 'an input check: the pasted signature is not by the claimed key',
+  'challenge-used': 'a step already done (start again)',
   'approval-ended': 'the login request itself already ended (approved, blocked or timed out): its own state, not a rule',
   // Plan 3 Task 20 (encrypted chat): the chat's own protocol and state, never a rule about the user.
   'chat-not-ready': 'the chat is still being secured (wait)',
@@ -338,6 +378,7 @@ export const TRADING_HOLD_CODE = 'trading-hold' satisfies CantDoCode;
 export const MY_OFFERS_HIDDEN = {
   'trading-paused': 'On, hidden while trading is paused',
   'trading-hold': 'On, hidden while your account has a trading hold',
+  'review-pending': 'On, hidden until you rate your last trade', // COPY-UNSIGNED (Plan 5 Task 3 review M3)
   'method-unavailable': "On, hidden: this payment method isn't available right now",
 } as const;
 export type MyOffersHidden = keyof typeof MY_OFFERS_HIDDEN;

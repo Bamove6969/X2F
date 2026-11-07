@@ -1,4 +1,4 @@
-// Review rules (Plan 5 Task 1): phrases, validation, the blind reveal and review-dispute status.
+// Review rules (Plan 5 Task 1): phrases, validation and review-dispute status.
 // Pure: no I/O and no clock reads. The personal-details check on notes is passed in (Task 3 passes
 // `s => detectSensitiveText(s).length > 0` from @x2f/proof), so this package has no dependencies.
 
@@ -44,9 +44,7 @@ export type ReviewErrorCode =
   | 'note-multiline'
   | 'note-bad-character'
   | 'note-personal-details'
-  | 'neutral-with-details'
-  | 'late-review-neutral-only'
-  | 'late-review-closed';
+  | 'neutral-with-details';
 
 export class ReviewError extends Error {
   constructor(readonly code: ReviewErrorCode) {
@@ -112,47 +110,9 @@ export function validateReview(i: unknown, rated: Side, hasPersonalDetails: (not
   return out;
 }
 
-// ---- Blind reveal (spec 5.3, P5-A5) ----
-
-export const REVEAL_AFTER_DAYS = 7;
-const DAY_MS = 86_400_000;
-
-export interface RevealFacts {
-  /** When the trade became reviewable: its close for a release, the dispute's close for a disputed trade. */
-  reviewableSince: Date;
-  submitted: { buyer: Date | null; seller: Date | null };
-}
-
-/**
- * When both reviews of a trade become visible: the later submission once both sides have rated, but
- * never later than `reviewableSince + 7 days` (spec 5.3: "until both are submitted, or 7 days pass").
- */
-export function revealAt(a: RevealFacts): Date {
-  const deadline = a.reviewableSince.getTime() + REVEAL_AFTER_DAYS * DAY_MS;
-  const { buyer, seller } = a.submitted;
-  if (buyer && seller) return new Date(Math.min(deadline, Math.max(buyer.getTime(), seller.getTime())));
-  return new Date(deadline);
-}
-
-export function isRevealed(a: RevealFacts, now: Date): boolean {
-  return now.getTime() >= revealAt(a).getTime();
-}
-
-// ---- Late reviews (P5-A31, OPEN: the owner has not picked; the default keeps the draft) ----
-
-export type LateReviewMode = 'any' | 'neutral-only' | 'closed';
-/** P5-A31 default (c) "keep as drafted". The owner picks before Task 18. */
-export const LATE_REVIEW: LateReviewMode = 'any';
-
-/**
- * Checks a review submitted after the other side's review was already revealed to this reviewer.
- * `'neutral-only'`: only Neutral; `'closed'`: no review at all (the trade stops blocking, Task 3).
- */
-export function assertLateReviewAllowed(i: ReviewInput, afterReveal: boolean, mode: LateReviewMode = LATE_REVIEW): void {
-  if (!afterReveal || mode === 'any') return;
-  if (mode === 'closed') throw new ReviewError('late-review-closed');
-  if (!i.neutral) throw new ReviewError('late-review-neutral-only');
-}
+// ---- No blind reveal, no late-review modes (owner 2026-11-02) ----
+// A review shows to the other side and publicly as soon as it is submitted, so there is no reveal
+// deadline (spec 5.3's 7 days) and no P5-A31 rule for a review given after the other one showed.
 
 // ---- Review disputes (Task 19, Revision 2026-10-29b) ----
 
