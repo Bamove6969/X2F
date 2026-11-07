@@ -63,6 +63,7 @@ export function sellerView(over: Partial<RefundView> = {}): RefundView {
     finalAlertAt: null,
     finalAlertSeenAt: null,
     settleBy: null,
+    releaseClaimedAt: null,
     pausedAt: null,
     closedAt: null,
     cancelConfirmedAt: null,

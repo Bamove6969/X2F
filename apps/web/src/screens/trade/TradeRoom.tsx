@@ -100,6 +100,7 @@ import { hasPanes, useFoldLayout, type FoldLayout } from '../../ui/fold.js';
 import { Panes } from '../../ui/Panes.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { useTradeChat } from './paySeams.js';
+import { SettleWait } from './settleWait.js';
 import { integrityFailed, POLL_MS, useTradeEscrow, useTradeLive, type ConfirmedTrade, type TradeEscrow } from './seams.js';
 import { TradeGlance } from './TradeGlance.js';
 import { CounterpartyCard } from './TradeTimeline.js';
@@ -216,12 +217,13 @@ function useTradeView(code: string): { load: Load; refresh: () => Promise<void> 
   return { load, refresh };
 }
 
-/** Shown for a state whose screen has not landed yet. */
-function StatusCard({ view }: { view: TradeView }) {
+/** Shown for a state whose screen has not landed yet; while settling, also what the trade waits for. */
+export function StatusCard({ view, serverClock }: { view: TradeView; serverClock: () => Date }) {
   return (
     <section className="x2f-trade-status" data-trade-state={view.state}>
       <p>Trade {view.code}</p>
       <p>State: {view.state.replace('_', ' ')}</p>
+      <SettleWait view={view} serverClock={serverClock} />
     </section>
   );
 }
@@ -358,7 +360,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
             // Fails closed even if no screen module registered the danger state.
             <p role="alert">Security check failed. Don't fund this trade.</p>
           ) : (
-            <StatusCard view={view} />
+            <StatusCard view={view} serverClock={clock} />
           )
         }
         side={
