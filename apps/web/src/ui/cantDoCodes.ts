@@ -31,9 +31,9 @@ export const CANT_DO_CODES = [
   'last-login-method',
   'method-not-allowed',
   'account-disabled',
-  // Hold model v3 (API only so far; the web screens are not on v3 yet, so no words here): a new
-  // device with nothing to approve it and no passkey, security key or PGP key; the 20-change cap;
-  // a trade event refused because the partner's account has a temporary problem.
+  // Hold model v3: a new device with nothing to approve it and no passkey, security key or PGP key
+  // (API only so far, no words here); the 20-change cap (owner G36, `holdChangesCantDoText`); a
+  // trade event refused because the partner's account has a temporary problem (no words yet).
   'approval-unavailable',
   'too-many-changes',
   'counterparty-unavailable',
@@ -226,6 +226,8 @@ export const CANT_DO_TITLE = {
   team: "This can't be done on the team",
   // COPY-UNSIGNED: the design review's title for shot 19 (too-many-members, now a server fallback).
   teamFull: 'Your team is full',
+  // Hold model v3, owner G36: the 20-change cap. COPY-UNSIGNED
+  changes: "This change can't be saved yet",
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -465,4 +467,15 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
     default:
       return "This can't be done on the team right now.";
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Hold model v3 (owner G36, 7 Nov 2026): at most 20 changes (drafts and waiting ones) per account.
+
+/** The change cap's code (409 `too-many-changes` `{ max }`). */
+export const TOO_MANY_CHANGES_CODE = 'too-many-changes' satisfies CantDoCode;
+
+/** 409 `too-many-changes`: the account already holds the most changes it can. COPY-UNSIGNED */
+export function holdChangesCantDoText(max: number | undefined): string {
+  return `Your account already has ${max ?? 20} changes waiting or in drafts, the most it can hold at once. Submit or cancel some of them under Account changes, then make this change again.`;
 }

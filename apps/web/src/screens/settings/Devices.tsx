@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { isHeld, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry } from '@x2f/auth-client';
+import { isStaged, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
@@ -26,7 +26,8 @@ import { Sheet } from '../../ui/Sheet.js';
 import { Switch } from '../../ui/Switch.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { heldNote, refusalText, weakSessionCantDo } from '../auth/refusals.js';
+import { refusalText, weakSessionCantDo } from '../auth/refusals.js';
+import { StagedNote, reportChangesCap } from './HoldChanges.js';
 import { DEVICES_TITLE, deviceKind, initials } from './devicesCopy.js';
 import { OwnerOnly } from './OwnerOnly.js';
 import { TEAM_PATH } from './teamCopy.js';
@@ -116,8 +117,8 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
   const [note, setNote] = useState<string | null>(null);
   const [optNote, setOptNote] = useState<string | null>(null);
   const [ask, setAsk] = useState<Ask | null>(null);
-  // Plan 2 Task 17: a change from a login with one way of proving it's you waits out the hold.
-  const [held, setHeld] = useState<string | null>(null);
+  // Hold model v3: a change from a username-and-password login is staged as a draft (202).
+  const [staged, setStaged] = useState(false);
   // Plan 2 Task 17 review round 2: a device whose login waits may not log stronger ones out (CantDoThat).
   const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
 
@@ -165,7 +166,7 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
     const on = !settings.oneDevice;
     setBusy(true);
     setError(null);
-    setHeld(null);
+    setStaged(false);
     setOptNote(null);
     try {
       const next = await withConfirm(
@@ -173,13 +174,13 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
         (t) => authApi.setOneDevice({ on, ...(t !== undefined ? { confirmToken: t } : {}) }),
         prove,
       );
-      if (isHeld(next)) setHeld(heldNote(next.holdUntil));
+      if (isStaged(next)) setStaged(true);
       else {
         setSettings(next);
         setOptNote(next.oneDevice ? C.oneDeviceOn : C.oneDeviceOff);
       }
     } catch (e) {
-      if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not change that setting. Try again.'));
+      if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not change that setting. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -367,11 +368,7 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                     data-part="one-device-toggle"
                   />
                 </div>
-                {held !== null ? (
-                  <p className="x2f-fine" role="status" data-part="held-note">
-                    {held}
-                  </p>
-                ) : null}
+                {staged ? <StagedNote /> : null}
                 {optNote !== null ? (
                   <p className="x2f-icon-line" role="status" data-part="one-device-note">
                     <Icon name="check" size={18} />

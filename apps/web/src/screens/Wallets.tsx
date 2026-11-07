@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { AuthApiError, isHeld, walletsAction, withConfirm, type Held } from '@x2f/auth-client';
+import { AuthApiError, isStaged, walletsAction, withConfirm, type Staged } from '@x2f/auth-client';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
-import { CANT_DO_TITLE, RECOVERY_SESSION_WALLETS, isCantDoCode, walletsCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, RECOVERY_SESSION_WALLETS, isCantDoCode, holdChangesCantDoText, walletsCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
 import { Icon } from '../ui/icons.js';
 import { Sheet } from '../ui/Sheet.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from './auth/ConfirmSheet.js';
-import { heldNote, refusalText } from './auth/refusals.js';
+import { refusalText } from './auth/refusals.js';
+import { StagedNote, changesCapOf } from './settings/HoldChanges.js';
 import {
   APP_LABELS,
   MAX_WALLET_BATCH,
@@ -26,6 +27,7 @@ import {
 } from './wallets-model.js';
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
+import { utcDateTime } from '../ui/dates.js';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
@@ -35,7 +37,7 @@ import { OwnerOnly } from './settings/OwnerOnly.js';
 const LABEL_MAX = 40;
 
 function when(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  return utcDateTime(new Date(iso));
 }
 
 /** 403 `recovery-session`: a backup login cannot change where coins are paid (Plan 2; in the refusal text map). */
@@ -261,6 +263,7 @@ function WalletsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [staged, setStaged] = useState(false);
 
   const codes = useOpenEscrowKeys();
   const { prove, confirmUi, open: confirmOpen } = useConfirm();
@@ -334,11 +337,12 @@ function WalletsScreen() {
     setSaving(true);
     setError(null);
     setNotice(null);
+    setStaged(false);
     const drafts = trimmed === '' ? batch : [...batch, current()];
     // After the first wallet, adding needs confirm-it's-you: one confirm for the whole batch.
-    const post = async (confirmToken?: string): Promise<WalletView[] | Held> => {
+    const post = async (confirmToken?: string): Promise<WalletView[] | Staged> => {
       try {
-        return await api<WalletView[] | Held>('/v1/wallets', {
+        return await api<WalletView[] | Staged>('/v1/wallets', {
           method: 'POST',
           body: confirmToken === undefined ? { wallets: drafts } : { wallets: drafts, confirmToken },
         });
@@ -350,16 +354,15 @@ function WalletsScreen() {
     };
     try {
       const action = await walletsAction(drafts.map((d) => d.address));
-      const result: WalletView[] | Held = await withConfirm(action, post, prove);
-      // Plan 2 Task 17 review round 2 N-I4: added from a login with one way of proving it's you
-      // (a username and password; a PGP key login is strong, owner Q81), the wallets wait 24 hours
-      // (202): nothing is listed yet.
-      if (isHeld(result)) {
+      const result: WalletView[] | Staged = await withConfirm(action, post, prove);
+      // Hold model v3: added from a username-and-password login (a PGP key login is strong, owner
+      // Q81), the wallets are a draft to review and submit (202 staged): nothing is listed yet.
+      if (isStaged(result)) {
         setBatch([]);
         setLabel('');
         setAddress('');
         setAdding(false);
-        setNotice(heldNote(result.holdUntil));
+        setStaged(true);
         return;
       }
       const saved = result;
@@ -388,7 +391,8 @@ function WalletsScreen() {
     } catch (e) {
       if (!isConfirmAbort(e)) {
         const code = addCantDo(e);
-        if (code !== null) setCantDo({ code, text: walletsCantDoText(code) ?? refusalText(e, ADD_FAILED) });
+        const cap = changesCapOf(e);
+        if (code !== null) setCantDo({ code, text: cap !== null ? holdChangesCantDoText(cap.max) : (walletsCantDoText(code) ?? refusalText(e, ADD_FAILED)) });
         else setError(addError(e));
       }
     } finally {
@@ -429,6 +433,7 @@ function WalletsScreen() {
             {notice}
           </p>
         ) : null}
+        {staged ? <StagedNote /> : null}
 
         {wallets && wallets.length > 0 ? (
           <section className="x2f-wallets__section" aria-label="Linked wallets">

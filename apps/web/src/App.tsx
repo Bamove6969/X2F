@@ -23,6 +23,7 @@ import { MemberInvite } from './screens/auth/MemberInvite.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
+import { AccountChangesScreen, ChangesBanner, ChangesCapPopup } from './screens/settings/HoldChanges.js';
 import { Security } from './screens/settings/Security.js';
 import { Team } from './screens/settings/Team.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
@@ -58,8 +59,11 @@ function Layout({ nav }: { nav: boolean }) {
     <div data-shell={wide ? 'desktop' : 'phone'} className={wide ? 'x2f-desktop' : undefined}>
       {wide ? <DesktopHeader /> : null}
       <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
+        {/* Hold model v3: waiting changes and a new recovery code, on every screen (HoldChange board). */}
+        <ChangesBanner />
         <Outlet />
       </div>
+      <ChangesCapPopup />
       {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} /> : null}
     </div>
   );
@@ -178,6 +182,7 @@ export function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />
+          <Route path="/settings/changes" element={<AccountChangesScreen />} />
           <Route path="/settings/devices" element={<DevicesRoute />} />
           <Route path="/settings/blocked" element={<Blocked />} />
           <Route path="/settings/team" element={<Team />} />

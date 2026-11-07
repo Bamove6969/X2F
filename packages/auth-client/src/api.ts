@@ -19,21 +19,6 @@ import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginRe
 export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult };
 
 /**
- * Plan 2 Task 17 (before hold model v3): a security change made from a login with just a username
- * and password (202) that waited out the account's 24-hour hold until `holdUntil`. The v3 API no
- * longer answers it (it stages the change: `Staged`); kept until the web screens move to v3.
- */
-export interface Held {
-  status: 'held';
-  holdUntil: string;
-}
-
-/** True for a change that waits out the 24-hour hold (202 `{ status: 'held', holdUntil }`). */
-export function isHeld(x: unknown): x is Held {
-  return x !== null && typeof x === 'object' && (x as { status?: unknown }).status === 'held' && typeof (x as { holdUntil?: unknown }).holdUntil === 'string';
-}
-
-/**
  * Hold model v3: a security change made from a login with just a username and password (202): nothing
  * changed yet; it is a draft of this session (`changeId`) to review and submit (`submitHoldChanges`),
  * then applies on its own 24 h after the account's latest submission (owner Q14). A login with a
@@ -54,6 +39,8 @@ export interface HoldChangeSummary {
   kind: string;
   method?: string;
   wallets?: number;
+  /** Wallets: each new address's last 6 characters. Optional: older API builds do not send it. */
+  addressEnds?: string[];
   on?: boolean;
   idleHours?: number;
   memberId?: string;
@@ -392,7 +379,7 @@ export interface AuthApi {
   loginWebAuthnFinish(b: { challengeId: string; response: AuthenticationResponseJSON; deviceLabel: string; pendingId?: string }): Promise<LoginResult>;
   logout(): Promise<void>;
   /** `POST /v1/account/login-name` (review I3): a pre-009 account sets its private login name once, with a `set-login-name` confirm token (`withConfirm`); 409 `login-name-set` afterwards, 409 `names-unavailable` for a taken name in either namespace, 400 `names-same` / `login-name-invalid`. */
-  setLoginName(b: { loginName: string; confirmToken?: string }): Promise<{ ok: true } | Held>;
+  setLoginName(b: { loginName: string; confirmToken?: string }): Promise<{ ok: true } | Staged>;
 
   // Confirm it's you: each returns a single-use token bound to this session and exactly `action`.
   confirmPassword(b: { password: string; action: ConfirmAction; totp?: string }): Promise<ConfirmTokenResult>;
@@ -403,19 +390,19 @@ export interface AuthApi {
 
   // Login methods of the account
   /**
-   * Task 17: each change below answers `Held` (202) instead when made from a login with only one
-   * way of proving it's you: nothing changed yet, it waits out the 24-hour hold (`isHeld`).
+   * Hold model v3: each change below answers `Staged` (202) instead when made from a login with just
+   * a username and password: nothing changed yet; it is a draft to review and submit (`isStaged`).
    */
   /** `PUT /v1/account/password` (Task 10). */
-  setPassword(b: { password: string } & Token): Promise<Held | undefined>;
+  setPassword(b: { password: string } & Token): Promise<Staged | undefined>;
   addPgpKeyStart(b: { publicKey: string } & Token): Promise<PgpChallenge>;
-  addPgpKeyFinish(b: { challengeId: string; code: string }): Promise<{ fingerprint: string } & Partial<Held>>;
+  addPgpKeyFinish(b: { challengeId: string; code: string }): Promise<{ fingerprint: string } & Partial<Staged>>;
   addWebAuthnStart(b: { kind: WebAuthnKind } & Token): Promise<RegistrationChallenge>;
-  addWebAuthnFinish(b: { challengeId: string; response: RegistrationResponseJSON; label?: string }): Promise<Held | undefined>;
+  addWebAuthnFinish(b: { challengeId: string; response: RegistrationResponseJSON; label?: string }): Promise<Staged | undefined>;
   /** `secret` (base32) and `otpauthUri` are for the authenticator app only: show them, never keep them. */
   addTotpStart(b: Token): Promise<{ challengeId: string; otpauthUri: string; secret: string }>;
-  addTotpFinish(b: { challengeId: string; code: string }): Promise<Held | undefined>;
-  newRecoveryCodes(b: Token): Promise<{ codes: string[] } & Partial<Held | Staged>>;
+  addTotpFinish(b: { challengeId: string; code: string }): Promise<Staged | undefined>;
+  newRecoveryCodes(b: Token): Promise<{ codes: string[] } & Partial<Staged>>;
   cancelRecoverySession(id: string): Promise<void>;
   /** Hold model v3: `POST /v1/account/recovery-code/reveal`, once, by a full session opened after a recovery-code login. */
   revealRecoveryCode(): Promise<{ code: string }>;
@@ -430,7 +417,7 @@ export interface AuthApi {
   /** `GET /v1/account/methods` (Task 10). */
   listMethods(): Promise<MethodEntry[]>;
   /** `DELETE /v1/account/methods/:type/:id` (Task 10), the token in a JSON body (R17). */
-  removeMethod(type: MethodType, id: string, b: Token): Promise<Held | undefined>;
+  removeMethod(type: MethodType, id: string, b: Token): Promise<Staged | undefined>;
 
   // Account overview (Task 11)
   me(): Promise<AccountOverview>;
@@ -448,7 +435,7 @@ export interface AuthApi {
   decideApproval(id: string, b: ApprovalDecision): Promise<{ outcome: 'approved' | 'blocked' }>;
   getDeviceSettings(): Promise<DeviceSettings>;
   /** Confirm-it's-you for `{ kind: 'set-one-device', on }` (`withConfirm`). */
-  setOneDevice(b: { on: boolean } & Token): Promise<DeviceSettings | Held>;
+  setOneDevice(b: { on: boolean } & Token): Promise<DeviceSettings | Staged>;
 
   // Wallets (Task 12)
   listWallets(): Promise<Wallet[]>;
@@ -458,26 +445,26 @@ export interface AuthApi {
    * TOTP code) `usableFrom` is 24 hours later. From a login that waits (a username and
    * password; a PGP key login is strong, owner 6 Nov 2026 Q81) nothing is added yet: 202 (staged).
    */
-  addWallet(b: WalletDraft & Token): Promise<Wallet | Held>;
+  addWallet(b: WalletDraft & Token): Promise<Wallet | Staged>;
   /**
    * Several wallets (1-10) under one confirm, action `add-wallets` (see `walletsAction`). They share
    * one `usableFrom`: one wait for the batch, not one each.
    */
-  addWallets(b: { wallets: WalletDraft[] } & Token): Promise<Wallet[] | Held>;
+  addWallets(b: { wallets: WalletDraft[] } & Token): Promise<Wallet[] | Staged>;
   getWalletRule(): Promise<WalletRule>;
   /** Needs no confirm; the server always records a `wallet-removed` alert. */
   removeWallet(id: string): Promise<void>;
   // Logout timer (owner, 2026-10-23)
   getLogoutTimer(): Promise<LogoutTimer>;
   /** Full trader sessions only; applies to the current session at once. */
-  setLogoutTimer(b: { idleHours: IdleHours }): Promise<LogoutTimer | Held>;
+  setLogoutTimer(b: { idleHours: IdleHours }): Promise<LogoutTimer | Staged>;
 
   // Team members (Plan 2 Task 18). The account owner's side: a member gets 403 `owner-only`.
   getTeam(): Promise<{ members: TeamMember[]; max: number }>;
   /** Confirm `team-invite` (`teamInviteAction`); 409 `too-many-members` `{ max }`, 409 `display-name-taken`. `invite` is shown once. */
   inviteMember(b: { displayName: string; roles: TeamRole[] } & Token): Promise<{ id: string; invite: string; expiresAt: string }>;
-  /** Confirm `team-roles` (`teamRolesAction`). */
-  setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember>;
+  /** Confirm `team-roles` (`teamRolesAction`). From a login that waits (a username and password), 202 `Staged`. */
+  setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember | Staged>;
   /** Confirm `team-remove` (`teamRemoveAction`); the member's sessions end at once. */
   removeMember(id: string, b: Token): Promise<void>;
   /** Newest first, at most 200 rows. */
@@ -562,10 +549,10 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
   const done = async (p: Promise<unknown>): Promise<void> => {
     await p;
   };
-  /** Nothing, or the `Held` answer of a change that waits out the hold (Task 17). */
-  const heldOrDone = async (p: Promise<unknown>): Promise<Held | undefined> => {
+  /** Nothing, or the `Staged` answer of a change staged for review (hold model v3). */
+  const stagedOrDone = async (p: Promise<unknown>): Promise<Staged | undefined> => {
     const r = await p;
-    return isHeld(r) ? r : undefined;
+    return isStaged(r) ? r : undefined;
   };
 
   return {
@@ -594,13 +581,13 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     confirmWebAuthnStart: (b) => post('/v1/confirm/webauthn/start', b),
     confirmWebAuthnFinish: (b) => post('/v1/confirm/webauthn/finish', b),
 
-    setPassword: (b) => heldOrDone(call('PUT', '/v1/account/password', b)),
+    setPassword: (b) => stagedOrDone(call('PUT', '/v1/account/password', b)),
     addPgpKeyStart: (b) => post('/v1/account/pgp/start', b),
     addPgpKeyFinish: (b) => post('/v1/account/pgp/finish', b),
     addWebAuthnStart: (b) => post('/v1/account/webauthn/start', b),
-    addWebAuthnFinish: (b) => heldOrDone(post('/v1/account/webauthn/finish', b)),
+    addWebAuthnFinish: (b) => stagedOrDone(post('/v1/account/webauthn/finish', b)),
     addTotpStart: (b) => post('/v1/account/totp/start', b),
-    addTotpFinish: (b) => heldOrDone(post('/v1/account/totp/finish', b)),
+    addTotpFinish: (b) => stagedOrDone(post('/v1/account/totp/finish', b)),
     newRecoveryCodes: (b) => post('/v1/account/recovery-codes', b),
     cancelRecoverySession: (id) => done(call('DELETE', `/v1/account/recovery-sessions/${seg(id)}`)),
     revealRecoveryCode: () => post('/v1/account/recovery-code/reveal'),
@@ -609,7 +596,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     cancelHoldChanges: () => done(call('DELETE', '/v1/account/hold/changes')),
     cancelHoldChange: (id) => done(call('DELETE', `/v1/account/hold/changes/${seg(id)}`)),
     listMethods: () => get('/v1/account/methods'),
-    removeMethod: (type, id, b) => heldOrDone(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
+    removeMethod: (type, id, b) => stagedOrDone(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
 
     me: () => get('/v1/account/me'),
     acceptTerms: (b) => done(post('/v1/account/terms', b)),

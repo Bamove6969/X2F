@@ -3,10 +3,11 @@
 import { describe, expect, it } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
-import { heldNote, holdLoginSentence, holdSentence, localTime, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
+import { holdLoginSentence, holdSentence, localTime, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
 import { TOO_MANY_APPROVALS, WEAK_SESSION_TEXT, holdText, teamCantDoText } from '../src/ui/cantDoCodes.js';
 import { ruleLines, ruleNote } from '../src/screens/wallets-model.js';
 import { walletWaitNote } from '../src/screens/auth/ConfirmSheet.js';
+import { HOLD_COPY } from '../src/screens/settings/holdCopy.js';
 
 const UNTIL = '2026-10-30T14:05:00.000Z';
 
@@ -17,11 +18,11 @@ describe('the 24-hour hold', () => {
     }
   });
 
-  it('a change that waits says when it takes effect and how to cancel it', () => {
-    const t = heldNote(UNTIL);
-    expect(t).toContain(`takes effect at ${localTime(new Date(UNTIL))}`);
-    expect(t).toContain('cancels it');
-    expect(heldNote('broken')).toContain('takes effect in a day');
+  it('hold v3: a staged change is a draft; the review says the 24-hour wait and how a strong login throws it away', () => {
+    expect(HOLD_COPY.staged).toBe('Saved as a draft. Nothing changes until you submit it.');
+    expect(HOLD_COPY.waitBody).toContain('these changes apply 24 hours after you submit them');
+    expect(HOLD_COPY.throwAway).toContain('these changes are thrown away');
+    expect(HOLD_COPY.submitted(UNTIL)).toBe(`Submitted. Your changes take effect on ${localTime(new Date(UNTIL))}.`);
   });
 });
 
@@ -83,7 +84,8 @@ describe('owner 6 Nov 2026: Q14 wording and Q81 (a PGP key login is strong)', ()
     holdText('until Tue 3:05 PM'),
     holdSentence(UNTIL),
     holdLoginSentence(UNTIL),
-    heldNote(UNTIL),
+    HOLD_COPY.waitBody,
+    HOLD_COPY.throwAway,
     WEAK_SESSION_TEXT,
     teamCantDoText('weak-session'),
     ...ruleLines(waitRule),
@@ -94,7 +96,7 @@ describe('owner 6 Nov 2026: Q14 wording and Q81 (a PGP key login is strong)', ()
 
   it('Q14: never "password only" or "password alone": it is a username and password at minimum', () => {
     for (const t of texts()) expect(t).not.toMatch(NOT_PASSWORD_ONLY);
-    expect(heldNote(UNTIL)).toContain('because you logged in with just your username and password');
+    expect(HOLD_COPY.waitBody).toContain('You logged in with just your username and password');
     expect(WEAK_SESSION_TEXT).toContain('This device logged in with just a username and password');
   });
 
@@ -104,7 +106,7 @@ describe('owner 6 Nov 2026: Q14 wording and Q81 (a PGP key login is strong)', ()
   });
 
   it('hold v3: only a passkey, security key or PGP key held before ends the hold or cancels a waiting change (an authenticator code does not)', () => {
-    for (const t of [holdText('for a day'), heldNote(UNTIL), holdLoginSentence(UNTIL)]) {
+    for (const t of [holdText('for a day'), HOLD_COPY.throwAway, holdLoginSentence(UNTIL)]) {
       expect(t).toMatch(/a passkey, a security key or a PGP key/);
       expect(t).not.toContain('authenticator');
     }

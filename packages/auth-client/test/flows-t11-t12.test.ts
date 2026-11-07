@@ -16,10 +16,10 @@ import {
   loginWithSecurityKey,
   walletAction,
   walletsAction,
-  isHeld,
+  isStaged,
   withConfirm,
   type AuthApi,
-  type Held,
+  type Staged,
 } from '../src/index.js';
 import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
@@ -168,8 +168,8 @@ describe('every later wallet goes through withConfirm (P2-C2)', () => {
 });
 
 /** Wallets added at once (these sessions' logins are strong or in their sign-up window: never a Task 17 hold). */
-function addedNow<T>(r: T[] | Held): T[] {
-  if (isHeld(r)) throw new Error('the add waited out the 24-hour hold');
+function addedNow<T>(r: T[] | Staged): T[] {
+  if (isStaged(r)) throw new Error('the add was staged for the 24-hour wait');
   return r;
 }
 

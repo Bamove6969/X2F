@@ -15,6 +15,7 @@
  */
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../../api/client.js';
+import { utcDateTime } from '../../ui/dates.js';
 import {
   HOLD_CODE, TOO_MANY_APPROVALS, TOO_MANY_APPROVALS_CODE,
   WEAK_SESSION_CODE, WEAK_SESSION_TEXT, holdApproveText, holdLoginText, holdText, type CantDoCode,
@@ -34,12 +35,12 @@ function refusalOf(e: unknown): Refusal | null {
   return null;
 }
 
-/** A clock time in the person's own time zone, e.g. "Tue 3:05 PM". */
+/** Design X5: the time as "6 Nov 2026, 15:00 UTC", the same for every viewer (was "Tue 3:05 PM", local). */
 export function localTime(at: Date): string {
-  return at.toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  return utcDateTime(at);
 }
 
-/** "until Tue 3:05 PM" for `holdUntil` (an ISO time), or "for a day" if the server sent none. */
+/** "until 6 Nov 2026, 15:00 UTC" for `holdUntil` (an ISO time), or "for a day" if the server sent none. */
 function untilWords(holdUntil: string | null | undefined): string {
   const at = holdUntil ? new Date(holdUntil) : null;
   return at === null || Number.isNaN(at.getTime()) ? 'for a day' : `until ${localTime(at)}`;
@@ -61,17 +62,6 @@ export function holdLoginSentence(holdUntil: string | null | undefined): string 
 /** 403 `recovery-hold` when approving a new device: the hold sentence, and that blocking still works. */
 export function holdApproveSentence(holdUntil: string | null | undefined): string {
   return holdApproveText(untilWords(holdUntil));
-}
-
-/**
- * A security change that answered 202 `held` (Plan 2 Task 17): nothing changed yet; it is kept and
- * made when the hold ends. An outcome the person chose, shown as a note. COPY-UNSIGNED
- */
-export function heldNote(holdUntil: string): string {
-  const at = new Date(holdUntil);
-  const when = Number.isNaN(at.getTime()) ? 'in a day' : `at ${localTime(at)}`;
-  // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81; hold v3: an authenticator code cancels nothing)
-  return `Saved. This change takes effect ${when}, because you logged in with just your username and password. Logging in with a passkey, a security key or a PGP key you had before then cancels it.`;
 }
 
 /**

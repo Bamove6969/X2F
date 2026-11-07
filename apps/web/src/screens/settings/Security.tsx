@@ -7,12 +7,14 @@
  */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { IDLE_HOURS, isHeld, type IdleHours, type LogoutTimer as Timer } from '@x2f/auth-client';
+import { IDLE_HOURS, isStaged, type IdleHours, type LogoutTimer as Timer } from '@x2f/auth-client';
 import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { heldNote, holdSentence } from '../auth/refusals.js';
+import { holdSentence } from '../auth/refusals.js';
 import { Icon } from '../../ui/icons.js';
 import { Alerts } from './Alerts.js';
+import { AccountChanges, StagedNote, reportChangesCap } from './HoldChanges.js';
+import { NewRecoveryCode } from './NewRecoveryCode.js';
 import { BLOCKED_PATH } from './BlockAction.js';
 import { BLOCK_COPY } from './blockCopy.js';
 import { DEVICES_PATH, DEVICES_TITLE } from './devicesCopy.js';
@@ -31,9 +33,8 @@ const isIdleHours = (n: number): n is IdleHours => (IDLE_HOURS as readonly numbe
  */
 function LogoutTimer() {
   const [timer, setTimer] = useState<Timer | null>(null);
-  const [status, setStatus] = useState<'loading' | 'idle' | 'saving' | 'saved' | 'held' | 'error' | 'load-error'>('loading');
-  // Plan 2 Task 17: a change from a login with one way of proving it's you waits out the hold.
-  const [heldUntil, setHeldUntil] = useState<string | null>(null);
+  // Hold model v3: a change from a username-and-password login is staged as a draft (202).
+  const [status, setStatus] = useState<'loading' | 'idle' | 'saving' | 'saved' | 'staged' | 'error' | 'load-error'>('loading');
 
   useEffect(() => {
     let live = true;
@@ -59,18 +60,18 @@ function LogoutTimer() {
     setStatus('saving');
     authApi.setLogoutTimer({ idleHours: value }).then(
       (t) => {
-        if (isHeld(t)) {
+        if (isStaged(t)) {
           setTimer(before);
-          setHeldUntil(t.holdUntil);
-          setStatus('held');
+          setStatus('staged');
           return;
         }
         setTimer(t);
         setStatus('saved');
       },
-      () => {
+      (e: unknown) => {
         setTimer(before);
-        setStatus('error');
+        // 409 too-many-changes opens the shell's CantDoThat (owner G36).
+        setStatus(reportChangesCap(e) ? 'idle' : 'error');
       },
     );
   };
@@ -116,11 +117,7 @@ function LogoutTimer() {
               Saved.
             </p>
           ) : null}
-          {status === 'held' && heldUntil !== null ? (
-            <p className="x2f-note" role="status" data-part="logout-timer-status">
-              {heldNote(heldUntil)}
-            </p>
-          ) : null}
+          {status === 'staged' ? <StagedNote part="logout-timer-status" /> : null}
           {status === 'error' ? (
             <p className="x2f-error" role="alert" data-part="logout-timer-status">
               Could not save that. Try again.
@@ -185,6 +182,9 @@ function SecurityScreen() {
       <main className="x2f-screen" data-screen="security">
         <h1 className="x2f-screen__title">Security</h1>
         <HoldBanner />
+        {/* Hold model v3 (lead review item 3): a new recovery code to write down, and the account's changes. */}
+        <NewRecoveryCode />
+        <AccountChanges />
         <Methods prove={prove} />
         <PayoutWait />
         {/* C2-D1: Devices is its own screen ("Devices and sessions" board); Security links to it. */}

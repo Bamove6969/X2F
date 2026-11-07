@@ -12,7 +12,7 @@ import {
   type RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type { ConfirmAction } from '@x2f/accounts';
-import type { AuthApi, Held, LoginResult, WebAuthnKind } from './api.js';
+import type { AuthApi, LoginResult, Staged, WebAuthnKind } from './api.js';
 
 export interface RegistrationCeremony {
   startRegistration(o: { optionsJSON: PublicKeyCredentialCreationOptionsJSON }): Promise<RegistrationResponseJSON>;
@@ -88,18 +88,18 @@ export async function confirmWithWebAuthn(
 /**
  * Adds a passkey or security key to the signed-in account. Outside the sign-up window the API asks
  * for a confirm token for `{ kind: 'add-method', method: kind }`: wrap the call in `withConfirm`.
- * Answers `Held` when the key waits out the 24-hour hold (Plan 2 Task 17), else undefined.
+ * Answers `Staged` when the key is staged for review (hold model v3: a username-and-password login), else undefined.
  */
 export async function addWebAuthnKey(
   api: AuthApi,
   kind: WebAuthnKind,
   o: { label?: string; confirmToken?: string | undefined } = {},
   ceremony: RegistrationCeremony = BROWSER_REGISTRATION,
-): Promise<Held | undefined> {
+): Promise<Staged | undefined> {
   const { challengeId, options } = await api.addWebAuthnStart({
     kind, ...(o.confirmToken !== undefined ? { confirmToken: o.confirmToken } : {}),
   });
   const response = await ceremony.startRegistration({ optionsJSON: options });
-  // Task 17: `Held` when the new key waits out the 24-hour hold.
+  // Hold model v3: `Staged` when the new key is a draft to review and submit.
   return api.addWebAuthnFinish({ challengeId, response, ...(o.label !== undefined ? { label: o.label } : {}) });
 }

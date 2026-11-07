@@ -240,3 +240,59 @@
 .x2f-qr__cell {
   fill: #000000;
 }
+
+/* Hold model v3 (HoldChange board): a change in the review or waiting list, before and after. */
+.x2f-change {
+  align-items: flex-start;
+}
+
+.x2f-change__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.x2f-change__ba {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+
+.x2f-change__before {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-change__after {
+  padding: 4px 8px;
+  border-radius: var(--x2f-radius-sm);
+  background: color-mix(in srgb, var(--x2f-caution) 10%, var(--x2f-surface-raised));
+}
+
+.x2f-change__k {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+
+/* The shell's banner while changes wait or a new recovery code waits (HoldChange board). */
+.x2f-changes-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--x2f-caution) 30%, transparent);
+  background: color-mix(in srgb, var(--x2f-caution) 12%, var(--x2f-surface));
+  font-size: 14px;
+}
+
+.x2f-changes-banner p {
+  margin: 0;
+}
+
+.x2f-changes-banner .x2f-link {
+  padding-block: 12px;
+}

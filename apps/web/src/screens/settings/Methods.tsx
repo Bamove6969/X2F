@@ -9,10 +9,10 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   AuthApiError,
   addWebAuthnKey,
-  isHeld,
+  isStaged,
   withConfirm,
   type ConfirmAction,
-  type Held,
+  type Staged,
   type MethodEntry,
   type MethodType,
   type WebAuthnKind,
@@ -22,7 +22,8 @@ import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, LAST_METHOD_CODE, LAST_METHOD_MESSAGE } from '../../ui/cantDoCodes.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { heldNote, refusalText } from '../auth/refusals.js';
+import { refusalText } from '../auth/refusals.js';
+import { StagedNote, reportChangesCap } from './HoldChanges.js';
 import { RecoveryCodes } from './RecoveryCodes.js';
 import { Totp } from './Totp.js';
 
@@ -56,13 +57,14 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
   const [lastMethod, setLastMethod] = useState(false);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState<Adding>('none');
-  // Plan 2 Task 17: a change made from a login with one way of proving it's you waits out the hold.
-  const [held, setHeld] = useState<string | null>(null);
-  const noteHeld = useCallback((h: Held | undefined) => {
-    if (h !== undefined) setHeld(heldNote(h.holdUntil));
+  // Hold model v3: a change made from a username-and-password login is staged as a draft (202).
+  // The count makes each new draft announce itself again.
+  const [staged, setStaged] = useState(0);
+  const noteStaged = useCallback((h: Staged | undefined) => {
+    if (h !== undefined) setStaged((n) => n + 1);
   }, []);
-  const done = (h?: Held) => {
-    noteHeld(h);
+  const done = (h?: Staged) => {
+    noteStaged(h);
     void refresh().finally(() => setAdding('none'));
   };
 
@@ -77,12 +79,11 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
   const addWebAuthn = async (kind: WebAuthnKind) => {
     setBusy(true);
     setError(null);
-    setHeld(null);
     try {
-      noteHeld(await withConfirm({ kind: 'add-method', method: kind }, (t) => addWebAuthnKey(authApi, kind, t !== undefined ? { confirmToken: t } : {}), prove));
+      noteStaged(await withConfirm({ kind: 'add-method', method: kind }, (t) => addWebAuthnKey(authApi, kind, t !== undefined ? { confirmToken: t } : {}), prove));
       await refresh();
     } catch (e) {
-      if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not add that method. Try again.'));
+      if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not add that method. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -95,9 +96,8 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
     }
     setBusy(true);
     setError(null);
-    setHeld(null);
     try {
-      noteHeld(await withConfirm(
+      noteStaged(await withConfirm(
         { kind: 'remove-method', method: m.type, id: m.id },
         (t) => authApi.removeMethod(m.type, m.id, t !== undefined ? { confirmToken: t } : {}),
         prove,
@@ -105,7 +105,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       await refresh();
     } catch (e) {
       if (e instanceof AuthApiError && e.code === LAST_METHOD_CODE) setLastMethod(true);
-      else if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not remove that method. Try again.'));
+      else if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not remove that method. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -121,11 +121,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
           {error}
         </p>
       ) : null}
-      {held !== null ? (
-        <p className="x2f-note" role="status" data-part="held-note">
-          {held}
-        </p>
-      ) : null}
+      {staged > 0 ? <StagedNote key={staged} /> : null}
       {lastMethod ? <CantDoThat title={CANT_DO_TITLE.methods} body={LAST_METHOD_MESSAGE} from={LAST_METHOD_CODE} onClose={() => setLastMethod(false)} /> : null}
 
       <ul className="x2f-list" data-part="method-list">
@@ -172,7 +168,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
   );
 }
 
-function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (held?: Held) => void; onCancel: () => void }) {
+function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (staged?: Staged) => void; onCancel: () => void }) {
   const primary = usePrimaryVariant();
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -186,7 +182,7 @@ function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
     } catch (e) {
       if (e instanceof AuthApiError && e.code === 'password-weak') setError('That password is too weak: use at least 10 characters with upper and lower case, a number and a symbol.');
       else if (e instanceof AuthApiError && e.code === 'password-leaked') setError('That password has been seen in a breach. Pick another.');
-      else if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not set a password. Try again.'));
+      else if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not set a password. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -215,7 +211,7 @@ function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
   );
 }
 
-function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (held?: Held) => void; onCancel: () => void }) {
+function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (staged?: Staged) => void; onCancel: () => void }) {
   const primary = usePrimaryVariant();
   const [publicKey, setPublicKey] = useState('');
   const [message, setMessage] = useState<{ challengeId: string; encryptedMessage: string } | null>(null);
@@ -245,9 +241,9 @@ function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => P
     setError(null);
     try {
       const r = await authApi.addPgpKeyFinish({ challengeId: message!.challengeId, code: code.trim() });
-      onDone(isHeld(r) ? r : undefined);
+      onDone(isStaged(r) ? r : undefined);
     } catch (e) {
-      setError(refusalText(e, 'That code did not work. It may have expired.', { expired: 'That message has expired. Start again for a new one.' }));
+      if (!reportChangesCap(e)) setError(refusalText(e, 'That code did not work. It may have expired.', { expired: 'That message has expired. Start again for a new one.' }));
     } finally {
       setBusy(false);
     }
