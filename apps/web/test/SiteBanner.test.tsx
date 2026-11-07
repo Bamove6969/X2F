@@ -34,12 +34,12 @@ describe('SiteBanner', () => {
 });
 
 describe('Maintenance', () => {
-  it("shows the owner's message, the paused-timers line and one primary button that checks again", () => {
+  it("shows the owner's message and one primary button that checks again; it promises nothing about timers (lead review 7 Nov)", () => {
     const retry = vi.fn();
     const { host } = render(<Maintenance maintenance={{ message: 'Upgrading.\nBack by 14:00 UTC.', kind: 'planned' }} onRetry={retry} />);
     expect(host.querySelector('h1')!.textContent).toBe(MAINTENANCE_COPY.title);
     expect(host.querySelector('[data-part="maintenance-message"]')!.textContent).toBe('Upgrading.\nBack by 14:00 UTC.');
-    expect(host.textContent).toContain(MAINTENANCE_COPY.timers);
+    expect(host.textContent).not.toMatch(/timers? (are )?paused/i);
     const primary = host.querySelectorAll('[data-primary]');
     expect(primary).toHaveLength(1);
     fire(primary[0]!, new MouseEvent('click', { bubbles: true }));

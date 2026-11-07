@@ -342,7 +342,7 @@ describe('open cases (was NEEDS_P4_CASE_ASSIGNEE)', () => {
     expect((await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {})).statusCode).toBe(200);
     const { rows } = await t.deps.db.query<{ assignee: string | null }>('select assignee::text from disputes where code = $1', [trade.code]);
     expect(rows[0]!.assignee).toBeNull();
-    expect(await logEntries(t.deps, 'dispute.unassigned')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ staffId: mod.id }) });
+    expect(await logEntries(t.deps, 'dispute.unassigned')).toContainEqual({ actor_kind: 'system', detail: JSON.stringify({ staffId: mod.id }) });
     const after = (await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string | null; openCases: number }>;
     expect(after.find((m) => m.accountId === mod.id)!.openCases).toBe(0);
   });

@@ -22,6 +22,8 @@ export interface DisputeTrade {
   /** Task 3's method profile sentence ("What is this?"), when the API has one. */
   whatItIs: string;
   amountAtomic: string;
+  /** Who posted the offer: the poster pays the 1% fee, so it decides what a ruling pays out (lead review 7 Nov). */
+  poster: Party;
   currency: string;
   paidAt: string | null;
   confirmBy: string | null;
@@ -72,6 +74,8 @@ export interface DisputeView {
   moderator: { name: string; joinedAt: string } | null;
   ruling: RulingView | null;
   appeal: { by: Party; at: string } | null;
+  /** The appeal window's length in hours, from the owner's settings (absent from an older API: 48). */
+  appealWindowH?: number | null;
   serverNow: string;
 }
 
@@ -121,6 +125,7 @@ export function tradeFromView(v: TradeView): DisputeTrade {
     methodId: v.methodId,
     whatItIs: methodOf(v).whatItIs,
     amountAtomic: v.amountAtomic,
+    poster: v.poster,
     currency: v.lockedRate.currency,
     paidAt: v.paidAt,
     confirmBy: v.confirmBy,
@@ -188,6 +193,10 @@ export function parseDispute(v: unknown): DisputeView {
     moderator,
     ruling,
     appeal,
+    appealWindowH: later(d.appealWindowH, (v) => {
+      if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) throw new ShapeError('appealWindowH');
+      return v;
+    }),
     serverNow: iso(d.serverNow, 'serverNow'),
   };
 }

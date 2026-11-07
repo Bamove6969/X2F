@@ -114,7 +114,8 @@ async function unassignOpenCases(c: pg.PoolClient, accountId: string, req: Fasti
     [accountId, OPEN_CASE_STATUSES],
   );
   for (const r of rows) {
-    await appendLog(c, { at: req.server.deps.clock(), actor: actorOf(req), tradeCode: r.code, action: 'dispute.unassigned', detail: { staffId: accountId } });
+    // Lead review 7 Nov: the system unassigns (a consequence of the switch-off, logged by its own entry).
+    await appendLog(c, { at: req.server.deps.clock(), actor: { kind: 'system' }, tradeCode: r.code, action: 'dispute.unassigned', detail: { staffId: accountId } });
   }
 }
 

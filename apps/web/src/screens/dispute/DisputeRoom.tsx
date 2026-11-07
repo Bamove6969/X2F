@@ -30,8 +30,11 @@ function DeadlineLine({ dispute, hourglass }: { dispute: DisputeView; hourglass:
   return <span className="dispute-deadline">{HOURGLASS_LINE}</span>;
 }
 
-/** Whether the hourglass shows: a dispute with Task 10's 24-hour goal and no ruling yet. */
-const hourglassShows = (d: DisputeView): boolean => d.ruling === null && Boolean(d.goalAt);
+/**
+ * Whether the hourglass shows: a dispute with Task 10's 24-hour goal, no ruling yet and no moderator
+ * yet (lead review 7 Nov; board v119: once one joins, "Replied in …" replaces it).
+ */
+const hourglassShows = (d: DisputeView): boolean => d.ruling === null && d.moderator === null && Boolean(d.goalAt);
 
 /** "23 h 12 min" split into numbers and units, so the numbers can be the big mono digits. */
 function heroParts(msLeft: number): { n: string; u: string }[] {
@@ -135,7 +138,8 @@ export function DisputeRoom({
           <StatusChip tone="danger" icon="clock" label="In dispute" />
         </div>
         <DisputeHourglass dispute={dispute} now={now} serverClock={serverClock} />
-        {dispute.afterRefund ? null : (
+        {/* Not after a refund, nor on a system escalation (late funds after a release: nothing is locked). */}
+        {dispute.afterRefund || dispute.openedBy === 'system' ? null : (
           // Board v119: the amount is the hero's inner block, six decimals.
           <div className="dispute-hero__amount" data-part="escrow-amount">
             <span className="dispute-hero__amount-label">

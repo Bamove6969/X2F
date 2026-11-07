@@ -11,8 +11,9 @@
  * funded amount within the offer's limits (the state machine does that, so the
  * amount here is already the grown one). Whatever is left above
  * sellerFundsAtomic (dust, above the offer maximum, or after "I've paid") goes
- * back to the seller. Every refund or cancel pays everything to the seller,
- * which is also all the moderator service may ever sign (spec 3.3).
+ * back to the seller. Every refund or cancel pays everything to the seller.
+ * A moderator's ruling pays by the `dispute-buyer` / `dispute-seller` sets
+ * (Plan 4 Task 15, Revision 2026-10-29c: the poster pays the 1% fee).
  */
 import type { Payout } from '@x2f/escrow';
 import { escrowPlan } from './money.js';

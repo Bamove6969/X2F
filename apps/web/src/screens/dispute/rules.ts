@@ -2,7 +2,7 @@
 // "now" here is the server's clock (useServerClock), never the device's alone (Review Focus 3).
 // Copy is from the DisputeOpen, DisputeRoom and DisputeRuling boards; lines marked COPY-UNSIGNED
 // have no board yet (spec wording or Plan 4 A8) and wait for the owner's sign-off.
-import { TIMERS, formatXmr } from '@x2f/trade';
+import { TIMERS, escrowPlan, formatXmr } from '@x2f/trade';
 import { formatRemaining } from '../../ui/Countdown.js';
 import type { DisputeReason, DisputeTrade, DisputeView, Party, Reason, RulingView } from './api.js';
 
@@ -103,8 +103,8 @@ export type SettleKind = 'release' | 'mutual-cancel' | 'buyer-cancel' | 'auto-re
  * (owner 2026-10-29; the seller is "the seller", never named): the buyer cancelled; the payment
  * time ran out and the seller cancelled; a dispute decision; both agreed to cancel; the funding
  * time ran out. Until trades record `refund_reason` (NEEDS_REFUND_REASON) the reason is inferred. A trade that had a dispute was
- * refunded by its decision (a moderator's refund to the seller is built as `mutual-cancel` today,
- * escrow/policy.ts, so the dispute decides the reason, not the kind). COPY-UNSIGNED (no board).
+ * refunded by its decision (a moderator's refund to the seller is the `dispute-seller` set, Plan 4
+ * Task 15, so the dispute decides the reason, not the kind). COPY-UNSIGNED (no board).
  */
 export function refundReason(settling: SettleKind | null, dispute: DisputeTrade['dispute']): { title: string; text: string } {
   if (dispute !== null) {
@@ -229,6 +229,13 @@ export interface RulingCopy {
   footer: string;
 }
 
+/** The XMR a ruling pays to the side it favours, in atomic units (the escrow fully funded). */
+export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: string, poster: Party): bigint {
+  const amount = BigInt(amountAtomic);
+  if (outcome === 'release-to-buyer' && poster === 'buyer') return amount - escrowPlan({ amountAtomic: amount, poster }).feeAtomic;
+  return amount;
+}
+
 /**
  * The ruling card's words for this side. `me` is this side, `other` the other trader's display name.
  * Board lines (DisputeRuling, wip/design-brief): "Ruling: release to the buyer", "1.25 XMR goes to
@@ -243,10 +250,14 @@ export interface RulingCopy {
  * board's "Sent to …" and the appeal line may say the XMR has moved.
  * Tripwire NEEDS_PLAN_4_RULING_PAYOUT in test/dispute-tripwires.test.ts.
  */
-export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, _now: Date): RulingCopy {
+export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, _now: Date, poster: Party): RulingCopy {
   const r = d.ruling;
   if (r === null) throw new Error('no ruling');
   const amount = `${xmrInText(amountAtomic)} XMR`;
+  // Lead review 7 Nov: what the ruling pays out, as `payoutsFor('dispute-buyer' | 'dispute-seller')`
+  // builds it for a fully funded escrow. The poster pays the 1% fee: on a buyer's ad the buyer gets
+  // the amount less the fee; the seller's refund is the amount either way.
+  const paidOut = `${xmrInText(paidOutAtomic(r.outcome, amountAtomic, poster))} XMR`;
   const otherSide: Party = me === 'buyer' ? 'seller' : 'buyer';
   const nameOf = (p: Party) => (p === me ? 'you' : other);
   let label: string;
@@ -254,11 +265,11 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
   switch (r.outcome) {
     case 'release-to-buyer':
       label = 'Ruling: release to the buyer';
-      title = me === 'buyer' ? `${amount} goes to you` : `${amount} goes to ${other}`;
+      title = me === 'buyer' ? `${paidOut} goes to you` : `${paidOut} goes to ${other}`;
       break;
     case 'refund-to-seller':
       label = 'Ruling: refund to the seller'; // COPY-UNSIGNED
-      title = me === 'seller' ? `${amount} goes to you` : `${amount} goes to ${other}`; // COPY-UNSIGNED
+      title = me === 'seller' ? `${paidOut} goes to you` : `${paidOut} goes to ${other}`; // COPY-UNSIGNED
       break;
     case 'seller-sends-xmr':
       label = 'Ruling: the seller sends the XMR'; // COPY-UNSIGNED

@@ -75,6 +75,8 @@ export interface DisputeView {
     destination: { walletApp: string | null; addressEnd: string } | null;
   } | null;
   appeal: { by: Party; at: string } | null;
+  /** The appeal window's length in hours, from the owner's settings. */
+  appealWindowH: number;
   serverNow: string;
 }
 
@@ -184,6 +186,8 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
       rec.moderatorName !== null && rec.moderatorJoinedAt !== null ? { name: rec.moderatorName, joinedAt: rec.moderatorJoinedAt.toISOString() } : null,
     ruling,
     appeal: d.appealBy !== null && d.appealedAt !== null ? { by: d.appealBy, at: d.appealedAt.toISOString() } : null,
+    // Lead review 7 Nov: the appeal window's length as the owner set it (settings), for the ruling page.
+    appealWindowH: (await disputeSettings(q)).appealWindowH,
     serverNow: now.toISOString(),
   };
 }

@@ -91,7 +91,7 @@ function AppealSection({
         </span>
       </div>
       <p className="dispute-muted">
-        Either of you can appeal until {dayTime(until)} ({APPEAL_WINDOW_H} h). An appeal goes to a senior moderator or the owner who hasn't seen this case.
+        Either of you can appeal until {dayTime(until)} ({dispute.appealWindowH ?? APPEAL_WINDOW_H} h). An appeal goes to a senior moderator or the owner who hasn't seen this case.
         {overturnLien(r.outcome, me, other)}
         {/* The owner's rule: one appeal only, binding. COPY-UNSIGNED */}
         {' There is one appeal per dispute, and its decision is final.'}
@@ -212,7 +212,7 @@ export function DisputeRuling({
   const r = dispute.ruling;
   if (r === null) throw new Error('DisputeRuling needs a ruling');
   const now = serverClock();
-  const copy = rulingCopy(dispute, trade.role, trade.counterparty, trade.amountAtomic, now);
+  const copy = rulingCopy(dispute, trade.role, trade.counterparty, trade.amountAtomic, now, trade.poster);
   const chat = `/trade/${encodeURIComponent(trade.code)}/dispute?view=chat`;
   // The ruling orders the seller to send the XMR and the proof form is wired: Send proof is the primary.
   const proofDue = r.outcome === 'seller-sends-xmr' && trade.role === 'seller' && onTxProof !== undefined;
