@@ -346,7 +346,7 @@ describe('messages to the parties', () => {
       expect(got.statusCode, got.body).toBe(200);
       const list = (got.json() as { envelopes: { senderRole: string; envelope: Envelope }[] }).envelopes.filter((e) => e.senderRole === 'mod');
       expect(list).toHaveLength(1);
-      const opened = await open(list[0]!.envelope, { me: c.ids[role], myRole: role, participants: c.participants, trade: c.channel, guard: new ReplayGuard() });
+      const opened = await open(list[0]!.envelope, { me: c.ids[role], myRole: role, participants: c.participants, trade: c.channel, guard: new ReplayGuard(c.channel) });
       // The trader app's chat contract (chatCrypto: payload exactly { text }); the badge comes from
       // the verified sender `mod` and the server's moderator name, never from the payload.
       expect(opened).toEqual({ from: 'mod', type: 'chat.msg', payload: { text: 'Please upload your bank statement.' } });

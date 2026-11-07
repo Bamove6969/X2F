@@ -44,7 +44,7 @@ export function checkModText(text: unknown): string {
  * `unreadable` with no text, so the moderator sees that something is there.
  */
 export async function readChat(a: { channel: string; mod: Identity; participants: Participants; rows: readonly EnvelopeRow[] }): Promise<ChatMessage[]> {
-  const guard = new ReplayGuard();
+  const guard = new ReplayGuard(a.channel);
   const out: ChatMessage[] = [];
   for (const r of a.rows) {
     const at = r.at.toISOString();

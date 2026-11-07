@@ -52,9 +52,10 @@ class FakeApi implements ApiView {
   disputes = new Map<string, string>();
   chats = new Map<string, string>();
   env = new Map<string, Array<{ id: string; senderRole: string; envelope: unknown; at: Date }>>();
-  private next = 1;
+  // One counter for the file: the moderation database (and its used entries) is shared by every test.
+  private static next = 1;
   entry(action: string, code: string | null, at = NOW): string {
-    const id = String(this.next++);
+    const id = String(FakeApi.next++);
     this.log.set(id, { id, at, action, tradeCode: code });
     return id;
   }
@@ -283,7 +284,7 @@ describe('chat', () => {
     }
     expect(envs.map((e) => [e.from, e.trade, e.seq])).toEqual([['mod', c.channel, 0], ['mod', c.channel, 1]]);
     for (const role of ['buyer', 'seller'] as const) {
-      const guard = new ReplayGuard();
+      const guard = new ReplayGuard(c.channel);
       const got = [];
       for (const e of envs) got.push(await open(e, { me: c.ids[role], myRole: role, participants: c.participants, trade: c.channel, guard }));
       expect(got).toEqual([
