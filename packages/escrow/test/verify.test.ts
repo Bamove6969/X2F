@@ -147,3 +147,38 @@ describe('checkTxSet', () => {
     expect(() => checkTxSet([goodTx()], [expected[0]!, expected[0]!], BALANCE)).toThrow(/bad-payouts/);
   });
 });
+
+describe('isScalar (review I1: a tx key from a party must be a reduced scalar before monero-ts sees it)', () => {
+  it('accepts a reduced non-zero scalar, refuses the rest', async () => {
+    const { isScalar } = await import('../src/index.js');
+    expect(isScalar('01' + '0'.repeat(62))).toBe(true);
+    // l - 1 (little-endian) is the largest scalar; l itself and 0 are not
+    expect(isScalar('ecd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010')).toBe(true);
+    expect(isScalar('edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010')).toBe(false);
+    expect(isScalar('0'.repeat(64))).toBe(false);
+    expect(isScalar('1'.repeat(64))).toBe(false);
+    expect(isScalar('ff'.repeat(32))).toBe(false);
+    expect(isScalar('AB'.repeat(32))).toBe(false);
+    expect(isScalar('ab'.repeat(31))).toBe(false);
+  });
+});
+
+describe('isTxKey (review round 2, R2-I2: a tx paying a subaddress has additional tx keys)', () => {
+  it('accepts the main key plus up to one additional key per output (16), every 32-byte chunk a reduced scalar', async () => {
+    const { isTxKey } = await import('../src/index.js');
+    const k = '01' + '0'.repeat(62);
+    const l1 = 'ecd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010';
+    expect(isTxKey(k)).toBe(true);
+    expect(isTxKey(k + l1)).toBe(true);
+    expect(isTxKey(k + l1 + k)).toBe(true);
+    expect(isTxKey(k.repeat(17))).toBe(true);
+    expect(isTxKey(k.repeat(18))).toBe(false);
+    // any chunk out of range, zero or malformed refuses the whole key
+    expect(isTxKey(k + '1'.repeat(64))).toBe(false);
+    expect(isTxKey('1'.repeat(64) + k)).toBe(false);
+    expect(isTxKey(k + '0'.repeat(64))).toBe(false);
+    expect(isTxKey(k + 'ab')).toBe(false);
+    expect(isTxKey(k + k.toUpperCase().replace('0', 'A'))).toBe(false);
+    expect(isTxKey('')).toBe(false);
+  });
+});
