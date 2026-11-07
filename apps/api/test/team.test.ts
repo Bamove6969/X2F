@@ -977,7 +977,7 @@ describe('team changes need a strong session (owner 1 Nov 2026; landing review I
     expect((await teamOf(owner.id))[0]!.roles).toEqual(['trades']);
   });
 
-  it("a weak session may still remove a member outside a hold (it only takes access away)", async () => {
+  it("a weak session may still remove a member outside a hold: access goes at once, the login after 24 h (owner G5)", async () => {
     const owner = await team();
     const m = await member(owner.id, ['trades']);
     await weaken(owner.browser, 'weak-single');
@@ -987,6 +987,13 @@ describe('team changes need a strong session (owner 1 Nov 2026; landing review I
     });
     expect(res.statusCode, res.body).toBe(204);
     expect(err(await m.browser.get('/v1/account/me'))).toEqual({ status: 401, error: 'not-authenticated' });
+    // Owner G5: access went at once; the member's login account is kept 24 h, then deleted.
+    const login = async () => (await deps.db.query('select 1 from accounts where id = $1', [m.loginId])).rowCount;
+    expect(await login()).toBe(1);
+    await purgeTeamLeftovers.run(deps.db, new Date(deps.clock().getTime() + HOLD_MS - 60_000));
+    expect(await login()).toBe(1);
+    await purgeTeamLeftovers.run(deps.db, new Date(deps.clock().getTime() + HOLD_MS + 60_000));
+    expect(await login()).toBe(0);
   });
 
   it('a strong session invites and changes roles as before', async () => {

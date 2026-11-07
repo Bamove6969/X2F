@@ -103,3 +103,8 @@ alter table sessions add constraint sessions_strength_check check (strength in (
 update login_approvals set strength = 'strong' where strength = 'pgp-single';
 alter table login_approvals drop constraint login_approvals_strength_check;
 alter table login_approvals add constraint login_approvals_strength_check check (strength in ('strong', 'weak-single'));
+
+-- Owner G5 (7 Nov): a team member removed by a session whose changes wait (just a username and
+-- password) loses access at once; their login account is kept until this time, then deleted
+-- (purgeTeamLeftovers). Null: deleted at the removal.
+alter table team_members add column login_kept_until timestamptz;
