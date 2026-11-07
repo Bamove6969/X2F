@@ -8,8 +8,9 @@
  * instant payment type, owner F9 7 Nov, but never before the server allows it), and the reminder that a paid trade can't be
  * cancelled. While trading is paused for maintenance both clocks stop at the pause (owner Q10).
  *
- * Once the window ends without a release the status turns to "hasn't confirmed in time" (the
- * board's window=ended). BuyerPay.tsx keeps the
+ * The status is the board's caution hero (chip, key mark, lead, then the timer inside it); once the
+ * window ends without a release its chip reads "Paid · not confirmed in time" (the board's
+ * window=ended). BuyerPay.tsx keeps the
  * escrow side: Finish marking as paid, the refusals and the stopped escrow come in as `notices`
  * and `primary`. Lines not on the board are COPY-UNSIGNED.
  */
@@ -25,6 +26,7 @@ import { Countdown, Duration } from '../../ui/Countdown.js';
 import { Disclosure } from '../../ui/Disclosure.js';
 import { Facts, type Fact } from '../../ui/Facts.js';
 import { Icon } from '../../ui/icons.js';
+import { KeyMark } from '../../ui/EscrowDots.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TimerCard } from '../../ui/TimerCard.js';
 import { When } from '../../ui/When.js';
@@ -34,6 +36,8 @@ import { publicName, type TradeView } from './payTypes.js';
 import { Name } from './TradeTimeline.js';
 
 const MIN_MS = 60_000;
+/** The server's limit between two nudges (spec 2.4), said in the "Nudge sent" line. */
+const NUDGE_AGAIN_MS = 10 * MIN_MS;
 
 /** The seller's confirm window, from the view: when it ends, how long it is, how much is left. */
 export function confirmWindow(view: Pick<TradeView, 'paidAt' | 'confirmBy'>, nowMs: number): { ends: number; lengthMs: number; leftMs: number; ended: boolean } | null {
@@ -78,13 +82,6 @@ export function disputeOpensAt(view: Pick<TradeView, 'paidAt' | 'confirmBy'>): n
   return Number.isFinite(paid) ? Math.max(paid, server) : server;
 }
 
-/** "2 hours", "1 hour", "90 minutes": the window's length in a sentence. */
-export function windowWords(ms: number): string {
-  const min = Math.round(ms / MIN_MS);
-  if (min > 0 && min % 60 === 0) return min === 60 ? '1 hour' : `${min / 60} hours`;
-  return min === 1 ? '1 minute' : `${min} minutes`;
-}
-
 /** The status card, the timer, What happens next and Your payment (the board's main column). */
 export function PaidWaitingBody({
   view,
@@ -105,61 +102,19 @@ export function PaidWaitingBody({
   const { clock, paused } = roomClock(view, serverClock);
   const win = confirmWindow(view, clock().getTime());
   const ended = win?.ended ?? false;
-  const length = win === null || win.lengthMs === 0 ? null : windowWords(win.lengthMs);
+  // The window's length as a Duration ("2 h"), never in words (the duration rule; design review P1-4).
+  const length = win === null || win.lengthMs === 0 ? null : <Duration ms={win.lengthMs} />;
   const xmr = <Xmr value={formatXmr(BigInt(view.amountAtomic))} />;
 
-  const status = (
-    <section role="status" aria-labelledby="paid-title" className="x2f-panel" data-part="paid-status">
-      {ended ? (
-        <StatusChip tone="caution" icon="clock" label="Paid · not confirmed in time" />
-      ) : (
-        <StatusChip tone="escrow" icon="check" label="Paid" />
-      )}
-      <h1 id="paid-title" className="x2f-h2">
-        {ended ? (
-          <>
-            <Name view={view} /> hasn't confirmed in time
-          </>
-        ) : (
-          <>
-            Paid · waiting for <Name view={view} /> to confirm
-          </>
-        )}
-      </h1>
-      <p className="x2f-fine">
-        {ended ? (
-          <>
-            {length !== null ? `Their ${length} to check ${method.name} ended` : `Their time to check ${method.name} ended`}
-            {win !== null ? (
-              <>
-                {' at '}
-                <When at={win.ends} />
-              </>
-            ) : null}
-            . The XMR is still safe in escrow. You can open a dispute now, or keep waiting and nudge them.
-          </>
-        ) : (
-          <>
-            You marked this trade as paid
-            {view.paidAt !== null ? (
-              <>
-                {' at '}
-                <When at={view.paidAt} />
-              </>
-            ) : null}
-            . <Name view={view} /> has been told and has {length !== null ? `up to ${length}` : 'time'} to check {method.name} and release.
-          </>
-        )}
-      </p>
-    </section>
-  );
-
+  // The hero (standard 11; design review P1-3): one caution card with the chip and the key mark,
+  // the lead (the page's h1 stays "Buying from …"), a divider, then the timer inside it.
   const timer =
     win === null ? null : (
       <TimerCard
         label="Time left to confirm"
         part="confirm-timer"
-        tone={ended ? 'caution' : 'escrow'}
+        tone="caution"
+        inset
         left={win.leftMs}
         total={win.lengthMs}
         ringLabel={
@@ -177,12 +132,71 @@ export function PaidWaitingBody({
             'Trading is paused for maintenance.'
           ) : (
             <>
-              {length !== null ? `${method.name} gets ${length} · ` : ''}ends <When at={win.ends} />
+              {length !== null ? (
+                <>
+                  {method.name} gets {length} ·{' '}
+                </>
+              ) : null}
+              ends <When at={win.ends} />
             </>
           )
         }
       />
     );
+
+  const status = (
+    <section role="status" aria-labelledby="paid-title" className="x2f-hero" data-tone="caution" data-wide={wide ? '' : undefined} data-part="paid-status">
+      <div className="x2f-hero__head">
+        <StatusChip tone="caution" look="tint" icon="check" label={ended ? 'Paid · not confirmed in time' : 'Paid'} />
+        <KeyMark className="x2f-hero__mark" />
+      </div>
+      <p id="paid-title" className="x2f-hero__lead">
+        {ended ? (
+          <>
+            {length !== null ? (
+              <>
+                Their {length} to check {method.name} ended
+              </>
+            ) : (
+              `Their time to check ${method.name} ended`
+            )}
+            {win !== null ? (
+              <>
+                {' at '}
+                <When at={win.ends} />
+              </>
+            ) : null}
+            . The XMR is still safe in escrow. You can open a dispute now, or keep waiting and nudge them.
+          </>
+        ) : (
+          <>
+            You marked this trade as paid
+            {view.paidAt !== null ? (
+              <>
+                {' at '}
+                <When at={view.paidAt} />
+              </>
+            ) : null}
+            . <Name view={view} /> has been told and has{' '}
+            {length !== null ? (
+              <>
+                up to {length}
+              </>
+            ) : (
+              'time'
+            )}{' '}
+            to check {method.name} and release.
+          </>
+        )}
+      </p>
+      {timer !== null ? (
+        <>
+          <div className="x2f-hero__rule" aria-hidden="true" data-fold-glance="timer" />
+          {timer}
+        </>
+      ) : null}
+    </section>
+  );
 
   const next = (
     <section className="x2f-panel" aria-labelledby="paid-next" data-part="paid-next">
@@ -247,10 +261,7 @@ export function PaidWaitingBody({
     return (
       <>
         {status}
-        <div className="x2f-room__grid">
-          {timer}
-          {payment}
-        </div>
+        <div className="x2f-room__grid">{payment}</div>
         {next}
       </>
     );
@@ -258,7 +269,6 @@ export function PaidWaitingBody({
   return (
     <>
       {status}
-      {timer}
       {next}
       {payment}
     </>
@@ -306,7 +316,7 @@ export function PaidWaitingActions({ view, serverClock }: { view: TradeView; ser
       {/* The button stays after a send (review N1); the server's 10-minute limit answers a second tap. */}
       {nudge === 'sent' ? (
         <p role="status" className="x2f-footnote" data-part="nudge-sent">
-          Nudge sent. You can send another in 10 min.
+          Nudge sent. You can send another in <Duration ms={NUDGE_AGAIN_MS} />.
         </p>
       ) : null}
       {nudge === 'failed' ? (

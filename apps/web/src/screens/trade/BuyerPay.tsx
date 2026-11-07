@@ -611,7 +611,7 @@ export function BuyerPay(p: TradeScreenProps) {
     }
     return (
       <div className="x2f-pay" data-layout="phone" data-screen-part="paid-waiting">
-        <TradeHeader title={title} code={view.code} method={method} backTo="/trades" action={<ChatButton view={view} />} />
+        <TradeHeader title={title} code={view.code} method={method} backTo="/trades" action={<ChatButton view={view} />} heading />
         <div className="x2f-pay__main">
           {notices}
           <PaidWaitingBody view={view} method={method} total={total} serverClock={serverClock} wide={false} chatAction={<ChatButton view={view} link />} />

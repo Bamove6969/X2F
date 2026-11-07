@@ -296,6 +296,7 @@
 }
 
 .x2f-trade-header__title {
+  margin: 0;
   font-size: 16px;
   font-weight: 600;
 }
@@ -1938,7 +1939,7 @@
   font-weight: var(--x2f-label-weight);
   letter-spacing: var(--x2f-label-tracking);
   text-transform: uppercase;
-  color: var(--x2f-ink-muted);
+  color: var(--x2f-timer-tone);
 }
 
 /* Tick box: a 24 px native checkbox in ink inside a 44×44 label (the tap target). */
@@ -2089,21 +2090,32 @@
 
 .x2f-timer__value {
   font-size: 18px;
-  line-height: 32px;
+  line-height: 44px;
 }
 
+/* The board's digits 40/44 mono 500 at -0.02em; the units 18/24 600 in ink-muted. */
 .x2f-timer__value .x2f-duration__n {
-  font-size: 28px;
+  font-size: 40px;
+  line-height: 44px;
   font-weight: 500;
+  letter-spacing: -0.02em;
 }
 
-.x2f-timer__hint {
-  font-size: 13px;
-  line-height: 18px;
+.x2f-timer__value .x2f-duration__unit {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
   color: var(--x2f-ink-muted);
 }
 
-.x2f-timer__hint .x2f-when {
+.x2f-timer__hint {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-timer__hint .x2f-when,
+.x2f-timer__hint .x2f-duration__n {
   color: var(--x2f-ink);
 }
 
@@ -2112,11 +2124,75 @@
 }
 
 .x2f-timer__ring-track {
-  stroke: var(--x2f-surface-raised);
+  stroke: var(--x2f-timer-tone);
+  stroke-opacity: 0.2;
 }
 
 .x2f-timer__ring-left {
   stroke: var(--x2f-timer-tone);
+}
+
+/* Inside a hero (BuyerPaidWaiting): the hero is the card. */
+.x2f-timer[data-inset] {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/*
+ * The hero (visual system v2, standard 11; BuyerPaidWaiting, Refunded): the screen's one status
+ * card, a 14% wash of its tone from the top over surface, a 35% border, radius 16. Row 1 is the
+ * tinted chip with the key mark on the right. Wide: padding 28, gap 20, the wash to 180 px.
+ */
+.x2f-hero {
+  --x2f-hero-tone: var(--x2f-caution);
+  --x2f-hero-stop: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--x2f-hero-tone) 35%, transparent);
+  border-radius: var(--x2f-radius-lg);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--x2f-hero-tone) 14%, var(--x2f-surface)) 0%, var(--x2f-surface) var(--x2f-hero-stop));
+}
+
+.x2f-hero[data-tone='muted'] {
+  --x2f-hero-tone: var(--x2f-ink-muted);
+}
+
+.x2f-hero[data-wide] {
+  --x2f-hero-stop: 180px;
+  gap: 20px;
+  padding: 28px;
+}
+
+.x2f-hero__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-hero__mark {
+  flex-shrink: 0;
+  color: var(--x2f-hero-tone);
+}
+
+.x2f-hero__lead {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-hero__lead .x2f-when,
+.x2f-hero__lead .x2f-duration__n {
+  color: var(--x2f-ink);
+}
+
+.x2f-hero__rule {
+  height: 1px;
+  background: color-mix(in srgb, var(--x2f-hero-tone) 25%, transparent);
 }
 
 /* The chat link in a card (BuyerPaidWaiting "Message satoshi_ghost in chat"). */

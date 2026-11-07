@@ -317,7 +317,23 @@ describe("I've paid and PaidConfirmSheet", () => {
     mount(props({ view: paidView, escrow: fakeEscrow({ paidRecorded: true }) }));
     const status = document.querySelector('[data-part="paid-status"]')!;
     expect(status.getAttribute('role')).toBe('status');
-    expect(status.querySelector('h1')?.textContent).toBe('Paid · waiting for satoshi_ghost to confirm');
+    // The board's caution hero (design review P1-3): the tinted chip and the key mark, the lead with
+    // no heading of its own (the page's h1 is the header's "Buying from …"), then the timer inside.
+    expect(status.className).toBe('x2f-hero');
+    expect(status.getAttribute('data-tone')).toBe('caution');
+    expect(status.querySelector('h1, h2')).toBeNull();
+    expect(document.querySelector('h1')?.textContent).toBe('Buying from satoshi_ghost');
+    const chip = status.querySelector('.x2f-chip')!;
+    expect([chip.textContent, chip.getAttribute('data-tone'), chip.getAttribute('data-look')]).toEqual(['Paid', 'caution', 'tint']);
+    expect(status.querySelector('[data-part="key-mark"]')?.querySelectorAll('circle')).toHaveLength(3);
+    expect(status.querySelector('[data-part="confirm-timer"]')?.hasAttribute('data-inset')).toBe(true);
+    expect(status.querySelector('.x2f-hero__rule')).not.toBeNull();
+    // "2 h" as a Duration, never "2 hours" in words (design review P1-4).
+    const lead = document.getElementById(status.getAttribute('aria-labelledby')!)!;
+    expect(lead.textContent).toMatch(/^You marked this trade as paid at \d+ \w{3} \d{4}, \d\d:\d\d UTC\. satoshi_ghost has been told and has up to 2 h to check Zelle and release\.$/);
+    expect(lead.querySelector('.x2f-duration__n')?.textContent).toBe('2');
+    expect(status.textContent).not.toMatch(/hours?\b/);
+    expect(status.querySelector('.x2f-timer__hint')?.textContent).toMatch(/^Zelle gets 2 h · ends /);
     expect(document.querySelectorAll('[data-primary]')).toHaveLength(0);
     // Your payment folds away in the kit's Disclosure, closed at first.
     expect(document.querySelector('[data-part="paid-payment-toggle"]')?.getAttribute('aria-expanded')).toBe('false');
@@ -758,7 +774,13 @@ describe('review minors 1, 5 and 7', () => {
     const open = document.querySelector('[data-part="paid-dispute"]')!;
     expect(open.tagName).toBe('A');
     expect(open.textContent).toBe('Open dispute');
-    expect(document.querySelector('[data-part="paid-status"] h1')?.textContent).toBe("satoshi_ghost hasn't confirmed in time");
+    // Ended: the same caution hero; the chip says so and the lead gives the window as a Duration.
+    const ended = document.querySelector('[data-part="paid-status"]')!;
+    expect(ended.getAttribute('data-tone')).toBe('caution');
+    expect(ended.querySelector('.x2f-chip')?.textContent).toBe('Paid · not confirmed in time');
+    expect(ended.querySelector('.x2f-hero__lead')?.textContent).toMatch(/^Their 2 h to check Zelle ended at .+ UTC\. The XMR is still safe in escrow\./);
+    // No arc once the time is up, only the track.
+    expect(ended.querySelectorAll('.x2f-timer__ring circle')).toHaveLength(1);
   });
 
   it('disputeOpensAt: 90 min after I\'ve paid (owner F9, instant types), never before the server allows it, and not at all without confirmBy (review M5)', () => {
@@ -797,6 +819,16 @@ describe('review minors 1, 5 and 7', () => {
     expect(waiting.tagName).toBe('BUTTON');
     const when = document.getElementById(waiting.getAttribute('aria-describedby')!)!.textContent ?? '';
     expect(when).toMatch(/^Available after the maintenance, in 1 h 50 min\.$/);
+  });
+
+  it('Nudge sent says when the next one can go, the 10 in mono (design review P1-4)', async () => {
+    answer = () => ({ status: 200, json: {} });
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    await click(document.querySelector<HTMLElement>('[data-part="nudge"]')!);
+    await flush();
+    const sent = document.querySelector('[data-part="nudge-sent"]')!;
+    expect(sent.textContent).toBe('Nudge sent. You can send another in 10 min.');
+    expect(sent.querySelector('.x2f-duration__n')?.textContent).toBe('10');
   });
 
   // Lead review m4: the tabletop glance shows the confirm timer, so the screen's copy hides there.

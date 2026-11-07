@@ -18,12 +18,15 @@ export function TradeHeader({
   method,
   backTo,
   action,
+  heading,
 }: {
   title: ReactNode;
   code: string;
   method: { name: string; whatItIs: string };
   backTo: string;
   action?: ReactNode;
+  /** The title is the page's h1 (BuyerPaidWaiting: the hero below has no heading of its own). */
+  heading?: boolean;
 }) {
   const [explain, setExplain] = useState(false);
   return (
@@ -32,7 +35,7 @@ export function TradeHeader({
         <Icon name="chevron-left" />
       </Link>
       <div className="x2f-trade-header__text">
-        <span className="x2f-trade-header__title">{title}</span>
+        {heading ? <h1 className="x2f-trade-header__title">{title}</h1> : <span className="x2f-trade-header__title">{title}</span>}
         <span className="x2f-trade-header__sub">
           Trade {code} ·{' '}
           <button type="button" className="x2f-method-name" aria-haspopup="dialog" onClick={() => setExplain(true)}>

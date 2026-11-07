@@ -150,7 +150,7 @@ test.describe("I've paid", () => {
     await expect(room(page)).toHaveAttribute('data-trade-state', 'paid');
     expect(s.posts).toEqual([{ type: 'mark-paid', fiatCents: '41250' }]);
     expect(await escrowCalls(page)).toEqual(['paid:41250']);
-    await expect(page.locator('[data-part="paid-status"]')).toContainText('Paid · waiting for');
+    await expect(page.locator('[data-part="paid-status"]')).toContainText('has been told');
     await expect(page.locator('[data-primary]')).toHaveCount(0);
   });
 
