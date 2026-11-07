@@ -32,7 +32,7 @@ import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
 import { requestOrigin } from './origin.js';
-import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
+import { gateChange, heldReply, lockAccount, pushHoldStarted, requireNotHeld, withTx } from './hold.js';
 import { TRADER_LOGIN_KINDS, realmOf, requireSession, startSession } from './sessions.js';
 import { NIL_UUID } from './throttle.js';
 
@@ -885,6 +885,43 @@ export async function applyPgpKey(db: Queryable, config: Config, accountId: stri
     throw e;
   }
   await addAlert(db, accountId, 'login-method-added', { method: 'pgp', fingerprint }, now);
+}
+
+/**
+ * Lead re-review 6 Nov item 1: adding a PGP key to one's own account on the staff site (staff and
+ * the owner have no trader session). `POST <base>/start { publicKey }` checks the key and sends a
+ * challenge to it (as the trader route); `POST <base>/finish { challengeId, code, tapId }` checks the
+ * code, then in one transaction with the account locked runs `inTx` (the staff route consumes a
+ * security-key tap bound to the fingerprint and logs it) and stores the key. A refused tap stores
+ * nothing; the code is used up, so the person starts again. No hold: staff have none.
+ */
+export function pgpAddKeyRoutesAt(
+  app: FastifyInstance,
+  base: string,
+  o: {
+    preHandler: preHandlerAsyncHookHandler[];
+    config: Record<string, unknown>;
+    inTx(c: Queryable, req: FastifyRequest, fingerprint: string): Promise<void>;
+  },
+): void {
+  app.post(`${base}/start`, { bodyLimit: PGP_BODY_LIMIT, config: o.config, preHandler: [...o.preHandler, inspectNewKey] }, addKeyStart);
+  app.post(`${base}/finish`, { config: o.config, preHandler: o.preHandler }, async (req) => {
+    const deps = req.server.deps;
+    const b = body(req);
+    const row = await checkPgpCode(deps, req, str(b, 'challengeId'), str(b, 'code'), {
+      purpose: 'add-key', accountId: req.auth.accountId, sessionId: req.auth.sessionId,
+    });
+    const pending = readPendingKey(row.payload, 'key');
+    const sealed = Buffer.from(pending.keyEnc, 'base64');
+    openKey(deps.config, sealed, pending.fingerprint); // throws for a tampered or foreign payload
+    const now = deps.clock();
+    await withTx(deps.db, async (c) => {
+      await lockAccount(c, req.auth.accountId);
+      await o.inTx(c, req, pending.fingerprint);
+      await applyPgpKey(c, req.auth.accountId, pending.fingerprint, sealed, now);
+    });
+    return { fingerprint: pending.fingerprint };
+  });
 }
 
 /**

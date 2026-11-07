@@ -19,6 +19,7 @@ import {
   parseKeyTapIntent,
   startKeyTap,
   tapPermOf,
+  TAP_STARTS_PER_WINDOW,
   purgeKeyTaps,
   MAX_OPEN_TAPS,
   KEY_TAP_PURGE_MS,
@@ -335,20 +336,41 @@ describe('RV5 Task 5 minors', () => {
   it('m12: at most 5 open taps per account; a finished or expired tap frees a place', async () => {
     const { id, key } = await staffWith();
     const started = [];
-    for (let i = 0; i < MAX_OPEN_TAPS; i++) started.push(await startKeyTap(deps, id, STOP));
-    await expect(startKeyTap(deps, id, STOP)).rejects.toMatchObject({ status: 429, code: 'slow-down' });
+    for (let i = 0; i < MAX_OPEN_TAPS; i++) started.push(await startKeyTap(deps, id, RULING));
+    await expect(startKeyTap(deps, id, RULING)).rejects.toMatchObject({ status: 429, code: 'slow-down' });
     // Another account is not affected.
     const other = await staffWith();
-    await startKeyTap(deps, other.id, STOP);
+    await startKeyTap(deps, other.id, RULING);
     await finishKeyTap(deps, id, started[0]!.tapId, key.authenticate(started[0]!.options, ORIGIN));
-    await startKeyTap(deps, id, STOP);
-    await expect(startKeyTap(deps, id, STOP)).rejects.toMatchObject({ status: 429 });
+    await startKeyTap(deps, id, RULING);
+    await expect(startKeyTap(deps, id, RULING)).rejects.toMatchObject({ status: 429 });
     setNow(new Date(deps.clock().getTime() + KEY_TAP_TTL_MS));
     try {
-      await startKeyTap(deps, id, STOP);
+      await startKeyTap(deps, id, RULING);
     } finally {
       setNow(T0);
     }
+  });
+
+  it('m11 (lead re-review item 5): only the assertion fields verification read are stored', async () => {
+    const { id, key } = await staffWith();
+    const { tapId, options } = await startKeyTap(deps, id, STOP);
+    const answer = key.authenticate(options, ORIGIN) as unknown as Record<string, unknown>;
+    await finishKeyTap(deps, id, tapId, { ...answer, extra: 'x'.repeat(50), response: { ...(answer.response as object), more: 'y' } });
+    const { rows } = await deps.db.query<{ response: Record<string, unknown> }>('select response from key_taps where id = $1', [tapId]);
+    expect(Object.keys(rows[0]!.response).sort()).toEqual(['clientExtensionResults', 'id', 'rawId', 'response', 'type']);
+    expect(Object.keys(rows[0]!.response.response as object).sort()).toEqual(
+      expect.arrayContaining(['authenticatorData', 'clientDataJSON', 'signature']),
+    );
+    expect(JSON.stringify(rows[0]!.response)).not.toMatch(/extra|more/);
+  });
+
+  it('m12 (lead re-review item 5): a full cap never blocks the emergency stop or the resume', async () => {
+    const { id } = await staffWith();
+    for (let i = 0; i < MAX_OPEN_TAPS; i++) await startKeyTap(deps, id, RULING);
+    await expect(startKeyTap(deps, id, RULING)).rejects.toMatchObject({ status: 429 });
+    await startKeyTap(deps, id, STOP);
+    await startKeyTap(deps, id, { kind: 'resume-trading' });
   });
 
   it('m8: unfinished and unused taps go a day after they start; used ones stay', async () => {
@@ -437,6 +459,21 @@ describe('keyTapRoutes', () => {
     expect(tapPermOf({ kind: 'set-role', accountId: RULING.rulingId, role: 'senior' })).toBe('staff.manage');
     expect(tapPermOf({ kind: 'settings', largeTradeLimitUsd: 1, firstResponseH: 1, appealWindowH: 48 })).toBe('settings.write');
     expect(tapPermOf({ kind: 'add-owner-key', credentialId: 'a'.repeat(22), publicKeySha256: 'b'.repeat(64) })).toBe('owner');
+  });
+
+  it('lead review M4: 20 tap starts per account per 10 minutes, then 429; the stop is never held back', async () => {
+    const { id } = await staffWith();
+    const start = (payload: object) => app.inject({ method: 'POST', url: '/staff/v1/taps/start', headers: { 'x-test-account': id, 'x-test-perms': 'self,disputes.handle,site.control' }, payload });
+    let refused = 0;
+    for (let i = 0; i < TAP_STARTS_PER_WINDOW + 1; i++) {
+      // Spread over the open-taps cap: finish nothing, so expire them by moving the clock 2 minutes.
+      setNow(new Date(T0.getTime() + i * 25_000));
+      const res = await start({ ...RULING, step: 'propose' });
+      if (res.statusCode === 429) refused++;
+    }
+    expect(refused).toBeGreaterThan(0);
+    expect((await start(STOP)).statusCode).toBe(200);
+    setNow(T0);
   });
 
   it('refuses without a session, a malformed intent and an oversized response', async () => {

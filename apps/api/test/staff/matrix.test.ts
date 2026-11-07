@@ -99,7 +99,7 @@ describe('privilege matrix', () => {
         const res = await (await browserFor(c)).send(method, urlOf(r), r.body);
         const want = expected(c, r);
         // A HEAD answer has no body: its status alone must match.
-        const error = method === 'HEAD' ? undefined : (res.json() as { error?: string }).error;
+        const error = method === 'HEAD' || res.body === '' ? undefined : (res.json() as { error?: string }).error; // a HEAD or a 204 has no body
         if (want === 'allowed') {
           // Allowed: the handler ran. It may still refuse with its own code (a tap that does not
           // exist is 403 `tap-invalid`, a target that is the owner 409 `owner-protected`), never

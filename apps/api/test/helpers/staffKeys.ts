@@ -1,6 +1,7 @@
 // Plan 4 Task 7 test helpers: a staff app whose security keys are attested (a test CA and FIDO
 // metadata on both allowlists), keys registered on the staff relying party, taps through the
 // staff routes, and the owner with two keys and a PGP key.
+import type { PushTransport } from '../../src/push/send.js';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -22,13 +23,13 @@ export const KEY_AAGUID = '11111111-2222-4333-8444-555555555555';
 export type AttestedStaffApps = Awaited<ReturnType<typeof staffApps>> & { newKey(o?: { passkey?: boolean }): SoftAuthenticator };
 
 /** `staffApps` with an attestation policy that accepts the test CA's keys (staff and owner). */
-export async function attestedStaffApps(): Promise<AttestedStaffApps> {
+export async function attestedStaffApps(staffOptions: { pushTransport?: PushTransport } = {}): Promise<AttestedStaffApps> {
   const ca = createTestCa();
   const dir = await mkdtemp(join(tmpdir(), 'x2f-mds-staff-'));
   await writeTestMds(dir, ca, { statements: [KEY_AAGUID], allow: [KEY_AAGUID], ownerAllow: [KEY_AAGUID] });
   const attestation = fileAttestationPolicy(dir);
   await attestation.init();
-  const apps = await staffApps({ attestation });
+  const apps = await staffApps({ attestation }, staffOptions);
   return {
     ...apps,
     newKey: (o = {}) =>

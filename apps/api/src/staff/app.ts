@@ -12,6 +12,8 @@ import { staffInviteRoutes } from './invites.js';
 import { keyTapRoutes } from './keyTap.js';
 import { staffMemberRoutes } from './members.js';
 import { ownerKeyRoutes } from './ownerKeys.js';
+import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from '../push/send.js';
+import { staffAccountRoutes } from './account.js';
 import { staffFeedbackRoutes } from './feedback.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
@@ -71,7 +73,10 @@ export const STAFF_CSP = [
  * WebAuthn uses the staff origin and relying party. Every route declares a perm in `config.perm`,
  * checked at startup (`assertRoutePerm`).
  */
-export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { write(line: string): void } } = {}): Promise<FastifyInstance> {
+export async function buildStaffApi(
+  deps: StaffDeps,
+  options: { logStream?: { write(line: string): void }; pushTransport?: PushTransport } = {},
+): Promise<FastifyInstance> {
   const origin = new URL(deps.staffOrigin);
   if (origin.origin !== deps.staffOrigin) throw new Error('config: X2F_STAFF_ORIGIN must be an exact origin such as https://staff.example.org');
   // The staff app's own view of the config: its origin is the only allowed one, and keys are
@@ -85,8 +90,12 @@ export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { wr
   app.decorate('budgets', newBudgets(deps.clock));
   // Staff have no live streams yet; ending a session still tells the (empty) bus.
   app.decorate('events', new EventBus());
-  // No staff push subscriptions yet (Plan 6): a new staff login pushes nothing.
-  app.decorate('push', { send: async () => false });
+  // Lead re-review 6 Nov item 2: real Web Push (staff subscribe at /staff/v1/account/push).
+  const transport = options.pushTransport ?? webPushTransport;
+  app.decorate('push', {
+    send: (accountId: string, kind: PushKind, opts?: PushOptions) =>
+      sendPush({ db: deps.db, clock: deps.clock, config: deps.config, transport, log: app.log }, accountId, kind, opts),
+  });
   app.decorate('sessionRealm', STAFF_REALM);
   app.decorate('sessionWriteRoutes', [] as string[]);
   app.decorateRequest('auth', null as never);
@@ -113,6 +122,8 @@ export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { wr
 
   app.get('/healthz', { config: { perm: 'public-login' } }, async () => ({ ok: true }));
   await staffLoginRoutes(app);
+  // Lead re-review 6 Nov items 1-2: one's own login methods, sessions, alerts and push.
+  staffAccountRoutes(app);
   // Plan 4 Task 5: security-key taps, used by every tapped action (Tasks 7, 8, 12).
   keyTapRoutes(app, {
     guard: requireStaff('self'),
