@@ -125,11 +125,11 @@ describe('choosing the session length', () => {
     expect((await setLength(b, 8)).statusCode).toBe(200);
     at(3 * HOUR);
     expect((await setLength(b, 4)).json()).toMatchObject({ lengthHours: 4, expiresAt: iso(7 * HOUR) });
-    at(6 * HOUR);
-    expect((await setLength(b, 2)).json()).toMatchObject({ lengthHours: 2, expiresAt: iso(8 * HOUR) });
-    at(8 * HOUR - MIN);
+    at(5 * HOUR);
+    expect((await setLength(b, 2)).json()).toMatchObject({ lengthHours: 2, expiresAt: iso(7 * HOUR) });
+    at(7 * HOUR - MIN);
     expect((await b.get('/v1/account/me')).statusCode).toBe(200);
-    at(8 * HOUR);
+    at(7 * HOUR);
     expect((await b.get('/v1/account/me')).statusCode).toBe(401);
   });
 
@@ -310,7 +310,7 @@ describe('"Stay logged in?": extending the session', () => {
     const name = `pt${String(++n).padStart(4, '0')}x`;
     const reg = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
     expect(reg.statusCode, reg.body).toBe(201);
-    const { rows } = await deps.db.query<{ account_id: string }>('select account_id from sessions order by created_at desc, id desc limit 1');
+    const { rows } = await deps.db.query<{ account_id: string }>('select id as account_id from accounts where display_name = $1', [`P${name}`]);
     await deps.db.query('insert into totp (account_id, secret_enc, created_at) values ($1, $2, $3)', [rows[0]!.account_id, randomBytes(48), T0]);
     expect((await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'set-password' } })).statusCode).toBe(401);
     const ok = await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'extend-session' } });
@@ -324,7 +324,7 @@ describe('"Stay logged in?": extending the session', () => {
     const name = `ps${String(++n).padStart(4, '0')}x`;
     const reg = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
     expect(reg.statusCode, reg.body).toBe(201);
-    const { rows } = await deps.db.query<{ account_id: string }>('select account_id from sessions order by created_at desc, id desc limit 1');
+    const { rows } = await deps.db.query<{ account_id: string }>('select id as account_id from accounts where display_name = $1', [`P${name}`]);
     await deps.db.query(`update accounts set terms_version = '2000-01-01' where id = $1`, [rows[0]!.account_id]);
     expect(errorOf(await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'set-password' } }))).toBe('terms-required');
     const ok = await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'extend-session' } });

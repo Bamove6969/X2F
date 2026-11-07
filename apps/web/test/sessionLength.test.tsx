@@ -258,7 +258,11 @@ describe('SessionExtend board: "Stay logged in?"', () => {
 
   it('another tab extended the session: at the old end it re-reads me, watches the new end and stays logged in (review 2)', async () => {
     const later = info({ expiresAt: new Date(T0 + 8 * 3_600_000).toISOString() });
-    handler = (url) => (url === '/v1/account/me' ? json(200, { ...ME, methods: ['passkey'], session: later }) : url === '/v1/logout' ? json(200, { ok: true }) : undefined);
+    // The server answers with its time as it reads (now).
+    handler = (url) =>
+      url === '/v1/account/me'
+        ? json(200, { ...ME, methods: ['passkey'], session: { ...later, serverNow: new Date(Date.now()).toISOString() } })
+        : url === '/v1/logout' ? json(200, { ok: true }) : undefined;
     render(<MemoryRouter><SessionPrompt /></MemoryRouter>);
     act(() => publishSessionWatch({ info: info(), methods: ['passkey'] }));
     tick(4 * 3_600_000 - 60_000);
@@ -270,7 +274,7 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     expect(document.body.textContent).not.toContain('Stay logged in?');
     expect(currentSessionWatch()?.info.expiresAt).toBe(later.expiresAt);
     // The new end is watched: the prompt comes again 5 minutes before it.
-    tick(4 * 3_600_000 - SESSION_PROMPT_MS - 62_000);
+    tick(4 * 3_600_000 - SESSION_PROMPT_MS - 3_000);
     expect(document.body.textContent).not.toContain('Stay logged in?');
     tick(3_000);
     expect(document.body.textContent).toContain('Stay logged in?');
@@ -288,7 +292,8 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     expect(document.body.textContent).toContain('Stay logged in?');
     // Another tab extends: its end reaches this one, which goes back to waiting.
     const other = new FakeChannel('x2f-session');
-    const later = info({ expiresAt: new Date(T0 + 12 * 3_600_000).toISOString(), lengthHours: 12 });
+    // The other tab's answer carries the server's time as it extended (now).
+    const later = info({ expiresAt: new Date(T0 + 12 * 3_600_000).toISOString(), lengthHours: 12, serverNow: new Date(Date.now()).toISOString() });
     act(() => other.postMessage({ type: 'session-info', info: later }));
     expect(document.body.textContent).not.toContain('Stay logged in?');
     expect(currentSessionWatch()).toEqual({ info: later, methods: ['password'] });
