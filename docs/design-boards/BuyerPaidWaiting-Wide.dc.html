@@ -67,7 +67,7 @@ button,a,summary{transition:background-color 150ms ease-out,border-color 150ms e
             <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
               <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">Time left to confirm</span>
               <sc-if value="{{inWindow}}" hint-placeholder-val="{{true}}">
-                <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">{{timerH}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">h</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">{{timerM}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">min</span></span>
+                <span style="display: inline-flex; align-items: baseline; gap: 6px;"><sc-if value="{{hasH}}" hint-placeholder-val="{{true}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">{{timerH}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">h</span></sc-if><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">{{timerM}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">min</span></span>
               </sc-if>
               <sc-if value="{{ended}}" hint-placeholder-val="{{false}}">
                 <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">0</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">min</span></span>
@@ -104,7 +104,7 @@ button,a,summary{transition:background-color 150ms ease-out,border-color 150ms e
             </sc-if>
           </div>
           <sc-if value="{{disputeLocked}}" hint-placeholder-val="{{true}}">
-            <span id="bpw-dispute-when" style="font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: right;">Available from <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">14:35 UTC</span> · in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">28</span> min</span>
+            <span id="bpw-dispute-when" style="font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: right;">Available from <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">15:35 UTC</span> · in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">88</span> min</span>
           </sc-if>
           <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">You can't cancel after marking as paid. Tapped it by mistake? Explain in chat or open a dispute.</p>
         </div>
@@ -113,8 +113,8 @@ button,a,summary{transition:background-color 150ms ease-out,border-color 150ms e
           <h2 id="bpw-next" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What happens next</h2>
           <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; font-size: 15px; line-height: 22px;">
             <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">1</span><span>satoshi_ghost checks their Zelle for <strong style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">$412.50</strong> with the memo <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span>.</span></li>
-            <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">2</span><span>When they release, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> reaches your wallet within seconds. Your app co-signs by itself.</span></li>
-            <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">3</span><span>If something goes wrong, you can open a dispute from <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:35 UTC</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> min after you marked it as paid. A moderator checks the chat and proof, then decides.</span></li>
+            <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">2</span><span>When they release, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> goes to your wallet once your app co-signs. Keep this page open until it arrives.</span></li>
+            <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">3</span><span>If something goes wrong, you can open a dispute from <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">15:35 UTC</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> min after you marked it as paid. A moderator checks the chat and proof, then decides.</span></li>
           </ol>
           <a href="#bpw-chat" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; margin: -4px 0 -10px -8px; padding: 0 8px; align-self: flex-start; border-radius: 12px; color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Message satoshi_ghost in chat</a>
         </section>
@@ -157,7 +157,7 @@ button,a,summary{transition:background-color 150ms ease-out,border-color 150ms e
       <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
       <aside aria-label="Decided by the owner: when the buyer can open a dispute" style="display: flex; flex-direction: column; gap: 6px; max-width: 560px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
-      <span style="font-weight: 600;">Dispute opens 30 minutes after I've paid (payments like Interac can take up to 30 min to arrive). Preview before and after with the window tweak.</span>
+      <span style="font-weight: 600;">Dispute opens after a wait set by the payment type (owner F9, 7 Nov): instant types such as Zelle 90 min; same or next day 24 h; slow types 48 h to 4 days. The wait pauses during maintenance. Preview before and after with the window tweak.</span>
     </aside>
       <aside aria-label="Design call: payment proof row" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design call · ships with proof upload</span>
@@ -172,7 +172,7 @@ button,a,summary{transition:background-color 150ms ease-out,border-color 150ms e
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"window":{"editor":"enum","options":["in-window","after-30-min","ended"],"default":"in-window"},"$preview":{"width":1280,"height":1410}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"window":{"editor":"enum","options":["in-window","after-wait","ended"],"default":"in-window"},"$preview":{"width":1280,"height":1428}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { nudged: false }; }
   renderVals() {
@@ -182,9 +182,9 @@ class Component extends DCLogic {
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const ended = this.props.window === 'ended';
-    // Owner, 2 Nov: the buyer can open a dispute 30 min after I've paid (paid 14:05 UTC, so from 14:35 UTC).
-    const after30 = this.props.window === 'after-30-min';
-    const H = ended ? 1408 : (this.props.window === 'after-30-min' ? 1384 : 1410);
+    // Owner F9, 7 Nov: Zelle is instant, so the dispute opens 90 min after I've paid (paid 14:05 UTC, so from 15:35 UTC).
+    const after30 = this.props.window === 'after-wait';
+    const H = ended ? 1426 : (this.props.window === 'after-wait' ? 1402 : 1428);
     const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     // Stepper (buyer labels): "Seller checks" is current; its bar fills as the 2-hour window runs.
     const STEP_LABELS = ['Escrow', 'You pay', 'Seller checks', 'Released'];
@@ -192,11 +192,11 @@ class Component extends DCLogic {
     const steps = STEP_LABELS.map((label, i) => ({
       label,
       current: i === current ? 'step' : 'false',
-      barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < current ? 'width: 100%; background: var(--escrow);' : i === current ? 'width: ' + (ended ? 100 : (after30 ? 27 : 2)) + '%; background: var(--caution);' : 'width: 0;'),
+      barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < current ? 'width: 100%; background: var(--escrow);' : i === current ? 'width: ' + (ended ? 100 : (after30 ? 77 : 2)) + '%; background: var(--caution);' : 'width: 0;'),
       labelStyle: 'font-size: 13px; line-height: 16px; ' + (i === current ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
     }));
     const C = 2 * Math.PI * 27;
-    const left = ended ? 0 : (after30 ? 88 : 118) / 120;
+    const left = ended ? 0 : (after30 ? 28 : 118) / 120;
     return {
       rootStyle, steps,
       inWindow: !ended,
@@ -204,8 +204,8 @@ class Component extends DCLogic {
       chip: ended ? 'Paid · not confirmed in time' : 'Paid',
       ringDash: (C * left).toFixed(1) + ' ' + C.toFixed(1),
       ringArcStyle: 'color: var(--caution);' + (ended ? ' opacity: 0;' : ''),
-      ringLabel: ended ? 'No time left to confirm' : (after30 ? '88' : '118') + ' of 120 minutes left to confirm',
-      timerH: '1', timerM: after30 ? '28' : '58',
+      ringLabel: ended ? 'No time left to confirm' : (after30 ? '28' : '118') + ' of 120 minutes left to confirm',
+      timerH: '1', hasH: !after30, timerM: after30 ? '28' : '58',
       disputeLocked: !ended && !after30,
       disputeSoft: after30,
       canNudge: !this.state.nudged,

@@ -159,27 +159,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
-    <aside aria-label="Open for the owner: what each preset turns on" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
-      <span style="font-weight: 600;">What does each preset turn on?</span>
-      <span style="color: var(--ink-muted);">Current draft:</span>
-      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px;">
-        <sc-for list="{{mapping}}" as="m" hint-placeholder-count="4">
-          <li><span style="font-weight: 600;">{{m.label}}:</span> {{m.list}}</li>
-        </sc-for>
-      </ul>
-      <span style="color: var(--ink-muted);">Options:</span>
-      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>Keep this draft</li>
-        <li>Change what a preset turns on</li>
-        <li>No presets: every member starts with everything off</li>
-      </ul>
-      <span style="color: var(--ink-muted);">Preview a starting point with the preset tweak. Showing: {{presetName}}</span>
-    </aside>
+    <aside aria-label="Decided by the owner: Team permissions are granular: member types with checkboxes" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q16)</span><span style="font-weight: 600;">Team permissions are granular: member types with checkboxes</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Three or four member types. Each type has 7 to 10 checkboxes the owner ticks one by one.</li><li>A member can belong to several types, or all of them, with only some boxes ticked in each.</li><li>This replaces the four presets drawn here. Redraw pending: the board will be rebuilt to this model.</li></ul></aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"preset":{"editor":"enum","options":["chat-only","offers","trades","everything","custom"],"default":"trades"},"$preview":{"width":390,"height":4263}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"preset":{"editor":"enum","options":["chat-only","offers","trades","everything","custom"],"default":"trades"},"$preview":{"width":390,"height":3973}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { on: null, saved: null, ask: null, note: '', verify: false }; }
   renderVals() {
@@ -331,7 +315,7 @@ class Component extends DCLogic {
 
     // Board height = measured content height (night, fonts loaded) for the default state,
     // plus what each state adds, so nothing is clipped and no empty band is left.
-    const H = Math.max(844, 4263
+    const H = Math.max(844, 3973
       + (match ? 0 : 52)
       + (s.note ? 58 : 0));
 

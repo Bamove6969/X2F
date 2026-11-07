@@ -18,6 +18,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
+  <div style="{{appStyle}}">
   <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
     <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
       <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);">
@@ -89,17 +90,42 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <li style="display: flex; gap: 8px; align-items: flex-start;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--caution);"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg><span>Sender name hidden by mira.k</span></li>
         </ul>
       </div>
+      <div role="group" aria-labelledby="blur-q" style="display: flex; flex-direction: column; gap: 12px; padding-top: 16px; border-top: 1px solid var(--surface-raised);">
+        <sc-if value="{{askRow}}" hint-placeholder-val="{{true}}">
+          <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;">
+            <span id="blur-q" style="font-size: 14px; line-height: 20px; color: var(--ink);">Was this proof blurred correctly?</span>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" aria-pressed="{{yesPressed}}" onClick="{{pickYes}}" style="{{chipYes}}">Yes</button>
+              <button type="button" aria-pressed="{{noPressed}}" onClick="{{pickNo}}" style="{{chipNo}}">No</button>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{noForm}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <label for="blur-note" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">What was wrong?</label>
+            <textarea id="blur-note" aria-describedby="blur-help" style="display: block; min-height: 96px; box-sizing: border-box; padding: 12px 14px; border-radius: 6px; background: var(--surface-raised); border: 1px solid var(--line); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: vertical;"></textarea>
+            <span id="blur-help" style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Help us improve the blur. Your note goes to the X2F team, not to the buyer.</span>
+          </div>
+          <button type="button" onClick="{{sendNote}}" style="display: flex; align-items: center; justify-content: center; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Send</button>
+          </div>
+        </sc-if>
+        <sc-if value="{{thanks}}" hint-placeholder-val="{{false}}">
+          <p role="status" style="margin: 0; display: flex; gap: 8px; align-items: flex-start; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg style="flex-shrink: 0; margin-top: 2px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Thanks. This helps us improve the blur.</p>
+        </sc-if>
+      </div>
       <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
         <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
-        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Look for a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$412.50</span> payment with the note <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> in your bank. Screenshot checks catch mistakes, but only your bank proves the money arrived.</p>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Look for a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$412.50</span> payment with the note <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> in your bank.</p>
       </div>
     </section>
 
     <section aria-labelledby="sc-faked" style="display: flex; flex-direction: column; gap: 14px; padding: 16px; border-radius: 16px; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);">
-      <h2 id="sc-faked" style="margin: 0; display: flex; gap: 10px; align-items: center; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--danger);">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
-        Screenshots can be faked
+      <h2 id="sc-faked" style="margin: 0; display: flex; gap: 10px; align-items: flex-start; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--danger);">
+        <svg style="flex-shrink: 0; margin-top: 2px;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+        Screenshots can be faked, even a copy of X2F's own screen.
       </h2>
+      <p style="margin: -8px 0 0 28px; font-size: 14px; line-height: 20px; color: var(--ink);">Only your bank app shows whether the money arrived.</p>
       <label for="checked" style="{{tickBoxStyle}}">
         <input id="checked" type="checkbox" checked="{{checked}}" onChange="{{toggleCheck}}" style="width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--ink); flex-shrink: 0;">
         <span>I checked my bank account myself and the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$412.50</span> from Zelle is there.</span>
@@ -125,13 +151,33 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <button type="button" style="height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Open dispute</button>
     </div>
   </footer>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <aside aria-label="Decided by the owner: proof disclaimer" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q46)</span>
+      <span style="font-weight: 600;">The proof disclaimer sits inside the &quot;Screenshots can be faked&quot; callout, next to the box the seller must tick before releasing.</span>
+      <span>Same wording on Warn-Release. Owner left wording, placement and button to design.</span>
+    </aside>
+    <aside aria-label="Decided by the owner: blur feedback" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q47)</span>
+      <span style="font-weight: 600;">Asked on every proof for the first months, then on every <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span>th to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">20</span>th proof (owner Q47).</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Yes and No are secondary chips; the selected one gets a 2px ink ring. The screen&#39;s one orange action stays Hold to release.</li>
+        <li>Yes, or Send after No, replaces the row with a thank-you line.</li>
+        <li>The note goes to the X2F team only; the buyer never sees it.</li>
+      </ul>
+      <span style="color: var(--ink-muted);">Preview with the blurCheck tweak. Showing: {{blurCheckName}}</span>
+    </aside>
+  </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1142}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"blurCheck":{"editor":"enum","options":["ask","no","thanks"],"default":"ask"},"$preview":{"width":390,"height":1762}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { open: false, checked: false, hover: false, progress: 0, done: false };
+    this.state = { open: false, checked: false, hover: false, progress: 0, done: false, bkey: '', blur: '' };
     this.timer = null;
   }
   componentWillUnmount() { this.clearTimer(); }
@@ -160,8 +206,19 @@ class Component extends DCLogic {
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const { checked, hover, progress, done } = this.state;
-    const H = done ? 1190 : (checked ? 1160 : 1142);
+    // Blur-check row (Q47). The tweak sets the starting state; taps change it until the tweak changes.
+    const BLUR = ['ask', 'no', 'thanks'];
+    const bTweak = BLUR.indexOf(this.props.blurCheck) >= 0 ? this.props.blurCheck : 'ask';
+    const blur = (this.state.bkey === bTweak && this.state.blur) ? this.state.blur : bTweak;
+    const setBlur = (v) => this.setState({ bkey: bTweak, blur: v });
+    const chip = (on) => 'display: inline-flex; align-items: center; justify-content: center; height: 44px; min-width: 64px; box-sizing: border-box; border-radius: 999px; font-family: inherit; font-size: 15px; font-weight: 600; color: var(--ink); cursor: pointer; ' + (on ? 'padding: 0 15px; border: 2px solid var(--ink); background: var(--surface-raised);' : 'padding: 0 16px; border: 1px solid var(--line); background: transparent;');
+    // Heights measured (night, fonts loaded): app content per blur state, + tick box / released lines; notes block under it.
+    const APP_BASE = { ask: 1275, no: 1511, thanks: 1223 }[blur];
+    const APP_H = APP_BASE + (done ? 48 : (checked ? 18 : 0));
+    const NOTES_H = 487;
+    const H = APP_H + NOTES_H;
     const rootStyle = THEMES[theme] + 'position: relative; overflow: hidden; width: 390px; height: ' + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const appStyle = 'position: relative; display: flex; flex-direction: column; flex-shrink: 0; height: ' + APP_H + 'px;';
     // Stepper (seller labels): "You check" is current; once released, every step is done.
     const STEP_LABELS = ['Escrow', 'Buyer pays', 'You check', 'Released'];
     const current = done ? 3 : 2;
@@ -185,7 +242,18 @@ class Component extends DCLogic {
       btnStyle = base + 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer;';
     }
     const fillStyle = 'position: absolute; left: 0; top: 0; bottom: 0; width: ' + (done ? 0 : progress) + '%; background: color-mix(in srgb, var(--on-monero) 28%, var(--monero)); pointer-events: none;';
-    return { rootStyle, steps, tickBoxStyle,
+    return { rootStyle, appStyle, steps, tickBoxStyle,
+      askRow: blur !== 'thanks',
+      noForm: blur === 'no',
+      thanks: blur === 'thanks',
+      yesPressed: 'false',
+      noPressed: blur === 'no' ? 'true' : 'false',
+      chipYes: chip(false),
+      chipNo: chip(blur === 'no'),
+      pickYes: () => setBlur('thanks'),
+      pickNo: () => setBlur(blur === 'no' ? 'ask' : 'no'),
+      sendNote: () => setBlur('thanks'),
+      blurCheckName: { ask: 'ask (row shown)', no: 'no (after tapping No)', thanks: 'thanks (after Yes or Send)' }[blur],
       done,
       checked,
       locked: !checked || done,

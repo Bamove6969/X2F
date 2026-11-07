@@ -267,6 +267,25 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <span style="font-weight: 600;">X2F builds a database of blur templates to improve automatic blurring.</span>
             <span>A template is the layout of a payment app&#39;s proof screen with the private areas blanked (nothing underneath). No real proofs are stored.</span>
           </aside>
+
+          <aside aria-label="Decided by the owner: what is never blurred" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+            <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q50)</span>
+            <span style="font-weight: 600;">The trade code, amount and time are never blurred. Names and account numbers can be blurred.</span>
+            <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+              <li>Blur templates and automatic blur never blank these three fields.</li>
+              <li>Owner: &quot;Trade code, amount, and time should never be blurred… Names and account numbers can be blurred.&quot;</li>
+              <li>If the uploader&#39;s own blur covers the amount or memo, the 2 Nov &quot;Warn, don&#39;t block&quot; rule still applies.</li>
+            </ul>
+          </aside>
+
+          <aside aria-label="Decided by the owner: amount not detected and old screenshots" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+            <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q42, Q43)</span>
+            <span style="font-weight: 600;">Two checks before sending.</span>
+            <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+              <li>Q43, amount not detected: the buyer can still post the proof. Owner: &quot;post anyways&quot;.</li>
+              <li>Q42, screenshot date older than the trade: the buyer is asked for a fresh screenshot. The old one is not sent.</li>
+            </ul>
+          </aside>
         </div>
         <div style="display: flex; flex-direction: column; gap: 12px;">
           <aside aria-label="Design note: what stays visible" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
@@ -324,7 +343,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["review","drawing","removing","preview","sent"],"default":"review"},"removeAuto":{"editor":"enum","options":["add-only","confirm-to-show"],"default":"add-only"},"protect":{"editor":"enum","options":["warn","no-warning"],"default":"warn"},"$preview":{"width":1280,"height":1478}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["review","drawing","removing","preview","sent"],"default":"review"},"removeAuto":{"editor":"enum","options":["add-only","confirm-to-show"],"default":"add-only"},"protect":{"editor":"enum","options":["warn","no-warning"],"default":"warn"},"$preview":{"width":1280,"height":1760}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -354,8 +373,8 @@ class Component extends DCLogic {
     const set = (p) => this.setState({ key: key, c: Object.assign({}, c, p) });
     const push = (boxes, extra) => set(Object.assign({ boxes: boxes, hist: c.hist.concat([c.boxes]) }, extra || {}));
 
-    const H_EDIT = 1478;
-    const H_SENT = 1364;
+    const H_EDIT = 1760;
+    const H_SENT = 1646;
     const ROWS_FIT = 4;
     // Stepper: Escrow done, You pay current.
     const STEP_LABELS = ['Escrow', 'You pay', 'Seller checks', 'Released'];

@@ -125,7 +125,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","extended","logged-out"],"default":"ask"},"accountType":{"editor":"enum","options":["trader","vendor"],"default":"trader"},"methods":{"editor":"enum","options":["strong","password+authenticator","password-only"],"default":"strong"},"$preview":{"width":390,"height":1479}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","extended","logged-out"],"default":"ask"},"accountType":{"editor":"enum","options":["trader","vendor"],"default":"trader"},"methods":{"editor":"enum","options":["strong","password+authenticator","username-password"],"default":"strong"},"$preview":{"width":390,"height":1479}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { stepOver: null, stepFor: '', pwOpen: false, pwFor: '', pw: '', code: '' }; }
   renderVals() {
@@ -150,10 +150,10 @@ class Component extends DCLogic {
 
     // Owner, 2 Nov: extending also works with the password, plus the authenticator code when the account has one;
     // accounts with only a username and password can extend too ("a very low risk thing").
-    // methods tweak: strong = passkey + security key (+ authenticator; sample), password+authenticator, password-only.
-    const meth = ['strong', 'password+authenticator', 'password-only'].indexOf(this.props.methods) >= 0 ? this.props.methods : 'strong';
+    // methods tweak: strong = passkey + security key (+ authenticator; sample), password+authenticator, username-password.
+    const meth = ['strong', 'password+authenticator', 'username-password'].indexOf(this.props.methods) >= 0 ? this.props.methods : 'strong';
     const hasKeys = meth === 'strong';
-    const hasTotp = meth !== 'password-only';
+    const hasTotp = meth !== 'username-password';
     const pwOpen = step === 'ask' && (hasKeys ? (s.pwOpen && s.pwFor === meth) : true);
     const pwNotReady = !(s.pw.length > 0 && (!hasTotp || /^[0-9]{6}$/.test(s.code)));
     // With no passkey or security key, "Stay logged in" is the one primary action (orange); otherwise it stays outline.

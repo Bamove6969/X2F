@@ -69,7 +69,7 @@ button,a{transition:background-color 150ms ease-out,border-color 150ms ease-out,
         <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>
         <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0;">
           <h2 id="rf-dispute" style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">{{disputeTitle}}</h2>
-          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Open a dispute and add your payment proof. If the money reached satoshi_ghost, a moderator makes them send you the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> XMR as agreed.</p>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Open a dispute and add your payment proof. If the money reached satoshi_ghost, a moderator can rule that they owe you the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> XMR. Until they pay it back, they can't trade.</p>
           <button type="button" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; margin: 2px 0 -10px; padding: 0; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; align-self: flex-start;">Open dispute<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
         </div>
       </section>
@@ -92,7 +92,7 @@ button,a{transition:background-color 150ms ease-out,border-color 150ms ease-out,
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "variant": {"editor": "enum", "options": ["buyer-cancelled", "time-ran-out", "moderator"], "default": "buyer-cancelled"}, "$preview": {"width": 390, "height": 1030}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "variant": {"editor": "enum", "options": ["buyer-cancelled", "time-ran-out", "moderator"], "default": "buyer-cancelled"}, "$preview": {"width": 390, "height": 1058}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = {}; }
   renderVals() {
@@ -102,7 +102,7 @@ class Component extends DCLogic {
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const v = ['buyer-cancelled', 'time-ran-out', 'moderator'].indexOf(this.props.variant) >= 0 ? this.props.variant : 'buyer-cancelled';
-    const H = { 'buyer-cancelled': 1030, 'time-ran-out': 1060, 'moderator': 1080 }[v];
+    const H = { 'buyer-cancelled': 1058, 'time-ran-out': 1060, 'moderator': 1096 }[v];
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const C = {
       'buyer-cancelled': {

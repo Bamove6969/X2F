@@ -295,7 +295,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"session":{"editor":"enum","options":["strong","password-only"],"default":"strong"},"$preview":{"width":390,"height":3537}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"session":{"editor":"enum","options":["strong","username-password"],"default":"strong"},"$preview":{"width":390,"height":3537}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { gone: [], ask: null, single: false, confirmOne: false, idle: null, devNote: '', optNote: '', off: [], kept: [], teamNote: '', verify: null, hold: null }; }
   renderVals() {
@@ -333,8 +333,8 @@ class Component extends DCLogic {
     // Switching off asks first, logs the member out, and keeps the row in this card, dimmed. Switching on needs no confirm.
     // kept = members logged out by switching off; they stay listed. teamLive = members still logged in.
     // Owner decided 2 Nov: switching members on or off needs a two-factor method you’ve already set up: a passkey, security key or PGP key. With just a username and password it waits 24 hours (owner rule change, 2 Nov: nobody is logged out).
-    // session tweak: strong = flipping asks "Confirm it's you" first; password-only = flipping opens the hold pop-up.
-    const strongSession = this.props.session !== 'password-only';
+    // session tweak: strong = flipping asks "Confirm it's you" first; username-password = flipping opens the hold pop-up.
+    const strongSession = this.props.session !== 'username-password';
     const teamRows = live.filter((d) => d.member);
     const teamLive = teamRows.filter((d) => s.kept.indexOf(d.id) < 0);
     const swTrack = (on) => 'display: flex; align-items: center; width: 52px; height: 32px; flex-shrink: 0; box-sizing: border-box; padding: 3px; border-radius: 999px; border: 1px solid ' + (on ? 'var(--ink); background: var(--ink); justify-content: flex-end;' : 'var(--line); background: var(--surface-raised); justify-content: flex-start;');
@@ -462,7 +462,7 @@ class Component extends DCLogic {
       teamAllStyle: 'display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; margin: 4px 0 16px; border-radius: 12px; background: transparent; font-family: inherit; font-size: 16px; font-weight: 600; ' + (teamLive.length ? 'border: 1px solid var(--team); color: var(--team); cursor: pointer;' : 'border: 1px solid color-mix(in srgb, var(--team) 25%, transparent); color: var(--ink-muted); cursor: not-allowed;'),
       askTeamAll: () => { if (teamLive.length) this.setState({ ask: 'team' }); },
       hasTeamNote: s.teamNote !== '', teamNote: s.teamNote,
-      sessionName: strongSession ? 'passkey, security key or PGP key' : 'username and password only',
+      sessionName: strongSession ? 'passkey, security key or PGP key' : 'username and password',
       verifying: !!vTarget, methods,
       verifyText: vTarget ? (vOff ? 'Switching ' + vTarget.member + ' back on needs a two-factor method you’ve already set up: a passkey, security key or PGP key.' : 'Switching ' + vTarget.member + ' off needs a two-factor method you’ve already set up: a passkey, security key or PGP key.') : '',
       verifyCancel: () => this.setState({ verify: null }),

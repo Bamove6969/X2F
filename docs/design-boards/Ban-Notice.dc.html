@@ -104,15 +104,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
     <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Built like Lien-Notice: a full-screen account notice, danger hero with the Ends and Reason block inside it, then what it means and who to message. OK is the one primary. Preview the trade ban and site ban with the variant tweak.</p>
-    <aside aria-label="Open for the owner: do bans have an end date" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
-      <span style="font-weight: 600;">Do bans have an end date?</span>
-      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>Timed: Ends shows <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14 Nov 2026, 14:05 UTC</span> (current default).</li>
-        <li>Not timed: Ends reads &quot;Permanent · until a moderator lifts it&quot;.</li>
-      </ul>
-      <span style="color: var(--ink-muted);">Preview with the ends tweak.</span>
-    </aside>
+    <aside aria-label="Decided by the owner: Ban length follows a written rule list" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q15)</span><span style="font-weight: 600;">Ban length follows a written rule list</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Each offence on the list carries its own ban length. Repeat offences step up; a third is a lifetime ban.</li><li>Some offences, such as scamming, are a lifetime ban from the first time.</li><li>Until the list is written, the moderator picks the length. So both forms ship: an end date, or "Permanent · until a moderator lifts it" (ends tweak).</li></ul></aside>
     <aside aria-label="Open for the owner: Matrix and Telegram addresses" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
       <span style="font-weight: 600;">The Matrix and Telegram addresses are still to be decided.</span>
@@ -121,7 +113,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["trade-ban","site-ban"],"default":"trade-ban"},"ends":{"editor":"enum","options":["date","permanent"],"default":"date"},"business":{"editor":"enum","options":["unfinished","none"],"default":"unfinished"},"$preview":{"width":390,"height":1483}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["trade-ban","site-ban"],"default":"trade-ban"},"ends":{"editor":"enum","options":["date","permanent"],"default":"date"},"business":{"editor":"enum","options":["unfinished","none"],"default":"unfinished"},"$preview":{"width":390,"height":1515}}'>
 class Component extends DCLogic {
   renderVals() {
     const THEMES = {
@@ -135,7 +127,7 @@ class Component extends DCLogic {
     // App area heights (measured), plus the design-notes strip below it.
     const APP = { trade: 1022, 'site-date-unfinished': 1426, 'site-permanent-unfinished': 1380, 'site-date-none': 1068, 'site-permanent-none': 1044 };
     const appH = !site ? APP.trade : APP['site-' + (timed ? 'date' : 'permanent') + '-' + (unfinished ? 'unfinished' : 'none')];
-    const NOTES = 461;
+    const NOTES = 493;
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (appH + NOTES) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + appH + 'px; display: flex; flex-direction: column; overflow: hidden;';
     const loginLine = unfinished

@@ -18,6 +18,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
+  <div style="{{appStyle}}">
   <sc-if value="{{showForm}}" hint-placeholder-val="{{true}}">
     <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
       <div style="display: flex; align-items: center; height: 44px; margin: 0 -10px;">
@@ -28,10 +29,19 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <p style="margin: 8px 0 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
     </header>
     <main aria-labelledby="fb-title" style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 0 16px 24px;">
+      <sc-if value="{{reached}}" hint-placeholder-val="{{false}}">
+        <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink);">You&#39;ve sent <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> today</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink);">To stop spam, you can send up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> messages a day. You can send more tomorrow.</span>
+          </div>
+        </div>
+      </sc-if>
       <section style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <label for="fb-text" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Your message</label>
-          <textarea id="fb-text" rows="9" maxlength="2000" value="{{text}}" onChange="{{onText}}" placeholder="Write anything you like" style="box-sizing: border-box; width: 100%; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: none;"></textarea>
+          <textarea id="fb-text" disabled="{{reached}}" rows="9" maxlength="2000" value="{{text}}" onChange="{{onText}}" placeholder="Write anything you like" style="box-sizing: border-box; width: 100%; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: none;"></textarea>
           <span style="align-self: flex-end; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{count}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2000</span> characters</span>
         </div>
         <label for="fb-anon" style="{{anonStyle}}">
@@ -44,7 +54,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </section>
     </main>
     <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
-      <button type="button" disabled="{{empty}}" onClick="{{send}}" style="{{sendStyle}}">Send</button>
+      <button type="button" disabled="{{sendOff}}" onClick="{{send}}" style="{{sendStyle}}">Send</button>
     </footer>
   </sc-if>
   <sc-if value="{{showThanks}}" hint-placeholder-val="{{false}}">
@@ -65,9 +75,22 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <button type="button" onClick="{{again}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Write another</button>
     </footer>
   </sc-if>
+  </div>
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <aside aria-label="Decided by the owner: daily limits" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q67, Q69)</span>
+      <span style="font-weight: 600;">Feedback and support tickets: up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> a day each.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Support tickets count across a vendor&#39;s whole team. Feedback counts per member.</li>
+        <li>At the limit, a caution callout shows above the form and Send is disabled. The count resets the next day.</li>
+      </ul>
+      <span style="color: var(--ink-muted);">Preview with the limit tweak. Showing: {{limitName}}</span>
+    </aside>
+  </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["form", "sent"], "default": "form"}, "$preview": {"width": 390, "height": 844}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["form", "sent"], "default": "form"}, "limit": {"editor": "enum", "options": ["ok", "reached"], "default": "ok"}, "$preview": {"width": 390, "height": 1087}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { sent: props.view === 'sent', text: '', anon: false }; }
   componentDidUpdate(prev) { if (prev.view !== this.props.view) this.setState({ sent: this.props.view === 'sent' }); }
@@ -77,12 +100,23 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    // Heights measured (night, fonts loaded): app screen, then the design-notes block under it.
+    const APP_H = 844;
+    const NOTES_H = 243;
+    const H = APP_H + NOTES_H;
+    const appStyle = 'position: relative; display: flex; flex-direction: column; flex-shrink: 0; height: ' + APP_H + 'px;';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const { sent, text, anon } = this.state;
     const empty = text.trim().length === 0;
+    const reached = this.props.limit === 'reached';
+    const sendOff = empty || reached;
     const sendBase = "display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; ";
     return {
       rootStyle,
+      appStyle,
+      reached,
+      sendOff,
+      limitName: reached ? 'reached' : 'ok',
       showForm: !sent,
       showThanks: sent,
       text,
@@ -92,10 +126,10 @@ class Component extends DCLogic {
       anonHint: anon ? "Your username isn't attached, so we can't follow up with you." : 'Sent with your username, mira.k, so we can follow up if needed.',
       anonStyle: 'display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 12px; background: var(--surface-raised); cursor: pointer; border: 2px solid ' + (anon ? 'var(--ink);' : 'transparent;'),
       sentAs: anon ? 'Sent anonymously.' : 'Sent as mira.k.',
-      sendStyle: sendBase + (empty ? 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;' : 'background: var(--monero); color: var(--on-monero); cursor: pointer;'),
+      sendStyle: sendBase + (sendOff ? 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;' : 'background: var(--monero); color: var(--on-monero); cursor: pointer;'),
       onText: (e) => this.setState({ text: e.target.value }),
       toggleAnon: () => this.setState({ anon: !anon }),
-      send: () => { if (!empty) this.setState({ sent: true }); },
+      send: () => { if (!sendOff) this.setState({ sent: true }); },
       again: () => this.setState({ sent: false, text: '' })
     };
   }

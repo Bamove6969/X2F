@@ -19,6 +19,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
+  <div style="{{appStyle}}">
   <header style="display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 6px;">
     <a href="BuyerPay.dc.html" aria-label="Back to the trade" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
@@ -27,6 +28,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Buying from satoshi_ghost</span>
       <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
     </div>
+    <span style="flex-shrink: 0; align-self: flex-start; margin-top: 4px; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
   </header>
 
   <main style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 8px 16px 24px;">
@@ -42,6 +44,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <h1 id="do-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">Open a dispute</h1>
         <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">The seller's time to confirm ran out. A moderator looks at what happened and decides where the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> XMR goes. It stays locked in escrow until then.</p>
       </div>
+      <p style="margin: 0; display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg style="flex-shrink: 0; color: var(--danger);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12M6 21h12"/><path d="M7 3c0 4.5 5 6 5 9s-5 4.5-5 9"/><path d="M17 3c0 4.5-5 6-5 9s5 4.5 5 9"/><path d="M9.5 18.5h5"/></svg><span>A moderator steps in within <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">24</span> h at the most. Usually it's much sooner.</span></p>
     </section>
 
     <section style="display: flex; flex-direction: column; padding: 20px; border-radius: 16px; background: var(--surface);">
@@ -90,7 +93,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--ink-muted); flex-shrink: 0; margin-top: 1px;"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
       <span style="display: flex; flex-direction: column; gap: 4px;">
         <span style="font-size: 15px; line-height: 20px; font-weight: 600;">A moderator will read this trade's chat to decide</span>
-        <span style="font-size: 14px; line-height: 20px;">That includes your messages from before the trade started. They may also ask you for an unblurred copy of your proof. A moderator usually replies within <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h.</span>
+        <span style="font-size: 14px; line-height: 20px;">That includes your messages from before the trade started. They may also ask you for an unblurred copy of your proof.</span>
       </span>
     </section>
   </main>
@@ -99,9 +102,19 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <a href="DisputeRoom.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Open dispute</a>
     <a href="BuyerPay.dc.html" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; font-size: 15px; font-weight: 600; color: var(--ink-muted); text-decoration: none;">Not now</a>
   </footer>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <aside aria-label="Decided by the owner: the moderator countdown" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q38)</span>
+      <span style="font-weight: 600;">Once a dispute is filed, an hourglass counts down from <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h, the most time before a moderator steps in, and says it usually happens much sooner.</span>
+      <span>Here, before filing, the same hourglass line tells the trader what to expect. It replaces "A moderator usually replies within <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h". The countdown itself runs in the dispute room.</span>
+    </aside>
+  </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1485}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1806}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -113,7 +126,11 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 1485px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    // Owner Q38, 6 Nov: moderator steps in within 24 h at the most; no 48 h deadline is shown.
+    const APP_H = 1553;
+    const NOTES = 253;
+    const appStyle = 'position: relative; flex-shrink: 0; height: ' + APP_H + 'px; display: flex; flex-direction: column; overflow: hidden;';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + (APP_H + NOTES) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const defs = [
       ['paid', "I paid, but the seller hasn't released"],
       ['silent', "The seller isn't replying"],
@@ -127,7 +144,7 @@ class Component extends DCLogic {
       style: 'display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 14px; box-sizing: border-box; border-radius: 12px; cursor: pointer; ' + (reason === id ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 2px solid var(--surface-raised); background: transparent;'),
       pick: () => this.setState({ reason: id })
     }));
-    return { rootStyle,
+    return { rootStyle, appStyle,
       reasons,
       note: this.state.note,
       count: this.state.note.length,

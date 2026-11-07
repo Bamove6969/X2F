@@ -177,7 +177,7 @@ a.row:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--surfa
         </div></li>
         <li><div class="row">
           <span class="tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16M7 16v-5M12 16V8M17 16v-3"/></svg></span>
-          <span class="txt"><span id="st-vol-l" class="ttl">Trade volume line on profile</span><span id="st-vol-d" class="meta">Shows “Completed over <span class="mono">$X</span> in trades”</span></span>
+          <span class="txt"><span id="st-vol-l" class="ttl">Trade volume line on profile</span><span id="st-vol-d" class="meta">Shows “<span class="mono">X</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> traded to date”</span></span>
           <button type="button" role="switch" class="sw" aria-checked="{{volume.on}}" aria-labelledby="st-vol-l" aria-describedby="st-vol-d" onClick="{{volume.toggle}}"><span aria-hidden="true" style="{{volume.track}}"><span style="{{volume.knob}}"></span></span></button>
         </div></li>
       </ul>
@@ -239,7 +239,7 @@ a.row:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--surfa
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["trader","vendor"],"default":"trader"},"$preview":{"width":390,"height":2809}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["trader","vendor"],"default":"trader"},"$preview":{"width":390,"height":2791}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { wait: false, seckey: false, one: false, nudges: true, volume: false }; }
   renderVals() {
@@ -248,8 +248,8 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    // Board height = measured content height (night, fonts loaded). The vendor variant changes words only, not rows.
-    const H = 2809;
+    // Board height = measured content height (night, fonts loaded). The vendor variant's longer words wrap one more line.
+    const H = this.props.accountType === 'vendor' ? 2809 : 2791;
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
     // Switch on = ink (selection is never orange). Same anatomy as Devices.
