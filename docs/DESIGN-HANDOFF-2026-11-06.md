@@ -147,3 +147,11 @@ Other loose end: draft PR Bamove6969/X2F#4 adds `.claude/settings.json` (seven r
 ## 10. Standing rule (owner, via the lead, 7 Nov): design never addresses the owner
 
 Everything design would say to the owner goes to the lead instead: questions, status, reports, "done" notes, anything to sign. Use `send_message` to the lead's session, or `docs/to-lead.md` on this branch. A reply in the design session itself does not reach the lead. Never end a turn with a report addressed to the owner: send it to the lead, then stop with at most one line. If the lead can't be reached, write it in `docs/to-lead.md` and push. The lead batches what the owner needs.
+
+## 11. State, 7 Nov 2026 (late): craft pass published
+
+- **Canvas v128** (https://claude.ai/artifact/NRhrWVvBrSwJ1Dt8oxp4eH): the craft pass and cohesion review on all 132 boards, Monero #ff6600, one cast with one set of facts, 44 px chip buttons, "Settings" context lines, owner items G54/G56/G57/G58. Boards and canvas.json in `docs/design-boards/`; the canvas is re-banded (`docs/design-tools/canvas-relayout.py`) because Main is now 6473 px tall. Working copy and kit sources: `docs/design-tools/gen/` (badges.py, badge_parts.py); the brief is `docs/design-craft-brief-2026-11-07.md`.
+- **Design system version 8**: night `monero` and `monero-ink` and day `monero` are #ff6600 (day `monero-ink` stays #b84a00 for contrast); FormField's session length is a drop-down (G23 decided).
+- **Build follow-ups (1)–(3)** from the lead's review: `wip/design-build-followups` @88a6eb63 READY, branched off `wip/third-design-build`.
+- **Open, waiting on the owner via the lead:** G56 wording sign-off; the gift card brand list; the four to-lead.md questions; the COPY-UNSIGNED list in to-lead.md's last section; G46 Devices wording items; the Trusted meaning "500+ trades and 98%+ positive" (a design call on badge copy that touches the product rule); Support's "Ask a team member" wording.
+- **Rule:** reports go to the lead (send_message or `docs/to-lead.md`), never to the owner.
