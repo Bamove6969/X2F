@@ -47,6 +47,8 @@ export interface TraderSummary {
   badges: string[];
   /** The starter-limits stage (spec 2.3, Task 4). */
   stage: 'starter' | 'building' | 'graduated';
+  /** C12b: the opt-in traded line's rounded-down dollars, or null (not shown in the trade room yet). */
+  tradedOverUsd?: number | null;
 }
 
 /** The counterparty's public display name; the one way screens read it (a login name is never sent or shown). */

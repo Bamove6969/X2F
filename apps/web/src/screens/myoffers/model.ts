@@ -87,6 +87,16 @@ export function offerLimits(o: MyOffer): string {
   return `${offerLimitsRange(o)} per trade`;
 }
 
+/** Fold-MyOffers' "Who can trade": "Anyone", or "10+ completed trades". */
+export function whoCanTrade(o: MyOffer): string {
+  return o.minTrades > 0 ? `${o.minTrades}+ completed trades` : 'Anyone';
+}
+
+/** Fold-MyOffers' line under the price. */
+export function marketLine(o: MyOffer): string {
+  return o.pricing.mode === 'market' ? 'Percent of the market price, updated as the market moves.' : 'A fixed price doesn’t follow the market. Check it often.';
+}
+
 /**
  * Whether the account has a trading hold, as far as this screen can tell: GET /v1/account/offers
  * marks every live offer `hidden: 'trading-hold'` during one, and a Turn on refused with

@@ -225,7 +225,7 @@
   color: var(--x2f-ink);
 }
 
-/* 44 px icon buttons (back and close on the boards). */
+/* 44 px icon buttons (back and close on the boards); the 12 px radius shapes the focus ring (v2). */
 .x2f-icon-button {
   display: flex;
   flex-shrink: 0;
@@ -235,6 +235,7 @@
   justify-content: center;
   padding: 0;
   border: 0;
+  border-radius: var(--x2f-radius-md);
   background: transparent;
   color: var(--x2f-ink);
   cursor: pointer;
@@ -502,7 +503,10 @@
   --x2f-tab-bar-height: calc(var(--x2f-tab-height) + 1px + env(safe-area-inset-bottom, 0px));
 }
 
-[data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > main {
+/* A screen inside Panes (My offers, the offers) is under its panes' boxes, `display: contents` on
+   a phone (styles/fold.css). */
+[data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > main,
+[data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > .x2f-panes > [data-pane='main'] > main {
   min-height: calc(100dvh - var(--x2f-tab-bar-height));
 }
 
@@ -746,12 +750,38 @@
   background: var(--x2f-surface-raised);
 }
 
-.x2f-choice[data-on='true'] {
+/* PickButton (src/ui/PickButton.tsx): a list row that picks what the next pane shows (Fold-Offers,
+   Fold-MyOffers). Selected: the shared selection style below. */
+.x2f-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 14px var(--x2f-space-4);
+  border: 2px solid transparent;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  color: var(--x2f-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* One selection style for every single-choice part (CONVENTIONS "Selection is never orange"):
+   the devices' ChoiceGroup (a radio tile or card, `data-on`), PickButton (a row that picks what the
+   next pane shows, `aria-pressed`) and a ticked SelectCard (My offers) all draw it as a 2 px ink
+   border on surface-raised. */
+.x2f-choice[data-on='true'],
+.x2f-pick[aria-pressed='true'],
+.x2f-select-card[data-selected='true'] {
   border-color: var(--x2f-ink);
   background: var(--x2f-surface-raised);
 }
 
-.x2f-choice:has(.x2f-choice__input:focus-visible) {
+.x2f-choice:has(.x2f-choice__input:focus-visible),
+.x2f-pick:focus-visible {
   outline: 2px solid var(--x2f-ink);
   outline-offset: 2px;
 }
@@ -883,6 +913,19 @@
 .x2f-outcome[data-tone='danger'] {
   border-color: var(--x2f-danger);
   color: var(--x2f-danger);
+}
+
+/* The info tone (BuyQuote board, design v2 batch 3): a note on what happens next, on surface-raised
+   with a 30% ink-muted border and an ink-muted info icon. */
+.x2f-outcome[data-tone='info'] {
+  padding: var(--x2f-space-3) 14px;
+  border-color: color-mix(in srgb, var(--x2f-ink-muted) 30%, transparent);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+}
+
+.x2f-outcome[data-tone='info'] .x2f-outcome__icon {
+  color: var(--x2f-ink-muted);
 }
 
 .x2f-outcome__icon {
@@ -1548,9 +1591,28 @@
   background: transparent;
 }
 
+/* Ticked: the shared selection style (with PickButton and ChoiceGroup, above). The card's border is
+   1 px (dashed when off), so a 1 px inset ring makes the 2 px ink line. */
 .x2f-select-card[data-selected='true'] {
-  background: var(--x2f-surface-raised);
-  box-shadow: inset 0 0 0 2px var(--x2f-ink);
+  border-color: var(--x2f-ink);
+  box-shadow: inset 0 0 0 1px var(--x2f-ink);
+}
+
+/* In two panes the card's text is a PickButton (MyOffers' RowText), drawn bare inside the card so
+   a ticked card and the shown one never look the same: the shown one gets the tab bar's "current"
+   treatment, a 2 px ink inset line (here at its start), never a second ring. */
+.x2f-pick.x2f-select-card__pick {
+  gap: var(--x2f-space-1);
+  min-height: 44px;
+  padding: 0 0 0 var(--x2f-space-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.x2f-pick.x2f-select-card__pick[aria-pressed='true'] {
+  background: transparent;
+  box-shadow: inset 2px 0 0 var(--x2f-ink);
 }
 
 .x2f-select-card__select,

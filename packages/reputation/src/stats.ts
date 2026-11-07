@@ -1,8 +1,7 @@
 // Stats maths (Plan 5 Task 1). Money stays bigint; percentages are whole numbers rounded down.
 // Built for Task 20's running totals: every input here is something an account can keep after its
-// trades are purged (review kind and its precomputed weight, counts, the last 20 action durations).
-// A review keeps only its weight (`reviewWeight` at review time), never the trade's USD amount
-// (review M1, lead 2026-10-30): a permanent, anonymous review must not carry an amount.
+// trades are purged (review kinds, counts, the last 20 action durations). A review carries no amount
+// and no weight (owner 2026-11-01: dollar amounts do not weight reviews).
 import { countsInStats, type ReviewDisputeStatus } from './reviews.js';
 
 // ---- Classification (P5-A1) ----
@@ -20,70 +19,40 @@ export function classify(r: { neutral: boolean; stars: number | null }): ReviewK
   return 'neutral';
 }
 
-// ---- Weights (P5-A2, P5-A32) ----
+// ---- % positive (P5-A2 as answered by the owner 2026-11-01: no dollar weighting) ----
 
-export const REVIEW_WEIGHT_FLOOR_USD_CENTS = 1_000n;
-export const REVIEW_WEIGHT_CAP_USD_CENTS = 100_000n;
-
-/**
- * P5-A32 (OPEN, owner has not picked): `'linear'` is the draft (weight = USD value, clamped);
- * `'steps'` is option (a): 1x under $100, 2x to $500, 3x above.
- */
-export type WeightMode = 'linear' | 'steps';
-export const WEIGHT_MODE: WeightMode = 'linear';
 /** P5-A32 option (b): % positive only from this many positive-or-negative reviews. 0 = the draft (off). */
 export const PCT_MIN_REVIEWS = 0;
 
-const STEP_2_FROM_USD_CENTS = 10_000n; // $100
-const STEP_3_ABOVE_USD_CENTS = 50_000n; // $500
-
 /**
- * The weight of one review from its trade's take-time USD value, computed once when the review is
- * stored; only the result is kept. `null` (a trade taken before the value was stored) weighs the
- * floor. Never converts at today's rate.
+ * What the stats need of one review: its kind and its Task 19 dispute status. Every rated review
+ * counts once (owner 2026-11-01: the trade's dollar amount does not weight a review).
  */
-export function reviewWeight(usdCents: bigint | null, mode: WeightMode = WEIGHT_MODE): bigint {
-  const v = usdCents ?? REVIEW_WEIGHT_FLOOR_USD_CENTS;
-  if (mode === 'steps') {
-    if (v < STEP_2_FROM_USD_CENTS) return 1n;
-    return v <= STEP_3_ABOVE_USD_CENTS ? 2n : 3n;
-  }
-  if (v < REVIEW_WEIGHT_FLOOR_USD_CENTS) return REVIEW_WEIGHT_FLOOR_USD_CENTS;
-  return v > REVIEW_WEIGHT_CAP_USD_CENTS ? REVIEW_WEIGHT_CAP_USD_CENTS : v;
-}
-
-export interface WeightedReview {
+export interface ReviewForStats {
   kind: ReviewKind;
-  /** The stored weight from `reviewWeight` (never the USD amount). */
-  weight: bigint;
   /** Task 19: an open or removed dispute takes the review out of the numbers. */
   dispute?: ReviewDisputeStatus | null;
 }
 
 /**
- * % positive = sum(weight of positive) / sum(weight of positive + negative), rounded down.
+ * % positive = positive reviews / (positive + negative reviews), rounded down; each counts once.
  * `null` when no positive or negative review counts (or fewer than `minReviews` of them).
- * Callers pass only revealed reviews (blind reveal, spec 5.3).
  */
-export function positivePct(rs: readonly WeightedReview[], opts: { minReviews?: number } = {}): number | null {
+export function positivePct(rs: readonly ReviewForStats[], opts: { minReviews?: number } = {}): number | null {
   const minReviews = opts.minReviews ?? PCT_MIN_REVIEWS;
-  let pos = 0n;
-  let total = 0n;
+  let pos = 0;
   let n = 0;
   for (const r of rs) {
     if (r.kind === 'neutral' || !countsInStats(r.dispute ?? null)) continue;
-    const w = r.weight;
-    if (w < 1n) throw new RangeError('a review weight is at least 1');
-    total += w;
-    if (r.kind === 'positive') pos += w;
+    if (r.kind === 'positive') pos++;
     n++;
   }
   if (n === 0 || n < minReviews) return null;
-  return Number((pos * 100n) / total);
+  return Math.floor((pos * 100) / n);
 }
 
 /** Positive and negative reviews that count in stats (Trusted's minimum, review M4). */
-export function ratedReviewCount(rs: readonly WeightedReview[]): number {
+export function ratedReviewCount(rs: readonly ReviewForStats[]): number {
   return rs.filter((r) => r.kind !== 'neutral' && countsInStats(r.dispute ?? null)).length;
 }
 

@@ -7,7 +7,7 @@ import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { currentLoginTag, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
-import { seedTrade } from './helpers/trades.js';
+import { seedReviews, seedTrade } from './helpers/trades.js';
 
 // Plan 3 Task 4: offers. Real Postgres (one database per file), a fake market so each test sets
 // the price feed up or down.
@@ -101,6 +101,7 @@ async function history(accountId: string, a: { days: number; completed: number }
     const other = await seedAccount(deps, { loginName: `cp${Math.random().toString(36).slice(2, 12)}` });
     const { code } = await seedTrade(deps, { sellerId: accountId, buyerId: other, poster: 'seller' });
     await deps.db.query(`update trades set state = 'released', closed_at = $2 where code = $1`, [code, now]);
+    await seedReviews(deps, code);
   }
 }
 
@@ -115,7 +116,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
         id,
         poster: {
           displayName: p.displayName, completedTrades: 0, online: true, lastSeenAt: deps.clock().toISOString(),
-          typicalMinutes: null, positivePct: null, badges: [], stage: 'starter',
+          typicalMinutes: null, positivePct: null, badges: [], stage: 'starter', tradedOverUsd: null,
         },
         rate: null,
         pricing: { mode: 'market', marginBps: 50 },
