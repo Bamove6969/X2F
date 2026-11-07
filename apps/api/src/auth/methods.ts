@@ -86,6 +86,9 @@ export function pairAllowed(kind: AccountKind, a: LoginFactor, b: LoginFactor): 
   if (kind === 'owner') return pgpWith(isAttestedKey);
   if (kind === 'staff' || kind === 'member') {
     if (pgpWith(isAttestedKey) || pgpWith(isPasskey)) return true;
+    // Owner G3 (7 Nov): a moderator holds a security key, a PGP key and a passkey; any two of them
+    // log in on a new device, so a security key and a passkey together are a pair too (staff only).
+    if (kind === 'staff' && ((isAttestedKey(a) && isPasskey(b)) || (isPasskey(a) && isAttestedKey(b)))) return true;
     if (!isPgp(a) || !isPgp(b)) return false;
     const first = pgpSet(a);
     for (const fp of pgpSet(b)) if (first.has(fp)) return false;
@@ -101,7 +104,13 @@ export function needsAfter(kind: AccountKind, first: LoginFactor): MethodType[] 
     if (isAttestedKey(first)) return ['pgp'];
     return [];
   }
-  if (kind === 'staff' || kind === 'member') {
+  if (kind === 'staff') {
+    if (isPgp(first)) return ['pgp', 'security-key', 'passkey'];
+    if (isAttestedKey(first)) return ['pgp', 'passkey'];
+    if (isPasskey(first)) return ['pgp', 'security-key'];
+    return [];
+  }
+  if (kind === 'member') {
     if (isPgp(first)) return ['pgp', 'security-key', 'passkey'];
     if (isAttestedKey(first) || isPasskey(first)) return ['pgp'];
     return [];

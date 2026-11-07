@@ -57,6 +57,12 @@ export async function completeLogin(
     pendingId?: string;
     deviceLabel: string;
     afterAuthenticate?: (accountId: string) => Promise<void>;
+    /**
+     * Owner G3 (7 Nov): whether this account may log in with one factor on this device (the staff
+     * app: a moderator on a device they have logged in on before). Asked only for a first factor
+     * that is one of their pair methods, before any pending login is made.
+     */
+    oneFactorOnKnownDevice?: (accountId: string, device: Buffer) => Promise<boolean>;
   },
 ): Promise<LoginResult> {
   if (a.afterAuthenticate) await a.afterAuthenticate(a.account.id);
@@ -76,6 +82,10 @@ export async function completeLogin(
     const needs = needsAfter(a.account.kind, a.factor);
     if (needs.length === 0) throw new ApiError(403, 'method-not-allowed');
     if (device === null) throw new ApiError(400, 'challenge-expired'); // never: every login route sets the device cookie
+    if (a.oneFactorOnKnownDevice && (await a.oneFactorOnKnownDevice(a.account.id, device))) {
+      await startSession(deps, req, reply, { accountId: a.account.id, level: 'full', deviceLabel: a.deviceLabel, method: a.factor.method, firstSession: false });
+      return { status: 'ok' };
+    }
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
        values ($1, $2, 'second-factor', 'pair', $3, $4, $5) returning id`,

@@ -249,7 +249,7 @@ describe('policy', () => {
     expect(pairAllowed('owner', pgp('a'), pk)).toBe(false);
   });
 
-  it('pairAllowed: staff need PGP plus an attested key, a passkey or a PGP key with no fingerprint in common', () => {
+  it('pairAllowed: staff need two of PGP, an attested key and a passkey (owner G3), or two PGP keys with no fingerprint in common', () => {
     expect(pairAllowed('staff', pgp('a'), sk())).toBe(true);
     expect(pairAllowed('staff', sk(), pgp('a'))).toBe(true);
     expect(pairAllowed('staff', pgp('a'), pk)).toBe(true);
@@ -260,8 +260,11 @@ describe('policy', () => {
     expect(pairAllowed('staff', pgp('a'), pgp('c', 'a'))).toBe(false);
     expect(pairAllowed('staff', pgp(), pgp('a'))).toBe(false); // no fingerprint proves nothing
     expect(pairAllowed('staff', pgp('a'), sk(false))).toBe(false);
-    expect(pairAllowed('staff', sk(), pk)).toBe(false);
-    expect(pairAllowed('staff', pk, sk())).toBe(false);
+    // Owner G3 (7 Nov): a security key and a passkey are a pair for staff (any two of the three).
+    expect(pairAllowed('staff', sk(), pk)).toBe(true);
+    expect(pairAllowed('staff', pk, sk())).toBe(true);
+    expect(pairAllowed('staff', sk(false), pk)).toBe(false);
+    expect(pairAllowed('member', sk(), pk)).toBe(false);
     expect(pairAllowed('staff', pk, pk)).toBe(false);
     expect(pairAllowed('staff', sk(), sk())).toBe(false);
     expect(pairAllowed('trader', pgp('a'), sk())).toBe(false);
@@ -273,8 +276,9 @@ describe('policy', () => {
     expect(needsAfter('owner', sk(false))).toEqual([]);
     expect(needsAfter('owner', pk)).toEqual([]);
     expect(needsAfter('staff', pgp('a'))).toEqual(['pgp', 'security-key', 'passkey']);
-    expect(needsAfter('staff', sk())).toEqual(['pgp']);
-    expect(needsAfter('staff', pk)).toEqual(['pgp']);
+    expect(needsAfter('staff', sk())).toEqual(['pgp', 'passkey']);
+    expect(needsAfter('staff', pk)).toEqual(['pgp', 'security-key']);
+    expect(needsAfter('member', sk())).toEqual(['pgp']);
     expect(needsAfter('trader', pgp('a'))).toEqual([]);
   });
 });
@@ -803,7 +807,7 @@ describe('two factors for staff and the owner (R1)', () => {
     expect(await sessionCount(id)).toBe(0);
   });
 
-  it('staff: a security key then a passkey or a second security key is no pair', async () => {
+  it('staff: a security key then a passkey is a pair (owner G3); a second security key is not', async () => {
     const { id, username } = await account('staff');
     const k1 = await addCredential(id, 'security-key', true);
     const k2 = await addCredential(id, 'security-key', true);
@@ -811,21 +815,19 @@ describe('two factors for staff and the owner (R1)', () => {
     await addPgp(id, keys[0]!);
     const b = new Browser();
     const first = await keyStep(b, username, k1.auth, undefined, STAFF_LOGIN);
-    expect(first.res.json()).toMatchObject({ status: 'second-factor', needs: ['pgp'] });
+    expect(first.res.json()).toMatchObject({ status: 'second-factor', needs: ['pgp', 'passkey'] });
     const pendingId = first.res.json().pendingId as string;
-    // A passkey is offered only after PGP (Task 8), so its answer fails the WebAuthn check first.
+    // After a security key, the passkey is offered and completes the pair.
     const viaPasskey = await keyStep(b, username, pk.auth, pendingId, STAFF_LOGIN);
-    expect(viaPasskey.options.allowCredentials.map((c: { id: string }) => c.id)).not.toContain(pk.auth.credentialId);
-    expect(viaPasskey.res.statusCode).toBe(401);
-    // Forced through completeLogin, security key + passkey is refused by the pairing rule.
-    const forced = await b.post('/t/complete', { accountId: id, factor: { method: 'passkey', credentialId: pk.auth.credentialId, attested: false }, pendingId });
-    expect(errorOf(forced)).toBe('method-not-allowed');
+    expect(viaPasskey.options.allowCredentials.map((c: { id: string }) => c.id)).toContain(pk.auth.credentialId);
+    expect(viaPasskey.res.json()).toEqual({ status: 'ok' });
+    expect(await sessionCount(id)).toBe(1);
+    await deps.db.query('update sessions set revoked_at = now() where account_id = $1', [id]);
 
     const again = (await keyStep(b, username, k1.auth, undefined, STAFF_LOGIN)).res.json().pendingId as string;
     const second = await keyStep(b, username, k2.auth, again, STAFF_LOGIN);
     expect(second.res.statusCode).toBe(403);
     expect(errorOf(second.res)).toBe('method-not-allowed');
-    expect(await sessionCount(id)).toBe(0);
   });
 
   it('a pendingId from another device or another account, or at 5:00, → challenge-expired', async () => {

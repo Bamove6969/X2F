@@ -9,6 +9,7 @@ import { appendLog } from '../log/append.js';
 import type { LogAction } from '../log/actions.js';
 import { requireStaff } from './guard.js';
 import { consumeKeyTap } from './keyTap.js';
+import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
 
 // Plan 4 Task 7: the owner's staff management (perm `staff.manage`).
 //
@@ -211,6 +212,8 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       const target = await lockTarget(c, id);
       const keys = await attestedKeyCount(c, id);
       if ((role === 'mod' || role === 'senior') && keys === 0) throw new ApiError(409, 'security-key-required');
+      // Owner G3 (7 Nov): a moderator or senior holds all three methods.
+      if (THREE_METHOD_ROLES.includes(role) && !(await holdsAllThree(c, id))) throw new ApiError(409, 'all-three-methods-required');
       await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'set-role', accountId: id, role }, now, { sessionId: req.auth.sessionId });
       await c.query('update staff_members set role = $2, has_security_key = $3 where account_id = $1', [id, role, keys > 0]);
       await log(c, req, 'staff.role-set', { staffId: id, from: target.role, to: role });

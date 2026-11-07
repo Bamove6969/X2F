@@ -107,7 +107,8 @@ describe('staff login with login hours', () => {
     const b = new StaffBrowser(app);
     const first = await keyFirstStep(b, s.loginName, key);
     expect(first.statusCode).toBe(200);
-    expect(first.json()).toMatchObject({ status: 'second-factor', needs: ['pgp'] });
+    // Owner G3: after a security key, PGP or a passkey completes the pair.
+    expect(first.json()).toMatchObject({ status: 'second-factor', needs: ['pgp', 'passkey'] });
     const res = await fullLogin(b, s.id, s.loginName, key);
     expect(res.json()).toEqual({ status: 'ok' });
     expect(b.cookies[STAFF_SESSION_COOKIE]).toBeDefined();

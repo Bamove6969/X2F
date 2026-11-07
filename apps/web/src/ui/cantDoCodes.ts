@@ -83,6 +83,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'two-factors-required': 'a staff sign-up step: a second login method must be added (staff app only)',
   'owner-protected': "the owner's own account in staff management (staff app only)",
   'owner-needs-two-keys': 'the owner keeps at least two security keys (staff app only)',
+  'all-three-methods-required': 'a moderator keeps a security key, a PGP key and a passkey (staff app only)',
   'bad-request': 'a malformed request (a fault)',
   'not-found': 'nothing there',
   'unsupported-media-type': 'a fault',

@@ -1,4 +1,4 @@
-import { navFor, windowEndsAt } from '@x2f/staff';
+import { navFor, windowEndsAt, type StaffRole } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import { pgpLoginRoutes } from '../auth/pgp.js';
 import { logoutRoute, sessionPolicy } from '../auth/sessions.js';
@@ -6,6 +6,8 @@ import { securityKeyLoginRoutes } from '../auth/webauthn.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { loadStaff, requireStaff, withinHours } from './guard.js';
+import { isTrusted } from '../auth/device.js';
+import type { Deps } from '../app.js';
 
 const PUBLIC_LOGIN = { perm: 'public-login' } as const;
 
@@ -23,6 +25,35 @@ export function staffLoginCheck(deps: { db: Queryable; clock: () => Date }): (ac
   };
 }
 
+/** The methods a moderator must hold (owner G3, 7 Nov): an attested security key, a PGP key and a passkey. */
+export async function holdsAllThree(db: Queryable, accountId: string): Promise<boolean> {
+  const { rows } = await db.query<{ keys: number; passkeys: number; pgp: number }>(
+    `select (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'security-key' and attested) as keys,
+            (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'passkey') as passkeys,
+            (select count(*)::int from pgp_keys where account_id = $1) as pgp`,
+    [accountId],
+  );
+  const r = rows[0]!;
+  return r.keys > 0 && r.passkeys > 0 && r.pgp > 0;
+}
+
+/** Roles owner G3 speaks of: moderators and senior moderators. */
+export const THREE_METHOD_ROLES: readonly StaffRole[] = ['mod', 'senior'];
+
+/**
+ * Owner G3 (7 Nov): a moderator logs in with two of their three methods on a new device and with
+ * one on a device they have logged in on before (`trusted_devices`, the last 90 days). Only for
+ * moderators and senior moderators who hold all three; the owner and helpers always use two.
+ */
+export function knownDeviceRule(deps: Pick<Deps, 'db' | 'clock'>): (accountId: string, device: Buffer) => Promise<boolean> {
+  return async (accountId, device) => {
+    const s = await loadStaff(deps.db, accountId);
+    if (s === null || !THREE_METHOD_ROLES.includes(s.role)) return false;
+    if (!(await holdsAllThree(deps.db, accountId))) return false;
+    return isTrusted(deps, accountId, device);
+  };
+}
+
 /**
  * The staff login, logout and `me` routes:
  * - `POST /staff/v1/login/security-key/{start,finish}` and `POST /staff/v1/login/pgp/{start,finish}`
@@ -34,11 +65,12 @@ export function staffLoginCheck(deps: { db: Queryable; clock: () => Date }): (ac
  */
 export async function staffLoginRoutes(app: FastifyInstance): Promise<void> {
   const afterAuthenticate = staffLoginCheck(app.deps);
+  const oneFactorOnKnownDevice = knownDeviceRule(app.deps);
   const kinds = ['staff', 'owner'] as const;
   await app.register(securityKeyLoginRoutes, {
-    prefix: '/staff/v1/login/security-key', kinds: [...kinds], realm: 'staff', afterAuthenticate, routeConfig: PUBLIC_LOGIN, recheckAllowlist: true,
+    prefix: '/staff/v1/login/security-key', kinds: [...kinds], realm: 'staff', afterAuthenticate, oneFactorOnKnownDevice, routeConfig: PUBLIC_LOGIN, recheckAllowlist: true,
   });
-  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...kinds], afterAuthenticate, routeConfig: PUBLIC_LOGIN }), {
+  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...kinds], afterAuthenticate, oneFactorOnKnownDevice, routeConfig: PUBLIC_LOGIN }), {
     prefix: '/staff/v1/login/pgp',
   });
   logoutRoute(app, '/staff/v1/logout', PUBLIC_LOGIN);

@@ -7,6 +7,7 @@ import { pushRoutesAt } from '../push/routes.js';
 import { requireStaff } from './guard.js';
 import { consumeKeyTap } from './keyTap.js';
 import { attestedKeyCount, body, idParam, log, tapIdOf } from './members.js';
+import { THREE_METHOD_ROLES } from './login.js';
 
 // Lead re-review 6 Nov, items 1 and 2: staff and the owner are refused on the trader site (owner
 // Q19, Q13), so their own account work moves here (perm `self`, every role, own account only):
@@ -65,6 +66,17 @@ export function staffAccountRoutes(app: FastifyInstance): void {
         // Lead review 7 Nov I-2: a moderator or senior moderator taps rulings with a security key;
         // without one they could never tap again.
         if ((req.staff.role === 'mod' || req.staff.role === 'senior') && keys <= 1) throw new ApiError(409, 'security-key-required');
+      }
+      // Owner G3 (7 Nov): a moderator or senior keeps all three methods; one of a kind may go only
+      // while another of that kind stays.
+      if (THREE_METHOD_ROLES.includes(req.staff.role)) {
+        const sameKind = methodType === 'pgp'
+          ? (await c.query<{ n: number }>('select count(*)::int as n from pgp_keys where account_id = $1', [me])).rows[0]!.n
+          : (await c.query<{ n: number }>(
+              `select count(*)::int as n from webauthn_credentials where account_id = $1 and kind = $2 and (kind <> 'security-key' or attested)`,
+              [me, methodType],
+            )).rows[0]!.n;
+        if (sameKind <= 1) throw new ApiError(409, methodType === 'security-key' ? 'security-key-required' : 'all-three-methods-required');
       }
       await applyRemoval(c, config, me, methodType, id, req.auth.sessionId, now);
       // Keep staff_members.has_security_key true to what is stored (202's column).

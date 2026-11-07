@@ -532,6 +532,8 @@ function usedFingerprints(payload: Record<string, unknown>): string[] {
 export interface PgpLoginOptions {
   kinds: AccountKind[];
   afterAuthenticate?: (accountId: string) => Promise<void>;
+  /** Owner G3: one factor is enough on a known device for this account (the staff app decides). */
+  oneFactorOnKnownDevice?: (accountId: string, device: Buffer) => Promise<boolean>;
   /** Route `config` for both routes (Plan 4's staff app marks them `{ perm: 'public-login' }`). */
   routeConfig?: Record<string, unknown>;
 }
@@ -594,6 +596,7 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
       deviceLabel,
       ...(boundPending !== undefined ? { pendingId: boundPending } : {}),
       ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}),
+      ...(opts.oneFactorOnKnownDevice ? { oneFactorOnKnownDevice: opts.oneFactorOnKnownDevice } : {}),
     });
     return result;
   });
