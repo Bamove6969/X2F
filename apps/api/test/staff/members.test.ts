@@ -321,9 +321,15 @@ describe('members', () => {
     expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'owner', tapId }))).toBe('bad-request');
   });
 
-  it('removes a staff member: switched off for good, gone from the list', async () => {
+  it('removes a staff member with a tap bound to them (owner G4): switched off for good, gone from the list', async () => {
     const mod = await staffWithKeys(t, { role: 'mod' });
-    const res = await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`);
+    // No tap, or a tap for someone else: refused, nothing removed.
+    expect(errorOf(await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`))).toBe('tap-invalid');
+    const otherTap = await tap(owner, { kind: 'remove-staff', accountId: owner.id });
+    expect(errorOf(await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`, { tapId: otherTap }))).toBe('tap-invalid');
+    expect((await mod.browser.get('/staff/v1/me')).statusCode).toBe(200);
+    const removeTap = await tap(owner, { kind: 'remove-staff', accountId: mod.id });
+    const res = await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`, { tapId: removeTap });
     expect(res.statusCode, res.body).toBe(204);
     expect(errorOf(await mod.browser.get('/staff/v1/me'))).toBe('not-authenticated');
     const { token } = await insertSession(t.deps, mod.id, 'staff');

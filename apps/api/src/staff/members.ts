@@ -258,12 +258,15 @@ export function staffMemberRoutes(app: FastifyInstance): void {
     return { grants };
   });
 
+  // Owner G4 (7 Nov): a permanent removal is tapped (`remove-staff` bound to the person).
   app.delete('/staff/v1/members/:id', opts, async (req, reply) => {
     const id = idParam(req);
+    const tapId = tapIdOf(body(req));
     const { db, clock } = req.server.deps;
     const now = clock();
     await withTx(db, async (c) => {
       const target = await lockTarget(c, id);
+      await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'remove-staff', accountId: id }, now, { sessionId: req.auth.sessionId });
       await c.query('update accounts set disabled_at = coalesce(disabled_at, $2) where id = $1', [id, now]);
       await c.query('update staff_members set switched_off_at = coalesce(switched_off_at, $2), removed_at = $2 where account_id = $1', [id, now]);
       if (!target.switchedOff) await unassignOpenCases(c, id, req);

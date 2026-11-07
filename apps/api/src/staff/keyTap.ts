@@ -366,6 +366,9 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     case 'set-role':
       exactKeys(r, ['kind', 'accountId', 'role']);
       return { kind: r.kind, accountId: match(r, 'accountId', UUID).toLowerCase(), role: oneOf(r, 'role', INVITABLE) };
+    case 'remove-staff':
+      exactKeys(r, ['kind', 'accountId']);
+      return { kind: 'remove-staff', accountId: match(r, 'accountId', UUID).toLowerCase() };
     case 'add-pgp-key':
       exactKeys(r, ['kind', 'fingerprint']);
       return { kind: 'add-pgp-key', fingerprint: match(r, 'fingerprint', FINGERPRINT).toLowerCase() };
@@ -438,6 +441,7 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'switch-on':
     case 'set-role':
     case 'set-grants':
+    case 'remove-staff':
       return 'staff.manage';
     case 'settings':
       return 'settings.write';
@@ -476,11 +480,20 @@ export interface KeyTapRouteOptions {
  * derives from its own input, so the client cannot get a tap for one action accepted by another.
  * Uses `app.deps` (the staff app's, with the staff origin and relying party).
  */
+/** Every app's tap-start windows (one map per registered app), so tests can start each case fresh. */
+const TAP_START_WINDOWS = new Set<Map<string, number[]>>();
+
+/** Clears every tap-start window (in memory); for tests, as `newBudgets` is for the other in-memory budgets. */
+export function resetTapStarts(): void {
+  for (const m of TAP_START_WINDOWS) m.clear();
+}
+
 export function keyTapRoutes(app: FastifyInstance, o: KeyTapRouteOptions): void {
   const config = { perm: 'self' as const };
   // Lead review 7 Nov M4: starts per account in a sliding window, in memory (one API process at
   // launch). The emergency stop and resume are never held back (as the open-taps cap, m12).
   const starts = new Map<string, number[]>();
+  TAP_START_WINDOWS.add(starts);
   const rateLimit = (accountId: string, now: number): void => {
     const recent = (starts.get(accountId) ?? []).filter((t) => t > now - TAP_START_WINDOW_MS);
     if (recent.length >= TAP_STARTS_PER_WINDOW) {
