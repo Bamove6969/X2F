@@ -18,11 +18,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
+  <div style="{{appStyle}}">
   <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
     <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
       <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
       </a>
+      <span style="margin-left: auto; margin-right: 12px; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
       <a href="#" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none;">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>
         Chat
@@ -52,18 +54,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </div>
       <div style="display: flex; flex-direction: column; gap: 8px;">
         <h2 id="sr-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">mira.k didn't mark the payment in time</h2>
-        <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> is still safe in escrow. You can take it back, or give mira.k more time.</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> is still safe in escrow. {{heroNext}}</p>
       </div>
     </section>
 
     <section aria-labelledby="sr-how" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
-      <h2 id="sr-how" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">If you cancel</h2>
-      <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
-        <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; margin-top: -2px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">1</span><span>mira.k gets a final alert and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">15</span> min to say they already paid.</span></li>
-        <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; margin-top: -2px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">2</span><span>If they stay silent, your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> comes back to your wallet automatically. No moderator needed.</span></li>
-        <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; margin-top: -2px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">3</span><span>If they say they paid, a moderator checks both sides before anything moves.</span></li>
-        <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; margin-top: -2px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">4</span><span>Even after your refund, mira.k can still open a dispute if they sent the money anyway. A moderator can pause your account from trading until it's resolved, then reviews it fairly. If their payment reached you, you'll be asked to send mira.k the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> as agreed. Refusing leads to an account suspension and a possible lifetime ban.</span></li>
-      </ol>
+      <h2 id="sr-how" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">If mira.k paid after all</h2>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Even after your refund, mira.k can still open a dispute if they sent the money anyway. A moderator can pause your account from trading until it's resolved, then reviews it fairly. If their payment reached you, you'll be asked to send mira.k the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> as agreed. Refusing leads to an account suspension and a possible lifetime ban.</p>
     </section>
 
     <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
@@ -73,18 +70,45 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </main>
 
   <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
-    <button type="button" style="height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Cancel and get refund</button>
-    <div style="display: flex; gap: 8px; padding-bottom: 8px;">
-      <button type="button" style="flex: 1 1 0; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Give <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">30</span> more min</button>
-      <button type="button" style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">
-        <svg style="color: var(--caution);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/><path d="M2 4l2 2"/><path d="M22 4l-2 2"/></svg>
+    <sc-if value="{{locked}}" hint-placeholder-val="{{true}}">
+      <button type="button" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">
+        <svg style="color: currentColor;" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/><path d="M2 4l2 2"/><path d="M22 4l-2 2"/></svg>
         Nudge mira.k
       </button>
-    </div>
+      <button type="button" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Give <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">30</span> more min</button>
+      <p style="margin: 0; padding: 0 8px 8px; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">No word from mira.k? After <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">90</span> min and one nudge, you can cancel and get your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> back.</p>
+    </sc-if>
+    <sc-if value="{{available}}" hint-placeholder-val="{{false}}">
+      <button type="button" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Cancel and get refund</button>
+      <div style="display: flex; gap: 8px;">
+        <button type="button" style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Give <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">30</span> more min</button>
+        <button type="button" style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">
+          <svg style="color: var(--caution);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/><path d="M2 4l2 2"/><path d="M22 4l-2 2"/></svg>
+          Nudge again
+        </button>
+      </div>
+      <p style="margin: 0; padding: 0 8px 8px; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">You can cancel now. Your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> goes straight back to your wallet.</p>
+    </sc-if>
   </footer>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">The seller&#39;s screen when mira.k hasn&#39;t marked the payment. Until Cancel unlocks, Nudge is the one orange action; once it unlocks, Cancel takes over. Preview both with the cancel tweak. Showing: {{cancelName}}</p>
+    <aside aria-label="Decided by the owner: who can cancel, and when" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G2)</span>
+      <span style="font-weight: 600;">Who can cancel, and when</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Before escrow is funded: either side can cancel at once, no reason needed.</li>
+        <li>Seller, after escrow, if the buyer hasn&#39;t been in touch: after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> min and at least one nudge, a Cancel button appears and the escrowed XMR goes back to the seller&#39;s wallet.</li>
+        <li>Buyer, after escrow: can cancel. That triggers a full refund to the seller, and the trade stays open until the refund has all <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> confirmations.</li>
+      </ul>
+      <span style="color: var(--ink-muted);">This board is rule (b). Structure changed: Cancel was the primary as soon as the payment window ended, and cancelling first gave mira.k a final alert and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">15</span> min to answer, with a moderator check if they said they paid. Now Cancel is locked until at least one nudge, and the XMR goes straight back. The old steps 1 to 3 are gone; the late-dispute step stays as &quot;If mira.k paid after all&quot;. Buyer cancel (c) is on CancelRequest.</span>
+    </aside>
+  </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1075}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"cancel":{"editor":"enum","options":["locked","available"],"default":"locked"},"$preview":{"width":390,"height":1468}}'>
 class Component extends DCLogic {
   renderVals() {
     const THEMES = {
@@ -92,7 +116,12 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const H = 1075;
+    const available = this.props.cancel === 'available';
+    // Measured (night, fonts loaded): app screen per cancel state, plus the design notes under it.
+    const APP_H = available ? 947 : 923;
+    const NOTES_H = 545;
+    const H = APP_H + NOTES_H;
+    const appStyle = 'position: relative; flex-shrink: 0; height: ' + APP_H + 'px; display: flex; flex-direction: column;';
     const rootStyle = THEMES[theme] + 'position: relative; overflow: hidden; width: 390px; height: ' + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     // Stepper (seller labels): "Buyer pays" is current and its time has run out (bar full, caution).
     const STEP_LABELS = ['Escrow', 'Buyer pays', 'You check', 'Released'];
@@ -103,7 +132,12 @@ class Component extends DCLogic {
       barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < current ? 'width: 100%; background: var(--escrow);' : i === current ? 'width: 100%; background: var(--caution);' : 'width: 0;'),
       labelStyle: 'font-size: 12px; line-height: 16px; ' + (i === current ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
     }));
-    return { rootStyle, steps };
+    return { rootStyle, appStyle, steps,
+      locked: !available,
+      available,
+      heroNext: available ? 'You can take it back, or give mira.k more time.' : 'Nudge mira.k, or give them more time.',
+      cancelName: available ? 'available (after a nudge)' : 'locked (no nudge yet)'
+    };
   }
 }
 </script>

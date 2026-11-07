@@ -101,10 +101,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </ul>
         </section>
         <section aria-labelledby="banw-contact" style="display: flex; flex-direction: column; gap: 12px; padding: 24px; border-radius: 16px; background: var(--surface);">
-          <div style="display: flex; flex-direction: column; gap: 4px;">
-            <h2 id="banw-contact" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Think this is a mistake?</h2>
-            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You can appeal. Message a moderator if you don't agree with this decision or feel it was made in error.</p>
-          </div>
+          <h2 id="banw-contact" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Think this is a mistake?</h2>
           <a href="#" style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); color: var(--ink); text-decoration: none;">
             <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 9h8M8 12h5"/></svg></span>
             <span style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">Message a moderator on Matrix</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted);">#x2f-help:example.org</span></span>
@@ -127,7 +124,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <p style="margin: 0; max-width: 944px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Built like Lien-Notice: a full-screen account notice, danger hero with the Ends and Reason block inside it, then what it means and who to message. OK is the one primary. Preview the trade ban and site ban with the variant tweak.</p>
     <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; max-width: 944px;">
       <aside aria-label="Decided by the owner: Ban length follows a written rule list" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q15)</span><span style="font-weight: 600;">Ban length follows a written rule list</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Each offence on the list carries its own ban length. Repeat offences step up; a third is a lifetime ban.</li><li>Some offences, such as scamming, are a lifetime ban from the first time.</li><li>Until the list is written, the moderator picks the length. So both forms ship: an end date, or "Permanent · until a moderator lifts it" (ends tweak).</li></ul></aside>
-      <aside aria-label="Open for the owner: Matrix and Telegram addresses" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <aside aria-label="Decided by the owner: ban notice wording" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G39)</span><span style="font-weight: 600;">Ban notice wording</span><span style="color: var(--ink-muted);">Owner: "We're sorry, but your account has been banned. If you feel this has been done in error, please reach out to a moderator at [Matrix Channel] [Telegram Channel] and ask to speak to a moderator for further details. Please refer to Design for the best wording here."</span><span>Design tightened it into the site-ban headline and lead. The trade ban keeps its own headline but uses the same apology and contact line. The contact card is now just its heading and the two rows, so the lead isn't said twice.</span></aside>
+    <aside aria-label="Open for the owner: Matrix and Telegram addresses" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
         <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
         <span style="font-weight: 600;">The Matrix and Telegram addresses are still to be decided.</span>
         <span style="color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">#x2f-help:example.org</span> and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">@x2f_help</span> are examples.</span>
@@ -136,7 +134,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["trade-ban","site-ban"],"default":"trade-ban"},"ends":{"editor":"enum","options":["date","permanent"],"default":"date"},"business":{"editor":"enum","options":["unfinished","none"],"default":"unfinished"},"$preview":{"width":1280,"height":1087}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["trade-ban","site-ban"],"default":"trade-ban"},"ends":{"editor":"enum","options":["date","permanent"],"default":"date"},"business":{"editor":"enum","options":["unfinished","none"],"default":"unfinished"},"$preview":{"width":1280,"height":1227}}'>
 class Component extends DCLogic {
   renderVals() {
     const THEMES = {
@@ -148,9 +146,9 @@ class Component extends DCLogic {
     const timed = this.props.ends !== 'permanent';
     const unfinished = this.props.business !== 'none';
     // App area heights (measured), plus the design-notes strip below it.
-    const APP = { trade: 800, 'site-date-unfinished': 944, 'site-permanent-unfinished': 900, 'site-date-none': 800, 'site-permanent-none': 800 };
+    const APP = { trade: 800, 'site-date-unfinished': 972, 'site-permanent-unfinished': 972, 'site-date-none': 800, 'site-permanent-none': 800 };
     const appH = !site ? APP.trade : APP['site-' + (timed ? 'date' : 'permanent') + '-' + (unfinished ? 'unfinished' : 'none')];
-    const NOTES = 287;
+    const NOTES = 427;
     const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + (appH + NOTES) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + appH + 'px; display: flex; overflow: hidden;';
     const mainStyle = 'flex-grow: 1; display: flex; flex-direction: column; gap: 24px; ' + (site ? 'align-items: center; padding: 40px 48px 48px;' : 'padding: 32px 48px 48px;');
@@ -165,9 +163,9 @@ class Component extends DCLogic {
       timed,
       permanent: !timed,
       chip: !site ? 'Trade ban' : (timed ? 'Temporary ban' : 'Account banned'),
-      headline: !site ? "You can't trade right now" : (timed ? 'Your account is banned for now' : 'Your account is banned'),
-      lead: !site ? "Your account can't start or join new trades."
-        : (timed ? 'You can use your account again when the ban ends.' : 'There is no end date.'),
+      headline: !site ? "You can't trade right now" : 'Your account has been banned',
+      lead: !site ? "We're sorry. Your account can't start or join new trades. If you think this was a mistake, message a moderator on Matrix or Telegram and ask for the details."
+        : "We're sorry. If you think this was a mistake, message a moderator on Matrix or Telegram and ask for the details.",
       reason: !site ? 'Three trades in a row were not paid.' : 'You sent the same seller a fake payment screenshot.',
       loginLine
     };

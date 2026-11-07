@@ -468,3 +468,29 @@ The words to sign are steps 2 and 3. The rest was signed before or is unchanged.
 **Link hover (G40):** every board's link hover rule is dark ink. Known gap: on 17 boards some links set their colour inline, which overrides the hover. The build should put link colour in CSS, not inline. The design follow-up is to move those inline colours into the shared rule.
 
 **Still in progress:** Ban-Notice wording (G39), no-date warnings (G16), cancel wording (G2), the hold before-and-after review (G29).
+
+## 7 Nov 2026: canvas v127 (G39 ban, G16 no date, G2 cancel, G29 hold review)
+
+All new wording is COPY-UNSIGNED.
+
+**G39, Ban-Notice (+Wide):** site ban headline "Your account has been banned"; lead "We're sorry. If you think this was a mistake, message a moderator on Matrix or Telegram and ask for the details." Trade ban: "We're sorry. Your account can't start or join new trades. If you think this was a mistake, message a moderator on Matrix or Telegram and ask for the details." The contact card is now just "Think this is a mistake?" and the two rows, so nothing is said twice.
+
+**G16, no readable date** (`date` tweak):
+- ProofBlur (+Wide), poster: caution callout above Send. Title "We couldn't find a date", body "Neither the photo's data nor the screenshot shows when it was taken. You can still send it. The seller will see this too, so a screenshot with the date showing is better." Send stays enabled.
+- SellerConfirm, seller: check line "No date found on this screenshot". Callout "We can't confirm when this screenshot was taken. That doesn't mean it's fake: check your bank app before you release."
+
+**G2, cancel:**
+- CancelRequest (+Wide), buyer after escrow: "Cancelling sends all 1.250000 XMR back to satoshi_ghost. The trade closes when the refund has all 10 confirmations." This replaces "Your 1.250000 XMR in escrow goes back… You can't undo this."
+- SellerRefund, structure fixed: the old board let the seller cancel as soon as the payment window ended, which broke the owner's rule. Now it's locked until 90 min and one nudge. Locked: Nudge is the primary, "No word from mira.k? After 90 min and one nudge, you can cancel and get your 1.250000 XMR back." Available: "Cancel and get refund", "You can cancel now. Your 1.250000 XMR goes straight back to your wallet." Other new lines: "Nudge mira.k, or give them more time.", "Nudge again", heading "If mira.k paid after all".
+- The pre-escrow line "Cancel now. Nothing has been sent yet, so nothing needs refunding." is ready, but no board shows a pre-escrow cancel yet.
+
+**G29/G5/G36, HoldChange (+Wide), redrawn as "Review your changes":**
+- Every pending change is grouped (Login methods, Wallets, Team) with Before | After side by side, each with a badge: "Applies after 24 h", "Takes effect now · final in 24 h", "Usable after 7 Nov 2026, 15:00 UTC", "Access ends now · final in 24 h". A count line reads "4 changes · up to 20".
+- Username and password: callout "Applies after a 24 h wait. You logged in with just a username and password. Removals take effect now and become final after 24 h. Everything else applies after 24 h. Anyone logged in can cancel during the wait." Encouragement: "Add a passkey, security key or PGP key and changes like these go through at once." with "Add one". Primary "Submit changes".
+- Strong login: "Your login is strong, so these apply as soon as you confirm." and "Confirm changes". After submitting: "Removals have taken effect. Everything becomes final after 24 h." Cancel sheet: "Removed wallets work again and removed team members get their access back. Nothing else changes."
+
+**For the owner, with design's recommendation:**
+1. Removing a passkey or other login method with username and password: does it also "take effect now, final in 24 h" like wallets and team (G5 names only those two)? Recommendation: no. A login-method removal waits 24 h, so a stolen password can't strip the owner's own keys at once.
+2. Cancelling during the wait restores removed wallets and members (assumed from "not permanent until the 24 h is up"). Recommendation: yes, as drawn.
+3. SellerRefund: do the 90 min run from escrow funding? Recommendation: yes, from when escrow is secured.
+4. CancelRequest's 2 Nov note says "No cancel after I've paid". With G2 (the buyer may cancel after escrow), recommendation: the buyer can cancel after escrow but not after tapping "I've paid", which is unchanged.
