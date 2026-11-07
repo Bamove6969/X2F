@@ -17,7 +17,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { HOLD_MS, endHoldByModerator, extendHoldByModerator, lockAccount, settleDueHolds, withTx } from '../src/auth/hold.js';
-import { MAX_HOLD_CHANGES, settleDueChanges } from '../src/auth/holdChanges.js';
+import { HOLD_CHANGE_ACTIONS_PER_DAY, MAX_HOLD_CHANGES, settleDueChanges } from '../src/auth/holdChanges.js';
 import { APPROVALS_PER_HOUR } from '../src/auth/approval.js';
 import { purgeExpired } from '../src/auth/challenges.js';
 import { RECOVERY_CODE_COUNT } from '../src/auth/recovery.js';
@@ -337,6 +337,15 @@ describe('a username + password session: changes are staged, reviewed, submitted
     await settleDueChanges(deps.config, app.events).run(deps.db, now);
     expect((await passwordLogin(new Browser(app), t.name, NEW_PASSWORD)).statusCode).toBe(401);
     expect((await passwordLogin(t.b, t.name)).json()).toEqual({ status: 'ok' });
+  });
+
+  it(`staging, submitting and cancelling are capped at ${HOLD_CHANGE_ACTIONS_PER_DAY} a day per account (429 slow-down)`, async () => {
+    const t = await passwordTrader();
+    const day = now.toISOString().slice(0, 10);
+    await deps.db.query('insert into daily_counts (key, day, count) values ($1, $2, $3)', [`hold-changes:${t.id}`, day, HOLD_CHANGE_ACTIONS_PER_DAY]);
+    expect(errorOf(await changePassword(t.b, t.id))).toBe('slow-down');
+    expect(errorOf(await t.b.delete('/v1/account/hold/changes'))).toBe('slow-down');
+    expect((await deps.db.query('select 1 from hold_changes where account_id = $1', [t.id])).rowCount).toBe(0);
   });
 
   it('one waiting change can be cancelled by id', async () => {

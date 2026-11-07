@@ -39,6 +39,13 @@ import { addressEnd } from '@x2f/accounts';
 /** At most this many changes (drafts and waiting ones) per account, so a session cannot flood the list or the alerts. */
 export const MAX_HOLD_CHANGES = 20;
 
+/**
+ * Staging, submitting and cancelling, together, per account and UTC day (lead hold v3 review,
+ * minor: each writes an alert, and the alert list shows 50); past it 429 `slow-down`.
+ */
+export const HOLD_CHANGE_ACTIONS_PER_DAY = 100;
+export const holdActionsKey = (accountId: string) => `hold-changes:${accountId}`;
+
 /** What a change is, as the review list, the alerts and the banner name it: never a secret, an address or a key. */
 export interface ChangeSummary {
   kind: PendingChange['kind'];

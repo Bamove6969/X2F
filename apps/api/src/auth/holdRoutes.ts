@@ -18,7 +18,8 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { ApiError } from '../errors.js';
 import { holdInTx, holdRefusal, lockAccount, requireLiveSessionInTx, requireNotHeld, settleOf, withTx } from './hold.js';
-import { cancelChanges, changesWait, listChanges, settleChangesInTx, submitChanges } from './holdChanges.js';
+import { HOLD_CHANGE_ACTIONS_PER_DAY, cancelChanges, changesWait, holdActionsKey, listChanges, settleChangesInTx, submitChanges } from './holdChanges.js';
+import { dailyCap } from './throttle.js';
 import { requireSession } from './sessions.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -53,6 +54,7 @@ export function holdRoutes(app: FastifyInstance): void {
     const ids = idsOf(req);
     const deps = req.server.deps;
     const now = deps.clock();
+    await dailyCap(deps, holdActionsKey(req.auth.accountId), HOLD_CHANGE_ACTIONS_PER_DAY);
     const out = await withTx(deps.db, async (db) => {
       await requireLiveSessionInTx(db, req.auth, now);
       const hold = await holdInTx(db, settleOf(req), req.auth.accountId, now);
@@ -68,6 +70,7 @@ export function holdRoutes(app: FastifyInstance): void {
   const cancel = async (req: FastifyRequest, id: string | null): Promise<void> => {
     const deps = req.server.deps;
     const now = deps.clock();
+    await dailyCap(deps, holdActionsKey(req.auth.accountId), HOLD_CHANGE_ACTIONS_PER_DAY);
     const n = await withTx(deps.db, async (db) => {
       await requireLiveSessionInTx(db, req.auth, now);
       await settleChangesInTx(db, settleOf(req), req.auth.accountId, now);

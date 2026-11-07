@@ -76,7 +76,8 @@ import { applyRoles } from '../team/members.js';
 import type { TeamRole } from '../team/perms.js';
 import { releaseHeldTrades, syncHeldTrades } from '../trades/held.js';
 import type { TradePublisher } from '../trades/store.js';
-import { stageChange } from './holdChanges.js';
+import { HOLD_CHANGE_ACTIONS_PER_DAY, holdActionsKey, stageChange } from './holdChanges.js';
+import { dailyCap } from './throttle.js';
 
 export const HOLD_MS = 24 * 3_600_000;
 
@@ -472,6 +473,7 @@ export async function gateChange(db: Queryable, req: FastifyRequest, change: Pen
   // the change waits out the 24 hours once, not twice).
   const waited = row.level === 'recovery' && row.hold_until !== null && row.hold_until.getTime() <= now.getTime();
   if (!waits(row.strength) || onboarding || waited) return null;
+  await dailyCap(deps, holdActionsKey(accountId), HOLD_CHANGE_ACTIONS_PER_DAY);
   return { changeId: await stageChange(db, accountId, sessionId, change, now) };
 }
 
