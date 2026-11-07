@@ -347,6 +347,8 @@ describe('owner Q54: the public name is displayName; a field named username is r
 
 describe('per-person grants (owner Q60)', () => {
   it('the owner ticks feedback for a moderator with a tap bound to the exact list; the moderator then reads feedback', async () => {
+    // 11 minutes on: the owner's earlier tap starts (in memory, 20 per 10 minutes) are out of the window.
+    t.setNow(new Date(MON_NOON.getTime() + 11 * 60_000));
     const mod = await staffWithKeys(t, { role: 'mod' });
     expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(403);
     const put = (grants: unknown, tapId?: string) => owner.browser.send('PUT', `/staff/v1/members/${mod.id}/grants`, { grants, ...(tapId ? { tapId } : {}) });
