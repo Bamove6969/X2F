@@ -59,7 +59,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <span style="display: flex; flex-direction: column; gap: 2px;">
               <span style="font-size: 16px; line-height: 24px; font-weight: 600;">Send anonymously</span>
               <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{anonHint}}</span>
-            </span>
+            </span><span style="margin-left: auto; align-self: center;"><sc-if value="{{named}}" hint-placeholder-val="{{true}}"><span style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface); border: 2px solid var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;">MK</span></sc-if><sc-if value="{{anon}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.1A9.8 9.8 0 0112 6c5 0 8.5 4 9.5 6a13 13 0 01-2.7 3.5"/><path d="M6.6 7.6C4.6 9 3.2 10.9 2.5 12c1 2 4.5 6 9.5 6 1.7 0 3.2-.5 4.5-1.2"/><path d="M9.9 10a3 3 0 004.2 4.2"/></svg></span></sc-if></span>
           </label>
         </section>
         <div style="display: flex; align-items: center; gap: 16px;">
@@ -68,16 +68,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </div>
     </sc-if>
     <sc-if value="{{showThanks}}" hint-placeholder-val="{{false}}">
-      <section aria-live="polite" style="width: 720px; box-sizing: border-box; margin-top: 40px; padding: 48px 28px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; background: linear-gradient(180deg, color-mix(in srgb, var(--escrow) 14%, var(--surface)) 0%, var(--surface) 180px); border: 1px solid color-mix(in srgb, var(--escrow) 35%, transparent);">
-        <span style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 16%, transparent); color: var(--escrow);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg></span>
-        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 40px; line-height: 44px; font-weight: 700; letter-spacing: -0.02em;">Thank you!</h1>
-        <p style="margin: 0; max-width: 520px; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Each and every comment is appreciated and reviewed to help make this community a better place for us all.</p>
-        <span style="display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;">{{sentAs}}</span>
-        <div style="display: flex; gap: 12px; margin-top: 8px;">
+      <section aria-live="polite" aria-labelledby="fb-thanks" style="width: 720px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 24px; text-align: center;"><span style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg></span><h2 id="fb-thanks" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Thank you!</h2><p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Each and every comment is appreciated and reviewed to help make this community a better place for us all.</p><span style="display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;">{{sentAs}}</span><div style="display: flex; gap: 12px; margin-top: 8px;">
           <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">Done</a>
           <button type="button" onClick="{{again}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 20px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Write another</button>
-        </div>
-      </section>
+        </div></section>
     </sc-if>
   </main>
   </div>
@@ -101,8 +95,8 @@ class Component extends DCLogic {
   componentDidUpdate(prev) { if (prev.view !== this.props.view) this.setState({ sent: this.props.view === 'sent' }); }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     // Heights measured (night, fonts loaded): app screen, then the design-notes block under it.
@@ -128,6 +122,7 @@ class Component extends DCLogic {
       anon,
       empty,
       count: String(text.length),
+      named: !anon,
       anonHint: anon ? "Your username isn't attached, so we can't follow up with you." : 'Sent with your username, mira.k, so we can follow up if needed.',
       anonStyle: 'display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: 12px; background: var(--surface-raised); cursor: pointer; border: 2px solid ' + (anon ? 'var(--ink);' : 'transparent;'),
       sentAs: anon ? 'Sent anonymously.' : 'Sent as mira.k.',

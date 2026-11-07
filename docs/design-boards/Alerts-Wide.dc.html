@@ -14,6 +14,8 @@ body{margin:0}
 button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
 input::placeholder,textarea::placeholder{color:var(--ink-muted)}
 button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+p,li{text-wrap:pretty}
+h1,h2,h3{text-wrap:balance}
 @media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
@@ -179,8 +181,8 @@ class Component extends DCLogic {
   constructor(props) { super(props); this.state = { push: true, alarm: true, sound: 'default', volume: 80, playing: false, battery: false, jabber: true, jid: '', testSent: false, saved: false }; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";

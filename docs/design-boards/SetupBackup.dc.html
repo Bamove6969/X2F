@@ -24,9 +24,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <a href="SetupPgpChallenge.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
       <span style="padding: 0 10px; font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink-muted);">Step <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; color: var(--ink);">{{step}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{total}}</span></span>
     </div>
-    <div role="progressbar" aria-label="Setup progress" aria-valuemin="1" aria-valuemax="{{total}}" aria-valuenow="{{step}}" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px;">
-      <sc-for list="{{bars}}" as="b" hint-placeholder-count="5"><span style="{{b.style}}"></span></sc-for>
-    </div>
+    <ol aria-label="Setup progress" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 8px 0 0; padding: 0; list-style: none;">
+      <sc-for list="{{bars}}" as="b" hint-placeholder-count="5"><li aria-current="{{b.cur}}" style="display: flex; flex-direction: column; gap: 6px; min-width: 0;"><span aria-hidden="true" style="{{b.style}}"></span><span style="{{b.labelStyle}}">{{b.label}}</span></li></sc-for>
+    </ol>
     <span style="margin-top: 20px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Set up your account · Takes about 2 minutes.</span>
     <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Add a backup way to log in</h1>
   </header>
@@ -40,12 +40,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <div role="radiogroup" aria-label="Backup method" style="display: flex; flex-direction: column; gap: 12px;">
       <sc-for list="{{opts}}" as="o" hint-placeholder-count="4">
         <button type="button" role="radio" aria-checked="{{o.on}}" onClick="{{o.pick}}" style="{{o.style}}">
-          <span aria-hidden="true" style="{{o.tile}}">
-            <sc-if value="{{o.isTotp}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M9 9h6M9 13h6"/><path d="M11 18h2"/></svg></sc-if>
-            <sc-if value="{{o.isKey}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="9" width="10" height="12" rx="2"/><path d="M9 9V3h6v6"/><path d="M11 5h.01M13 5h.01"/><circle cx="12" cy="15" r="1.5"/></svg></sc-if>
-            <sc-if value="{{o.isPgp}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg></sc-if>
-            <sc-if value="{{o.isCodes}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg></sc-if>
-          </span>
+          <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--ink) 16%, var(--surface-raised)); border: 1.5px solid color-mix(in srgb, var(--ink) 55%, transparent); color: var(--ink);"><sc-if value="{{o.isTotp}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 7h4M9 12h6M9 16h4"/></svg></sc-if><sc-if value="{{o.isKey}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2.5" width="8" height="8" rx="1.5"/><path d="M6.5 10.5h11V15a5.5 5.5 0 01-11 0z"/><path d="M12 14v2.5"/></svg></sc-if><sc-if value="{{o.isPgp}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 6l3 3"/></svg></sc-if><sc-if value="{{o.isCodes}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg></sc-if></span>
           <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0; flex-grow: 1; text-align: left;">
             <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{o.name}}</span>
             <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{o.desc}}</span>
@@ -62,19 +57,22 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":939}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":937}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { pick: 'totp' }; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const H = 939;
+    const H = 937;
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const STEP = 4, TOTAL = 5;
-    const bars = Array.from({ length: TOTAL }, (_, i) => ({ style: 'display: block; height: 4px; border-radius: 999px; background: ' + (i < STEP ? 'var(--ink);' : 'var(--surface-raised);') }));
+    const STEP_LABELS = ['Username', 'Log in', 'PGP key', 'Backup', 'Wallet'];
+    const bars = STEP_LABELS.map((label, i) => { const n = i + 1; const done = n < 4; const cur = n >= 4 && n <= 4;
+      return { label, cur: cur ? 'step' : 'false', style: 'display: block; height: 4px; border-radius: 999px; background: ' + (done ? 'var(--escrow);' : cur ? 'var(--ink);' : 'var(--surface-raised);'),
+        labelStyle: 'font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ' + (cur ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);') }; });
     const defs = [
       { id: 'totp', name: 'Authenticator app', short: 'authenticator app', desc: 'Six-digit codes from any authenticator app.' },
       { id: 'key', name: 'Security key', short: 'security key', desc: 'A YubiKey or similar that you keep somewhere safe.' },
@@ -89,7 +87,6 @@ class Component extends DCLogic {
         name: d.name, desc: d.desc, on: on ? 'true' : 'false',
         isTotp: d.id === 'totp', isKey: d.id === 'key', isPgp: d.id === 'pgp2', isCodes: d.id === 'codes',
         style: 'display: flex; align-items: center; gap: 14px; width: 100%; min-height: 72px; box-sizing: border-box; padding: 14px 16px; border-radius: 16px; color: var(--ink); font-family: inherit; cursor: pointer; ' + (on ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 2px solid transparent; background: var(--surface);'),
-        tile: 'display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink); background: ' + (on ? 'var(--surface);' : 'var(--surface-raised);'),
         dot: 'width: 20px; height: 20px; flex-shrink: 0; box-sizing: border-box; border-radius: 999px; ' + (on ? 'border: 6px solid var(--ink);' : 'border: 2px solid var(--line);'),
         pick: () => this.setState({ pick: d.id })
       };

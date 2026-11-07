@@ -30,9 +30,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <main style="flex-grow: 1; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 16px;">
       <section aria-label="desk_ana, team member" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--team) 45%, transparent); background: color-mix(in srgb, var(--team) 10%, var(--surface));">
         <div style="display: flex; align-items: center; gap: 12px;">
-          <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); color: var(--ground); font-size: 14px; line-height: 16px; font-weight: 600; letter-spacing: 0.02em;">DA</span>
-          <span style="flex-grow: 1; min-width: 0; font-size: 16px; line-height: 22px; font-weight: 600;">desk_ana</span>
-          <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; flex-shrink: 0; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c.8-3.5 3.2-5.5 6-5.5s5.2 2 6 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7"/><path d="M18 14.8c1.6.8 2.6 2.6 3 5.2"/></svg>Team member</span>
+          <span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 48px; height: 48px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; background: var(--team); border: 2px solid var(--team); color: var(--ground);">DA</span>
+          <span style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; flex-grow: 1; min-width: 0;"><span style="font-size: 17px; line-height: 22px; font-weight: 600;">desk_ana</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>Team member</span></span>
         </div>
         <p role="status" style="margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); font-size: 15px; line-height: 22px; font-weight: 600;">In <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{typesOnN}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{typesN}}</span> types · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{allowedN}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{totalN}}</span> things allowed</p>
       </section>
@@ -48,6 +47,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <h3 style="flex-grow: 1; min-width: 0; margin: 0; font-size: inherit; font-weight: inherit;">
               <button type="button" aria-expanded="{{t.expanded}}" aria-controls="{{t.panelId}}" onClick="{{t.toggleOpen}}" style="display: flex; align-items: center; gap: 10px; width: 100%; min-height: 64px; padding: 0 8px; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;">
                 <svg style="{{t.chevStyle}}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                <span aria-hidden="true" style="{{t.tileStyle}}"><sc-if value="{{t.isChat}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg></sc-if><sc-if value="{{t.isOffers}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg></sc-if><sc-if value="{{t.isTrades}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg></sc-if><sc-if value="{{t.isRecords}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4"/><path d="M10 12h6M10 16h6"/></svg></sc-if></span>
                 <span style="display: flex; flex-direction: column; min-width: 0;">
                   <span id="{{t.hid}}" style="{{t.nameStyle}}">{{t.name}}</span>
                   <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><sc-if value="{{t.isOff}}" hint-placeholder-val="{{false}}">Off · </sc-if><span style="{{t.countStyle}}">{{t.n}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{t.total}}</span> {{t.countWord}}</span>
@@ -137,7 +137,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"example":{"editor":"enum","options":["offers-and-chat","everything","trades-with-release"],"default":"offers-and-chat"},"$preview":{"width":390,"height":2421}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"example":{"editor":"enum","options":["offers-and-chat","everything","trades-with-release"],"default":"offers-and-chat"},"$preview":{"width":390,"height":2429}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.seed(props.example); }
   seed(ex) {
@@ -161,8 +161,8 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const rootCss = (H) => THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
@@ -224,6 +224,8 @@ class Component extends DCLogic {
         },
         track: swTrack(on), knob: swKnob(on),
         chevStyle: 'flex-shrink: 0; color: var(--ink-muted);' + (open ? ' transform: rotate(90deg);' : ''),
+        isChat: t.id === 'chat', isOffers: t.id === 'offers', isTrades: t.id === 'trades', isRecords: t.id === 'records',
+        tileStyle: 'display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; ' + (on ? 'background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);' : 'background: var(--surface-raised); color: var(--ink-muted);'),
         nameStyle: 'font-size: 16px; line-height: 22px; font-weight: 600; color: ' + (on ? 'var(--ink);' : 'var(--ink-muted);'),
         // Off = greyed: no fill, faint border. On = surface card.
         cardStyle: 'display: flex; flex-direction: column; border-radius: 16px; ' + (on ? 'background: var(--surface); border: 1px solid var(--surface);' : 'background: transparent; border: 1px solid var(--surface-raised);')
@@ -240,7 +242,7 @@ class Component extends DCLogic {
     // Board height = measured content height (night, fonts loaded): closed cards + each open card's rows,
     // + the off hint and the sensitive callout, + the saved note. Nothing clipped, no empty band.
     const ROW = 44, PANEL = 13, OFFHINT = 34, WARN = 74;
-    let H = 1722;
+    let H = 1730;
     types.forEach((t) => {
       if (!t.open) return;
       H += PANEL + t.rows.length * ROW + (t.rows.length - 1) + (t.isOff ? OFFHINT : 0) + t.rows.filter((r) => r.warn).length * WARN;

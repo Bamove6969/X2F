@@ -29,6 +29,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <span style="font-size: 13px; color: var(--ink-muted);">{{countLine}}</span>
       </div>
     </header>
+    <div style="padding: 0 16px 4px;"><div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;"><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{st.on}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">on</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{st.selling}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">selling</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{st.buying}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">buying</span></span></div></div>
 
     <div style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 8px;">
       <div style="display: flex; align-items: center; gap: 4px; padding: 6px 16px 6px 4px; border-radius: 12px; background: var(--surface);">
@@ -88,7 +89,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </article>
       </sc-for>
 
-      <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal. You can have 2 offers per side (buying or selling) for each currency.</p>
+      <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal. You can have <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> buying and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> selling offers. Each offer can cover several currencies.</p>
     </div>
 
     <sc-if value="{{hasSel}}" hint-placeholder-val="{{false}}">
@@ -205,10 +206,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <li>Preview with the rate tweak (all, one-missing, none). The chip label and the two caution lines are draft copy.</li>
       </ul>
     </aside>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;">Craft pass, 7 Nov: three stat tiles under the list header (on, selling, buying). COPY-UNSIGNED fix: the limit sentence said "2 offers per side … for each currency", which contradicted the owner's 2 Nov decision; it now reads as on the phone ("3 buying and 3 selling offers. Each offer can cover several currencies.").</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"rate":{"editor":"enum","options":["all","one-missing","none"],"default":"all"},"$preview":{"width":840,"height":1485}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"rate":{"editor":"enum","options":["all","one-missing","none"],"default":"all"},"$preview":{"width":840,"height":1609}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -216,14 +218,14 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     // F4 (owner, 7 Nov): currencies with no market rate. "one-missing": o1 also covers ARS, which has no rate.
     // "none": o3 is an ARS-only offer and ARS has no rate, so it can't go live (shown in the detail pane by default).
     const rate = ['one-missing', 'none'].includes(this.props.rate) ? this.props.rate : 'all';
-    const H = { all: [1174, 1485], 'one-missing': [1216, 1527], none: [1248, 1559] };
+    const H = { all: [1232, 1609], 'one-missing': [1274, 1651], none: [1306, 1683] };
     const rootStyle = THEMES[theme] + "position: relative; width: 840px; height: " + H[rate][1] + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const appStyle = "position: relative; flex-shrink: 0; height: " + H[rate][0] + "px; overflow: hidden; display: grid; grid-template-columns: 412px 16px 412px;";
 
@@ -346,6 +348,8 @@ class Component extends DCLogic {
       rootStyle, appStyle, offers, d,
       paneLabel: 'Details: ' + d.title,
       countLine: nOn + ' of ' + OFFERS.length + ' offers on',
+      st: { on: String(nOn), selling: String(OFFERS.filter((o) => o.side === 'Selling XMR').length), buying: String(OFFERS.filter((o) => o.side === 'Buying XMR').length) },
+
       allChecked: allSel, allMixed: someSel, hasSel: nSel > 0, noSel: nSel === 0,
       allHint: nSel === 0 ? 'Pick offers to turn them on or off together.' : (allSel ? 'All ' + OFFERS.length + ' offers selected.' : 'Some selected: ' + nSel + ' of ' + OFFERS.length + '.'),
       selCount: nSel + ' selected',

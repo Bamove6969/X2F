@@ -28,7 +28,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 15px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h6a2 2 0 012 2v13a2 2 0 00-2-2H4z"/><path d="M20 5h-6a2 2 0 00-2 2v13a2 2 0 012-2h6z"/></svg>Training library</a>
       <a href="StaffLog.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 15px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg>Activity log</a>
       <a href="StaffSettings.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; text-decoration: none; font-size: 15px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Settings</a>
-    <span style="margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px; font-size: 14px;"><span style="color: var(--mod);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>lumen.k <span style="color: var(--ink-muted);">· Owner</span></span>
+    <span style="margin-top: auto; display: flex; align-items: center; gap: 12px; padding: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--mod) 16%, transparent); color: var(--mod);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span><span style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0;"><span style="font-size: 15px; line-height: 20px; font-weight: 600;">lumen.k</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--mod) 14%, transparent); color: var(--mod);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>Owner</span></span></span>
   </nav>
   <main style="flex: 1 1 0; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
     <div style="width: 100%; display: flex; flex-direction: column; gap: 24px;">
@@ -49,7 +49,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <div role="radiogroup" aria-label="Role" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
           <sc-for list="{{roles}}" as="r" hint-placeholder-count="3">
             <button type="button" role="radio" aria-checked="{{r.on}}" onClick="{{r.pick}}" style="{{r.style}}">
-              <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{r.name}}</span>
+              <span aria-hidden="true" style="{{r.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{r.d}}"/></svg></span>
+              <span style="margin-top: 6px; font-size: 16px; line-height: 22px; font-weight: 600;">{{r.name}}</span>
               <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{r.desc}}</span>
             </button>
           </sc-for>
@@ -89,15 +90,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </sc-if>
 
       <section aria-labelledby="team-title" style="display: flex; flex-direction: column; gap: 8px; padding: 20px 0 8px; border-radius: 16px; background: var(--surface);">
-        <h2 id="team-title" style="margin: 0; padding: 0 20px; font-size: 18px; line-height: 24px; font-weight: 600;">Staff members</h2>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 0 20px 8px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><circle cx="16" cy="10" r="3"/><path d="M3 20c.8-3.5 3.2-5 6-5s5.2 1.5 6 5M15 15.5c2.6 0 4.6 1.4 5.4 4.5"/></svg></span><h2 id="team-title" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Staff members</h2></div>
         <div role="table" aria-labelledby="team-title" style="display: flex; flex-direction: column;">
           <div role="row" style="{{gridHead}}">
             <span role="columnheader">Name</span><span role="columnheader">Role</span><span role="columnheader">Status</span><span role="columnheader">Login hours</span><span role="columnheader">Joined</span><span role="columnheader">Last active</span><span role="columnheader" style="text-align: right;">Cases</span><span role="columnheader"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Actions</span></span>
           </div>
           <sc-for list="{{staff}}" as="p" hint-placeholder-count="4">
           <div role="row" style="{{gridRow}}">
-            <span role="cell" style="{{p.nameStyle}}">{{p.name}}</span>
-            <span role="cell"><span style="{{p.roleStyle}}">{{p.role}}</span></span>
+            <span role="cell" style="display: flex; align-items: center; gap: 10px; min-width: 0;"><sc-if value="{{p.isMod}}" hint-placeholder-val="{{true}}"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 10px; background: color-mix(in srgb, var(--mod) 16%, transparent); color: var(--mod);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span></sc-if><sc-if value="{{p.isHelper}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: -0.01em;">{{p.init}}</span></sc-if><sc-if value="{{p.isInvite}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 10px; border: 1px solid var(--line); color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span></sc-if><span style="{{p.nameStyle}}">{{p.name}}</span></span>
+            <span role="cell"><span style="{{p.roleStyle}}"><sc-if value="{{p.modRole}}" hint-placeholder-val="{{true}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></sc-if>{{p.role}}</span></span>
             <span role="cell" style="display: inline-flex; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; font-weight: 600;"><span style="{{p.dotStyle}}"></span>{{p.status}}</span>
             <span role="cell" style="font-size: 14px; line-height: 20px;">{{p.hoursPre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">{{p.hoursNum}}</span>{{p.hoursPost}}</span>
             <span role="cell" style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{p.joinedPre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{p.joinedNum}}</span>{{p.joinedPost}}</span>
@@ -112,36 +113,37 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </div>
     <section aria-label="Design notes" style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px; padding-top: 24px; border-top: 1px solid var(--line);">
       <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
-      <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Names and numbers are examples. Login hours are typed as 24-hour UTC times (HH:MM), matching the table.</p>
+      <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Names and numbers are examples. Login hours are typed as 24-hour UTC times (HH:MM), matching the table.</p><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><li>Craft pass, 7 Nov: moderators and senior moderators are drawn with the --mod shield tile (32 in the table, 40 in the rail); the helper gets the neutral initials avatar; a pending invite gets the pending tile (solid 1px line border).</li><li>Role tags are the shared role tag (Vendor tag shape from Badges), in --mod with the shield for moderator roles, neutral for Helper. Role cards lead with a 40 icon tile.</li></ul>
     </section>
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1229}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1395}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { adding: true, role: 'mod', link: false, off: {}, days: { Mon: true, Tue: true, Wed: true, Thu: true, Fri: true } }; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "width: 1280px; min-height: 1229px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;";
+    const rootStyle = THEMES[theme] + "width: 1280px; min-height: 1395px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;";
     const VIOLET = 'var(--mod)';
     const defs = [
-      { id: 'senior', name: 'Senior moderator', desc: 'Handles disputes and appeals, co-approves rulings above your size limit, and can freeze or ban accounts.' },
-      { id: 'mod', name: 'Moderator', desc: 'Handles disputes and rules alone below your size limit. Larger rulings wait for a senior moderator or you.' },
-      { id: 'helper', name: 'Helper', desc: 'Answers questions and support tickets. Cannot see dispute evidence or rule on anything.' }
+      { id: 'senior', d: 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6zM9 12l2 2 4-4', tone: 'mod', name: 'Senior moderator', desc: 'Handles disputes and appeals, co-approves rulings above your size limit, and can freeze or ban accounts.' },
+      { id: 'mod', d: 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z', tone: 'mod', name: 'Moderator', desc: 'Handles disputes and rules alone below your size limit. Larger rulings wait for a senior moderator or you.' },
+      { id: 'helper', d: 'M4 5h16v11H9l-5 4z', tone: '', name: 'Helper', desc: 'Answers questions and support tickets. Cannot see dispute evidence or rule on anything.' }
     ];
     const role = this.state.role;
     const base = 'display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 14px 16px; border-radius: 12px; background: var(--surface-raised); color: var(--ink); font-family: inherit; text-align: left; cursor: pointer; ';
     const roles = defs.map((d) => ({ ...d, on: role === d.id ? 'true' : 'false',
+      tileStyle: 'display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; ' + (d.tone ? 'background: color-mix(in srgb, var(--mod) 14%, transparent); color: var(--mod);' : 'background: var(--surface); color: var(--ink);'),
       style: base + (role === d.id ? 'border: 2px solid var(--ink);' : 'border: 2px solid transparent;'),
       pick: () => this.setState({ role: d.id, link: false }) }));
     const chip = (c) => 'display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; ' + c;
     const people = [
       // Digits are split out so dates, times and counts render in mono; the words are unchanged.
-      { id: 'a', name: 'sarah.v', role: 'Senior moderator', hoursPre: 'Any time', hoursNum: '', hoursPost: '', joinedPre: '', joinedNum: 'Sep 2026', joinedPost: '', activeNum: '12', activePost: ' min ago', cases: '41' },
+      { id: 'a', name: 'elena.t', role: 'Senior moderator', hoursPre: 'Any time', hoursNum: '', hoursPost: '', joinedPre: '', joinedNum: 'Sep 2026', joinedPost: '', activeNum: '12', activePost: ' min ago', cases: '41' },
       { id: 'b', name: 'dmitri_k', role: 'Moderator', hoursPre: 'Mon–Fri, ', hoursNum: '09:00–17:00', hoursPost: ' UTC', joinedPre: '', joinedNum: 'Oct 2026', joinedPost: '', activeNum: '2', activePost: ' h ago', cases: '17' },
       { id: 'c', name: 'tobi.w', role: 'Helper', hoursPre: 'Every day, ', hoursNum: '18:00–23:00', hoursPost: ' UTC', joinedPre: '', joinedNum: 'Oct 2026', joinedPost: '', activeNum: '', activePost: 'Yesterday', cases: '0' },
       { id: 'd', name: 'Invite sent', role: 'Moderator', hoursPre: 'Mon–Fri, ', hoursNum: '09:00–17:00', hoursPost: ' UTC', joinedPre: 'Expires in ', joinedNum: '21', joinedPost: ' h', activeNum: '', activePost: '', cases: '' }
@@ -151,8 +153,9 @@ class Component extends DCLogic {
       const pending = p.id === 'd';
       return { ...p,
         // Moderator identity is --mod: senior and moderator = tinted chip, helper = neutral chip. Chips are fill-only.
-        roleStyle: chip(p.role === 'Helper' ? 'background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink);' : 'background: color-mix(in srgb, ' + VIOLET + ' 16%, transparent); color: ' + VIOLET + ';'),
-        nameStyle: 'white-space: nowrap; font-size: 15px; font-weight: 600; ' + (pending ? 'color: var(--ink-muted);' : ''),
+        roleStyle: p.role === 'Helper' ? "display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted);" : "display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--mod) 14%, transparent); color: var(--mod);",
+        modRole: p.role !== 'Helper', isMod: !pending && p.role !== 'Helper', isHelper: p.role === 'Helper', isInvite: pending, init: p.name.slice(0, 2).toUpperCase(),
+        nameStyle: 'white-space: nowrap; font-size: 15px; line-height: 20px; font-weight: 600; ' + (pending ? 'color: var(--ink-muted);' : ''),
         status: pending ? 'Waiting' : (off ? 'Switched off' : 'Active'),
         dotStyle: 'display: block; flex-shrink: 0; width: 8px; height: 8px; border-radius: 999px; background: ' + (pending ? 'var(--caution)' : (off ? 'var(--danger)' : 'var(--escrow)')) + ';',
         action: pending ? 'Cancel invite' : (off ? 'Switch on' : 'Switch off'),
@@ -165,7 +168,7 @@ class Component extends DCLogic {
         style: dayBase + (on ? 'border: 2px solid var(--ink); background: var(--surface-raised); color: var(--ink); font-weight: 600;' : 'border: 1px solid var(--line); background: transparent; color: var(--ink-muted);'),
         toggle: () => this.setState({ days: Object.assign({}, this.state.days, { [label]: !on }) }) };
     });
-    const cols = 'display: grid; grid-template-columns: 92px 152px 104px minmax(150px, 1fr) 100px 84px 40px 112px; column-gap: 10px; align-items: center; padding: 0 20px;';
+    const cols = 'display: grid; grid-template-columns: 118px 152px 92px minmax(132px, 1fr) 96px 84px 48px 112px; column-gap: 10px; align-items: center; padding: 0 20px;';
     const gridHead = cols + ' min-height: 40px; font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink-muted);';
     const gridRow = cols + ' min-height: 64px; padding-top: 10px; padding-bottom: 10px; box-sizing: border-box; border-top: 1px solid var(--surface-raised); font-size: 15px;';
     return { rootStyle, gridHead, gridRow, roles, staff, days, addBtnStyle: this.state.adding ? 'display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;' : 'display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;', adding: this.state.adding, closed: !this.state.adding, noLink: !this.state.link, hasLink: this.state.link,

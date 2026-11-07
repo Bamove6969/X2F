@@ -37,9 +37,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <sc-if value="{{isShow}}" hint-placeholder-val="{{true}}">
       <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">This code gets you back in if every other way to log in is lost. It isn&#39;t a way to log in, so you should only ever need it in an emergency.</p>
 
-      <section aria-labelledby="rc-code-h" style="display: flex; flex-direction: column; gap: 16px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--escrow) 12%, var(--surface)) 0%, var(--surface) 160px); border: 1px solid color-mix(in srgb, var(--escrow) 35%, transparent);">
-        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -8px -8px -4px 0;">
-          <h2 id="rc-code-h" style="display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>Recovery code</h2>
+      <section aria-labelledby="rc-code-h" style="display: flex; flex-direction: column; gap: 16px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--escrow) 14%, var(--surface)) 0%, var(--surface) 160px); border: 1px solid color-mix(in srgb, var(--escrow) 35%, transparent);">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -8px -8px -4px 0; min-height: 44px;">
+          <h2 id="rc-code-h" style="display: inline-flex; align-items: center; gap: 6px; height: 28px; margin: 0; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--escrow) 14%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>Recovery code</h2>
           <button type="button" onClick="{{toggleHide}}" aria-pressed="{{hiddenAria}}" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 8px; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>{{hideLabel}}</button>
         </div>
         <ol aria-label="{{codeAria}}" style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
@@ -92,7 +92,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </sc-if>
 
     <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
-      <div style="display: flex; flex-direction: column; gap: 12px; padding: 24px 20px; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 40%, transparent);">
+      <div style="display: flex; flex-direction: column; gap: 12px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--escrow) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--escrow) 35%, transparent);">
         <span aria-hidden="true" style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 16%, transparent); color: var(--escrow);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></span>
         <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your recovery code is set</h2>
         <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Keep it hidden and apart from everything else.</p>
@@ -198,8 +198,8 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     // Board = phone screen (content height, min 800) + design notes under it. $preview = measured default (show).

@@ -15,6 +15,8 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 input::placeholder{color:var(--ink-muted)}
 button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
 @media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+p,li{text-wrap:pretty}
+h1,h2,h3{text-wrap:balance}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
@@ -45,16 +47,17 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <sc-for list="{{offers}}" as="o" hint-placeholder-count="4">
         <li style="display: flex;">
           <button type="button" aria-pressed="{{o.on}}" onClick="{{o.pick}}" style="{{o.style}}">
-            <span style="{{o.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg><span aria-hidden="true" style="{{o.dotStyle}}"></span></span>
-            <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
-              <span style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px;">
-                <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{o.name}}</span>
-                <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 24px; font-weight: 500;">{{o.price}}</span>
+            <span style="display: flex; align-items: flex-start; gap: 12px; min-width: 0;">
+              <span aria-hidden="true" style="{{o.avStyle}}">{{o.init}}<sc-if value="{{o.online}}" hint-placeholder-val="{{true}}"><span style="{{o.dotStyle}}"></span></sc-if></span>
+              <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
+                <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{o.name}}</span><sc-if value="{{o.vendor}}" hint-placeholder-val="{{true}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; flex-shrink: 0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></sc-if></span>
+                <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="{{o.seenStyle}}">{{o.seen}}</span> · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.trades}}</span> trades · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.pos}}</span> positive</span>
               </span>
-              <span style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">
-                <span>{{o.seen}} · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.trades}}</span> trades · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.pos}}</span> positive</span>
-                <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">{{o.range}}</span>
-              </span>
+            </span>
+            <sc-if value="{{o.hasChips}}" hint-placeholder-val="{{true}}"><span style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-left: 52px;"><sc-for list="{{o.chips}}" as="b" hint-placeholder-count="2"><span style="{{b.chipStyle}}"><span aria-hidden="true" style="{{b.seal22}}"><sc-if value="{{b.isIcon}}" hint-placeholder-val="{{true}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.d}}"/></svg></sc-if><sc-if value="{{b.isNum}}" hint-placeholder-val="{{false}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 8px; line-height: 1; font-weight: 500; letter-spacing: -0.02em;">{{b.num}}</span></sc-if></span>{{b.name}}</span></sc-for><sc-if value="{{o.hasMore}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.more}}</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></sc-if></span></sc-if>
+            <span style="{{o.bottomStyle}}">
+              <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted); white-space: nowrap;">{{o.range}}</span>
+              <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 24px; font-weight: 500; letter-spacing: -0.01em;">{{o.price}}</span>
             </span>
           </button>
         </li>
@@ -74,14 +77,19 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </header>
 
     <main style="flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 16px 16px 24px;">
-      <section aria-label="About this seller" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
-        <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{sel.seen}} · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{sel.trades}}</span> trades · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{sel.pos}}</span> positive</span>
-        <span style="display: flex; flex-wrap: wrap; gap: 6px;">
-          <sc-for list="{{sel.badges}}" as="b" hint-placeholder-count="2">
-            <span style="display: inline-flex; align-items: center; height: 24px; box-sizing: border-box; padding: 0 8px; border-radius: 999px; border: 1px solid var(--escrow); color: var(--escrow); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">{{b.label}}</span>
-          </sc-for>
-        </span>
-        <span style="font-size: 15px; line-height: 22px;">Sells <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{sel.range}}</span> per trade. Releases in <span style="white-space: nowrap;">{{sel.release}}</span>.</span>
+      <section aria-label="About this seller" style="display: flex; flex-direction: column; gap: 14px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+          <span aria-hidden="true" style="{{sel.avStyle}}">{{sel.init}}<sc-if value="{{sel.online}}" hint-placeholder-val="{{true}}"><span style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></sc-if></span>
+          <span style="display: flex; flex-direction: column; gap: 3px; min-width: 0;">
+            <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px;"><span style="font-size: 17px; line-height: 22px; font-weight: 600;">{{sel.name}}</span><sc-if value="{{sel.vendor}}" hint-placeholder-val="{{true}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; flex-shrink: 0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></sc-if></span>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="{{sel.seenStyle}}">{{sel.seen}}</span></span>
+          </span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+          <span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{sel.trades}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">trades</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{sel.pos}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">positive</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{sel.xmr}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">XMR traded</span></span>
+        </div>
+        <sc-if value="{{sel.hasChips}}" hint-placeholder-val="{{true}}"><div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;"><sc-for list="{{sel.chips}}" as="b" hint-placeholder-count="3"><button type="button" aria-haspopup="dialog" aria-label="{{b.label}}" style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{b.chipStyle}}"><span aria-hidden="true" style="{{b.seal22}}"><sc-if value="{{b.isIcon}}" hint-placeholder-val="{{true}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.d}}"/></svg></sc-if><sc-if value="{{b.isNum}}" hint-placeholder-val="{{false}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 8px; line-height: 1; font-weight: 500; letter-spacing: -0.02em;">{{b.num}}</span></sc-if></span>{{b.name}}</span></button></sc-for><sc-if value="{{sel.hasMore}}" hint-placeholder-val="{{true}}"><button type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="{{sel.moreLabel}}" style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{sel.more}}</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button></sc-if></div></sc-if>
+        <span style="padding-top: 14px; border-top: 1px solid var(--surface-raised); font-size: 15px; line-height: 22px;">Sells <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{sel.range}}</span> per trade. Releases in <span style="white-space: nowrap;">{{sel.release}}</span>.</span>
       </section>
 
       <section aria-label="Amount" style="display: flex; flex-direction: column; gap: 8px;">
@@ -97,7 +105,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <section aria-label="What you get" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">You receive</span>
-          <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; font-variant-numeric: tabular-nums;">{{xmr}}</span><span style="font-size: 16px; font-weight: 600; color: var(--monero-ink);">XMR</span></span>
+          <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;">{{xmr}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--monero-ink);">XMR</span></span>
           <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">In Cake Wallet, address ending <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">…k3Fz</span> · <a href="Wallet.dc.html" style="color: var(--monero-ink); display: inline-block; padding: 12px 0; margin: -12px 0;">Change</a></span>
         </div>
         <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
@@ -129,25 +137,52 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":840,"height":1000}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":840,"height":1012}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
     this.state = { selected: 'satoshi', amount: '412.50', sort: 'price' };
   }
   renderVals() {
+
+    // Badge set, as on the Badges board (7 Nov): family tone, stroke glyph or milestone number, meaning. Draft copy.
+    const BADGES = {
+      trusted: { name: 'Trusted', tone: 'escrow', d: 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6zM9 12l2 2 4-4', meaning: '500+ trades and 98%+ positive.' },
+      clean: { name: 'Clean record', tone: 'escrow', d: 'M3 12a9 9 0 1018 0a9 9 0 10-18 0M8 12.5l2.8 2.8L16.5 9', meaning: 'No lost disputes in 100 trades.' },
+      veteran: { name: 'Veteran', tone: 'escrow', d: 'M7 9a5 5 0 1010 0a5 5 0 10-10 0M9 13.5L7.5 21l4.5-2.5 4.5 2.5L15 13.5', meaning: 'Trading on X2F for over a year.' },
+      fast: { name: 'Fast', tone: 'caution', d: 'M13 2L4 14h7l-1 8 9-12h-7z', meaning: 'Usually pays or releases within 10 min.' },
+      pgp: { name: 'PGP verified', tone: 'ink', d: 'M4 15a4 4 0 108 0a4 4 0 10-8 0M11 12l9-9M17 6l3 3', meaning: 'Logs in with a verified PGP key.' },
+      hw: { name: 'Security key', tone: 'ink', d: 'M9.5 2.5h5A1.5 1.5 0 0116 4v5a1.5 1.5 0 01-1.5 1.5h-5A1.5 1.5 0 018 9V4a1.5 1.5 0 011.5-1.5zM6.5 10.5h11V15a5.5 5.5 0 01-11 0zM12 14v2.5', meaning: 'Protects the account with a hardware key.' },
+      m100: { name: '100 trades', tone: 'ink', num: '100', meaning: 'Completed 100 trades.' },
+      m500: { name: '500 trades', tone: 'ink', num: '500', meaning: 'Completed 500 trades.' },
+      fresh: { name: 'New', tone: 'ink-muted', d: 'M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 15c0-3-2.5-5-6-5 0 3 2.5 5 6 5z', meaning: 'Joined in the last 30 days.' }
+    };
+    const sealStyle = (tone, size) => 'display: flex; flex-shrink: 0; width: ' + size + 'px; height: ' + size + 'px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: ' + (size === 40 ? 12 : 999) + 'px; background: color-mix(in srgb, var(--' + tone + ') 16%, var(--surface-raised)); border: ' + (size === 40 ? 1.5 : 1) + 'px solid color-mix(in srgb, var(--' + tone + ') 55%, transparent); color: var(--' + tone + ');';
+    const badge = (key, earned, tap) => {
+      const b = BADGES[key];
+      return {
+        key, name: b.name, meaning: b.meaning, d: b.d || '', num: b.num || '', isIcon: !b.num, isNum: !!b.num,
+        seal22: sealStyle(b.tone, 22), seal40: sealStyle(b.tone, 40),
+        chipStyle: 'display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--' + b.tone + ') 32%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink); white-space: nowrap;',
+        label: b.name + ' badge: ' + b.meaning,
+        earnPre: earned ? earned[0] : '', earnDate: earned ? earned[1] : '',
+        tap: tap || (() => {})
+      };
+    };
+    const avatarStyle = (size, ring) => 'position: relative; display: flex; flex-shrink: 0; width: ' + size + 'px; height: ' + size + 'px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid ' + (ring ? 'color-mix(in srgb, var(--escrow) 70%, transparent)' : 'var(--surface-raised)') + "; font-family: 'Familjen Grotesk', sans-serif; font-size: " + (size === 48 ? 17 : 15) + 'px; font-weight: 700; letter-spacing: -0.01em;';
+    const moreStyle = (active) => 'display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: ' + (active ? '2px solid var(--ink)' : '1px solid var(--line)') + '; background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;';
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 840px; height: 1000px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: grid; grid-template-columns: 412px 16px 412px;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 840px; height: 1012px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: grid; grid-template-columns: 412px 16px 412px;";
 
     const defs = [
-      { id: 'satoshi', name: 'satoshi_ghost', rate: 330.00, online: true, seen: 'Online', trades: 340, pos: 99, min: 50, max: 1500, release: '~8 min', badges: ['Trusted', 'Veteran', 'Fast'] },
-      { id: 'kettle', name: 'kettle.moss', rate: 331.50, online: false, seen: 'Seen 40 min ago', trades: 96, pos: 98, min: 100, max: 3000, release: '~20 min', badges: ['PGP verified'] },
-      { id: 'lowtide', name: 'lowtide_rx', rate: 333.00, online: true, seen: 'Online', trades: 12, pos: 100, min: 20, max: 400, release: '~30 min', badges: [] },
-      { id: 'mira', name: 'mira.k', rate: 334.00, online: true, seen: 'Online', trades: 58, pos: 97, min: 200, max: 2500, release: '~15 min', badges: ['PGP verified'] }
+      { id: 'satoshi', name: 'satoshi_ghost', init: 'SG', xmr: '275.4', rate: 330.00, online: true, seen: 'Online', trades: 1284, pos: 99.4, min: 50, max: 1500, release: '~8 min', vendor: true, badges: ['trusted', 'fast', 'clean', 'veteran', 'm100'] },
+      { id: 'kettle', name: 'kettle.moss', init: 'KM', xmr: '31.2', rate: 331.50, online: false, seen: 'Seen 40 min ago', trades: 96, pos: 98, min: 100, max: 3000, release: '~20 min', vendor: true, badges: ['pgp'] },
+      { id: 'lowtide', name: 'lowtide_rx', init: 'LR', xmr: '2.9', rate: 333.00, online: true, seen: 'Online', trades: 12, pos: 100, min: 20, max: 400, release: '~30 min', vendor: true, badges: ['fresh'] },
+      { id: 'mira', name: 'mira.k', init: 'MK', xmr: '41.7', rate: 334.00, online: true, seen: 'Online', trades: 212, pos: 99, min: 200, max: 2500, release: '~15 min', vendor: false, badges: ['pgp'] }
     ];
     const money = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
     const sort = this.state.sort;
@@ -169,25 +204,41 @@ class Component extends DCLogic {
       name: d.name,
       price: '$' + d.rate.toFixed(2),
       seen: d.seen,
-      trades: String(d.trades),
+      trades: d.trades.toLocaleString('en-US'),
+      vendor: d.vendor,
       positive: d.pos + '% positive',
       pos: d.pos + '%',
       range: money(d.min) + ' – ' + money(d.max),
       release: d.release,
-      badges: d.badges.map((label) => ({ label }))
+      init: d.init, xmr: d.xmr, online: d.online,
+      // Online in escrow teal, as the Badges trader block; "Seen ..." stays muted.
+      seenStyle: d.online ? 'color: var(--escrow); font-weight: 600;' : '',
+      trusted: d.badges.indexOf('trusted') >= 0,
+      hasChips: d.badges.length > 0,
+      chips: d.badges.slice(0, 2).map((k) => badge(k)),
+      hasMore: d.badges.length > 2,
+      more: '+' + (d.badges.length - 2),
+      moreLabel: (d.badges.length - 2) + ' more badges',
+      avStyle: avatarStyle(48, d.badges.indexOf('trusted') >= 0)
     });
-    const offers = ordered.map((d) => Object.assign(view(d), {
-      on: d.id === selId ? 'true' : 'false',
-      style: 'display: flex; align-items: center; gap: 14px; width: 100%; min-height: 72px; box-sizing: border-box; padding: 14px 16px; border-radius: 16px; text-align: left; font-family: inherit; color: var(--ink); cursor: pointer; ' + (d.id === selId
-        ? 'border: 2px solid var(--ink); background: var(--surface-raised);'
-        : 'border: 2px solid transparent; background: var(--surface);'),
-      dotStyle: d.online
-        ? 'position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; box-sizing: border-box; border-radius: 999px; background: var(--escrow); border: 2px solid var(--surface);'
-        : 'position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; box-sizing: border-box; border-radius: 999px; background: var(--surface); border: 2px solid var(--line);',
-      tileStyle: 'position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink); background: ' + (d.id === selId ? 'var(--surface)' : 'var(--surface-raised)') + ';',
-      pick: () => this.setState({ selected: d.id })
-    }));
-
+    // List card (craft kit, as BuyOffers): 40 px avatar with the online dot (teal ring only for Trusted),
+    // name + Vendor tag, price right-aligned in mono, then up to 2 featured badge chips and "+N".
+    const offers = ordered.map((d) => {
+      const on = d.id === selId;
+      const v = view(d);
+      const avBase = avatarStyle(40, v.trusted);
+      return Object.assign(v, {
+        on: on ? 'true' : 'false',
+        style: 'display: flex; flex-direction: column; gap: 12px; width: 100%; box-sizing: border-box; padding: 16px; border-radius: 16px; text-align: left; font-family: inherit; color: var(--ink); cursor: pointer; ' + (on
+          ? 'border: 2px solid var(--ink); background: var(--surface-raised);'
+          : 'border: 2px solid transparent; background: var(--surface);'),
+        // On the selected (surface-raised) card the avatar steps back to surface so it keeps its edge.
+        avStyle: on ? avBase.replace('background: var(--surface-raised)', 'background: var(--surface)').replace('border: 2px solid var(--surface-raised)', 'border: 2px solid var(--surface)') : avBase,
+        dotStyle: 'position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid ' + (on ? 'var(--surface-raised)' : 'var(--surface)') + ';',
+        bottomStyle: 'display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 0 0 52px; border-top: 1px solid ' + (on ? 'var(--surface)' : 'var(--surface-raised)') + ';',
+        pick: () => this.setState({ selected: d.id })
+      });
+    });
     const s = defs.find((d) => d.id === selId) || defs[0];
     const raw = String(this.state.amount).replace(/[^0-9.]/g, '');
     const usd = parseFloat(raw);

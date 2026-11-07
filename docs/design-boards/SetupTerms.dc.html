@@ -24,7 +24,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <a href="SellOffers.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
       <span style="padding-top: 4px; padding-right: 10px; align-self: flex-start; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
     </div>
-    <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Before you start</span>
+    <ol aria-label="Setup progress" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 8px 0 0; padding: 0; list-style: none;">
+      <sc-for list="{{bars}}" as="b" hint-placeholder-count="5"><li aria-current="{{b.cur}}" style="display: flex; flex-direction: column; gap: 6px; min-width: 0;"><span aria-hidden="true" style="{{b.style}}"></span><span style="{{b.labelStyle}}">{{b.label}}</span></li></sc-for>
+    </ol>
+    <span style="margin-top: 20px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Before you start</span>
     <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Terms of Service</h1>
   </header>
 
@@ -37,7 +40,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </sc-for>
       </ul>
     </section>
-    <div tabindex="0" role="region" aria-label="Full Terms of Service" onScroll="{{onScroll}}" style="flex-grow: 1; min-height: 120px; overflow-y: auto; padding: 16px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 21px; color: var(--ink); display: flex; flex-direction: column; gap: 10px;">
+    <div tabindex="0" role="region" aria-label="Full Terms of Service" onScroll="{{onScroll}}" style="flex: 1 1 0; min-height: 120px; box-sizing: border-box; overflow-y: auto; padding: 16px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 21px; color: var(--ink); display: flex; flex-direction: column; gap: 10px;">
       <p style="margin: 0; font-size: 14px; color: var(--ink-muted);">Final text to come.</p>
       <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">1. What X2F is</h2>
       <p style="margin: 0;">[TERMS TEXT: X2F connects buyers and sellers of Monero. It is not a party to any trade and never holds funds.]</p>
@@ -89,20 +92,25 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1044}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1061}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { read: false, agreed: false }; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     // Board = phone screen (844) + design notes under it.
-    const NOTES_H = 200;
+    const NOTES_H = 217;
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + (844 + NOTES_H) + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const frameStyle = 'position: relative; flex-shrink: 0; height: 844px; display: flex; flex-direction: column; overflow: hidden;';
     const { read, agreed } = this.state;
+    // Journey stepper as on every Setup* board: nothing started yet, so every step is upcoming.
+    const STEP_LABELS = ['Username', 'Log in', 'PGP key', 'Backup', 'Wallet'];
+    const bars = STEP_LABELS.map((label, i) => { const n = i + 1; const done = false; const cur = false;
+      return { label, cur: cur ? 'step' : 'false', style: 'display: block; height: 4px; border-radius: 999px; background: ' + (done ? 'var(--escrow);' : cur ? 'var(--ink);' : 'var(--surface-raised);'),
+        labelStyle: 'font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ' + (cur ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);') }; });
     const ready = read && agreed;
     const hint = read ? 'Tick the box to continue.' : 'Scroll to the end, then tick the box.';
     const points = [
@@ -115,7 +123,7 @@ class Component extends DCLogic {
     ].map((t) => ({ t }));
     // Confirm row (v2 §11): raised, radius 12, 2px ink border once ticked. Muted until the terms are read.
     const agreeStyle = 'flex-shrink: 0; display: flex; align-items: flex-start; gap: 12px; min-height: 44px; box-sizing: border-box; padding: 14px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px; border: 2px solid ' + (agreed ? 'var(--ink); ' : 'transparent; ') + (read ? 'color: var(--ink); cursor: pointer;' : 'color: var(--ink-muted); cursor: not-allowed;');
-    return { rootStyle, frameStyle, points, hint,
+    return { rootStyle, bars, frameStyle, points, hint,
       notRead: !read, agreed, ready, notReady: !ready, agreeStyle,
       onScroll: (e) => {
         const el = e.currentTarget;

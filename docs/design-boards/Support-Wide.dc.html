@@ -40,8 +40,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <div role="radiogroup" aria-labelledby="sup-cat" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
             <sc-for list="{{cats}}" as="c" hint-placeholder-count="8">
               <button type="button" role="radio" aria-checked="{{c.on}}" onClick="{{c.pick}}" style="{{c.style}}">
+                <span aria-hidden="true" style="{{c.tile}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{c.d}}"/></svg></span>
+                <span style="flex-grow: 1; min-width: 0;">{{c.name}}</span>
                 <span aria-hidden="true" style="{{c.dot}}"></span>
-                <span>{{c.name}}</span>
               </button>
             </sc-for>
           </div>
@@ -61,7 +62,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <sc-if value="{{isThread}}" hint-placeholder-val="{{false}}">
         <section aria-label="Ticket" style="display: flex; flex-direction: column; gap: 12px; padding: 28px; border-radius: 16px; background: var(--surface);">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-            <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Trades and payments</h2>
+            <span style="display: flex; align-items: center; gap: 12px; min-width: 0;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h14l-3-3M20 16H6l3 3"/></svg></span><h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Trades and payments</h2></span>
             <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Answered</span>
           </div>
           <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px;">
@@ -73,24 +74,18 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <ol aria-label="Messages" style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px;">
             <li style="align-self: flex-end; max-width: 75%; display: flex; flex-direction: column; gap: 4px;">
               <span style="align-self: flex-end; font-size: 13px; line-height: 16px; color: var(--ink-muted);">You · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">09:12</span></span>
-              <p style="margin: 0; padding: 12px 14px; border-radius: 16px 16px 4px 16px; background: var(--surface-raised); font-size: 15px; line-height: 22px;">My buyer says they paid, but I can&#39;t see the money in my bank yet. How long should I wait before I release?</p>
+              <p style="margin: 0; padding: 10px 14px; border-radius: 12px 12px 4px 12px; border: 1px solid var(--line); font-size: 15px; line-height: 22px;">My buyer says they paid, but I can&#39;t see the money in my bank yet. How long should I wait before I release?</p>
             </li>
-            <li style="align-self: flex-start; max-width: 75%; display: flex; flex-direction: column; gap: 4px;">
-              <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="font-weight: 600; color: var(--ink);">quill_7</span><span style="display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--team); font-size: 12px; line-height: 16px; font-weight: 600; color: var(--team);">Team member</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">09:40</span></span>
-              <p style="margin: 0; padding: 12px 14px; border-radius: 16px 16px 16px 4px; background: var(--surface); font-size: 15px; line-height: 22px;">Only release once the money is in your own account, checked in your bank&#39;s app, not from a screenshot. Some bank payments take a few hours. If the payment timer runs out and nothing has arrived, you can open a dispute from the trade page.</p>
-            </li>
+            <li style="align-self: flex-start; max-width: 90%; display: flex; gap: 8px; align-items: flex-end;"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: -0.01em; background: var(--surface-raised); border: 2px solid var(--surface-raised); color: var(--ink);">X2F</span><div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;"><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="font-size: 14px; line-height: 18px; font-weight: 600; color: var(--ink);">quill_7</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted);">X2F team</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">09:40</span></span><p style="margin: 0; padding: 10px 14px; border-radius: 12px 12px 12px 4px; background: var(--surface); font-size: 15px; line-height: 22px;">Only release once the money is in your own account, checked in your bank&#39;s app, not from a screenshot. Some bank payments take a few hours. If the payment timer runs out and nothing has arrived, you can open a dispute from the trade page.</p></div></li>
             <li style="align-self: flex-end; max-width: 75%; display: flex; flex-direction: column; gap: 4px;">
               <span style="align-self: flex-end; font-size: 13px; line-height: 16px; color: var(--ink-muted);">You · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10:05</span></span>
-              <p style="margin: 0; padding: 12px 14px; border-radius: 16px 16px 4px 16px; background: var(--surface-raised); font-size: 15px; line-height: 22px;">It just arrived. Thanks! Can I still leave a review after I release?</p>
+              <p style="margin: 0; padding: 10px 14px; border-radius: 12px 12px 4px 12px; border: 1px solid var(--line); font-size: 15px; line-height: 22px;">It just arrived. Thanks! Can I still leave a review after I release?</p>
             </li>
-            <li style="align-self: flex-start; max-width: 75%; display: flex; flex-direction: column; gap: 4px;">
-              <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="font-weight: 600; color: var(--ink);">quill_7</span><span style="display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--team); font-size: 12px; line-height: 16px; font-weight: 600; color: var(--team);">Team member</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10:11</span></span>
-              <p style="margin: 0; padding: 12px 14px; border-radius: 16px 16px 16px 4px; background: var(--surface); font-size: 15px; line-height: 22px;">Yes. Once you release, the trade page asks for a review. Glad it worked out.</p>
-            </li>
+            <li style="align-self: flex-start; max-width: 90%; display: flex; gap: 8px; align-items: flex-end;"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: -0.01em; background: var(--surface-raised); border: 2px solid var(--surface-raised); color: var(--ink);">X2F</span><div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;"><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="font-size: 14px; line-height: 18px; font-weight: 600; color: var(--ink);">quill_7</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted);">X2F team</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10:11</span></span><p style="margin: 0; padding: 10px 14px; border-radius: 12px 12px 12px 4px; background: var(--surface); font-size: 15px; line-height: 22px;">Yes. Once you release, the trade page asks for a review. Glad it worked out.</p></div></li>
             <sc-for list="{{sent}}" as="m" hint-placeholder-count="0">
             <li style="align-self: flex-end; max-width: 75%; display: flex; flex-direction: column; gap: 4px;">
               <span style="align-self: flex-end; font-size: 13px; line-height: 16px; color: var(--ink-muted);">You · just now</span>
-              <p style="margin: 0; padding: 12px 14px; border-radius: 16px 16px 4px 16px; background: var(--surface-raised); font-size: 15px; line-height: 22px;">{{m.text}}</p>
+              <p style="margin: 0; padding: 10px 14px; border-radius: 12px 12px 4px 12px; border: 1px solid var(--line); font-size: 15px; line-height: 22px;">{{m.text}}</p>
             </li>
             </sc-for>
         </ol>
@@ -107,17 +102,18 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </sc-if>
       </div>
     </div>
+    <section aria-label="Design notes" style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px; width: 720px; box-sizing: border-box; padding-top: 24px; border-top: 1px solid var(--line);"><h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><li>Craft pass, 7 Nov: each topic is a row with a 40 icon tile, the name, and the radio mark trailing; the picked row keeps the 2px ink ring on surface-raised.</li><li>X2F staff are not a vendor's team: a 32 neutral X2F avatar in ink and the neutral "X2F team" tag. The ticket card leads with a 40 tile.</li></ul></section>
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["new", "thread"], "default": "new"}, "$preview": {"width": 1280, "height": 992}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["new", "thread"], "default": "new"}, "$preview": {"width": 1280, "height": 1219}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { cat: 'trades', stage: null, draft: '', sent: [] }; }
   componentDidUpdate(prev) { if (prev.view !== this.props.view) this.setState({ stage: null }); }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
@@ -129,9 +125,11 @@ class Component extends DCLogic {
       ['bug', "Something isn't working"], ['else', 'Everything else']
     ];
     // Selection is never orange: the picked category is --surface-raised with a 2px ink border.
+    const ICONS = {"login": "M4 15a4 4 0 108 0a4 4 0 10-8 0M11 12l9-9M17 6l3 3", "trades": "M4 8h14l-3-3M20 16H6l3 3", "escrow": "M5 6h14a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2zM3 10h18M16 14.5h.01", "offers": "M4 9l1.5-5h13L20 9M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11zM5.5 14v6h13v-6", "disputes": "M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z", "reviews": "M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z", "bug": "M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z", "else": "M4 5h16v11H9l-5 4z"};
     const cats = defs.map(([id, name]) => ({
-      name, on: this.state.cat === id ? 'true' : 'false', dot: dot(this.state.cat === id),
-      style: 'display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 0 14px; box-sizing: border-box; border-radius: 12px; color: var(--ink); font-family: inherit; font-size: 16px; text-align: left; cursor: pointer; ' + (this.state.cat === id ? 'background: var(--surface-raised); border: 2px solid var(--ink); font-weight: 600;' : 'background: var(--surface); border: 2px solid transparent;'),
+      name, d: ICONS[id],
+      tile: 'display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink); background: ' + (this.state.cat === id ? 'var(--surface)' : 'var(--surface-raised)') + ';', on: this.state.cat === id ? 'true' : 'false', dot: dot(this.state.cat === id),
+      style: 'display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 14px; box-sizing: border-box; border-radius: 12px; color: var(--ink); font-family: inherit; font-size: 16px; text-align: left; cursor: pointer; ' + (this.state.cat === id ? 'background: var(--surface-raised); border: 2px solid var(--ink); font-weight: 600;' : 'background: var(--surface); border: 2px solid transparent;'),
       pick: () => this.setState({ cat: id })
     }));
     return {

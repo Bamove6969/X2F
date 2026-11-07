@@ -31,7 +31,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         {{chip}}
       </span>
       <div style="display: flex; flex-direction: column; gap: 10px;">
-        <h1 id="ban-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">{{headline}}</h1>
+        <h1 id="ban-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em; text-wrap: balance;">{{headline}}</h1>
         <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">{{lead}}</p>
       </div>
       <dl style="margin: 0; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
@@ -80,7 +80,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <h2 id="ban-contact" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Think this is a mistake?</h2>
       <a href="#" style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); color: var(--ink); text-decoration: none;">
         <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/><path d="M8 9h8M8 12h5"/></svg></span>
-        <span style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">Message a moderator on Matrix</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted);">#x2f-help:example.org</span></span>
+        <span style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;"><span style="font-size: 16px; line-height: 22px; font-weight: 600; text-wrap: balance;">Message a moderator on Matrix</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted);">#x2f-help:example.org</span></span>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg>
       </a>
       <a href="#" style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); color: var(--ink); text-decoration: none;">
@@ -115,8 +115,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 class Component extends DCLogic {
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const site = this.props.variant === 'site-ban';
@@ -126,7 +126,7 @@ class Component extends DCLogic {
     const APP = { trade: 1050, 'site-date-unfinished': 1406, 'site-permanent-unfinished': 1384, 'site-date-none': 1048, 'site-permanent-none': 1048 };
     const appH = !site ? APP.trade : APP['site-' + (timed ? 'date' : 'permanent') + '-' + (unfinished ? 'unfinished' : 'none')];
     const NOTES = 741;
-    const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (appH + NOTES) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (appH + NOTES) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); text-wrap: pretty; font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + appH + 'px; display: flex; flex-direction: column; overflow: hidden;';
     const loginLine = unfinished
       ? (timed ? "Once everything is finished, you won't be able to log in again until the ban ends." : "Once everything is finished, you won't be able to log in again.")

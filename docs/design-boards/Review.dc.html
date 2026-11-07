@@ -38,7 +38,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <svg style="flex-shrink: 0; color: var(--escrow);" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
       </div>
       <div style="display: flex; flex-direction: column; gap: 10px;">
-        <h1 id="rv-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; letter-spacing: -0.03em;">1.237500</span> <span style="color: var(--monero-ink);">XMR</span> is yours</h1>
+        <h1 id="rv-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; letter-spacing: -0.03em;">1.237500</span> <span style="color: var(--monero-ink);">XMR</span> <span style="white-space: nowrap;">is yours</span></h1>
         <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Released by you and satoshi_ghost. It's on its way to your external wallet ending <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">…k3Fz</span>.</p>
       </div>
       <dl aria-label="What you receive" style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
@@ -61,19 +61,19 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </section>
 
     <sc-if value="{{rating}}" hint-placeholder-val="{{true}}">
-      <section aria-labelledby="rv-q" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <section aria-labelledby="rv-q" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;"><div style="display: flex; align-items: center; gap: 12px; min-width: 0;"><span style="position: relative; display: flex; flex-shrink: 0; width: 48px; height: 48px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); font-family: 'Familjen Grotesk', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em;">SG<span aria-label="Online" style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></span><span style="display: flex; flex-direction: column; gap: 3px; min-width: 0;"><span style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 17px; line-height: 22px; font-weight: 600;">satoshi_ghost</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></span></span></div><span style="display: flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em;">{{ratingNum}}</span><span style="font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">{{ratingOf}}</span></span></div>
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <h2 id="rv-q" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">How was trading with satoshi_ghost?</h2>
           <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Your review shows on satoshi_ghost's profile straight away.</span>
         </div>
-        <div role="radiogroup" aria-labelledby="rv-q" style="display: flex; gap: 4px; margin: 0 -6px;">
+        <div role="radiogroup" aria-labelledby="rv-q" style="display: flex; gap: 6px;">
           <sc-for list="{{pickStars}}" as="st" hint-placeholder-count="5">
-            <button type="button" role="radio" aria-checked="{{st.checked}}" aria-label="{{st.label}}" onClick="{{st.pick}}" style="display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border: 0; border-radius: 12px; background: transparent; padding: 0; cursor: pointer;">
-              <svg width="42" height="42" viewBox="0 0 24 24" aria-hidden="true" style="{{st.style}}"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="{{st.fill}}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+            <button type="button" role="radio" aria-checked="{{st.checked}}" aria-label="{{st.label}}" onClick="{{st.pick}}" style="{{st.tile}}">
+              <svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true" style="{{st.style}}"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="{{st.fill}}" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
             </button>
           </sc-for>
         </div>
-        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{ratingLabel}}</span>
       </section>
 
       <section aria-labelledby="rv-phr" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
@@ -98,7 +98,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </div>
         <div style="display: flex; flex-wrap: wrap; gap: 8px;">
           <sc-for list="{{badges}}" as="b" hint-placeholder-count="6">
-            <button type="button" aria-pressed="{{b.on}}" aria-disabled="{{b.disabled}}" onClick="{{b.toggle}}" style="{{b.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.icon}}"/></svg>{{b.label}}</button>
+            <button type="button" aria-pressed="{{b.on}}" aria-disabled="{{b.disabled}}" onClick="{{b.toggle}}" style="{{b.style}}"><span aria-hidden="true" style="{{b.seal}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.icon}}"/></svg></span>{{b.label}}</button>
           </sc-for>
         </div>
       </section>
@@ -111,10 +111,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </sc-if>
 
     <sc-if value="{{thanks}}" hint-placeholder-val="{{false}}">
-    <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
-      <svg style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">{{thanksText}}</p>
-    </div>
+<sc-if value="{{wasSaved}}" hint-placeholder-val="{{true}}"><section role="status" aria-labelledby="rvd-saved" style="display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 24px; text-align: center;"><span style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg></span><h2 id="rvd-saved" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">{{thanksTitle}}</h2><p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">{{thanksText}}</p></section></sc-if><sc-if value="{{wasSkipped}}" hint-placeholder-val="{{false}}"><section role="status" aria-labelledby="rvd-skipped" style="display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 24px; text-align: center;"><span style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: var(--surface-raised); color: var(--ink);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 5l8 7-8 7z"/><path d="M18 5v14"/></svg></span><h2 id="rvd-skipped" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">{{thanksTitle}}</h2><p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">{{thanksText}}</p></section></sc-if>
 
     <section aria-labelledby="rv-x2f" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
       <div style="display: flex; flex-direction: column; gap: 4px;">
@@ -158,7 +155,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":2191}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":2219}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -166,12 +163,12 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     // Measured app heights (the design notes sit below the app screen).
-    const APP_H = this.state.submitted ? 1202 : 2016;
+    const APP_H = this.state.submitted ? 1418 : 2044;
     const NOTES_H = 175;
     const rootStyle = THEMES[theme] + 'position: relative; overflow: hidden; width: 390px; height: ' + (APP_H + NOTES_H) + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + APP_H + 'px; display: flex; flex-direction: column;';
@@ -189,7 +186,10 @@ class Component extends DCLogic {
     // Owner, 2 Nov: a review is visible right away; "Skip review" shows nothing to anyone.
     const flow = {
       rating: !this.state.submitted, thanks: this.state.submitted, moods,
-      thanksText: this.state.skipped ? 'Review skipped. satoshi_ghost sees nothing from you.' : 'Review saved. satoshi_ghost can see it right away.',
+      // Same sentences as before, split into a title and a line for the result state.
+      thanksTitle: this.state.skipped ? 'Review skipped.' : 'Review saved.',
+      thanksText: this.state.skipped ? 'satoshi_ghost sees nothing from you.' : 'satoshi_ghost can see it right away.',
+      wasSaved: this.state.submitted && !this.state.skipped, wasSkipped: this.state.submitted && this.state.skipped,
       submit: () => this.setState({ submitted: true, skipped: false }),
       skip: () => this.setState({ submitted: true, skipped: true })
     };
@@ -204,6 +204,8 @@ class Component extends DCLogic {
         checked: n === rating ? 'true' : 'false',
         fill: n <= rating ? 'currentColor' : 'none',
         style: 'color: ' + (n <= rating ? 'var(--caution)' : 'var(--line)') + ';',
+        // Seal tiles (Badges seal, caution family): picked stars get the seal wash and ring.
+        tile: 'display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; box-sizing: border-box; border-radius: 12px; padding: 0; cursor: pointer; ' + (n <= rating ? 'background: color-mix(in srgb, var(--caution) 16%, var(--surface-raised)); border: 1.5px solid color-mix(in srgb, var(--caution) 55%, transparent);' : 'background: var(--surface-raised); border: 1.5px solid transparent;'),
         pick: () => this.setState({ r5: n })
       });
     }
@@ -238,14 +240,16 @@ class Component extends DCLogic {
       return {
         label, icon, on: on ? 'true' : 'false',
         disabled,
-        style: chipBase + 'display: inline-flex; align-items: center; gap: 6px; ' + (on
-          ? 'border: 2px solid var(--ink); background: var(--surface-raised); color: var(--ink); font-weight: 600;'
-          : 'border: 1px solid var(--line); background: transparent; color: ' + (disabled ? 'var(--ink-muted)' : 'var(--ink)') + '; opacity: ' + (disabled ? '0.5' : '1') + ';'),
+        // Badge chips (Badges chip + 22 px escrow seal); picked = 2px ink border, never orange.
+        seal: disabled ? 'display: flex; flex-shrink: 0; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: color-mix(in srgb, var(--ink-muted) 16%, var(--surface-raised)); border: 1px solid color-mix(in srgb, var(--ink-muted) 55%, transparent); color: var(--ink-muted);' : 'display: flex; flex-shrink: 0; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: color-mix(in srgb, var(--escrow) 16%, var(--surface-raised)); border: 1px solid color-mix(in srgb, var(--escrow) 55%, transparent); color: var(--escrow);',
+        style: 'display: inline-flex; align-items: center; gap: 8px; min-height: 44px; box-sizing: border-box; padding: 0 14px 0 10px; border-radius: 999px; font-family: inherit; font-size: 15px; cursor: pointer; background: var(--surface-raised); ' + (on
+          ? 'border: 2px solid var(--ink); color: var(--ink); font-weight: 600;'
+          : 'border: 1px solid color-mix(in srgb, var(--escrow) 32%, transparent); color: ' + (disabled ? 'var(--ink-muted)' : 'var(--ink)') + '; opacity: ' + (disabled ? '0.5' : '1') + ';'),
         toggle: () => { if (!disabled) this.setState({ badges: Object.assign({}, s.badges, { [label]: !on }) }); }
       };
     });
     return Object.assign({ rootStyle, appStyle, confs,
-      pickStars, ratingLabel: rating + ' of ' + max,
+      pickStars, ratingLabel: rating + ' of ' + max, ratingNum: String(rating), ratingOf: 'of ' + max,
       phrases, badges,
       badgeCount: pickedCount + ' of 3 picked',
       note: s.note, noteCount: s.note.length + ' / 200',

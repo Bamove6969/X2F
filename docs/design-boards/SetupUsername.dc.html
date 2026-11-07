@@ -24,9 +24,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <a href="SetupTerms.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
       <span style="padding: 0 10px; font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink-muted);">Step <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; color: var(--ink);">{{step}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{total}}</span></span>
     </div>
-    <div role="progressbar" aria-label="Setup progress" aria-valuemin="1" aria-valuemax="{{total}}" aria-valuenow="{{step}}" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px;">
-      <sc-for list="{{bars}}" as="b" hint-placeholder-count="5"><span style="{{b.style}}"></span></sc-for>
-    </div>
+    <ol aria-label="Setup progress" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 8px 0 0; padding: 0; list-style: none;">
+      <sc-for list="{{bars}}" as="b" hint-placeholder-count="5"><li aria-current="{{b.cur}}" style="display: flex; flex-direction: column; gap: 6px; min-width: 0;"><span aria-hidden="true" style="{{b.style}}"></span><span style="{{b.labelStyle}}">{{b.label}}</span></li></sc-for>
+    </ol>
     <span style="margin-top: 20px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Set up your account · Takes about 2 minutes.</span>
     <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Pick a username</h1>
   </header>
@@ -59,14 +59,17 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 class Component extends DCLogic {
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 844px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     // Onboarding layout (shared by every Setup* board): step N of 5, done + current bars in ink, the rest raised.
     const STEP = 1, TOTAL = 5;
-    const bars = Array.from({ length: TOTAL }, (_, i) => ({ style: 'display: block; height: 4px; border-radius: 999px; background: ' + (i < STEP ? 'var(--ink);' : 'var(--surface-raised);') }));
+    const STEP_LABELS = ['Username', 'Log in', 'PGP key', 'Backup', 'Wallet'];
+    const bars = STEP_LABELS.map((label, i) => { const n = i + 1; const done = n < 1; const cur = n >= 1 && n <= 1;
+      return { label, cur: cur ? 'step' : 'false', style: 'display: block; height: 4px; border-radius: 999px; background: ' + (done ? 'var(--escrow);' : cur ? 'var(--ink);' : 'var(--surface-raised);'),
+        labelStyle: 'font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ' + (cur ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);') }; });
     return { rootStyle, bars, step: String(STEP), total: String(TOTAL) };
   }
 }

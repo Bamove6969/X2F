@@ -18,8 +18,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <header style="display: flex; align-items: center; padding: 24px 32px;">
-    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em;">X2F</span>
+  <header style="position: relative; display: flex; align-items: center; justify-content: center; padding: 56px 32px 0;">
+    <span role="img" aria-label="X2F" style="font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true" style="color: var(--ink);">X2F</span></span>
   </header>
 
   <div style="flex-grow: 1; display: flex; justify-content: center; align-items: flex-start; padding: 16px 32px 48px;">
@@ -32,13 +32,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <section aria-labelledby="ii-title" style="{{heroStyle}}">
           <span style="{{chipStyle}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 15l-1.5 1.5a3.5 3.5 0 01-5-5L5 9"/><path d="M15 9l1.5-1.5a3.5 3.5 0 015 5L19 15"/><path d="M4 4l16 16"/></svg>{{chip}}</span>
           <div style="display: flex; flex-direction: column; gap: 8px;">
-            <h1 id="ii-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 40px; line-height: 44px; font-weight: 700; letter-spacing: -0.02em;">This invite link doesn't work</h1>
+            <h1 id="ii-title" style="margin: 0; text-wrap: balance; font-family: 'Familjen Grotesk', sans-serif; font-size: 40px; line-height: 44px; font-weight: 700; letter-spacing: -0.02em;">This invite link doesn't work</h1>
             <p style="margin: 4px 0 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{headline}}</p>
             <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">{{body}}</p>
           </div>
           <sc-if value="{{hasWhen}}" hint-placeholder-val="{{true}}">
             <dl style="margin: 0; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
-              <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; margin: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Team account</dt><dd style="margin: 0; font-size: 15px; font-weight: 600;">satoshi_ghost</dd></div>
+              <div style="display: flex; align-items: center; gap: 12px; padding: 14px;"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; background: var(--surface-raised); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); color: var(--ink);">SG</span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><dt style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Team account</dt><dd style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">satoshi_ghost</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></dd></span></div>
               <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; margin: 0 14px; border-top: 1px solid var(--surface); font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">{{whenLabel}}</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500; text-align: right;">{{whenValue}}</dd></div>
             </dl>
           </sc-if>
@@ -65,7 +65,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <section aria-labelledby="ii-next" style="display: flex; align-items: flex-start; gap: 14px; padding: 20px; border-radius: 16px; border: 1px solid var(--line);">
           <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg></span>
           <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
-            <h2 id="ii-next" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{askTitle}}</h2>
+            <h2 id="ii-next" style="margin: 0; text-wrap: balance; font-size: 18px; line-height: 24px; font-weight: 600;">{{askTitle}}</h2>
             <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">{{askBody}}</p>
           </div>
         </section>
@@ -82,12 +82,12 @@ class Component extends DCLogic {
   constructor(props) { super(props); this.state = {}; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     // Board height = measured content height: 800 (the minimum) for every reason except 'used', whose extra callout needs 827.
-    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + (this.props.reason === 'used' ? 827 : 800) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + (this.props.reason === 'used' ? 863 : 800) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const REASONS = ['expired', 'used', 'revoked', 'full', 'incomplete'];
     const r = REASONS.indexOf(this.props.reason) >= 0 ? this.props.reason : 'expired';
     const ask = 'Ask satoshi_ghost for a new link';

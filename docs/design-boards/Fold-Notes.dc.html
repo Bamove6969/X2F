@@ -14,6 +14,8 @@ body{margin:0}
 button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
 @media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+p,li{text-wrap:pretty}
+h1,h2,h3{text-wrap:balance}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
@@ -28,46 +30,46 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <table style="width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px;">
         <thead>
           <tr>
-            <th scope="col" style="width: 72px; padding: 4px 0; text-align: left; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Diagram</span></th>
+            <th scope="col" style="width: 80px; padding: 4px 0; text-align: left; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Diagram</span></th>
             <th scope="col" style="padding: 4px 8px 4px 0; text-align: left; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Posture</th>
             <th scope="col" style="padding: 4px 0; text-align: left; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Layout</th>
           </tr>
         </thead>
         <tbody>
           <tr style="border-top: 1px solid var(--surface-raised);">
-            <td style="padding: 10px 0;">
-              <svg width="64" height="48" viewBox="0 0 64 48" aria-hidden="true" style="color: var(--line);"><rect x="22" y="2" width="22" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="25" y="7" width="16" height="34" rx="1" style="fill: var(--surface-raised);"/></svg>
+            <td style="padding: 12px 0;">
+              <span aria-hidden="true" style="display: flex; width: 64px; height: 52px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised);"><svg width="52" height="39" viewBox="0 0 64 48" aria-hidden="true" style="color: var(--ink-muted);"><rect x="22" y="2" width="22" height="44" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="25" y="7" width="16" height="34" rx="1" style="fill: var(--surface);"/></svg></span>
             </td>
-            <th scope="row" style="padding: 10px 8px 10px 0; text-align: left; font-weight: 600; vertical-align: middle;">Folded, cover screen</th>
-            <td style="padding: 10px 0;">Book folds: the normal phone layout, same boards as the phone.</td>
+            <th scope="row" style="padding: 12px 8px 12px 0; text-align: left; font-weight: 600; vertical-align: middle;">Folded, cover screen</th>
+            <td style="padding: 12px 0;">Book folds: the normal phone layout, same boards as the phone.</td>
           </tr>
           <tr style="border-top: 1px solid var(--surface-raised);">
-            <td style="padding: 10px 0;">
-              <svg width="64" height="48" viewBox="0 0 64 48" aria-hidden="true" style="color: var(--line);"><rect x="12" y="4" width="40" height="40" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="32" cy="24" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="25" y="20" width="14" height="8" rx="1" style="fill: var(--surface-raised);"/></svg>
+            <td style="padding: 12px 0;">
+              <span aria-hidden="true" style="display: flex; width: 64px; height: 52px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised);"><svg width="52" height="39" viewBox="0 0 64 48" aria-hidden="true" style="color: var(--ink-muted);"><rect x="12" y="4" width="40" height="40" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="32" cy="24" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="25" y="20" width="14" height="8" rx="1" style="fill: var(--surface);"/></svg></span>
             </td>
-            <th scope="row" style="padding: 10px 8px 10px 0; text-align: left; font-weight: 600; vertical-align: middle;">Flip, small cover</th>
-            <td style="padding: 10px 0;">Flip and Razr-type only. One active trade at a glance.</td>
+            <th scope="row" style="padding: 12px 8px 12px 0; text-align: left; font-weight: 600; vertical-align: middle;">Flip, small cover</th>
+            <td style="padding: 12px 0;">Flip and Razr-type only. One active trade at a glance.</td>
           </tr>
           <tr style="border-top: 1px solid var(--surface-raised);">
-            <td style="padding: 10px 0;">
-              <svg width="64" height="48" viewBox="0 0 64 48" aria-hidden="true" style="color: var(--line);"><rect x="6" y="4" width="52" height="40" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="10" y="8" width="19" height="32" rx="1" style="fill: var(--surface-raised);"/><rect x="35" y="8" width="19" height="32" rx="1" style="fill: var(--surface-raised);"/><path d="M32 2v44" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/></svg>
+            <td style="padding: 12px 0;">
+              <span aria-hidden="true" style="display: flex; width: 64px; height: 52px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised);"><svg width="52" height="39" viewBox="0 0 64 48" aria-hidden="true" style="color: var(--ink-muted);"><rect x="6" y="4" width="52" height="40" rx="4" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="10" y="8" width="19" height="32" rx="1" style="fill: var(--surface);"/><rect x="35" y="8" width="19" height="32" rx="1" style="fill: var(--surface);"/><path d="M32 2v44" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/></svg></span>
             </td>
-            <th scope="row" style="padding: 10px 8px 10px 0; text-align: left; font-weight: 600; vertical-align: middle;">Unfolded</th>
-            <td style="padding: 10px 0;">Two panes. List on the left, detail on the right.</td>
+            <th scope="row" style="padding: 12px 8px 12px 0; text-align: left; font-weight: 600; vertical-align: middle;">Unfolded</th>
+            <td style="padding: 12px 0;">Two panes. List on the left, detail on the right.</td>
           </tr>
           <tr style="border-top: 1px solid var(--surface-raised);">
-            <td style="padding: 10px 0;">
-              <svg width="64" height="48" viewBox="0 0 64 48" aria-hidden="true" style="color: var(--line);"><path d="M8 26L16 4h40l-8 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><rect x="8" y="26" width="48" height="18" rx="2" style="fill: var(--surface-raised);"/><path d="M8 26h48" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/></svg>
+            <td style="padding: 12px 0;">
+              <span aria-hidden="true" style="display: flex; width: 64px; height: 52px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised);"><svg width="52" height="39" viewBox="0 0 64 48" aria-hidden="true" style="color: var(--ink-muted);"><path d="M8 26L16 4h40l-8 22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><rect x="8" y="26" width="48" height="18" rx="2" style="fill: var(--surface);"/><path d="M8 26h48" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2"/></svg></span>
             </td>
-            <th scope="row" style="padding: 10px 8px 10px 0; text-align: left; font-weight: 600; vertical-align: middle;">Tabletop, half open</th>
-            <td style="padding: 10px 0;">Top half to look at. Bottom half to touch.</td>
+            <th scope="row" style="padding: 12px 8px 12px 0; text-align: left; font-weight: 600; vertical-align: middle;">Tabletop, half open</th>
+            <td style="padding: 12px 0;">Top half to look at. Bottom half to touch.</td>
           </tr>
           <tr style="border-top: 1px solid var(--surface-raised);">
-            <td style="padding: 10px 0;">
-              <svg width="64" height="48" viewBox="0 0 64 48" aria-hidden="true" style="color: var(--line);"><rect x="2" y="6" width="60" height="36" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="6" y="10" width="8" height="28" rx="1" style="fill: var(--surface-raised);"/><rect x="17" y="10" width="26" height="28" rx="1" style="fill: var(--surface-raised);"/><rect x="46" y="10" width="12" height="28" rx="1" style="fill: var(--surface-raised);"/></svg>
+            <td style="padding: 12px 0;">
+              <span aria-hidden="true" style="display: flex; width: 64px; height: 52px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised);"><svg width="52" height="39" viewBox="0 0 64 48" aria-hidden="true" style="color: var(--ink-muted);"><rect x="2" y="6" width="60" height="36" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="6" y="10" width="8" height="28" rx="1" style="fill: var(--surface);"/><rect x="17" y="10" width="26" height="28" rx="1" style="fill: var(--surface);"/><rect x="46" y="10" width="12" height="28" rx="1" style="fill: var(--surface);"/></svg></span>
             </td>
-            <th scope="row" style="padding: 10px 8px 10px 0; text-align: left; font-weight: 600; vertical-align: middle;">Wide, tri-fold open</th>
-            <td style="padding: 10px 0;">Three panes: list, detail, chat. Desktop keeps its nav rail.</td>
+            <th scope="row" style="padding: 12px 8px 12px 0; text-align: left; font-weight: 600; vertical-align: middle;">Wide, tri-fold open</th>
+            <td style="padding: 12px 0;">Three panes: list, detail, chat. Desktop keeps its nav rail.</td>
           </tr>
         </tbody>
       </table>
@@ -77,12 +79,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <h2 id="fn-rules" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Rules</h2>
       <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px;">
         <sc-for list="{{rules}}" as="r" hint-placeholder-count="5">
-          <li style="display: flex; gap: 12px; align-items: flex-start;">
-            <svg width="44" height="36" viewBox="0 0 44 36" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--line);">
+          <li style="display: flex; gap: 14px; align-items: center;">
+            <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 56px; height: 48px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised);"><svg width="40" height="33" viewBox="0 0 44 36" aria-hidden="true" style="color: var(--ink-muted);">
               <rect x="1" y="1" width="42" height="34" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>
               <path d="{{r.mark}}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="{{r.dash}}"/>
-              <rect x="{{r.bx}}" y="{{r.by}}" width="{{r.bw}}" height="{{r.bh}}" rx="1" style="fill: var(--surface-raised);"/>
-            </svg>
+              <rect x="{{r.bx}}" y="{{r.by}}" width="{{r.bw}}" height="{{r.bh}}" rx="1" style="fill: var(--surface);"/>
+            </svg></span>
             <span style="display: flex; flex-direction: column; gap: 2px;">
               <span style="font-size: 15px; line-height: 20px; font-weight: 600;">{{r.title}}</span>
               <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{r.text}}</span>
@@ -96,7 +98,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <section aria-labelledby="fn-devices" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
     <h2 id="fn-devices" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Devices</h2>
     <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Layouts are fluid. They switch on the width the app gets, not on the phone model.</p>
-    <svg width="736" height="56" viewBox="0 0 776 56" role="img" aria-label="Width breakpoints: under 600 is phone, 600 to 999 is two panes, 1000 and up is three panes" style="color: var(--line);">
+    <svg width="736" height="56" viewBox="0 0 776 56" role="img" aria-label="Width breakpoints: under 600 is phone, 600 to 999 is two panes, 1000 and up is three panes" style="color: var(--ink-muted);">
       <rect x="0" y="4" width="220" height="28" rx="6" style="fill: var(--surface-raised);"/>
       <rect x="226" y="4" width="270" height="28" rx="6" style="fill: var(--surface-raised);"/>
       <rect x="502" y="4" width="274" height="28" rx="6" style="fill: var(--surface-raised);"/>
@@ -145,15 +147,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":840,"height":2026}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":840,"height":2046}}'>
 class Component extends DCLogic {
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 840px; min-height: 2026px; box-sizing: border-box; padding: 32px; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column; gap: 24px;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 840px; min-height: 2046px; box-sizing: border-box; padding: 32px; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column; gap: 24px;";
     const rules = [
       { title: 'Keep content off the fold', text: 'Leave a 16px gutter on the hinge. No text, buttons or chat bubbles in it.',
         mark: 'M22 1v34', dash: '2 2', bx: 4, by: 4, bw: 14, bh: 28 },

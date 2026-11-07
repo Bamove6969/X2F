@@ -26,11 +26,11 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase;">Superseded</span>
       <span style="font-weight: 600;">Superseded by the owner&#39;s hold model (2 Nov): everyone is logged out during a hold, so there is nothing to block. Kept for reference only.</span>
     </aside>
-    <section aria-labelledby="bq-alert" style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; border: 1px solid var(--danger); background: var(--surface);">
-      <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--danger);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4M12 16h.01"/></svg>Security alert</span>
-      <h2 id="bq-alert" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your recovery code was used to log in</h2>
+    <section aria-labelledby="bq-alert" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--danger) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);">
+      <span style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--danger) 14%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--danger);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4M12 16h.01"/></svg>Security alert</span>
+      <h2 id="bq-alert" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Your recovery code was used to log in</h2>
       <p style="margin: 0; font-size: 16px; line-height: 24px;">On <span style="font-weight: 600;">Firefox, Linux</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">1 Nov 2026, 13:58 UTC</span>. That device is on a 24-hour hold. Nothing it changes takes effect before <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">2 Nov 2026, 13:58 UTC</span>.</p>
-      <p style="margin: 0; font-size: 16px; line-height: 24px;">If you don&#39;t recognise a change below, block it.</p>
+      <p style="margin: 0; font-size: 16px; line-height: 24px; text-wrap: balance;">If you don&#39;t recognise a change below, block it.</p>
     </section>
 
     <sc-if value="{{hasNote}}" hint-placeholder-val="{{false}}">
@@ -127,7 +127,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["alert","confirm","blocked"],"default":"alert"},"logoutRule":{"editor":"enum","options":["always","user-chooses","never"],"default":"always"},"$preview":{"width":390,"height":1540}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["alert","confirm","blocked"],"default":"alert"},"logoutRule":{"editor":"enum","options":["always","user-chooses","never"],"default":"always"},"$preview":{"width":390,"height":1344}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.fromStep(props.step); }
   fromStep(step) {
@@ -138,8 +138,8 @@ class Component extends DCLogic {
   componentDidUpdate(prev) { if (prev.step !== this.props.step) this.setState(this.fromStep(this.props.step)); }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";

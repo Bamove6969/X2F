@@ -15,6 +15,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
 input::placeholder{color:var(--ink-muted)}
 button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
 @keyframes x2f-sheet-in{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+p,li{text-wrap:pretty}
 @media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
@@ -35,7 +36,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <sc-if value="{{isProfile}}" hint-placeholder-val="{{true}}">
       <div style="width: 720px; display: flex; flex-direction: column; gap: 24px;">
         <section style="position: relative; display: flex; align-items: center; gap: 16px;">
-          <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 64px; height: 64px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--line); font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; font-weight: 700;">N</span>
+          <span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 48px; height: 48px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink);">NO</span>
           <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1;">
             <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">nightowl_44</h1>
             <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Seen <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h ago · member since <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">Jun 2025</span></span>
@@ -78,6 +79,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </div>
         <section aria-label="Chat with nightowl_44" style="display: flex; flex-direction: column; border-radius: 16px; background: var(--surface);">
           <div style="position: relative; display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-bottom: 1px solid var(--surface-raised);">
+            <span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;">NO</span>
             <div style="display: flex; flex-direction: column; flex-grow: 1;">
               <span style="font-size: 16px; line-height: 22px; font-weight: 600;">nightowl_44</span>
               <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">58</span> trades · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">97%</span> positive</span>
@@ -116,9 +118,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
     <sc-if value="{{isSettings}}" hint-placeholder-val="{{false}}">
       <div style="width: 720px; display: flex; flex-direction: column; gap: 24px;">
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <a href="#" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; height: 44px; margin: -10px 0 -6px -6px; padding: 0 6px; font-size: 14px; font-weight: 600; color: var(--monero-ink); text-decoration: none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Settings</a>
-          <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Blocked traders</h1>
+        <div style="display: flex; align-items: flex-start; gap: 8px; margin-left: -12px;">
+          <a href="#" aria-label="Back to settings" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+          <div style="display: flex; flex-direction: column; gap: 4px; padding-top: 2px;">
+            <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Settings</span>
+            <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Blocked traders</h1>
+          </div>
         </div>
         <section aria-labelledby="blkw-what" style="display: flex; flex-direction: column; gap: 12px; padding: 20px 24px; border-radius: 16px; background: var(--surface);">
           <h2 id="blkw-what" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What blocking does</h2>
@@ -134,7 +139,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <div style="display: flex; flex-direction: column; padding: 4px 0; border-radius: 16px; background: var(--surface);">
             <sc-for list="{{rows}}" as="r" hint-placeholder-count="3">
               <div style="{{r.rowStyle}}">
-                <span style="{{r.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg></span>
+                <span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; {{r.avatarTone}}">{{r.initials}}<sc-if value="{{r.isBlocked}}" hint-placeholder-val="{{true}}"><span style="position: absolute; right: -3px; bottom: -3px; display: flex; width: 18px; height: 18px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--danger); color: var(--surface); border: 2px solid var(--surface);"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg></span></sc-if></span>
                 <span style="{{r.nameStyle}}">{{r.name}}</span>
                 <span style="flex-grow: 1; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{r.sub}}</span>
                 <sc-if value="{{r.isBlocked}}" hint-placeholder-val="{{true}}">
@@ -154,7 +159,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <sc-if value="{{confirmOpen}}" hint-placeholder-val="{{false}}">
     <div style="position: absolute; inset: 0; z-index: 3; background: var(--scrim); display: flex; align-items: center; justify-content: center;">
       <section role="dialog" aria-modal="true" aria-labelledby="blkw-title" style="width: 520px; box-sizing: border-box; padding: 28px; border-radius: 16px; border: 1px solid var(--surface-raised); background: var(--surface); display: flex; flex-direction: column; gap: 16px; animation: x2f-sheet-in 200ms ease-out;">
-        <h2 id="blkw-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Block nightowl_44?</h2>
+        <div style="display: flex; align-items: center; gap: 14px;"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 48px; height: 48px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; color: var(--ink);">NO</span><h2 id="blkw-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Block nightowl_44?</h2></div>
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <p style="margin: 0; font-size: 16px; line-height: 24px;">Once blocked, nightowl_44 can't:</p>
           <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 16px; line-height: 24px;">
@@ -194,8 +199,8 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const view = ['profile', 'chat', 'settings'].indexOf(this.props.view) >= 0 ? this.props.view : 'profile';
@@ -213,6 +218,8 @@ class Component extends DCLogic {
       const isUn = !!un[name];
       return {
         name,
+        initials: ({ nightowl_44: 'NO', quickflip_22: 'QF', cashbymail_ann: 'CA' })[name] || name.slice(0, 2).toUpperCase(),
+        avatarTone: isUn ? 'color: var(--ink-muted);' : 'color: var(--ink);',
         sub: isUn ? 'Unblocked. They can see your offers again.' : 'Blocked ' + date,
         nameStyle: 'width: 200px; flex-shrink: 0; font-size: 16px; line-height: 22px; font-weight: 600; color: ' + (isUn ? 'var(--ink-muted)' : 'var(--ink)') + ';',
         rowStyle: 'display: flex; align-items: center; gap: 16px; min-height: 64px; padding: 12px 20px; box-sizing: border-box;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : ''),

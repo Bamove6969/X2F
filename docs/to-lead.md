@@ -534,3 +534,33 @@ All new wording is COPY-UNSIGNED.
 **G57/G58, approval view:** HoldChange gets a "Changes waiting for you" state for a strong lead. It shows the same before/after list, a countdown (23 h 12 min) and three actions: **Approve now** (primary), **Make changes**, **Cancel all**. Team kick-outs show "Logged out now · removed in 24 h"; other team changes show "Applies after 24 h".
 
 **What I need from the owner:** sign-off on the G56 wording above and on the gift card brand list. Nothing else is blocking me.
+
+## 7 Nov 2026: craft pass published (canvas v128), all 132 boards
+
+Canvas https://claude.ai/artifact/NRhrWVvBrSwJ1Dt8oxp4eH is v128: every board carries the craft pass (brief `design-craft-brief-2026-11-07.md`), the cohesion review (three parallel reviewers, ~70 boards changed), Monero's true orange #ff6600, and the owner's G54/G56/G57/G58 boards. Boards and canvas.json are in `docs/design-boards/`; final renders were checked night and day; every board passes check-board.js and no variant clips. Canvas layout was re-banded (Main is now 6473 px tall with the full method list), so the sections sit further apart; section notes moved with them.
+
+**Head-designer decisions (visual, no owner sign-off needed)**
+- One cast, one set of facts everywhere: satoshi_ghost 1,284 · 99.4% · 275.4 XMR (Trusted + Fast +3); mira.k 212 · 99% · 41.7 (PGP verified featured, +3: Fast, Security key, 100 trades; no ring); nightowl_44 58 · 97% · 12.6; kettle.moss 96 · 98% · 31.2; lowtide_rx 12 · 100% · 2.9 (New).
+- Trusted's meaning is now "500+ trades and 98%+ positive" (was 100+), so mira.k's numbers no longer contradict her lack of a ring. Badge meaning only; the product rule is yours and the owner's to confirm. COPY-UNSIGNED.
+- Market price $329.90 / XMR on every list, quote and ad (OfferAd, Badges fixed). The example trade's locked rate stays $330.00 → $412.50 on the 38 trade boards: a locked rate is a trade-time fact, not the market.
+- Badge chips and "+N" are 44 px transparent buttons everywhere, including the Badges reference and `gen/badges.py`.
+- "Settings" 13/16 context line above every settings sub-page title (phone and wide). Wallet's Back now goes to Settings.
+- Kits adopted as shared: trader card, recipient row, offline card, parties strip, evidence tile, chat message, decided-by row, setup stepper, rating chip, done_state, team kit, KPI cell, the one empty-state mark. Avatar/icon tiles on a raised block use a surface fill. ProofBlur's dashed on-image marks stay. Frame floors 844/800 stay.
+- X2F support staff are drawn neutral ("X2F team" tag, ink avatar); `--team` is reserved for a vendor's team. TeamChat's partner view draws the member as a `--team` people-icon avatar (no name).
+- Per-variant root heights everywhere (no empty bands).
+
+**COPY-UNSIGNED (new or changed visible words, for the owner)**
+- Team / Team-Wide: "Everything allowed" description is now "Every permission." (was "Every permission except the ones coming later.", which contradicted MemberPermissions' 31).
+- Team totals "of 19" → "of 31" (TeamRefusal, MemberApproval, Team).
+- Trusted badge meaning: "500+ trades and 98%+ positive".
+- Support / Support-Wide: headline "Ask a team member" still says "team member" for X2F staff; now that "team" means a vendor's team it may need rewording. Not changed; your call to raise.
+- ProfileVisibility (G54): "Counts X2F trades only; imported volume shows on its own line." / "Imported from LocalMonero: 120.0 XMR" / "Your X2F total so far".
+- CancelRequest (G56): your wording, as sent. Refunded's lead loses "If you already sent the payment, open a dispute below."
+- HoldChange (G57/58): "Changes waiting for you" / "Submitted with just a username and password. Your login is strong, so you can decide now." / "Time left" / "Submitted by" / "Apply on their own" / "Logged out now · removed in 24 h" / "Removed now · final in 24 h" / "If you log in with a passkey, security key or PGP key you had before the hold, you see these changes waiting and can approve them now, make changes or cancel all."
+- Badges board: "Prices are examples at a $329.90 / XMR market" (design note only).
+
+**G47 foldables**: research note `docs/design-research-foldables-2026-11-07.md`. Apple's iPhone Duo is a book fold (cover 382 CSS px, inner 669/951). Android Back is an edge swipe from either side, unchanged when unfolded; no system Back on iPhone. Design by screen shape, not brand: the existing phone / two-pane / tabletop Fold boards cover it; every screen keeps its own Back control, sheets are history entries, no edge-swipe confirms. No new boards needed; no per-brand boards (G48 closed).
+
+**Build follow-ups (1)–(3)**: pushed as `wip/design-build-followups` @88a6eb63 (READY), branched from wip/third-design-build since main didn't carry it yet; it rebases cleanly once that lands. Web tests 86 files / 1226 pass, tsc clean.
+
+**Needed from the owner**: G56 wording sign-off; the gift card brand list; the four questions above (login-method removal 24 h wait; cancel during the wait restores removed items; seller's 90 min from escrow secured; buyer cancel window); the COPY-UNSIGNED list here; G46 Devices wording items.

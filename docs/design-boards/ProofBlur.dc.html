@@ -113,14 +113,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </div>
         </div>
 
-        <p style="display: flex; gap: 8px; align-items: flex-start; margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
-          <svg style="flex-shrink: 0; margin-top: 2px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>
-          <span>We blur your private details automatically, and you check the result before it&#39;s sent. Hidden photo data (EXIF), like location and device, is removed too.</span>
-        </p>
-        <p style="display: flex; gap: 8px; align-items: flex-start; margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
-          <svg style="flex-shrink: 0; margin-top: 2px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>
-          <span>We keep an encrypted unblurred copy that only a moderator can open, and only if there&#39;s a dispute. It&#39;s deleted automatically when the trade is over.</span>
-        </p>
+        <ul aria-label="How your proof is protected" style="margin: 0; padding: 0 14px; list-style: none; display: flex; flex-direction: column; border-radius: 16px; background: var(--surface);"><li style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 0;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 10px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.1A10 10 0 0112 6c5 0 9 6 9 6a17 17 0 01-2.6 3.2M6.6 6.6C4.3 8.1 3 12 3 12s4 6 9 6c1.6 0 3-.4 4.3-1.1"/><path d="M9.9 10a3 3 0 004.1 4.1"/></svg></span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">We blur your private details automatically, and you check the result before it&#39;s sent. Hidden photo data (EXIF), like location and device, is removed too.</span></li><li style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--surface-raised);"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 10px; background: var(--surface-raised); color: var(--ink);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">We keep an encrypted unblurred copy that only a moderator can open, and only if there&#39;s a dispute. It&#39;s deleted automatically when the trade is over.</span></li></ul>
       </main>
 
       <div role="toolbar" aria-label="Blur tools" style="display: grid; grid-template-columns: 78px 94px 64px 1fr; gap: 6px; padding: 6px 16px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
@@ -245,6 +238,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
     <p style="margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink);">Showing: {{stepName}}</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Craft pass, 7 Nov: the two privacy promises are one surface block with 32 icon tiles (eye-off in escrow, lock in ink) and an inset divider, instead of two loose lines on the ground. Wording unchanged.</p>
 
     <aside aria-label="Decided by the owner: payment proof privacy" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
@@ -334,7 +328,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["review","drawing","removing","preview","sent"],"default":"review"},"removeAuto":{"editor":"enum","options":["add-only","confirm-to-show"],"default":"add-only"},"protect":{"editor":"enum","options":["warn","no-warning"],"default":"warn"},"date":{"editor":"enum","options":["found","missing"],"default":"found"},"$preview":{"width":390,"height":3001}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["review","drawing","removing","preview","sent"],"default":"review"},"removeAuto":{"editor":"enum","options":["add-only","confirm-to-show"],"default":"add-only"},"protect":{"editor":"enum","options":["warn","no-warning"],"default":"warn"},"date":{"editor":"enum","options":["found","missing"],"default":"found"},"$preview":{"width":390,"height":3161}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -350,8 +344,8 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const STEPS = ['review', 'drawing', 'removing', 'preview', 'sent'];
@@ -365,10 +359,10 @@ class Component extends DCLogic {
     const push = (boxes, extra) => set(Object.assign({ boxes: boxes, hist: c.hist.concat([c.boxes]) }, extra || {}));
 
     // Board = 844 px phone screen + the design-notes block under it (measured, night, fonts loaded).
-    const NOTES_H = 2121;
+    const NOTES_H = 2205;
     const dateMissing = this.props.date === 'missing';
     // The date callout sits in the footer, so the phone screen grows by its height.
-    const APP_H = 880 + (dateMissing && !c.sent ? 112 : 0);
+    const APP_H = 956 + (dateMissing && !c.sent ? 112 : 0);
     const H = APP_H + NOTES_H;
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + APP_H + 'px; display: flex; flex-direction: column; overflow: hidden;';
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";

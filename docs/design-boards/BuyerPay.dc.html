@@ -18,7 +18,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <div style="position: relative; flex-shrink: 0; height: 1076px; overflow: hidden; display: flex; flex-direction: column;">
+  <div style="position: relative; flex-shrink: 0; height: {{appH}}; overflow: hidden; display: flex; flex-direction: column;">
   <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
     <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
       <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);">
@@ -29,7 +29,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         Chat
       </a>
     </div>
-    <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
+    <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
     <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Buying from satoshi_ghost</h1>
   </header>
 
@@ -45,10 +45,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <main style="display: flex; flex-direction: column; gap: 16px; padding: 0 16px 24px; flex-grow: 1;">
     <section aria-label="Escrow and payment time" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-        <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
+<sc-if value="{{securing}}" hint-placeholder-val="{{true}}">        <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 8v4l2 2"/></svg>
           Securing escrow
-        </span>
+        </span></sc-if>
+        <sc-if value="{{secured}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Pay now</span></sc-if>
         <svg style="color: var(--caution);" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
       </div>
 
@@ -58,9 +59,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <span style="display: inline-flex; align-items: center; gap: 6px;">Confirmations
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
             </span>
-            <span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; color: var(--ink);">3 of 10</span> · about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14</span> min</span>
+            <sc-if value="{{securing}}" hint-placeholder-val="{{true}}"><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; color: var(--ink);">3 of 10</span> · about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14</span> min</span></sc-if><sc-if value="{{secured}}" hint-placeholder-val="{{false}}"><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; color: var(--ink);">10 of 10</span> · secured</span></sc-if>
           </span>
-          <span role="progressbar" aria-label="Escrow confirmations" aria-valuemin="0" aria-valuemax="10" aria-valuenow="3" style="display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; width: 100%; height: 8px;">
+          <span role="progressbar" aria-label="Escrow confirmations" aria-valuemin="0" aria-valuemax="10" aria-valuenow="{{confNow}}" style="display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; width: 100%; height: 8px;">
             <sc-for list="{{confs}}" as="c" hint-placeholder-count="10"><span style="{{c.style}}"></span></sc-for>
           </span>
         </button>
@@ -76,20 +77,34 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">Time to pay
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
           </span>
-          <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">90</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">min</span></span>
-          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Clock starts when escrow settles, in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">14</span> min</span>
+          <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">{{payMin}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">min</span></span>
+          <sc-if value="{{securing}}" hint-placeholder-val="{{true}}"><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Clock starts when escrow settles, <span style="white-space: nowrap;">in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">14</span> min</span></span></sc-if>
         </button>
         <sc-if value="{{payOpen}}" hint-placeholder-val="{{false}}">
           <span id="tip-pay" role="tooltip" style="position: absolute; top: calc(100% + 8px); left: 0; z-index: 10; width: 280px; padding: 12px; border-radius: 12px; background: var(--surface-raised); border: 1px solid var(--line); color: var(--ink); font-size: 14px; line-height: 20px;">You get <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> min to send the money and tap I've paid. The clock starts once the escrow has settled, so waiting for it never costs you time. If time runs out without that tap, the seller can cancel and get a refund, or give you more time.</span>
         </sc-if>
-        <svg style="flex-shrink: 0;" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="90 of 90 minutes left, not started">
+<sc-if value="{{securing}}" hint-placeholder-val="{{true}}">        <svg style="flex-shrink: 0;" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="90 of 90 minutes left, not started">
           <circle style="color: var(--caution);" cx="32" cy="32" r="27" fill="none" stroke="currentColor" stroke-opacity="0.2" stroke-width="5"/>
           <circle style="color: var(--caution);" cx="32" cy="32" r="27" fill="none" stroke="currentColor" stroke-width="5" stroke-dasharray="2 6.48" stroke-linecap="round"/>
           <path style="color: var(--caution);" d="M32 22v10l6 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
+        </svg></sc-if>
+        <sc-if value="{{secured}}" hint-placeholder-val="{{false}}"><svg style="flex-shrink: 0;" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="89 of 90 minutes left to pay"><circle style="color: var(--caution);" cx="32" cy="32" r="27" fill="none" stroke="currentColor" stroke-opacity="0.2" stroke-width="5"/><circle style="color: var(--caution);" cx="32" cy="32" r="27" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-dasharray="167.7 169.6" transform="rotate(-90 32 32)"/></svg></sc-if>
       </div>
     </section>
 
+    <section aria-label="Seller" style="display: flex; flex-direction: column; padding: 20px; border-radius: 16px; background: var(--surface);"><div style="display: flex; flex-direction: column; gap: 12px;"><div style="display: flex; align-items: center; gap: 12px;"><span style="position: relative; display: flex; flex-shrink: 0; width: 48px; height: 48px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); font-family: 'Familjen Grotesk', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em;">SG<span aria-label="Online" style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></span><span style="display: flex; flex-direction: column; gap: 3px; min-width: 0;"><span style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 17px; line-height: 22px; font-weight: 600;">satoshi_ghost</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="color: var(--escrow); font-weight: 600;">Online</span> · replies in about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">4</span> min</span></span></div><div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;"><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">1,284</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">trades</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">99.4%</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">positive</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">275.4</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">XMR traded</span></span></div><div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;"><button type="button" aria-haspopup="dialog" aria-label="Trusted badge: 500+ trades and 98%+ positive." style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--escrow) 32%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink); white-space: nowrap;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: color-mix(in srgb, var(--escrow) 16%, var(--surface-raised)); border: 1px solid color-mix(in srgb, var(--escrow) 55%, transparent); color: var(--escrow);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span>Trusted</span></button><button type="button" aria-haspopup="dialog" aria-label="Fast badge: Usually pays or releases within 10 min." style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--caution) 32%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink); white-space: nowrap;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: color-mix(in srgb, var(--caution) 16%, var(--surface-raised)); border: 1px solid color-mix(in srgb, var(--caution) 55%, transparent); color: var(--caution);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span>Fast</span></button><button type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="3 more badges" style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+3</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button></div></div></section>
+
+    <sc-if value="{{securing}}" hint-placeholder-val="{{true}}">
+    <section aria-labelledby="send-title-locked" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <div style="display: flex; align-items: center; gap: 14px;"><span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><h2 id="send-title-locked" style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Payment details</h2><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">They appear when the escrow is secured, in about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">14</span> min.</span></span></div>
+      <div aria-hidden="true" style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);"><div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px;"><span style="display: block; width: 64px; height: 10px; border-radius: 999px; background: var(--surface);"></span><span style="display: block; width: 132px; height: 10px; border-radius: 999px; background: var(--surface);"></span></div><div style="height: 1px; margin: 0 14px; background: var(--surface);"></div><div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px;"><span style="display: block; width: 44px; height: 10px; border-radius: 999px; background: var(--surface);"></span><span style="display: block; width: 176px; height: 10px; border-radius: 999px; background: var(--surface);"></span></div></div>
+      <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+        <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Pay from an account in your own name. Payments from someone else's account may be rejected or frozen. Use at your own risk.</p>
+      </div>
+    </section>
+    </sc-if>
+    <sc-if value="{{secured}}" hint-placeholder-val="{{false}}">
     <section aria-labelledby="send-title" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
       <div style="display: flex; flex-direction: column; gap: 4px;">
         <h2 id="send-title" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Send exactly</h2>
@@ -121,10 +136,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <input id="proof" type="file" accept="image/*" aria-describedby="tip-proof" style="position: absolute; width: 1px; height: 1px; opacity: 0;">
     </label>
     </div>
+    </sc-if>
   </main>
 
   <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
-    <button type="button" onClick="{{openConfirm}}" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">I've paid</button>
+<sc-if value="{{secured}}" hint-placeholder-val="{{false}}">    <button type="button" onClick="{{openConfirm}}" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">I've paid</button></sc-if>
+    <sc-if value="{{securing}}" hint-placeholder-val="{{true}}"><button type="button" disabled aria-describedby="pay-when" style="height: 56px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">I've paid</button><span id="pay-when" style="padding: 4px 8px 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">Opens once the escrow is secured.</span></sc-if>
     <div style="display: flex; justify-content: space-between;">
       <a href="CancelRequest.dc.html" style="display: inline-flex; align-items: center; height: 44px; padding: 0 8px; color: var(--ink-muted); font-size: 15px; font-weight: 600; text-decoration: none;">Cancel trade</a>
       <button type="button" style="height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Open dispute</button>
@@ -138,7 +155,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <h2 id="paid-title" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Mark this trade as paid?</h2>
         <label for="paid-check" style="{{tickBoxStyle}}">
           <input id="paid-check" type="checkbox" checked="{{ticked}}" onChange="{{toggleTick}}" style="width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--ink); flex-shrink: 0;">
-          <span>I sent exactly <strong style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">$412.50</strong> by Zelle with the memo <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span>.</span>
+          <span>I sent exactly <strong style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">$412.50</strong> by Zelle with the memo <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">K7M2-9QXA-4FTR-8WPN</span>.</span>
         </label>
         <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">After this you can't cancel the trade. If something goes wrong, open a dispute.</p>
         <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -166,7 +183,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1556}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"escrow":{"editor":"enum","options":["securing","secured"],"default":"securing"},"$preview":{"width":390,"height":1668}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -174,25 +191,30 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 1556px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const secured = this.props.escrow === 'secured';
+    // Measured (night, fonts loaded): app screen per escrow state; design notes 485 under it.
+    const APP_H = secured ? 1239 : 1183;
+    const H = APP_H + 485;
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const tip = this.state.tip;
     // Stepper: step 0 is current (escrow 3 of 10), later steps upcoming.
     const STEP_LABELS = ['Escrow', 'You pay', 'Seller checks', 'Released'];
-    const current = 0;
+    const current = secured ? 1 : 0;
     const steps = STEP_LABELS.map((label, i) => ({
       label,
       current: i === current ? 'step' : 'false',
-      barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < current ? 'width: 100%; background: var(--escrow);' : i === current ? 'width: 30%; background: var(--caution);' : 'width: 0;'),
+      barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < current ? 'width: 100%; background: var(--escrow);' : i === current ? 'width: ' + (secured ? 2 : 30) + '%; background: var(--caution);' : 'width: 0;'),
       labelStyle: 'font-size: 12px; line-height: 16px; ' + (i === current ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
     }));
-    const confs = Array.from({ length: 10 }, (_, i) => ({ style: 'display: block; border-radius: 999px; background: ' + (i < 3 ? 'var(--caution);' : 'color-mix(in srgb, var(--caution) 18%, var(--surface-raised));') }));
+    const confs = Array.from({ length: 10 }, (_, i) => ({ style: 'display: block; border-radius: 999px; background: ' + (secured ? 'var(--escrow);' : (i < 3 ? 'var(--caution);' : 'color-mix(in srgb, var(--caution) 18%, var(--surface-raised));')) }));
     const ticked = this.state.ticked;
     const tickBoxStyle = 'display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: 14px; border-radius: 12px; font-size: 16px; line-height: 24px; cursor: pointer; background: var(--surface-raised); border: 2px solid ' + (ticked ? 'var(--ink);' : 'transparent;');
     return { rootStyle, steps, confs, tickBoxStyle,
+      securing: !secured, secured, appH: APP_H + 'px', payMin: secured ? '89' : '90', confNow: secured ? '10' : '3',
       confirmOpen: this.state.confirm,
       ticked,
       notTicked: !ticked,

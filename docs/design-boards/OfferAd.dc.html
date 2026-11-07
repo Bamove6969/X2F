@@ -32,37 +32,26 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
   <main style="display: flex; flex-direction: column; gap: 16px; padding: 0 16px 24px; flex-grow: 1;">
 
-    <section aria-label="About the vendor" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
-      <div style="display: flex; align-items: center; gap: 14px;">
-        <span style="position: relative; display: flex; flex-shrink: 0; width: 52px; height: 52px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 18px; line-height: 24px; font-weight: 700;" aria-hidden="true">{{ad.initials}}<span style="position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; box-sizing: border-box; border-radius: 999px; background: var(--escrow); border: 3px solid var(--surface);"></span></span>
-        <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
-          <span style="font-size: 18px; line-height: 24px; font-weight: 600;">{{ad.vendor}}</span>
-          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="color: var(--escrow); font-weight: 600;">Online</span> · Replies in about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{ad.reply}}</span> min</span>
+    <section aria-label="About the vendor" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span aria-hidden="true" style="{{avatarStyle}}">{{ad.initials}}<span style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></span>
+        <div style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1; min-width: 0;">
+          <span style="display: flex; align-items: center; gap: 8px; min-width: 0;"><span style="font-size: 17px; line-height: 22px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ad.vendor}}</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; flex-shrink: 0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="color: var(--escrow); font-weight: 600;">Online</span> · replies in about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{ad.reply}}</span> min</span>
         </div>
         <a href="Profile.dc.html" aria-label="{{ad.profileLabel}}" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; margin-right: -12px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
       </div>
-      <span style="display: flex; flex-wrap: wrap; gap: 6px;">
-        <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10l1.5-5h13L20 10"/><path d="M4 10h16v1a3 3 0 01-6 0 3 3 0 01-4 0 3 3 0 01-6 0z"/><path d="M6 13v7h12v-7"/></svg>Vendor</span>
-        <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow); border: 1px solid var(--escrow); border-radius: 999px; padding: 3px 8px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>Trusted</span>
-        <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow); border: 1px solid var(--escrow); border-radius: 999px; padding: 3px 8px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M13 3L5 13h6l-1 8 8-10h-6z"/></svg>Fast</span>
-      </span>
-      <dl style="display: grid; grid-template-columns: repeat(3, 1fr); margin: 0; border-radius: 12px; background: var(--surface-raised);">
-        <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 14px;">
-          <dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 18px; line-height: 24px; font-weight: 500;">{{ad.trades}}</dd>
-          <dt style="order: 2; font-size: 12px; line-height: 16px; color: var(--ink-muted);">trades</dt>
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-left: 1px solid var(--surface);">
-          <dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 18px; line-height: 24px; font-weight: 500;">{{ad.positive}}</dd>
-          <dt style="order: 2; font-size: 12px; line-height: 16px; color: var(--ink-muted);">positive</dt>
-        </div>
-        <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-left: 1px solid var(--surface);">
-          <dd style="margin: 0; display: flex; align-items: center; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 18px; line-height: 24px; font-weight: 500;">{{ad.rating}}</span><span role="img" aria-label="{{ad.starsLabel}}" style="display: inline-flex; gap: 1px;"><sc-for list="{{stars}}" as="st" hint-placeholder-count="5"><svg width="11" height="11" viewBox="0 0 24 24" style="{{st.style}}" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="{{st.fill}}" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></sc-for></span></dd>
-          <dt style="order: 2; font-size: 12px; line-height: 16px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{ad.reviews}}</span> reviews</dt>
-        </div>
+      <dl style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0;">
+        <div style="display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><dt style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">trades</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{ad.trades}}</dd></div>
+        <div style="display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><dt style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">positive</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{ad.positive}}</dd></div>
+        <sc-if value="{{showVolume}}" hint-placeholder-val="{{true}}"><div style="display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><dt style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">XMR traded</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{volumeText}}</dd></div></sc-if>
+        <sc-if value="{{noVolume}}" hint-placeholder-val="{{false}}"><div style="display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><dt style="font-size: 12px; line-height: 16px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{ad.reviews}}</span> reviews</dt><dd style="margin: 0; display: flex; align-items: center; gap: 4px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{ad.rating}}</span><span role="img" aria-label="{{ad.starsLabel}}" style="display: inline-flex;"><svg width="12" height="12" viewBox="0 0 24 24" style="color: var(--caution);" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span></dd></div></sc-if>
       </dl>
-      <sc-if value="{{showVolume}}" hint-placeholder-val="{{true}}">
-        <span style="display: inline-flex; align-items: center; gap: 6px; margin-top: -4px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg style="flex-shrink: 0;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19h16"/><path d="M7 15v-4"/><path d="M12 15V8"/><path d="M17 15v-7"/></svg><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{volumeText}}</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> traded to date</span></span>
-      </sc-if>
+      <div style="position: relative; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+        <sc-for list="{{featuredBadges}}" as="b" hint-placeholder-count="2"><button type="button" aria-haspopup="dialog" aria-label="{{b.label}}" onClick="{{b.tap}}" style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{b.chipStyle}}"><span aria-hidden="true" style="{{b.seal22}}"><sc-if value="{{b.isIcon}}" hint-placeholder-val="{{true}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.d}}"/></svg></sc-if><sc-if value="{{b.isNum}}" hint-placeholder-val="{{false}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 8px; line-height: 1; font-weight: 500; letter-spacing: -0.02em;">{{b.num}}</span></sc-if></span>{{b.name}}</span></button></sc-for>
+        <sc-if value="{{hasMoreBadges}}" hint-placeholder-val="{{true}}"><button type="button" aria-haspopup="dialog" aria-expanded="{{badgesExpanded}}" aria-controls="oa-bsheet" aria-label="{{moreLabel}}" onClick="{{toggleBadges}}" style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{moreStyle}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+{{moreCount}}</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button></sc-if>
+        
+      </div>
     </section>
 
     <section aria-labelledby="oa-price" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--escrow) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--escrow) 35%, transparent);">
@@ -203,6 +192,20 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <a href="#" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 8px; color: var(--ink-muted); font-size: 15px; font-weight: 600; text-decoration: none;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Message {{ad.vendor}}</a>
     </div>
   </footer>
+  <sc-if value="{{badgesOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; z-index: 10; background: var(--scrim);">
+      <div style="position: absolute; top: 0; left: 0; right: 0; height: 844px; display: flex; align-items: flex-end;">
+        <section id="oa-bsheet" role="dialog" aria-modal="true" aria-labelledby="oa-bsheet-t" style="width: 100%; box-sizing: border-box; padding: 10px 16px 24px; border-radius: 16px 16px 0 0; border-top: 1px solid var(--surface-raised); background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
+          <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <h2 id="oa-bsheet-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">{{ad.vendor}}'s badges</h2>
+            <button type="button" aria-label="Close" onClick="{{closeBadges}}" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; margin-right: -10px; align-items: center; justify-content: center; border: 0; border-radius: 12px; background: transparent; color: var(--ink); cursor: pointer;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          </div>
+          <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 16px;"><sc-for list="{{allBadges}}" as="b" hint-placeholder-count="5"><li style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="{{b.seal40}}"><sc-if value="{{b.isIcon}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.d}}"/></svg></sc-if><sc-if value="{{b.isNum}}" hint-placeholder-val="{{false}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 1; font-weight: 500; letter-spacing: -0.02em;">{{b.num}}</span></sc-if></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><span style="font-size: 15px; line-height: 20px; font-weight: 600;">{{b.name}}</span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{b.meaning}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{b.earnPre}} <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{b.earnDate}}</span></span></span></li></sc-for></ul>
+        </section>
+      </div>
+    </div>
+  </sc-if>
   </div>
 
   <section data-m="notes" aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; padding: 24px 16px 32px; border-top: 1px solid var(--line);">
@@ -211,8 +214,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </div>
     <p style="margin: 0; font-size: 14px; line-height: 20px;">The public page of one ad, opened from the offers list. Same anatomy on both sides of the coin; the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">side</span> tweak flips the words, the units of the limits and the button. Showing: <strong>{{sideName}}</strong>.</p>
     <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 18px; color: var(--ink);">
-      <li><strong>Vendor.</strong> Avatar with online dot, badges as on Profile, then a stat strip: trades, % positive, star average (1–5, as on Reviews). The chevron opens the profile.</li>
-      <li><strong>Volume line (opt-in, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">volumeLine</span> tweak).</strong> "<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{volumeText}}</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> traded to date", under the stat strip. The vendor turns it on; off by default. It counts XMR, not dollars (owner, 6 Nov, Q63). Rounded <em>down</em> to one decimal: it is a reputation figure, not an amount being moved, so the 6-decimal rule for amounts does not apply, and rounding down never overstates. Showing: <strong>{{volumeState}}</strong>{{volumeRaw}}.</li>
+      <li><strong>Vendor.</strong> The trader block from the Badges board: 48px avatar (teal ring because this trader holds Trusted; online dot), name with a Vendor tag, "Online · replies in about N min", three stat tiles (trades, % positive, XMR traded), then up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> featured badges and "+N". The chevron opens the profile.</li>
+      <li><strong>Badges (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">badges</span> tweak, showing: {{badgesState}}).</strong> Tapping "+N" or a featured badge opens a bottom sheet over the scrim: every badge this trader shows, with what it means and when it was earned. The X, a swipe down or a tap outside closes it. Drawn at the bottom of the first <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">844</span> px, the phone viewport. Badges are not status chips: sentence case, no wash fill; the colour lives in the seal.</li>
+      <li><strong>Volume line (opt-in, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">volumeLine</span> tweak).</strong> "<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{volumeText}}</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> traded to date", shown as the third stat tile ("XMR traded"); with it off, that tile shows the star average and review count instead. The vendor turns it on; off by default. It counts XMR, not dollars (owner, 6 Nov, Q63). Rounded <em>down</em> to one decimal: it is a reputation figure, not an amount being moved, so the 6-decimal rule for amounts does not apply, and rounding down never overstates. Showing: <strong>{{volumeState}}</strong>{{volumeRaw}}.</li>
       <li><strong>Hero, escrow tone.</strong> The chip is the ad's side in the vendor's words (Selling XMR); the line beside it says what that means for you. One hero number: the price for the chosen currency and method, then vs market, then the live market reference.</li>
       <li><strong>Currency ▾ and {{ad.methodLabel}} ▾ sit together under the price.</strong> Opens on the currency and payment method you searched for. Each method option carries its own adjustment and limit ("PayPal · +1.5% · up to $500"). Changing either updates the price, the limits, the time window, the method line in the terms and the footer maths.</li>
       <li><strong>Currency drop-down (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">currencyMenu</span> tweak, showing: {{menuState}}).</strong> The six most-used currencies come first, always in this order: USD, EUR, GBP, CAD, AUD, JPY. Then a divider, then every other currency A to Z by code. An ad lists only the currencies its vendor ticked (up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">5</span>), in that same order. Every row starts with a flag. The picked row has the 2px ink ring on the raised surface, never orange.</li>
@@ -251,30 +255,32 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </ul>
     </aside>
     <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">COPY-UNSIGNED, new 7 Nov (draft): the closed field "Zelle · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> min to pay" ("PayPal · pays in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">60</span> min" when buying) and the row meta "<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">60</span> min to pay · up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$500</span>".</p>
-    <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Names, prices and terms are examples. Market prices: USD <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">167.88</span>, CAD <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">232.10</span>, EUR <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">155.40</span>, GBP <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">132.60</span>, ARS no rate.</p>
+    <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">COPY-UNSIGNED, new 7 Nov (draft): the sheet title "{{ad.vendor}}'s badges", the tile label "XMR traded", "replies in about", and the badge names, meanings and dates (as on the Badges board).</p>
+    <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Names, prices and terms are examples. Market prices: USD <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">329.90</span>, CAD <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">456.10</span>, EUR <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">305.40</span>, GBP <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">260.60</span>, ARS no rate.</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["selling","buying"],"default":"selling"},"volumeLine":{"editor":"enum","options":["on","off"],"default":"on"},"currencyMenu":{"editor":"enum","options":["closed","open"],"default":"closed"},"payMenu":{"editor":"enum","options":["closed","open"],"default":"closed"},"$preview":{"width":390,"height":4249}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["selling","buying"],"default":"selling"},"volumeLine":{"editor":"enum","options":["on","off"],"default":"on"},"currencyMenu":{"editor":"enum","options":["closed","open"],"default":"closed"},"payMenu":{"editor":"enum","options":["closed","open"],"default":"closed"},"badges":{"editor":"enum","options":["closed","open"],"default":"closed"},"$preview":{"width":390,"height":4489}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { cur: null, method: null, mode: 0, amount: null, menu: null, pay: null };
+    this.state = { cur: null, method: null, mode: 0, amount: null, menu: null, pay: null, badges: null };
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const side = this.props.side === 'buying' ? 'buying' : 'selling';
     const sell = side === 'selling';
     const volumeOn = this.props.volumeLine !== 'off';
     // Measured with lead/offerad-tools/measure.js: screen block per side and currency (method count differs),
-    // +VOL_H when the volume line shows; notes block per side.
-    const SCREEN_H = { selling: { USD: 1822, CAD: 1840, EUR: 1818, GBP: 1818 }, buying: { USD: 1830, EUR: 1848, GBP: 1848 } };
-    const VOL_H = 30;
-    const NOTES_H = 2397;
+    // The volume is now the third stat tile (rating tile when it's off), so it no longer changes the height (VOL_H 0).
+    // Re-measured 7 Nov (render-board MEASURE) after the trader block from the Badges board went in.
+    const SCREEN_H = { selling: { USD: 1804, CAD: 1822, EUR: 1800, GBP: 1800 }, buying: { USD: 1812, EUR: 1830, GBP: 1830 } };
+    const VOL_H = 0;
+    const NOTES_H = 2685;
 
     const RR = 'M5 6h14a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z';
     const RING = 'M3 12a9 9 0 1018 0a9 9 0 10-18 0';
@@ -297,7 +303,7 @@ class Component extends DCLogic {
         searched: { cur: 'USD', method: 'zelle' },
         terms: 'Pay only from an account in your own name. No third-party payments. Memo: the trade code.',
         currencies: [
-          { code: 'USD', name: 'US dollar', sym: '$', market: 167.88, def: 300, min: 200, max: 2000, methods: [
+          { code: 'USD', name: 'US dollar', sym: '$', market: 329.90, def: 300, min: 200, max: 2000, methods: [
             M('zelle', 'Zelle', 'zelle', 0, '90', 'min', 'Send to the Zelle ID in the trade room. Trade code in the memo, nothing else.'),
             M('paypal', 'PayPal', 'wallet', 1.5, '60', 'min', 'Friends and family only, from a PayPal in your own name.', { cap: 500 }),
             M('cashapp', 'Cash App', 'phone', 0.5, '60', 'min', 'Send to the $cashtag in the trade room. Trade code in the note.'),
@@ -305,20 +311,20 @@ class Component extends DCLogic {
             M('revolut', 'Revolut', 'card', 0, '90', 'min', 'Send to the Revolut username in the trade room.'),
             M('mail', 'Cash by mail', 'mail', 3, '3', 'days', 'Tracked post only. I share the address in chat after I accept.', { floor: 500 })
           ] },
-          { code: 'CAD', name: 'Canadian dollar', sym: 'C$', market: 232.10, def: 400, min: 250, max: 2500, methods: [
+          { code: 'CAD', name: 'Canadian dollar', sym: 'C$', market: 456.10, def: 400, min: 250, max: 2500, methods: [
             M('interac', 'Interac e-Transfer', 'send', 0, '90', 'min', 'Send to the contact in the trade room. Trade code in the message.'),
             M('wise', 'Wise', 'globe', 0, '2', 'h', 'A CAD transfer from your own Wise account. Reference: the trade code.'),
             M('paypal', 'PayPal', 'wallet', 1.5, '60', 'min', 'Friends and family only, from a PayPal in your own name.', { cap: 500 }),
             M('mail', 'Cash by mail', 'mail', 3, '4', 'days', 'Tracked post only. I share the address in chat after I accept.', { floor: 500 })
           ] },
-          { code: 'EUR', name: 'Euro', sym: '€', market: 155.40, def: 280, min: 180, max: 1800, methods: [
+          { code: 'EUR', name: 'Euro', sym: '€', market: 305.40, def: 280, min: 180, max: 1800, methods: [
             M('sepainst', 'SEPA Instant', 'bank', 0, '90', 'min', 'From a bank account in your own name. Reference: the trade code.'),
             M('sepa', 'SEPA transfer', 'bank', 0, '2', 'days', 'From a bank account in your own name. Reference: the trade code.'),
             M('wise', 'Wise', 'globe', 0, '2', 'h', 'A EUR transfer from your own Wise account.'),
             M('revolut', 'Revolut', 'card', 0, '90', 'min', 'Send to the Revolut username in the trade room.'),
             M('paypal', 'PayPal', 'wallet', 1.5, '60', 'min', 'Friends and family only, from a PayPal in your own name.', { cap: 500 })
           ] },
-          { code: 'GBP', name: 'British pound', sym: '£', market: 132.60, def: 240, min: 150, max: 1500, methods: [
+          { code: 'GBP', name: 'British pound', sym: '£', market: 260.60, def: 240, min: 150, max: 1500, methods: [
             M('fps', 'Faster Payments', 'bolt', 0, '90', 'min', 'From a UK account in your own name. Reference: the trade code.'),
             M('wise', 'Wise', 'globe', 0, '2', 'h', 'A GBP transfer from your own Wise account.'),
             M('revolut', 'Revolut', 'card', 0, '90', 'min', 'Send to the Revolut username in the trade room.'),
@@ -327,13 +333,13 @@ class Component extends DCLogic {
         ]
       },
       buying: {
-        vendor: 'nightowl_44', initials: 'NO', adId: 'OF-8VD2', trades: '486', positive: '98.7%', rating: '4.8', starCount: 5, reviews: '233', reply: '12',
+        vendor: 'nightowl_44', initials: 'NO', adId: 'OF-8VD2', trades: '58', positive: '97%', rating: '4.8', starCount: 5, reviews: '51', reply: '12',
         margin: -1.5, chip: 'Buying XMR', methodLabel: 'Receive by', cta: 'Request to sell XMR', ctaShort: 'Sell XMR',
         searched: { cur: 'USD', method: 'zelle' },
         xmin: 0.5, xmax: 5,
         terms: 'I pay from accounts in my own name, with the trade code in the memo. Release only when the money is in your account, not because of a screenshot.',
         currencies: [
-          { code: 'USD', name: 'US dollar', sym: '$', market: 167.88, methods: [
+          { code: 'USD', name: 'US dollar', sym: '$', market: 329.90, methods: [
             M('zelle', 'Zelle', 'zelle', 0, '60', 'min', 'Put your Zelle ID in the trade room. It must be in your own name.'),
             M('ach', 'Bank transfer (ACH)', 'bank', 0, '3', 'days', 'Takes 1 to 3 business days. Share your account details in the trade room only.'),
             M('wise', 'Wise', 'globe', 0, '2', 'h', 'Share your Wise details in the trade room.'),
@@ -341,14 +347,14 @@ class Component extends DCLogic {
             M('paypal', 'PayPal', 'wallet', -1, '60', 'min', 'I send friends and family to a PayPal in your own name.', { xcap: 2 }),
             M('cashapp', 'Cash App', 'phone', -0.5, '60', 'min', 'Share your $cashtag in the trade room.')
           ] },
-          { code: 'EUR', name: 'Euro', sym: '€', market: 155.40, methods: [
+          { code: 'EUR', name: 'Euro', sym: '€', market: 305.40, methods: [
             M('sepainst', 'SEPA Instant', 'bank', 0, '60', 'min', 'Share an IBAN in your own name in the trade room.'),
             M('sepa', 'SEPA transfer', 'bank', 0, '2', 'days', 'Share an IBAN in your own name in the trade room.'),
             M('wise', 'Wise', 'globe', 0, '2', 'h', 'Share your Wise details in the trade room.'),
             M('revolut', 'Revolut', 'card', 0, '60', 'min', 'Share your Revolut username in the trade room.'),
             M('paypal', 'PayPal', 'wallet', -1, '60', 'min', 'I send friends and family to a PayPal in your own name.', { xcap: 2 })
           ] },
-          { code: 'GBP', name: 'British pound', sym: '£', market: 132.60, methods: [
+          { code: 'GBP', name: 'British pound', sym: '£', market: 260.60, methods: [
             M('fps', 'Faster Payments', 'bolt', 0, '60', 'min', 'Share UK account details in your own name in the trade room.'),
             M('wise', 'Wise', 'globe', 0, '2', 'h', 'Share your Wise details in the trade room.'),
             M('revolut', 'Revolut', 'card', 0, '60', 'min', 'Share your Revolut username in the trade room.'),
@@ -361,8 +367,50 @@ class Component extends DCLogic {
     ad.profileLabel = 'Open ' + ad.vendor + "'s profile";
     ad.starsLabel = ad.rating + ' of 5 stars';
     const s = this.state;
+
+    // Badge set, as on the Badges board (7 Nov): family tone, stroke glyph or milestone number, meaning. Draft copy.
+    const BADGES = {
+      trusted: { name: 'Trusted', tone: 'escrow', d: 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6zM9 12l2 2 4-4', meaning: '500+ trades and 98%+ positive.' },
+      clean: { name: 'Clean record', tone: 'escrow', d: 'M3 12a9 9 0 1018 0a9 9 0 10-18 0M8 12.5l2.8 2.8L16.5 9', meaning: 'No lost disputes in 100 trades.' },
+      veteran: { name: 'Veteran', tone: 'escrow', d: 'M7 9a5 5 0 1010 0a5 5 0 10-10 0M9 13.5L7.5 21l4.5-2.5 4.5 2.5L15 13.5', meaning: 'Trading on X2F for over a year.' },
+      fast: { name: 'Fast', tone: 'caution', d: 'M13 2L4 14h7l-1 8 9-12h-7z', meaning: 'Usually pays or releases within 10 min.' },
+      pgp: { name: 'PGP verified', tone: 'ink', d: 'M4 15a4 4 0 108 0a4 4 0 10-8 0M11 12l9-9M17 6l3 3', meaning: 'Logs in with a verified PGP key.' },
+      hw: { name: 'Security key', tone: 'ink', d: 'M9.5 2.5h5A1.5 1.5 0 0116 4v5a1.5 1.5 0 01-1.5 1.5h-5A1.5 1.5 0 018 9V4a1.5 1.5 0 011.5-1.5zM6.5 10.5h11V15a5.5 5.5 0 01-11 0zM12 14v2.5', meaning: 'Protects the account with a hardware key.' },
+      m100: { name: '100 trades', tone: 'ink', num: '100', meaning: 'Completed 100 trades.' },
+      m500: { name: '500 trades', tone: 'ink', num: '500', meaning: 'Completed 500 trades.' },
+      fresh: { name: 'New', tone: 'ink-muted', d: 'M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 15c0-3-2.5-5-6-5 0 3 2.5 5 6 5z', meaning: 'Joined in the last 30 days.' }
+    };
+    const sealStyle = (tone, size) => 'display: flex; flex-shrink: 0; width: ' + size + 'px; height: ' + size + 'px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: ' + (size === 40 ? 12 : 999) + 'px; background: color-mix(in srgb, var(--' + tone + ') 16%, var(--surface-raised)); border: ' + (size === 40 ? 1.5 : 1) + 'px solid color-mix(in srgb, var(--' + tone + ') 55%, transparent); color: var(--' + tone + ');';
+    const badge = (key, earned, tap) => {
+      const b = BADGES[key];
+      return {
+        key, name: b.name, meaning: b.meaning, d: b.d || '', num: b.num || '', isIcon: !b.num, isNum: !!b.num,
+        seal22: sealStyle(b.tone, 22), seal40: sealStyle(b.tone, 40),
+        chipStyle: 'display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--' + b.tone + ') 32%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink); white-space: nowrap;',
+        label: b.name + ' badge: ' + b.meaning,
+        earnPre: earned ? earned[0] : '', earnDate: earned ? earned[1] : '',
+        tap: tap || (() => {})
+      };
+    };
+    const avatarStyle = (size, ring) => 'position: relative; display: flex; flex-shrink: 0; width: ' + size + 'px; height: ' + size + 'px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid ' + (ring ? 'color-mix(in srgb, var(--escrow) 70%, transparent)' : 'var(--surface-raised)') + "; font-family: 'Familjen Grotesk', sans-serif; font-size: " + (size === 48 ? 17 : 15) + 'px; font-weight: 700; letter-spacing: -0.01em;';
+    const moreStyle = (active) => 'display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: ' + (active ? '2px solid var(--ink)' : '1px solid var(--line)') + '; background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;';
+
+    // Trader badges (Badges board, 7 Nov). Up to 2 featured; the rest sit behind "+N" (the "When tapped" level).
+    const EARNED = {
+      selling: { featured: ['trusted', 'fast'], more: ['clean', 'veteran', 'm100'],
+        dates: { trusted: ['Earned', '12 Mar 2026'], fast: ['Earned', '20 Apr 2026'], clean: ['Earned', '2 Jun 2026'], veteran: ['Earned', '1 Oct 2026'], m100: ['Earned', '28 Feb 2026'] } },
+      buying: { featured: ['hw', 'veteran'], more: [],
+        dates: { veteran: ['Earned', '14 Aug 2026'], hw: ['Since', '22 Jan 2026'] } }
+    }[side];
+    // Wide hover card: the nub sits under the middle of "+N" (measured per side; chip widths differ).
+    const NUB_X = { selling: 204, buying: 203 };
+    const badgesOpen = s.badges == null ? this.props.badges === 'open' : !!s.badges;
+    const openSheet = () => this.setState({ badges: true });
+    const featuredBadges = EARNED.featured.map((k) => badge(k, EARNED.dates[k], openSheet));
+    const moreBadges = EARNED.more.map((k) => badge(k, EARNED.dates[k]));
+    const allBadges = EARNED.featured.concat(EARNED.more).map((k) => badge(k, EARNED.dates[k]));
     // Volume line: opt-in (owner, 2 Nov), in XMR traded to date (owner, 6 Nov, Q63), rounded DOWN to 1 decimal (design call).
-    const VOLUME_XMR = { selling: 275.483112, buying: 96.730540 }[side];
+    const VOLUME_XMR = { selling: 275.483112, buying: 12.638104 }[side];
     const volumeRounded = Math.floor(VOLUME_XMR * 10) / 10;
     const showVolume = volumeOn && volumeRounded >= 0.1;
     const volumeText = volumeRounded.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -377,7 +425,7 @@ class Component extends DCLogic {
     cur.label = cur.code + ' · ' + cur.name;
     cur.flag = FLAG[cur.code] || '';
     const menuOpen = s.menu == null ? this.props.currencyMenu === 'open' : !!s.menu;
-    const screenH = (SCREEN_H[side][cur.code] || 1848) + (volumeOn ? VOL_H : 0);
+    const screenH = (SCREEN_H[side][cur.code] || 1830) + (volumeOn ? VOL_H : 0);
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (screenH + NOTES_H) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const screenStyle = 'position: relative; flex-shrink: 0; height: ' + screenH + 'px; display: flex; flex-direction: column;';
     const method = cur.methods.find((m) => m.id === s.method) || cur.methods.find((m) => m.id === ad.searched.method) || cur.methods[0];
@@ -506,6 +554,21 @@ class Component extends DCLogic {
       convPre, convVal, convUnit,
       convUnitStyle: 'font-weight: 600; color: ' + (convUnit === 'XMR' ? 'var(--monero-ink);' : 'var(--ink-muted);'),
       showVolume, volumeText,
+
+      featuredBadges, moreBadges, allBadges,
+      hasMoreBadges: moreBadges.length > 0,
+      moreCount: moreBadges.length,
+      moreLabel: moreBadges.length + ' more badges',
+      moreTitle: moreBadges.length + ' more badges',
+      moreStyle: moreStyle(badgesOpen),
+      badgesOpen, badgesExpanded: badgesOpen ? 'true' : 'false',
+      badgesState: badgesOpen ? 'open' : 'closed',
+      toggleBadges: () => this.setState({ badges: !badgesOpen }),
+      openBadges: () => this.setState({ badges: true }),
+      closeBadges: () => this.setState({ badges: false }),
+      avatarStyle: avatarStyle(48, EARNED.featured.concat(EARNED.more).indexOf('trusted') >= 0),
+      noVolume: !showVolume,
+      nubStyle: 'position: absolute; top: -7px; left: ' + NUB_X[side] + 'px; width: 12px; height: 12px; background: var(--surface-raised); border-left: 1px solid var(--line); border-top: 1px solid var(--line); transform: rotate(45deg);',
       volumeState: showVolume ? 'on' : 'off',
       volumeRaw: showVolume ? ' (actual ' + VOLUME_XMR.toFixed(6) + ' XMR)' : '',
       sideName: sell ? 'selling (vendor sells XMR, you pay fiat)' : 'buying (vendor buys XMR, you receive fiat)',

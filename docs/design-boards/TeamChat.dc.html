@@ -20,6 +20,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 <div style="{{rootStyle}}">
   <header style="display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 6px;">
     <a href="#" aria-label="Back to trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    <span aria-hidden="true" style="{{avStyle}} margin-right: 6px;">{{avInit}}<span style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--ground);"></span></span>
     <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
       <h1 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">{{title}}</h1>
       <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$165.00</span></span>
@@ -28,16 +29,16 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </header>
 
   <main style="flex-grow: 1; display: flex; flex-direction: column; gap: 12px; padding: 8px 16px 16px;">
-    <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted); text-align: center;">Encrypted. If a dispute is opened, a moderator can read this conversation.</p>
+    <p style="display: flex; align-items: flex-start; justify-content: center; gap: 6px; margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted); text-align: center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Encrypted. If a dispute is opened, a moderator can read this conversation.</span></p>
 
     <div role="log" aria-label="Trade chat" style="display: flex; flex-direction: column; gap: 12px;">
       <sc-for list="{{msgs}}" as="m" hint-placeholder-count="8">
         <sc-if value="{{m.isSys}}" hint-placeholder-val="{{false}}">
-          <p style="align-self: center; max-width: 92%; margin: 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--surface-raised); font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.t}}</span> · {{m.text}}</p>
+          <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg><p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">{{m.t}}</span> · {{m.text}}</p></div>
         </sc-if>
         <sc-if value="{{m.isNotice}}" hint-placeholder-val="{{false}}">
-          <div style="align-self: center; max-width: 92%; display: flex; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--team) 50%, transparent); font-size: 13px; line-height: 18px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--team);"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M15.5 4.8a3.5 3.5 0 010 6.4"/><path d="M18 14.6c2.1.8 3.5 2.8 3.5 5.4"/></svg>
+          <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--team) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--team) 30%, transparent); font-size: 14px; line-height: 20px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--team);"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
             <span style="display: flex; flex-direction: column; gap: 2px;">
               <span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">{{m.t}}</span> · {{m.text}}</span>
               <sc-if value="{{m.hasSub}}" hint-placeholder-val="{{false}}"><span style="color: var(--ink-muted);">{{m.sub}}</span></sc-if>
@@ -45,16 +46,17 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </div>
         </sc-if>
         <sc-if value="{{m.isMsg}}" hint-placeholder-val="{{true}}">
-          <div style="{{m.rowStyle}}">
+          <div style="{{m.wrapStyle}}"><sc-if value="{{m.personAv}}" hint-placeholder-val="{{true}}"><span aria-hidden="true" style="{{m.avStyle}}">{{m.init}}</span></sc-if><sc-if value="{{m.teamAv}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); border: 2px solid var(--team); color: var(--ground);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span></sc-if><div style="{{m.rowStyle}}">
             <span style="{{m.metaStyle}}">
-              <sc-if value="{{m.icon}}" hint-placeholder-val="{{false}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; color: var(--team);"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M15.5 4.8a3.5 3.5 0 010 6.4"/><path d="M18 14.6c2.1.8 3.5 2.8 3.5 5.4"/></svg></sc-if>
-              <sc-if value="{{m.avatar}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="display: flex; width: 24px; height: 24px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); color: var(--ground); font-size: 11px; line-height: 12px; font-weight: 600; letter-spacing: 0.02em;">DA</span></sc-if>
               <span style="{{m.whoStyle}}">{{m.who}}</span>
+              <sc-if value="{{m.tagTeam}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>Team member</span></sc-if>
+              <sc-if value="{{m.tagVendor}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></sc-if>
+              <sc-if value="{{m.hasTeamOf}}" hint-placeholder-val="{{false}}"><span style="color: var(--team); font-weight: 600;">{{m.teamOf}}</span></sc-if>
               <span>·</span>
               <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.t}}</span>
             </span>
             <p style="{{m.bubbleStyle}}">{{m.text}}</p>
-          </div>
+          </div></div>
         </sc-if>
       </sc-for>
     </div>
@@ -69,19 +71,19 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":390,"height":864}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":390,"height":920}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { draft: '', sent: [] }; }
   componentDidUpdate(prev) { if (prev.viewer !== this.props.viewer) this.setState({ draft: '', sent: [] }); }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const s = this.state;
     // Measured heights: the lead's view has an extra line under the team notice.
-    const H = (this.props.viewer === 'lead' ? 858 : 864) + s.sent.length * 74;
+    const H = (this.props.viewer === 'lead' ? 874 : 920) + s.sent.length * 75;
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     // Owner, 2 Nov: a team member's replies get their own colour (--team) so it's very obvious a team member is replying.
@@ -99,12 +101,15 @@ class Component extends DCLogic {
       { k: 'partner', t: '14:24', text: 'Great, thanks.' }
     ].concat(s.sent.map((x) => ({ k: me, t: x.t, text: x.text })));
 
-    const row = (right, max) => 'display: flex; flex-direction: column; gap: 4px; max-width: ' + max + '; align-self: ' + (right ? 'flex-end; align-items: flex-end;' : 'flex-start; align-items: flex-start;');
-    const meta = 'display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 16px; color: var(--ink-muted);';
-    const bubble = 'margin: 0; padding: 10px 12px; border-radius: 12px; font-size: 15px; line-height: 21px; color: var(--ink); ';
+    const row = (right) => 'display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: ' + (right ? 'flex-end;' : 'flex-start;');
+    // Chat kit (craftfold/foldkit.py): the other side's messages carry the 32 px avatar; bubbles 12/12/12/4.
+    const wrap = (right, max) => 'display: flex; gap: 8px; align-items: flex-end; max-width: ' + max + '; align-self: ' + (right ? 'flex-end;' : 'flex-start;');
+    const av32 = (ring) => 'position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid ' + (ring ? 'color-mix(in srgb, var(--escrow) 70%, transparent)' : 'var(--surface-raised)') + '; font-family: \'Familjen Grotesk\', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: -0.01em;';
+    const meta = 'display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 13px; line-height: 16px; color: var(--ink-muted);';
+    const bubble = 'margin: 0; padding: 10px 14px; font-size: 15px; line-height: 21px; color: var(--ink); ';
     const BUB = {
-      other: bubble + 'background: var(--surface);',
-      own: bubble + 'background: transparent; border: 1px solid var(--line);',
+      other: bubble + 'border-radius: 12px 12px 12px 4px; background: var(--surface);',
+      own: bubble + 'border-radius: 12px 12px 4px 12px; background: transparent; border: 1px solid var(--line);',
       team: bubble + 'background: color-mix(in srgb, var(--team) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--team) 50%, transparent);'
     };
     const NAME = { vendor: 'satoshi_ghost', partner: 'mira.k' };
@@ -116,26 +121,28 @@ class Component extends DCLogic {
         text: lead ? 'desk_ana replied for you.' : 'A team member from satoshi_ghost’s team is replying.',
         hasSub: lead, sub: 'mira.k sees “Team member”, not the name.'
       };
-      const base = { isSys: false, isNotice: false, isMsg: true, t: m.t, text: m.text, metaStyle: meta, icon: false, avatar: false, whoStyle: 'color: var(--ink-muted);' };
+      const base = { isSys: false, isNotice: false, isMsg: true, t: m.t, text: m.text, metaStyle: meta, tagTeam: false, tagVendor: false, hasTeamOf: false, teamOf: '', whoStyle: 'color: var(--ink-muted);' };
       if (m.k === 'member') {
         // Partner: people icon + "Team member · satoshi_ghost's team", left. Lead: DA avatar + name, right (sent from your account).
         return Object.assign(base, {
-          rowStyle: row(lead, '86%'), bubbleStyle: BUB.team,
-          icon: !lead, avatar: lead,
-          who: lead ? 'desk_ana · team member' : 'Team member · satoshi_ghost’s team',
-          whoStyle: 'color: var(--team); font-weight: 600;'
+          rowStyle: row(lead), wrapStyle: wrap(lead, '94%'), personAv: false, teamAv: !lead, init: '', avStyle: '', bubbleStyle: BUB.team + (lead ? 'border-radius: 12px 12px 4px 12px;' : 'border-radius: 12px 12px 12px 4px;'),
+          tagTeam: true, hasTeamOf: !lead, teamOf: 'satoshi_ghost’s team',
+          who: lead ? 'desk_ana' : '',
+          whoStyle: lead ? 'color: var(--ink); font-weight: 600;' : 'display: none;'
         });
       }
       const mine = m.k === me;
       return Object.assign(base, {
-        rowStyle: row(mine, '84%'), bubbleStyle: mine ? BUB.own : BUB.other,
-        who: mine ? 'You' : NAME[m.k]
+        rowStyle: row(mine), wrapStyle: wrap(mine, '84%'), personAv: !mine, teamAv: false, init: mine ? '' : ({ vendor: 'SG', partner: 'MK' })[m.k], avStyle: av32(m.k === 'vendor'), bubbleStyle: mine ? BUB.own : BUB.other,
+        who: mine ? 'You' : NAME[m.k], tagVendor: !mine && m.k === 'vendor',
+        whoStyle: mine ? 'color: var(--ink-muted);' : 'color: var(--ink); font-weight: 600;'
       });
     });
 
     return {
       rootStyle,
       title: lead ? 'Chat with mira.k' : 'Chat with satoshi_ghost',
+      avInit: lead ? 'MK' : 'SG', avStyle: lead ? "position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; background: var(--surface-raised); border: 2px solid var(--surface-raised); color: var(--ink);" : "position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; background: var(--surface-raised); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); color: var(--ink);",
       placeholder: lead ? 'Message mira.k' : 'Message satoshi_ghost',
       msgs,
       draft: s.draft,

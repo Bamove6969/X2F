@@ -15,6 +15,8 @@ button:focus-visible,a:focus-visible,input:focus-visible,label:focus-within{outl
 input::placeholder{color:var(--ink-muted)}
 button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
 @media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+p,li{text-wrap:pretty}
+h1,h2,h3{text-wrap:balance}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
@@ -86,7 +88,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Your Zelle</dt><dd style="margin: 0; font-weight: 600;">Nothing to send</dd></div>
           <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
-          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Your profile</dt><dd style="margin: 0; font-weight: 600;">No dispute. Moderators see it in your cancel count</dd></div>
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted); white-space: nowrap;">Your profile</dt><dd style="margin: 0; font-weight: 600;">No dispute. Moderators see it in your cancel count</dd></div>
           <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Cancelled at</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">13:04 UTC</dd></div>
         </dl>
@@ -182,20 +184,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <div aria-hidden="true" style="display: flex; justify-content: center;"><span style="width: 1px; background: var(--surface-raised);"></span></div>
 
   <section aria-label="Chat with satoshi_ghost" style="position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
-    <header style="display: flex; align-items: center; gap: 12px; padding: 16px; min-height: 44px;">
-      <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
-        <h2 style="margin: 0; display: flex; align-items: center; gap: 6px; font-size: 16px; line-height: 22px; font-weight: 600;"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 999px; background: var(--escrow);"></span>satoshi_ghost</h2>
-        <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Online · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">412</span> trades · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">99%</span> positive</span>
-      </div>
-      <span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow); border: 1px solid var(--escrow); border-radius: 999px; padding: 3px 8px;">Trusted</span>
+    <header style="display: flex; align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
+      <div style="display: flex; align-items: center; gap: 12px; flex-grow: 1; min-width: 0;"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;">SG<span style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></span><span style="display: flex; flex-direction: column; gap: 3px; flex-grow: 1; min-width: 0;"><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">satoshi_ghost</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; flex-shrink: 0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="color: var(--escrow); font-weight: 600;">Online</span> · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1,284</span> trades · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">99.4%</span> positive</span></span><span style="flex-shrink: 0;"><button type="button" aria-haspopup="dialog" aria-label="Trusted badge: 500+ trades and 98%+ positive." style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--escrow) 32%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink); white-space: nowrap;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: color-mix(in srgb, var(--escrow) 16%, var(--surface-raised)); border: 1px solid color-mix(in srgb, var(--escrow) 55%, transparent); color: var(--escrow);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6zM9 12l2 2 4-4"/></svg></span>Trusted</span></button></span></div>
     </header>
-    <div role="log" aria-label="Messages" style="flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px; font-size: 15px; line-height: 22px;">
-      <span style="align-self: center; text-align: center; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Encrypted. If a dispute is opened, a moderator can read this conversation.</span>
+    <div role="log" aria-label="Messages" style="flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 16px;">
+      <span style="align-self: center; display: flex; align-items: flex-start; gap: 6px; max-width: 320px; font-size: 12px; line-height: 16px; color: var(--ink-muted); text-align: center;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg><span>Encrypted. If a dispute is opened, a moderator can read this conversation.</span></span>
       <sc-for list="{{messages}}" as="m" hint-placeholder-count="3">
-        <div style="{{m.wrapStyle}}">
-          <span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{m.meta}}</span>
-          <p style="{{m.bubbleStyle}}">{{m.text}}</p>
-        </div>
+        <div style="{{m.wrapStyle}}"><sc-if value="{{m.them}}" hint-placeholder-val="{{true}}"><span aria-hidden="true" style="{{m.avStyle}}">{{m.init}}</span></sc-if><div style="{{m.colStyle}}"><span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="color: var(--ink); font-weight: 600;">{{m.who}}</span> · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.time}}</span></span><p style="{{m.bubbleStyle}}">{{m.text}}</p></div></div>
       </sc-for>
     </div>
     <div role="group" aria-label="Write a message" style="display: flex; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
@@ -206,7 +201,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":840,"height":1000}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":840,"height":1011}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -224,11 +219,11 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 840px; height: 1000px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: grid; grid-template-columns: 412px 16px 412px;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 840px; height: 1011px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: grid; grid-template-columns: 412px 16px 412px;";
     const s = this.state;
     // Stepper (v2 §13): buyer labels, step 1 (You pay) current at 62 of 90 min used = 31%.
     // After "Cancel trade" the stepper stays as it was, greyed, and the hero turns neutral.
@@ -244,12 +239,15 @@ class Component extends DCLogic {
     const statusStyle = 'display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, ' + tone + ' ' + (s.cancelled ? '16%' : '14%') + ', transparent); color: ' + (s.cancelled ? 'var(--ink)' : tone) + '; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;';
     const returnPills = Array.from({ length: 10 }, (_, i) => ({ style: 'display: block; border-radius: 999px; background: ' + (i < 3 ? tone : 'color-mix(in srgb, ' + tone + ' 18%, var(--surface-raised))') + ';' }));
     const tickBoxStyle = 'display: flex; align-items: flex-start; gap: 12px; padding: ' + (s.ticked ? '13px' : '14px') + '; border-radius: 12px; background: var(--surface-raised); border: ' + (s.ticked ? '2px solid var(--ink)' : '1px solid transparent') + '; font-size: 16px; line-height: 24px; cursor: pointer;';
-    const messages = s.messages.map((m) => ({
-      text: m.text,
-      meta: (m.me ? 'You' : 'satoshi_ghost') + ' · ' + m.time,
-      wrapStyle: 'display: flex; flex-direction: column; gap: 4px; max-width: 85%; align-self: ' + (m.me ? 'flex-end; align-items: flex-end;' : 'flex-start; align-items: flex-start;'),
-      bubbleStyle: 'margin: 0; padding: 10px 14px; border-radius: 16px; ' + (m.me ? 'background: transparent; border: 1px solid var(--line);' : 'background: var(--surface-raised);')
-    }));
+    // Chat rows (craft kit, as DisputeRoom): their messages carry the 32 px avatar; time in mono.
+    const chatView = (m, who, init, ring) => ({
+      text: m.text, time: m.time, them: !m.me, init, who: m.me ? 'You' : who,
+      avStyle: "position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid " + (ring ? 'color-mix(in srgb, var(--escrow) 70%, transparent)' : 'var(--surface-raised)') + "; font-family: 'Familjen Grotesk', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: -0.01em;",
+      wrapStyle: 'display: flex; gap: 8px; align-items: flex-end; max-width: ' + (m.me ? '85%; align-self: flex-end;' : '90%; align-self: flex-start;'),
+      colStyle: 'display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: ' + (m.me ? 'flex-end;' : 'flex-start;'),
+      bubbleStyle: 'margin: 0; padding: 10px 14px; font-size: 15px; line-height: 22px; ' + (m.me ? 'border-radius: 12px 12px 4px 12px; border: 1px solid var(--line);' : 'border-radius: 12px 12px 12px 4px; background: var(--surface);')
+    });
+    const messages = s.messages.map((m) => chatView(m, 'satoshi_ghost', 'SG', true));
     const send = () => {
       const text = this.state.draft.trim();
       if (!text) return;

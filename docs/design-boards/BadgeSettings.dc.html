@@ -24,26 +24,14 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </a>
       <span style="padding-right: 10px; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
     </div>
-    <h1 style="margin: 8px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Your badges</h1>
+    <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Settings</span>
+    <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Your badges</h1>
   </header>
 
   <main style="flex-grow: 1; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 16px;">
     <section aria-label="Preview" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
       <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">On your offers</span>
-      <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
-        <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface); font-size: 15px; font-weight: 600;">M</span>
-        <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0;">
-          <span style="font-size: 16px; line-height: 22px; font-weight: 600;">mira.k</span>
-          <div style="display: flex; flex-wrap: wrap; gap: 6px; min-height: 24px;">
-            <sc-for list="{{featured}}" as="b" hint-placeholder-count="2">
-              <span style="display: inline-flex; align-items: center; gap: 4px; height: 24px; box-sizing: border-box; padding: 0 8px; border-radius: 999px; border: 1px solid var(--escrow); color: var(--escrow); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">{{b.name}}</span>
-            </sc-for>
-            <sc-if value="{{hasMore}}" hint-placeholder-val="{{true}}">
-              <span style="display: inline-flex; align-items: center; height: 24px; box-sizing: border-box; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-muted); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; font-weight: 500;">+{{moreCount}}</span>
-            </sc-if>
-          </div>
-        </div>
-      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--surface-raised);"><div style="display: flex; align-items: center; gap: 12px; min-width: 0;"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;">MK<span style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">mira.k</span></span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Online · </span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">212</span> trades · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">99%</span> positive</span></span></div><div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 30px;"><sc-for list="{{featured}}" as="b" hint-placeholder-count="2"><span style="{{b.chipStyle}}"><span aria-hidden="true" style="{{b.seal22}}"><sc-if value="{{b.isIcon}}" hint-placeholder-val="{{true}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.d}}"/></svg></sc-if><sc-if value="{{b.isNum}}" hint-placeholder-val="{{false}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 8px; line-height: 1; font-weight: 500; letter-spacing: -0.02em;">{{b.num}}</span></sc-if></span>{{b.name}}</span></sc-for><sc-if value="{{hasMore}}" hint-placeholder-val="{{true}}"><span aria-label="{{moreLabel}}" style="display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+{{moreCount}}</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></sc-if></div></div>
       <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Featured <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{featuredCount}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span></span>
     </section>
 
@@ -55,19 +43,21 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </sc-if>
 
     <section aria-labelledby="earned-title" style="display: flex; flex-direction: column; padding: 20px 20px 8px; border-radius: 16px; background: var(--surface);">
-      <h2 id="earned-title" style="margin: 0 0 4px; font-size: 18px; line-height: 24px; font-weight: 600;">Earned</h2>
+      <h2 id="earned-title" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Earned</h2>
+      <p style="margin: 4px 0 4px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-weight: 600; color: var(--ink);">When tapped:</span> Shows behind +N on your offers. Buyers tap it (or point at it on a computer) to see it.</p>
       <sc-for list="{{earned}}" as="b" hint-placeholder-count="6">
         <div style="{{b.rowStyle}}">
-          <div style="display: flex; align-items: center; gap: 14px;">
-            <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="5.5"/><path d="M8.5 13.5L7 21l5-2.5 5 2.5-1.5-7.5"/></svg></span>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span aria-hidden="true" style="{{b.seal40}}"><sc-if value="{{b.isIcon}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.d}}"/></svg></sc-if><sc-if value="{{b.isNum}}" hint-placeholder-val="{{false}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 1; font-weight: 500; letter-spacing: -0.02em;">{{b.num}}</span></sc-if></span>
             <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
-              <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{b.name}}</span>
+              <span style="font-size: 15px; line-height: 20px; font-weight: 600;">{{b.name}}</span>
               <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{b.meaning}}</span>
+              <span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{b.earnPre}} <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{b.earnDate}}</span></span>
             </div>
           </div>
           <div role="radiogroup" aria-label="{{b.name}} visibility" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 999px; background: var(--surface-raised);">
             <button type="button" role="radio" aria-checked="{{b.fOn}}" onClick="{{b.setF}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; margin: -4px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{b.fStyle}}">Featured</span></button>
-            <button type="button" role="radio" aria-checked="{{b.hOn}}" onClick="{{b.setH}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; margin: -4px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{b.hStyle}}">On hover</span></button>
+            <button type="button" role="radio" aria-checked="{{b.hOn}}" onClick="{{b.setH}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; margin: -4px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{b.hStyle}}">When tapped</span></button>
             <button type="button" role="radio" aria-checked="{{b.xOn}}" onClick="{{b.setX}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; margin: -4px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{b.xStyle}}">Hidden</span></button>
           </div>
         </div>
@@ -89,31 +79,26 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </main>
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
-    <aside aria-label="Open for the owner: On hover on a phone" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
-      <span style="font-weight: 600;">"On hover" has no hover on a phone. What should the middle option be?</span>
-      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>Keep "On hover" (shows on hover on desktop, on tap on a phone)</li>
-        <li>Rename it "On tap" with the helper "Shows when someone taps your badges"</li>
-        <li>Drop it: only Featured or Hidden</li>
-      </ul>
-      <span style="color: var(--ink-muted);">Kept "On hover" until decided.</span>
+    <aside aria-label="Proposal: the middle visibility option" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Proposal · design, 7 Nov (owner liked tap/hover)</span>
+      <span>Design's proposal follows the owner's 7 Nov comment that they like showing more on tap or hover. The middle option is renamed from "On hover" to "When tapped": those badges sit behind "+N" on offers. On a phone, tapping "+N" or a badge opens a sheet; on a computer, pointing at "+N" opens a small card (see OfferAd and OfferAd-Wide). Not decided yet: the owner confirms the name.</span>
     </aside>
-    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Badge names and counts are examples. The badge descriptions and the New-badge sentence are COPY-UNSIGNED.</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Badge names, counts and dates are examples. The badge descriptions, the New-badge sentence, the "When tapped" label and its helper are COPY-UNSIGNED (draft). Rows use the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">40</span> px seal and the preview uses the offer-card chips from the Badges board.</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1645}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1658}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
     this.state = {
-      vis: { 'Trusted': 'f', 'Fast': 'f', 'Veteran': 'h', 'PGP verified': 'h', 'Security key verified': 'h', '100 trades': 'x' },
-      order: ['Trusted', 'Fast'],
+      vis: { pgp: 'f', fast: 'h', hw: 'h', m100: 'h' },
+      order: ['pgp'],
       notice: ''
     };
   }
   set(name, level) {
+    const BADGES = { fast: { name: 'Fast' }, pgp: { name: 'PGP verified' }, hw: { name: 'Security key' }, m100: { name: '100 trades' } };
     const vis = Object.assign({}, this.state.vis);
     let order = this.state.order.filter((n) => n !== name);
     let notice = '';
@@ -121,7 +106,7 @@ class Component extends DCLogic {
       if (order.length >= 2) {
         const bumped = order.shift();
         vis[bumped] = 'h';
-        notice = bumped + ' moved to On hover. Only 2 badges can be featured.';
+        notice = BADGES[bumped].name + ' moved to When tapped. Only 2 badges can be featured.';
       }
       order.push(name);
     }
@@ -130,23 +115,42 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "width: 390px; min-height: 1645px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
-    const meanings = {
-      'Trusted': '100+ trades and 98%+ positive',
-      'Fast': 'Usually pays or releases within 10 min',
-      'Veteran': 'Trading on X2F for 1+ year',
-      'PGP verified': 'Signs in with a verified PGP key',
-      'Security key verified': 'Protects the account with a hardware key',
-      '100 trades': 'Completed 100 trades'
+
+    // Badge set, as on the Badges board (7 Nov): family tone, stroke glyph or milestone number, meaning. Draft copy.
+    const BADGES = {
+      trusted: { name: 'Trusted', tone: 'escrow', d: 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6zM9 12l2 2 4-4', meaning: '500+ trades and 98%+ positive.' },
+      clean: { name: 'Clean record', tone: 'escrow', d: 'M3 12a9 9 0 1018 0a9 9 0 10-18 0M8 12.5l2.8 2.8L16.5 9', meaning: 'No lost disputes in 100 trades.' },
+      veteran: { name: 'Veteran', tone: 'escrow', d: 'M7 9a5 5 0 1010 0a5 5 0 10-10 0M9 13.5L7.5 21l4.5-2.5 4.5 2.5L15 13.5', meaning: 'Trading on X2F for over a year.' },
+      fast: { name: 'Fast', tone: 'caution', d: 'M13 2L4 14h7l-1 8 9-12h-7z', meaning: 'Usually pays or releases within 10 min.' },
+      pgp: { name: 'PGP verified', tone: 'ink', d: 'M4 15a4 4 0 108 0a4 4 0 10-8 0M11 12l9-9M17 6l3 3', meaning: 'Logs in with a verified PGP key.' },
+      hw: { name: 'Security key', tone: 'ink', d: 'M9.5 2.5h5A1.5 1.5 0 0116 4v5a1.5 1.5 0 01-1.5 1.5h-5A1.5 1.5 0 018 9V4a1.5 1.5 0 011.5-1.5zM6.5 10.5h11V15a5.5 5.5 0 01-11 0zM12 14v2.5', meaning: 'Protects the account with a hardware key.' },
+      m100: { name: '100 trades', tone: 'ink', num: '100', meaning: 'Completed 100 trades.' },
+      m500: { name: '500 trades', tone: 'ink', num: '500', meaning: 'Completed 500 trades.' },
+      fresh: { name: 'New', tone: 'ink-muted', d: 'M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 15c0-3-2.5-5-6-5 0 3 2.5 5 6 5z', meaning: 'Joined in the last 30 days.' }
     };
+    const sealStyle = (tone, size) => 'display: flex; flex-shrink: 0; width: ' + size + 'px; height: ' + size + 'px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: ' + (size === 40 ? 12 : 999) + 'px; background: color-mix(in srgb, var(--' + tone + ') 16%, var(--surface-raised)); border: ' + (size === 40 ? 1.5 : 1) + 'px solid color-mix(in srgb, var(--' + tone + ') 55%, transparent); color: var(--' + tone + ');';
+    const badge = (key, earned, tap) => {
+      const b = BADGES[key];
+      return {
+        key, name: b.name, meaning: b.meaning, d: b.d || '', num: b.num || '', isIcon: !b.num, isNum: !!b.num,
+        seal22: sealStyle(b.tone, 22), seal40: sealStyle(b.tone, 40),
+        chipStyle: 'display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 4px; box-sizing: border-box; border-radius: 999px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--' + b.tone + ') 32%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; color: var(--ink); white-space: nowrap;',
+        label: b.name + ' badge: ' + b.meaning,
+        earnPre: earned ? earned[0] : '', earnDate: earned ? earned[1] : '',
+        tap: tap || (() => {})
+      };
+    };
+    const avatarStyle = (size, ring) => 'position: relative; display: flex; flex-shrink: 0; width: ' + size + 'px; height: ' + size + 'px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid ' + (ring ? 'color-mix(in srgb, var(--escrow) 70%, transparent)' : 'var(--surface-raised)') + "; font-family: 'Familjen Grotesk', sans-serif; font-size: " + (size === 48 ? 17 : 15) + 'px; font-weight: 700; letter-spacing: -0.01em;';
+    const moreStyle = (active) => 'display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: ' + (active ? '2px solid var(--ink)' : '1px solid var(--line)') + '; background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;';
+    const rootStyle = THEMES[theme] + "width: 390px; min-height: 1658px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const DATES = { pgp: ['Since', '4 Jan 2026'], fast: ['Earned', '20 Apr 2026'], hw: ['Since', '4 Jan 2026'], m100: ['Earned', '28 Feb 2026'] };
     const { vis, order, notice } = this.state;
     const seg = (on) => 'display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; height: 36px; border-radius: 999px; font-family: inherit; font-size: 14px; ' + (on ? 'background: var(--surface); border: 2px solid var(--ink); color: var(--ink); font-weight: 600;' : 'border: 2px solid transparent; background: transparent; color: var(--ink-muted);');
-    const earned = Object.keys(meanings).map((name, i) => ({
-      name, meaning: meanings[name],
+    const earned = Object.keys(DATES).map((name, i) => Object.assign(badge(name, DATES[name]), {
       rowStyle: 'display: flex; flex-direction: column; gap: 12px; padding: 16px 0;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : ''),
       fOn: vis[name] === 'f' ? 'true' : 'false', hOn: vis[name] === 'h' ? 'true' : 'false', xOn: vis[name] === 'x' ? 'true' : 'false',
       fStyle: seg(vis[name] === 'f'), hStyle: seg(vis[name] === 'h'), xStyle: seg(vis[name] === 'x'),
@@ -155,7 +159,8 @@ class Component extends DCLogic {
     const hover = Object.keys(vis).filter((n) => vis[n] === 'h').length;
     return { rootStyle,
       earned,
-      featured: order.map((name) => ({ name })),
+      featured: order.map((k) => badge(k)),
+      moreLabel: hover + ' more badges',
       featuredCount: order.length,
       hasMore: hover > 0,
       moreCount: hover,

@@ -43,6 +43,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <div style="display: flex; flex-direction: column; gap: 4px; padding: 14px 20px; border-radius: 12px; background: var(--surface-raised);">
             <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">You owe</span>
             <span style="display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 32px; line-height: 36px; font-weight: 500; letter-spacing: -0.01em;">1.250000</span><span style="font-size: 16px; font-weight: 600; color: var(--monero-ink);">XMR</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; color: var(--ink-muted);">$412.50</span></span>
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--surface);"><div style="display: flex; align-items: center; gap: 12px; min-width: 0;"><span style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface); border: 2px solid var(--surface); font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;">MK</span><span style="display: flex; flex-direction: column; gap: 3px; min-width: 0;"><span style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">mira.k</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;">Buyer</span></span></span></div></div>
           </div>
         </section>
         <p style="margin: 0; display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); font-size: 14px; line-height: 20px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--danger);"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg><span>If you don't repay, your account can be banned.</span></p>
@@ -57,7 +58,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </sc-if>
         <div style="display: flex; align-items: center; gap: 16px;">
           <sc-if value="{{notStarted}}" hint-placeholder-val="{{true}}">
-            <button type="button" onClick="{{repay}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Repay&#160;<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1.250000</span>&#160;XMR</button>
+            <button type="button" onClick="{{repay}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Repay&nbsp;<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1.250000</span>&nbsp;XMR</button>
           </sc-if>
           <sc-if value="{{started}}" hint-placeholder-val="{{false}}">
             <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">Go to the repayment trade</a>
@@ -102,12 +103,12 @@ class Component extends DCLogic {
   constructor(props) { super(props); this.state = { started: false }; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const started = this.state.started;
-    const H = 854;
+    const H = started ? 857 : 854;
     const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     return {
       rootStyle,

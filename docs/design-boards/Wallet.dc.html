@@ -15,16 +15,19 @@ a{color:var(--monero-ink)}a:hover{color:var(--ink)}
 button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 input::placeholder{color:var(--ink-muted)}
 button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+p,li{text-wrap:pretty}
+h1,h2,h3{text-wrap:balance}
 @media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
   <header style="display: flex; flex-direction: column; padding: 8px 16px 0;">
     <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
-      <a href="Main.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <a href="Settings.dc.html" aria-label="Back to Settings" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
       <span style="padding-right: 10px; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
     </div>
-    <h1 style="margin: 8px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Your wallets</h1>
+    <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Settings</span>
+    <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Your wallets</h1>
   </header>
 
   <main style="flex-grow: 1; min-height: 0; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
@@ -35,13 +38,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <ul style="margin: 0 -20px; padding: 0; list-style: none;">
         <sc-for list="{{wallets}}" as="w" hint-placeholder-count="3">
           <li style="{{w.rowStyle}}">
-            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg></span>
+            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><sc-if value="{{w.isSoft}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg></sc-if><sc-if value="{{w.isHw}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2.5" width="8" height="8" rx="1.5"/><path d="M6.5 10.5h11V15a5.5 5.5 0 01-11 0z"/><path d="M12 14v2.5"/></svg></sc-if></span>
             <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
               <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{w.name}}</span>
               <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{w.addr}}</span>{{w.role}}</span>
             </span>
             <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0;">
-              <span style="{{w.statusStyle}}">{{w.status}}</span>
+              <span style="{{w.statusStyle}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>{{w.status}}</span>
               <sc-if value="{{w.statusNote}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{w.statusNote}}</span></sc-if>
             </span>
           </li>
@@ -78,7 +81,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </section>
 
     <section aria-label="Escrow keys" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--escrow); flex-shrink: 0; margin-top: 1px;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--escrow); flex-shrink: 0; margin-top: 1px;"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9"/><path d="M17 6l3 3"/></svg>
       <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);"><span style="font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1</span> escrow key on this device</span> for trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">K7M2-9QXA-4FTR-8WPN</span>. It holds no coins, is backed up to your PGP key and is deleted when the trade closes.</p>
     </section>
 
@@ -93,7 +96,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1253}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1292}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -101,15 +104,15 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const app = this.state.app;
     // Measured content height; Edge adds its privacy callout.
-    const H = app === 'Edge' ? 1355 : 1253;
+    const H = app === 'Edge' ? 1394 : 1292;
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
-    const chip = (tone) => 'display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: color-mix(in srgb, ' + tone + ' 14%, transparent); color: ' + tone + ';';
+    const chip = (tone) => 'display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: color-mix(in srgb, ' + tone + ' 14%, transparent); color: ' + tone + ';';
     const ready = chip('var(--escrow)');
     const list = [
       { name: 'Cake Wallet', addr: '…k3Fz', role: ' · gets payouts', status: 'Ready', statusStyle: ready, statusNote: '' },
@@ -117,6 +120,7 @@ class Component extends DCLogic {
       { name: 'Edge', addr: '…7HcW', role: '', status: 'Ready', statusStyle: ready, statusNote: 'Added today' }
     ];
     const wallets = list.map((w, i) => Object.assign({}, w, {
+      isHw: w.name.indexOf('Ledger') === 0, isSoft: w.name.indexOf('Ledger') !== 0,
       rowStyle: 'display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 20px;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '')
     }));
     const names = ['Cake Wallet', 'Edge', 'Feather', 'Monerujo', 'Stack', 'Monero GUI', 'Ledger or Trezor', 'Other'];

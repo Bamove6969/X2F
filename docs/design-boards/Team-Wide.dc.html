@@ -34,7 +34,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <div style="display: flex; align-items: center; gap: 8px; margin-left: -12px;">
           <a href="#" aria-label="Back to settings" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
           <div style="display: flex; flex-direction: column;">
-            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Settings</span>
+            <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Settings</span>
             <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Team</h1>
           </div>
         </div>
@@ -54,6 +54,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </div>
     <div style="display: grid; grid-template-columns: 560px 360px; gap: 24px; align-items: start;">
       <div style="display: flex; flex-direction: column; gap: 24px;">
+        <section aria-label="Your account" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);"><div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 48px; height: 48px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; background: var(--surface-raised); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); color: var(--ink);">SG<span aria-label="Online" style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></span><span style="display: flex; flex-direction: column; gap: 3px; min-width: 0;"><span style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 17px; line-height: 22px; font-weight: 600;">satoshi_ghost</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">You, the owner</span></span></div><div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;"><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{statMembers}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">members</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{statOnline}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">logged in</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{statInvites}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">invites open</span></span></div></section>
         <section aria-labelledby="tm-list" style="display: flex; flex-direction: column; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--team) 45%, transparent); background: color-mix(in srgb, var(--team) 10%, var(--surface));">
           <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 20px 20px 4px;">
             <h2 id="tm-list" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Team members<span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);"> · {{memberLine}}</span></h2>
@@ -63,20 +64,21 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <sc-for list="{{members}}" as="m" hint-placeholder-count="2">
               <li style="{{m.rowStyle}}">
                 <div style="display: flex; align-items: center; gap: 14px;">
-                  <span aria-hidden="true" style="{{m.avatar}}">{{m.initials}}</span>
+                  <span aria-hidden="true" style="{{m.avatar}}">{{m.initials}}<sc-if value="{{m.online}}" hint-placeholder-val="{{true}}"><span aria-label="Online" style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid color-mix(in srgb, var(--team) 10%, var(--surface));"></span></sc-if></span>
                   <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
                     <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;">
                       <span id="{{m.labelId}}" style="font-size: 16px; line-height: 22px; font-weight: 600;">{{m.name}}</span>
-                      <sc-if value="{{m.isMember}}" hint-placeholder-val="{{true}}"><span style="{{m.pillStyle}}">Team member</span></sc-if>
+                      <sc-if value="{{m.isMember}}" hint-placeholder-val="{{true}}"><span style="{{m.pillStyle}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>Team member</span></sc-if>
                     </span>
-                    <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span aria-hidden="true" style="{{m.dot}}"></span><span style="{{m.statusStyle}}">{{m.status}}</span></span>
+                    <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="{{m.statusStyle}}">{{m.status}}</span></span>
                   </span>
                   <sc-if value="{{m.isMember}}" hint-placeholder-val="{{true}}">
                     <button type="button" role="switch" aria-checked="{{m.sw.on}}" aria-label="{{m.swLabel}}" onClick="{{m.sw.toggle}}" style="display: flex; align-items: center; justify-content: center; width: 60px; height: 44px; flex-shrink: 0; margin-right: -4px; padding: 0; border: 0; background: transparent; cursor: pointer;"><span aria-hidden="true" style="{{m.sw.track}}"><span style="{{m.sw.knob}}"></span></span></button>
                   </sc-if>
                 </div>
                 <sc-if value="{{m.isMember}}" hint-placeholder-val="{{true}}">
-                  <a href="MemberPermissions-Wide.dc.html" aria-label="{{m.editLabel}}" style="display: flex; align-items: center; gap: 12px; min-height: 48px; box-sizing: border-box; padding: 0 12px 0 14px; border-radius: 12px; background: var(--surface); color: var(--ink); text-decoration: none;">
+                  <a href="MemberPermissions-Wide.dc.html" aria-label="{{m.editLabel}}" style="display: flex; align-items: center; gap: 12px; min-height: 48px; box-sizing: border-box; padding: 12px 12px 12px 14px; border-radius: 12px; background: var(--surface); color: var(--ink); text-decoration: none;">
+                <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></span>
                     <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column;">
                       <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Edit what they can do</span>
                       <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{m.allowed}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.total}}</span> allowed · {{m.presetLabel}}</span>
@@ -100,12 +102,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </sc-if>
         <section aria-label="How team members work" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
           <p style="margin: 0; font-size: 15px; line-height: 22px;">Switching a member off logs them out at once. Up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> members per account.</p>
-          <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px;">
-            <li style="display: flex; gap: 10px; margin: 0 14px; padding: 12px 0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Adding a member or changing what they can do needs a passkey, security key or PGP key.</span></li>
-            <li style="display: flex; gap: 10px; margin: 0 14px; padding: 12px 0; border-top: 1px solid var(--surface);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg><span>You approve each new member&#39;s first login.</span></li>
-            <li style="display: flex; gap: 10px; margin: 0 14px; padding: 12px 0; border-top: 1px solid var(--surface);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M11 18h2"/></svg><span>Members&#39; logins don&#39;t count toward your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> devices.</span></li>
-            <li style="display: flex; gap: 10px; margin: 0 14px; padding: 12px 0; border-top: 1px solid var(--surface);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>During a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold, all team changes wait until the hold ends.</span></li>
-          </ul>
+          <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; font-size: 14px; line-height: 20px;">
+        <li style="display: flex; align-items: center; gap: 14px;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span><span>Adding a member or changing what they can do needs a passkey, security key or PGP key.</span></li>
+        <li style="display: flex; align-items: center; gap: 14px;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></span><span>You approve each new member&#39;s first login.</span></li>
+        <li style="display: flex; align-items: center; gap: 14px;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M11 18h2"/></svg></span><span>Members&#39; logins don&#39;t count toward your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> devices.</span></li>
+        <li style="display: flex; align-items: center; gap: 14px;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span>During a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold, all team changes wait until the hold ends.</span></li>
+      </ul>
         </section>
         <section aria-labelledby="tm-log" style="display: flex; align-items: flex-start; gap: 14px; padding: 20px; border-radius: 16px; background: var(--surface);">
           <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4"/><path d="M10 12h6M10 16h6"/></svg></span>
@@ -131,10 +133,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
             <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Sensitive permissions, like releasing XMR, warn you before they turn on.</p>
           </div>
-          <p style="display: flex; gap: 10px; margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg><span>Trades are never accepted automatically.</span></p>
+          <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg><p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Trades are never accepted automatically.</p></div>
         </section>
         <section aria-labelledby="tm-only" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
-          <h2 id="tm-only" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Only you can</h2>
+          <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; background: var(--surface-raised); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); color: var(--ink);">SG</span><h2 id="tm-only" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Only you can</h2></div>
           <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
             <sc-for list="{{only}}" as="o" hint-placeholder-count="6">
               <li style="{{o.style}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>{{o.text}}</span></li>
@@ -146,8 +148,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </div>
         </section>
         <section aria-labelledby="tm-see" style="display: flex; flex-direction: column; gap: 8px; padding: 20px; border-radius: 16px; background: var(--surface);">
-          <h2 id="tm-see" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What trade partners see</h2>
-          <p style="margin: 0; font-size: 15px; line-height: 24px;">Your username, with a <span style="display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--team) 16%, transparent); color: var(--team); font-size: 12px; line-height: 16px; font-weight: 600; vertical-align: 1px;">Team member</span> label on chat replies a member sends. Never which member. All reviews and reputation go to your account.</p>
+          <h2 id="tm-see" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What trade partners see</h2><div aria-hidden="true" style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; background: var(--surface-raised); border: 2px solid color-mix(in srgb, var(--escrow) 70%, transparent); color: var(--ink);">SG</span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0;"><span style="font-size: 15px; line-height: 20px; font-weight: 600;">satoshi_ghost</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>Team member</span></span></div>
+          <p style="margin: 0; font-size: 15px; line-height: 24px;">Your username, with a <span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;  background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team); vertical-align: 1px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>Team member</span> label on chat replies a member sends. Never which member. All reviews and reputation go to your account.</p>
         </section>
       </div>
     </div>
@@ -221,7 +223,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1430}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1506}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -235,19 +237,19 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const s = this.state;
     const MAX = 3;
     // Owner, 2 Nov: per-member permissions (MemberPermissions) replace the two fixed roles. Same four presets and counts.
-    const TOTAL = 19;
+    const TOTAL = 31;
     const PRESETS = [
       { id: 'chat-only', label: 'Chat only', n: 2, desc: 'See trades and reply in trade chat.', sens: [] },
       { id: 'offers', label: 'Offers manager', n: 5, desc: 'Post, edit and pause offers, plus trade chat.', sens: ['posting offers', 'editing offers'] },
       { id: 'trades', label: 'Trade handler', n: 9, desc: 'Accept trades, confirm payment, cancel, disputes and chat.', sens: ['accepting trades', 'confirming payments'] },
-      { id: 'everything', label: 'Everything allowed', n: 16, desc: 'Every permission except the ones coming later.', sens: ['posting, editing and deleting offers', 'accepting trades', 'confirming payments', 'releasing XMR'] }
+      { id: 'everything', label: 'Everything allowed', n: 31, desc: 'Every permission.', sens: ['posting, editing and deleting offers', 'accepting trades', 'confirming payments', 'releasing XMR'] }
     ];
     const presetOf = (id) => PRESETS.find((p) => p.id === id);
     const initials = (n) => { const p = n.split(/[_.\-\s]+/).filter(Boolean); return ((p.length > 1 ? p[0].charAt(0) + p[1].charAt(0) : n.slice(0, 2)) || '?').toUpperCase(); };
@@ -261,7 +263,7 @@ class Component extends DCLogic {
       const member = m.kind === 'member';
       const p = presetOf(m.preset);
       let status, dot, statusStyle = '';
-      if (!member) { status = 'Invite not used yet'; dot = 'border: 1px dashed var(--line);'; }
+      if (!member) { status = 'Invite not used yet'; dot = 'border: 1px solid var(--line);'; }
       else if (!m.on) { status = 'Switched off'; dot = 'background: var(--danger);'; statusStyle = 'color: var(--danger);'; }
       else if (m.online) { status = 'Logged in · ' + m.seen.toLowerCase(); dot = 'background: var(--escrow);'; }
       else { status = 'Logged out · ' + m.seen.toLowerCase(); dot = 'border: 1px solid var(--line);'; }
@@ -270,9 +272,10 @@ class Component extends DCLogic {
         name: m.name, initials: initials(m.name), labelId: 'tm-m-' + m.id,
         isMember: member, isInvite: !member, status, statusStyle,
         dot: 'display: block; width: 8px; height: 8px; box-sizing: border-box; border-radius: 999px; flex-shrink: 0; ' + dot,
-        avatar: 'display: flex; width: 40px; height: 40px; flex-shrink: 0; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-size: 14px; line-height: 16px; font-weight: 600; letter-spacing: 0.02em; ' + (live ? 'background: var(--team); color: var(--ground);' : (member ? 'background: var(--surface-raised); color: var(--ink-muted);' : 'border: 1px dashed var(--line); color: var(--ink-muted);')),
+        avatar: "position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; " + (live ? 'background: var(--team); border: 2px solid var(--team); color: var(--ground);' : (member ? 'background: var(--surface-raised); border: 2px solid var(--surface-raised); color: var(--ink-muted);' : 'border: 1px solid var(--line); color: var(--ink-muted);')),
+        online: live && m.online,
         // Members are always --team: avatar, pill and card tint. A switched-off member goes neutral.
-        pillStyle: 'display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; line-height: 16px; font-weight: 600; ' + (live ? 'background: color-mix(in srgb, var(--team) 16%, transparent); color: var(--team);' : 'background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink-muted);'),
+        pillStyle: 'display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; ' + (live ? 'background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);' : 'background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted);'),
         rowStyle: 'display: flex; flex-direction: column; gap: 12px; padding: 16px 0 12px;' + (i > 0 ? ' border-top: 1px solid color-mix(in srgb, var(--team) 25%, transparent);' : ''),
         sub: member ? 'Member since' : 'Expires', when: m.since,
         allowed: String(m.allowed), total: String(TOTAL), presetLabel: p ? p.label : 'Custom',
@@ -321,14 +324,15 @@ class Component extends DCLogic {
     };
     const methods = ['Use my passkey', 'Use my security key'].map((label) => ({ label, use: verified }));
 
-    // Board height = measured content height (night, fonts loaded). The right column sets it (1430): even with
-    // 3 rows (the most allowed) and a status note, the member column stays shorter.
-    const H = 1430;
+    // Board height = measured content height (night, fonts loaded). The right column sets it (1510) up to 2 rows.
+    // With 3 rows (the most allowed) the member column is taller: 1526 for 3 invites, +14 per member row, +70 for the status note.
+    const H = count >= MAX ? 1522 + 14 * s.list.filter((m) => m.kind === 'member').length + (s.note ? 70 : 0) : 1506;
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     return {
       rootStyle, members, presetRows, presetOpts,
       only: ONLY.map((t, i) => ({ text: t, style: 'display: flex; gap: 10px; align-items: flex-start; margin: 0 14px; padding: 12px 0; font-size: 15px; line-height: 20px;' + (i > 0 ? ' border-top: 1px solid var(--surface);' : '') })),
       memberLine: count + ' of ' + MAX + ' · ' + online + ' logged in',
+      statMembers: count + ' of ' + MAX, statOnline: String(online), statInvites: String(s.list.filter((m) => m.kind !== 'member').length),
       hasNote: s.note !== '', note: s.note,
       isFull: full, addStyle: primary(full),
       openAdd: () => { if (!full) this.setState({ sheet: 'name', draft: '', copied: false, pick: null, verify: null }); },

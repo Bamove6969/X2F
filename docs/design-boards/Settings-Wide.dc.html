@@ -27,6 +27,12 @@ a.row:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--surfa
 .ttl{font-size:16px;line-height:22px;font-weight:600}
 .meta{font-size:13px;line-height:18px;color:var(--ink-muted)}
 .chev{flex-shrink:0;color:var(--ink-muted)}
+.ttl{text-wrap:balance}
+.val{flex-shrink:0;white-space:nowrap;font-size:15px;line-height:20px;font-weight:500;color:var(--ink)}
+.val+.chev{margin-left:-6px}
+.tile.danger{background:color-mix(in srgb, var(--danger) 14%, transparent);color:var(--danger)}
+button.row{width:100%;border:0;background:transparent;font-family:inherit;text-align:left;cursor:pointer}
+button.row:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--surface))}
 .off{color:var(--ink-muted)}
 .off .tile{color:var(--ink-muted)}
 .sw{display:flex;align-items:center;justify-content:center;width:60px;height:44px;flex-shrink:0;margin-right:-8px;padding:0;border:0;border-radius:999px;background:transparent;cursor:pointer}
@@ -53,7 +59,7 @@ a.row:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--surfa
           <h2 id="st-acc" class="lbl">Account</h2>
           <ul class="card">
             <li><a href="Profile-Wide.dc.html" class="row">
-              <span class="tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg></span>
+              <span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 40px; height: 40px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;">MK<span style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; box-sizing: border-box; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></span>
               <span class="txt"><span class="ttl">Display name</span><span class="meta">mira.k · public</span></span>
               <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
             </a></li>
@@ -89,17 +95,20 @@ a.row:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--surfa
             </a></li>
             <li><a href="Devices-Wide.dc.html" class="row">
               <span class="tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg></span>
-              <span class="txt"><span class="ttl">Devices</span><span class="meta"><span class="mono">2</span> of <span class="mono">3</span> in use</span></span>
+              <span class="txt"><span class="ttl">Devices</span><span class="meta">in use</span></span>
+<span class="val"><span class="mono">2</span> of <span class="mono">3</span></span>
               <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
             </a></li>
             <li><a href="SetupBackup-Wide.dc.html" class="row">
               <span class="tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h6"/></svg></span>
-              <span class="txt"><span class="ttl">Recovery code</span><span class="meta">Written down <span class="mono">14 Oct 2026</span></span></span>
+              <span class="txt"><span class="ttl">Recovery code</span><span class="meta">Written down</span></span>
+<span class="val"><span class="mono">14 Oct 2026</span></span>
               <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
             </a></li>
             <li><a href="Devices-Wide.dc.html" class="row">
               <span class="tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
-              <span class="txt"><span class="ttl">Session length</span><span class="meta"><span class="mono">{{sessionH}}</span> h · asked at every login</span></span>
+              <span class="txt"><span class="ttl">Session length</span><span class="meta">asked at every login</span></span>
+<span class="val"><span class="mono">{{sessionH}}</span> h</span>
               <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
             </a></li>
             <li><div class="row">
@@ -138,7 +147,8 @@ a.row:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--surfa
               <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}">
                 <a href="Team-Wide.dc.html" class="row">
                   <span class="tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c2.8 0 4.5 1.9 4.5 4.5"/></svg></span>
-                  <span class="txt"><span class="ttl">Team members</span><span class="meta"><span class="mono">2</span> of <span class="mono">3</span> · roles, invites, on or off</span></span>
+                  <span class="txt"><span class="ttl">Team members</span><span class="meta">roles, invites, on or off</span></span>
+<span class="val"><span class="mono">2</span> of <span class="mono">3</span></span>
                   <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
                 </a>
               </sc-if>
@@ -195,7 +205,8 @@ a.row:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--surfa
             </a></li>
             <li><a href="SetupTerms-Wide.dc.html" class="row">
               <span class="tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg></span>
-              <span class="txt"><span class="ttl">Terms</span><span class="meta">Version accepted <span class="mono">14 Oct 2026</span></span></span>
+              <span class="txt"><span class="ttl">Terms</span><span class="meta">Version accepted</span></span>
+<span class="val"><span class="mono">14 Oct 2026</span></span>
               <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
             </a></li>
             <li><a href="News-Wide.dc.html" class="row">
@@ -209,10 +220,10 @@ a.row:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--surfa
               <svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
             </a></li>
           </ul>
-          <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 8px 0;">
-            <button type="button" style="display: inline-flex; align-items: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; line-height: 20px; font-weight: 600; cursor: pointer;">Log out</button>
-            <a href="DeleteAccount-Wide.dc.html" style="display: inline-flex; align-items: center; gap: 4px; height: 44px; padding: 0 8px; color: var(--danger); font-size: 15px; line-height: 20px; font-weight: 600; text-decoration: none;"><span>Delete account</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
-          </div>
+          <ul class="card" aria-label="Session and account" style="margin-top: 16px;">
+        <li><button type="button" class="row"><span class="tile" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h4a2 2 0 012 2v12a2 2 0 01-2 2h-4"/><path d="M10 16l-4-4 4-4M6 12h10"/></svg></span><span class="txt"><span class="ttl">Log out</span></span></button></li>
+        <li><a href="DeleteAccount-Wide.dc.html" class="row"><span class="tile danger" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></span><span class="txt"><span class="ttl" style="color: var(--danger);">Delete account</span></span><svg class="chev" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a></li>
+      </ul>
         </section>
       </div>
     </div>
@@ -249,8 +260,8 @@ class Component extends DCLogic {
   constructor(props) { super(props); this.state = { wait: false, seckey: false, one: false, nudges: true, volume: false }; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     // Board height = measured content height (night, fonts loaded); the right column is the taller one. The vendor variant changes words only.

@@ -28,9 +28,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </div>
     <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">{{countLine}}</span>
     <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">My offers</h1>
+    <div style="margin-top: 16px;"><div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;"><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{st.on}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">on</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{st.selling}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">selling</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{st.buying}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">buying</span></span></div></div>
   </header>
 
-  <main style="flex-grow: 1; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 12px;">
+  <main style="flex-grow: 1; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 16px;">
     <sc-if value="{{onHold}}" hint-placeholder-val="{{false}}">
       <div role="status" style="display: flex; gap: 10px; align-items: flex-start; margin-bottom: 4px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
         <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
@@ -96,7 +97,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
                 Paused · trading hold
               </span>
             </sc-if>
-            <a href="FlexOffer-Post.dc.html" aria-label="{{o.editLabel}}" style="display: flex; align-items: center; height: 44px; padding: 0 8px; margin-right: -4px; border-radius: 6px; color: var(--ink); font-size: 15px; font-weight: 600; {{o.dim}}">Edit</a>
+            <a href="FlexOffer-Post.dc.html" aria-label="{{o.editLabel}}" style="display: flex; align-items: center; height: 44px; padding: 0 8px; margin-right: -4px; border-radius: 6px; color: var(--ink); font-size: 15px; font-weight: 600; gap: 2px; {{o.dim}}">Edit<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
           </div>
         </div>
         <button type="button" role="switch" aria-checked="{{o.onStr}}" aria-label="{{o.switchLabel}}" disabled="{{onHold}}" onClick="{{o.toggle}}" style="{{o.switchStyle}}">
@@ -143,10 +144,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <li>Preview with the rate tweak (all, one-missing, none). The chip label and the two caution lines are draft copy.</li>
       </ul>
     </aside>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;">Craft pass, 7 Nov: three stat tiles under the title (on, selling, buying; computed from the offers). Edit gets a chevron. COPY-UNSIGNED: "on", "selling", "buying".</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"hold":{"editor":"enum","options":["off","on"],"default":"off"},"rate":{"editor":"enum","options":["all","one-missing","none"],"default":"all"},"$preview":{"width":390,"height":2273}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"hold":{"editor":"enum","options":["off","on"],"default":"off"},"rate":{"editor":"enum","options":["all","one-missing","none"],"default":"all"},"$preview":{"width":390,"height":2451}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -154,15 +156,15 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const hold = this.props.hold === 'on';
     // F4 (owner, 7 Nov): currencies with no market rate. "one-missing": o1 also covers ARS, which has no rate.
     // "none": o3 is an ARS-only offer and ARS has no rate, so it can't go live.
     const rate = ['one-missing', 'none'].includes(this.props.rate) ? this.props.rate : 'all';
-    const H = { all: [2273, 2439], 'one-missing': [2315, 2481], none: [2353, 2519] };
+    const H = { all: [2451, 2621], 'one-missing': [2493, 2663], none: [2531, 2701] };
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H[rate][hold ? 1 : 0] + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     const OFFERS = [
@@ -245,6 +247,8 @@ class Component extends DCLogic {
         ? 'border: 1px solid var(--surface-raised); background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'
         : 'border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;'),
       countLine: nOn + ' of ' + OFFERS.length + ' offers on',
+      st: { on: String(nOn), selling: String(OFFERS.filter((o) => o.side === 'Selling XMR').length), buying: String(OFFERS.filter((o) => o.side === 'Buying XMR').length) },
+
       allChecked: allSel, allMixed: someSel, hasSel: nSel > 0,
       allHint: nSel === 0 ? 'Pick offers to turn them on or off together.' : (allSel ? 'All ' + OFFERS.length + ' offers selected.' : 'Some selected: ' + nSel + ' of ' + OFFERS.length + '.'),
       selCount: nSel + ' selected',
