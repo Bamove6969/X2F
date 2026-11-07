@@ -542,3 +542,10 @@ Review: `~/x2f-comms/review-task40-2026-10-29.md`. Built: the app shell (one tre
 - RV5 m7: `taps/start` checks `tapPermOf(intent)` through the mount's `allows` (ruling propose `disputes.handle`, approve `rulings.approve`, stop/resume `site.control`, invites/switch-on/set-role `staff.manage`, settings `settings.write`, add-owner-key the owner role); refused → 403 `forbidden`, nothing stored.
 - RV5 m10 wired: the staff mount passes `sessionOf: req.auth.sessionId`, and members, invites and ownerKeys pass `{ sessionId }` to `consumeKeyTap`. Task 8's settings and site routes must do the same when they merge.
 - Flake fixed in ownerLockout.test.ts: the owner's two keys share a creation time, so "the first key" followed random ids; the test now removes keys[0] by its credential.
+
+### Lead re-review 6 Nov, items 1-2: own account work on the staff site (claude3, 7 Nov)
+- `apps/api/src/staff/account.ts` (perm `self`, own account only): methods list; PGP add (`/staff/v1/account/pgp/{start,finish}`, the code proves the key, a tap `add-pgp-key` bound to the fingerprint confirms); method removal (`DELETE /staff/v1/account/methods/:type/:id`, pgp | security-key | passkey, tap `remove-method`; `last-login-method` and the owner's two-key rule hold; other sessions end); sessions list (both sites) and end one; alerts and mark seen; Web Push at `/staff/v1/account/push`.
+- New tap intents in @x2f/staff: `add-pgp-key { fingerprint }`, `remove-method { methodType, methodId }` (`tapPermOf` → `self`).
+- The staff app's `push` is real `sendPush` now (was a stub); `buildStaffApi(..., { pushTransport })`. `pushRoutesAt` serves both sites; only the owner's subscriptions are account-wide.
+- Log actions: `staff.method-added`, `staff.method-removed` (method kind only), `staff.session-ended`.
+- Not built here: adding a security key or passkey for a staff member (the owner has `/staff/v1/owner/keys`); a staff key is added at sign-up today. Lead: say if staff need it.
