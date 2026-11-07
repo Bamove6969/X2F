@@ -6,7 +6,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { verifyLogChain } from '../../src/log/verify.js';
 import { codeOf, decrypt, genKey, type Pair } from '../helpers/pgpKeys.js';
 import type { SoftAuthenticator } from '../helpers/softAuthenticator.js';
-import { SESSION_COOKIE, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedStaff } from '../helpers/staffApp.js';
+import { SESSION_COOKIE, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedStaff, uniqueName } from '../helpers/staffApp.js';
+import { seedAccount } from '../helpers/accounts.js';
+import { driveTo, seedTrade } from '../helpers/trades.js';
+import { applyEvent } from '../../src/trades/store.js';
 import { addPgpKey, attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
 
 const MON_NOON = new Date('2026-11-02T12:00:00Z');
@@ -337,6 +340,26 @@ describe('members', () => {
   });
 });
 
+describe('open cases (was NEEDS_P4_CASE_ASSIGNEE)', () => {
+  it('the list counts a member\'s open cases; switch-off sends them back to the queue, one log entry each', async () => {
+    const mod = await staffWithKeys(t, { role: 'mod' });
+    const seller = await seedAccount(t.deps, { loginName: uniqueName('cs') });
+    const buyer = await seedAccount(t.deps, { loginName: uniqueName('cb') });
+    const { trade } = await seedTrade(t.deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
+    await driveTo(t.deps, trade, 'released');
+    await applyEvent(t.deps, trade.code, { type: 'escalate' }, 'system');
+    await t.deps.db.query('update disputes set assignee = $2 where code = $1', [trade.code, mod.id]);
+    const before = (await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string | null; openCases: number }>;
+    expect(before.find((m) => m.accountId === mod.id)!.openCases).toBe(1);
+    expect((await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {})).statusCode).toBe(200);
+    const { rows } = await t.deps.db.query<{ assignee: string | null }>('select assignee::text from disputes where code = $1', [trade.code]);
+    expect(rows[0]!.assignee).toBeNull();
+    expect(await logEntries(t.deps, 'dispute.unassigned')).toContainEqual({ actor_kind: 'system', detail: JSON.stringify({ staffId: mod.id }) });
+    const after = (await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string | null; openCases: number }>;
+    expect(after.find((m) => m.accountId === mod.id)!.openCases).toBe(0);
+  });
+});
+
 describe('owner Q54: the public name is displayName; a field named username is refused', () => {
   it('the invitee names the account with displayName and loginName; username is not taken', async () => {
     const inv = await createInvite('helper');
@@ -385,13 +408,6 @@ describe('per-person grants (owner Q60)', () => {
 describe('Task 7 tripwires (local tree only)', () => {
   const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
   const migrations = (): string => readdirSync(`${ROOT}apps/api/migrations`).map((f) => readFileSync(`${ROOT}apps/api/migrations/${f}`, 'utf8')).join('\n');
-
-  it('NEEDS_P4_CASE_ASSIGNEE: switch-off unassigns open cases and the list counts them', () => {
-    // When Tasks 10-12 add `disputes.assignee` (coordination "Columns on disputes"): in
-    // staff/members.ts make `unassignOpenCases` clear it for the switched-off member (one
-    // `dispute.assigned`-style log entry per case) and make `openCases` count them; test both.
-    expect(/\bassignee\b/.test(migrations()), 'disputes.assignee landed: wire unassignOpenCases and openCases (see this test)').toBe(false);
-  });
 
   it('NEEDS_P4_MODERATION_REVOKE: switch-off tells the moderation process', () => {
     // When Task 13's gate lands (apps/moderation/src/gate): give ModerationClient a revoke call and

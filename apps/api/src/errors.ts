@@ -75,6 +75,9 @@ export type ApiErrorCode =
   | 'offer-busy'
   // Plan 4, Task 5: a security-key tap that is missing, expired, used, another account's or for another intent.
   | 'tap-invalid'
+  // Plan 4, Task 8: the banner's 140 characters, and the trader API during maintenance (503).
+  | 'banner-too-long'
+  | 'maintenance'
   // Plan 3, Task 8: participant identities and the moderation attestation.
   | 'identity-exists'
   | 'identity-conflict'

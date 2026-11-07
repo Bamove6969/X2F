@@ -41,6 +41,27 @@ export type Actor =
  */
 export type DisputeStatus = 'open' | 'awaiting-approval' | 'published' | 'appealed' | 'final' | 'complying' | 'closed';
 
+/** The dispute status as traders see it (Plan 3 Task 27's five; migration 108's original set). */
+export type TraderDisputeStatus = 'open' | 'ruled' | 'appealed' | 'final' | 'closed';
+
+/**
+ * The one mapping from the machine's statuses to the traders' (lead decision 2026-10-30): a
+ * proposal awaiting a second approval is not a ruling yet, and `complying` is final (no appeal is
+ * possible; the seller still owes the XMR of `seller-sends-xmr`).
+ */
+export function traderStatus(s: DisputeStatus): TraderDisputeStatus {
+  switch (s) {
+    case 'awaiting-approval':
+      return 'open';
+    case 'published':
+      return 'ruled';
+    case 'complying':
+      return 'final';
+    default:
+      return s;
+  }
+}
+
 export interface RulingDraft {
   id: string;
   outcome: RulingOutcome;

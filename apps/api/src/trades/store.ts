@@ -361,7 +361,7 @@ export async function applyEvent(
       ]);
       // Task 27: a system escalation writes its dispute row with the trade (a trader's own
       // opening writes it through `within`, with the reason they gave).
-      if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, code, now);
+      if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, next, now);
       // C12b: a completed trade adds its take-time USD value to both sides' running totals, a settled
       // buyer cancel to the buyer's cancel count (idempotent per trade; traders/tradedTotal.ts).
       if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) await countTradeTotals(client, code);
