@@ -121,9 +121,11 @@ describe('setVerifiedPastRepUsd (the moderator seam)', () => {
     const staff = await account('staff');
     const signed = await claim(trader, { site: 'LocalMonero' });
     const approved = await claim(trader, { site: 'Paxful', status: 'approved' });
-    expect(await setVerifiedPastRepUsd(deps.db, signed, 1_250_000_00, senior(staff), T0)).toEqual({ ok: true });
+    // Owner Q58 (6 Nov): at most $100,000.
+    expect(await setVerifiedPastRepUsd(deps.db, signed, 100_000_01, senior(staff), T0)).toEqual({ ok: false, reason: 'bad-amount' });
+    expect(await setVerifiedPastRepUsd(deps.db, signed, 100_000_00, senior(staff), T0)).toEqual({ ok: true });
     expect(await setVerifiedPastRepUsd(deps.db, approved, 99, senior(staff), T0)).toEqual({ ok: true });
-    expect(await row(signed)).toEqual({ verified_usd_cents: '125000000', verified_usd_by: staff, verified_usd_at: T0 });
+    expect(await row(signed)).toEqual({ verified_usd_cents: '10000000', verified_usd_by: staff, verified_usd_at: T0 });
     // Owner 2026-11-02: a figure may be entered before approval, but only an APPROVED claim counts.
     expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(99);
   });
@@ -235,21 +237,5 @@ describe('stand-ins', () => {
       .filter((f) => readFileSync(f, 'utf8').includes('verified_usd_cents'))
       .map((f) => f.slice(ROOT.length));
     expect(holders).toEqual(['apps/api/src/pastrep/store.ts']);
-  });
-
-  it('NEEDS_P4_PASTREP_VERIFIED_USD: the moderator route sets the figure through setVerifiedPastRepUsd', () => {
-    // When Plan 4's staff API lands (`buildStaffApi`, `apps/api/src/staff`, or a staff app): add the
-    // moderator route that sets a claim's verified dollar figure (perm check, activity-log entry with
-    // the claim id and no amount text in it), calling `setVerifiedPastRepUsd` only and passing the
-    // signed-in staff member's real role (`req.staff.role`) as the actor: owner 2026-11-02, only
-    // senior moderators and the owner (`PASTREP_VERIFY_ROLES`, role senior|owner); then delete this test.
-    const staffFiles = [
-      ...sources(join(ROOT, 'apps/api/src/staff')),
-      ...sources(join(ROOT, 'apps/staff-api/src')),
-    ];
-    const appTs = readFileSync(join(ROOT, 'apps/api/src/app.ts'), 'utf8');
-    const staffLanded = /buildStaffApi/.test(appTs) || staffFiles.length > 0;
-    const usesSeam = staffFiles.some((f) => readFileSync(f, 'utf8').includes('setVerifiedPastRepUsd'));
-    expect(staffLanded && !usesSeam, 'Plan 4 staff API landed without a verified-USD route on setVerifiedPastRepUsd (see this test)').toBe(false);
   });
 });

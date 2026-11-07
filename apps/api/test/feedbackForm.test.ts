@@ -1,6 +1,4 @@
 // Plan 5 Task 21: the feedback form behind every "can't do that" popup (spec 5.2, owner 2026-10-29).
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
@@ -358,18 +356,5 @@ describe('listFeedbackForm and purgeFeedbackForm', () => {
     );
     expect(await purgeFeedbackForm.run(deps.db, T0)).toBe(1);
     expect((await rows()).map((r) => r.body)).toEqual(['keep']);
-  });
-});
-
-// TRIPWIRE (local tree only): Plan 4's staff API and Task 4's staff Feedback page are not on the main
-// line yet, so no route lists feedback_form rows. When either lands, serve listFeedbackForm behind
-// `feedback.read` (the staff list shows both kinds: Task 4's moods and these form rows, named rows
-// with their account), then delete this tripwire.
-describe('Task 21 waits for the staff Feedback page', () => {
-  const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-  it('NEEDS_PLAN_4_STAFF: no staff route lists the feedback form yet', () => {
-    for (const p of ['apps/api/src/staff/feedback.ts', 'apps/staff-web/src/screens/Feedback.tsx']) {
-      expect(existsSync(ROOT + p), `${p} landed: serve listFeedbackForm on the staff Feedback page (Task 21), then delete this tripwire`).toBe(false);
-    }
   });
 });

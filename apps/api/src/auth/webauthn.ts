@@ -26,7 +26,7 @@ import { confirmerOf, issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { assertMethodAllowed } from './methods.js';
-import { requireSession, startSession } from './sessions.js';
+import { realmOf, requireSession, startSession } from './sessions.js';
 import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
 
 export type CredentialKind = 'passkey' | 'security-key';
@@ -137,11 +137,12 @@ interface CredentialRow {
   kind: CredentialKind;
   transports: string[] | null;
   attested: boolean;
+  aaguid: string | null;
   account_kind: AccountKind;
   webauthn_user_id: Buffer;
 }
 
-const CREDENTIAL_SELECT = `select c.id, c.account_id, c.credential_id, c.public_key, c.counter, c.kind, c.transports, c.attested,
+const CREDENTIAL_SELECT = `select c.id, c.account_id, c.credential_id, c.public_key, c.counter, c.kind, c.transports, c.attested, c.aaguid,
                                   a.kind as account_kind, a.webauthn_user_id
                              from webauthn_credentials c join accounts a on a.id = c.account_id`;
 
@@ -159,9 +160,16 @@ async function accountById(db: Queryable, accountId: string): Promise<AccountRow
   return rows[0];
 }
 
-async function credentialsOf(db: Queryable, accountId: string): Promise<Array<{ credential_id: Buffer; kind: CredentialKind; attested: boolean }>> {
-  const { rows } = await db.query<{ credential_id: Buffer; kind: CredentialKind; attested: boolean }>(
-    'select credential_id, kind, attested from webauthn_credentials where account_id = $1 order by created_at, id',
+interface CredentialSummary {
+  credential_id: Buffer;
+  kind: CredentialKind;
+  attested: boolean;
+  aaguid: string | null;
+}
+
+async function credentialsOf(db: Queryable, accountId: string): Promise<CredentialSummary[]> {
+  const { rows } = await db.query<CredentialSummary>(
+    'select credential_id, kind, attested, aaguid from webauthn_credentials where account_id = $1 order by created_at, id',
     [accountId],
   );
   return rows;
@@ -414,28 +422,44 @@ export async function verifyWebAuthnRegistrationOnly(
   response: unknown,
   expectedChallenge: string | Uint8Array,
   o: { kind?: CredentialKind; label?: string } = {},
-): Promise<{ credentialId: string; kind: CredentialKind; attested: boolean; aaguid: string | null; store(q: Queryable): Promise<void> }> {
+): Promise<{
+  credentialId: string;
+  kind: CredentialKind;
+  attested: boolean;
+  aaguid: string | null;
+  /** The verified COSE public key (Plan 4: `keyCheckCode`, the `add-owner-key` tap's hash). */
+  publicKey: Uint8Array;
+  /** Inserts the credential through `q`; returns its row id. */
+  store(q: Queryable): Promise<string>;
+}> {
   const account = await accountById(deps.db, accountId);
   const cred = await verifyRegistration(deps, {
     accountKind: account.kind, kind: o.kind ?? null, response, expectedChallenge: challengeString(expectedChallenge),
   });
   const label = cleanLabel(o.label, cred.kind);
   return {
-    credentialId: cred.credentialId, kind: cred.kind, attested: cred.attested, aaguid: cred.aaguid,
-    store: async (q) => {
-      await insertCredential(q, accountId, cred, label, deps.clock());
-    },
+    credentialId: cred.credentialId, kind: cred.kind, attested: cred.attested, aaguid: cred.aaguid, publicKey: cred.publicKey,
+    store: (q) => insertCredential(q, accountId, cred, label, deps.clock()),
   };
 }
 
-/** Assertion options listing the account's credentials that its kind may use (`assertCredentialAllowed`). */
+/**
+ * Assertion options listing the account's credentials that its kind may use (`assertCredentialAllowed`)
+ * and, when given, that `o.only` also accepts (Plan 4 Task 5: a key tap offers attested security
+ * keys only). No credential left → 403 `method-not-allowed` when `o.only` is given.
+ */
 export async function webauthnAssertionOptions(
   deps: Pick<Deps, 'db' | 'config'>,
   accountId: string,
   challenge: Uint8Array,
+  o: { only?: (c: { kind: CredentialKind; attested: boolean; aaguid: string | null; accountKind: AccountKind }) => boolean } = {},
 ): Promise<PublicKeyCredentialRequestOptionsJSON> {
   const account = await accountById(deps.db, accountId);
-  const creds = (await credentialsOf(deps.db, accountId)).filter((c) => allowed(account.kind, c));
+  const only = o.only;
+  const creds = (await credentialsOf(deps.db, accountId)).filter(
+    (c) => allowed(account.kind, c) && (!only || only({ kind: c.kind, attested: c.attested, aaguid: c.aaguid, accountKind: account.kind })),
+  );
+  if (only && creds.length === 0) throw new ApiError(403, 'method-not-allowed');
   return buildAssertionOptions(deps, creds, challenge);
 }
 
@@ -449,6 +473,22 @@ export async function verifyWebAuthnAssertion(
   const row = await verifyAssertion(deps, { accountId, response, expectedChallenge: challengeString(expectedChallenge) });
   assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });
   return { credentialId: b64url(row.credential_id), kind: row.kind, attested: row.attested };
+}
+
+/**
+ * Plan 4 M1 (coordination.md; RV5 m5): false for a staff or owner security key whose stored AAGUID
+ * is not on the current allowlist for the account kind (the owner's list for the owner, staff's
+ * otherwise), true for anything else. The lists are applied when a key is registered; this applies
+ * a later change (a snapshot refresh that withdraws an AAGUID, or new list rules) at login too, with
+ * no data migration. An attested key with no stored AAGUID is never on a list.
+ */
+export function stillAllowlisted(
+  deps: Pick<Deps, 'attestation'>,
+  accountKind: AccountKind,
+  c: { kind: CredentialKind; aaguid: string | null },
+): boolean {
+  if (c.kind !== 'security-key' || (accountKind !== 'staff' && accountKind !== 'owner')) return true;
+  return c.aaguid !== null && deps.attestation.isAllowed(c.aaguid, 'packed', accountKind === 'owner' ? 'owner' : 'staff');
 }
 
 function allowed(accountKind: AccountKind, c: { kind: string; attested: boolean }): boolean {
@@ -484,11 +524,24 @@ async function securityKeyIdLengths(db: Queryable): Promise<IdLengths[]> {
  * lengths of the security keys actually stored (`lengths`, weighted by count), so a stranger's name
  * lists IDs of the same lengths as registered accounts do; with nothing stored yet, 64 bytes (a
  * YubiKey's non-discoverable credential ID). The bytes come from HMAC-SHA-512 in counter mode.
+ *
+ * `realm` (lead review I-1, 6 Nov): the staff app shares `serverKey`, so without it both sites made
+ * the same decoys for a name, and comparing one name's lists on the two sites showed which IDs were
+ * real (a staff member's n keys on the staff site, a trader's on the trader site). The staff realm
+ * puts `staff/` in front of the label; the trader realm keeps the label it always had, so traders'
+ * decoys do not change.
  */
-export function decoyCredentialIds(deps: Pick<Deps, 'config'>, nameTag: string, count: number, lengths: readonly IdLengths[]): Buffer[] {
+export function decoyCredentialIds(
+  deps: Pick<Deps, 'config'>,
+  nameTag: string,
+  count: number,
+  lengths: readonly IdLengths[],
+  realm: LoginRealm = 'trader',
+): Buffer[] {
   const key = subkey(deps.config, 'decoy');
+  const prefix = realm === 'staff' ? 'staff/' : '';
   const mac = (label: string, i: number, j: number) =>
-    createHmac('sha512', key).update(Buffer.concat([Buffer.from(`${label}/${nameTag}/`, 'utf8'), Buffer.from([i, j])])).digest();
+    createHmac('sha512', key).update(Buffer.concat([Buffer.from(`${prefix}${label}/${nameTag}/`, 'utf8'), Buffer.from([i, j])])).digest();
   const total = lengths.reduce((sum, l) => sum + l.n, 0);
   // A uniform draw in [0, 1) per decoy, mapped through the cumulative distribution of the stored
   // lengths, so a shift in the stored mix moves only the few draws near a boundary (the modulo
@@ -524,8 +577,8 @@ async function pendingAfterPgp(deps: Deps, req: FastifyRequest, accountId: strin
   const { rows } = await deps.db.query(
     `select 1 from challenges
       where id = $1 and account_id = $2 and device_hash = $3 and purpose = 'second-factor' and method = 'pair'
-        and used_at is null and expires_at > $4 and payload->'first'->>'method' = 'pgp'`,
-    [pendingId, accountId, device, deps.clock()],
+        and used_at is null and expires_at > $4 and payload->'first'->>'method' = 'pgp' and payload->>'app' = $5`,
+    [pendingId, accountId, device, deps.clock(), realmOf(req).app],
   );
   return rows.length > 0;
 }
@@ -541,8 +594,8 @@ async function pendingPgpAccount(deps: Deps, req: FastifyRequest, pendingId: str
   const { rows } = await deps.db.query<{ id: string; kind: AccountKind }>(
     `select a.id, a.kind from challenges c join accounts a on a.id = c.account_id
       where c.id = $1 and c.device_hash = $2 and c.purpose = 'second-factor' and c.method = 'pair'
-        and c.used_at is null and c.expires_at > $3 and c.payload->'first'->>'method' = 'pgp'`,
-    [pendingId, device, deps.clock()],
+        and c.used_at is null and c.expires_at > $3 and c.payload->'first'->>'method' = 'pgp' and c.payload->>'app' = $4`,
+    [pendingId, device, deps.clock(), realmOf(req).app],
   );
   return rows[0] ?? null;
 }
@@ -552,13 +605,27 @@ function pendingTag(deps: Pick<Deps, 'config'>, pendingId: string): string {
   return createHmac('sha256', subkey(deps.config, 'name')).update(`pending/${pendingId}`).digest('hex');
 }
 
+/** Which site a login runs on: decoys differ per site (lead review I-1). */
+export type LoginRealm = 'trader' | 'staff';
+
 interface LoginRouteOptions {
   kinds: AccountKind[];
+  /** The site these routes serve; 'trader' when absent. The staff app passes 'staff'. */
+  realm?: LoginRealm;
   afterAuthenticate?: (accountId: string) => Promise<void>;
+  /** Route `config` for both routes (Plan 4's staff app marks them `{ perm: 'public-login' }`). */
+  routeConfig?: Record<string, unknown>;
+  /**
+   * Plan 4 M1 (the staff app): a staff or owner security key no longer on its allowlist
+   * (`stillAllowlisted`) is not offered by `start` and is refused by `finish` with 403
+   * `method-not-allowed`, after the assertion verifies and before `afterAuthenticate`.
+   */
+  recheckAllowlist?: boolean;
 }
 
 function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discoverable: boolean }): void {
-  app.post('/start', async (req: FastifyRequest, reply: FastifyReply) => {
+  const config = opts.routeConfig ?? {};
+  app.post('/start', { config }, async (req: FastifyRequest, reply: FastifyReply) => {
     const deps = req.server.deps;
     ensureDeviceCookie(req, reply);
     req.server.budgets.start.take();
@@ -611,7 +678,11 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     // A team member logs in by the staff rule (Plan 2 Task 18): PGP + a passkey is a pair for them too.
     const withPasskeys = afterPgp && (found?.kind === 'staff' || found?.kind === 'member');
     let creds = (await credentialsOf(deps.db, found?.id ?? NIL_UUID)).filter(
-      (c) => found !== null && (c.kind === 'security-key' || (withPasskeys && c.kind === 'passkey')) && allowed(found.kind, c),
+      (c) =>
+        found !== null &&
+        (c.kind === 'security-key' || (withPasskeys && c.kind === 'passkey')) &&
+        allowed(found.kind, c) &&
+        (opts.recheckAllowlist !== true || stillAllowlisted(deps, found.kind, c)),
     );
     let account: { id: string; kind: AccountKind } | null = null;
     // Passkeys are in `creds` only after a staff member's PGP first factor (they may then be the only
@@ -623,8 +694,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     // staff second step after a PGP first factor (passkeys listed too) can exceed that, and it
     // already named the account.
     const lengths = await securityKeyIdLengths(deps.db);
-    const decoys = decoyCredentialIds(deps, tag, Math.max(0, MAX_SECURITY_KEYS - creds.length), lengths);
-    creds = [...creds, ...decoys.map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false }))].sort((x, y) =>
+    const decoys = decoyCredentialIds(deps, tag, Math.max(0, MAX_SECURITY_KEYS - creds.length), lengths, opts.realm ?? 'trader');
+    creds = [...creds, ...decoys.map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false, aaguid: null }))].sort((x, y) =>
       Buffer.compare(x.credential_id, y.credential_id),
     );
     const options = await buildAssertionOptions(deps, creds);
@@ -640,7 +711,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     return { challengeId, options };
   });
 
-  app.post('/finish', async (req: FastifyRequest, reply: FastifyReply): Promise<LoginResult> => {
+  app.post('/finish', { config }, async (req: FastifyRequest, reply: FastifyReply): Promise<LoginResult> => {
     const deps = req.server.deps;
     ensureDeviceCookie(req, reply);
     const body = record(req.body);
@@ -670,6 +741,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     }
     assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });
     if (ch.payload.mode !== 'discoverable') assertListed(ch, row);
+    // A key withdrawn from its allowlist between start and finish (start no longer lists it).
+    if (opts.recheckAllowlist === true && !stillAllowlisted(deps, row.account_kind, row)) throw new ApiError(403, 'method-not-allowed');
     const result = await completeLogin(deps, req, reply, {
       account: { id: row.account_id, kind: row.account_kind },
       factor: { method: row.kind, credentialId: b64url(row.credential_id), attested: row.attested },
@@ -693,7 +766,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
  * runs in `completeLogin` after the credential check passes. Plan 4 mounts it on the staff app.
  */
 export async function securityKeyLoginRoutes(app: FastifyInstance, opts: LoginRouteOptions): Promise<void> {
-  loginRoutes(app, { kinds: opts.kinds, ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}), discoverable: false });
+  loginRoutes(app, { ...opts, discoverable: false });
 }
 
 /** `buildApi`'s mount at `/v1/login/webauthn`: the login-name-based routes plus discoverable passkey login (`start {}`). */

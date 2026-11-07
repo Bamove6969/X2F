@@ -264,6 +264,8 @@ export const PGP_PURPOSE = {
   login: 'log in',
   'add-key': 'add this PGP key to your account',
   'team-join': 'join a team as a member',
+  // Plan 4 Task 7: a staff invitee's PGP key (COPY-UNSIGNED, no board).
+  'staff-join': 'join the X2F staff',
 } as const;
 
 /** ISO 8601 to the second, with `Z`. */
