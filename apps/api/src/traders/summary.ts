@@ -29,7 +29,7 @@ export interface TraderSummary {
    * MORE than 10 XMR. Never the exact total.
    */
   tradedOverXmr: number | null;
-  /** Owner Q64: verified imported volume, one line per site (opt-in like the XMR line; [] when off). */
+  /** Owner Q64, F17: verified imported volume, one line per site in XMR (opt-in like the XMR line; [] when off). */
   imported: ImportedLine[];
 }
 
@@ -72,6 +72,8 @@ export async function traderSummaries(
   now: Date,
   viewerId: string | null,
   settings?: StarterSettings,
+  /** Owner F17: the XMR price in US cents that converts imported volume (null or absent: no imported lines). */
+  usdCentsPerXmr: bigint | null = null,
 ): Promise<Map<string, TraderSummary>> {
   const out = new Map<string, TraderSummary>();
   const ids = [...new Set(accountIds)];
@@ -101,15 +103,21 @@ export async function traderSummaries(
       badges: [],
       stage: stageFor(s, completed, r.created_at, now),
       tradedOverXmr: tradedOverXmr(r.show_traded, r.traded),
-      imported: r.show_traded ? importedLines(sites.get(r.id)) : [],
+      imported: r.show_traded ? importedLines(sites.get(r.id), usdCentsPerXmr) : [],
     });
   }
   return out;
 }
 
 /** One trader's summary as `viewerId` may see it; throws for an unknown account. */
-export async function traderSummary(q: Queryable, accountId: string, now: Date, viewerId: string | null): Promise<TraderSummary> {
-  const t = (await traderSummaries(q, [accountId], now, viewerId)).get(accountId);
+export async function traderSummary(
+  q: Queryable,
+  accountId: string,
+  now: Date,
+  viewerId: string | null,
+  usdCentsPerXmr: bigint | null = null,
+): Promise<TraderSummary> {
+  const t = (await traderSummaries(q, [accountId], now, viewerId, undefined, usdCentsPerXmr)).get(accountId);
   if (!t) throw new Error('trader missing');
   return t;
 }

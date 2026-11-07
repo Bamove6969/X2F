@@ -4,7 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { setVerifiedPastRepUsd } from '../src/pastrep/store.js';
 import { traderSummaries } from '../src/traders/summary.js';
-import { countTradeTotals } from '../src/traders/tradedTotal.js';
+import { countTradeTotals, usdRate } from '../src/traders/tradedTotal.js';
+import { tradedBucketXmr } from '@x2f/reputation';
 import { applyEvent } from '../src/trades/store.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
@@ -236,9 +237,9 @@ describe('buyer cancels (moderators only, a Plan 4 seam)', () => {
   });
 });
 
-// Owner Q64 (6 Nov 2026): imported volume is a separate line per site with proof: the dollar figure
-// a moderator verified on an APPROVED claim (migration 310), each rounded down like the old dollar
-// line. An unverified, not-yet-approved or dead claim shows nothing; the figures never leave the
+// Owner Q64 (6 Nov 2026), F17 (7 Nov): imported volume is a separate line per site with proof: the
+// dollar figure a moderator verified on an APPROVED claim (migration 310), shown converted to XMR at
+// the current price and rounded down like the XMR line. An unverified, not-yet-approved or dead claim shows nothing; the figures never leave the
 // server, only the buckets. The XMR line never includes them.
 describe('verified imported volume, one line per site (owner Q64)', () => {
   let staffN = 0;
@@ -257,10 +258,23 @@ describe('verified imported volume, one line per site (owner Q64)', () => {
     );
     return { id: rows[0]!.id, site: s };
   }
+  /**
+   * Owner F17: a site's line in XMR at the test app's current XMR/USD price, rounded down like the
+   * XMR line; [] when it is 10 XMR or less.
+   */
+  const lineOf = (site: string, usdCents: bigint) => {
+    const rate = usdRate(deps);
+    if (rate === null) return [];
+    const over = tradedBucketXmr((usdCents * 1_000_000_000_000n) / rate);
+    return over === null ? [] : [{ site, overXmr: over }];
+  };
   const verify = async (claimId: string, usdCents: bigint | null) =>
     expect(await setVerifiedPastRepUsd(deps.db, claimId, usdCents === null ? null : Number(usdCents), { accountId: await staff(), role: 'senior' }, START)).toEqual({ ok: true });
 
   it('each verified, approved site is its own line; the XMR line is not lifted; figures never appear', async () => {
+    // The test app has a USD price, so these lines are not empty by default.
+    expect(usdRate(deps)).not.toBeNull();
+    expect(lineOf('Paxful', dollars(150_000))).toHaveLength(1);
     const seller = await trader();
     const buyer = await trader();
     const code = await trade(seller, buyer, xmr(5));
@@ -269,10 +283,10 @@ describe('verified imported volume, one line per site (owner Q64)', () => {
     await verify(a.id, dollars(23_456) + 78n);
     await verify(b.id, dollars(150_000));
     expect((await optIn(seller, true)).json()).toEqual({
-      show: true, tradedOverXmr: null, imported: [{ site: 'LocalMonero', overUsd: 20_000 }, { site: 'Paxful', overUsd: 100_000 }],
+      show: true, tradedOverXmr: null, imported: [...lineOf('LocalMonero', dollars(23_456) + 78n), ...lineOf('Paxful', dollars(150_000))],
     });
     const viewed = await summaryOf(buyer, code);
-    expect(viewed.summary).toMatchObject({ tradedOverXmr: null, imported: [{ site: 'LocalMonero', overUsd: 20_000 }, { site: 'Paxful', overUsd: 100_000 }] });
+    expect(viewed.summary).toMatchObject({ tradedOverXmr: null, imported: [...lineOf('LocalMonero', dollars(23_456) + 78n), ...lineOf('Paxful', dollars(150_000))] });
     expect((await setting(buyer)).json()).toEqual({ show: false, tradedOverXmr: null, imported: [] });
     for (const body of [viewed.body, (await setting(seller)).body]) expect(body).not.toMatch(/2345678|23,456|15000000|verified_?usd|usd_?cents/i);
   });
@@ -284,15 +298,16 @@ describe('verified imported volume, one line per site (owner Q64)', () => {
     const c = await claim(seller.id);
     await verify(c.id, dollars(30_000) + 1n);
     expect((await summaryOf(buyer, code)).summary).toMatchObject({ tradedOverXmr: null, imported: [] });
-    expect((await setting(seller)).json()).toEqual({ show: false, tradedOverXmr: null, imported: [{ site: c.site, overUsd: 30_000 }] });
+    expect((await setting(seller)).json()).toEqual({ show: false, tradedOverXmr: null, imported: lineOf(c.site, dollars(30_000) + 1n) });
   });
 
-  it('a site at $10,000 or less, unverified, cleared, signed or dead shows no line', async () => {
+  it('a site at 10 XMR or less, unverified, cleared, signed or dead shows no line', async () => {
     const seller = await trader();
     const buyer = await trader();
     const code = await trade(seller, buyer, xmr(1));
     expect((await optIn(seller, true)).statusCode).toBe(200);
-    await verify((await claim(seller.id)).id, dollars(10_000)); // not MORE than the step
+    await verify((await claim(seller.id)).id, dollars(1)); // far below 10 XMR at any price
+    expect(lineOf('x', dollars(1))).toEqual([]);
     await claim(seller.id); // never verified
     const signed = await claim(seller.id, 'signed');
     await verify(signed.id, dollars(50_000) + 1n); // entered before approval: counts only once approved
@@ -301,7 +316,7 @@ describe('verified imported volume, one line per site (owner Q64)', () => {
     await verify(cleared.id, null);
     expect((await summaryOf(buyer, code)).summary.imported).toEqual([]);
     await deps.db.query(`update past_reputation set status = 'approved' where id = $1`, [signed.id]);
-    expect((await summaryOf(buyer, code)).summary.imported).toEqual([{ site: signed.site, overUsd: 50_000 }]);
+    expect((await summaryOf(buyer, code)).summary.imported).toEqual(lineOf(signed.site, dollars(50_000) + 1n));
     for (const dead of ['revoked', 'removed', 'rejected']) {
       await deps.db.query('update past_reputation set status = $2 where id = $1', [signed.id, dead]);
       expect((await summaryOf(buyer, code)).summary.imported, dead).toEqual([]);
@@ -316,7 +331,7 @@ describe('verified imported volume, one line per site (owner Q64)', () => {
     await verify(c.id, dollars(25_000));
     expect(await totals(solo.id)).toBeNull();
     expect((await traderSummaries(deps.db, [solo.id], START, viewer.id)).get(solo.id)).toMatchObject({ tradedOverXmr: null, imported: [] });
-    expect((await optIn(solo, true)).json()).toEqual({ show: true, tradedOverXmr: null, imported: [{ site: c.site, overUsd: 20_000 }] });
-    expect((await traderSummaries(deps.db, [solo.id], START, viewer.id)).get(solo.id)).toMatchObject({ completedTrades: 0, imported: [{ site: c.site, overUsd: 20_000 }] });
+    expect((await optIn(solo, true)).json()).toEqual({ show: true, tradedOverXmr: null, imported: lineOf(c.site, dollars(25_000)) });
+    expect((await traderSummaries(deps.db, [solo.id], START, viewer.id)).get(solo.id)).toMatchObject({ completedTrades: 0, imported: lineOf(c.site, dollars(25_000)) });
   });
 });

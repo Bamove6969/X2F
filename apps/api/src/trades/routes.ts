@@ -1,3 +1,4 @@
+import { usdRate } from '../traders/tradedTotal.js';
 import { addressEnd } from '@x2f/accounts';
 import { normalizeTradeCode } from '@x2f/core';
 import { CLIENT_EVENTS, TradeRuleError, UNLOCK_CONFIRMATIONS, type Trade, type TradeEvent } from '@x2f/trade';
@@ -99,7 +100,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     const other = t.buyerId === me ? t.sellerId : t.buyerId;
     const now = deps.clock();
     return toTradeView(t, me, now, {
-      counterparty: await traderSummary(deps.db, other, now, me),
+      counterparty: await traderSummary(deps.db, other, now, me, usdRate(deps)),
       profile: profile(t.methodId) ?? null,
       sellerWalletApp: row.seller_wallet_app,
       finalAlertSeenAt: row.final_alert_seen_at,

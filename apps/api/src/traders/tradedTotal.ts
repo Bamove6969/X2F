@@ -1,4 +1,5 @@
 import { tradedBucketUsd, tradedBucketXmr } from '@x2f/reputation';
+import type { Deps } from '../app.js';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
@@ -80,16 +81,23 @@ export function tradedOverXmr(show: boolean, atomic: string | bigint): number | 
   return show ? tradedBucketXmr(BigInt(atomic)) : null;
 }
 
-/** Owner Q64: one line per site with a verified figure, each rounded down like the dollar line (a site at $10,000 or less shows nothing). */
+/**
+ * Owner Q64: one line per site with a verified figure. Owner F17 (7 Nov): shown converted to XMR at
+ * the current XMR/USD price, rounded down like the XMR line (a site at 10 XMR or less shows
+ * nothing). With no USD price right now, no imported line shows (nothing to convert with).
+ */
 export interface ImportedLine {
   site: string;
-  overUsd: number;
+  overXmr: number;
 }
 
-export function importedLines(volumes: readonly VerifiedSiteVolume[] | undefined): ImportedLine[] {
+const PICO = 1_000_000_000_000n;
+
+export function importedLines(volumes: readonly VerifiedSiteVolume[] | undefined, usdCentsPerXmr: bigint | null): ImportedLine[] {
+  if (usdCentsPerXmr === null || usdCentsPerXmr <= 0n) return [];
   return (volumes ?? []).flatMap((v) => {
-    const overUsd = tradedBucketUsd(v.usdCents);
-    return overUsd === null ? [] : [{ site: v.site, overUsd }];
+    const overXmr = tradedBucketXmr((v.usdCents * PICO) / usdCentsPerXmr);
+    return overXmr === null ? [] : [{ site: v.site, overXmr }];
   });
 }
 
@@ -97,6 +105,7 @@ export function importedLines(volumes: readonly VerifiedSiteVolume[] | undefined
 export async function tradedTotalSetting(
   q: Queryable,
   accountId: string,
+  usdCentsPerXmr: bigint | null,
 ): Promise<{ show: boolean; tradedOverXmr: number | null; imported: ImportedLine[] }> {
   const { rows } = await q.query<{ show: boolean; xmr: string }>(
     `select a.show_traded_total as show, ${tradedXmrSql('a.id')}::text as xmr from accounts a where a.id = $1`,
@@ -104,7 +113,7 @@ export async function tradedTotalSetting(
   );
   const r = rows[0]!;
   const sites = await verifiedPastRepBySite(q, [accountId]);
-  return { show: r.show, tradedOverXmr: tradedBucketXmr(BigInt(r.xmr)), imported: importedLines(sites.get(accountId)) };
+  return { show: r.show, tradedOverXmr: tradedBucketXmr(BigInt(r.xmr)), imported: importedLines(sites.get(accountId), usdCentsPerXmr) };
 }
 
 /**
@@ -115,11 +124,16 @@ export async function tradedTotalSetting(
 export function tradedTotalRoutes(app: FastifyInstance): void {
   const trader = requireSession({ kinds: ['trader'] });
   const PATH = '/v1/account/profile/traded-total';
-  app.get(PATH, { preHandler: trader }, async (req) => tradedTotalSetting(req.server.deps.db, req.auth.accountId));
+  app.get(PATH, { preHandler: trader }, async (req) => tradedTotalSetting(req.server.deps.db, req.auth.accountId, usdRate(req.server.deps)));
   app.put(PATH, { preHandler: trader }, async (req) => {
     const body = req.body as { show?: unknown } | null;
     if (body === null || typeof body !== 'object' || Array.isArray(body) || typeof body.show !== 'boolean') throw new ApiError(400, 'bad-request');
     await req.server.deps.db.query('update accounts set show_traded_total = $2 where id = $1', [req.auth.accountId, body.show]);
-    return tradedTotalSetting(req.server.deps.db, req.auth.accountId);
+    return tradedTotalSetting(req.server.deps.db, req.auth.accountId, usdRate(req.server.deps));
   });
+}
+
+/** The current XMR price in US cents, or null when the USD market price is paused (owner F17). */
+export function usdRate(deps: Pick<Deps, 'prices'>): bigint | null {
+  return deps.prices.quote('USD')?.price.centsPerXmr ?? null;
 }

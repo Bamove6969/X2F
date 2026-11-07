@@ -212,15 +212,21 @@ describe('OfferCard as a pick row (two panes, Fold-Offers)', () => {
   });
 });
 
-describe('the opt-in traded line (C12b, owner 2026-11-01/02)', () => {
-  it('reads tradedOverUsd (missing or null: nothing) and shows the bucket only when the API sends one', () => {
+describe('the opt-in traded line in XMR (owner Q63) and imported lines per site (Q64, F17)', () => {
+  it('reads tradedOverXmr and imported (missing or null: nothing) and shows them only when the API sends them', () => {
     const mira = byName('mira.k');
-    expect(mira.poster.tradedOverUsd).toBeNull();
-    const [withLine] = parseOffers([{ ...raw()[0], poster: { ...(raw()[0] as { poster: object }).poster, tradedOverUsd: 90_000 } }]);
-    expect(withLine!.poster.tradedOverUsd).toBe(90_000);
-    expect(() => parseOffers([{ ...raw()[0], poster: { ...(raw()[0] as { poster: object }).poster, tradedOverUsd: '90000' } }])).toThrow(ApiShapeError);
-    expect(card(mira).host.textContent).not.toContain('in trades to date');
-    const on = card({ ...mira, poster: { ...mira.poster, tradedOverUsd: 150_000 } }).host.textContent;
-    expect(on).toContain('$150,000+ in trades to date');
+    expect(mira.poster.tradedOverXmr).toBeNull();
+    expect(mira.poster.imported).toEqual([]);
+    const poster = (raw()[0] as { poster: object }).poster;
+    const [withLine] = parseOffers([{ ...raw()[0], poster: { ...poster, tradedOverXmr: 90, imported: [{ site: 'LocalMonero', overXmr: 150 }] } }]);
+    expect(withLine!.poster.tradedOverXmr).toBe(90);
+    expect(withLine!.poster.imported).toEqual([{ site: 'LocalMonero', overXmr: 150 }]);
+    expect(() => parseOffers([{ ...raw()[0], poster: { ...poster, tradedOverXmr: '90' } }])).toThrow(ApiShapeError);
+    expect(() => parseOffers([{ ...raw()[0], poster: { ...poster, imported: [{ site: 'X', overXmr: '1' }] } }])).toThrow(ApiShapeError);
+    expect(card(mira).host.textContent).not.toContain('traded to date');
+    const on = card({ ...mira, poster: { ...mira.poster, tradedOverXmr: 1_200, imported: [{ site: 'Paxful', overXmr: 50 }] } }).host.textContent;
+    expect(on).toContain('1,200+ XMR traded to date');
+    expect(on).toContain('50+ XMR on Paxful, verified');
+    expect(on).not.toContain('in trades to date');
   });
 });
