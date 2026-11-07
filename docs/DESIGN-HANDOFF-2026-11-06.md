@@ -135,3 +135,11 @@ Other loose end: draft PR Bamove6969/X2F#4 adds `.claude/settings.json` (seven r
 - **Done:** section 6 (both jobs). Canvas v118; X2F design system version 7 (v2 tokens, README, 15 components; FormField marks session-length tiles vs drop-down as OPEN).
 - **Waiting:** proof pop-ups 63/64/65 from the lead, after the proof batch lands; owner answers to "Owner questions 6 Nov" in `docs/to-lead.md`; sign-off of every COPY-UNSIGNED list.
 - **Working copies:** canvas boards in `docs/design-boards/` (matches v118). The design system lives only in its artifact; read it from there.
+
+## 9. State, 7 Nov 2026 (after the overdrive)
+
+- **Lead** is now `session_01Btihb1rhhyuYviZeH5NRW1` (name may show as "desktop-…"). Jetpost is retired; use normal messages only. The owner wants **no questions to the owner from design**: everything goes to the lead, with design's recommendation beside each question.
+- **Canvas v121.** Owner answers of 6–7 Nov applied (see `docs/to-lead.md`, 7 Nov sections). The working copy is in the session scratchpad `canvas/project/`; `docs/design-boards/` matches v121.
+- **Done:** proof pop-up review, build review re-check on main 55bc70f9, branch reviews (hold-v3, task15, results), owner-answer boards, gift card rules draft, nudge = owner's Ahooga horn (Freesound 480002, CC0, on comms).
+- **Next for design:** MemberPermissions (+Wide) redraw for Q16 (3–4 member types, 7–10 checkboxes each, a member can be in several); the per-payment-type price change on FlexOffer-Post switches to Above/Below + typed % (max 50).
+- **Waiting on the owner (via the lead):** signing all COPY-UNSIGNED lines; ProfileVisibility OPEN (does "traded to date" include imported volume); the gift card numbers; the Refunded buyer-cancelled dispute card; the rule checks in the hold-v3 and task15 reviews.
