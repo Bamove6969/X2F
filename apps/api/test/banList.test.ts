@@ -204,6 +204,27 @@ describe('a banned PGP key can never be used again', () => {
     expect(finish!.json()).toEqual({ error: 'key-unavailable' });
   });
 
+  it('lead review item 2: a login that refreshes the stored key with a banned subkey is refused, and nothing is stored', async () => {
+    const k = await genKey();
+    const id = await seedAccount(deps, { loginName: uniq('refresher') });
+    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: k.fingerprint, armored: k.publicKey, now: deps.clock() });
+    const before = (await deps.db.query<{ armored_enc: Buffer }>('select armored_enc from pgp_keys where account_id = $1', [id])).rows[0]!.armored_enc;
+    // The same primary key with a new signing subkey, which is banned.
+    const priv = await openpgp.readPrivateKey({ armoredKey: k.privateKey });
+    const grown = await priv.addSubkey({ sign: true, date: new Date(deps.clock().getTime() - 60_000) });
+    const sub = grown.getSubkeys().at(-1)!.getFingerprint();
+    await recordBannedValues(deps.db, deps.config, { kind: 'pgp-fingerprint', values: [sub], accountId: null, now: deps.clock() });
+    const b = new Browser(app);
+    const start = await b.post('/v1/login/pgp/start', { key: grown.toPublic().armor() });
+    expect(start.statusCode, start.body).toBe(200);
+    const code = codeOf(await decrypt(start.json().encryptedMessage, grown.armor(), undefined, deps.clock()));
+    const finish = await b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Desk' });
+    expect([finish.statusCode, finish.json()]).toEqual([409, { error: 'key-unavailable' }]);
+    const after = (await deps.db.query<{ armored_enc: Buffer }>('select armored_enc from pgp_keys where account_id = $1', [id])).rows[0]!.armored_enc;
+    expect(after.equals(before)).toBe(true);
+    expect((await deps.db.query('select 1 from sessions where account_id = $1', [id])).rowCount).toBe(0);
+  });
+
   it('as a new key on another account: POST /v1/account/pgp/start answers as for any key; finish refuses 409 key-unavailable and adds nothing', async () => {
     const b = await banned();
     const other = await seedAccount(deps, { loginName: uniq('keyadder') });

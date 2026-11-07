@@ -586,6 +586,9 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
     const now = deps.clock();
     if (row.payload.refreshed !== undefined) {
       const refreshed = readPendingKey(row.payload, 'refreshed');
+      // Lead review 6 Nov item 2: the refreshed (merged) key may carry a subkey that is banned; the
+      // ban list is checked here, after proof, before anything is stored (409 key-unavailable).
+      await assertKeyNotBanned(deps.db, deps.config, openKey(deps.config, Buffer.from(refreshed.keyEnc, 'base64'), refreshed.fingerprint));
       await deps.db.query('update pgp_keys set armored_enc = $3 where account_id = $1 and fingerprint = $2', [
         account.id, refreshed.fingerprint, Buffer.from(refreshed.keyEnc, 'base64'),
       ]);
@@ -918,7 +921,7 @@ export function pgpAddKeyRoutesAt(
     await withTx(deps.db, async (c) => {
       await lockAccount(c, req.auth.accountId);
       await o.inTx(c, req, pending.fingerprint);
-      await applyPgpKey(c, req.auth.accountId, pending.fingerprint, sealed, now);
+      await applyPgpKey(c, deps.config, req.auth.accountId, pending.fingerprint, sealed, now);
     });
     return { fingerprint: pending.fingerprint };
   });
