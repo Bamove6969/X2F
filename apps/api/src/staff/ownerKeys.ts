@@ -7,7 +7,7 @@ import { WEBAUTHN_TTL_MS, verifyWebAuthnRegistrationOnly, webauthnRegistrationOp
 import { ApiError } from '../errors.js';
 import { requireStaff } from './guard.js';
 import { consumeKeyTap } from './keyTap.js';
-import { attestedKeyCount, body, idParam, log, tapIdOf } from './members.js';
+import { body, log, tapIdOf } from './members.js';
 
 // Plan 4 Task 7: the owner's security keys (perm `self`, the owner only: anyone else 403 `forbidden`).
 //
@@ -21,8 +21,9 @@ import { attestedKeyCount, body, idParam, log, tapIdOf } from './members.js';
 //   keys is consumed (`credentialId` = the new key's base64url id, `publicKeySha256` = hex SHA-256 of
 //   its COSE public key), the key is stored and `owner.key-added` logged. A refused tap rolls all
 //   of it back, so the person can tap again.
-// - `DELETE /staff/v1/owner/keys/:id` → 204; 409 `owner-needs-two-keys` when fewer than two
-//   attested security keys would be left (Global Constraints); 404 when not one of the owner's.
+// - Removing a key: `DELETE /staff/v1/account/methods/security-key/:id` (staff/account.ts), with a
+//   tap, the two-key rule (409 `owner-needs-two-keys`), an alert and every other session ended
+//   (lead review 7 Nov I-1: the untapped owner-only DELETE here is gone).
 
 const ownerOnly: preHandlerAsyncHookHandler = async function (req: FastifyRequest) {
   if (req.staff.role !== 'owner') throw new ApiError(403, 'forbidden');
@@ -89,22 +90,5 @@ export function ownerKeyRoutes(app: FastifyInstance): void {
       return rowId;
     });
     return reply.code(201).send({ id, keyCheckCode: keyCheckCode(cred.publicKey) });
-  });
-
-  app.delete('/staff/v1/owner/keys/:id', opts, async (req, reply) => {
-    const id = idParam(req);
-    const owner = req.staff.accountId;
-    await withTx(req.server.deps.db, async (c) => {
-      await lockAccount(c, owner);
-      const { rows } = await c.query(
-        "select 1 from webauthn_credentials where id = $1 and account_id = $2 and kind = 'security-key' and attested",
-        [id, owner],
-      );
-      if (rows.length === 0) throw new ApiError(404, 'not-found');
-      if ((await attestedKeyCount(c, owner)) <= 2) throw new ApiError(409, 'owner-needs-two-keys');
-      await c.query('delete from webauthn_credentials where id = $1', [id]);
-      await log(c, req, 'owner.key-removed', { credentialId: id });
-    });
-    return reply.code(204).send();
   });
 }
