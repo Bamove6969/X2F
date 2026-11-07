@@ -34,6 +34,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
 import { applyChange, concurrencyFailure, lockAccount, methodIds, provenIds, withTx, HOLD_MS, type PendingChange, type ProvenMethod, type SettleDeps } from './hold.js';
+import { addressEnd } from '@x2f/accounts';
 
 /** At most this many changes (drafts and waiting ones) per account, so a session cannot flood the list or the alerts. */
 export const MAX_HOLD_CHANGES = 20;
@@ -43,8 +44,9 @@ export interface ChangeSummary {
   kind: PendingChange['kind'];
   /** A passkey or a security key (webauthn), the method removed (remove-method). */
   method?: string;
-  /** Wallets: how many, and each address's last 6 characters. */
+  /** Wallets: how many, and each address's last 6 characters (lead hold v3 review, minor). */
   wallets?: number;
+  addressEnds?: string[];
   /** The one-device switch, the logout timer, a member's new roles. */
   on?: boolean;
   idleHours?: number;
@@ -59,7 +61,7 @@ export function describeChange(c: PendingChange): ChangeSummary {
     case 'remove-method':
       return { kind: c.kind, method: c.type };
     case 'wallets':
-      return { kind: c.kind, wallets: c.items.length };
+      return { kind: c.kind, wallets: c.items.length, addressEnds: c.items.map((w) => addressEnd(w.address)) };
     case 'one-device':
       return { kind: c.kind, on: c.on };
     case 'logout-timer':
@@ -165,14 +167,16 @@ export async function submitChanges(db: Queryable, accountId: string, sessionId:
 
 /**
  * Inside a transaction with the account locked: cancels the account's waiting changes (all, or the
- * one `id`) and the calling session's own drafts among them. A draft of another session is not
- * this session's to cancel (404, as an unknown id). Alert `hold-changes-cancelled` `{ count,
- * changes }` when a waiting change went. Returns how many went.
+ * one `id`) and the calling session's own drafts among them. Cancelling all takes every other
+ * session's drafts too (lead hold v3 review, minor: a thief's drafts must not wait to be submitted
+ * after the owner cancelled everything). One other session's draft by id is not this session's to
+ * cancel (404, as an unknown id). Alert `hold-changes-cancelled` `{ count, changes }` when a waiting
+ * change went. Returns how many went.
  */
 export async function cancelChanges(db: Queryable, accountId: string, sessionId: string, id: string | null, now: Date): Promise<number> {
   const { rows } = await db.query<ChangeRow>(
     `delete from hold_changes
-      where account_id = $1 and (submitted_at is not null or session_id = $2) and ($3::uuid is null or id = $3)
+      where account_id = $1 and ($3::uuid is null or ((submitted_at is not null or session_id = $2) and id = $3))
       returning *`,
     [accountId, sessionId, id],
   );
@@ -228,17 +232,25 @@ export async function listChanges(db: Queryable, accountId: string, sessionId: s
 }
 
 /** Every minute (main.ts): applies the waiting changes whose date has come, each account in its own transaction. */
-export function settleDueChanges(config: Config, events: SettleDeps['events'], log?: SettleDeps['log']): RetentionJob {
+export function settleDueChanges(
+  config: Config,
+  events: SettleDeps['events'],
+  log?: SettleDeps['log'],
+  push?: { send(accountId: string, kind: 'alert'): Promise<unknown> },
+): RetentionJob {
   return {
     name: 'settleDueChanges',
     async run(pool, now) {
       const { rows } = await pool.query<{ account_id: string }>('select distinct account_id from hold_changes where due_at <= $1', [now]);
       let n = 0;
       for (const r of rows) {
-        n += await withTx(pool, async (db) => {
+        const settled = await withTx(pool, async (db) => {
           await lockAccount(db, r.account_id);
           return settleChangesInTx(db, { config, events, log }, r.account_id, now);
         });
+        n += settled;
+        // The owner hears that the changes applied (alert hold-changes-applied; lead hold v3 review, minor).
+        if (settled > 0 && push) void push.send(r.account_id, 'alert').catch(() => undefined);
       }
       return n;
     },

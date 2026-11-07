@@ -323,10 +323,16 @@ describe('a username + password session: changes are staged, reviewed, submitted
     const t = await passwordTrader();
     const id = ((await changePassword(t.b, t.id)).json() as { changeId: string }).changeId;
     expect((await submit(t.b, [id])).statusCode).toBe(200);
+    // The first session also has a draft (a wallet, named by its address's last 6).
+    const address = fakeAddress();
+    const draft = ((await addWallet(t.b, t.id, address)).json() as { changeId: string }).changeId;
+    expect((await holdView(t.b)).drafts).toEqual([expect.objectContaining({ id: draft, kind: 'wallets', wallets: 1, addressEnds: [addressEnd(address)] })]);
     const other = await secondSession(t);
     const c = await other.delete('/v1/account/hold/changes');
     expect(c.statusCode).toBe(204);
     expect(await alertsOf(t.id, 'hold-changes-cancelled')).toEqual([{ count: 1, changes: [{ kind: 'password' }] }]);
+    // Cancelling all takes the other session's drafts too (review minor).
+    expect((await deps.db.query('select 1 from hold_changes where account_id = $1', [t.id])).rowCount).toBe(0);
     later(HOLD_MS);
     await settleDueChanges(deps.config, app.events).run(deps.db, now);
     expect((await passwordLogin(new Browser(app), t.name, NEW_PASSWORD)).statusCode).toBe(401);

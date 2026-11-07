@@ -91,7 +91,7 @@ onAlert = ownerAlertSink({ db, clock, push: app.push });
 // hours are up apply, and held trades are paused or resumed as their holds say.
 const stopHolds = startRetention(
   deps,
-  [settleDueHolds(config, app.events, app.log), settleDueChanges(config, app.events, app.log), syncHeldTradesJob(app.tradePublish)],
+  [settleDueHolds(config, app.events, app.log), settleDueChanges(config, app.events, app.log, app.push), syncHeldTradesJob(app.tradePublish)],
   60_000,
 );
 alertLog = app.log;
