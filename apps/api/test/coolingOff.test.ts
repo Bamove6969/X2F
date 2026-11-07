@@ -919,8 +919,11 @@ describe('review round 2', () => {
     });
   });
 
-  it('N-I4 (lead decision 2026-10-30; model v3, open question 1): a PGP-alone session adding a wallet with a PGP confirm is staged and waits 24 h once submitted; a strong session does not', async () => {
-    const { b, id } = await pgpTrader();
+  it('N-I4 (lead decision 2026-10-30; model v3): a username-and-password session adding a wallet, even with a PGP confirm, is staged and waits 24 h once submitted; a strong session does not', async () => {
+    const t = await passwordTrader();
+    await weakAgain(t.b, t.name, t.id);
+    const { b, id } = t;
+    await deps.db.query('update accounts set had_wallet = true where id = $1', [id]);
     const address = fakeAddress();
     const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionOf(b), accountId: id, action: walletAction(address), method: 'pgp' });
     const send = vi.spyOn(app.push, 'send');
@@ -947,6 +950,16 @@ describe('review round 2', () => {
     expect(ok.statusCode).toBe(201);
     expect(ok.json()).toMatchObject({ usable: true });
     expect(await holdOf(deps, strong.id)).toBeNull();
+
+    // Q81 (owner 6 Nov 2026): a PGP key login is strong: its wallet confirmed with PGP is usable at once, nothing staged.
+    const g = await pgpTrader();
+    await deps.db.query('update accounts set had_wallet = true where id = $1', [g.id]);
+    const a3 = fakeAddress();
+    const t3 = await issueConfirmToken(deps, { sessionId: await sessionOf(g.b), accountId: g.id, action: walletAction(a3), method: 'pgp' });
+    const pgpOk = await g.b.post('/v1/wallets', { app: 'feather', label: 'Main', address: a3, confirmToken: t3 });
+    expect(pgpOk.statusCode, pgpOk.body).toBe(201);
+    expect(pgpOk.json()).toMatchObject({ usable: true });
+    expect(await changesOf(g.id)).toEqual([]);
   });
 
   describe('N-M1: a login name waiting out the hold', () => {
