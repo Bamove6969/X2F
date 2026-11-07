@@ -201,15 +201,6 @@ export async function discardChangesIfOwner(db: Queryable, accountId: string, pr
   return true;
 }
 
-/** Inside a recovery-code login's transaction (account locked): every change of the account goes (alert `hold-changes-discarded` `{ reason: 'recovery-code' }` when any was waiting). */
-export async function discardAllChanges(db: Queryable, accountId: string, now: Date): Promise<void> {
-  const { rows } = await db.query<ChangeRow>('delete from hold_changes where account_id = $1 returning *', [accountId]);
-  const waiting = rows.filter((r) => r.submitted_at !== null).sort((a, b) => Number(a.seq) - Number(b.seq));
-  if (waiting.length > 0) {
-    await addAlert(db, accountId, 'hold-changes-discarded', { count: waiting.length, changes: waiting.map((r) => describeChange(r.change)), reason: 'recovery-code' }, now);
-  }
-}
-
 /** `GET /v1/account/hold`'s list: the waiting changes (any session's) and the calling session's drafts. */
 export async function listChanges(db: Queryable, accountId: string, sessionId: string): Promise<{
   changes: { count: number; takesEffectAt: string | null; items: Array<ChangeSummary & { id: string; createdAt: string; submittedAt: string; by: string | null; mine: boolean }> };

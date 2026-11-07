@@ -76,11 +76,14 @@ export function holdRoutes(app: FastifyInstance): void {
     if (id !== null && n === 0) throw new ApiError(404, 'not-found');
     if (n > 0) void req.server.push.send(req.auth.accountId, 'alert').catch(() => undefined);
   };
-  app.delete('/v1/account/hold/changes', { preHandler: requireSession({ kinds: ['trader'] }) }, async (req, reply) => {
+  // A recovery session cancels too, during its hold (owner G32: the recovery-code login keeps the
+  // waiting changes; cancelling only takes power away).
+  const cancelOpts = { preHandler: requireSession({ kinds: ['trader'], allowRecovery: true, allowHeld: true }) };
+  app.delete('/v1/account/hold/changes', cancelOpts, async (req, reply) => {
     await cancel(req, null);
     return reply.code(204).send();
   });
-  app.delete('/v1/account/hold/changes/:id', { preHandler: requireSession({ kinds: ['trader'] }) }, async (req, reply) => {
+  app.delete('/v1/account/hold/changes/:id', cancelOpts, async (req, reply) => {
     const id = (req.params as { id?: unknown }).id;
     if (typeof id !== 'string' || !UUID.test(id)) throw new ApiError(404, 'not-found');
     await cancel(req, id.toLowerCase());

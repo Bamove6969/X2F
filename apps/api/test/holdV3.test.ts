@@ -508,14 +508,21 @@ describe('a recovery-code login', () => {
     expect((await passwordLogin(t.b, t.name)).json()).toMatchObject({ approvalId: expect.any(String) });
   });
 
-  it('discards changes waiting from a password-only session', async () => {
+  it('owner G32: keeps the changes waiting from a password-only session; the recovery session may cancel them', async () => {
     const t = await ownerWithCode();
     const id = ((await changePassword(t.b, t.id)).json() as { changeId: string }).changeId;
     expect((await submit(t.b, [id])).statusCode).toBe(200);
-    expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
-    const { rows } = await deps.db.query('select 1 from hold_changes where account_id = $1', [t.id]);
-    expect(rows).toHaveLength(0);
-    expect(await alertsOf(t.id, 'hold-changes-discarded')).toEqual([{ count: 1, changes: [{ kind: 'password' }], reason: 'recovery-code' }]);
+    const draft = ((await changePassword(t.b, t.id, 'Another-Pass-77!')).json() as { changeId: string }).changeId;
+    const rec = new Browser(app);
+    expect((await backupLogin(rec, t.name, t.code)).statusCode).toBe(200);
+    // The waiting change keeps its date; the draft died with its session.
+    const { rows } = await deps.db.query<{ id: string }>('select id from hold_changes where account_id = $1', [t.id]);
+    expect(rows.map((r) => r.id)).toEqual([id]);
+    expect(await alertsOf(t.id, 'hold-changes-discarded')).toEqual([]);
+    expect(draft).not.toBe(id);
+    // The held recovery session cancels it.
+    expect((await rec.delete(`/v1/account/hold/changes/${id}`)).statusCode).toBe(204);
+    expect((await deps.db.query('select 1 from hold_changes where account_id = $1', [t.id])).rowCount).toBe(0);
   });
 
   it("trades: unfunded ones are cancelled, funded ones paused; the partner sees only the other account's problem", async () => {

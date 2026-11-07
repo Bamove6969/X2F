@@ -38,7 +38,6 @@ import { throttleCheck, throttleFail, throttleKey, throttleReset } from './throt
 import {
   endHoldOfSession, gateChange, stagedReply, holdInTx, lockAccount, requireLiveSessionInTx, requireNotHeld, settleOf, startHold, weakOf, weakRefusal, withTx,
 } from './hold.js';
-import { discardAllChanges } from './holdChanges.js';
 import { totpBox } from './totp.js';
 import { holdTrades, syncHeldTrades } from '../trades/held.js';
 import { loginStrength, waits } from './strength.js';
@@ -198,7 +197,9 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
  * spent (false when a parallel use spent it first: nothing else happens); a hold whose time is up
  * settles first; every session of the account (the owner's and the team members') is
  * logged out (alert `sessions-ended` `{ count, reason: 'recovery-code' }`) and every open login
- * approval expires; the account's waiting and staged changes are discarded; the held recovery
+ * approval expires; the drafts die with their sessions, the waiting (submitted) changes keep their
+ * date (owner G32, 7 Nov: a recovery code is only a way in; it overrides neither the password nor
+ * the 24-hour wait of password-only changes; the recovery session may cancel them); the held recovery
  * session opens (`openSession` writes alert `recovery-login`); the account's hold starts (reason
  * `recovery-code`) or a running one extends; its open trades are held; the code used is replaced by
  * a new one (`renewRecoveryCode`). After the commit the ended sessions' streams close and the held
@@ -220,7 +221,6 @@ async function backupSession(req: FastifyRequest, reply: FastifyReply, accountId
       [accountId, now],
     );
     if (ended.rows.length > 0) await addAlert(db, accountId, 'sessions-ended', { count: ended.rows.length, reason: 'recovery-code' }, now);
-    await discardAllChanges(db, accountId, now);
     // Lead hold v3 review, Critical 1: device trust is a cookie a thief can copy (as at the
     // owner's proof, hold.ts): after a recovery-code login every browser needs an approval again.
     await db.query('delete from trusted_devices where account_id = $1', [accountId]);
