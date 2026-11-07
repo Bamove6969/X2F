@@ -11,8 +11,9 @@
  * funded amount within the offer's limits (the state machine does that, so the
  * amount here is already the grown one). Whatever is left above
  * sellerFundsAtomic (dust, above the offer maximum, or after "I've paid") goes
- * back to the seller. Every refund or cancel pays everything to the seller,
- * which is also all the moderator service may ever sign (spec 3.3).
+ * back to the seller. Every refund or cancel pays everything to the seller.
+ * A moderator's ruling pays by the `dispute-buyer` / `dispute-seller` sets
+ * (Plan 4 Task 15, Revision 2026-10-29c: the poster pays the 1% fee).
  */
 import type { Payout } from '@x2f/escrow';
 import { escrowPlan } from './money.js';
@@ -21,8 +22,19 @@ export type SettleKind = 'release' | 'mutual-cancel' | 'buyer-cancel' | 'auto-re
 
 export const SETTLE_KINDS: readonly SettleKind[] = ['release', 'mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'];
 
+/**
+ * A moderator-built set for a published ruling (Plan 4 Tasks 13-15, Revision 2026-10-29c "Fees on
+ * settled disputes": a settled dispute pays the 1%, the poster pays):
+ * - 'dispute-buyer': the release (buyer first, then the exact fee, any surplus to the seller);
+ * - 'dispute-seller': poster seller, the seller gets the balance less the fee and the fee wallet
+ *   exactly the fee; poster buyer (no fee in the escrow), the whole balance to the seller (the poster
+ *   still owes the fee, Plan 4 Task 12's fees_owed).
+ * Kept apart from SettleKind: no trader route settles these, only the moderator builds them.
+ */
+export type RulingKind = 'dispute-buyer' | 'dispute-seller';
+
 export interface PayoutFacts {
-  kind: SettleKind;
+  kind: SettleKind | RulingKind;
   amountAtomic: bigint;
   feeAtomic: bigint;
   poster: 'seller' | 'buyer';
@@ -53,7 +65,8 @@ export function payoutsFor(f: PayoutFacts): Payout[] {
   const balance = f.balanceAtomic;
 
   switch (f.kind) {
-    case 'release': {
+    case 'release':
+    case 'dispute-buyer': {
       if (balance < f.sellerFundsAtomic) throw new RangeError('underfunded');
       const surplus = balance - f.sellerFundsAtomic;
       const toBuyer = f.poster === 'seller' ? f.amountAtomic : f.amountAtomic - f.feeAtomic;
@@ -69,6 +82,14 @@ export function payoutsFor(f: PayoutFacts): Payout[] {
     case 'lapse-refund':
       // Every refund: the whole balance, surplus included, to the seller's signed refund address.
       return out([{ address: f.sellerRefund, amountAtomic: balance }]);
+    case 'dispute-seller': {
+      if (f.poster === 'buyer') return out([{ address: f.sellerRefund, amountAtomic: balance }]);
+      if (balance <= f.feeAtomic) throw new RangeError('underfunded');
+      return out([
+        { address: f.sellerRefund, amountAtomic: balance - f.feeAtomic },
+        { address: f.feeWallet, amountAtomic: f.feeAtomic },
+      ]);
+    }
     default:
       throw new RangeError('unknown settle kind');
   }

@@ -2,7 +2,7 @@
 // "now" here is the server's clock (useServerClock), never the device's alone (Review Focus 3).
 // Copy is from the DisputeOpen, DisputeRoom and DisputeRuling boards; lines marked COPY-UNSIGNED
 // have no board yet (spec wording or Plan 4 A8) and wait for the owner's sign-off.
-import { TIMERS, formatXmr } from '@x2f/trade';
+import { TIMERS, escrowPlan, formatXmr } from '@x2f/trade';
 import { formatRemaining } from '../../ui/Countdown.js';
 import type { DisputeReason, DisputeTrade, DisputeView, Party, Reason, RulingView } from './api.js';
 
@@ -28,6 +28,9 @@ export const reasonsFor = (side: Party) => (side === 'buyer' ? BUYER_REASONS : S
 export function reasonLabel(by: Party, r: DisputeReason): string {
   return reasonsFor(by).find(([id]) => id === r)?.[1] ?? 'Something else';
 }
+
+/** Owner Q38 via design (board DisputeRoom v119): the line under the hourglass, and on DisputeOpen before filing. COPY-UNSIGNED */
+export const HOURGLASS_LINE = "A moderator steps in within 24 h at the most. Usually it's much sooner.";
 
 export const NOTE_MAX = 1000;
 /** The board's appeal form enables "Send appeal" from 10 characters (not counting spaces at the ends). */
@@ -100,8 +103,8 @@ export type SettleKind = 'release' | 'mutual-cancel' | 'buyer-cancel' | 'auto-re
  * (owner 2026-10-29; the seller is "the seller", never named): the buyer cancelled; the payment
  * time ran out and the seller cancelled; a dispute decision; both agreed to cancel; the funding
  * time ran out. Until trades record `refund_reason` (NEEDS_REFUND_REASON) the reason is inferred. A trade that had a dispute was
- * refunded by its decision (a moderator's refund to the seller is built as `mutual-cancel` today,
- * escrow/policy.ts, so the dispute decides the reason, not the kind). COPY-UNSIGNED (no board).
+ * refunded by its decision (a moderator's refund to the seller is the `dispute-seller` set, Plan 4
+ * Task 15, so the dispute decides the reason, not the kind). COPY-UNSIGNED (no board).
  */
 export function refundReason(settling: SettleKind | null, dispute: DisputeTrade['dispute']): { title: string; text: string } {
   if (dispute !== null) {
@@ -166,6 +169,13 @@ export function dayTime(d: Date, timeZone?: string): string {
   return `${get('weekday')} ${get('day')} ${get('month')}, ${clockTime(d, timeZone)}`;
 }
 
+/** Design X5 (7 Nov): "6 Nov 2026, 15:00 UTC", shown in mono; the same for every viewer. */
+export function utcDateTime(d: Date): string {
+  const parts = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return `${get('day')} ${get('month')} ${get('year')}, ${clockTime(d, 'UTC')} UTC`;
+}
+
 /** "in 23 h" or "in 40 min" (whole hours down, minutes up, as the DisputeRoom board's "(in 23 h)"). */
 export function inTime(msLeft: number): string {
   const left = Math.max(0, msLeft);
@@ -219,25 +229,35 @@ export interface RulingCopy {
   footer: string;
 }
 
+/** The XMR a ruling pays to the side it favours, in atomic units (the escrow fully funded). */
+export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: string, poster: Party): bigint {
+  const amount = BigInt(amountAtomic);
+  if (outcome === 'release-to-buyer' && poster === 'buyer') return amount - escrowPlan({ amountAtomic: amount, poster }).feeAtomic;
+  return amount;
+}
+
 /**
  * The ruling card's words for this side. `me` is this side, `other` the other trader's display name.
  * Board lines (DisputeRuling, wip/design-brief): "Ruling: release to the buyer", "1.25 XMR goes to
  * you" and the footer. The board's "Sent to Cake Wallet, address ending …k3Fz." is not true yet: the
  * page says "Goes to …" (DisputeRuling.tsx) until the API reports the payout executed.
  *
- * NEEDS_PLAN_4_RULING_PAYOUT (C11 review I1): the spec and Plan 4 ("A1 dropped", Revision
- * 2026-10-29c) move the coins at the ruling, but nothing executes a ruling's payout yet, and
- * rulingAllowsCosign below still holds the co-sign until the ruling is final (round 1 past its window
- * with no appeal, or round 2). Changing that gate (coins move at the ruling, with or without an
- * appeal, still through cosignPolicy) is a money rule and belongs to the Plan 4 execution task, not
- * to copy. When the API reports the payout executed (DisputeView has no such flag today), the
- * destination line flips to the board's "Sent to …" and the appeal line may say the XMR has moved.
+ * NEEDS_PLAN_4_RULING_PAYOUT (C11 review I1): the spec, Plan 4 ("A1 dropped", Revision 2026-10-29c)
+ * and the owner (Q37, 6 Nov: "at once, with a lien covering a reversal") move the coins at the
+ * ruling, and rulingAllowsCosign below allows the co-sign from the ruling on, appeal or not. Nothing
+ * executes a ruling's payout yet, though, so the page still says "Goes to …". When the API reports
+ * the payout executed (DisputeView has no such flag today), the destination line flips to the
+ * board's "Sent to …" and the appeal line may say the XMR has moved.
  * Tripwire NEEDS_PLAN_4_RULING_PAYOUT in test/dispute-tripwires.test.ts.
  */
-export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, _now: Date): RulingCopy {
+export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, _now: Date, poster: Party): RulingCopy {
   const r = d.ruling;
   if (r === null) throw new Error('no ruling');
   const amount = `${xmrInText(amountAtomic)} XMR`;
+  // Lead review 7 Nov: what the ruling pays out, as `payoutsFor('dispute-buyer' | 'dispute-seller')`
+  // builds it for a fully funded escrow. The poster pays the 1% fee: on a buyer's ad the buyer gets
+  // the amount less the fee; the seller's refund is the amount either way.
+  const paidOut = `${xmrInText(paidOutAtomic(r.outcome, amountAtomic, poster))} XMR`;
   const otherSide: Party = me === 'buyer' ? 'seller' : 'buyer';
   const nameOf = (p: Party) => (p === me ? 'you' : other);
   let label: string;
@@ -245,11 +265,11 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
   switch (r.outcome) {
     case 'release-to-buyer':
       label = 'Ruling: release to the buyer';
-      title = me === 'buyer' ? `${amount} goes to you` : `${amount} goes to ${other}`;
+      title = me === 'buyer' ? `${paidOut} goes to you` : `${paidOut} goes to ${other}`;
       break;
     case 'refund-to-seller':
       label = 'Ruling: refund to the seller'; // COPY-UNSIGNED
-      title = me === 'seller' ? `${amount} goes to you` : `${amount} goes to ${other}`; // COPY-UNSIGNED
+      title = me === 'seller' ? `${paidOut} goes to you` : `${paidOut} goes to ${other}`; // COPY-UNSIGNED
       break;
     case 'seller-sends-xmr':
       label = 'Ruling: the seller sends the XMR'; // COPY-UNSIGNED
@@ -325,11 +345,12 @@ export interface SettleOutcome {
 
 /**
  * The ruling gate in front of co-signing a moderator-built transaction (Plan 3 Task 27): only a
- * set the moderator built for this side to co-sign, only when the ruling pays this side, only once
- * the ruling is final (the appeal round, or round 1 past its window with no appeal; see
- * NEEDS_PLAN_4_RULING_PAYOUT above rulingCopy: Plan 4's execution task changes this), and only when
- * `cosignPolicy` (Task 12, which checks the exact payouts against this device's own facts) agrees.
- * Anything else is refused. Never throws.
+ * set the moderator built for this side to co-sign, only when the ruling pays this side, and only
+ * when `cosignPolicy` (Task 12, which checks the exact payouts against this device's own facts)
+ * agrees. The money moves at the ruling, during the appeal window and during an appeal too: an
+ * overturn puts a lien on whoever received the coins (owner Q37, 6 Nov; spec Revision 2026-10-29c
+ * "Liens"). An after-refund ruling moves nothing from the escrow. Anything else is refused. Never
+ * throws.
  */
 export function rulingAllowsCosign(a: {
   role: Party;
@@ -342,10 +363,23 @@ export function rulingAllowsCosign(a: {
     const d = a.dispute;
     if (d === null || d.ruling === null || d.afterRefund) return false;
     if (paidSide(d.ruling.outcome) !== a.role) return false;
-    if (!rulingFinal(d, a.now)) return false;
     if (a.outcome.kind !== 'release' || a.outcome.builder !== 'mod' || a.outcome.cosigner !== a.role) return false;
     return a.cosignPolicy(a.outcome) === true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Revision 2026-10-29c "Fees on settled disputes": the party who lost a dispute with no money in the
+ * escrow still owes the 1%. The sentence is the plan's, COPY-UNSIGNED beyond the owner's meaning.
+ * Shown only when the server's dispute view says this side owes it (NEEDS_TASK_12_FEES_OWED).
+ */
+export function feeOwedLine(atomic: string): string {
+  return `This also means you still owe the 1% fee for this trade, equal to ${xmrInText(atomic)} XMR, which will be deducted automatically from your future trades.`;
+}
+
+/** A Monero transaction ID or transaction key: 64 lowercase hex characters. */
+export function isTxHex(s: string): boolean {
+  return /^[0-9a-f]{64}$/.test(s);
 }

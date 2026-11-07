@@ -4,29 +4,106 @@
 // (GET /v1/trades/:code/dispute), never from a chat message. The chat itself is Task 20's
 // TradeChatPanel (it shows the spec 6.6 notice; moderator lines get ModeratorTag's badge) under the
 // server's system cards, and the unblurred-proof request is Plan 5's (seams.tsx).
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { TradeChatPanel } from '../../chat/ChatPanel.js';
+import { formatXmr } from '@x2f/trade';
 import { Icon } from '../../ui/icons.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import type { DisputeTrade, DisputeView } from './api.js';
 import { TradeTitle } from './DisputeOpen.js';
 import { DisputeIcon } from './icons.js';
-import { dayTime, inTime, repliedIn, xmrInText } from './rules.js';
+import { HOURGLASS_LINE, repliedIn } from './rules.js';
 import { DisputeSystemCards, systemCardsFor, tradeProofs, UnblurredRequest } from './seams.js';
 import './dispute.css';
 
-/** "Replied in 38 min · ruling due by Fri 16 Oct, 10:14 (in 23 h)" (board), or the waiting form. */
-function DeadlineLine({ dispute, now }: { dispute: DisputeView; now: Date }) {
+/**
+ * The board's "Replied in 38 min", on Plan 4 Task 10's view. While the hourglass runs it is the one
+ * deadline on the screen (design 7 Nov: "First reply due by" competed with it), so before anyone
+ * replies this line shows nothing. Traders never see the 48-hour hard deadline (owner Q38).
+ */
+function DeadlineLine({ dispute, hourglass }: { dispute: DisputeView; hourglass: boolean }) {
   const replied = repliedIn(dispute);
-  const first = replied !== null ? `Replied in ${replied}` : 'A moderator usually replies within 4 hours'; // COPY-UNSIGNED (from DisputeOpen)
-  if (dispute.dueAt === null) return <span className="dispute-deadline">{first}.</span>;
-  const due = new Date(dispute.dueAt);
+  if (replied !== null) return <span className="dispute-deadline">Replied in {replied}.</span>;
+  if (hourglass) return null;
+  return <span className="dispute-deadline">{HOURGLASS_LINE}</span>;
+}
+
+/**
+ * Whether the hourglass shows: a dispute with Task 10's 24-hour goal, no ruling yet and no moderator
+ * yet (lead review 7 Nov; board v119: once one joins, "Replied in …" replaces it).
+ */
+const hourglassShows = (d: DisputeView): boolean => d.ruling === null && d.moderator === null && Boolean(d.goalAt);
+
+/** "23 h 12 min" split into numbers and units, so the numbers can be the big mono digits. */
+function heroParts(msLeft: number): { n: string; u: string }[] {
+  const min = Math.max(0, Math.ceil(msLeft / 60_000));
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (h === 0) return [{ n: String(m), u: 'min' }];
+  return m === 0 ? [{ n: String(h), u: 'h' }] : [{ n: String(h), u: 'h' }, { n: String(m), u: 'min' }];
+}
+
+/** The hourglass countdown, read from the server clock every second (as `Countdown`). */
+function HeroCountdown({ deadline, serverClock }: { deadline: Date; serverClock: () => Date }) {
+  const end = deadline.getTime();
+  const clock = useRef(serverClock);
+  clock.current = serverClock;
+  const [ms, setMs] = useState(() => end - serverClock().getTime());
+  useEffect(() => {
+    const tick = () => setMs(end - clock.current().getTime());
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [end]);
   return (
-    <span className="dispute-deadline">
-      {first} · ruling due by <span className="dispute-ink">{dayTime(due)}</span> ({inTime(due.getTime() - now.getTime())})
+    <span className="dispute-hero__time" role="timer" data-mask="clock">
+      {heroParts(ms).map((p, i) => (
+        <span key={p.u}>
+          {i > 0 ? ' ' : null}
+          <span className="dispute-hero__num">{p.n}</span> <span className="dispute-hero__unit">{p.u}</span>
+        </span>
+      ))}
     </span>
+  );
+}
+
+/**
+ * Owner Q38 (6 Nov), board DisputeRoom v119 (`moderator=waiting`): once a dispute is filed the
+ * hero's one big number is an hourglass counting down from 24 hours to Task 10's `goalAt`, "Until a
+ * moderator steps in", with the place in the queue as a meta line under it. Past the 24 hours it
+ * reads as empty and says a moderator steps in as soon as they can; never the 48-hour deadline.
+ * COPY-UNSIGNED (design's words).
+ */
+export function DisputeHourglass({ dispute, now, serverClock }: { dispute: DisputeView; now: Date; serverClock: () => Date }) {
+  if (!hourglassShows(dispute)) return null;
+  const goal = new Date(dispute.goalAt!);
+  const over = now.getTime() >= goal.getTime();
+  return (
+    <div className="dispute-hourglass" data-part="hourglass" data-state={over ? 'over' : 'running'}>
+      {over ? (
+        <>
+          <DisputeIcon name="hourglassEmpty" size={24} stroke={1.5} />
+          <span className="dispute-stack">
+            <span className="dispute-strong">Taking longer than usual</span>
+            <span className="dispute-muted">A moderator will step in as soon as they can.</span>
+          </span>
+        </>
+      ) : (
+        <span className="dispute-stack">
+          <span className="dispute-hero__label">Until a moderator steps in</span>
+          <span className="dispute-hero__row">
+            <DisputeIcon name="hourglass" size={24} stroke={1.5} />
+            <HeroCountdown deadline={goal} serverClock={serverClock} />
+          </span>
+          <span className="dispute-hero__line">{HOURGLASS_LINE}</span>
+        </span>
+      )}
+      {dispute.moderator === null && dispute.queuePosition ? (
+        <span className="dispute-hero__meta">You're number {dispute.queuePosition} in the queue</span>
+      ) : null}
+    </div>
   );
 }
 
@@ -59,14 +136,19 @@ export function DisputeRoom({
       <section className="dispute-status" aria-label="Dispute status">
         <div className="dispute-chips">
           <StatusChip tone="danger" icon="clock" label="In dispute" />
-          {dispute.afterRefund ? null : (
-            <span className="x2f-chip" data-tone="escrow">
-              <DisputeIcon name="lock" size={14} stroke={1.75} />
-              {xmrInText(trade.amountAtomic)} XMR locked in escrow
-            </span>
-          )}
         </div>
-        <DeadlineLine dispute={dispute} now={now} />
+        <DisputeHourglass dispute={dispute} now={now} serverClock={serverClock} />
+        {/* Not after a refund, nor on a system escalation (late funds after a release: nothing is locked). */}
+        {dispute.afterRefund || dispute.openedBy === 'system' ? null : (
+          // Board v119: the amount is the hero's inner block, six decimals.
+          <div className="dispute-hero__amount" data-part="escrow-amount">
+            <span className="dispute-hero__amount-label">
+              <DisputeIcon name="lock" size={14} stroke={1.75} /> Locked in escrow
+            </span>
+            <span className="dispute-hero__xmr">{formatXmr(BigInt(trade.amountAtomic))} XMR</span>
+          </div>
+        )}
+        <DeadlineLine dispute={dispute} hourglass={hourglassShows(dispute)} />
       </section>
 
       <div className="dispute-main dispute-main--room">

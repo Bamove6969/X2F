@@ -128,6 +128,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'method-unavailable': 'a catalog fact (the method is off the list); Suggest a method covers it',
   'no-wallet': 'sends the person to Add a wallet',
   'trading-paused': 'maintenance, with its own message (Plan 3 emergency stop)',
+  // Plan 4 Tasks 5 and 8: staff-API answers (a security-key tap, the owner's banner limit) that
+  // traders never get, and maintenance, which the app shows as the Maintenance screen.
+  'banner-too-long': "an input check on the owner's banner (staff app only)",
+  maintenance: "the site is in maintenance: the Maintenance screen with the owner's message",
   'out-of-range': 'an input check on the amount',
   'ad-busy': 'someone else is taking the offer (try again)',
   'wallet-not-ready': 'pick another wallet (the wait is explained on Wallets)',
