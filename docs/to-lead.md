@@ -215,3 +215,51 @@ Q12 (nothing tells the buyer to pay before escrow is fully in: BuyerPay, Desktop
 - **F13, gift card rules:** plain-language draft in `docs/design-gift-card-rules-2026-11-07.md`. It covers a short block on each gift card offer, a 5-step list and a tick-box for the sender, a 4-step list and a tick-box for the receiver, and what the moderator looks at in a dispute. Four numbers are for the owner: a 30-minute redemption window, cards bought within 7 days, a short brand list at launch, and no partial-balance cards.
 - **F1/F2/F6/F7/F8** (±% above or below, max 50; empty-instructions helper; currency, then payment type dropdowns on the ad; "2 of 3 selling offers used" in the builder): board work in progress on FlexOffer-Post (+Wide) and OfferAd (+Wide); next publish.
 - **F18:** the Devices session length changes this session only. The Devices note will say so in the next publish.
+
+## 7 Nov 2026: build review (5 Nov) re-checked against main 55bc70f9
+
+How I checked: by reading the code on `origin/main` @ `55bc70f9` (apps/web), not from screenshots; there's no pack for this head. Anything that only shows when it renders is marked "check on the next pack". File references are relative to `apps/web/src/`.
+
+### X1–X9
+
+| Code | Now | Evidence on main |
+|---|---|---|
+| X1 orange selection | **PARTLY** | Closed: chips and segments (`browse.css:176-183`, `PostOffer.css:93-96` RadioChips, `Wallets.css:183`, `setup.css:294/378/401`), and ui `Checkbox` (`ui.css:1526` accent ink). Still orange: checkboxes in `screens.css:125-130` (.x2f-team__role), `setup.css:604-608` (.x2f-check), `pay.css:352-359` (.x2f-paid__check), `release.css:147-152` (.x2f-release__check), and the dispute reason radio dot `dispute.css:205`. |
+| X2 CantDoThat shell | **CLOSED (code)** | MyOffers, Team and Chat all use `ui/CantDoThat` (`MyOffers.tsx:239`). Check 33 on the next pack. |
+| X3 orange focus ring | **PARTLY** | Shared rules are ink. Still orange: `.x2f-input:focus-visible` (`screens.css:68-69`, monero-ink, offset 1), `dispute.css:208-209`, `quote.css:~222`. |
+| X4 native controls | **OPEN** | `<fieldset>` + legend: `Team.tsx:42-56` ("Roles"), `Feedback.tsx:149-159` ("What is it?"). Native `<select>`: `Team.tsx:335` (log filter), `Security.tsx:100` (session length), `PostOffer.tsx:267/283/296/407`. |
+| X5 dates | **OPEN** | Weekday or no-year formats: `screens/auth/refusals.ts:39` ("Fri 3:00 PM"), `screens/dispute/rules.ts:163-167` (`dayTime` "Fri 16 Oct, 10:14"), `screens/settings/teamCopy.ts:17-18` (no year), `Wallets.tsx:38`, `news-model.ts:52`, `settings/Alerts.tsx:79` (locale formats). |
+| X6 invite expiry at the epoch | **CLOSED (code)** | `Team.tsx:247` guards null. The date itself still lacks a year (that's X5). |
+| X7 mono timer spacing | **CHECK ON NEXT PACK** | `ui/Countdown.tsx` 'minutes' renders "47 h 58 min" in one `.x2f-countdown` span; if that span is mono, the units are mono too. |
+| X8 centred "Time to pay" card | **CHECK ON NEXT PACK** | `pay.css:318-321` still centres a block. |
+| X9 old hold wording | **OPEN** | `screens/auth/refusals.ts:73` and `ui/cantDoCodes.ts:383, 394, 405` still say "only one way of proving it's you". |
+
+### Top five from the 5 Nov review
+
+1. **Hold and Strong-login copy, RecoveryHold and TeamRefusal screens: OPEN.** There's no RecoveryHold or TeamRefusal screen on main, and the X9 strings are still there.
+2. **One CantDoThat component: MOSTLY CLOSED.** The titles are still vague: `cantDoCodes.ts:203` "This can't be done on the team".
+3. **X1/X3/X4 in shared parts: PARTLY** (see above).
+4. **Dispute room and ruling: OPEN.** `DisputeRoom.tsx:61-67` shows two chips, no hero and no key mark. `rules.ts:146-151` `xmrInText` trims XMR to 2 decimals ("1.25"). Dates use `dayTime`. The new owner rule (Q38, hourglass from 24 h, no 48 h line) isn't built.
+5. **Wide and fold My offers: PARTLY.** Fold panes are built (`MyOffers.tsx` uses `Panes`). The wide table is not (tripwire NEEDS_DESIGN_MYOFFERS, `MyOffers.tsx:15`). The Edit link waits for Task 35. Footer padding: check on the next pack.
+
+### Open items as buildable tasks (one per line: screen · change)
+
+- Team, Setup, I've-paid, Release confirm · checkbox `accent-color: var(--x2f-ink)` in `screens.css:130`, `setup.css:~608`, `pay.css:~359`, `release.css:~152`.
+- DisputeOpen · reason radio: the dot is `var(--x2f-ink)` (`dispute.css:205`), and the selected row gets a 2px ink border on surface-raised.
+- All forms · `.x2f-input:focus-visible { outline: 2px solid var(--x2f-ink); outline-offset: 2px }` (`screens.css:68`); the same in `dispute.css:208`, `quote.css:~222`.
+- All forms · `.x2f-input` background `var(--x2f-surface-raised)`, `min-height: 48px`, `padding: 0 14px`; textarea `min-height: 96px; padding: 12px 14px` (also P1 of the proof pop-up review).
+- Team · replace the "Roles" fieldset (`Team.tsx:42`) per the new owner model Q16 (member types with checkboxes). **Wait for the redrawn MemberPermissions board.**
+- Team · log filter `<select>` (`Team.tsx:335`) → tiles or the shared listbox (no native select).
+- Security · session length `<select>` (`Security.tsx:100`) → the SessionLength tiles (owner OPEN still: tiles vs drop-down; build tiles behind the same component so either can ship).
+- Feedback · drop the "What is it?" fieldset (`Feedback.tsx:149`), per the Feedback board. Add the 10-a-day limit state (Q67, Feedback board `limit=reached`).
+- Login refusal · `refusals.ts:39` date → `6 Nov 2026, 15:00 UTC` (mono).
+- Dispute · `rules.ts:163` `dayTime` → `D Mon YYYY, HH:MM UTC`; `xmrInText` → 6 decimals.
+- Team · `teamCopy.ts:18` add `year: 'numeric'`.
+- Wallets, News, Alerts · replace locale `toLocaleString` with the shared UTC date formatter.
+- Hold copy · `refusals.ts:73`, `cantDoCodes.ts:383/394/405`: replace "only one way of proving it's you" with "a username and password" (owner Q14 wording), per HoldChange and RecoveryHold.
+- RecoveryHold · new screen per the RecoveryHold board; the 04 refusal links to it.
+- TeamRefusal · new screen per the TeamRefusal board, replacing the 20 popup.
+- CantDoThat titles · `cantDoCodes.ts:203` → "Only the owner can do this" (member) / "Needs a Strong login" (weak session).
+- DisputeRoom · hero per the board (v119): chip + key mark; waiting state = hourglass countdown from 24 h with "A moderator steps in within 24 h at the most. Usually it's much sooner."; amount block 1.250000 XMR; drop the 48 h line.
+- MyOffers wide · table layout per MyOffers-Wide (clears NEEDS_DESIGN_MYOFFERS); selection bar at the top of the column.
+- LoginApprove "You're in" · add "Chrome on Windows is now one of your devices." (check that the board copy is still missing on main).
