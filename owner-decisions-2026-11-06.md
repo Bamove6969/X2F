@@ -27,3 +27,23 @@ Q2, Q24, Q25, Q38, Q39, Q46 (disclaimer wording and placement), Q47 wording, Q67
 
 ## Lead brings back to the owner
 Explanations asked for: Q3 ranges, Q19 watcher (done), Q26, Q29 and Q33 (My offers, Task 34), Q32, Q44, Q48, Q62, Q66, Q71. Research: Q11 timing table, Q22 gift cards, Q6 sources, Q9 why 45.
+
+# Owner follow-up decisions, 7 Nov. These override anything above.
+## claude2
+- Pricing: vendor picks above or below and types a percentage, max 50% either way (F1). The board follows this; the owner's 50% wins over the design limit.
+- Instructions: per payment type; if blank, the automatic line shows: "Payment method chosen: Interac e-Transfer. Please post pertinent details in chat window." (F2)
+- Bands: a band must have something that makes it different. What those things are is still open: propose a list to the lead. Don't allow identical bands (F3).
+- Ads: a dropdown shows each payment type and each currency; the taker picks currency, then payment type, on one ad. Those items must be indexed so searches find them (F6, F7).
+- Limit: 3 buy + 3 sell, shown in the vendor's settings and the ad builder (F8).
+- Timing: instant payment types: 90 minutes before a dispute, replacing the 60. Same or next day: 24 h. Slow types: 48 h to 4 days, and raise the 24 h maximum (F9). Everything else in the research recommendation stands: give common payment types their own timing profile.
+- Nudge: once every 15 minutes, with a sound. The owner wants the old ICQ-style car horn. Check the rights first: use an original sound in that style unless we can license it (F10).
+- Prices: keep the 3-source middle value; add a 4th source after it passes a Tor check (F11). Currencies: launch with the 45, then add what Coinbase and BitPay both quote; never sanctioned currencies, and check the 45 as well, including RUB (F12).
+- Gift cards: keep them. Build clear rules from what Paxful and LocalMonero required, in plain language, with evidence for disputes (F13). Card currency follows its country, short window, evidence checklist, tick-box terms.
+- Session length on Devices: this session only (F18).
+## claude3
+- Trade code hidden by the blur: warn the poster, who can still post. Also post in the trade chat that the automated proof check saw the code obscured (F14).
+- Card ending vs amount: read the words before the digits. "Trade code" or "Amount" stays clear, and the others are blurred if they look personal (F15).
+- 4-point signing help after every failed claim (F16). Imported cap: 100,000 US dollars, shown converted to XMR (F17).
+- Owner wants screenshots when Task 16 is ready, for the staff menu (F19).
+## design
+- Pick the name by vote: My offers, My listings, My ads, My posts (F5). Solve the "can't read this currency" state on the vendor's list: obvious, little reading, good looking (F4). Nudge sound in the ICQ spirit (F10). Plain gift card rules (F13).
