@@ -230,7 +230,10 @@ export async function traderLogin(
   const secret = randomBytes(32).toString('base64url');
   const settle = settleOf(req);
 
-  type Outcome = { kind: 'session'; after: () => void } | { kind: 'wait'; wait: ApprovalWait };
+  // `refused`: the login is refused, but what this transaction did first (the owner's proof
+  // discarding a thief's waiting changes) is committed before the error is thrown (lead hold v3
+  // review item 6: a thief's approval flood must not undo the discard).
+  type Outcome = { kind: 'session'; after: () => void } | { kind: 'wait'; wait: ApprovalWait } | { kind: 'refused'; error: ApiError };
   let discarded = false;
   /** The owner's proof ended an account hold: its held trades resume after the commit. */
   let heldEnded = false;
@@ -288,7 +291,7 @@ export async function traderLogin(
     }
     // Hold model v3: during the hold nobody else logs in, not even on a trusted device (its trust is
     // a cookie that can be copied; review round 2 N-C1), whatever the login proved.
-    if (hold !== null) throw holdRefusal(hold.holdUntil);
+    if (hold !== null) return { kind: 'refused', error: holdRefusal(hold.holdUntil) };
     // Plan 2 Task 18: a team member's session is no logged-in device here: it never answers an
     // approval (the approval routes are the account owner's), so the owner's login never waits for
     // one. Member sessions still count toward the device limit (`devicesInUse`).
@@ -304,7 +307,7 @@ export async function traderLogin(
     if (open.rows[0]!.n === 0) {
       if (await isTrusted(deps, a.accountId, device)) return session();
       if (a.proven !== undefined && a.proven.kind !== 'password-totp') return session();
-      throw new ApiError(403, 'approval-unavailable');
+      return { kind: 'refused', error: new ApiError(403, 'approval-unavailable') };
     }
     const inUse = await devicesInUse(db, a.accountId, now, presented);
     const trusted = await isTrusted(deps, a.accountId, device);
@@ -321,7 +324,7 @@ export async function traderLogin(
     if (recent.rows[0]!.n >= APPROVALS_PER_HOUR) {
       const oldest = recent.rows[0]!.oldest ?? now;
       const retryAfterSeconds = Math.max(1, Math.ceil((oldest.getTime() + 3_600_000 - now.getTime()) / 1000));
-      throw new ApiError(429, 'slow-down', { retryAfterSeconds, reason: 'approvals' });
+      return { kind: 'refused', error: new ApiError(429, 'slow-down', { retryAfterSeconds, reason: 'approvals' }) };
     }
     // This browser's earlier open approval is superseded (its approval cookie is replaced below).
     await db.query(
@@ -352,6 +355,7 @@ export async function traderLogin(
   // The owner hears that the waiting changes were discarded on every device.
   if (discarded) void req.server.push.send(a.accountId, 'alert').catch(() => undefined);
   if (heldEnded) await syncHeldTrades({ db: deps.db, clock: deps.clock, publish: req.server.tradePublish }, a.accountId);
+  if (out.kind === 'refused') throw out.error;
   if (out.kind === 'session') {
     out.after();
     return { status: 'ok' };

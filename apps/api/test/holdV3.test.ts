@@ -18,6 +18,7 @@ import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { HOLD_MS, endHoldByModerator, extendHoldByModerator, lockAccount, settleDueHolds, withTx } from '../src/auth/hold.js';
 import { MAX_HOLD_CHANGES, settleDueChanges } from '../src/auth/holdChanges.js';
+import { APPROVALS_PER_HOUR } from '../src/auth/approval.js';
 import { purgeExpired } from '../src/auth/challenges.js';
 import { RECOVERY_CODE_COUNT } from '../src/auth/recovery.js';
 import { syncHeldTradesJob } from '../src/trades/held.js';
@@ -340,6 +341,22 @@ describe('a username + password session: changes are staged, reviewed, submitted
     expect((await t.b.delete(`/v1/account/hold/changes/${a}`)).statusCode).toBe(204);
     expect((await holdView(t.b)).changes.items.map((i) => i.id)).toEqual([b]);
     expect((await t.b.delete(`/v1/account/hold/changes/${a}`)).statusCode).toBe(404);
+  });
+
+  it('lead review item 6: a thief flooding approvals cannot keep its changes: the refused strong login still discards them', async () => {
+    const t = await ownerWithPasskey();
+    // The owner's strong session on another device (it answers approvals).
+    const phone = new Browser(app);
+    expect((await passkeyLogin(phone, t.auth)).json()).toEqual({ status: 'ok' });
+    // The thief's password-only session stages and submits a change.
+    const id = ((await changePassword(t.b, t.id)).json() as { changeId: string }).changeId;
+    expect((await submit(t.b, [id])).statusCode).toBe(200);
+    // The thief uses up the hour's approvals.
+    for (let i = 0; i < APPROVALS_PER_HOUR; i++) await passwordLogin(new Browser(app), t.name);
+    const res = await passkeyLogin(new Browser(app), t.auth);
+    expect([res.statusCode, errorOf(res)]).toEqual([429, 'slow-down']);
+    expect((await deps.db.query('select 1 from hold_changes where id = $1', [id])).rowCount).toBe(0);
+    expect(await alertsOf(t.id, 'hold-changes-discarded')).toEqual([{ count: 1, changes: [{ kind: 'password' }], reason: 'owner-login' }]);
   });
 
   it("the owner's passkey held before the submission ends the wait early and discards the changes", async () => {
