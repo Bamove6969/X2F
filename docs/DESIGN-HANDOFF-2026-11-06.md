@@ -143,3 +143,7 @@ Other loose end: draft PR Bamove6969/X2F#4 adds `.claude/settings.json` (seven r
 - **Done:** proof pop-up review, build review re-check on main 55bc70f9, branch reviews (hold-v3, task15, results), owner-answer boards, gift card rules draft, nudge = owner's Ahooga horn (Freesound 480002, CC0, on comms).
 - **Next for design:** MemberPermissions (+Wide) redraw for Q16 (3–4 member types, 7–10 checkboxes each, a member can be in several); the per-payment-type price change on FlexOffer-Post switches to Above/Below + typed % (max 50).
 - **Waiting on the owner (via the lead):** signing all COPY-UNSIGNED lines; ProfileVisibility OPEN (does "traded to date" include imported volume); the gift card numbers; the Refunded buyer-cancelled dispute card; the rule checks in the hold-v3 and task15 reviews.
+
+## 10. Standing rule (owner, via the lead, 7 Nov): design never addresses the owner
+
+Everything design would say to the owner goes to the lead instead: questions, status, reports, "done" notes, anything to sign. Use `send_message` to the lead's session, or `docs/to-lead.md` on this branch. A reply in the design session itself does not reach the lead. Never end a turn with a report addressed to the owner: send it to the lead, then stop with at most one line. If the lead can't be reached, write it in `docs/to-lead.md` and push. The lead batches what the owner needs.
