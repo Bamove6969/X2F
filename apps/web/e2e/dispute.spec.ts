@@ -48,6 +48,7 @@ function tradeView(o: Partial<Record<string, unknown>> & { role?: 'buyer' | 'sel
     payBy: T('09:30'),
     paidAt: T('08:02'),
     confirmBy: T('10:02'),
+    buyerDisputeFrom: T('09:02'),
     finalAlertAt: null,
     settleBy: null,
     pausedAt: null,
@@ -167,11 +168,11 @@ test('DisputeOpen shows the board copy and sends the reason and note', async ({ 
   expect(posts[0]!.postDataJSON()).toEqual({ reason: 'silent', note: 'No answer since 10:02.' });
 });
 
-test('before 30 minutes after marking paid (owner 2026-11-01), the buyer is told when and nothing is sent', async ({ page }) => {
-  // Paid at 08:02: 29 min later the dispute is still closed.
-  const posts = await stub(page, { trade: tradeView({ serverNow: T('08:31') }) });
+test('before 60 minutes after marking paid (owner 2026-11-06 Q10, was 30), the buyer is told when and nothing is sent', async ({ page }) => {
+  // Paid at 08:02: 59 min later the dispute is still closed.
+  const posts = await stub(page, { trade: tradeView({ serverNow: T('09:01') }) });
   await open(page);
-  await expect(page.getByText("You can open a dispute if the seller hasn't confirmed within 30 min of your payment.")).toBeVisible();
+  await expect(page.getByText("You can open a dispute if the seller hasn't confirmed within 60 min of your payment.")).toBeVisible();
   const button = page.getByRole('button', { name: 'Open dispute' });
   await expect(button).toBeDisabled();
   await button.click({ force: true });
@@ -179,11 +180,20 @@ test('before 30 minutes after marking paid (owner 2026-11-01), the buyer is told
   expect(posts).toHaveLength(0);
 });
 
-test('from 30 minutes after marking paid the buyer may open one, before the seller\'s confirm window ends', async ({ page }) => {
-  await stub(page, { trade: tradeView({ serverNow: T('08:32') }) });
+test('from 60 minutes after marking paid the buyer may open one, before the seller\'s confirm window ends', async ({ page }) => {
+  await stub(page, { trade: tradeView({ serverNow: T('09:02') }) });
   await open(page);
   await expect(page.getByRole('button', { name: 'Open dispute' })).toBeEnabled();
   await expect(page.getByText("Seller's time to confirm ran out")).toHaveCount(0);
+});
+
+test('after a maintenance moved the end of the wait (owner 2026-11-06 Q10), the buyer still waits past paidAt + 60 min', async ({ page }) => {
+  // Paid at 08:02; a 40-minute maintenance moved the end of the wait from 09:02 to 09:42.
+  const posts = await stub(page, { trade: tradeView({ serverNow: T('09:10'), buyerDisputeFrom: T('09:42'), confirmBy: T('10:42') }) });
+  await open(page);
+  await expect(page.getByRole('button', { name: 'Open dispute' })).toBeDisabled();
+  await expect(page.getByText("You can open a dispute if the seller hasn't confirmed within 60 min of your payment.")).toBeVisible();
+  expect(posts).toHaveLength(0);
 });
 
 test('the seller sees the seller\'s reasons', async ({ page }) => {

@@ -739,15 +739,22 @@ describe('review minors 1, 5 and 7', () => {
     expect(document.querySelector('[data-grown]')).toBeNull();
   });
 
-  it("in paid, Open dispute waits 30 minutes from marking paid (owner 2026-11-01; too-early before it), not for confirmBy", () => {
-    // 29:59 after marking paid: still waiting, 1 min left.
-    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-(29 * 60 + 59) / 60), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+  it("in paid, Open dispute waits 60 minutes from marking paid (owner 2026-11-06 Q10; too-early before it), not for confirmBy", () => {
+    // 59:59 after marking paid: still waiting, 1 min left.
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-(59 * 60 + 59) / 60), buyerDisputeFrom: at(1 / 60), confirmBy: at(60) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(maybe('Open dispute')).toBeUndefined();
     expect(text()).toContain('Dispute opens in 1 min');
     r.unmount();
-    // 30:00 after marking paid, with the seller's window still open: the link is there.
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-30), confirmBy: at(90) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    // 60:00 after marking paid, with the seller's window still open: the link is there.
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-60), buyerDisputeFrom: at(0), confirmBy: at(60) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(maybe('Open dispute')).toBeDefined();
+  });
+
+  it("in paid, the wait follows the server's buyerDisputeFrom, which maintenance moved later (owner 2026-11-06 Q10)", () => {
+    // Marked paid 70 min ago, but a 40-minute maintenance paused the wait: 30 min left.
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-70), buyerDisputeFrom: at(30), confirmBy: at(90) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(maybe('Open dispute')).toBeUndefined();
+    expect(text()).toContain('Dispute opens in 30 min');
   });
 
   it("the wide seller room's Chat goes to the chat beside it, never a second chat panel", async () => {

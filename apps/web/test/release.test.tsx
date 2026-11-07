@@ -142,6 +142,7 @@ describe('SellerConfirm', () => {
     const s = sellerConfirm(trade());
     const tip = s.host.querySelector('#x2f-confirm-tip')!.textContent!.replace(/\s+/g, ' ');
     expect(tip).toContain(`mira.k can ask a moderator to step in from ${TIMERS.buyerDisputeAfterPaidMin} minutes after marking paid.`);
+    expect(tip, 'owner 2026-11-06 Q10: 60 minutes, was 30').toContain('from 60 minutes after marking paid.');
     expect(tip).not.toContain('If time runs out');
   });
 

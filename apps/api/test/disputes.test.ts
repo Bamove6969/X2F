@@ -70,9 +70,9 @@ async function rule(code: string, o: { outcome: string; round?: 1 | 2; ruledAt: 
 }
 
 describe('POST /v1/trades/:code/dispute', () => {
-  it('refuses the buyer before 30 minutes after marking paid (29:59), and writes nothing (owner 2026-11-01)', async () => {
+  it('refuses the buyer before 60 minutes after marking paid (59:59), and writes nothing (owner 2026-11-06 Q10, was 30)', async () => {
     const { buyer, t } = await tradeIn('paid');
-    setNow(at(29 * MIN + 59_000));
+    setNow(at(59 * MIN + 59_000));
     const res = await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
     expect(res.statusCode).toBe(409);
     expect(errorOf(res)).toBe('too-early');
@@ -81,15 +81,15 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect(await eventTypes(t.code)).not.toContain('open-dispute');
   });
 
-  it('opens a dispute from 30:00 after marking paid, inside the seller\'s 2-hour window: the trade, its event and the dispute row in one go', async () => {
+  it('opens a dispute from 60:00 after marking paid, inside the seller\'s 2-hour window: the trade, its event and the dispute row in one go', async () => {
     const { buyer, seller, t } = await tradeIn('paid');
-    setNow(at(30 * MIN));
+    setNow(at(60 * MIN));
     const note = 'I sent $412.50 by Zelle at 10:02 from my own account.';
     const res = await buyer.browser.post(dispute(t.code), { reason: 'paid', note });
     expect(res.statusCode).toBe(200);
     const body = res.json() as Record<string, unknown>;
     expect(body).toMatchObject({ openedBy: 'buyer', reason: 'paid', afterRefund: false, status: 'open', moderator: null, ruling: null, appeal: null });
-    expect(body.openedAt).toBe(at(30 * MIN).toISOString());
+    expect(body.openedAt).toBe(at(60 * MIN).toISOString());
     expect(body).not.toHaveProperty('note');
     expect((await loadTrade(deps.db, t.code))!.state).toBe('disputed');
     expect(await eventTypes(t.code)).toContain('open-dispute');
@@ -99,6 +99,29 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect(again.statusCode).toBe(409);
     expect(errorOf(again)).toBe('dispute-exists');
     expect(await disputeRow(t.code)).toMatchObject({ opened_by: 'buyer' });
+  });
+
+  it("maintenance pauses the buyer's 60 minutes: the wait ends later by the paused time; the seller's confirm window moves as before (owner 2026-11-06 Q10)", async () => {
+    const { buyer, seller, t } = await tradeIn('paid'); // marked paid at START: wait ends +60, confirmBy +120
+    const view0 = (await buyer.browser.get(`/v1/trades/${t.code}`)).json() as Record<string, unknown>;
+    expect(view0.buyerDisputeFrom).toBe(at(60 * MIN).toISOString());
+    expect((await seller.browser.get(`/v1/trades/${t.code}`)).json()).toMatchObject({ buyerDisputeFrom: at(60 * MIN).toISOString() });
+    setNow(at(5 * MIN));
+    await applyEvent(deps, t.code, { type: 'pause' }, 'system');
+    setNow(at(45 * MIN));
+    await applyEvent(deps, t.code, { type: 'resume' }, 'system'); // paused 40 min
+    const resumed = (await loadTrade(deps.db, t.code))!;
+    expect(resumed.buyerDisputeFrom).toEqual(at(100 * MIN));
+    expect(resumed.confirmBy).toEqual(at(160 * MIN));
+    expect(resumed.paidAt).toEqual(START);
+    setNow(at(99 * MIN + 59_000));
+    const early = await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    expect(early.statusCode).toBe(409);
+    expect(errorOf(early)).toBe('too-early');
+    expect(await disputeRow(t.code)).toBeUndefined();
+    expect((await buyer.browser.get(`/v1/trades/${t.code}`)).json()).toMatchObject({ buyerDisputeFrom: at(100 * MIN).toISOString() });
+    setNow(at(100 * MIN));
+    expect((await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' })).statusCode).toBe(200);
   });
 
   it('lets either side open one while the escrow is securing or secured', async () => {

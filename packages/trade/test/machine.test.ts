@@ -96,7 +96,7 @@ const sampleEvent: Record<TradeEvent['type'], TradeEvent> = {
 
 describe('constants', () => {
   test('TIMERS', () => {
-    expect(TIMERS).toEqual({ setupMin: 15, fundMin: 30, payMin: 90, extendMin: 30, maxExtensions: 2, finalAlertMin: 15, settleMin: 15, lapseCosignMin: 30, disputeAfterRefundHours: 48, buyerDisputeAfterPaidMin: 30 });
+    expect(TIMERS).toEqual({ setupMin: 15, fundMin: 30, payMin: 90, extendMin: 30, maxExtensions: 2, finalAlertMin: 15, settleMin: 15, lapseCosignMin: 30, disputeAfterRefundHours: 48, buyerDisputeAfterPaidMin: 60 });
   });
 
   test('every event type is exactly one of system or client', () => {
@@ -746,16 +746,54 @@ describe('open-dispute', () => {
     }
   });
 
-  test('in paid: the seller any time, the buyer from 30 minutes after marking paid (owner 2026-11-01), not from confirmBy', () => {
-    // paid() marks paid at 40; its confirmBy is 160.
-    expect(TIMERS.buyerDisputeAfterPaidMin).toBe(30);
+  test('in paid: the seller any time, the buyer from 60 minutes after marking paid (owner 2026-11-06 Q10, was 30), not from confirmBy', () => {
+    // paid() marks paid at 40; its confirmBy is 160, its buyerDisputeFrom 100.
+    expect(TIMERS.buyerDisputeAfterPaidMin).toBe(60);
+    expect(paid().buyerDisputeFrom).toEqual(at(100));
     expect(apply(paid(), { type: 'open-dispute' }, 'seller', at(41)).state).toBe('disputed');
-    expect(rule(() => apply(paid(), { type: 'open-dispute' }, 'buyer', at(69, 59_999)))).toBe('too-early');
-    expect(rule(() => apply(paid(), { type: 'open-dispute' }, 'buyer', at(69, 59_000)))).toBe('too-early');
-    const d = apply(paid(), { type: 'open-dispute' }, 'buyer', at(70));
+    expect(rule(() => apply(paid(), { type: 'open-dispute' }, 'buyer', at(70)))).toBe('too-early');
+    expect(rule(() => apply(paid(), { type: 'open-dispute' }, 'buyer', at(99, 59_999)))).toBe('too-early');
+    expect(rule(() => apply(paid(), { type: 'open-dispute' }, 'buyer', at(99, 59_000)))).toBe('too-early');
+    const d = apply(paid(), { type: 'open-dispute' }, 'buyer', at(100));
     expect(d.state).toBe('disputed');
-    expect(d.dispute).toEqual({ by: 'buyer', at: at(70) });
+    expect(d.dispute).toEqual({ by: 'buyer', at: at(100) });
     expect(apply(paid(), { type: 'open-dispute' }, 'buyer', at(160)).state).toBe('disputed');
+  });
+
+  test("maintenance pauses the buyer's 60-minute wait; the seller's confirm window moves exactly as before (owner 2026-11-06 Q10)", () => {
+    // Marked paid at 40 (wait ends 100, confirmBy 160); maintenance 45 → 105 (60 min).
+    const r = apply(apply(paid(), { type: 'pause' }, 'system', at(45)), { type: 'resume' }, 'system', at(105));
+    expect(r.buyerDisputeFrom).toEqual(at(160));
+    expect(r.paidAt).toEqual(at(40));
+    expect(r.confirmBy).toEqual(at(220)); // the seller's (poster's) time: unchanged by this rule
+    expect(rule(() => apply(r, { type: 'open-dispute' }, 'buyer', at(159, 59_999)))).toBe('too-early');
+    expect(apply(r, { type: 'open-dispute' }, 'buyer', at(160)).state).toBe('disputed');
+    // The seller may still dispute at once after the resume.
+    expect(apply(r, { type: 'open-dispute' }, 'seller', at(105)).state).toBe('disputed');
+  });
+
+  test("a wait that had already ended before the maintenance does not close again (only a running wait moves)", () => {
+    // Wait ends 100; maintenance 110 → 130: the buyer may dispute at once after the resume.
+    const r = apply(apply(paid(), { type: 'pause' }, 'system', at(110)), { type: 'resume' }, 'system', at(130));
+    expect(r.buyerDisputeFrom).toEqual(at(100));
+    expect(r.confirmBy).toEqual(at(180));
+    expect(apply(r, { type: 'open-dispute' }, 'buyer', at(130)).state).toBe('disputed');
+    // Exactly at the end, like every other deadline, it still moves (a pause at 100 → 120 gives 120).
+    expect(apply(apply(paid(), { type: 'pause' }, 'system', at(100)), { type: 'resume' }, 'system', at(120)).buyerDisputeFrom).toEqual(at(120));
+  });
+
+  test('marked paid during maintenance: the 60 minutes count from the resume', () => {
+    const p = apply(secured(), { type: 'pause' }, 'system', at(100));
+    const marked = apply(p, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(110));
+    expect(marked.buyerDisputeFrom).toEqual(at(160));
+    const r = apply(marked, { type: 'resume' }, 'system', at(160));
+    expect(r.buyerDisputeFrom).toEqual(at(220));
+    expect(r.confirmBy).toEqual(at(280));
+  });
+
+  test('buyerDisputeFrom is null before marking paid', () => {
+    expect(taken().buyerDisputeFrom).toBeNull();
+    expect(secured().buyerDisputeFrom).toBeNull();
   });
 
   test('in settling only after settleBy', () => {
