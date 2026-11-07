@@ -45,12 +45,13 @@ export function formatRemaining(ms: number, format: CountdownFormat): string {
 /**
  * A length of time as the conventions write it (2 Nov 2026): digits in mono, unit words in the body
  * face, one space before each unit ("1 h 52 min", never "1h52min" or wide mono gaps). The text
- * content is exactly `formatRemaining(ms, 'minutes')`.
+ * content is exactly `formatRemaining(ms, 'minutes')`, unless `parts` gives the units (a rule's own
+ * length, such as the dispute wait's "90 min").
  */
-export function Duration({ ms }: { ms: number }) {
+export function Duration({ ms, parts }: { ms: number; parts?: DurationPart[] }) {
   return (
     <span className="x2f-duration">
-      {durationParts(ms).map((p, i) => (
+      {(parts ?? durationParts(ms)).map((p, i) => (
         <Fragment key={p.unit}>
           {i > 0 ? ' ' : null}
           <span className="x2f-duration__n">{p.n}</span> <span className="x2f-duration__unit">{p.unit}</span>

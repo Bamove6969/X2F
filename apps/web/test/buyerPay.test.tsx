@@ -763,19 +763,35 @@ describe('review minors 1, 5 and 7', () => {
     expect(document.querySelector('[data-grown]')).toBeNull();
   });
 
-  it("in paid, Open a dispute waits for the later of I've paid + 90 min (owner F9, 7 Nov) and the server's confirmBy, then opens", () => {
-    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+  it("in paid, Open dispute waits for the server's disputeOpensAt (owner F9: the trade's own wait, 90 min for Zelle; design review P1-1), not for confirmBy", () => {
+    // 89 min after I've paid: locked, with the board's "Available from 15:35 UTC · in 1 min".
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-89), disputeOpensAt: at(1), confirmBy: at(31) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     const waiting = document.querySelector<HTMLButtonElement>('[data-part="paid-dispute"]')!;
     expect(waiting.tagName).toBe('BUTTON');
     // aria-disabled, so it keeps focus and its "Available from" (review N4).
     expect(waiting.getAttribute('aria-disabled')).toBe('true');
-    // The server's rule is later here (confirmBy, machine.ts too-early), so that is the time; "in 1 h 59 min" keeps its space (review 39 "in2 h").
-    // The board's "Available from 15:35 UTC · in 88 min", the time alone and no full stop (design review P2-11).
-    expect(document.getElementById(waiting.getAttribute('aria-describedby')!)?.textContent).toMatch(/^Available from \d\d:\d\d UTC · in 1 h 59 min$/);
+    // The time alone on the same day and no full stop (design review P2-11); "in 1 min" keeps its space (review 39).
+    expect(document.getElementById(waiting.getAttribute('aria-describedby')!)?.textContent).toMatch(/^Available from \d\d:\d\d UTC · in 1 min$/);
     r.unmount();
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    // 90 min after, the seller's window still running: the board's after-wait, a soft link under Nudge (P2-12).
+    const r2 = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-90), disputeOpensAt: at(0), confirmBy: at(30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const soft = document.querySelector('[data-part="paid-dispute"]')!;
+    expect(soft.tagName).toBe('A');
+    expect(soft.textContent).toBe('Open dispute');
+    expect(soft.className).toBe('x2f-paid-soft-dispute');
+    expect(soft.getAttribute('href')).toBe(`/trade/${CODE}/dispute`);
+    expect(soft.querySelector('svg')).not.toBeNull();
+    expect(document.getElementById('paid-dispute-when')).toBeNull();
+    const footer = document.querySelector('footer')!;
+    expect([...footer.querySelectorAll('[data-part="paid-dispute"], [data-part="nudge"]')].map((e) => e.getAttribute('data-part'))).toEqual(['nudge', 'paid-dispute']);
+    // The window still runs: the hero is not "ended".
+    expect(document.querySelector('[data-part="paid-status"] .x2f-chip')?.textContent).toBe('Paid');
+    r2.unmount();
+    // The window ended: the outlined button.
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), disputeOpensAt: at(-31), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     const open = document.querySelector('[data-part="paid-dispute"]')!;
     expect(open.tagName).toBe('A');
+    expect(open.className).toBe('x2f-button x2f-button--danger-outline');
     expect(open.textContent).toBe('Open dispute');
     // Ended: the same caution hero; the chip says so and the lead gives the window as a Duration.
     const ended = document.querySelector('[data-part="paid-status"]')!;
@@ -786,17 +802,44 @@ describe('review minors 1, 5 and 7', () => {
     expect(ended.querySelectorAll('.x2f-timer__ring circle')).toHaveLength(1);
   });
 
-  it('disputeOpensAt: 90 min after I\'ve paid (owner F9, instant types), never before the server allows it, and not at all without confirmBy (review M5)', () => {
+  it('the wide after-wait: the soft link on the right of the row, no "Available from" line (design review P2-12)', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-92), disputeOpensAt: at(-2), confirmBy: at(28) }), escrow: fakeEscrow({ paidRecorded: true }), wide: true }));
+    const row = document.querySelector('.x2f-paid-actions__row')!;
+    expect([...row.children].map((c) => c.getAttribute('data-part') ?? c.className)).toEqual(['nudge', 'x2f-room__spacer', 'paid-dispute']);
+    expect(row.querySelector('[data-part="paid-dispute"]')?.className).toBe('x2f-paid-soft-dispute');
+    expect(document.getElementById('paid-dispute-when')).toBeNull();
+  });
+
+  it("disputeOpensAt is the server's time (owner F9; maintenance moves it, Q10), and nothing without it", () => {
     const t = (min: number) => new Date(Date.UTC(2026, 10, 6, 15, 0) + min * 60_000).toISOString();
-    // The server's confirmBy is later: it wins.
-    expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(120) })).toBe(Date.parse(t(120)));
-    // A server window shorter than 90 min: paid + 90 min.
-    expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(10) })).toBe(Date.parse(t(90)));
-    expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(75) })).toBe(Date.parse(t(90)));
-    // No confirmBy: the server refuses (too-early), so nothing is offered.
-    expect(disputeOpensAt({ paidAt: t(0), confirmBy: null })).toBeNull();
-    expect(disputeOpensAt({ paidAt: null, confirmBy: null })).toBeNull();
-    expect(disputeOpensAt({ paidAt: null, confirmBy: t(5) })).toBe(Date.parse(t(5)));
+    expect(disputeOpensAt({ disputeOpensAt: t(90) })).toBe(Date.parse(t(90)));
+    // Earlier than the seller's window is the point: the client never waits for confirmBy.
+    expect(disputeOpensAt({ disputeOpensAt: t(5) })).toBe(Date.parse(t(5)));
+    expect(disputeOpensAt({ disputeOpensAt: null })).toBeNull();
+    expect(disputeOpensAt({ disputeOpensAt: 'not a time' })).toBeNull();
+  });
+
+  it("What happens next's step 3 is the board's: the time the dispute opens and the trade's own wait (design review P1-2)", () => {
+    const step = () => document.querySelector('[data-part="paid-next-dispute"]')!;
+    // Zelle: 90 min, said as the board's "90 min" (never "1 h 30 min"), the number in mono.
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), disputeOpensAt: at(89), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(step().textContent).toMatch(/^If something goes wrong, you can open a dispute from \d\d:\d\d UTC, 90 min after you marked it as paid\. A moderator checks the chat and proof, then decides\.$/);
+    expect(step().querySelector('time')?.getAttribute('dateTime')).toBe(at(89));
+    expect(step().querySelector('.x2f-duration__n')?.textContent).toBe('90');
+    expect(step().textContent).not.toContain('confirm by');
+    r.unmount();
+    // A bank transfer's 3-day wait: the date as well, and "3 d".
+    const r2 = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), disputeOpensAt: at(3 * 1440 - 1), disputeWaitMin: 3 * 1440, confirmBy: at(3 * 1440 - 1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(step().textContent).toMatch(/you can open a dispute from \d{1,2} \w{3} \d{4}, \d\d:\d\d UTC, 3 d after you marked it as paid\./);
+    r2.unmount();
+    // A maintenance during the wait moved the server's time later (owner Q10).
+    const r3 = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-100), disputeOpensAt: at(30), confirmBy: at(60) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(step().textContent).toContain('90 min after you marked it as paid, plus the time trading was paused.');
+    r3.unmount();
+    // Paused now: no time, since it moves.
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-40), disputeOpensAt: at(50), confirmBy: at(80), pausedAt: at(-30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(step().textContent).toMatch(/^If something goes wrong, you can open a dispute 90 min after you marked it as paid, not counting the maintenance\./);
+    expect(step().querySelector('time')).toBeNull();
   });
 
   // Lead review 2026-11-06 I1: the co-sign runs in the open page (Released.tsx), not by itself.
@@ -814,14 +857,15 @@ describe('review minors 1, 5 and 7', () => {
 
   // Owner Q10 (6 Nov 2026): the clock pauses in maintenance. Lead review m2.
   it('paused for maintenance: the confirm timer and the dispute wait stop at the pause and say why', () => {
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-40), confirmBy: at(80), pausedAt: at(-30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-40), disputeOpensAt: at(50), confirmBy: at(80), pausedAt: at(-30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     // 110 min were left at the pause (80 now + the 30 paused), not 80.
     expect(document.querySelector('[data-part="confirm-timer"] [role="timer"]')?.textContent).toBe('1 h 50 min');
     expect(document.querySelector('[data-part="confirm-timer"]')!.textContent).toContain('Trading is paused for maintenance.');
     const waiting = document.querySelector<HTMLButtonElement>('[data-part="paid-dispute"]')!;
     expect(waiting.tagName).toBe('BUTTON');
     const when = document.getElementById(waiting.getAttribute('aria-describedby')!)!.textContent ?? '';
-    expect(when).toMatch(/^Available after the maintenance · in 1 h 50 min$/);
+    // The server's wait (paid + 90 min) froze at the pause too: 80 min were left then.
+    expect(when).toMatch(/^Available after the maintenance · in 1 h 20 min$/);
   });
 
   it('the phone footer (design review P2-11, P2-13): the dispute first at 56 px, then an ink Nudge with only its bell in caution', () => {
@@ -836,7 +880,7 @@ describe('review minors 1, 5 and 7', () => {
   });
 
   it('the open dispute on the phone is the 56 px danger outline, not the medium size', () => {
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), disputeOpensAt: at(-31), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     const open = document.querySelector('[data-part="paid-dispute"]')!;
     expect(open.className).toBe('x2f-button x2f-button--danger-outline');
     expect(open.hasAttribute('data-size')).toBe(false);
@@ -860,7 +904,7 @@ describe('review minors 1, 5 and 7', () => {
   });
 
   it('the wide room in the Wide board\'s order (design review P2-10): hero, the actions row, What happens next, Your payment', () => {
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }), wide: true }));
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), disputeOpensAt: at(89), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }), wide: true }));
     const order = [...document.querySelectorAll('[data-part="paid-progress"], [data-part="paid-status"], [data-part="paid-actions"], [data-part="paid-next"], [data-part="paid-payment"]')].map((e) => e.getAttribute('data-part'));
     expect(order).toEqual(['paid-progress', 'paid-status', 'paid-actions', 'paid-next', 'paid-payment']);
     expect(document.querySelector('.x2f-room__grid')).toBeNull();

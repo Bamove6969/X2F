@@ -71,6 +71,19 @@ describe('durations: digits mono, units in the body face', () => {
     expect(durationParts(-5)).toEqual([{ n: '0', unit: 'min' }]);
   });
 
+  it('durationParts over two days: days and hours, the same as formatRemaining (owner F9 waits up to 4 days)', () => {
+    expect(durationParts(4 * 86_400_000 - 60_000)).toEqual([{ n: '3', unit: 'd' }, { n: '23', unit: 'h' }]);
+    expect(durationParts(3 * 86_400_000)).toEqual([{ n: '3', unit: 'd' }]);
+    expect(durationParts(48 * 3_600_000)).toEqual([{ n: '48', unit: 'h' }]);
+    expect(render(<Duration ms={3 * 86_400_000} />).host.textContent).toBe(formatRemaining(3 * 86_400_000, 'minutes'));
+  });
+
+  it('Duration takes a rule\'s own units ("90 min", not "1 h 30 min")', () => {
+    const host = render(<Duration ms={90 * 60_000} parts={[{ n: '90', unit: 'min' }]} />).host;
+    expect(host.textContent).toBe('90 min');
+    expect(host.querySelector('.x2f-duration__n')?.textContent).toBe('90');
+  });
+
   it("formatRemaining('minutes') is still the plain text", () => {
     expect(formatRemaining(112 * 60_000, 'minutes')).toBe('1 h 52 min');
     expect(formatRemaining(120 * 60_000, 'minutes')).toBe('2 h');

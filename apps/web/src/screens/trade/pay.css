@@ -745,3 +745,22 @@ main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
 [data-part='paid-payment-body'] {
   padding-bottom: 20px;
 }
+
+/* After the wait, while the seller's window runs: the board's soft "Open dispute ›" (danger 15/600,
+   44 px, chevron 16; design review P2-12). */
+.x2f-paid-soft-dispute {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 8px;
+  color: var(--x2f-danger);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.x2f-paid-actions__row .x2f-paid-soft-dispute {
+  display: inline-flex;
+}

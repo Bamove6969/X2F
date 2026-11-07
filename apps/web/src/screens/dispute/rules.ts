@@ -3,7 +3,7 @@
 // Copy is from the DisputeOpen, DisputeRoom and DisputeRuling boards; lines marked COPY-UNSIGNED
 // have no board yet (spec wording or Plan 4 A8) and wait for the owner's sign-off.
 import { TIMERS, escrowPlan, formatXmr } from '@x2f/trade';
-import { formatRemaining } from '../../ui/Countdown.js';
+import { formatRemaining, type DurationPart } from '../../ui/Countdown.js';
 import { formatDateTime, formatUtcTime } from '../../ui/dates.js';
 import type { DisputeReason, DisputeTrade, DisputeView, Party, Reason, RulingView } from './api.js';
 
@@ -63,10 +63,21 @@ const ms = (iso: string | null): number | null => (iso === null ? null : Date.pa
  * otherwise minutes.
  */
 export function waitInWords(min: number): string {
+  const { n, unit } = waitPart(min);
+  const word = unit === 'd' ? 'days' : unit === 'h' ? 'hours' : n === '1' ? 'minute' : 'minutes';
+  return `${n} ${word}`;
+}
+
+/**
+ * The same wait as one number and unit, the way a Duration writes it: "90 min", "24 h", "4 d" (the
+ * BuyerPaidWaiting board's "90 min" in step 3; the duration rule, design review P1-4). The owner's
+ * units, never "1 h 30 min" for the 90-minute wait.
+ */
+export function waitPart(min: number): DurationPart {
   const DAY = 24 * 60;
-  if (min >= 2 * DAY && min % DAY === 0) return `${min / DAY} days`;
-  if (min >= 120 && min % 60 === 0) return `${min / 60} hours`;
-  return min === 1 ? '1 minute' : `${min} minutes`;
+  if (min >= 2 * DAY && min % DAY === 0) return { n: String(min / DAY), unit: 'd' };
+  if (min >= 120 && min % 60 === 0) return { n: String(min / 60), unit: 'h' };
+  return { n: String(min), unit: 'min' };
 }
 
 export type Entry = { kind: 'open' } | { kind: 'wait'; text: string; until: Date } | { kind: 'opened' } | { kind: 'none' };

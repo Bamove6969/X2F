@@ -14,6 +14,8 @@ import {
   dayTime,
   HOURGLASS_LINE,
   utcDateTime,
+  waitInWords,
+  waitPart,
   disputeEntry,
   inTime,
   rulingAllowsCosign,
@@ -594,5 +596,23 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     const buyer = render(inRouter(<DisputeRuling trade={{ ...t, role: 'buyer', counterparty: 'satoshi_ghost' }} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} />));
     expect(buyer.host.textContent).toContain('satoshi_ghost must send you 1.25 XMR');
     expect(buyer.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
+  });
+});
+
+describe('the buyer dispute wait, said two ways (owner F9)', () => {
+  it('waitPart is the Duration of the wait in the same units as waitInWords', () => {
+    const cases: [number, string, string][] = [
+      [90, '90 min', '90 minutes'],
+      [180, '3 h', '3 hours'],
+      [1440, '24 h', '24 hours'],
+      [2 * 1440, '2 d', '2 days'],
+      [4 * 1440, '4 d', '4 days'],
+      [1, '1 min', '1 minute'],
+    ];
+    for (const [min, part, words] of cases) {
+      const p = waitPart(min);
+      expect(`${p.n} ${p.unit}`).toBe(part);
+      expect(waitInWords(min)).toBe(words);
+    }
   });
 });
