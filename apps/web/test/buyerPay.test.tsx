@@ -757,7 +757,7 @@ describe('review minors 1, 5 and 7', () => {
     mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     const open = document.querySelector('[data-part="paid-dispute"]')!;
     expect(open.tagName).toBe('A');
-    expect(open.textContent).toBe('Open a dispute');
+    expect(open.textContent).toBe('Open dispute');
     expect(document.querySelector('[data-part="paid-status"] h1')?.textContent).toBe("satoshi_ghost hasn't confirmed in time");
   });
 

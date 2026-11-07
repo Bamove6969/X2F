@@ -196,7 +196,7 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
             ) : null}
             {/* A secondary way on (design session 2 Nov): the danger text button with a chevron; Find another offer stays the primary. */}
             <Link className="x2f-button x2f-button--danger" to={disputeHref} data-part="refunded-open-dispute">
-              Open a dispute
+              Open dispute
               <Icon name="chevron-right" size={18} />
             </Link>
           </section>

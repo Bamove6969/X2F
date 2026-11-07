@@ -3,7 +3,7 @@
  * 1 Nov 2026 shot 39, NEEDS_DESIGN "the after-I've-paid buyer state"): the status card says the
  * trade is paid and the seller is checking, the timer shows the seller's confirm window, "What
  * happens next" says what each side does, and the payment's details fold away under "Your
- * payment". The footer has Nudge (the API's nudge on an open trade, spec 2.4), Open a dispute
+ * payment". The footer has Nudge (the API's nudge on an open trade, spec 2.4), Open dispute (the terms list)
  * (disabled with "Available from … in …" until `disputeOpensAt`: 90 min after I've paid for an
  * instant payment type, owner F9 7 Nov, but never before the server allows it), and the reminder that a paid trade can't be
  * cancelled. While trading is paused for maintenance both clocks stop at the pause (owner Q10).
@@ -315,13 +315,13 @@ export function PaidWaitingActions({ view, serverClock }: { view: TradeView; ser
       ) : null}
       {opensAt !== null && now >= opensAt ? (
         <Link to={`/trade/${encodeURIComponent(view.code)}/dispute`} className="x2f-button x2f-button--danger-outline" data-size="medium" data-part="paid-dispute">
-          Open a dispute
+          Open dispute
         </Link>
       ) : (
         <>
           {/* aria-disabled, not disabled: it stays focusable, so its "Available from" is reachable (review N4). */}
           <Button variant="secondary" aria-disabled="true" aria-describedby={opensAt !== null ? 'paid-dispute-when' : undefined} data-part="paid-dispute">
-            Open a dispute
+            Open dispute
           </Button>
           {opensAt !== null ? (
             <p id="paid-dispute-when" className="x2f-footnote">

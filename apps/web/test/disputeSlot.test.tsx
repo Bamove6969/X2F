@@ -150,13 +150,13 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
   // The Refunded screen names the seller (design session 2 Nov): the fixture's counterparty.
   const S = sellerView().counterparty.displayName;
 
-  it('offers "Open a dispute" within 48 hours of the refund (owner 2026-10-29), linking to the dispute page', () => {
+  it('offers "Open dispute" within 48 hours of the refund (owner 2026-10-29), linking to the dispute page', () => {
     const { host } = render(
       <MemoryRouter>
         <RefundedSlot {...props(refunded())} />
       </MemoryRouter>,
     );
-    const link = [...host.querySelectorAll('a')].find((a) => a.textContent === 'Open a dispute');
+    const link = [...host.querySelectorAll('a')].find((a) => a.textContent === 'Open dispute');
     expect(link?.getAttribute('href')).toBe(`/trade/${encodeURIComponent(refunded().code)}/dispute`);
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -167,7 +167,7 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
         <RefundedSlot {...props(refunded({ closedAt: at(-48 * 60 * MIN - 1) }))} />
       </MemoryRouter>,
     );
-    expect(late.host.textContent).not.toContain('Open a dispute');
+    expect(late.host.textContent).not.toContain('Open dispute');
     const had = render(
       <MemoryRouter>
         <RefundedSlot {...props(refunded({ dispute: { by: 'buyer', at: at(-20 * DAY) } }))} />
@@ -226,7 +226,7 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     expect(dispute.textContent).toContain('a moderator can rule that they owe you the 1.250000 XMR. Until they pay it back, they can\'t trade.');
     expect(dispute.textContent).not.toContain('makes them');
     // A danger text button with a chevron (design session 2 Nov); Find another offer stays the primary.
-    expect(dispute.querySelector('a.x2f-button--danger')?.textContent).toBe('Open a dispute');
+    expect(dispute.querySelector('a.x2f-button--danger')?.textContent).toBe('Open dispute');
     expect(dispute.querySelector('a.x2f-button--danger svg')).not.toBeNull();
     expect(host.querySelector('footer a[data-primary]')?.textContent).toBe('Find another offer');
   });
@@ -251,7 +251,7 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
         </MemoryRouter>,
       );
       expect(host.querySelector('h1')?.textContent).toBe(`The XMR went back to ${S} after you paid`);
-      expect([...host.querySelectorAll('a')].filter((a) => a.textContent === 'Open a dispute'), settling).toHaveLength(1);
+      expect([...host.querySelectorAll('a')].filter((a) => a.textContent === 'Open dispute'), settling).toHaveLength(1);
       expect(host.textContent).not.toContain('Cancelling');
     }
   });
@@ -272,7 +272,7 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
           <RefundedSlot {...props(refunded({ settling, cancelConfirmedAt: at(-9 * DAY) }))} />
         </MemoryRouter>,
       );
-      expect([...host.querySelectorAll('a')].filter((a) => a.textContent === 'Open a dispute'), settling).toHaveLength(0);
+      expect([...host.querySelectorAll('a')].filter((a) => a.textContent === 'Open dispute'), settling).toHaveLength(0);
       expect(host.textContent).not.toContain('Did you pay before you cancelled?');
     }
     const noShow = render(
@@ -280,6 +280,6 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
         <RefundedSlot {...props(refunded({ settling: 'auto-refund' }))} />
       </MemoryRouter>,
     );
-    expect([...noShow.host.querySelectorAll('a')].filter((a) => a.textContent === 'Open a dispute')).toHaveLength(1);
+    expect([...noShow.host.querySelectorAll('a')].filter((a) => a.textContent === 'Open dispute')).toHaveLength(1);
   });
 });

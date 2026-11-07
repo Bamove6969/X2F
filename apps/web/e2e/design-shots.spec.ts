@@ -738,7 +738,7 @@ test("48 the buyer's refunded trade: why, and the 48-hour Open a dispute", async
   const base = sellerView({ role: 'buyer', state: 'refunded', settling: 'auto-refund', payBy: ago(620), finalAlertAt: ago(615), closedAt: ago(600), txHash: 'ab'.repeat(32) });
   const v = { ...base, counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' } };
   await openRoom(page, v);
-  await expect(page.getByRole('link', { name: 'Open a dispute' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open dispute', exact: true })).toBeVisible();
   await shot(page, '48-trade-buyer-refunded');
 });
 
