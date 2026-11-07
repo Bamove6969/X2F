@@ -1,0 +1,4 @@
+# Design's branch reviews, 7 Nov (full list: origin/wip/design-brief docs/to-lead.md @9bf67a0c). Fix before each lands.
+- lead-design-results: not ready, 8 P1. Biggest: the 90-minute dispute rule never applies: disputeOpensAt = max(paid+90, confirmBy), and machine.ts:416 and disputeEntry wait for confirmBy. Change the API and machine to the owner's wait: 90 min for instant types, by type group. Also: step 3's time, hero on paid room and Refunded, "2 hours" in words, "Open dispute", XMR unit style, News inset shadow and orange header action.
+- lead-hold-v3: 1 P1: teamCantDoText offers "username, password and authenticator code" for invites: not enough under the owner's rule.
+- third-p4-task15: Maintenance replaces the whole app but the board says escrowed trades keep working; hourglass is the hero number per DisputeRoom; "First reply due by" competes with it; possible two primaries on the ruling screen.
