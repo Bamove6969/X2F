@@ -245,24 +245,28 @@ async function weakAgain(b: Browser, name: string, id: string, d: Deps = deps) {
   expect(await holdOf(d, id)).toBeNull();
 }
 
-describe("login strength: the owner's list of 14:12, exactly", () => {
+describe("login strength: the owner's list of 14:12, exactly, plus a PGP key (owner 6 Nov 2026, Q81)", () => {
   it('strong only for the listed combinations (or a login proving more than one of them)', () => {
     expect(STRONG_COMBOS).toEqual([
-      ['passkey'], ['security-key'], ['password', 'totp'], ['password', 'passkey'], ['password', 'security-key'], ['pgp', 'passkey'], ['pgp', 'security-key'],
+      ['passkey'], ['security-key'], ['pgp'], ['password', 'totp'], ['password', 'passkey'], ['password', 'security-key'], ['pgp', 'passkey'], ['pgp', 'security-key'],
     ]);
     for (const combo of STRONG_COMBOS) expect(loginStrength(combo)).toBe('strong');
     expect(loginStrength(['passkey', 'totp'])).toBe('strong');
   });
 
-  it('PGP alone waits (pgp-single); every other single way, and any unlisted pair, waits (weak-single)', () => {
-    expect(loginStrength(['pgp'])).toBe('pgp-single');
+  it('Q81: a PGP key login (username and PGP key) is strong, with anything else it proved too', () => {
+    expect(loginStrength(['pgp'])).toBe('strong');
+    expect(loginStrength(['pgp', 'password'])).toBe('strong');
+    expect(loginStrength(['pgp', 'totp'])).toBe('strong');
+  });
+
+  it('every other single way, and any unlisted pair, waits (weak-single)', () => {
     expect(loginStrength(['password'])).toBe('weak-single');
     expect(loginStrength(['totp'])).toBe('weak-single');
     expect(loginStrength(['recovery-code'])).toBe('weak-single');
     // Two kinds that are not on the owner's list are not strong (review I1).
     expect(loginStrength(['totp', 'recovery-code'])).toBe('weak-single');
-    expect(loginStrength(['pgp', 'password'])).toBe('weak-single');
-    expect(loginStrength(['pgp', 'totp'])).toBe('weak-single');
+    expect(loginStrength(['password', 'recovery-code'])).toBe('weak-single');
   });
 });
 
@@ -378,17 +382,26 @@ describe('one weak way (hold model v3: its changes are staged and wait; nothing 
     expect(await holdOf(deps, id)).toBeNull();
   });
 
-  it("PGP alone: its changes are staged like a password's (open question 1); the account's PGP key ends a recovery-code hold", async () => {
+  it("Q81 (owner 6 Nov 2026): a PGP key login is strong: its session is stored strong, its changes apply at once (nothing staged), and the account's PGP key ends a recovery-code hold", async () => {
     const { b, id, name, key } = await pgpTrader();
     await onboarding(deps, id, new Date(now.getTime() + HOUR));
     const { codes } = (await b.post('/v1/account/recovery-codes', {})).json() as { codes: string[] };
     await onboarding(deps, id, null);
+    // A fresh PGP login (not the sign-up session) in the trusted browser.
+    await b.post('/v1/logout');
+    expect((await pgpLogin(b, key)).json()).toEqual({ status: 'ok' });
+    const st = await deps.db.query<{ strength: string }>('select strength from sessions where id = $1', [await sessionOf(b)]);
+    expect(st.rows[0]!.strength).toBe('strong');
+    expect((await b.get('/v1/account/me')).json()).toMatchObject({ changesWait: false, pendingChanges: null });
     const confirmToken = await tokenFor(deps, b, id, { kind: 'new-recovery-codes' });
-    const staged = await b.post('/v1/account/recovery-codes', { confirmToken });
-    expect(staged.statusCode).toBe(202);
-    expect(staged.json()).toMatchObject({ status: 'staged' });
-    expect(await changesOf(id)).toEqual([{ kind: 'recovery-codes', submitted: false }]);
-    expect((await backup(new Browser(app), name, codes[0]!)).statusCode).toBe(200);
+    const renewed = await b.post('/v1/account/recovery-codes', { confirmToken });
+    expect(renewed.statusCode, renewed.body).toBe(200);
+    expect(renewed.json()).not.toMatchObject({ status: 'staged' });
+    const fresh = (renewed.json() as { codes: string[] }).codes;
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0]).not.toBe(codes[0]);
+    expect(await changesOf(id)).toEqual([]);
+    expect((await backup(new Browser(app), name, fresh[0]!)).statusCode).toBe(200);
     expect(await holdOf(deps, id)).toMatchObject({ reason: 'recovery-code' });
     expect((await pgpLogin(new Browser(app), key)).json()).toEqual({ status: 'ok' });
     expect(await holdOf(deps, id)).toBeNull();

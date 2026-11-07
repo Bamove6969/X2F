@@ -168,6 +168,48 @@ describe('migrations', () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+  it("016 (owner 6 Nov 2026, Q81): a PGP key login is strong: earlier 'pgp-single' sessions and approvals become 'strong', and the value is refused after", async () => {
+    const db = await emptyDb();
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
+    try {
+      for (const f of (await readdir(MIGRATIONS_DIR)).filter((f) => f < '016')) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
+      await migrate(db, dir);
+      const t = new Date('2026-11-01T12:00:00Z');
+      const { rows: acct } = await db.query<{ id: string }>(
+        `insert into accounts (display_name, display_key, kind, webauthn_user_id, created_at) values ('Trader01', 'trader01', 'trader', $1, $2) returning id`,
+        [randomBytes(32), t],
+      );
+      const accountId = acct[0]!.id;
+      const session = async (strength: string) =>
+        (await db.query<{ id: string }>(
+          `insert into sessions (account_id, token_hash, level, device_label, created_at, last_seen_at, expires_at, strength)
+           values ($1, $2, 'full', 'b', $3, $3, $4, $5) returning id`,
+          [accountId, randomBytes(32), t, new Date(t.getTime() + 86_400_000), strength],
+        )).rows[0]!.id;
+      const pgp = await session('pgp-single');
+      const weak = await session('weak-single');
+      const approval = async (strength: string) =>
+        (await db.query<{ id: string }>(
+          `insert into login_approvals (account_id, device_hash, secret_hash, device_label, session_label, method, number, choices, created_at, expires_at, strength)
+           values ($1, $2, $3, 'Browser', 'b', 'pgp', 12, '{12,34,56}', $4, $5, $6) returning id`,
+          [accountId, randomBytes(32), randomBytes(32), t, new Date(t.getTime() + 300_000), strength],
+        )).rows[0]!.id;
+      const pgpApproval = await approval('pgp-single');
+      const weakApproval = await approval('weak-single');
+      await migrate(db);
+      const strengthOf = async (table: string, id: string) =>
+        (await db.query<{ strength: string }>(`select strength from ${table} where id = $1`, [id])).rows[0]!.strength;
+      expect(await strengthOf('sessions', pgp)).toBe('strong');
+      expect(await strengthOf('sessions', weak)).toBe('weak-single');
+      expect(await strengthOf('login_approvals', pgpApproval)).toBe('strong');
+      expect(await strengthOf('login_approvals', weakApproval)).toBe('weak-single');
+      await expect(db.query(`update sessions set strength = 'pgp-single' where id = $1`, [weak])).rejects.toMatchObject({ code: '23514' });
+      await expect(db.query(`update login_approvals set strength = 'pgp-single' where id = $1`, [weakApproval])).rejects.toMatchObject({ code: '23514' });
+    } finally {
+      await db.end();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('schema', () => {

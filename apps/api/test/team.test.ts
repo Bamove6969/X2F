@@ -231,7 +231,7 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     });
     expect(f2.statusCode, f2.body).toBe(201);
     // Landing review M1: the member just proved two factors, so their first session is strong (as
-    // every member login, login.ts), not the single PGP key's `pgp-single`.
+    // every member login, login.ts; a single PGP key is strong too since Q81).
     const first = await deps.db.query<{ strength: string }>('select strength from sessions where id = $1', [await sessionId(b)]);
     expect(first.rows[0]!.strength).toBe('strong');
     const me = (await b.get('/v1/account/me')).json() as { displayName: string; member: unknown };
@@ -934,12 +934,13 @@ describe('team changes need a strong session (owner 1 Nov 2026; landing review I
     (await deps.db.query<{ display_name: string; roles: string[]; removed_at: Date | null }>(
       'select display_name, roles, removed_at from team_members where account_id = $1 order by created_at, id', [accountId],
     )).rows;
-  const weaken = async (b: Browser, strength: 'weak-single' | 'pgp-single') =>
+  const weaken = async (b: Browser, strength: 'weak-single') =>
     deps.db.query('update sessions set strength = $2 where id = $1', [await sessionId(b), strength]);
   const unspent = async (token: string) =>
     (await deps.db.query('select 1 from confirm_tokens where token_hash = sha256(convert_to($1, \'utf8\')) and used_at is null', [token])).rowCount;
 
-  for (const strength of ['weak-single', 'pgp-single'] as const) {
+  // Owner 6 Nov 2026 (Q81): a PGP key login is strong, so only a username-and-password session is weak here.
+  for (const strength of ['weak-single'] as const) {
     it(`a ${strength} session's invite gets weak-session, writes nothing and spends no confirm token`, async () => {
       const owner = await team();
       await weaken(owner.browser, strength);
