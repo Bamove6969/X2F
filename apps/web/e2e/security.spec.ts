@@ -358,18 +358,122 @@ test('a logged-in device asked "Is this you?" taps the number and lets the new d
   await expect(page.locator('[role="dialog"]')).toHaveCount(0);
 });
 
-// Plan 2 Task 17: a change made from a login with one way of proving it's you answers 202 held:
-// the screen says when it takes effect and does not show it as done.
-test('a held logout-timer change says when it takes effect and keeps the old value', async ({ page }) => {
+// Hold model v3 (lead hold v3 review item 3): a change from a username-and-password login answers
+// 202 staged; the drafts are reviewed and submitted together, then wait 24 hours with Cancel.
+const DUE = '2099-01-02T15:00:00.000Z';
+const D1 = '11111111-1111-4111-8111-111111111111';
+const holdView = (o: { drafts?: unknown[]; items?: unknown[] } = {}) => ({
+  accountHold: null,
+  changes: { count: (o.items ?? []).length, takesEffectAt: (o.items ?? []).length > 0 ? DUE : null, items: o.items ?? [] },
+  drafts: o.drafts ?? [],
+  changesWait: true,
+});
+
+test('a staged logout-timer change is a draft: it keeps the old value, then is reviewed and submitted from Security', async ({ page }) => {
   await base(page);
+  let view = holdView();
+  await page.route('**/v1/account/hold', (r) => json(view)(r));
   await page.route('**/v1/account/security/logout-timer', async (r) => {
-    if (r.request().method() === 'PUT') return json({ status: 'held', holdUntil: '2099-01-02T15:00:00.000Z' }, 202)(r);
+    if (r.request().method() === 'PUT') {
+      view = holdView({ drafts: [{ id: D1, kind: 'logout-timer', idleHours: 2, createdAt: DUE }] });
+      return json({ status: 'staged', changeId: D1 }, 202)(r);
+    }
     return json({ idleHours: 12, adjustable: true })(r);
   });
+  let submitted: unknown = null;
+  await page.route('**/v1/account/hold/changes/submit', async (r) => {
+    submitted = JSON.parse(r.request().postData() ?? '{}');
+    view = holdView({ items: [{ id: D1, kind: 'logout-timer', idleHours: 2, createdAt: DUE, submittedAt: DUE, by: 'Browser on Linux', mine: true }] });
+    return json({ status: 'queued', count: 1, takesEffectAt: DUE })(r);
+  });
   await page.goto('/settings/security');
+  await expect(page.locator('[data-part="change-drafts"]')).toHaveCount(0);
   await page.selectOption('[data-part="logout-timer-select"]', '2');
-  await expect(page.locator('[data-part="logout-timer-status"]')).toContainText('This change takes effect at');
+  await expect(page.locator('[data-part="logout-timer-status"]')).toContainText('Saved as a draft. Nothing changes until you submit it.');
   await expect(page.locator('[data-part="logout-timer-select"]')).toHaveValue('12');
+
+  const drafts = page.locator('[data-part="change-drafts"]');
+  await expect(drafts.locator('[data-part="change"]')).toContainText('Logged out after 2 hours with no activity');
+  await expect(drafts.locator('[data-part="drafts-wait"]')).toContainText('apply 24 hours after you submit them');
+  await expect(drafts.locator('[data-part="drafts-stronger"]')).toContainText('Add a passkey, a security key or a PGP key');
+  await drafts.locator('[data-part="drafts-submit"]').click();
+  await expect(page.locator('[data-part="changes-status"]')).toHaveText('Submitted. Your changes take effect on 2 Jan 2099, 15:00 UTC.');
+  expect(submitted).toEqual({ ids: [D1] });
+  await expect(page.locator('[data-part="changes-waiting"] [data-part="change"]')).toContainText('Applies 2 Jan 2099, 15:00 UTC');
+});
+
+test('waiting changes are listed with their date and cancelled one by one or all at once', async ({ page }) => {
+  await base(page, { me: { pendingChanges: { count: 2, takesEffectAt: DUE } } });
+  const W2 = '22222222-2222-4222-8222-222222222222';
+  let view = holdView({
+    items: [
+      { id: D1, kind: 'wallets', wallets: 1, addressEnds: ['k3Fzab'], createdAt: DUE, submittedAt: DUE, by: 'Chrome on Windows', mine: false },
+      { id: W2, kind: 'password', createdAt: DUE, submittedAt: DUE, by: 'Browser on Linux', mine: true },
+    ],
+  });
+  await page.route('**/v1/account/hold', (r) => json(view)(r));
+  const deleted: string[] = [];
+  await page.route('**/v1/account/hold/changes**', async (r) => {
+    if (r.request().method() !== 'DELETE') return r.fallback();
+    deleted.push(new URL(r.request().url()).pathname);
+    view = holdView();
+    return r.fulfill({ status: 204 });
+  });
+  // The banner on any other screen leads here.
+  await page.route('**/v1/offers**', json({ offers: [] }));
+  await page.goto('/settings/changes');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Account changes');
+  const waiting = page.locator('[data-part="changes-waiting"]');
+  await expect(waiting.locator('[data-part="waiting-when"]')).toHaveText('2 changes take effect on 2 Jan 2099, 15:00 UTC');
+  await expect(waiting.locator('[data-part="change"]').first()).toContainText('1 new wallet added: …k3Fzab');
+  await expect(waiting.locator('[data-part="change"]').first()).toContainText('From Chrome on Windows');
+  await waiting.getByRole('button', { name: 'Cancel the change: Payout wallets' }).click();
+  await expect.poll(() => deleted).toEqual([`/v1/account/hold/changes/${D1}`]);
+
+  view = holdView({ items: [{ id: W2, kind: 'password', createdAt: DUE, submittedAt: DUE, by: 'Browser on Linux', mine: true }] });
+  await page.reload();
+  await page.locator('[data-part="waiting-cancel-all"]').click();
+  const sheet = page.locator('[role="dialog"]');
+  await expect(sheet).toContainText('Cancel this change?');
+  await sheet.locator('[data-part="cancel-yes"]').click();
+  await expect(page.locator('[data-part="changes-status"]')).toHaveText('Cancelled. Nothing on your account changed.');
+  expect(deleted.at(-1)).toBe('/v1/account/hold/changes');
+});
+
+test('the banner shows waiting changes on other screens; a team member sees none of it', async ({ page }) => {
+  await base(page, { me: { pendingChanges: { count: 1, takesEffectAt: DUE } } });
+  await page.goto('/settings/devices');
+  const banner = page.locator('[data-part="changes-banner-pending"]');
+  await expect(banner).toHaveText('1 change takes effect on 2 Jan 2099, 15:00 UTC Review changes');
+  await banner.getByRole('link', { name: 'Review changes' }).click();
+  await expect(page).toHaveURL(/\/settings\/changes$/);
+
+  await page.unroute('**/v1/account/me');
+  await page.route('**/v1/account/me', json(overview({ member: { name: 'Aurora', roles: ['trades'] }, pendingChanges: null })));
+  await page.goto('/settings/changes');
+  await expect(page.locator('[data-owner-only]')).toBeVisible();
+  await expect(page.locator('[data-part="changes-banner"]')).toHaveCount(0);
+});
+
+test('a new recovery code is shown once, after the reminder, and must be written down', async ({ page }) => {
+  await base(page, { me: { recoveryCodeToShow: true } });
+  let reveals = 0;
+  await page.route('**/v1/account/recovery-code/reveal', (r) => {
+    reveals += 1;
+    return json({ code: 'K7QM4XD2VT9BHP3A' })(r);
+  });
+  await page.goto('/settings/devices');
+  await page.locator('[data-part="changes-banner-code"]').getByRole('link', { name: 'Go to Security' }).click();
+  const card = page.locator('[data-part="new-recovery-code"]');
+  await expect(card).toContainText('only an emergency way back in');
+  await card.locator('[data-part="new-code-show"]').click();
+  await expect(card.locator('[data-part="new-code"] li')).toHaveText(['K7QM', '4XD2', 'VT9B', 'HP3A']);
+  await expect(card).toContainText('You will not see it again.');
+  await expect(card.locator('[data-part="new-code-done"]')).toBeDisabled();
+  await card.locator('input[type="checkbox"]').check();
+  await card.locator('[data-part="new-code-done"]').click();
+  await expect(card).toHaveCount(0);
+  expect(reveals).toBe(1);
 });
 
 // C2-D1: the LoginApprove and Devices boards at phone sizes: no sideways scroll, every control
