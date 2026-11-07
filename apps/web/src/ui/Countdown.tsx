@@ -5,7 +5,8 @@ export type CountdownFormat = 'clock' | 'minutes';
 
 /**
  * 'clock' is the funding timer style ("28:42", TradeFund board); 'minutes' the longer windows
- * ("1 h 52 min", SellerConfirm board), rounded up so it never reads 0 min while time is left.
+ * ("1 h 52 min", SellerConfirm board), rounded up so it never reads 0 min while time is left; over
+ * two days, days and hours ("3 d 23 h").
  */
 export function formatRemaining(ms: number, format: CountdownFormat): string {
   const left = Math.max(0, ms);
@@ -14,6 +15,9 @@ export function formatRemaining(ms: number, format: CountdownFormat): string {
     const h = Math.floor(min / 60);
     const m = min % 60;
     if (h === 0) return `${m} min`;
+    // Over two days (waits of up to 4 days, owner F9): days and hours, never "95 h 59 min". Up to
+    // 48 h stays in hours: the appeal countdown's board reads "47 h 58 min".
+    if (h > 48 || (h === 48 && m > 0)) return h % 24 === 0 ? `${h / 24} d` : `${Math.floor(h / 24)} d ${h % 24} h`;
     return m === 0 ? `${h} h` : `${h} h ${m} min`;
   }
   const s = Math.ceil(left / 1000);
