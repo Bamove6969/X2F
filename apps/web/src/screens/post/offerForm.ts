@@ -1,7 +1,7 @@
 // PostOffer's form logic (Task 21; board PostOffer.dc.html; spec 2.2 step 5, 2.3, 11.6). Fiat is
 // bigint minor units; the form takes only two-decimal currencies until formatFiat takes the
 // currency's exponent (Revision 2026-10-20).
-import { CANT_DO_TITLE, isCantDoCode, postCantDoText, type CantDoCode } from '../../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, isCantDoCode, offerCapsOf, postCantDoText, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { CURRENCIES } from '../browse/api.js';
 import type { PostOfferBody, PriceQuote, Side } from './api.js';
 import { isCountryCode } from './countries.js';
@@ -230,9 +230,12 @@ export function postCantDo(code: string): CantDoCode | null {
   return isCantDoCode(code) ? code : null;
 }
 
-/** The words for a refused Post offer; a CANT_DO_CODES refusal is shown in CantDoThat, the rest inline. */
-export function refusalText(code: string): string {
-  if (isCantDoCode(code)) return postCantDoText(code);
+/**
+ * The words for a refused Post offer; a CANT_DO_CODES refusal is shown in CantDoThat, the rest
+ * inline. `extra` is the refusal's other fields (the cap on `too-many-offers`, review M2).
+ */
+export function refusalText(code: string, extra?: Record<string, unknown>): string {
+  if (isCantDoCode(code)) return postCantDoText(code, offerCapsOf(extra));
   switch (code) {
     case 'trading-paused':
       return 'Trading is paused for maintenance. Your offer was not posted. Try again soon.';

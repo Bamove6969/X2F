@@ -247,13 +247,35 @@ export function chatCantDoText(code: CantDoCode): string {
  */
 export const OFFER_CAP_LINE = 'You can have 3 buying and 3 selling offers.'; // COPY-UNSIGNED
 
-/** What a refused Post offer says. */
-export function postCantDoText(code: CantDoCode): string {
+/**
+ * The offer cap a 409 `too-many-offers` carries (cap-dispute review M2: `offers_max_per_side` is an
+ * owner setting, not a fixed number). The API sends `{ perSide }` on POST and PATCH (C2-A1). Same
+ * shape as wip/second-p3-task34-web's, so the two merge to one.
+ */
+export interface OfferCaps {
+  perSide: number;
+}
+
+/** The cap from a refusal's extra fields, or null when the API sent none (or nonsense). */
+export function offerCapsOf(extra: Record<string, unknown> | undefined): OfferCaps | null {
+  const ok = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 1 && v <= 1000;
+  return extra && ok(extra.perSide) ? { perSide: extra.perSide } : null;
+}
+
+/** The cap line with the number the API sent (the owner setting), else the default line. COPY-UNSIGNED */
+export function offerCapLine(caps: OfferCaps | null): string {
+  if (caps === null || caps.perSide === 3) return OFFER_CAP_LINE;
+  const n = caps.perSide;
+  return `You can have ${n} buying and ${n} selling ${n === 1 ? 'offer' : 'offers'}.`;
+}
+
+/** What a refused Post offer says; `caps` from the API's refusal (offerCapsOf). */
+export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null): string {
   switch (code) {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'too-many-offers':
-      return `${OFFER_CAP_LINE} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED
+      return `${offerCapLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED
     // Plan 2 Task 18: a team member without the Offers role.
     case 'forbidden':
     case 'owner-only':
