@@ -223,7 +223,7 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     const dispute = host.querySelector('[data-part="refunded-dispute"]')!;
     expect(dispute.querySelector('h2')?.textContent).toBe('Did you send the money anyway?');
     // Lead review 2026-11-06 m3: a moderator rules, the screen does not promise the outcome.
-    expect(dispute.textContent).toContain('a moderator can rule that they send you the 1.250000 XMR as agreed.');
+    expect(dispute.textContent).toContain('a moderator can rule that they owe you the 1.250000 XMR. Until they pay it back, they can\'t trade.');
     expect(dispute.textContent).not.toContain('makes them');
     // A danger text button with a chevron (design session 2 Nov); Find another offer stays the primary.
     expect(dispute.querySelector('a.x2f-button--danger')?.textContent).toBe('Open a dispute');

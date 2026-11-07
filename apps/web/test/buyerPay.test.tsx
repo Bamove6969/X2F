@@ -745,7 +745,7 @@ describe('review minors 1, 5 and 7', () => {
     expect(document.querySelector('[data-grown]')).toBeNull();
   });
 
-  it("in paid, Open a dispute waits for the later of I've paid + 60 min (owner Q10, 6 Nov) and the server's confirmBy, then opens", () => {
+  it("in paid, Open a dispute waits for the later of I've paid + 90 min (owner F9, 7 Nov) and the server's confirmBy, then opens", () => {
     const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     const waiting = document.querySelector<HTMLButtonElement>('[data-part="paid-dispute"]')!;
     expect(waiting.tagName).toBe('BUTTON');
@@ -761,13 +761,13 @@ describe('review minors 1, 5 and 7', () => {
     expect(document.querySelector('[data-part="paid-status"] h1')?.textContent).toBe("satoshi_ghost hasn't confirmed in time");
   });
 
-  it('disputeOpensAt: 60 min after I\'ve paid (owner Q10), never before the server allows it, and not at all without confirmBy (review M5)', () => {
+  it('disputeOpensAt: 90 min after I\'ve paid (owner F9, instant types), never before the server allows it, and not at all without confirmBy (review M5)', () => {
     const t = (min: number) => new Date(Date.UTC(2026, 10, 6, 15, 0) + min * 60_000).toISOString();
     // The server's confirmBy is later: it wins.
     expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(120) })).toBe(Date.parse(t(120)));
-    // A server window shorter than 60 min: paid + 60 min.
-    expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(10) })).toBe(Date.parse(t(60)));
-    expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(45) })).toBe(Date.parse(t(60)));
+    // A server window shorter than 90 min: paid + 90 min.
+    expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(10) })).toBe(Date.parse(t(90)));
+    expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(75) })).toBe(Date.parse(t(90)));
     // No confirmBy: the server refuses (too-early), so nothing is offered.
     expect(disputeOpensAt({ paidAt: t(0), confirmBy: null })).toBeNull();
     expect(disputeOpensAt({ paidAt: null, confirmBy: null })).toBeNull();
@@ -778,7 +778,7 @@ describe('review minors 1, 5 and 7', () => {
   it('What happens next says the XMR goes to the wallet once the app co-signs, and to keep the page open', () => {
     mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     const next = document.querySelector('[data-part="paid-next"]')!.textContent ?? '';
-    expect(next).toContain('When they release, 1.250000 XMR goes to your wallet once your app co-signs. Keep this page open.');
+    expect(next).toContain('When they release, 1.250000 XMR goes to your wallet once your app co-signs. Keep this page open until it arrives.');
     expect(next).not.toContain('by itself');
   });
 

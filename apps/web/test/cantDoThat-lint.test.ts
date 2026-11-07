@@ -130,7 +130,8 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // XMR back." explains a consequence before any appeal (dispute/rules.ts overturnLien).
     // 51 -> 53 (design results, 2 Nov): BuyerPaidWaiting's "You can't cancel after marking as paid",
     // said ahead of time, and the Feedback anonymous hint "we can't follow up with you".
-    expect(notARefusal).toBeLessThanOrEqual(53);
+    // 54: Refunded's "Until they pay it back, they can't trade." (design's wording 7 Nov) explains a ruling about the other trader.
+    expect(notARefusal).toBeLessThanOrEqual(54);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

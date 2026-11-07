@@ -4,8 +4,8 @@
  * trade is paid and the seller is checking, the timer shows the seller's confirm window, "What
  * happens next" says what each side does, and the payment's details fold away under "Your
  * payment". The footer has Nudge (the API's nudge on an open trade, spec 2.4), Open a dispute
- * (disabled with "Available from … in …" until `disputeOpensAt`: 60 min after I've paid, owner
- * Q10 6 Nov, but never before the server allows it), and the reminder that a paid trade can't be
+ * (disabled with "Available from … in …" until `disputeOpensAt`: 90 min after I've paid for an
+ * instant payment type, owner F9 7 Nov, but never before the server allows it), and the reminder that a paid trade can't be
  * cancelled. While trading is paused for maintenance both clocks stop at the pause (owner Q10).
  *
  * Once the window ends without a release the status turns to "hasn't confirmed in time" (the
@@ -44,8 +44,13 @@ export function confirmWindow(view: Pick<TradeView, 'paidAt' | 'confirmBy'>, now
   return { ends, lengthMs, leftMs, ended: leftMs === 0 };
 }
 
-/** The owner's rule (Q10, 6 Nov 2026; was 30 min on 2 Nov): the buyer may open a dispute 60 minutes after tapping I've paid. */
-export const DISPUTE_AFTER_PAID_MS = 60 * MIN_MS;
+/**
+ * The owner's rule for instant payment types (F9, 7 Nov 2026; was 60 min on 6 Nov, 30 min on 2 Nov):
+ * the buyer may open a dispute 90 minutes after tapping I've paid. Slower types wait longer: the
+ * server's confirmBy covers them here, and the per-type wait comes from the API once it carries it
+ * (wip/second-api-cap-dispute).
+ */
+export const DISPUTE_AFTER_PAID_MS = 90 * MIN_MS;
 
 /**
  * The clock the paid room counts with: the server's, stopped at `pausedAt` while trading is paused
@@ -58,10 +63,10 @@ export function roomClock(view: Pick<TradeView, 'pausedAt'>, serverClock: () => 
 }
 
 /**
- * When the buyer's Open a dispute becomes available in `paid`: 60 minutes after I've paid (owner
- * Q10), but never before the server allows it. The state machine refuses the buyer's dispute until
+ * When the buyer's Open a dispute becomes available in `paid`: 90 minutes after I've paid (owner
+ * F9, instant types), but never before the server allows it. The state machine refuses the buyer's dispute until
  * confirmBy, and while confirmBy is unknown (machine.ts `too-early`), so the time is the later of
- * paid + 60 min and confirmBy, and null (not offered at all) without confirmBy (review M5). The view
+ * paid + 90 min and confirmBy, and null (not offered at all) without confirmBy (review M5). The view
  * carries no dispute time of its own, so this is the client's own reckoning: it can never offer
  * the dispute before confirmBy, but a server rule that opens it later than both is not seen here.
  */
@@ -189,8 +194,8 @@ export function PaidWaitingBody({
           <span className="x2f-when">{view.code}</span>.
         </li>
         <li>
-          {/* COPY-UNSIGNED (lead review 2026-11-06 I1; design confirms): the co-sign runs in the open page (Released.tsx). */}
-          When they release, <span className="x2f-when">{xmr}</span> goes to your wallet once your app co-signs. Keep this page open.
+          {/* COPY-UNSIGNED: design's wording (7 Nov), owner still to sign. The co-sign runs in the open page (Released.tsx). */}
+          When they release, <span className="x2f-when">{xmr}</span> goes to your wallet once your app co-signs. Keep this page open until it arrives.
         </li>
         <li>
           {win !== null ? (

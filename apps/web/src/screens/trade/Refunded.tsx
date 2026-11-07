@@ -183,9 +183,10 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
               {story.disputeTitle}
             </h2>
             <p className="x2f-fine">
-              {/* COPY-UNSIGNED (lead review 2026-11-06 m3: "makes them send" over-promised; design rewords) */}
-              Open a dispute and add your payment proof. If the money reached <span data-username="">{name}</span>, a moderator can rule that they send you the{' '}
-              {formatXmr(BigInt(view.amountAtomic))} XMR as agreed.
+              {/* COPY-UNSIGNED: design's wording (7 Nov), owner still to sign (lead review 2026-11-06 m3). */}
+              Open a dispute and add your payment proof. If the money reached <span data-username="">{name}</span>, a moderator can rule that they owe you the{' '}
+              {/* not-a-refusal: explains what a ruling means for the other trader; nothing is refused to this user */}
+              {formatXmr(BigInt(view.amountAtomic))} XMR. Until they pay it back, they can't trade.
             </p>
             {Number.isFinite(closed) ? (
               <p className="x2f-fine" data-dispute-window="">
