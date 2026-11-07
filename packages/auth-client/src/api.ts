@@ -19,8 +19,9 @@ import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginRe
 export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult };
 
 /**
- * Plan 2 Task 17: a security change made from a login with only one way of proving it's you
- * (202): nothing changed yet; the change waits until `holdUntil` (the account's 24-hour hold), and
+ * Plan 2 Task 17: a security change made from a login with just a username and password (202):
+ * nothing changed yet (hold model v3 answers 202 `{ status: 'staged', changeId }` instead: not yet
+ * ported here); the change waits until `holdUntil` (the account's 24-hour hold), and
  * a strong login with a method held before the hold cancels it.
  */
 export interface Held {

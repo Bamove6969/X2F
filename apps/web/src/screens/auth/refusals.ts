@@ -70,7 +70,8 @@ export function holdApproveSentence(holdUntil: string | null | undefined): strin
 export function heldNote(holdUntil: string): string {
   const at = new Date(holdUntil);
   const when = Number.isNaN(at.getTime()) ? 'in a day' : `at ${localTime(at)}`;
-  return `Saved. This change takes effect ${when}, because you logged in with only one way of proving it's you. Logging in with a passkey, a security key, or your password and authenticator code from before then cancels it.`;
+  // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81; hold v3: an authenticator code cancels nothing)
+  return `Saved. This change takes effect ${when}, because you logged in with just your username and password. Logging in with a passkey, a security key or a PGP key you had before then cancels it.`;
 }
 
 /**

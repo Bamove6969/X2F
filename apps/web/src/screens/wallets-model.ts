@@ -82,8 +82,9 @@ export function ruleLines(rule: WalletRule): string[] {
       lines.push(`If you confirm with your password instead, they work ${h} hours after you add them.`);
     }
   } else if (rule.password === 'waits') {
-    lines.push(`You only have a password: new wallets will work ${h} hours after you add them.`);
-    lines.push('Add a passkey, security key or PGP key first to skip the wait.');
+    // DESIGN: wording (owner 6 Nov 2026, Q14: never "password only")
+    lines.push(`You have no passkey, security key or PGP key yet: new wallets will work ${h} hours after you add them.`);
+    lines.push('Add one first to skip the wait.');
   } else {
     lines.push("Saving asks you to confirm it's you.");
   }

@@ -375,12 +375,13 @@ export const TOO_MANY_APPROVALS_CODE = 'too-many-approvals' satisfies CantDoCode
 export const HOLD_CODE = 'recovery-hold' satisfies CantDoCode;
 
 /**
- * 403 `recovery-hold`: the account's 24-hour hold after a login with only one way of proving it's
- * you, or a backup login (Plan 2 Task 17; owner 2026-10-29 14:12: PGP alone does not end it).
- * `when` is "until Tue 3:05 PM" or "for a day".
+ * 403 `recovery-hold`: the account's 24-hour hold (hold model v3: only a recovery-code login starts
+ * one; a passkey, security key or PGP key the account held before it ends it, an authenticator
+ * code does not; owner 2 Nov and 6 Nov 2026, Q81). `when` is "until Tue 3:05 PM" or "for a day".
  */
 export function holdText(when: string): string {
-  return `Your account is on a 24-hour hold after a login with only one way of proving it's you, so new trades, wallet changes and login changes wait ${when}. Trades already open can still be finished. Logging in with a passkey, a security key, or your password and authenticator code from before the hold ends it.`;
+  // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81)
+  return `Your account is on a 24-hour hold after a login with a recovery code, so new trades, wallet changes and login changes wait ${when}. Trades already open can still be finished. Logging in with a passkey, a security key or a PGP key you had before the hold ends it.`;
 }
 
 /**
@@ -391,7 +392,8 @@ export function holdText(when: string): string {
  * code and pushes the hold's end out to 24 hours from then. COPY-UNSIGNED
  */
 export function holdLoginText(when: string): string {
-  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with only one way of proving it's you, and a login like this one waits until the hold ends. If you had a passkey, a security key, or an authenticator code set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. With a recovery code you can use a backup login in the meantime to finish trades already open. A backup login uses up that recovery code and makes the hold last 24 hours from then.`;
+  // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81)
+  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with a recovery code, and a login like this one waits until the hold ends. If you had a passkey, a security key or a PGP key set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. With a recovery code you can use a backup login in the meantime to finish trades already open. A backup login uses up that recovery code and makes the hold last 24 hours from then.`;
 }
 
 /** 429 `slow-down` `{ reason: 'approvals' }`: too many login approvals asked for in an hour. */
@@ -402,12 +404,13 @@ export const TOO_MANY_APPROVALS =
 export const WEAK_SESSION_CODE = 'weak-session' satisfies CantDoCode;
 
 /**
- * 403 `weak-session`: this device logged in with only one way of proving it's you, so it cannot
- * log out a device that logged in more strongly (or any device during the 24-hour hold), nor
- * answer a login made with a passkey or two ways.
+ * 403 `weak-session`: this device logged in with a username and password and nothing stronger, so
+ * it cannot log out a device that logged in more strongly (or any device during the 24-hour hold),
+ * nor answer a strong login (a passkey, security key, PGP key since Q81, or password and code).
  */
+// DESIGN: wording (owner 6 Nov 2026, Q14 and Q81)
 export const WEAK_SESSION_TEXT =
-  "This device logged in with only one way of proving it's you, so it can't log out devices that logged in more securely, or answer their logins. Do this from a device where you logged in with a passkey, a security key, or your password and authenticator code.";
+  "This device logged in with just a username and password, so it can't log out devices that logged in more securely, or answer their logins. Do this from a device where you logged in with a passkey, a security key, a PGP key, or your username, password and authenticator code.";
 
 /** 403 `recovery-hold` when approving a new device during the hold; blocking it still works. */
 export function holdApproveText(when: string): string {
@@ -434,7 +437,8 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
       return "Starting or accepting a trade, and securing or releasing coins, stay on the account owner's device for now. Ask the account owner to do this step.";
     // Owner 1 Nov 2026: inviting a member and changing roles need a strong login (API 403 weak-session).
     case 'weak-session':
-      return "This device logged in with only one way of proving it's you, so it can't invite team members or change their roles. Do this from a device where you logged in with a passkey, a security key, or your password and authenticator code.";
+      // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81)
+      return "This device logged in with just a username and password, so it can't invite team members or change their roles. Do this from a device where you logged in with a passkey, a security key, a PGP key, or your username, password and authenticator code.";
     default:
       return "This can't be done on the team right now.";
   }

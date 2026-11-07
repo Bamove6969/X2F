@@ -57,7 +57,8 @@ export function walletWaitNote(rule: WalletRule, batch: boolean): string {
     const strong = `Confirm with your ${orList(rule.strongMethods.map((m) => STRONG_WORDS[m]))} and ${it} ${batch ? 'work' : 'works'} at once.`;
     return rule.password === 'waits' ? `${strong} Confirming with your password instead means a ${wait}${batch ? ', shared by all of them' : ''}.` : strong;
   }
-  return `You only have a password, so ${it} will work ${rule.waitHours} hours after you add ${batch ? 'them, all on one shared wait' : 'it'}. Add a passkey, security key or PGP key first to skip the wait.`;
+  // DESIGN: wording (owner 6 Nov 2026, Q14: never "password only")
+  return `You have no passkey, security key or PGP key yet, so ${it} will work ${rule.waitHours} hours after you add ${batch ? 'them, all on one shared wait' : 'it'}. Add one first to skip the wait.`;
 }
 
 function WalletWaitNote({ batch }: { batch: boolean }) {
