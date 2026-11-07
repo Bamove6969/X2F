@@ -112,6 +112,7 @@ export const LOG_ACTIONS = {
   'staff.joined': { staffId: 'uuid', role: 'id' },
   'staff.switched-off': { staffId: 'uuid' },
   'staff.switched-on': { staffId: 'uuid', role: 'id' },
+  'staff.removed': { staffId: 'uuid' },
   'staff.role-set': { staffId: 'uuid', from: 'id', to: 'id' },
   'staff.hours-set': { staffId: 'uuid' },
   'staff.grants-set': { staffId: 'uuid', ticketsHandle: 'bool' },
@@ -123,6 +124,9 @@ export const LOG_ACTIONS = {
   'shift.abandoned': { shiftId: 'id', ended: 'id' },
   'pay.paid': { staffId: 'uuid', kind: 'id', usdCents: 'amount', atomic: 'amount', ref: 'id' },
   'pay.clawback': { staffId: 'uuid', usdCents: 'amount', rulingId: 'id' },
+  // Past reputation (Plan 5 Task 10, owner 2026-11-02): a senior moderator or the owner sets or
+  // clears a claim's verified dollar figure. The figure itself is never logged.
+  'pastrep.verified-usd-set': { claimId: 'uuid', cleared: 'bool' },
   // The owner (Task 6).
   'owner.setup-completed': {},
   'owner.key-added': { credentialId: 'id' },

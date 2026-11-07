@@ -5,7 +5,7 @@ import { ApiError } from '../errors.js';
 import { deviceHash } from './device.js';
 import { needsAfter, pairAllowed, parseFactor } from './methods.js';
 import { traderLogin, type ApprovalWait } from './approval.js';
-import { assertNotDisabled, startSession } from './sessions.js';
+import { assertNotDisabled, realmOf, startSession } from './sessions.js';
 import type { LoginStrength } from './strength.js';
 import { SECOND_FACTOR_TTL_MS } from './totp.js';
 
@@ -79,7 +79,9 @@ export async function completeLogin(
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
        values ($1, $2, 'second-factor', 'pair', $3, $4, $5) returning id`,
-      [a.account.id, device, JSON.stringify({ first: a.factor }), now, new Date(now.getTime() + PAIR_TTL_MS)],
+      // The site the first factor was given on (lead review M-1): the second step must finish on the
+      // same site, so a first factor on the trader site can't skip the staff site's checks.
+      [a.account.id, device, JSON.stringify({ first: a.factor, app: realmOf(req).app }), now, new Date(now.getTime() + PAIR_TTL_MS)],
     );
     return { status: 'second-factor', pendingId: rows[0]!.id, needs };
   } else {
@@ -87,9 +89,9 @@ export async function completeLogin(
     const { rows } = await deps.db.query<{ payload: Record<string, unknown> }>(
       `update challenges set used_at = $4
         where id = $1 and account_id = $2 and device_hash = $3 and purpose = 'second-factor' and method = 'pair'
-          and used_at is null and expires_at > $4
+          and used_at is null and expires_at > $4 and payload->>'app' = $5
         returning payload`,
-      [a.pendingId, a.account.id, device, now],
+      [a.pendingId, a.account.id, device, now, realmOf(req).app],
     );
     const pending = rows[0];
     if (!pending) throw new ApiError(400, 'challenge-expired');

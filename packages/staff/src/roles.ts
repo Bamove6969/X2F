@@ -6,7 +6,8 @@ export type StaffRole = (typeof STAFF_ROLES)[number];
  * Every permission a staff route can declare (Plan 4 Task 4: one per route). Added by later
  * revisions of Plan 4: `stats.read` (Revision 2026-10-28), `accounts.ban` (Task 27),
  * `reputation.review` (Revision 2026-10-29b, Plan 5 Task 19), `tickets.handle` (Task 30) and
- * `feedback.read` (owner only, Plan 5 Task 4).
+ * `feedback.read` (owner only, Plan 5 Task 4) and `reputation.verify` (senior moderators and the
+ * owner, owner 2026-11-02: entering a past-reputation claim's verified dollar figure).
  */
 export const PERMS = [
   'staff.manage',
@@ -22,6 +23,7 @@ export const PERMS = [
   'accounts.freeze',
   'accounts.ban',
   'reputation.review',
+  'reputation.verify',
   'tickets.handle',
   'feedback.read',
   'training.read',
@@ -42,7 +44,7 @@ const MOD_PERMS: readonly Perm[] = ['disputes.handle', 'log.read.cases', 'reputa
 const ROLE_PERMS: Readonly<Record<StaffRole, ReadonlySet<Perm>>> = {
   owner: new Set(PERMS),
   // `accounts.ban`: a ban, including a permanent one, is a senior-moderator or owner action (Task 27).
-  senior: new Set<Perm>([...MOD_PERMS, 'rulings.approve', 'accounts.freeze', 'accounts.ban']),
+  senior: new Set<Perm>([...MOD_PERMS, 'rulings.approve', 'accounts.freeze', 'accounts.ban', 'reputation.verify']),
   // `reputation.review` for moderators is a lead default (Revision 2026-10-29b); the owner may change it.
   mod: new Set<Perm>(MOD_PERMS),
   helper: new Set<Perm>(['self']),

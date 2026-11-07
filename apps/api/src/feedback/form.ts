@@ -67,8 +67,8 @@ export interface FeedbackFormCursor {
 /**
  * The staff list's query: newest day first, then by id, 50 a page; `before` is the last row of the
  * previous page (a keyset cursor, so a day with more than 50 rows is never cut short).
- * Plan 4's staff API and the Task 4 Feedback page call it once they are on the main line (see the
- * tripwire in test/feedbackForm.test.ts); no route serves it yet.
+ * Served by the staff API's `GET /staff/v1/feedback/form` (staff/feedback.ts, perm `feedback.read`);
+ * the staff web Feedback page (Plan 4 Task 16) is still owed (tripwire in test/feedback.test.ts).
  */
 export async function listFeedbackForm(db: pg.Pool, o: { before?: FeedbackFormCursor; limit?: number } = {}): Promise<FeedbackFormItem[]> {
   const limit = Math.min(Math.max(o.limit ?? 50, 1), 50);

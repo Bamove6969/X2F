@@ -21,6 +21,7 @@ import { moneroAddressValidator } from './wallets/address.js';
 import { productionNudgeWiring } from './nudge/wiring.js';
 import { daemonConfirmations, monerodUrlFromEnv } from './trades/chain.js';
 import { ownerAlertSink } from './push/ownerAlert.js';
+import { staffListenFromEnv, startStaffApi } from './staff/main.js';
 
 function port(raw: string | undefined): number {
   if (raw === undefined || raw === '') return 8080;
@@ -105,7 +106,12 @@ if (internal) {
   });
 }
 
+// Plan 4 Task 4: the staff API on its own origin and port (X2F_STAFF_ORIGIN, X2F_STAFF_PORT); unset: none.
+const staffListen = staffListenFromEnv(process.env);
+const staff = staffListen ? await startStaffApi(deps, staffListen) : null;
+
 const shutdown = async () => {
+  if (staff) await staff.close();
   await stopHolds();
   await stopRetention(); // lets a purge in flight finish before the pool closes
   await prices.stop();
