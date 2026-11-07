@@ -39,7 +39,12 @@ const NONCE_BYTES = 16;
 const MAX_RESPONSE_CHARS = 16_384;
 /** RV5 m12: at most this many unfinished, unexpired taps per account at once. */
 export const MAX_OPEN_TAPS = 5;
-/** RV5 m8 (owner Q6 pending): an unfinished or unused tap is deleted a day after it started. */
+/**
+ * Lead re-review item 5: the emergency stop and the resume are never held back by the cap (a burst
+ * of other open taps, the person's own or a stolen session's, must not stop the owner stopping trading).
+ */
+const UNCAPPED: ReadonlySet<KeyTapIntent['kind']> = new Set(['emergency-stop', 'resume-trading']);
+/** RV5 m8: an unfinished or unused tap is deleted a day after it started (a lead default; keep times for used taps are RV5 Q6, for the owner). */
 export const KEY_TAP_PURGE_MS = 24 * 60 * 60_000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -120,9 +125,9 @@ export async function startKeyTap(
     const { rows } = await client.query<{ id: string }>(
       `insert into key_taps (account_id, intent, nonce, started_at, session_id)
        select $1, $2, $3, $4, $5
-        where (select count(*) from key_taps where account_id = $1 and finished_at is null and started_at > $6) < $7
+        where $8::boolean or (select count(*) from key_taps where account_id = $1 and finished_at is null and started_at > $6) < $7
        returning id`,
-      [accountId, canonical, nonce, now, o.sessionId ?? null, new Date(now.getTime() - KEY_TAP_TTL_MS), MAX_OPEN_TAPS],
+      [accountId, canonical, nonce, now, o.sessionId ?? null, new Date(now.getTime() - KEY_TAP_TTL_MS), MAX_OPEN_TAPS, UNCAPPED.has(norm.kind)],
     );
     await client.query('commit');
     id = rows[0]?.id;
@@ -188,10 +193,32 @@ export async function finishKeyTap(deps: Deps, accountId: string, tapId: string,
     `update key_taps set credential_id = $3, response = $4, finished_at = $5
       where id = $1 and account_id = $2 and finished_at is null and started_at > $6
       returning id, account_id, credential_id, intent, nonce, response`,
-    [tapId, accountId, verified.credentialId, JSON.stringify(response), now, cutoff],
+    [tapId, accountId, verified.credentialId, JSON.stringify(assertionFields(response)), now, cutoff],
   );
   if (!done[0]) throw tapInvalid(); // a parallel finish won, or the tap expired meanwhile
   return storedOf(done[0]);
+}
+
+/**
+ * RV5 m11 (lead re-review item 5): only the fields of a WebAuthn assertion that verification read,
+ * and that the moderation process re-verifies, are stored; anything else the client sent is dropped.
+ * Called after the assertion verified, so the fields are there and are strings.
+ */
+function assertionFields(response: unknown): AuthenticationResponseJSON {
+  const r = response as AuthenticationResponseJSON;
+  const a = r.response;
+  return {
+    id: r.id,
+    rawId: r.rawId,
+    type: 'public-key',
+    clientExtensionResults: {},
+    response: {
+      clientDataJSON: a.clientDataJSON,
+      authenticatorData: a.authenticatorData,
+      signature: a.signature,
+      ...(typeof a.userHandle === 'string' ? { userHandle: a.userHandle } : {}),
+    },
+  };
 }
 
 /**

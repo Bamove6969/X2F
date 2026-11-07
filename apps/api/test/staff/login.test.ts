@@ -201,6 +201,23 @@ describe('staff login with login hours', () => {
     expect(rows[0].revoked_at).not.toBeNull();
   });
 
+  it('the sweeper also purges stale key taps (RV5 m8, lead re-review item 4)', async () => {
+    const s = await seedStaff(deps, { role: 'mod' });
+    const old = new Date(deps.clock().getTime() - 25 * 60 * 60_000);
+    const { rows: ins } = await deps.db.query<{ id: string }>(
+      `insert into key_taps (account_id, intent, nonce, started_at) values ($1, '{"kind":"emergency-stop"}', $2, $3) returning id`,
+      [s.id, randomBytes(16), old],
+    );
+    const sweeper = startHoursSweeper({ db: deps.db, clock: deps.clock, events: app.events }, (e) => { throw e; }, 20);
+    let gone = false;
+    for (let i = 0; i < 100 && !gone; i++) {
+      gone = (await deps.db.query('select 1 from key_taps where id = $1', [ins[0]!.id])).rowCount === 0;
+      if (!gone) await new Promise((r) => setTimeout(r, 20));
+    }
+    await sweeper.stop();
+    expect(gone).toBe(true);
+  });
+
   it('logs the owner in at any hour', async () => {
     const o = owner;
     const key = await addKey(o.id);

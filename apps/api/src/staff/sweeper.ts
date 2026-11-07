@@ -3,6 +3,7 @@ import { withTx } from '../auth/hold.js';
 import type { EventBus } from '../events/bus.js';
 import { appendLog } from '../log/append.js';
 import { loadStaff, withinHours } from './guard.js';
+import { purgeKeyTaps } from './keyTap.js';
 
 /** How often the sweeper looks for staff sessions outside their login hours (Plan 4 Task 4). */
 export const HOURS_SWEEP_MS = 30_000;
@@ -51,13 +52,16 @@ export async function sweepHours(deps: SweepDeps): Promise<number> {
 
 /**
  * `startHoursSweeper(deps)`: every 30 s, ends the staff sessions outside their window (the owner has
- * no hours). A failed pass is reported to `onError` and the next one runs as usual.
+ * no hours), then purges stale key taps (`purgeKeyTaps`). A failed pass is reported to `onError`
+ * and the next one runs as usual.
  */
 export function startHoursSweeper(deps: SweepDeps, onError: (err: unknown) => void = () => undefined, everyMs = HOURS_SWEEP_MS): { stop(): Promise<void> } {
   let running: Promise<unknown> | null = null;
   const timer = setInterval(() => {
     if (running) return;
+    // RV5 m8 (lead re-review item 4): the same pass purges the taps never finished or never used.
     running = sweepHours(deps)
+      .then(() => purgeKeyTaps(deps.db, deps.clock()))
       .catch(onError)
       .finally(() => {
         running = null;
