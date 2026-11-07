@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
 import { heldNote, holdLoginSentence, holdSentence, localTime, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
-import { TOO_MANY_APPROVALS, WEAK_SESSION_TEXT } from '../src/ui/cantDoCodes.js';
+import { TOO_MANY_APPROVALS, WEAK_SESSION_TEXT, holdText, teamCantDoText } from '../src/ui/cantDoCodes.js';
+import { ruleLines, ruleNote } from '../src/screens/wallets-model.js';
+import { walletWaitNote } from '../src/screens/auth/ConfirmSheet.js';
 
 const UNTIL = '2026-10-30T14:05:00.000Z';
 
@@ -36,7 +38,7 @@ describe('loginCantDo', () => {
     expect(t).toEqual({ code: 'recovery-hold', text: holdLoginSentence(UNTIL) });
     expect(t!.text).toContain(`This login can't get in until ${localTime(new Date(UNTIL))}.`);
     expect(t!.text).toContain('If not, wait and log in again when the hold ends.');
-    expect(t!.text).toContain('If you had a passkey, a security key, or an authenticator code set up before the hold');
+    expect(t!.text).toContain('If you had a passkey, a security key or a PGP key set up before the hold');
     // Nothing it cannot keep: this login finishes no trades, and the account's held changes are not the reader's to make here.
     expect(t!.text).not.toContain('can still be finished');
     expect(t!.text).not.toContain('wallet changes');
@@ -71,5 +73,40 @@ describe('loginCantDo', () => {
   it('anything else is worded inline as before', () => {
     expect(loginCantDo(new AuthApiError(401, 'credentials-invalid'), 'login')).toBeNull();
     expect(loginCantDo(new Error('x'), 'login')).toBeNull();
+  });
+});
+
+describe('owner 6 Nov 2026: Q14 wording and Q81 (a PGP key login is strong)', () => {
+  const NOT_PASSWORD_ONLY = /password[- ](?:only|alone)|only (?:have )?(?:a|your) password|only one way of proving/i;
+  const waitRule = { firstWallet: false, strongMethods: [], password: 'waits' as const, waitHours: 24 };
+  const texts = (): string[] => [
+    holdText('until Tue 3:05 PM'),
+    holdSentence(UNTIL),
+    holdLoginSentence(UNTIL),
+    heldNote(UNTIL),
+    WEAK_SESSION_TEXT,
+    teamCantDoText('weak-session'),
+    ...ruleLines(waitRule),
+    ruleNote(waitRule),
+    walletWaitNote(waitRule, false),
+    walletWaitNote(waitRule, true),
+  ];
+
+  it('Q14: never "password only" or "password alone": it is a username and password at minimum', () => {
+    for (const t of texts()) expect(t).not.toMatch(NOT_PASSWORD_ONLY);
+    expect(heldNote(UNTIL)).toContain('because you logged in with just your username and password');
+    expect(WEAK_SESSION_TEXT).toContain('This device logged in with just a username and password');
+  });
+
+  it('Q81: a PGP key counts wherever a strong login is named', () => {
+    expect(WEAK_SESSION_TEXT).toContain('a passkey, a security key, a PGP key, or your username, password and authenticator code');
+    expect(teamCantDoText('weak-session')).toContain('a passkey, a security key, a PGP key, or your username, password and authenticator code');
+  });
+
+  it('hold v3: only a passkey, security key or PGP key held before ends the hold or cancels a waiting change (an authenticator code does not)', () => {
+    for (const t of [holdText('for a day'), heldNote(UNTIL), holdLoginSentence(UNTIL)]) {
+      expect(t).toMatch(/a passkey, a security key or a PGP key/);
+      expect(t).not.toContain('authenticator');
+    }
   });
 });

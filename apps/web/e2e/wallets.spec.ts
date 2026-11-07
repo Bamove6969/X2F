@@ -220,11 +220,11 @@ test.describe('the rule popup explains what adding does for this account', () =>
       never: [],
     },
     {
-      name: 'password only',
+      name: 'username and password, nothing stronger',
       rule: RULE_PASSWORD_ONLY,
       says: [
-        /You only have a password: new wallets will work 24 hours after you add them\./,
-        /Add a passkey, security key or PGP key first to skip the wait\./,
+        /You have no passkey, security key or PGP key yet: new wallets will work 24 hours after you add them\./,
+        /Add one first to skip the wait\./,
       ],
       never: [],
     },

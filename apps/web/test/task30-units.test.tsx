@@ -56,9 +56,9 @@ describe('wallet-wait note (rule from GET /v1/wallets/rule)', () => {
     );
   });
 
-  it('password only: the wait, shared by a batch, and how to skip it', () => {
+  it('no passkey, security key or PGP key: the wait, shared by a batch, and how to skip it', () => {
     expect(walletWaitNote(rule(), true)).toBe(
-      'You only have a password, so these wallets will work 24 hours after you add them, all on one shared wait. Add a passkey, security key or PGP key first to skip the wait.',
+      'You have no passkey, security key or PGP key yet, so these wallets will work 24 hours after you add them, all on one shared wait. Add one first to skip the wait.',
     );
   });
 
