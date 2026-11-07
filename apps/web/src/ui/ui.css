@@ -1084,12 +1084,6 @@
   padding-bottom: var(--x2f-space-4);
 }
 
-/* A Disclosure on the ground with a line border instead of the surface (BuyerPaidWaiting). */
-.x2f-disclosure[data-outline] {
-  border: 1px solid var(--x2f-surface-raised);
-  background: transparent;
-}
-
 .x2f-disclosure__button[data-open='true'] .x2f-disclosure__chevron {
   transform: rotate(180deg);
 }
@@ -1487,6 +1481,76 @@
   font-size: 16px;
   line-height: 24px;
   font-weight: 600;
+}
+
+/*
+ * Raised rows (BuyerPaidWaiting "Your payment"): the raised box, each row 48 px high with the key
+ * muted on the left and the value 15 on the right, inset surface dividers; `mono` values in mono
+ * 500. With two columns (the Wide board) each cell stacks its key over its value.
+ */
+.x2f-facts[data-layout='raised'] {
+  padding: 0;
+}
+
+.x2f-facts[data-layout='raised'] > div {
+  position: relative;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 0 14px;
+}
+
+.x2f-facts[data-layout='raised'] > div + div {
+  border-top: 0;
+}
+
+.x2f-facts[data-layout='raised'] > div + div::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 14px;
+  left: 14px;
+  height: 1px;
+  background: var(--x2f-surface);
+}
+
+.x2f-facts[data-layout='raised'] dd {
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.x2f-facts[data-layout='raised'][data-columns='2'] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.x2f-facts[data-layout='raised'][data-columns='2'] > div {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 2px;
+  min-height: 0;
+  padding: 12px 14px;
+}
+
+.x2f-facts[data-layout='raised'][data-columns='2'] > div::before {
+  display: none;
+}
+
+.x2f-facts[data-layout='raised'][data-columns='2'] > div:nth-child(n + 3) {
+  border-top: 1px solid var(--x2f-surface);
+}
+
+.x2f-facts[data-layout='raised'][data-columns='2'] > div:nth-child(even) {
+  border-left: 1px solid var(--x2f-surface);
+}
+
+.x2f-facts[data-layout='raised'][data-columns='2'] dd {
+  text-align: left;
 }
 
 /* A list of rows with dividers (Devices: your devices, team members' sessions). */

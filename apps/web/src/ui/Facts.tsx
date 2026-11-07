@@ -10,7 +10,7 @@ export interface Fact {
   rule?: boolean;
   /** stacked: the value in 16/600 (LoginApprove "Device"). */
   strong?: boolean;
-  /** stacked: the value in mono (a time). */
+  /** stacked, raised: the value in mono (a time, a code). */
   mono?: boolean;
 }
 
@@ -18,11 +18,14 @@ export interface Fact {
  * Facts as a `<dl class="x2f-facts">`, in one of two layouts:
  * - `stacked` (LoginApprove board): the key over the value, in a raised box;
  * - `rows` (Refunded "What happened", BuyerPaidWaiting "Your payment"): the key muted on the left,
- *   the value in mono on the right, no box of its own.
+ *   the value in mono on the right, no box of its own;
+ * - `raised` (BuyerPaidWaiting "Your payment"): the raised box with 48 px rows, the key on the left
+ *   and the value on the right (`mono` puts it in mono 500); `columns={2}` makes the Wide board's
+ *   two-column grid, each cell the key over the value.
  */
-export function Facts({ rows, layout, part }: { rows: readonly Fact[]; layout: 'stacked' | 'rows'; part?: string }) {
+export function Facts({ rows, layout, part, columns }: { rows: readonly Fact[]; layout: 'stacked' | 'rows' | 'raised'; part?: string; columns?: 2 | undefined }) {
   return (
-    <dl className="x2f-facts" data-layout={layout} data-part={part}>
+    <dl className="x2f-facts" data-layout={layout} data-part={part} data-columns={columns}>
       {rows.map((r) => (
         <div key={r.key} data-rule={r.rule ? '' : undefined}>
           <dt>{r.label ?? r.key}</dt>

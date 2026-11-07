@@ -740,3 +740,8 @@ main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
 .x2f-paid-actions__row [data-part='nudge'] {
   padding: 0 20px;
 }
+
+/* "Your payment" opens to the raised rows 20 px above the card's bottom edge (BuyerPaidWaiting). */
+[data-part='paid-payment-body'] {
+  padding-bottom: 20px;
+}

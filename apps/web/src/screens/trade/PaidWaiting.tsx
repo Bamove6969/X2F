@@ -231,29 +231,31 @@ export function PaidWaitingBody({
   );
 
   const rows: Fact[] = [
-    ...(details ?? []).map((d) => ({ key: d.label === `${method.name} to` ? 'Sent to' : d.label, value: d.value })),
-    { key: 'Memo', value: view.code },
+    ...(details ?? []).map((d) => ({ key: d.label === `${method.name} to` ? 'Sent to' : d.label, value: d.value, mono: true })),
+    { key: 'Memo', value: view.code, mono: true },
     { key: 'For', value: xmr },
-    ...(view.paidAt !== null ? [{ key: 'Marked as paid', value: <When at={view.paidAt} /> }] : []),
+    ...(view.paidAt !== null ? [{ key: 'Marked as paid', value: <When at={view.paidAt} />, mono: true }] : []),
+    // The board's design call keeps this row (design review P2-17). The upload is not built yet, so
+    // no proof is ever attached here and the row says so. COPY-UNSIGNED (design's wording)
+    { key: 'Payment proof', value: 'Add payment proof · optional' },
   ];
+  // On surface with no border, the rows in the raised box; two columns on wide (design review P2-16).
   const payment = (
     <section aria-label="Your payment" data-part="paid-payment">
-      {/* The kit's Disclosure (LoginApprove board) with its note slot, outlined as on this board. */}
       <Disclosure
         part="paid-payment-toggle"
-        outline
         summary="Your payment"
         note={
           <>
-            {total !== null ? <span className="x2f-when">{total.text}</span> : null}
+            {total !== null ? <span className="x2f-when x2f-ink">{total.text}</span> : null}
             {total !== null ? ' · ' : ''}
             {method.name}
           </>
         }
       >
         {(id) => (
-          <div id={id} className="x2f-disclosure__body">
-            <Facts layout="rows" rows={rows} />
+          <div id={id} className="x2f-disclosure__body" data-part="paid-payment-body">
+            <Facts layout="raised" rows={rows} columns={wide ? 2 : undefined} />
           </div>
         )}
       </Disclosure>

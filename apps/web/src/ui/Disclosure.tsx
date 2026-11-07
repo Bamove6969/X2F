@@ -10,22 +10,19 @@ import './ui.css';
 export function Disclosure({
   summary,
   note,
-  outline = false,
   part,
   children,
 }: {
   summary: ReactNode;
   /** Muted words on the row before the chevron (BuyerPaidWaiting "$412.50 · Zelle"). */
   note?: ReactNode;
-  /** A line border on the ground instead of the surface fill. */
-  outline?: boolean;
   part?: string;
   children: (id: string) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
   return (
-    <div className="x2f-disclosure" data-outline={outline ? '' : undefined}>
+    <div className="x2f-disclosure">
       <button
         type="button"
         className="x2f-disclosure__button"

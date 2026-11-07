@@ -869,6 +869,24 @@ describe('review minors 1, 5 and 7', () => {
     expect(document.getElementById('paid-dispute-when')?.getAttribute('data-align')).toBe('end');
   });
 
+  it('Your payment (design review P2-16, P2-17): on surface, the raised rows with Payment proof last, two columns on wide', async () => {
+    for (const wide of [false, true]) {
+      const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }), wide }));
+      const toggle = document.querySelector<HTMLElement>('[data-part="paid-payment-toggle"]')!;
+      expect(toggle.closest('.x2f-disclosure')?.hasAttribute('data-outline')).toBe(false);
+      await click(toggle);
+      const dl = document.querySelector('[data-part="paid-payment"] dl')!;
+      expect(dl.getAttribute('data-layout')).toBe('raised');
+      expect(dl.getAttribute('data-columns')).toBe(wide ? '2' : null);
+      const rows = [...dl.querySelectorAll(':scope > div')].map((d) => [d.querySelector('dt')!.textContent, d.querySelector('dd')!.textContent]);
+      expect(rows.map(([k]) => k)).toEqual(['Sent to', 'Memo', 'For', 'Marked as paid', 'Payment proof']);
+      expect(rows.at(-1)![1]).toBe('Add payment proof · optional');
+      const memo = dl.querySelector(':scope > div dd')!;
+      expect(memo.className).toBe('x2f-num');
+      r.unmount();
+    }
+  });
+
   it('Nudge sent says when the next one can go, the 10 in mono (design review P1-4)', async () => {
     answer = () => ({ status: 200, json: {} });
     mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
