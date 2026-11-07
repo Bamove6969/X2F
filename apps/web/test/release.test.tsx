@@ -54,6 +54,7 @@ function trade(over: Over = {}): ReleaseTrade {
     settling: null,
     txHash: null,
     confirmBy: '2026-10-25T13:52:00.000Z',
+    disputeWaitMin: 90,
     serverNow: NOW,
     ...rest,
   };
@@ -135,6 +136,16 @@ describe('SellerConfirm', () => {
     for (const el of s.host.querySelectorAll('[data-username]')) expect(el.textContent).toBe('mira.k');
     expect(s.host.querySelectorAll('[data-username]').length).toBeGreaterThanOrEqual(2);
     expect(s.host.querySelectorAll('[data-primary]')).toHaveLength(1);
+  });
+
+  it("the confirm-window tip says the buyer can ask a moderator from the trade's own wait after marking paid (cap-dispute I1)", () => {
+    const s = sellerConfirm(trade());
+    const tip = s.host.querySelector('#x2f-confirm-tip')!.textContent!.replace(/\s+/g, ' ');
+    // The trade's own wait (owner 2026-11-07 F9: per payment type; Zelle 90 minutes).
+    expect(tip).toContain('mira.k can ask a moderator to step in from 90 minutes after marking paid.');
+    const slow = sellerConfirm(trade({ disputeWaitMin: 4320 }));
+    expect(slow.host.querySelector('#x2f-confirm-tip')!.textContent!.replace(/\s+/g, ' ')).toContain('from 3 days after marking paid.');
+    expect(tip).not.toContain('If time runs out');
   });
 
   it('the release warning (Task 38, board Warn-Release) opens first and keeps the hold locked until "It\'s in my account", once per trade', () => {

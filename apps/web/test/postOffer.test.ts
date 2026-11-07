@@ -297,11 +297,26 @@ describe('refusalText', () => {
     expect(refusalText('trading-hold')).toMatch(/trading hold/);
     expect(refusalText('trading-paused')).toMatch(/paused/);
     expect(refusalText('method-unavailable')).toMatch(/payment method/);
-    expect(refusalText('too-many-offers')).toMatch(/Remove one/);
+    // The cap the API enforces (owner 2026-11-01: 3 buying and 3 selling offers per account), in the cap's own line.
+    expect(refusalText('too-many-offers')).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then post this one.');
     expect(refusalText('something-new')).toMatch(/wasn't posted/);
     for (const code of ['trading-hold', 'trading-paused', 'method-unavailable', 'too-many-offers', 'x']) expect(refusalText(code)).not.toContain('!');
   });
 });
+describe('refusalText: the cap from the 409 (cap-dispute review M2)', () => {
+  it("too-many-offers says the cap the API sent ({ perSide }, an owner setting), else the default 3", () => {
+    expect(refusalText('too-many-offers', { perSide: 3 })).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then post this one.');
+    expect(refusalText('too-many-offers', { perSide: 5 })).toBe('You can have 5 buying and 5 selling offers. Remove one you no longer need, then post this one.');
+    expect(refusalText('too-many-offers', { perSide: 1 })).toMatch(/^You can have 1 buying and 1 selling offer\. /);
+    // No cap, or nonsense: the default line.
+    for (const extra of [undefined, {}, { perSide: 0 }, { perSide: 1001 }, { perSide: 2.5 }, { perSide: '2' }, { perMarket: 2, total: 20 }]) {
+      expect(refusalText('too-many-offers', extra)).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then post this one.');
+    }
+    // Other codes ignore it.
+    expect(refusalText('trading-hold', { perSide: 5 })).toBe(refusalText('trading-hold'));
+  });
+});
+
 
 describe('api parsers (Task 3 shapes: GET /v1/price, GET /v1/methods on the main line)', () => {
   it('parsePrice reads the price route', () => {

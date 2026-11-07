@@ -47,6 +47,7 @@ export function tradeFromView(v: RefundView): Trade {
     lockedRate: { currency: v.lockedRate.currency, centsPerXmr: atomic(v.lockedRate.centsPerXmr, 'rate') },
     fiatCents: atomic(v.fiatCents, 'fiat total'),
     confirmWindowMin: 1,
+    buyerDisputeWaitMin: 1,
     minFiatCents: 1n,
     // not-a-refusal: a field name in a developer error
     maxFiatCents: atomic(v.maxFiatCents, 'offer maximum'),
@@ -68,6 +69,7 @@ export function tradeFromView(v: RefundView): Trade {
     extensions: v.extensions,
     paidAt: date(v.paidAt, 'paidAt'),
     confirmBy: date(v.confirmBy, 'confirmBy'),
+    buyerDisputeFrom: date(v.disputeOpensAt ?? null, 'disputeOpensAt'),
     finalAlertAt: date(v.finalAlertAt, 'finalAlertAt'),
     cancelProposedBy: v.cancelProposedBy,
     settling: v.settling,

@@ -8,6 +8,7 @@ import { HoldButton } from '../../ui/HoldButton.js';
 import { Icon } from '../../ui/icons.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { clearReleaseAsked, markReleaseAsked, releaseAsked } from './release/marker.js';
+import { waitInWords } from '../dispute/rules.js';
 import { ReleaseWarning } from './ReleaseWarning.js';
 import { setWarned, warned } from './warned.js';
 import { ESCROW_STOPPED, amounts, publicName, firstPerson, profileCopy, refusalCopy, type MethodInfo, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
@@ -238,7 +239,7 @@ export function SellerConfirm({
               <span data-username="">{buyer}</span>: Payment sent
             </span>
           </span>
-          {trade.confirmBy !== null && !releasing ? <ConfirmWindow deadline={trade.confirmBy} clock={clock} buyer={buyer} place={place} /> : null}
+          {trade.confirmBy !== null && !releasing ? <ConfirmWindow deadline={trade.confirmBy} clock={clock} buyer={buyer} place={place} waitMin={trade.disputeWaitMin} /> : null}
         </div>
 
         <h1 className="x2f-release__title">
@@ -349,7 +350,7 @@ export function SellerConfirm({
 }
 
 /** "1 h 52 min to confirm", with the board's explanation on hover, focus or tap. */
-function ConfirmWindow({ deadline, clock, buyer, place }: { deadline: string; clock: () => Date; buyer: string; place: string }) {
+function ConfirmWindow({ deadline, clock, buyer, place, waitMin }: { deadline: string; clock: () => Date; buyer: string; place: string; waitMin: number }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -369,8 +370,10 @@ function ConfirmWindow({ deadline, clock, buyer, place }: { deadline: string; cl
       </button>
       <span id="x2f-confirm-tip" role="tooltip" className="x2f-release__tip" hidden={!open}>
         Time you have to check {place} and release, or report that the money didn&apos;t arrive. Instant apps like Zelle get 2 hours;
-        bank wires get up to 24. If time runs out, {buyer} can ask a moderator to step in. Nothing is released without you or a
-        moderator.
+        bank transfers up to 3 days and cash by mail 4.{' '}
+        {/* DESIGN: wording (cap-dispute review I1). Owner 2026-11-07 F9: the buyer's wait is the trade's own, by payment type; maintenance pauses it (Q10). */}
+        {buyer} can ask a moderator to step in from {waitInWords(waitMin)} after marking paid. Nothing is
+        released without you or a moderator.
       </span>
     </>
   );

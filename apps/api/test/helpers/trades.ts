@@ -61,6 +61,7 @@ export async function seedTrade(
       amountAtomic: a.amountAtomic ?? AMOUNT,
       lockedRate: RATE,
       confirmWindowMin: 120,
+      buyerDisputeWaitMin: 90, // Zelle's (owner 2026-11-07 F9: instant types 90 min)
       minFiatCents: 1_000n,
       maxFiatCents: 100_000n,
     },

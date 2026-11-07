@@ -25,6 +25,7 @@ export type ReleaseTrade = Pick<
   | 'settling'
   | 'txHash'
   | 'confirmBy'
+  | 'disputeWaitMin'
   | 'serverNow'
 >;
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { feeFor } from '@x2f/core';
 import {
   CLIENT_EVENTS,
+  MAX_TRADE_WINDOW_MIN,
   SELLER_CONFIRM_CANCEL_TIMEOUT_H,
   awaitingCancelConfirm,
   amountForFunds,
@@ -36,6 +37,7 @@ const TAKE = {
   amountAtomic: AMOUNT,
   lockedRate: RATE,
   confirmWindowMin: 120,
+  buyerDisputeWaitMin: 90, // an instant type (owner 2026-11-07 F9)
   minFiatCents: 10_000n, // $100
   maxFiatCents: 50_000n, // $500; the trade is $412.50
 };
@@ -97,6 +99,7 @@ const sampleEvent: Record<TradeEvent['type'], TradeEvent> = {
 describe('constants', () => {
   test('TIMERS', () => {
     expect(TIMERS).toEqual({ setupMin: 15, fundMin: 30, payMin: 90, extendMin: 30, maxExtensions: 2, finalAlertMin: 15, settleMin: 15, lapseCosignMin: 30, disputeAfterRefundHours: 48 });
+    expect(MAX_TRADE_WINDOW_MIN).toBe(4 * 24 * 60); // owner 2026-11-07 F9: slow types up to 4 days (was 24 h)
   });
 
   test('every event type is exactly one of system or client', () => {
@@ -139,8 +142,14 @@ describe('take, setup and funding', () => {
   test('newTrade refuses bad terms', () => {
     const bad = [
       { ...TAKE, poster: 'seller' as const, amountAtomic: 1n }, // fiat total rounds to 0
-      { ...TAKE, poster: 'seller' as const, confirmWindowMin: 1441 },
+      { ...TAKE, poster: 'seller' as const, confirmWindowMin: 5761, buyerDisputeWaitMin: 5760 },
       { ...TAKE, poster: 'seller' as const, confirmWindowMin: 0 },
+      // The buyer's dispute wait (owner 2026-11-07 F9): a whole number of minutes, at least 1, never
+      // past the seller's confirm window, never past the maximum.
+      { ...TAKE, poster: 'seller' as const, buyerDisputeWaitMin: 0 },
+      { ...TAKE, poster: 'seller' as const, buyerDisputeWaitMin: 1.5 },
+      { ...TAKE, poster: 'seller' as const, buyerDisputeWaitMin: 121 },
+      { ...TAKE, poster: 'seller' as const, confirmWindowMin: 5760, buyerDisputeWaitMin: 5761 },
       { ...TAKE, poster: 'seller' as const, minFiatCents: 50_000n }, // $412.50 below the minimum
       { ...TAKE, poster: 'seller' as const, maxFiatCents: 40_000n }, // above the maximum
       { ...TAKE, poster: 'seller' as const, minFiatCents: 0n },
@@ -148,6 +157,9 @@ describe('take, setup and funding', () => {
     ];
     for (const a of bad) expect(() => newTrade(a, T0)).toThrow(RangeError);
     expect(newTrade({ ...TAKE, poster: 'seller', confirmWindowMin: 1440 }, T0).confirmWindowMin).toBe(1440);
+    const slow = newTrade({ ...TAKE, poster: 'seller', confirmWindowMin: 5760, buyerDisputeWaitMin: 5760 }, T0);
+    expect([slow.confirmWindowMin, slow.buyerDisputeWaitMin]).toEqual([5760, 5760]);
+    expect(newTrade({ ...TAKE, poster: 'seller', buyerDisputeWaitMin: 120 }, T0).buyerDisputeWaitMin).toBe(120);
   });
 
   test('tick past setupBy → cancelled, no penalty', () => {
@@ -746,10 +758,61 @@ describe('open-dispute', () => {
     }
   });
 
-  test('in paid: the seller any time, the buyer only from confirmBy', () => {
+  test("in paid: the seller any time, the buyer from the trade's own wait after marking paid (owner 2026-11-07 F9: per payment type), not from confirmBy", () => {
+    // paid() marks paid at 40 with a 90-minute wait (an instant type): buyerDisputeFrom 130; confirmBy 160.
+    expect(paid().buyerDisputeWaitMin).toBe(90);
+    expect(paid().buyerDisputeFrom).toEqual(at(130));
     expect(apply(paid(), { type: 'open-dispute' }, 'seller', at(41)).state).toBe('disputed');
-    expect(rule(() => apply(paid(), { type: 'open-dispute' }, 'buyer', at(159)))).toBe('too-early');
+    expect(rule(() => apply(paid(), { type: 'open-dispute' }, 'buyer', at(100)))).toBe('too-early');
+    expect(rule(() => apply(paid(), { type: 'open-dispute' }, 'buyer', at(129, 59_999)))).toBe('too-early');
+    const d = apply(paid(), { type: 'open-dispute' }, 'buyer', at(130));
+    expect(d.state).toBe('disputed');
+    expect(d.dispute).toEqual({ by: 'buyer', at: at(130) });
     expect(apply(paid(), { type: 'open-dispute' }, 'buyer', at(160)).state).toBe('disputed');
+  });
+
+  test('a slow type waits its own time: cash by mail, 4 days (owner 2026-11-07 F9)', () => {
+    const mail = newTrade({ ...TAKE, poster: 'seller', confirmWindowMin: 5760, buyerDisputeWaitMin: 5760 }, T0);
+    const p = run([[{ type: 'setup-done', escrowAddress: '4Escrow' }, 'system', 1], [chain(FUNDS, 0n, 1), 'system', 5], [chain(FUNDS, FUNDS, 10), 'system', 30], [{ type: 'mark-paid', fiatCents: 41250n }, 'buyer', 40]], mail);
+    expect(p.buyerDisputeFrom).toEqual(at(40 + 5760));
+    expect(rule(() => apply(p, { type: 'open-dispute' }, 'buyer', at(40 + 5760, -1)))).toBe('too-early');
+    expect(apply(p, { type: 'open-dispute' }, 'buyer', at(40 + 5760)).state).toBe('disputed');
+  });
+
+  test("maintenance pauses the buyer's wait; the seller's confirm window moves exactly as before (owner 2026-11-06 Q10)", () => {
+    // Marked paid at 40 (wait ends 130, confirmBy 160); maintenance 45 → 105 (60 min).
+    const r = apply(apply(paid(), { type: 'pause' }, 'system', at(45)), { type: 'resume' }, 'system', at(105));
+    expect(r.buyerDisputeFrom).toEqual(at(190));
+    expect(r.paidAt).toEqual(at(40));
+    expect(r.confirmBy).toEqual(at(220)); // the seller's (poster's) time: unchanged by this rule
+    expect(rule(() => apply(r, { type: 'open-dispute' }, 'buyer', at(189, 59_999)))).toBe('too-early');
+    expect(apply(r, { type: 'open-dispute' }, 'buyer', at(190)).state).toBe('disputed');
+    // The seller may still dispute at once after the resume.
+    expect(apply(r, { type: 'open-dispute' }, 'seller', at(105)).state).toBe('disputed');
+  });
+
+  test('a wait that had already ended before the maintenance does not close again (only a running wait moves)', () => {
+    // Wait ends 130; maintenance 140 → 160: the buyer may dispute at once after the resume.
+    const r = apply(apply(paid(), { type: 'pause' }, 'system', at(140)), { type: 'resume' }, 'system', at(160));
+    expect(r.buyerDisputeFrom).toEqual(at(130));
+    expect(r.confirmBy).toEqual(at(180));
+    expect(apply(r, { type: 'open-dispute' }, 'buyer', at(160)).state).toBe('disputed');
+    // Exactly at the end, like every other deadline, it still moves (a pause at 130 → 150 gives 150).
+    expect(apply(apply(paid(), { type: 'pause' }, 'system', at(130)), { type: 'resume' }, 'system', at(150)).buyerDisputeFrom).toEqual(at(150));
+  });
+
+  test("marked paid during maintenance: the trade's wait counts from the resume", () => {
+    const p = apply(secured(), { type: 'pause' }, 'system', at(100));
+    const marked = apply(p, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(110));
+    expect(marked.buyerDisputeFrom).toEqual(at(190));
+    const r = apply(marked, { type: 'resume' }, 'system', at(160));
+    expect(r.buyerDisputeFrom).toEqual(at(250));
+    expect(r.confirmBy).toEqual(at(280));
+  });
+
+  test('buyerDisputeFrom is null before marking paid', () => {
+    expect(taken().buyerDisputeFrom).toBeNull();
+    expect(secured().buyerDisputeFrom).toBeNull();
   });
 
   test('in settling only after settleBy', () => {

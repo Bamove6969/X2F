@@ -42,7 +42,7 @@ function apply(s: Server, e: Record<string, unknown>): { status: number; json: u
       if (v.role !== 'buyer') return refuse('wrong-party');
       if (v.state !== 'securing' && v.state !== 'secured') return refuse('wrong-state');
       if (e.fiatCents !== v.fiatCents) return refuse('total-changed');
-      s.view = { ...v, state: 'paid', paidAt: PAY_NOW, confirmBy: at(120), cancelProposedBy: v.cancelProposedBy === 'seller' ? null : v.cancelProposedBy };
+      s.view = { ...v, state: 'paid', paidAt: PAY_NOW, confirmBy: at(120), disputeOpensAt: at(90), disputeWaitMin: 90, cancelProposedBy: v.cancelProposedBy === 'seller' ? null : v.cancelProposedBy };
       break;
     case 'buyer-cancel':
       if (v.role !== 'buyer') return refuse('wrong-party');
@@ -165,7 +165,7 @@ test.describe("I've paid", () => {
   });
 
   test('paid on the server but never recorded on this device (a reload): Finish sends only trade.paid (review I2)', async ({ page }) => {
-    const s = await open(page, { ...PAY_SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) });
+    const s = await open(page, { ...PAY_SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119), disputeOpensAt: at(89), disputeWaitMin: 90 });
     await page.evaluate(() => window.__x2fSetFixtureEscrow!({ refusal: 'amount-unknown' }));
     await expect(page.getByText("Your device hasn't recorded your payment. Tap to finish.")).toBeVisible();
     await primary(page).click();
@@ -220,7 +220,7 @@ test.describe('cancel', () => {
   });
 
   test("after I've paid there is no cancel at all (Revision 2026-10-29b)", async ({ page }) => {
-    const s = await open(page, { ...PAY_SECURED, state: 'paid', paidAt: at(-5), confirmBy: at(115) });
+    const s = await open(page, { ...PAY_SECURED, state: 'paid', paidAt: at(-5), confirmBy: at(115), disputeOpensAt: at(85), disputeWaitMin: 90 });
     await expect(page.locator('[data-part="paid-status"]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Cancel trade' })).toHaveCount(0);
     await expect(page.getByText('Only cancel if your payment was never sent')).toHaveCount(0);

@@ -38,7 +38,7 @@ export {
 } from './money.js';
 export { SETTLE_KINDS, payoutsFor, type PayoutFacts, type RulingKind, type SettleKind } from './payouts.js';
 export { moneroUri } from './moneroUri.js';
-export { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
+export { MAX_TRADE_WINDOW_MIN, SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
 export {
   CLIENT_EVENTS,
   SYSTEM_EVENTS,

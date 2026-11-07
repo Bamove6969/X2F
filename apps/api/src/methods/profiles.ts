@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { MAX_TRADE_WINDOW_MIN } from '@x2f/trade';
 
 /** One payment method in `data/payment-methods.json` (spec 2.6). */
 export interface CatalogMethod {
@@ -23,13 +24,32 @@ export interface MethodProfile {
   landsIn: string;
   checkPrompt: string;
   arrival: 'instant' | 'same-day' | 'days';
-  /** The seller's confirmation window: 120 for instant apps, up to 1440 for wires. */
+  /** The seller's confirmation window: 120 for instant apps, up to 4 days (cash by mail; owner 2026-11-07 F9). */
   confirmWindowMin: number;
+  /**
+   * How long the buyer waits after marking paid before they may open a dispute (owner 2026-11-07 F9,
+   * research F1): 90 min for instant types, 3 h Faster Payments, 24 h same/next day, 48 h to 4 days
+   * for slow ones. At most the confirm window.
+   */
+  buyerDisputeWaitMin: number;
   fields: { key: string; label: string; kind: FieldKind }[];
 }
 
-/** The launch profiles (spec 11.5): Zelle, Cash App, Revolut, Wise, ACH, SEPA, Cash by mail, Custom method. */
-export const LAUNCH_PROFILE_IDS = ['ZELLE', 'CASH_APP', 'REVOLUT', 'TRANSFERWISE', 'ACH_TRANSFER', 'SEPA', 'PAY_BY_MAIL', 'CUSTOM'] as const;
+/**
+ * The profiles (spec 11.5's launch set: Zelle, Cash App, Revolut, Wise, ACH, SEPA, Cash by mail,
+ * Custom method; then owner 2026-11-07 F9, "give the common payment types their own profile",
+ * research F1's table: Interac, SEPA Instant, PayPal, Venmo, PIX, UPI, Faster Payments, domestic
+ * wire, SWIFT and one for every gift card).
+ */
+export const LAUNCH_PROFILE_IDS = [
+  'ZELLE', 'CASH_APP', 'REVOLUT', 'TRANSFERWISE', 'ACH_TRANSFER', 'SEPA', 'PAY_BY_MAIL', 'CUSTOM',
+  'INTERAC_E_TRANSFER', 'SEPA_INSTANT', 'PAYPAL', 'VENMO', 'PIX', 'UPI', 'FASTER_PAYMENTS', 'DOMESTIC_WIRE_TRANSFER', 'SWIFT', 'OTHER_GIFT_CARD',
+] as const;
+
+/** The profile a method with none of its own uses at take: the Custom method's (24 h). */
+export const FALLBACK_PROFILE_ID = 'CUSTOM';
+/** The profile every gift card without one of its own uses (owner 2026-11-07 F9: instant, 90 min). */
+export const GIFT_CARD_PROFILE_ID = 'OTHER_GIFT_CARD';
 
 export const GIFT_CARD_GROUP = 'Gift cards & vouchers';
 
@@ -77,20 +97,23 @@ export function loadProfiles(raw: unknown, methods: readonly CatalogMethod[]): M
     if (!method) throw bad(file, `${p.id} is not in the catalog`);
     if (seen.has(p.id)) throw bad(file, `duplicate profile ${p.id}`);
     seen.add(p.id);
-    const { whatItIs, landsIn, checkPrompt, arrival, confirmWindowMin, fields } = p;
+    const { whatItIs, landsIn, checkPrompt, arrival, confirmWindowMin, buyerDisputeWaitMin, fields } = p;
     if (!nonEmpty(whatItIs) || !nonEmpty(landsIn) || !nonEmpty(checkPrompt)) throw bad(file, `${p.id}: missing text`);
     if (landsIn.toLowerCase().includes(method.name.toLowerCase())) throw bad(file, `${p.id}: landsIn must not name the method`);
     const arr = ARRIVALS.find((a) => a === arrival);
     if (!arr) throw bad(file, `${p.id}: arrival`);
-    if (typeof confirmWindowMin !== 'number' || !Number.isInteger(confirmWindowMin) || confirmWindowMin < 120 || confirmWindowMin > 1440) {
-      throw bad(file, `${p.id}: confirmWindowMin must be 120-1440`);
+    if (typeof confirmWindowMin !== 'number' || !Number.isInteger(confirmWindowMin) || confirmWindowMin < 120 || confirmWindowMin > MAX_TRADE_WINDOW_MIN) {
+      throw bad(file, `${p.id}: confirmWindowMin must be 120-${MAX_TRADE_WINDOW_MIN}`);
+    }
+    if (typeof buyerDisputeWaitMin !== 'number' || !Number.isInteger(buyerDisputeWaitMin) || buyerDisputeWaitMin < 1 || buyerDisputeWaitMin > confirmWindowMin) {
+      throw bad(file, `${p.id}: buyerDisputeWaitMin must be 1 to confirmWindowMin`);
     }
     if (!Array.isArray(fields) || fields.length === 0) throw bad(file, `${p.id}: fields`);
     const outFields = fields.map((f: unknown) => {
       if (!isRecord(f) || !nonEmpty(f.key) || !nonEmpty(f.label) || !KINDS.includes(f.kind as FieldKind)) throw bad(file, `${p.id}: a field`);
       return { key: f.key, label: f.label, kind: f.kind as FieldKind };
     });
-    return { id: p.id, whatItIs, landsIn, checkPrompt, arrival: arr, confirmWindowMin, fields: outFields };
+    return { id: p.id, whatItIs, landsIn, checkPrompt, arrival: arr, confirmWindowMin, buyerDisputeWaitMin, fields: outFields };
   });
 }
 
@@ -114,6 +137,16 @@ export function getMethod(id: string): CatalogMethod | null {
 
 export function getProfile(id: string): MethodProfile | null {
   return PROFILE_BY_ID.get(id) ?? null;
+}
+
+/**
+ * The profile a trade on `methodId` is taken with (its confirm window and the buyer's dispute
+ * wait): the method's own, else the gift card one for any gift card, else the Custom method's.
+ */
+export function tradeProfile(methodId: string): MethodProfile {
+  const p = getProfile(methodId) ?? (isGiftCard(methodId) ? getProfile(GIFT_CARD_PROFILE_ID) : null) ?? getProfile(FALLBACK_PROFILE_ID);
+  if (p === null) throw new Error('no fallback method profile');
+  return p;
 }
 
 /** In the catalog and not waiting for legal review (P3-I20): only these may be listed or offered. */

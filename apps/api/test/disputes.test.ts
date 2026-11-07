@@ -1,8 +1,11 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { RulingOutcome } from '@x2f/staff';
 import { loadDispute } from '../src/disputes/store.js';
+import { MIGRATIONS_DIR } from '../src/db/migrate.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { appealDirect, publishRuling } from './helpers/disputes.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
@@ -83,9 +86,9 @@ async function rule(code: string, o: { outcome: RulingOutcome; round?: 1 | 2; ru
 }
 
 describe('POST /v1/trades/:code/dispute', () => {
-  it('refuses the buyer before the seller\'s confirm window ends, and writes nothing', async () => {
+  it("refuses the buyer before the trade's 90-minute wait after marking paid (89:59), and writes nothing (owner 2026-11-07 F9: instant types)", async () => {
     const { buyer, t } = await tradeIn('paid');
-    setNow(at(119 * MIN));
+    setNow(at(89 * MIN + 59_000));
     const res = await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
     expect(res.statusCode).toBe(409);
     expect(errorOf(res)).toBe('too-early');
@@ -94,15 +97,15 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect(await eventTypes(t.code)).not.toContain('open-dispute');
   });
 
-  it('opens a dispute once the window has ended: the trade, its event and the dispute row in one go', async () => {
+  it('opens a dispute from 90:00 after marking paid, inside the seller\'s 2-hour window: the trade, its event and the dispute row in one go', async () => {
     const { buyer, seller, t } = await tradeIn('paid');
-    setNow(at(120 * MIN));
+    setNow(at(90 * MIN));
     const note = 'I sent $412.50 by Zelle at 10:02 from my own account.';
     const res = await buyer.browser.post(dispute(t.code), { reason: 'paid', note });
     expect(res.statusCode).toBe(200);
     const body = res.json() as Record<string, unknown>;
     expect(body).toMatchObject({ openedBy: 'buyer', reason: 'paid', afterRefund: false, status: 'open', moderator: null, ruling: null, appeal: null });
-    expect(body.openedAt).toBe(at(120 * MIN).toISOString());
+    expect(body.openedAt).toBe(at(90 * MIN).toISOString());
     expect(body).not.toHaveProperty('note');
     expect((await loadTrade(deps.db, t.code))!.state).toBe('disputed');
     expect(await eventTypes(t.code)).toContain('open-dispute');
@@ -112,6 +115,46 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect(again.statusCode).toBe(409);
     expect(errorOf(again)).toBe('dispute-exists');
     expect(await disputeRow(t.code)).toMatchObject({ opened_by: 'buyer' });
+  });
+
+  it("maintenance pauses the buyer's wait: it ends later by the paused time; the seller's confirm window moves as before (owner 2026-11-06 Q10)", async () => {
+    const { buyer, seller, t } = await tradeIn('paid'); // marked paid at START: wait 90 min, confirmBy +120
+    const view0 = (await buyer.browser.get(`/v1/trades/${t.code}`)).json() as Record<string, unknown>;
+    expect(view0).toMatchObject({ disputeOpensAt: at(90 * MIN).toISOString(), disputeWaitMin: 90 });
+    expect((await seller.browser.get(`/v1/trades/${t.code}`)).json()).toMatchObject({ disputeOpensAt: at(90 * MIN).toISOString(), disputeWaitMin: 90 });
+    setNow(at(5 * MIN));
+    await applyEvent(deps, t.code, { type: 'pause' }, 'system');
+    setNow(at(45 * MIN));
+    await applyEvent(deps, t.code, { type: 'resume' }, 'system'); // paused 40 min
+    const resumed = (await loadTrade(deps.db, t.code))!;
+    expect(resumed.buyerDisputeFrom).toEqual(at(130 * MIN));
+    expect(resumed.confirmBy).toEqual(at(160 * MIN));
+    expect(resumed.paidAt).toEqual(START);
+    setNow(at(129 * MIN + 59_000));
+    await relogin(buyer);
+    const early = await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    expect(early.statusCode).toBe(409);
+    expect(errorOf(early)).toBe('too-early');
+    expect(await disputeRow(t.code)).toBeUndefined();
+    expect((await buyer.browser.get(`/v1/trades/${t.code}`)).json()).toMatchObject({ disputeOpensAt: at(130 * MIN).toISOString() });
+    setNow(at(130 * MIN));
+    expect((await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' })).statusCode).toBe(200);
+  });
+
+  it("migration 118 keeps the landed rule for trades already taken: the buyer's wait is the confirm window, opening at confirmBy", async () => {
+    const sql = await readFile(join(MIGRATIONS_DIR, '118_buyer_dispute_from.sql'), 'utf8');
+    const backfill = sql.slice(sql.indexOf('-- BACKFILL'), sql.indexOf('-- END BACKFILL'));
+    const a = await tradeIn('paid'); // paid at START, confirmBy +120 (a 2-hour window)
+    const b = await tradeIn('paid');
+    const c = await tradeIn('secured');
+    // As before 118: nothing stored; b had a 40-minute maintenance, so its confirmBy is +160.
+    await deps.db.query('update trades set buyer_dispute_from = null, buyer_dispute_wait_min = null where code = any($1)', [[a.t.code, b.t.code, c.t.code]]);
+    await deps.db.query('update trades set confirm_by = $2 where code = $1', [b.t.code, at(160 * MIN)]);
+    await deps.db.query(backfill);
+    const [ta, tb, tc] = await Promise.all([a, b, c].map(async (x) => (await loadTrade(deps.db, x.t.code))!));
+    expect([ta!.buyerDisputeWaitMin, ta!.buyerDisputeFrom]).toEqual([120, at(120 * MIN)]);
+    expect([tb!.buyerDisputeWaitMin, tb!.buyerDisputeFrom]).toEqual([120, at(160 * MIN)]);
+    expect([tc!.buyerDisputeWaitMin, tc!.buyerDisputeFrom]).toEqual([120, null]);
   });
 
   it('lets either side open one while the escrow is securing or secured', async () => {

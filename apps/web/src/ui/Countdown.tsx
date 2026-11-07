@@ -6,24 +6,31 @@ export type CountdownFormat = 'clock' | 'minutes';
 /** One number and its unit in a duration ("1 h", "52 min"). */
 export interface DurationPart {
   n: string;
-  unit: 'h' | 'min';
+  unit: 'd' | 'h' | 'min';
 }
 
 /**
  * The parts of `formatRemaining(ms, 'minutes')`: [{n:'1',unit:'h'},{n:'52',unit:'min'}] for
- * "1 h 52 min" (rounded up to the minute, so never 0 min while time is left).
+ * "1 h 52 min" (rounded up to the minute, so never 0 min while time is left). Over two days (waits of
+ * up to 4 days, owner F9): days and hours, never "95 h 59 min"; up to 48 h stays in hours (the
+ * appeal countdown's board reads "47 h 58 min").
  */
 export function durationParts(ms: number): DurationPart[] {
   const min = Math.ceil(Math.max(0, ms) / 60_000);
   const h = Math.floor(min / 60);
   const m = min % 60;
   if (h === 0) return [{ n: String(m), unit: 'min' }];
+  if (h > 48 || (h === 48 && m > 0)) {
+    const d = Math.floor(h / 24);
+    return h % 24 === 0 ? [{ n: String(d), unit: 'd' }] : [{ n: String(d), unit: 'd' }, { n: String(h % 24), unit: 'h' }];
+  }
   return m === 0 ? [{ n: String(h), unit: 'h' }] : [{ n: String(h), unit: 'h' }, { n: String(m), unit: 'min' }];
 }
 
 /**
  * 'clock' is the funding timer style ("28:42", TradeFund board); 'minutes' the longer windows
- * ("1 h 52 min", SellerConfirm board), rounded up so it never reads 0 min while time is left.
+ * ("1 h 52 min", SellerConfirm board), rounded up so it never reads 0 min while time is left; over
+ * two days, days and hours ("3 d 23 h").
  */
 export function formatRemaining(ms: number, format: CountdownFormat): string {
   const left = Math.max(0, ms);

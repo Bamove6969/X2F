@@ -56,6 +56,8 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     payBy: null,
     paidAt: null,
     confirmBy: null,
+    disputeOpensAt: null,
+    disputeWaitMin: 90,
     finalAlertAt: null,
     finalAlertSeenAt: null,
     settleBy: null,

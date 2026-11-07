@@ -2,7 +2,7 @@
 // React so the unit tests can read them. Words follow Claude Design's MyOffers board
 // (origin/wip/design-brief docs/design-boards/MyOffers.dc.html, 2026-10-29); anything the board does
 // not give is lead wording until the owner signs it off (COPY-UNSIGNED).
-import { CANT_DO_CODES, MY_OFFERS_HIDDEN, TRADING_HOLD_CODE, isCantDoCode, myOffersRowText, type CantDoCode, type MyOffersHidden } from '../../ui/cantDoCodes.js';
+import { CANT_DO_CODES, MY_OFFERS_HIDDEN, OFFER_CAP_LINE, TRADING_HOLD_CODE, isCantDoCode, myOffersRowText, type CantDoCode, type MyOffersHidden } from '../../ui/cantDoCodes.js';
 import { formatAmount, formatPrice, marginText } from '../post/offerForm.js';
 import type { MyOffer, OfferState, SwitchResult } from './api.js';
 
@@ -140,10 +140,10 @@ export function allHint(selected: number, total: number): string {
 /**
  * The board's footnote with its cap line from the batch 3 MyOffers board (owner, 2 Nov 2026: 3
  * buying and 3 selling offers per vendor; one offer covers all the currencies it lists).
- * COPY-UNSIGNED. The API still enforces the old caps (3 per market, 20 in all: routes.ts
- * OFFER_CAP_DEFAULTS), a lead API follow-up.
+ * COPY-UNSIGNED. The cap line is `OFFER_CAP_LINE`, the cap the API enforces (C2-A1: routes.ts
+ * OFFER_CAP_DEFAULTS, 3 per side).
  */
-export const FOOTNOTE = 'Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal. You can have 3 buying and 3 selling offers. Each offer can cover several currencies.';
+export const FOOTNOTE = `Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal. ${OFFER_CAP_LINE} Each offer can cover several currencies.`;
 
 /** The offers with each switch result's status applied; ids reported `not-found` are dropped. */
 export function applyResults(offers: readonly MyOffer[], results: readonly SwitchResult[]): MyOffer[] {

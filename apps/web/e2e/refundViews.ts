@@ -60,6 +60,8 @@ export function sellerView(over: Partial<RefundView> = {}): RefundView {
     payBy: iso(-5),
     paidAt: null,
     confirmBy: null,
+    disputeOpensAt: null,
+    disputeWaitMin: 90,
     finalAlertAt: null,
     finalAlertSeenAt: null,
     settleBy: null,

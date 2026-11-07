@@ -12,6 +12,13 @@ export const TIMERS = {
   disputeAfterRefundHours: 48,
 } as const;
 
+/**
+ * The longest seller confirm window and buyer dispute wait a trade may have, in minutes: 4 days
+ * (owner 2026-11-07 F9: slow payment types such as cash by mail; was 24 h). The buyer's wait in
+ * `paid` is per payment type (`Trade.buyerDisputeWaitMin`, from the method profile at take).
+ */
+export const MAX_TRADE_WINDOW_MIN = 4 * 24 * 60;
+
 /** Confirmations after which Monero coins unlock. */
 export const UNLOCK_CONFIRMATIONS = 10;
 

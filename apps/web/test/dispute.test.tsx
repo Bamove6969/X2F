@@ -42,6 +42,8 @@ function trade(over: Partial<DisputeTrade> = {}): DisputeTrade {
     currency: 'USD',
     paidAt: iso(0),
     confirmBy: iso(120),
+    disputeOpensAt: iso(90),
+    disputeWaitMin: 90,
     settleBy: null,
     closedAt: null,
     dispute: null,
@@ -88,15 +90,39 @@ const at = (m: number) => () => new Date(T0 + m * MIN);
 const inRouter = (ui: React.ReactNode) => <MemoryRouter>{ui}</MemoryRouter>;
 
 describe('disputeEntry (mirrors the state machine; the server clock decides)', () => {
-  it('makes the buyer wait for the end of the confirm window, with the board explanation', () => {
-    const e = disputeEntry(trade(), new Date(T0 + 119 * MIN));
+  it("makes the buyer wait the trade's own time from marking paid (owner 2026-11-07 F9: 90 minutes for an instant type), not the whole confirm window, with the board explanation", () => {
+    // paidAt 0, disputeOpensAt 90, confirmBy 120: 89:59 waits, 90:00 opens.
+    const e = disputeEntry(trade(), new Date(T0 + 89 * MIN + 59_000));
     expect(e).toEqual({
       kind: 'wait',
-      until: new Date(T0 + 120 * MIN),
-      text: "You can open a dispute if the seller hasn't confirmed within 2 h of your payment.",
+      until: new Date(T0 + 90 * MIN),
+      text: "You can open a dispute if the seller hasn't confirmed within 90 minutes of your payment.",
     });
-    expect(disputeEntry(trade(), new Date(T0 + 120 * MIN))).toEqual({ kind: 'open' });
+    expect(disputeEntry(trade(), new Date(T0 + 90 * MIN))).toEqual({ kind: 'open' });
+    expect(disputeEntry(trade({ paidAt: null, disputeOpensAt: null }), new Date(T0 + 90 * MIN))).toEqual({ kind: 'none' });
     expect(disputeEntry(trade({ role: 'seller' }), new Date(T0))).toEqual({ kind: 'open' });
+  });
+
+  it('says each payment type\'s wait in words (owner 2026-11-07 F9)', () => {
+    const text = (min: number) => (disputeEntry(trade({ disputeWaitMin: min, disputeOpensAt: iso(min), confirmBy: iso(min) }), new Date(T0)) as { text: string }).text;
+    expect(text(90)).toContain('within 90 minutes of');
+    expect(text(180)).toContain('within 3 hours of');
+    expect(text(1440)).toContain('within 24 hours of');
+    expect(text(2880)).toContain('within 2 days of');
+    expect(text(4320)).toContain('within 3 days of');
+    expect(text(5760)).toContain('within 4 days of');
+  });
+
+  it("reads the server's disputeOpensAt, which maintenance moved later (owner 2026-11-06 Q10), never paidAt + the wait", () => {
+    // Marked paid at 0; maintenance 5 → 45 moved the end of the wait to 130 (and confirmBy to 160).
+    const paused = trade({ disputeOpensAt: iso(130), confirmBy: iso(160) });
+    expect(disputeEntry(paused, new Date(T0 + 90 * MIN))).toEqual({
+      kind: 'wait',
+      until: new Date(T0 + 130 * MIN),
+      text: "You can open a dispute if the seller hasn't confirmed within 90 minutes of your payment.",
+    });
+    expect(disputeEntry(paused, new Date(T0 + 129 * MIN + 59_999)).kind).toBe('wait');
+    expect(disputeEntry(paused, new Date(T0 + 130 * MIN))).toEqual({ kind: 'open' });
   });
 
   it('opens for either side while securing or secured, and not in funding or after release', () => {
@@ -243,14 +269,26 @@ describe('ModeratorTag: the violet badge only inside a disputed trade', () => {
 describe('DisputeOpen', () => {
   it('explains when the buyer can open a dispute and sends nothing before then', () => {
     const onOpen = vi.fn(async () => undefined);
-    const { host } = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(30)} onOpen={onOpen} />));
-    expect(host.textContent).toContain("You can open a dispute if the seller hasn't confirmed within 2 h of your payment.");
+    // 89 min after marking paid (owner 2026-11-07 F9: an instant type's buyer may dispute from 90 min).
+    const { host } = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(89)} onOpen={onOpen} />));
+    expect(host.textContent).toContain("You can open a dispute if the seller hasn't confirmed within 90 minutes of your payment.");
     const primary = host.querySelector<HTMLButtonElement>('[data-primary]')!;
     expect(primary.textContent).toBe('Open dispute');
     expect(primary.disabled).toBe(true);
     fire(primary, new MouseEvent('click', { bubbles: true }));
     expect(onOpen).not.toHaveBeenCalled();
     expect(host.querySelector('input[type=file]')).toBeNull();
+  });
+
+  it("from 90 minutes after marking paid the buyer may open one; the seller's-time flag shows only once confirmBy has passed (owner 2026-11-07 F9)", () => {
+    const early = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(90)} onOpen={vi.fn(async () => undefined)} />));
+    expect(early.host.querySelector<HTMLButtonElement>('[data-primary]')!.disabled).toBe(false);
+    expect(early.host.textContent).not.toContain("Seller's time to confirm ran out");
+    expect(early.host.querySelector('.dispute-wait')).toBeNull();
+    early.unmount();
+    const late = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(120)} onOpen={vi.fn(async () => undefined)} />));
+    expect(late.host.textContent).toContain("Seller's time to confirm ran out");
+    late.unmount();
   });
 
   it('sends the picked reason and the note once the window has ended', async () => {

@@ -210,7 +210,7 @@ export function PostOffer() {
       // terms-required and no-wallet have already sent the page on (api client); the draft waits.
       if (e instanceof ApiCallError && (e.code === 'terms-required' || e.code === 'no-wallet')) return;
       const code = e instanceof ApiCallError ? e.code : 'network';
-      setRefusal(refusalText(code));
+      setRefusal(refusalText(code, e instanceof ApiCallError ? e.extra : undefined));
       setCantDo(postCantDo(code));
     }
   }

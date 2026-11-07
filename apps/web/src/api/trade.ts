@@ -97,6 +97,14 @@ export interface TradeView {
   payBy: string | null;
   paidAt: string | null;
   confirmBy: string | null;
+  /**
+   * In `paid`, when the buyer may open a dispute: `disputeWaitMin` after marking paid, later by any
+   * maintenance during the wait (owner 2026-11-06 Q10, 2026-11-07 F9); the server's own time, null
+   * until marked paid.
+   */
+  disputeOpensAt: string | null;
+  /** The buyer's dispute wait in minutes, fixed at take by the payment type (owner 2026-11-07 F9: 90 for instant types up to 4 days). */
+  disputeWaitMin: number;
   finalAlertAt: string | null;
   /** When the buyer's device posted the final-alert seen-receipt (Task 25's FinalAlert); sent to the buyer only, null for the seller. */
   finalAlertSeenAt: string | null;

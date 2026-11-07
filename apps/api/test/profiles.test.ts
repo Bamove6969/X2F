@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import {
-  catalog, getMethod, getProfile, isAvailable, isGiftCard, LAUNCH_PROFILE_IDS, PROFILES, type MethodProfile,
+  catalog, getMethod, getProfile, isAvailable, isGiftCard, LAUNCH_PROFILE_IDS, loadProfiles, PROFILES, tradeProfile, type MethodProfile,
 } from '../src/methods/profiles.js';
 import type { LiveOfferQuery, LiveOfferStat } from '../src/methods/routes.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -17,7 +17,11 @@ const raw = JSON.parse(readFileSync(new URL('../../../data/payment-methods.json'
 describe('method profiles', () => {
   it('has exactly the launch profiles', () => {
     expect(PROFILES.map((p) => p.id).sort()).toEqual([...LAUNCH_PROFILE_IDS].sort());
-    expect(LAUNCH_PROFILE_IDS).toEqual(['ZELLE', 'CASH_APP', 'REVOLUT', 'TRANSFERWISE', 'ACH_TRANSFER', 'SEPA', 'PAY_BY_MAIL', 'CUSTOM']);
+    expect(LAUNCH_PROFILE_IDS).toEqual([
+      'ZELLE', 'CASH_APP', 'REVOLUT', 'TRANSFERWISE', 'ACH_TRANSFER', 'SEPA', 'PAY_BY_MAIL', 'CUSTOM',
+      // Owner 2026-11-07 F9 ("give the common payment types their own profile"): research F1's table.
+      'INTERAC_E_TRANSFER', 'SEPA_INSTANT', 'PAYPAL', 'VENMO', 'PIX', 'UPI', 'FASTER_PAYMENTS', 'DOMESTIC_WIRE_TRANSFER', 'SWIFT', 'OTHER_GIFT_CARD',
+    ]);
   });
 
   it('every profile id exists in the catalog, with a landsIn that never names the method', () => {
@@ -38,17 +42,57 @@ describe('method profiles', () => {
     expect(zelle.landsIn).toBe("your bank account, checked in your bank's app");
     expect(zelle.confirmWindowMin).toBe(120);
     expect(zelle.arrival).toBe('instant');
-    for (const id of ['ACH_TRANSFER', 'SEPA']) expect(getProfile(id)!.confirmWindowMin).toBe(1440);
     for (const p of PROFILES) {
-      if (p.arrival === 'instant') expect(p.confirmWindowMin, p.id).toBe(120);
       expect(p.confirmWindowMin, p.id).toBeGreaterThanOrEqual(120);
-      expect(p.confirmWindowMin, p.id).toBeLessThanOrEqual(1440);
+      expect(p.confirmWindowMin, p.id).toBeLessThanOrEqual(5760);
+      expect(p.buyerDisputeWaitMin, p.id).toBeLessThanOrEqual(p.confirmWindowMin);
     }
+  });
+
+  it("each payment type's seller confirm window and buyer dispute wait (owner 2026-11-07 F9 on research F1)", () => {
+    const H = 60;
+    const D = 24 * H;
+    const table: Record<string, [confirm: number, wait: number]> = {
+      // Instant: 90 minutes before the buyer may dispute (owner F9, replacing the research's 30 min-1 h).
+      ZELLE: [120, 90], INTERAC_E_TRANSFER: [120, 90], SEPA_INSTANT: [120, 90], PAYPAL: [120, 90], CASH_APP: [120, 90],
+      VENMO: [120, 90], REVOLUT: [120, 90], PIX: [120, 90], UPI: [120, 90], OTHER_GIFT_CARD: [120, 90],
+      FASTER_PAYMENTS: [3 * H, 3 * H],
+      // Same or next day: 24 h.
+      SEPA: [D, D], DOMESTIC_WIRE_TRANSFER: [D, D], TRANSFERWISE: [D, D], CUSTOM: [D, D],
+      // Slow: ACH 48 h, SWIFT 72 h (research 48-72 h, the longer end), cash by mail 4 days.
+      ACH_TRANSFER: [2 * D, 2 * D], SWIFT: [3 * D, 3 * D], PAY_BY_MAIL: [4 * D, 4 * D],
+    };
+    expect(Object.keys(table).sort()).toEqual([...LAUNCH_PROFILE_IDS].sort());
+    for (const [id, [confirm, wait]] of Object.entries(table)) {
+      expect([getProfile(id)!.confirmWindowMin, getProfile(id)!.buyerDisputeWaitMin], id).toEqual([confirm, wait]);
+    }
+  });
+
+  it('the profile a trade uses: its own, else a gift card\'s for any gift card, else the Custom one', () => {
+    expect(tradeProfile('ZELLE').id).toBe('ZELLE');
+    expect(tradeProfile('SWIFT').id).toBe('SWIFT');
+    for (const id of ['AMAZON_GIFT_CARD', 'STEAM_GIFT_CARD', 'OTHER_GIFT_CARD']) expect(tradeProfile(id).id, id).toBe('OTHER_GIFT_CARD');
+    for (const id of ['SPEI', 'FPS', 'TRANSFERWISE_USD', 'NOPE']) expect(tradeProfile(id).id, id).toBe('CUSTOM');
+  });
+
+  it('refuses a profile whose timing is out of range (owner 2026-11-07 F9: up to 4 days, was 24 h)', () => {
+    const base = { id: 'ZELLE', whatItIs: 'x', landsIn: 'your bank account', checkPrompt: 'Check it.', arrival: 'instant', fields: [{ key: 'k', label: 'L', kind: 'text' }] };
+    const load = (p: Record<string, unknown>) => () => loadProfiles({ profiles: [{ ...base, ...p }] }, catalog());
+    expect(load({ confirmWindowMin: 5760, buyerDisputeWaitMin: 5760 })).not.toThrow();
+    expect(load({ confirmWindowMin: 120, buyerDisputeWaitMin: 1 })).not.toThrow();
+    for (const bad of [
+      { confirmWindowMin: 5761, buyerDisputeWaitMin: 90 },
+      { confirmWindowMin: 119, buyerDisputeWaitMin: 90 },
+      { confirmWindowMin: 120 }, // no wait
+      { confirmWindowMin: 120, buyerDisputeWaitMin: 0 },
+      { confirmWindowMin: 120, buyerDisputeWaitMin: 90.5 },
+      { confirmWindowMin: 120, buyerDisputeWaitMin: 121 }, // past the seller's window
+    ]) expect(load(bad), JSON.stringify(bad)).toThrow(/confirmWindowMin|buyerDisputeWaitMin/);
   });
 
   it('has no profile for an unknown method', () => {
     expect(getProfile('NOPE')).toBeNull();
-    expect(getProfile('VENMO')).toBeNull(); // in the catalog, but no profile yet
+    expect(getProfile('SPEI')).toBeNull(); // in the catalog, but no profile of its own (the Custom one at take)
     expect(getMethod('NOPE')).toBeNull();
   });
 
