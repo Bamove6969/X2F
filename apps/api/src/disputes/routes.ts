@@ -11,6 +11,7 @@ import { applyEvent, noPublish, rowToTrade, type TradePublisher, type TradeRow }
 import { tradeFor } from '../trades/routes.js';
 import { roleOf } from '../trades/view.js';
 import { NEXT_SEQ } from './store.js';
+import { refuseHeldTradeEvent } from '../trades/held.js';
 
 /**
  * Trader-side disputes (Plan 3 Task 27; spec 2.3, 6.6). Plan 3 opens disputes and takes appeals;
@@ -223,6 +224,9 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     try {
       await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, { type: 'open-dispute' }, side, async (client, prev, _next, now) => {
         if (prev.dispute !== null) throw new ApiError(409, 'dispute-exists');
+        // A held trade: the held account's own sessions are refused (403 recovery-hold); the
+        // partner may open one (owner G7; lead hold v3 review item 5 and minor).
+        await refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute');
         await client.query(
           `insert into disputes (code, seq, opened_by, reason, note, opened_at, after_refund) values ($1, ${NEXT_SEQ}, $2, $3, $4, $5, $6)`,
           [row.code, side, reason, note, now, prev.state === 'refunded'],
@@ -256,6 +260,8 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
         'select seq, status from disputes where code = $1 order by seq desc limit 1 for update',
         [row.code],
       )).rows[0];
+      // A held trade's own account may not appeal while held (lead hold v3 review, minor).
+      await refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute');
       // Only a published first-round ruling can be appealed (never an open, appealed, final or closed case).
       if (!d || d.status !== 'ruled') throw new ApiError(409, 'wrong-state');
       const now = deps.clock();

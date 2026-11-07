@@ -436,10 +436,13 @@ describe("the seller's walk-away and fund-started (Revision 2026-10-29b)", () =>
     expect(rule(() => apply(funding(), { type: 'fund-started' }, 'buyer', at(2)))).toBe('wrong-party');
   });
 
-  test('fund-started is recorded during maintenance; walk-away is not', () => {
+  test('fund-started is recorded while paused; so is the walk-away before funding (lead hold v3 review item 5)', () => {
     const p = apply(funding(), { type: 'pause' }, 'system', at(2));
     expect(apply(p, { type: 'fund-started' }, 'seller', at(3)).fundStartedAt).toEqual(at(3));
-    expect(rule(() => apply(p, { type: 'walk-away' }, 'seller', at(3)))).toBe('wrong-state');
+    expect(apply(p, { type: 'walk-away' }, 'seller', at(3)).state).toBe('cancelled');
+    // After "Fund escrow" the walk-away is gone, paused or not.
+    const tapped = apply(p, { type: 'fund-started' }, 'seller', at(3));
+    expect(rule(() => apply(tapped, { type: 'walk-away' }, 'seller', at(4)))).toBe('wrong-state');
   });
 
   test('new trades start with no fund tap', () => {
@@ -947,10 +950,10 @@ describe('pause and resume (P3-I19)', () => {
     expect(apply(sec, { type: 'resume' }, 'system', at(50)).payBy).toEqual(at(140));
   });
 
-  test('while paused, client events other than mark-paid and buyer-cancel are refused', () => {
+  test('while paused, client events other than mark-paid, buyer-cancel, fund-started, walk-away and open-dispute are refused', () => {
     const p = apply(secured(), { type: 'pause' }, 'system', at(130)); // payBy 120 passed
     for (const type of CLIENT_EVENTS) {
-      if (type === 'mark-paid' || type === 'buyer-cancel' || type === 'fund-started') continue;
+      if (['mark-paid', 'buyer-cancel', 'fund-started', 'walk-away', 'open-dispute'].includes(type)) continue;
       for (const by of ['buyer', 'seller'] as const) {
         const code = rule(() => apply(p, sampleEvent[type], by, at(131)));
         expect(code === 'wrong-state' || code === 'wrong-party').toBe(true);
@@ -959,7 +962,8 @@ describe('pause and resume (P3-I19)', () => {
     expect(rule(() => apply(p, { type: 'request-refund' }, 'seller', at(131)))).toBe('wrong-state');
     expect(rule(() => apply(p, { type: 'extend' }, 'seller', at(131)))).toBe('wrong-state');
     expect(rule(() => apply(p, { type: 'release-started' }, 'seller', at(131)))).toBe('wrong-state');
-    expect(rule(() => apply(p, { type: 'open-dispute' }, 'buyer', at(131)))).toBe('wrong-state');
+    // Owner G7 (lead hold v3 review item 5): a paused trade's parties still reach a moderator.
+    expect(apply(p, { type: 'open-dispute' }, 'buyer', at(131)).state).toBe('disputed');
     expect(rule(() => apply(p, { type: 'propose-cancel' }, 'buyer', at(131)))).toBe('wrong-state');
     expect(apply(p, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(131)).state).toBe('paid');
     expect(apply(p, { type: 'buyer-cancel' }, 'buyer', at(131)).state).toBe('settling');

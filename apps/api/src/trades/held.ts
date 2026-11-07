@@ -11,7 +11,7 @@
  *   `recovery-hold`), and the partner may post only the ways out (`PARTNER_EXITS`; else 409
  *   `counterparty-unavailable`). The partner's view carries `counterpartyProblem: true` and nothing
  *   else: the partner is told "<name>'s account has a temporary problem", never hold, security or
- *   vendor. Chat and opening a dispute stay open (the moderator decides a paused trade).
+ *   vendor. Chat and opening a dispute stay open (the moderator decides a paused trade; owner G7).
  * - When the hold ends (by time, the owner's pre-existing method or a moderator) the rows are
  *   released in that transaction (`releaseHeldTrades`); the sync then deletes them, and when a
  *   trade's last row goes it resumes the trade if it is paused (only holds and maintenance pause a
@@ -33,8 +33,12 @@ import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
 import { applyEvent, noPublish, type TradePublisher } from './store.js';
 
-/** The partner's events allowed on a held trade: only leaving it (the machine decides whether it may). */
-export const PARTNER_EXITS: readonly string[] = ['buyer-cancel', 'walk-away'];
+/**
+ * The partner's events allowed on a held trade: leaving it, and opening a dispute (owner G7: the
+ * partner still reaches a moderator; no money moves until the moderator decides). The machine
+ * decides whether each may.
+ */
+export const PARTNER_EXITS: readonly string[] = ['buyer-cancel', 'walk-away', 'open-dispute'];
 
 /** Inside the recovery-code login's transaction (account locked): one row per open trade of the account. */
 export async function holdTrades(db: Queryable, accountId: string, now: Date): Promise<void> {

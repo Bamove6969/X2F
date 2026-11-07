@@ -573,6 +573,24 @@ describe('a recovery-code login', () => {
     expect((await deps.db.query('select 1 from held_trades where code = $1', [s.code])).rowCount).toBe(0);
   });
 
+  it('owner G7, lead review item 5: on a paused held trade the partner opens a dispute; the held account cannot', async () => {
+    const t = await ownerWithCode();
+    const partner = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: partner.id, buyerId: t.id, poster: 'seller' });
+    const s = await driveTo(deps, trade, 'secured');
+    const rec = new Browser(app);
+    expect((await backupLogin(rec, t.name, t.code)).statusCode).toBe(200);
+    expect((await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code])).rows[0]!.p).not.toBeNull();
+    const body = { reason: 'silent', note: 'The buyer went quiet.' };
+    expect(errorOf(await rec.post(`/v1/trades/${s.code}/dispute`, body))).toBe('recovery-hold');
+    const opened = await partner.browser.post(`/v1/trades/${s.code}/dispute`, body);
+    expect(opened.statusCode).toBe(200);
+    const row = await deps.db.query<{ state: string; p: Date | null }>('select state, paused_at as p from trades where code = $1', [s.code]);
+    // Still paused: no money moves until a moderator decides.
+    expect(row.rows[0]!.state).toBe('disputed');
+    expect(row.rows[0]!.p).not.toBeNull();
+  });
+
   it("the held account's own recovery session cannot move its held trades either", async () => {
     const t = await ownerWithCode();
     const partner = await trader();

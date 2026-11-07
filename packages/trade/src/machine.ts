@@ -182,10 +182,13 @@ const SETTLED_FROM: readonly TradeState[] = ['funding', 'securing', 'secured', '
 /** States in which extra XMR grows the trade: before "I've paid" and before any refund or settlement starts. */
 const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 /**
- * Client events still accepted during maintenance: the buyer's own payment and cancel, and the
- * seller's "Fund escrow" record (it only takes the seller's walk-away away; their wallet opens anyway).
+ * Client events still accepted while a trade is paused (maintenance, or a party's account hold):
+ * the buyer's own payment and cancel, the seller's "Fund escrow" record (it only takes the seller's
+ * walk-away away; their wallet opens anyway), the seller's walk-away before funding (nothing has
+ * moved), and opening a dispute (owner G7, 7 Nov: a paused trade's parties still reach a moderator;
+ * no money moves until the moderator decides; lead hold v3 review item 5).
  */
-const WHILE_PAUSED: readonly string[] = ['mark-paid', 'buyer-cancel', 'fund-started'];
+const WHILE_PAUSED: readonly string[] = ['mark-paid', 'buyer-cancel', 'fund-started', 'walk-away', 'open-dispute'];
 /** The longest seller confirm window (wires, 24 h). */
 const MAX_CONFIRM_WINDOW_MIN = 1440;
 
@@ -451,7 +454,7 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
     if (by !== 'system') return fail('wrong-party');
   } else if (CLIENT.has(e.type)) {
     if (by === 'system') return fail('wrong-party');
-    // Maintenance: only the buyer's own payment and cancel go through.
+    // Paused (maintenance or a hold): only WHILE_PAUSED goes through.
     if (t.pausedAt !== null && !WHILE_PAUSED.includes(e.type)) return fail('wrong-state');
   } else {
     throw new RangeError('unknown event');
