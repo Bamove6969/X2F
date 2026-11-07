@@ -17,6 +17,7 @@ import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { formatXmr } from '@x2f/trade';
 import { sendNudge } from '../../nudge/useNudge.js';
+import { Xmr } from '../../ui/Amount.js';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, NUDGE_TOO_SOON, NUDGE_TOO_SOON_CODE } from '../../ui/cantDoCodes.js';
@@ -105,7 +106,7 @@ export function PaidWaitingBody({
   const win = confirmWindow(view, clock().getTime());
   const ended = win?.ended ?? false;
   const length = win === null || win.lengthMs === 0 ? null : windowWords(win.lengthMs);
-  const xmr = `${formatXmr(BigInt(view.amountAtomic))} XMR`;
+  const xmr = <Xmr value={formatXmr(BigInt(view.amountAtomic))} />;
 
   const status = (
     <section role="status" aria-labelledby="paid-title" className="x2f-panel" data-part="paid-status">
@@ -195,7 +196,7 @@ export function PaidWaitingBody({
         </li>
         <li>
           {/* COPY-UNSIGNED: design's wording (7 Nov), owner still to sign. The co-sign runs in the open page (Released.tsx). */}
-          When they release, <span className="x2f-when">{xmr}</span> goes to your wallet once your app co-signs. Keep this page open until it arrives.
+          When they release, {xmr} goes to your wallet once your app co-signs. Keep this page open until it arrives.
         </li>
         <li>
           {win !== null ? (

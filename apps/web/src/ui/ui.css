@@ -231,6 +231,17 @@
   color: var(--x2f-ink-muted);
 }
 
+/* An XMR amount in a sentence or a row (ui/Amount.tsx Xmr; standard 7): mono digits, the unit 600 in monero-ink. */
+.x2f-xmr {
+  white-space: nowrap;
+}
+
+.x2f-xmr__unit {
+  font-family: var(--x2f-font-sans);
+  font-weight: 600;
+  color: var(--x2f-monero-ink);
+}
+
 /* Links that leave X2F. */
 .x2f-link {
   color: var(--x2f-monero-ink);

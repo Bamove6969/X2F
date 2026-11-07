@@ -67,6 +67,7 @@ const ORANGE_ALLOWED = [
   'screens/dispute/dispute.css .dispute-retry',
   // The XMR unit label (tokens.json monero-ink usage; BuyQuote board).
   'ui/ui.css .x2f-amount__unit',
+  'ui/ui.css .x2f-xmr__unit',
   'screens/quote/quote.css .x2f-quote__xmr-unit',
   // Owned elsewhere (see OWNED_ELSEWHERE): the dispute radio's focus ring.
   'screens/dispute/dispute.css .dispute-reason input:focus-visible',

@@ -780,6 +780,11 @@ describe('review minors 1, 5 and 7', () => {
     const next = document.querySelector('[data-part="paid-next"]')!.textContent ?? '';
     expect(next).toContain('When they release, 1.250000 XMR goes to your wallet once your app co-signs. Keep this page open until it arrives.');
     expect(next).not.toContain('by itself');
+    // Standard 7 (design review P1-6): the digits in mono, the unit apart at 600 in monero-ink.
+    const amount = document.querySelector('[data-part="paid-next"] .x2f-xmr')!;
+    expect(amount.querySelector('.x2f-num')?.textContent).toBe('1.250000');
+    expect(amount.querySelector('.x2f-xmr__unit')?.textContent).toBe('XMR');
+    expect(amount.closest('.x2f-when')).toBeNull();
   });
 
   // Owner Q10 (6 Nov 2026): the clock pauses in maintenance. Lead review m2.

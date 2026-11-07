@@ -214,6 +214,9 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     const keys = facts.map(([k]) => k);
     expect(keys.slice(-2)).toEqual(['Trade amount', 'X2F fee']);
     expect(facts.at(-2)![1]).toBe('1.250000 XMR · $412.50');
+    // Standard 7 (design review P1-6): mono digits, the unit apart; the dispute card's number is mono in ink.
+    expect(host.querySelector('[data-part="refunded-facts"] .x2f-xmr__unit')?.textContent).toBe('XMR');
+    expect(host.querySelector('[data-part="refunded-dispute"] .x2f-xmr .x2f-num[data-ink="true"]')?.textContent).toBe('1.250000');
     expect(facts.at(-1)![1]).toBe('None');
     expect(keys).toContain(`Refund sent to ${S}`);
     expect(host.querySelector('#refunded-what')?.textContent).toMatch(/^What happened · \d+ \w{3} \d{4}$/);

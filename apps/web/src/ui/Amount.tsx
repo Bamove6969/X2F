@@ -20,3 +20,21 @@ export function Amount({ xmr, fiat }: { xmr: string; fiat?: string }) {
     </span>
   );
 }
+
+/**
+ * An XMR amount inside a sentence or a row (standard 7; BuyerPaidWaiting and Refunded boards): the
+ * digits in mono, the "XMR" unit at 600 in monero-ink. `ink` keeps the digits in ink inside a muted
+ * line. The text reads "1.250000 XMR".
+ */
+export function Xmr({ value, ink }: { value: string; ink?: boolean }) {
+  return (
+    <span className="x2f-xmr">
+      <span className="x2f-num" data-ink={ink ? 'true' : undefined}>
+        {value}
+      </span>{' '}
+      <span data-part="unit" className="x2f-xmr__unit">
+        XMR
+      </span>
+    </span>
+  );
+}

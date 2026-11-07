@@ -17,6 +17,7 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { formatFiat, formatXmr, TIMERS } from '@x2f/trade';
 import { methodOf, type TradeView } from '../../api/trade.js';
+import { Xmr } from '../../ui/Amount.js';
 import { formatDate } from '../../ui/dates.js';
 import { Facts, type Fact } from '../../ui/Facts.js';
 import { Icon } from '../../ui/icons.js';
@@ -143,7 +144,11 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
     ...timeline.map((r) => ({ key: r.key, label: r.label, value: <When at={r.at} form={oneDay !== null ? 'time' : 'date-time'} /> })),
     {
       key: 'Trade amount',
-      value: `${formatXmr(BigInt(view.amountAtomic))} XMR · ${formatFiat(BigInt(view.fiatCents), view.lockedRate.currency)}`,
+      value: (
+        <>
+          <Xmr value={formatXmr(BigInt(view.amountAtomic))} /> · {formatFiat(BigInt(view.fiatCents), view.lockedRate.currency)}
+        </>
+      ),
       rule: timeline.length > 0,
     },
     // The design session's row (2 Nov; was "Charged to you: Nothing"): a refund never carries X2F's fee. COPY-UNSIGNED
@@ -186,7 +191,7 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
               {/* COPY-UNSIGNED: design's wording (7 Nov), owner still to sign (lead review 2026-11-06 m3). */}
               Open a dispute and add your payment proof. If the money reached <span data-username="">{name}</span>, a moderator can rule that they owe you the{' '}
               {/* not-a-refusal: explains what a ruling means for the other trader; nothing is refused to this user */}
-              {formatXmr(BigInt(view.amountAtomic))} XMR. Until they pay it back, they can't trade.
+              <Xmr value={formatXmr(BigInt(view.amountAtomic))} ink />. Until they pay it back, they can't trade.
             </p>
             {Number.isFinite(closed) ? (
               <p className="x2f-fine" data-dispute-window="">
