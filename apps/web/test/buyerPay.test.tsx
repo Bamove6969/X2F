@@ -745,7 +745,7 @@ describe('review minors 1, 5 and 7', () => {
     expect(document.querySelector('[data-grown]')).toBeNull();
   });
 
-  it("in paid, Open a dispute waits for the later of I've paid + 30 min (owner 2 Nov) and the server's confirmBy, then opens", () => {
+  it("in paid, Open a dispute waits for the later of I've paid + 60 min (owner Q10, 6 Nov) and the server's confirmBy, then opens", () => {
     const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     const waiting = document.querySelector<HTMLButtonElement>('[data-part="paid-dispute"]')!;
     expect(waiting.tagName).toBe('BUTTON');
@@ -761,16 +761,43 @@ describe('review minors 1, 5 and 7', () => {
     expect(document.querySelector('[data-part="paid-status"] h1')?.textContent).toBe("satoshi_ghost hasn't confirmed in time");
   });
 
-  it('disputeOpensAt: 30 min after I\'ve paid, never before the server allows it, and not at all without confirmBy (review M5)', () => {
+  it('disputeOpensAt: 60 min after I\'ve paid (owner Q10), never before the server allows it, and not at all without confirmBy (review M5)', () => {
     const t = (min: number) => new Date(Date.UTC(2026, 10, 6, 15, 0) + min * 60_000).toISOString();
     // The server's confirmBy is later: it wins.
     expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(120) })).toBe(Date.parse(t(120)));
-    // A server window shorter than 30 min: paid + 30 min.
-    expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(10) })).toBe(Date.parse(t(30)));
+    // A server window shorter than 60 min: paid + 60 min.
+    expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(10) })).toBe(Date.parse(t(60)));
+    expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(45) })).toBe(Date.parse(t(60)));
     // No confirmBy: the server refuses (too-early), so nothing is offered.
     expect(disputeOpensAt({ paidAt: t(0), confirmBy: null })).toBeNull();
     expect(disputeOpensAt({ paidAt: null, confirmBy: null })).toBeNull();
     expect(disputeOpensAt({ paidAt: null, confirmBy: t(5) })).toBe(Date.parse(t(5)));
+  });
+
+  // Lead review 2026-11-06 I1: the co-sign runs in the open page (Released.tsx), not by itself.
+  it('What happens next says the XMR goes to the wallet once the app co-signs, and to keep the page open', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const next = document.querySelector('[data-part="paid-next"]')!.textContent ?? '';
+    expect(next).toContain('When they release, 1.250000 XMR goes to your wallet once your app co-signs. Keep this page open.');
+    expect(next).not.toContain('by itself');
+  });
+
+  // Owner Q10 (6 Nov 2026): the clock pauses in maintenance. Lead review m2.
+  it('paused for maintenance: the confirm timer and the dispute wait stop at the pause and say why', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-40), confirmBy: at(80), pausedAt: at(-30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    // 110 min were left at the pause (80 now + the 30 paused), not 80.
+    expect(document.querySelector('[data-part="confirm-timer"] [role="timer"]')?.textContent).toBe('1 h 50 min');
+    expect(document.querySelector('[data-part="confirm-timer"]')!.textContent).toContain('Trading is paused for maintenance.');
+    const waiting = document.querySelector<HTMLButtonElement>('[data-part="paid-dispute"]')!;
+    expect(waiting.tagName).toBe('BUTTON');
+    const when = document.getElementById(waiting.getAttribute('aria-describedby')!)!.textContent ?? '';
+    expect(when).toMatch(/^Available after the maintenance, in 1 h 50 min\.$/);
+  });
+
+  // Lead review m4: the tabletop glance shows the confirm timer, so the screen's copy hides there.
+  it('the confirm timer is marked for the tabletop glance', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(document.querySelector('[data-part="confirm-timer"]')?.getAttribute('data-fold-glance')).toBe('timer');
   });
 
   it("the wide seller room's Chat goes to the chat beside it, never a second chat panel", async () => {

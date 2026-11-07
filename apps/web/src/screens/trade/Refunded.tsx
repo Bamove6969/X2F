@@ -183,7 +183,8 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
               {story.disputeTitle}
             </h2>
             <p className="x2f-fine">
-              Open a dispute and add your payment proof. If the money reached <span data-username="">{name}</span>, a moderator makes them send you the{' '}
+              {/* COPY-UNSIGNED (lead review 2026-11-06 m3: "makes them send" over-promised; design rewords) */}
+              Open a dispute and add your payment proof. If the money reached <span data-username="">{name}</span>, a moderator can rule that they send you the{' '}
               {formatXmr(BigInt(view.amountAtomic))} XMR as agreed.
             </p>
             {Number.isFinite(closed) ? (

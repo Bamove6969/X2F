@@ -18,6 +18,7 @@ export function TimerCard({
   ringLabel,
   tone,
   part,
+  glance,
 }: {
   label: string;
   value: ReactNode;
@@ -27,10 +28,12 @@ export function TimerCard({
   ringLabel: string;
   tone: 'caution' | 'escrow' | 'muted';
   part?: string;
+  /** `data-fold-glance`: the tabletop glance shows this timer, so the screen's copy hides there (styles/fold.css). */
+  glance?: 'timer';
 }) {
   const share = total > 0 ? Math.min(Math.max(left, 0), total) / total : 0;
   return (
-    <section aria-label={label} className="x2f-timer" data-tone={tone} data-part={part}>
+    <section aria-label={label} className="x2f-timer" data-tone={tone} data-part={part} data-fold-glance={glance}>
       <div className="x2f-timer__text">
         <span className="x2f-timer__label">{label}</span>
         <span className="x2f-timer__value">{value}</span>

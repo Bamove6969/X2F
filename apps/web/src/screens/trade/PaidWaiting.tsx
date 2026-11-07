@@ -4,9 +4,9 @@
  * trade is paid and the seller is checking, the timer shows the seller's confirm window, "What
  * happens next" says what each side does, and the payment's details fold away under "Your
  * payment". The footer has Nudge (the API's nudge on an open trade, spec 2.4), Open a dispute
- * (disabled with "Available from … in …" until `disputeOpensAt`: 30 min after I've paid, owner
- * 2 Nov, but never before the server allows it), and the reminder that a paid trade can't be
- * cancelled.
+ * (disabled with "Available from … in …" until `disputeOpensAt`: 60 min after I've paid, owner
+ * Q10 6 Nov, but never before the server allows it), and the reminder that a paid trade can't be
+ * cancelled. While trading is paused for maintenance both clocks stop at the pause (owner Q10).
  *
  * Once the window ends without a release the status turns to "hasn't confirmed in time" (the
  * board's window=ended). BuyerPay.tsx keeps the
@@ -44,16 +44,26 @@ export function confirmWindow(view: Pick<TradeView, 'paidAt' | 'confirmBy'>, now
   return { ends, lengthMs, leftMs, ended: leftMs === 0 };
 }
 
-/** The owner's rule (2 Nov): the buyer may open a dispute 30 minutes after tapping I've paid. */
-export const DISPUTE_AFTER_PAID_MS = 30 * MIN_MS;
+/** The owner's rule (Q10, 6 Nov 2026; was 30 min on 2 Nov): the buyer may open a dispute 60 minutes after tapping I've paid. */
+export const DISPUTE_AFTER_PAID_MS = 60 * MIN_MS;
 
 /**
- * When the buyer's Open a dispute becomes available in `paid`: 30 minutes after I've paid (the
- * owner's rule, 2 Nov), but never before the server allows it. Today the state machine refuses the
- * buyer's dispute until confirmBy, and while confirmBy is unknown (machine.ts `too-early`), so the
- * time is the later of the two, and null (not offered at all) without confirmBy (review M5). When
- * the API allows it 30 min after paid (claude2's change), the client still follows what the
- * server's view says.
+ * The clock the paid room counts with: the server's, stopped at `pausedAt` while trading is paused
+ * for maintenance (owner Q10: the clock pauses then; lead review 2026-11-06 m2).
+ */
+export function roomClock(view: Pick<TradeView, 'pausedAt'>, serverClock: () => Date): { clock: () => Date; paused: boolean } {
+  const at = view.pausedAt === null ? NaN : Date.parse(view.pausedAt);
+  if (!Number.isFinite(at)) return { clock: serverClock, paused: false };
+  return { clock: () => new Date(Math.min(at, serverClock().getTime())), paused: true };
+}
+
+/**
+ * When the buyer's Open a dispute becomes available in `paid`: 60 minutes after I've paid (owner
+ * Q10), but never before the server allows it. The state machine refuses the buyer's dispute until
+ * confirmBy, and while confirmBy is unknown (machine.ts `too-early`), so the time is the later of
+ * paid + 60 min and confirmBy, and null (not offered at all) without confirmBy (review M5). The view
+ * carries no dispute time of its own, so this is the client's own reckoning: it can never offer
+ * the dispute before confirmBy, but a server rule that opens it later than both is not seen here.
  */
 export function disputeOpensAt(view: Pick<TradeView, 'paidAt' | 'confirmBy'>): number | null {
   const server = view.confirmBy === null ? NaN : Date.parse(view.confirmBy);
@@ -86,7 +96,8 @@ export function PaidWaitingBody({
   wide: boolean;
 }) {
   const details = usePaymentDetails(view.code);
-  const win = confirmWindow(view, serverClock().getTime());
+  const { clock, paused } = roomClock(view, serverClock);
+  const win = confirmWindow(view, clock().getTime());
   const ended = win?.ended ?? false;
   const length = win === null || win.lengthMs === 0 ? null : windowWords(win.lengthMs);
   const xmr = `${formatXmr(BigInt(view.amountAtomic))} XMR`;
@@ -152,11 +163,17 @@ export function PaidWaitingBody({
               ? `${Math.ceil(win.leftMs / MIN_MS)} of ${Math.round(win.lengthMs / MIN_MS)} minutes left to confirm`
               : `${Math.ceil(win.leftMs / MIN_MS)} minutes left to confirm`
         }
-        value={ended ? <Duration ms={0} /> : <Countdown deadline={new Date(win.ends)} serverClock={serverClock} format="minutes" />}
+        glance="timer"
+        value={ended ? <Duration ms={0} /> : <Countdown deadline={new Date(win.ends)} serverClock={clock} format="minutes" />}
         hint={
-          <>
-            {length !== null ? `${method.name} gets ${length} · ` : ''}ends <When at={win.ends} />
-          </>
+          paused ? (
+            // The end moves later by the pause, so no clock time is shown while paused.
+            'Trading is paused for maintenance.'
+          ) : (
+            <>
+              {length !== null ? `${method.name} gets ${length} · ` : ''}ends <When at={win.ends} />
+            </>
+          )
         }
       />
     );
@@ -172,7 +189,8 @@ export function PaidWaitingBody({
           <span className="x2f-when">{view.code}</span>.
         </li>
         <li>
-          When they release, <span className="x2f-when">{xmr}</span> reaches your wallet within seconds. Your app co-signs by itself.
+          {/* COPY-UNSIGNED (lead review 2026-11-06 I1; design confirms): the co-sign runs in the open page (Released.tsx). */}
+          When they release, <span className="x2f-when">{xmr}</span> goes to your wallet once your app co-signs. Keep this page open.
         </li>
         <li>
           {win !== null ? (
@@ -244,7 +262,8 @@ export function PaidWaitingBody({
 /** The footer: Nudge, the dispute (waiting or open), and the no-cancel line. */
 export function PaidWaitingActions({ view, serverClock }: { view: TradeView; serverClock: () => Date }) {
   const name = publicName(view.counterparty);
-  const now = serverClock().getTime();
+  const { clock, paused } = roomClock(view, serverClock);
+  const now = clock().getTime();
   const opensAt = disputeOpensAt(view);
   const [nudge, setNudge] = useState<'sent' | 'failed' | 'gone' | null>(null);
   const [nudgeLimit, setNudgeLimit] = useState(false);
@@ -301,7 +320,9 @@ export function PaidWaitingActions({ view, serverClock }: { view: TradeView; ser
           </Button>
           {opensAt !== null ? (
             <p id="paid-dispute-when" className="x2f-footnote">
-              Available from <When at={opensAt} />, in <Countdown deadline={new Date(opensAt)} serverClock={serverClock} format="minutes" />.
+              {/* COPY-UNSIGNED "after the maintenance" (owner Q10; design words it) */}
+              {paused ? 'Available after the maintenance, in ' : <>Available from <When at={opensAt} />, in </>}
+              <Countdown deadline={new Date(opensAt)} serverClock={clock} format="minutes" />.
             </p>
           ) : null}
         </>
