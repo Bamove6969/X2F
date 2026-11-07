@@ -1,4 +1,3 @@
-import { usdRate } from '../traders/tradedTotal.js';
 import { MAX_MARGIN_BPS, offerRate, type Pricing, type Side } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
@@ -16,6 +15,7 @@ import { blockedEitherWaySql } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
 import { hasPendingReview, pendingReviewSql } from '../reviews/gate.js';
 import { lastSeenSql, onlineSince, traderSummaries, type TraderSummary } from '../traders/summary.js';
+import { usdRate } from '../traders/tradedTotal.js';
 import { usableWallets } from '../wallets/routes.js';
 
 /**

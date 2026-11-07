@@ -1,10 +1,10 @@
-import { tradedBucketUsd, tradedBucketXmr } from '@x2f/reputation';
+import { tradedBucketXmr } from '@x2f/reputation';
 import type { Deps } from '../app.js';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
-import { verifiedPastRepBySite, verifiedPastRepUsdSql, type VerifiedSiteVolume } from '../pastrep/store.js';
+import { verifiedPastRepBySite, type VerifiedSiteVolume } from '../pastrep/store.js';
 
 /**
  * C12b (owner 2026-11-01/02, via the lead): the per-account running totals of 308_traded_totals.sql.
@@ -17,13 +17,13 @@ import { verifiedPastRepBySite, verifiedPastRepUsdSql, type VerifiedSiteVolume }
  * review or a Skip review changes neither. The totals have no link to trades, so they survive the
  * 30-day purge. SEAM for Plan 5 Task 20's `account_totals`.
  *
- * The public bucket is `tradedBucketUsd(own_usd_cents + verifiedPastRepUsdCents)`: the account's own
- * counted total plus the volume proven on other sites, ONLY through the dollar figure a moderator
- * verified on an APPROVED past-reputation claim (owner 2026-11-02, lead 07:48; migration 310,
- * `pastrep/store.ts`). An unverified (null), not-yet-approved (`signed`) or dead (rejected, removed,
- * revoked) claim adds nothing,
- * and is read live, so a revoked claim stops counting at once. With no trades of its own, verified
- * imported volume alone counts (OWNER-Q: the owner said the line includes it; plan default).
+ * The dollar total (`own_usd_cents`) is for moderators only, never public (owner Q63, 6 Nov). The
+ * public line is in XMR: `tradedBucketXmr(own_xmr_atomic)` (migration 312), the account's own trades
+ * only. Imported volume never joins it: it shows as separate per-site lines (owner Q64 + F17), from
+ * the dollar figure a moderator verified on an APPROVED past-reputation claim (migration 310,
+ * `pastrep/store.ts`) converted at the current XMR/USD price. An unverified (null), not-yet-approved
+ * (`signed`) or dead (rejected, removed, revoked) claim adds no line, and is read live, so a revoked
+ * claim stops showing at once.
  */
 export async function countTradeTotals(q: Queryable, code: string): Promise<void> {
   // Completed: add the value to both sides, once.
@@ -55,18 +55,6 @@ export async function countTradeTotals(q: Queryable, code: string): Promise<void
      on conflict (account_id) do update set buyer_cancels = account_traded_totals.buyer_cancels + 1`,
     [code],
   );
-}
-
-/**
- * SQL (bigint): the account `account`'s total for the public bucket: its own counted total (0 with no
- * row) plus `verifiedPastRepUsdCents` (as `verifiedPastRepUsdSql`, the same sum in one query).
- */
-export const tradedTotalSql = (account: string): string =>
-  `(coalesce((select tt.own_usd_cents from account_traded_totals tt where tt.account_id = ${account}), 0) + ${verifiedPastRepUsdSql(account)})`;
-
-/** The public bucket in whole dollars, or null: opted out, or below $10,000. Never the exact total. */
-export function tradedOverUsd(show: boolean, totalUsdCents: string | bigint): number | null {
-  return show ? tradedBucketUsd(BigInt(totalUsdCents)) : null;
 }
 
 /**

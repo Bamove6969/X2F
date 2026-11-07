@@ -11,14 +11,14 @@
  *   or `approved`), checked inside the one UPDATE, so a claim revoked meanwhile is never given a
  *   figure. `null` clears the figure. The table's trigger refuses a figure from any account that is
  *   not enabled staff or the owner as well (roles are not in the database on this branch).
- * - `verifiedPastRepUsdCents` is what the traded total ("$X+ in trades to date") may add: the sum of the
- *   account's APPROVED claims with a figure (owner 2026-11-02: a moderator may enter the figure on a
- *   `signed` claim before approving it, but it counts nothing until the claim is approved). An
- *   unverified (null), not-yet-approved or dead claim adds nothing; read at query time, so a claim
- *   revoked or a figure cleared stops counting at once.
- *   `verifiedPastRepUsdSql` is the same sum as an SQL fragment, so the traded total
- *   (`traders/tradedTotal.ts` `tradedTotalSql`) adds it for many accounts in one query; the column
- *   name stays in this file only.
+ * - `verifiedPastRepUsdCents` is the sum of the account's APPROVED claims with a figure (owner
+ *   2026-11-02: a moderator may enter the figure on a `signed` claim before approving it, but it
+ *   counts nothing until the claim is approved). An unverified (null), not-yet-approved or dead claim
+ *   adds nothing; read at query time, so a claim revoked or a figure cleared stops counting at once.
+ *   `verifiedPastRepUsdSql` is the same sum as an SQL fragment; the column name stays in this file
+ *   only. No dollar figure is public (owner Q63, 6 Nov): the public traded line is in XMR and never
+ *   includes imported volume, which shows per site (`verifiedPastRepBySite`, owner Q64 + F17,
+ *   converted to XMR in `traders/tradedTotal.ts` `importedLines`).
  */
 import type { StaffRole } from '@x2f/staff';
 import type { Queryable } from '../db/pool.js';

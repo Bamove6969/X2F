@@ -1,5 +1,6 @@
-// The opt-in "$X+ in trades to date" line (owner 2026-11-01/02, via the lead; C12b; exact words Design's).
-// The exact total never leaves the server: only this rounded-DOWN bucket, in whole US dollars.
+// The traded-to-date buckets (owner 2026-11-01/02, via the lead; C12b). Owner Q63 (6 Nov): the public
+// line is the XMR one below ("X+ XMR traded to date"); the dollar bucket is no longer public (the
+// dollar total is for moderators). The exact total never leaves the server: only a rounded-DOWN bucket.
 
 /**
  * The lowest step: a total of this many dollars or less shows nothing; MORE than it shows "$10,000+"

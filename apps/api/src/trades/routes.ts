@@ -1,4 +1,3 @@
-import { usdRate } from '../traders/tradedTotal.js';
 import { addressEnd } from '@x2f/accounts';
 import { normalizeTradeCode } from '@x2f/core';
 import { CLIENT_EVENTS, TradeRuleError, UNLOCK_CONFIRMATIONS, type Trade, type TradeEvent } from '@x2f/trade';
@@ -8,6 +7,7 @@ import { requireLiveSessionInTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
 import { assertLiveMember, auditMember, type AuditAction } from '../team/audit.js';
 import { assertMemberMaySend } from '../team/perms.js';
+import { usdRate } from '../traders/tradedTotal.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
