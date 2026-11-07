@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { assertNotDisabled } from '../src/auth/sessions.js';
-import { closeInactiveVendors, VENDOR_INACTIVE_MS } from '../src/vendorInactivity.js';
+import { closeDueVendors, closeInactiveVendors, VENDOR_CLOSE_CAP, VENDOR_INACTIVE_MS, VENDOR_REOPEN_MS, vendorInactivityJob } from '../src/vendorInactivity.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
@@ -90,10 +90,10 @@ describe('closeInactiveVendors (Q77)', () => {
 
   it('closes a vendor whose last login is 60 days old: disabled, closed (vendor-inactive), sessions revoked; not a moment before', async () => {
     const t = await vendor();
-    await closeInactiveVendors.run(deps.db, new Date(START.getTime() + VENDOR_INACTIVE_MS - 1));
+    await closeDueVendors(deps.db, new Date(START.getTime() + VENDOR_INACTIVE_MS - 1));
     expect((await row(t.id)).closed_at).toBeNull();
     const when = at(VENDOR_INACTIVE_MS);
-    expect(await closeInactiveVendors.run(deps.db, when)).toBeGreaterThanOrEqual(1);
+    expect(await closeDueVendors(deps.db, when)).toBeGreaterThanOrEqual(1);
     expect(await row(t.id)).toEqual({ last_login_at: START, disabled_at: when, closed_at: when, closed_reason: 'vendor-inactive' });
     expect(await liveSessions(t.id)).toBe(0);
   });
@@ -104,7 +104,7 @@ describe('closeInactiveVendors (Q77)', () => {
     await deps.db.query("update offers set status = 'live', method_id = 'ZELLE' where id = $1", [offerId]);
     const other = await trader();
     expect((await other.browser.get(`/v1/offers/${offerId}`)).statusCode).toBe(200);
-    await closeInactiveVendors.run(deps.db, at(VENDOR_INACTIVE_MS));
+    await closeDueVendors(deps.db, at(VENDOR_INACTIVE_MS));
     setNow(at(VENDOR_INACTIVE_MS + 1));
     // Every login finish runs assertNotDisabled before its session (the test login skips it).
     await expect(assertNotDisabled(deps.db, t.id)).rejects.toMatchObject({ status: 403, code: 'account-disabled' });
@@ -114,7 +114,7 @@ describe('closeInactiveVendors (Q77)', () => {
   it('never closes a trader account, however long since its last login', async () => {
     setNow(START);
     const t = await trader();
-    await closeInactiveVendors.run(deps.db, at(400 * DAY));
+    await closeDueVendors(deps.db, at(400 * DAY));
     expect((await row(t.id)).closed_at).toBeNull();
     expect((await row(t.id)).disabled_at).toBeNull();
   });
@@ -123,9 +123,9 @@ describe('closeInactiveVendors (Q77)', () => {
     const t = await vendor();
     setNow(at(50 * DAY));
     expect((await new Browser(app).post('/t/login', { accountId: t.id })).statusCode).toBe(200);
-    await closeInactiveVendors.run(deps.db, at(VENDOR_INACTIVE_MS));
+    await closeDueVendors(deps.db, at(VENDOR_INACTIVE_MS));
     expect((await row(t.id)).closed_at).toBeNull();
-    await closeInactiveVendors.run(deps.db, at(50 * DAY + VENDOR_INACTIVE_MS));
+    await closeDueVendors(deps.db, at(50 * DAY + VENDOR_INACTIVE_MS));
     expect((await row(t.id)).closed_reason).toBe('vendor-inactive');
   });
 
@@ -134,17 +134,55 @@ describe('closeInactiveVendors (Q77)', () => {
     setNow(START);
     const buyer = await trader();
     const { trade } = await seedTrade(deps, { sellerId: t.id, buyerId: buyer.id, poster: 'seller' });
-    await closeInactiveVendors.run(deps.db, at(VENDOR_INACTIVE_MS + DAY));
+    await closeDueVendors(deps.db, at(VENDOR_INACTIVE_MS + DAY));
     expect((await row(t.id)).closed_at).toBeNull();
     await deps.db.query("update trades set state = 'cancelled', closed_at = $2 where code = $1", [trade.code, at(VENDOR_INACTIVE_MS + DAY)]);
-    await closeInactiveVendors.run(deps.db, at(VENDOR_INACTIVE_MS + 2 * DAY));
+    // Lead vendor review item 3: a trade closed within 30 days could still reopen, so it still waits.
+    await closeDueVendors(deps.db, at(VENDOR_INACTIVE_MS + DAY + VENDOR_REOPEN_MS - 1));
+    expect((await row(t.id)).closed_at).toBeNull();
+    await closeDueVendors(deps.db, at(VENDOR_INACTIVE_MS + DAY + VENDOR_REOPEN_MS));
     expect((await row(t.id)).closed_reason).toBe('vendor-inactive');
   });
 
   it('leaves an account a moderator already disabled as it is (not marked closed)', async () => {
     const t = await vendor();
     await deps.db.query('update accounts set disabled_at = $2 where id = $1', [t.id, at(DAY)]);
-    await closeInactiveVendors.run(deps.db, at(VENDOR_INACTIVE_MS + DAY));
+    await closeDueVendors(deps.db, at(VENDOR_INACTIVE_MS + DAY));
     expect(await row(t.id)).toMatchObject({ disabled_at: at(DAY), closed_at: null, closed_reason: null });
+  });
+
+  it('lead vendor review item 4: the first pass after a start or a gap closes nothing; a pass in maintenance closes nothing', async () => {
+    const t = await vendor();
+    const job = vendorInactivityJob();
+    const due = at(VENDOR_INACTIVE_MS + DAY);
+    expect(await job.run(deps.db, due)).toBe(0); // the first pass only records the time
+    expect((await row(t.id)).closed_at).toBeNull();
+    await deps.db.query('update site_flags set maintenance_since = $1', [due]);
+    try {
+      expect(await job.run(deps.db, new Date(due.getTime() + 10 * 60_000))).toBe(0);
+      expect((await row(t.id)).closed_at).toBeNull();
+    } finally {
+      await deps.db.query('update site_flags set maintenance_since = null');
+    }
+    // A gap of more than an hour: again nothing, then the next regular pass closes.
+    const later = new Date(due.getTime() + 3 * 60 * 60_000);
+    expect(await job.run(deps.db, later)).toBe(0);
+    expect(await job.run(deps.db, new Date(later.getTime() + 10 * 60_000))).toBeGreaterThanOrEqual(1);
+    expect((await row(t.id)).closed_reason).toBe('vendor-inactive');
+  });
+
+  it(`lead vendor review item 4: one pass closes at most ${VENDOR_CLOSE_CAP}; when more are due the owner is alerted`, async () => {
+    const owner = await seedAccount(deps, { loginName: `vowner${Date.now()}`, kind: 'owner' }).catch(async () => (await deps.db.query<{ id: string }>("select id from accounts where kind = 'owner'")).rows[0]!.id);
+    const many = [];
+    for (let i = 0; i < VENDOR_CLOSE_CAP + 2; i++) many.push(await vendor());
+    const when = at(VENDOR_INACTIVE_MS + 500 * DAY);
+    const closed = await closeDueVendors(deps.db, when);
+    expect(closed).toBe(VENDOR_CLOSE_CAP);
+    const { rows } = await deps.db.query<{ detail: { closed: number; cap: number } }>(
+      "select detail from alerts where account_id = $1 and kind = 'vendor-auto-close-capped' order by created_at desc limit 1", [owner],
+    );
+    expect(rows[0]!.detail).toEqual({ closed: VENDOR_CLOSE_CAP, cap: VENDOR_CLOSE_CAP });
+    // The rest close on the next passes.
+    expect(await closeDueVendors(deps.db, when)).toBeGreaterThanOrEqual(2);
   });
 });
