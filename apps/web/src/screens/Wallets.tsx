@@ -26,6 +26,7 @@ import {
 } from './wallets-model.js';
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
+import { utcDateTime } from '../ui/dates.js';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
@@ -35,7 +36,7 @@ import { OwnerOnly } from './settings/OwnerOnly.js';
 const LABEL_MAX = 40;
 
 function when(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  return utcDateTime(new Date(iso));
 }
 
 /** 403 `recovery-session`: a backup login cannot change where coins are paid (Plan 2; in the refusal text map). */

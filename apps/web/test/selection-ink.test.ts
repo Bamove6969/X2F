@@ -44,10 +44,8 @@ const ACCENT = /var\(--x2f-monero(-ink|-ink-hover)?\)/;
  * Selected states that stay orange for now because the screen is owned by another branch
  * (C2-D2 brief: the dispute screens are claude3's; the tab bar went ink on main with My offers.)
  */
-const OWNED_ELSEWHERE = [
-  'screens/dispute/dispute.css .dispute-reason[data-on=\'true\']',
-  'screens/dispute/dispute.css .dispute-reason input:checked',
-];
+// Design build review 7 Nov: the dispute reason radio is ink now; nothing is owned elsewhere.
+const OWNED_ELSEWHERE: string[] = [];
 
 /** Every orange use that is not a selected state: one primary action, links, the XMR unit, the hold. */
 const ORANGE_ALLOWED = [
@@ -68,8 +66,6 @@ const ORANGE_ALLOWED = [
   // The XMR unit label (tokens.json monero-ink usage; BuyQuote board).
   'ui/ui.css .x2f-amount__unit',
   'screens/quote/quote.css .x2f-quote__xmr-unit',
-  // Owned elsewhere (see OWNED_ELSEWHERE): the dispute radio's focus ring.
-  'screens/dispute/dispute.css .dispute-reason input:focus-visible',
 ];
 
 describe('selection is ink, never orange', () => {
@@ -98,6 +94,6 @@ describe('selection is ink, never orange', () => {
   it('the input focus ring is ink, like every other focus ring', () => {
     const rings = rules()
       .filter((r) => r.selector.includes(':focus') && /outline:/.test(r.body) && ACCENT.test(r.body));
-    expect(rings.map((r) => `${r.file} ${r.selector}`)).toEqual(['screens/dispute/dispute.css .dispute-reason input:focus-visible']);
+    expect(rings.map((r) => `${r.file} ${r.selector}`)).toEqual([]);
   });
 });
