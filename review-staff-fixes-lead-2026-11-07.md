@@ -1,0 +1,5 @@
+# Lead security review: wip/third-p4-reverify c9118570. CHANGES REQUIRED. No Critical.
+Fix: I-1 ownerKeys.ts:94-109: DELETE /staff/v1/owner/keys/:id has no tap, ends no sessions, no alert: bypasses the tapped removal. Route it through the remove-method tap and applyRemoval, or delete it.
+I-2 account.ts:65, methods.ts:278: a senior or mod can remove their last attested key and then can't tap at all. Add 409 security-key-required for senior and mod; update has_security_key. Test it (M6).
+M1 log silencing actions; scope the owner's bare DELETE push to the calling session (push/routes.ts:142, account.ts:91, :113). M3 purge skipped when sweepHours throws (sweeper.ts:63-64); test the wiring. M4 rate limit taps/start (keyTap.ts:458). M5 feedback comments; named rows' accountId for helpers (feedback.ts:25, :29, roles.ts:9).
+Owner calls: I-3 staff without a usable key have no remedy (owner reset per member?); I-4 owner loses all PGP keys while logged out: locked out for good; Q55 vs Q59. M2 waits on Q51.
