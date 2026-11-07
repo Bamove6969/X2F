@@ -4,7 +4,8 @@
 import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FEEDBACK_ANON_HINT, FEEDBACK_BAD_TEXT, FEEDBACK_THANKS, Feedback, fromCode } from '../src/screens/Feedback.js';
+import { FEEDBACK_FORM_DAILY } from '@x2f/core';
+import { FEEDBACK_ANON_HINT, FEEDBACK_BAD_TEXT, FEEDBACK_DAILY_LIMIT, FEEDBACK_THANKS, Feedback, fromCode } from '../src/screens/Feedback.js';
 import { refreshSession } from '../src/session/useSession.js';
 import { logOut } from '../src/push/usePush.js';
 import { CANT_DO_CODES, CantDoThat, feedbackHref } from '../src/ui/CantDoThat.js';
@@ -244,6 +245,15 @@ describe('Feedback form', () => {
     await send(busy.host);
     expect(busy.host.querySelector('[role="alert"]')?.textContent).toBe('Too many tries. Try again in 2 minutes.');
     busy.unmount();
+    // Owner Q67: the 11th send of the day says the limit is there to stop spam.
+    const daily = await open('/feedback', { status: 429, json: { error: 'slow-down', retryAfterSeconds: 3600, limit: 'daily' } });
+    type(daily.host.querySelector('textarea')!, 'Hi');
+    await send(daily.host);
+    expect(daily.host.querySelector('[role="alert"]')?.textContent).toBe(FEEDBACK_DAILY_LIMIT);
+    // The number comes from @x2f/core, the same constant the API counts against.
+    expect(FEEDBACK_DAILY_LIMIT).toContain(`You've sent ${FEEDBACK_FORM_DAILY} today`);
+    expect(FEEDBACK_FORM_DAILY).toBe(10);
+    daily.unmount();
     const bad = await open('/feedback', { status: 400, json: { error: 'bad-request' } });
     type(bad.host.querySelector('textarea')!, 'Hi');
     await send(bad.host);
