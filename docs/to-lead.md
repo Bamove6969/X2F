@@ -494,3 +494,43 @@ All new wording is COPY-UNSIGNED.
 2. Cancelling during the wait restores removed wallets and members (assumed from "not permanent until the 24 h is up"). Recommendation: yes, as drawn.
 3. SellerRefund: do the 90 min run from escrow funding? Recommendation: yes, from when escrow is secured.
 4. CancelRequest's 2 Nov note says "No cancel after I've paid". With G2 (the buyer may cancel after escrow), recommendation: the buyer can cancel after escrow but not after tapping "I've paid", which is unchanged.
+
+## 7 Nov 2026: design's calls on G41–G60
+
+**G41, XMR colour.** I sampled the official symbol from getmonero.org/press-kit: Monero orange is **#FF6600** (grey #4C4C4C).
+- Night: the primary button fill, the XMR unit and links all become #FF6600.
+- Day: the button fill becomes #FF6600 (dark text on it reads fine). Orange *text* (the XMR unit, links) stays the darker #B84A00, because #FF6600 on white is only about 2.9:1 and fails legibility for small text.
+- I'll apply this to every board and the design system once the polish pass lands. This is the "unless design changes it" case, for legibility on white only.
+
+**G42, active Buy/Sell tab:** yes. A 2 px ink border on surface-raised, the same as every selection in the app; never orange.
+
+**G43:** keep the disabled button (surface-raised fill, muted text, no outline) and the sheet title (Familjen 24/30 700) everywhere.
+
+**G44, offers screens, what to build and in what order:**
+1. the market price card;
+2. per-method icons (the 40 px icon tiles);
+3. section counts (mono);
+4. the empty-search state (the shared empty-state mark: 56 px tile with two small blocks, title, one sentence);
+5. the Site news link (the bell with the unread dot in the header);
+6. **Don't build the "Deposit required" row:** X2F takes no deposits, and that board line is out of date.
+
+**G45:** no blue information note. Blue belongs to team members only. Information callouts are the neutral style: surface-raised, muted icon, ink text. Icon buttons use radius 12, as on the boards.
+
+**G46, Devices wording:** please send me the five items (the build's list), and I'll write them. The owner shouldn't be needed unless one of them is a rule.
+
+**G47, folding phones:** research is under way (Pixel Fold, Samsung Z Fold and Z Flip, OnePlus Open, Honor, Vivo, Xiaomi, Huawei, Motorola razr, Surface Duo; Apple has no shipping foldable). The note will cover Back gestures, layouts, and what a web app can detect (screen segments and posture, not the brand). New boards follow only where a device really behaves differently.
+
+**G48:** the fold label waits for the final fold boards, which are in the polish pass now.
+
+**G50–G53, gift cards:** `docs/design-gift-card-rules-2026-11-07.md` is updated: 45 minutes to check, cards bought in the last 30 days, video proof (log in, show the card, then send), full value only except range cards, and range cards always need the video. Draft brand list for the owner to edit: Amazon, Apple, Google Play, Steam, Visa prepaid, Mastercard prepaid, Walmart, Target, eBay, Razer Gold.
+
+**G54:** ProfileVisibility's OPEN box becomes DECIDED (X2F trades only; imports on their own lines).
+
+**G56, final-decision warning** (replaces Refunded's dispute card). Wording for the owner to sign, on the buyer's Cancel confirmation:
+- Title: "Cancelling is final"
+- Body: "The 1.250000 XMR goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap I've paid instead."
+- Refunded (buyer cancelled) loses the "Did you pay before you cancelled?" card.
+
+**G57/G58, approval view:** HoldChange gets a "Changes waiting for you" state for a strong lead. It shows the same before/after list, a countdown (23 h 12 min) and three actions: **Approve now** (primary), **Make changes**, **Cancel all**. Team kick-outs show "Logged out now · removed in 24 h"; other team changes show "Applies after 24 h".
+
+**What I need from the owner:** sign-off on the G56 wording above and on the gift card brand list. Nothing else is blocking me.
