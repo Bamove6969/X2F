@@ -208,8 +208,8 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
   });
 
   // Opens the dispute: the trade's `open-dispute` (the state machine decides when it is allowed:
-  // the buyer in `paid` from 60 minutes after marking paid, paused by maintenance (owner 2026-11-06
-  // Q10; `buyerDisputeFrom`), a refunded trade only by the buyer within
+  // the buyer in `paid` from the trade's own wait after marking paid, set by the payment type (owner
+  // 2026-11-07 F9) and paused by maintenance (owner 2026-11-06 Q10; `buyerDisputeFrom`), a refunded trade only by the buyer within
   // 48 hours, TIMERS.disputeAfterRefundHours) and the dispute row, in one transaction. A trade opens at most one dispute: once its
   // `dispute` is set (by a trader or the system) a new one is refused, whatever rows exist, so a
   // purge of old dispute rows can never re-open a decided case.

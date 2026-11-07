@@ -40,6 +40,12 @@ export interface TradeRow {
   locked_cents_per_xmr: string;
   fiat_cents: string;
   confirm_window_min: number;
+  /**
+   * Migration 118 (owner 2026-11-07 F9): the buyer's dispute wait after marking paid, fixed at take
+   * from the method profile. Null only for a trade taken before 118 the backfill missed: read as the
+   * confirm window, the rule it was taken under.
+   */
+  buyer_dispute_wait_min: number | null;
   min_fiat_cents: string;
   max_fiat_cents: string;
   grown_at: Date | null;
@@ -63,7 +69,7 @@ export interface TradeRow {
   extensions: number;
   paid_at: Date | null;
   confirm_by: Date | null;
-  /** Migration 118 (owner 2026-11-06 Q10): when the buyer may dispute in `paid`; moved by maintenance. */
+  /** Migration 118 (owner 2026-11-06 Q10, 11-07 F9): when the buyer may dispute in `paid` (paid time + wait); moved by maintenance. */
   buyer_dispute_from: Date | null;
   final_alert_at: Date | null;
   /** Task 19: when the buyer's first seen-receipt for the final alert landed (null = not seen). */
@@ -111,6 +117,7 @@ export function rowToTrade(r: TradeRow): Trade {
     lockedRate: { currency: r.locked_currency, centsPerXmr: big(r.locked_cents_per_xmr) },
     fiatCents: big(r.fiat_cents),
     confirmWindowMin: r.confirm_window_min,
+    buyerDisputeWaitMin: r.buyer_dispute_wait_min ?? r.confirm_window_min,
     minFiatCents: big(r.min_fiat_cents),
     maxFiatCents: big(r.max_fiat_cents),
     grown:
@@ -210,6 +217,7 @@ export async function insertTrade(q: Queryable, t: Trade, sides: TradeSides, usd
     ['locked_currency', t.lockedRate.currency],
     ['locked_cents_per_xmr', t.lockedRate.centsPerXmr.toString()],
     ['confirm_window_min', t.confirmWindowMin],
+    ['buyer_dispute_wait_min', t.buyerDisputeWaitMin],
     ['min_fiat_cents', t.minFiatCents.toString()],
     ['max_fiat_cents', t.maxFiatCents.toString()],
     ['taken_at', t.takenAt],
