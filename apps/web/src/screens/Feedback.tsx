@@ -36,11 +36,6 @@ export const FEEDBACK_BAD_TEXT = 'Your comment has a hidden character the form d
 /** The owner's wording, exactly (2026-10-29). copy-lint lets this one sentence keep its "!". */
 export const FEEDBACK_THANKS = 'Thank you! Each and every comment is appreciated and reviewed to help make this community a better place for us all.';
 
-const KINDS: readonly { id: FeedbackKind; label: string }[] = [
-  { id: 'complaint', label: 'Complaint' },
-  { id: 'feedback', label: 'Feedback' },
-  { id: 'recommendation', label: 'Recommendation' },
-];
 
 /** The refusal code from `?from=`, when it has the API's shape; anything else is dropped. */
 export { clearFeedbackDraft, loadFeedbackDraft };
@@ -66,6 +61,7 @@ export function Feedback() {
   // account wrote is never shown (round-2 review N-M6).
   const owner = session.status === 'signed-in' ? displayNameOf(session.me) || null : null;
   const [draft, setDraft] = useState(() => loadFeedbackDraft(null));
+  // The board has no kind choice: a draft keeps the kind it had, a new message is feedback.
   const [kind, setKind] = useState<FeedbackKind>(draft?.kind ?? 'feedback');
   const [text, setText] = useState(draft?.text ?? '');
   const [anonymous, setAnonymous] = useState(draft?.anonymous ?? false);
@@ -133,7 +129,9 @@ export function Feedback() {
 
   return (
     <main className="x2f-screen" data-screen="feedback">
-      <h1 className="x2f-screen__title">Feedback</h1>
+      {/* The Feedback board (design build review 7 Nov): no "What is it?" choice; every message is sent as feedback. */}
+      <h1 className="x2f-screen__title">Tell us what you think</h1>
+      <p className="x2f-sheet__body">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
       {/* COPY-UNSIGNED */}
       <p className="x2f-note">A complaint, feedback, a recommendation, anything. Every comment is read.</p>
       {session.status === 'signed-out' && state.kind !== 'signed-out' ? (
@@ -146,20 +144,9 @@ export function Feedback() {
         </p>
       ) : null}
       <form className="x2f-stack" onSubmit={(e) => void submit(e)}>
-        <fieldset className="x2f-field">
-          <legend className="x2f-label">What is it?</legend>
-          <div className="x2f-row">
-            {KINDS.map((k) => (
-              <label key={k.id}>
-                <input type="radio" name="feedback-kind" value={k.id} checked={kind === k.id} onChange={() => setKind(k.id)} />
-                {k.label}
-              </label>
-            ))}
-          </div>
-        </fieldset>
         <div className="x2f-field">
           <label htmlFor={textId} className="x2f-label">
-            Your comment
+            Your message
           </label>
           <textarea
             id={textId}
