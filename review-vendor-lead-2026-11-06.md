@@ -1,0 +1,7 @@
+# Lead security review: wip/lead-vendor cc2d372e. CHANGES REQUIRED. No Critical; vendor gate held.
+1. Anyone can test if a PGP key is banned, no login, no proof: pgp.ts:682, :760, :824. Drop the three pre-proof checks. insertPgpKey:152 and applyPgpKey:864 refuse after proof. Confirm team-join finish reaches insertPgpKey. Update banList.test.ts:157-171.
+2. Banned subkey gets in through login key refresh: pgp.ts:579-583 writes merged armor without assertKeyNotBanned (mergeKeys:663). Check before the update; add a test.
+3. Auto-close ignores trades that can reopen: vendorInactivity.ts:31 checks only closed_at is null, but disputes reopen for 48 h (machine.ts:421-432, timers.ts:12) and late funds for 30 days (machine.ts:487, watch.ts:43). Exclude trades in those windows, lock each account before re-checking (race with take.ts:247), add reopen-window and race tests.
+4. A wrong close can't be undone: after an outage or clock error the first tick closes everyone on day 57+ with no warning. Skip after a scheduler gap and during maintenance; cap each run with an owner alert.
+Minor: Jabber normalisation (bans.ts:71-72: trailing dot, IDN, width) before Jabber setup. Say in docs that recordBan has no caller until Plan 4. Fix bans.ts header, vendorInactivity.ts note, 198's comment. Cited docs aren't on the branch.
+Owner questions: warning before auto-close; can staff reopen a closed vendor; may a vendor remove its only strong key (methods.ts:410); may a closed vendor reuse its key or names.
