@@ -18,6 +18,7 @@ import { Link } from 'react-router';
 import { formatFiat, formatXmr, TIMERS } from '@x2f/trade';
 import { methodOf, type TradeView } from '../../api/trade.js';
 import { Xmr } from '../../ui/Amount.js';
+import { KeyMark } from '../../ui/EscrowDots.js';
 import { formatDate } from '../../ui/dates.js';
 import { Facts, type Fact } from '../../ui/Facts.js';
 import { Icon } from '../../ui/icons.js';
@@ -140,33 +141,44 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
   // One day for every row: the day goes in the card's head and each row shows its time (the board).
   const days = new Set(timeline.map((r) => formatDate(r.at)));
   const oneDay = days.size === 1 ? [...days][0]! : null;
-  const facts: Fact[] = [
-    ...timeline.map((r) => ({ key: r.key, label: r.label, value: <When at={r.at} form={oneDay !== null ? 'time' : 'date-time'} /> })),
-    {
-      key: 'Trade amount',
-      value: (
-        <>
-          <Xmr value={formatXmr(BigInt(view.amountAtomic))} /> · {formatFiat(BigInt(view.fiatCents), view.lockedRate.currency)}
-        </>
-      ),
-      rule: timeline.length > 0,
-    },
-    // The design session's row (2 Nov; was "Charged to you: Nothing"): a refund never carries X2F's fee. COPY-UNSIGNED
-    { key: 'X2F fee', value: 'None' },
-  ];
+  const facts: Fact[] = timeline.map((r) => ({ key: r.key, label: r.label, value: <When at={r.at} form={oneDay !== null ? 'time' : 'date-time'} /> }));
+  // The hero's tone (design review P1-7): ink-muted for a finished refund, the moderator's after a
+  // dispute decided it, caution while a cancel is still being returned.
+  const tone = trade.dispute !== null ? 'mod' : story.chip.tone === 'caution' ? 'caution' : 'muted';
   const closed = view.closedAt === null ? NaN : Date.parse(view.closedAt);
   const disputeHref = `/trade/${encodeURIComponent(trade.code)}/dispute`;
 
   return (
     <div className="x2f-pay" data-layout="phone" data-screen-part="refunded">
-      <TradeHeader title={<TradeTitle trade={trade} />} code={trade.code} method={{ name: method.name, whatItIs: trade.whatItIs }} backTo="/buy" />
+      {/* "Back to trades", as the board's back control says (design review P2-18). */}
+      <TradeHeader title={<TradeTitle trade={trade} />} code={trade.code} method={{ name: method.name, whatItIs: trade.whatItIs }} backTo="/trades" />
       <div className="x2f-pay__main">
-        <div>
-          <StatusChip tone={story.chip.tone} icon={story.chip.icon} label={story.chip.label} />
-        </div>
-        <section className="x2f-stack" aria-label="Trade status">
-          <h1 className="x2f-h2">{story.title}</h1>
-          <p className="x2f-lead">{story.lead}</p>
+        {/* The board's hero (standard 11; design review P1-7): chip and key mark, the h1 and lead, then
+            the trade amount and X2F's fee in a raised box. */}
+        <section className="x2f-hero" data-tone={tone} data-kind="outcome" aria-labelledby="refunded-title" data-part="refunded-hero">
+          <div className="x2f-hero__head">
+            <StatusChip tone={story.chip.tone} look="tint" icon={story.chip.icon} label={story.chip.label} />
+            <KeyMark className="x2f-hero__mark" />
+          </div>
+          <div className="x2f-hero__text">
+            <h1 className="x2f-hero__title" id="refunded-title">
+              {story.title}
+            </h1>
+            <p className="x2f-hero__lead">{story.lead}</p>
+          </div>
+          <dl className="x2f-hero__facts" data-part="refunded-amount">
+            <div className="x2f-hero__amount">
+              <dt className="x2f-hero__label">Trade amount</dt>
+              <dd>
+                <Xmr value={formatXmr(BigInt(view.amountAtomic))} ink /> <span className="x2f-hero__fiat">{formatFiat(BigInt(view.fiatCents), view.lockedRate.currency)}</span>
+              </dd>
+            </div>
+            <div className="x2f-hero__fee">
+              {/* The design session's row (2 Nov; was "Charged to you: Nothing"): a refund never carries X2F's fee. COPY-UNSIGNED */}
+              <dt>X2F fee</dt>
+              <dd className="x2f-num">None</dd>
+            </div>
+          </dl>
         </section>
         <section className="x2f-panel" aria-labelledby="refunded-what">
           {/* "What happened · 29 Oct 2026", the day in mono, when every row is on it (design session 2 Nov). */}
@@ -217,6 +229,10 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
       <footer className="x2f-pay__footer">
         <Link className="x2f-button x2f-button--primary" to="/buy" data-primary="">
           Find another offer
+        </Link>
+        {/* The board's tertiary link under the primary (design review P2-19). */}
+        <Link className="x2f-button x2f-button--tertiary" to="/trades" data-part="refunded-trades">
+          Back to my trades
         </Link>
       </footer>
     </div>

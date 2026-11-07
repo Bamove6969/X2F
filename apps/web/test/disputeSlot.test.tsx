@@ -210,19 +210,32 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
       </MemoryRouter>,
     );
     expect(host.querySelector('.x2f-chip')?.textContent).toBe('Payment time ran out');
+    // The board's hero (design review P1-7): the muted tone, the tinted chip and key mark, the h1 and
+    // lead, then Trade amount and X2F fee in its raised box (no longer in What happened).
+    const hero = host.querySelector('[data-part="refunded-hero"]')!;
+    expect([hero.className, hero.getAttribute('data-tone'), hero.getAttribute('data-kind')]).toEqual(['x2f-hero', 'muted', 'outcome']);
+    expect(hero.querySelector('.x2f-chip')?.getAttribute('data-look')).toBe('tint');
+    expect(hero.querySelector('[data-part="key-mark"]')).not.toBeNull();
+    expect(hero.querySelector('h1.x2f-hero__title')?.textContent).toBe('Payment time ran out');
+    expect(hero.querySelector('.x2f-hero__lead')).not.toBeNull();
+    const amount = [...hero.querySelectorAll('[data-part="refunded-amount"] > div')].map((r) => [r.querySelector('dt')!.textContent, r.querySelector('dd')!.textContent]);
+    expect(amount).toEqual([
+      ['Trade amount', '1.250000 XMR $412.50'],
+      ['X2F fee', 'None'],
+    ]);
+    // Standard 7 (design review P1-6): mono digits in ink, the unit apart; the dispute card's number too.
+    expect(hero.querySelector('.x2f-hero__amount .x2f-num[data-ink="true"]')?.textContent).toBe('1.250000');
+    expect(hero.querySelector('.x2f-hero__amount .x2f-xmr__unit')?.textContent).toBe('XMR');
+    expect(host.querySelector('[data-part="refunded-dispute"] .x2f-xmr .x2f-num[data-ink="true"]')?.textContent).toBe('1.250000');
     const facts = [...host.querySelectorAll('[data-part="refunded-facts"] > div')].map((r) => [r.querySelector('dt')!.textContent, r.querySelector('dd')!.textContent]);
     const keys = facts.map(([k]) => k);
-    expect(keys.slice(-2)).toEqual(['Trade amount', 'X2F fee']);
-    expect(facts.at(-2)![1]).toBe('1.250000 XMR · $412.50');
-    // Standard 7 (design review P1-6): mono digits, the unit apart; the dispute card's number is mono in ink.
-    expect(host.querySelector('[data-part="refunded-facts"] .x2f-xmr__unit')?.textContent).toBe('XMR');
-    expect(host.querySelector('[data-part="refunded-dispute"] .x2f-xmr .x2f-num[data-ink="true"]')?.textContent).toBe('1.250000');
-    expect(facts.at(-1)![1]).toBe('None');
+    expect(keys).not.toContain('Trade amount');
+    expect(keys).not.toContain('X2F fee');
     expect(keys).toContain(`Refund sent to ${S}`);
     expect(host.querySelector('#refunded-what')?.textContent).toMatch(/^What happened · \d+ \w{3} \d{4}$/);
     expect(host.textContent).not.toMatch(/the seller/i);
     // Every time is the one format: "HH:MM UTC" under a dated head, or the full "D Mon YYYY, HH:MM UTC".
-    for (const [k, val] of facts.slice(0, -2)) expect(val, k!).toMatch(/^(\d+ \w{3} \d{4}, )?\d\d:\d\d UTC$/);
+    for (const [k, val] of facts) expect(val, k!).toMatch(/^(\d+ \w{3} \d{4}, )?\d\d:\d\d UTC$/);
     const dispute = host.querySelector('[data-part="refunded-dispute"]')!;
     expect(dispute.querySelector('h2')?.textContent).toBe('Did you send the money anyway?');
     // Lead review 2026-11-06 m3: a moderator rules, the screen does not promise the outcome.
@@ -232,6 +245,27 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     expect(dispute.querySelector('a.x2f-button--danger')?.textContent).toBe('Open dispute');
     expect(dispute.querySelector('a.x2f-button--danger svg')).not.toBeNull();
     expect(host.querySelector('footer a[data-primary]')?.textContent).toBe('Find another offer');
+    // Design review P2-18, P2-19: back goes to the trades, and "Back to my trades" sits under the primary.
+    expect(host.querySelector('a[aria-label="Back to trades"]')?.getAttribute('href')).toBe('/trades');
+    const trades = host.querySelector('footer [data-part="refunded-trades"]')!;
+    expect([trades.textContent, trades.getAttribute('href'), trades.className]).toEqual(['Back to my trades', '/trades', 'x2f-button x2f-button--tertiary']);
+  });
+
+  it('the hero takes the moderator tone after a dispute decided the refund, and caution while a cancel is returned', () => {
+    const cases: [Partial<TradeView>, string][] = [
+      [{ settling: 'mutual-cancel', dispute: { by: 'buyer', at: at(-20 * DAY) } }, 'mod'],
+      [{ settling: 'buyer-cancel' }, 'caution'],
+      [{ settling: 'buyer-cancel', cancelConfirmedAt: at(-9 * DAY) }, 'muted'],
+    ];
+    for (const [over, tone] of cases) {
+      const { host, unmount } = render(
+        <MemoryRouter>
+          <RefundedSlot {...props(refunded(over))} />
+        </MemoryRouter>,
+      );
+      expect(host.querySelector('[data-part="refunded-hero"]')?.getAttribute('data-tone'), JSON.stringify(over)).toBe(tone);
+      unmount();
+    }
   });
 
   it('"X2F fee: None" on every refund, paid first or not (design session 2 Nov; was "Charged to you: Nothing")', () => {
