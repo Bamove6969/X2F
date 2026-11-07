@@ -75,6 +75,14 @@ export type CantDoCode = (typeof CANT_DO_CODES)[number];
 
 /** Every other code the web knows, with why it is not a "can't do that" refusal. */
 export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
+  // Plan 4 Tasks 5 and 7: staff-API answers traders never get (their words come with the staff web
+  // app, Plan 4 Task 16).
+  'tap-invalid': 'a staff security-key tap (staff app only)',
+  'invite-invalid': 'a staff invite link that is used, expired or cancelled (staff app only)',
+  'security-key-required': 'a staff sign-up step: a security key must be added (staff app only)',
+  'two-factors-required': 'a staff sign-up step: a second login method must be added (staff app only)',
+  'owner-protected': "the owner's own account in staff management (staff app only)",
+  'owner-needs-two-keys': 'the owner keeps at least two security keys (staff app only)',
   'bad-request': 'a malformed request (a fault)',
   'not-found': 'nothing there',
   'unsupported-media-type': 'a fault',
