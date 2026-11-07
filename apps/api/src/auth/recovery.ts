@@ -221,6 +221,9 @@ async function backupSession(req: FastifyRequest, reply: FastifyReply, accountId
     );
     if (ended.rows.length > 0) await addAlert(db, accountId, 'sessions-ended', { count: ended.rows.length, reason: 'recovery-code' }, now);
     await discardAllChanges(db, accountId, now);
+    // Lead hold v3 review, Critical 1: device trust is a cookie a thief can copy (as at the
+    // owner's proof, hold.ts): after a recovery-code login every browser needs an approval again.
+    await db.query('delete from trusted_devices where account_id = $1', [accountId]);
     const s = await openSession(db, deps, req, reply, {
       accountId, level: 'recovery', deviceLabel, method: 'recovery-code', firstSession: false, holdUntil, strength: loginStrength(['recovery-code']),
     });
@@ -257,18 +260,26 @@ async function renewRecoveryCode(db: Queryable, config: Config, accountId: strin
   await addAlert(db, accountId, 'recovery-code-renewed', {}, now);
 }
 
-/** True when a replaced recovery code waits to be shown and the session (a full one, opened after it) may show it. */
-export async function revealDue(db: Queryable, accountId: string, sessionId: string): Promise<boolean> {
+/**
+ * True when a replaced recovery code waits to be shown and this session may show it (lead hold v3
+ * review, Critical 1): the account owner's session, opened with or after the code was replaced,
+ * and either a strong full login or the recovery session itself once its 24 hours are over. A
+ * username-and-password session never may: a password thief on a once-trusted device must not
+ * read the new code.
+ */
+export async function revealDue(db: Queryable, accountId: string, sessionId: string, now: Date): Promise<boolean> {
   const { rows } = await db.query(
     `select 1 from recovery_code_reveals r join sessions s on s.account_id = r.account_id
-      where r.account_id = $1 and s.id = $2 and s.level = 'full' and s.member_id is null and s.created_at >= r.created_at`,
-    [accountId, sessionId],
+      where r.account_id = $1 and s.id = $2 and s.member_id is null and s.revoked_at is null and s.created_at >= r.created_at
+        and ((s.level = 'full' and s.strength = 'strong') or (s.level = 'recovery' and s.hold_until is not null and s.hold_until <= $3))`,
+    [accountId, sessionId, now],
   );
   return rows.length > 0;
 }
 
 /**
- * `POST /v1/account/recovery-code/reveal` (a full session of the account owner opened after the code
+ * `POST /v1/account/recovery-code/reveal` (a session `revealDue` allows: a strong full login or the
+ * waited recovery session, opened with or after the code
  * was replaced): `{ code }`, once; the sealed copy is deleted in the same transaction. 404 when
  * there is none for this session. The session must still be live under the account lock.
  */
@@ -278,7 +289,7 @@ async function revealCode(req: FastifyRequest) {
   const { accountId } = req.auth;
   const sealed = await withTx(deps.db, async (db) => {
     await requireLiveSessionInTx(db, req.auth, now);
-    if (!(await revealDue(db, accountId, req.auth.sessionId))) throw new ApiError(404, 'not-found');
+    if (!(await revealDue(db, accountId, req.auth.sessionId, now))) throw new ApiError(404, 'not-found');
     const { rows } = await db.query<{ code_enc: Buffer }>('delete from recovery_code_reveals where account_id = $1 returning code_enc', [accountId]);
     return rows[0]!.code_enc;
   });
@@ -327,6 +338,7 @@ export function recoveryRoutes(app: FastifyInstance): void {
     newCodes,
   );
   app.post('/v1/login/backup', backupLogin);
-  app.post('/v1/account/recovery-code/reveal', { preHandler: requireSession() }, revealCode);
+  // A recovery session may reveal once its hold is over (a held one is 403 recovery-hold).
+  app.post('/v1/account/recovery-code/reveal', { preHandler: requireSession({ allowRecovery: true }) }, revealCode);
   app.delete('/v1/account/recovery-sessions/:id', { preHandler: requireSession() }, cancelRecovery);
 }

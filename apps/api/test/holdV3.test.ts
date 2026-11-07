@@ -417,6 +417,36 @@ describe('a recovery-code login', () => {
     expect((await backupLogin(new Browser(app), t.name, code)).statusCode).toBe(200);
   });
 
+  it('lead hold v3 review Critical 1: a password thief on a once-trusted device never reads the new code', async () => {
+    const t = await ownerWithCode();
+    // The thief copied the owner's device cookie (a trusted device) and knows the password.
+    const thief = new Browser(app);
+    thief.cookies = { ...t.b.cookies };
+    const trusted = async () => (await deps.db.query('select 1 from trusted_devices where account_id = $1', [t.id])).rowCount;
+    expect(await trusted()).toBe(1);
+    const rec = new Browser(app);
+    expect((await backupLogin(rec, t.name, t.code)).statusCode).toBe(200);
+    // Every earlier device trust is gone with the recovery-code login; only its own browser's is new.
+    expect(await trusted()).toBe(1);
+    // The hold ends by time; the copied cookie no longer skips the approval.
+    later(HOLD_MS + 60_000);
+    // (Nothing that could approve it is logged in: 403 approval-unavailable.)
+    const w = await passwordLogin(thief, t.name);
+    expect([w.statusCode, w.json()]).toEqual([403, { error: 'approval-unavailable' }]);
+    // Even a username-and-password full session opened after the code was replaced is refused.
+    const recId = await sessionOf(rec);
+    await deps.db.query("update sessions set level = 'full', strength = 'weak-single' where id = $1", [recId]);
+    expect(((await rec.get('/v1/account/me')).json() as { recoveryCodeToShow: boolean }).recoveryCodeToShow).toBe(false);
+    expect((await rec.post('/v1/account/recovery-code/reveal', {})).statusCode).toBe(404);
+    // The recovery session itself, its 24 hours over, is shown the new code once.
+    await deps.db.query("update sessions set level = 'recovery', strength = 'weak-single' where id = $1", [recId]);
+    expect(((await rec.get('/v1/account/me')).json() as { recoveryCodeToShow: boolean }).recoveryCodeToShow).toBe(true);
+    const shown = await rec.post('/v1/account/recovery-code/reveal', {});
+    expect(shown.statusCode).toBe(200);
+    expect(normalizeRecoveryCode((shown.json() as { code: string }).code)).not.toBeNull();
+    expect((await rec.post('/v1/account/recovery-code/reveal', {})).statusCode).toBe(404);
+  });
+
   it('during the hold nobody logs in: a password, on a trusted device too, and a password with its code', async () => {
     const t = await ownerWithCode();
     const trusted = new Browser(app);
@@ -429,11 +459,15 @@ describe('a recovery-code login', () => {
 
   it('ends by itself after 24 h (minute job), and the account works again', async () => {
     const t = await ownerWithCode();
-    expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
+    const rec = new Browser(app);
+    expect((await backupLogin(rec, t.name, t.code)).statusCode).toBe(200);
     later(HOLD_MS);
     expect(await settleDueHolds(deps.config, app.events).run(deps.db, now)).toBeGreaterThanOrEqual(1);
     expect(await accountHoldOf(t.id)).toBeNull();
-    expect((await passwordLogin(t.b, t.name)).statusCode).toBeLessThan(300);
+    // The browser of the recovery-code login is trusted; every older one asks for an approval
+    // (Critical 1: device trust ends with a recovery-code login).
+    expect((await passwordLogin(rec, t.name)).json()).toMatchObject({ status: 'ok' });
+    expect((await passwordLogin(t.b, t.name)).json()).toMatchObject({ approvalId: expect.any(String) });
   });
 
   it('discards changes waiting from a password-only session', async () => {

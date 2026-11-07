@@ -187,7 +187,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
     pendingChanges: member !== null ? null : await pendingSummary(deps.db, accountId),
     changesWait: member !== null ? false : await changesWait(req),
-    recoveryCodeToShow: member !== null || row.level !== 'full' ? false : await revealDue(deps.db, accountId, sessionId),
+    recoveryCodeToShow: member !== null ? false : await revealDue(deps.db, accountId, sessionId, deps.clock()),
     member,
   };
 }

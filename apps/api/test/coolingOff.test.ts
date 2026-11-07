@@ -1298,12 +1298,18 @@ describe('review round 2', () => {
 
       it('after the hold, a weak session younger than the backup session is refused (403 weak-session) and the backup session stays', async () => {
         const o = await weakOwnerWithCode();
+        const trust = await deps.db.query<{ device_hash: Buffer }>('select device_hash from trusted_devices where account_id = $1', [o.id]);
         setNow(new Date(now.getTime() + 60_000));
         const rec = await backupLogin(o.name, o.code);
         setNow(new Date(now.getTime() + HOLD_MS + 60_000));
         await settleDueHolds(deps.config, app.events).run(deps.db, now);
         expect(await holdOf(deps, o.id)).toBeNull();
-        // The trusted sign-up browser logs in again with the password: a weak session opened after the backup login.
+        // The recovery-code login ended every device trust (hold v3 review Critical 1); the sign-up
+        // browser is trusted again here as if a login of it had been approved since.
+        for (const r of trust.rows) {
+          await deps.db.query('insert into trusted_devices (account_id, device_hash, created_at, last_used_at) values ($1, $2, $3, $3) on conflict do nothing', [o.id, r.device_hash, now]);
+        }
+        // The sign-up browser logs in again with the password: a weak session opened after the backup login.
         expect((await passwordLogin(o.b, o.name)).json()).toEqual({ status: 'ok' });
         expect((await o.b.delete(`/v1/account/recovery-sessions/${rec}`)).json()).toEqual({ error: 'weak-session' });
         const { rows } = await deps.db.query('select 1 from sessions where id = $1 and revoked_at is null', [rec]);
