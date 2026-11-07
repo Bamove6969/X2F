@@ -413,3 +413,24 @@ What matches: the Refunded dispute body copy follows v119, apart from the mono n
 - **v120:** the MyOffers (+Wide, Fold) "no rate" state (F4): currency chips; one off = a struck chip plus "No rate for ARS right now. Buyers can't pick it until it's back."; all off = "NOT LIVE · NO RATE" plus "We can't get a rate for ARS, so this offer can't go live. It goes live by itself when the rate is back.". FlexOffer-Post (+Wide): Above/Below market plus a typed % ("Up to 50%." / "Set 50% or less."), the empty-instructions helper, and "2 of 3 selling offers used". OfferAd (+Wide): Currency, then PAY WITH dropdowns; the list of ways to pay is folded into the dropdown. Devices (+Wide): F18 note. All new lines are COPY-UNSIGNED.
 - **Open, design's call next:** the per-payment-type price change on FlexOffer-Post still uses a ± stepper. For one pattern, design will switch it to the same Above/Below plus typed % (max 50%) unless the owner objects.
 - **Queued:** the MemberPermissions redraw for Q16 (member types with checkboxes).
+
+## 7 Nov 2026: canvas v122 (Q16 member types; per-payment-type price)
+
+**MemberPermissions (+Wide), redrawn for Q16.** Four member types, each a card with an on/off switch and its own checkboxes: Chat (7), Offers (8), Trades (9), Records (7). A member can be in any number of types. A type that's switched off keeps its ticks but they don't count. Release XMR is marked SENSITIVE: ticking it shows a caution line and asks to confirm first, per the earlier owner rule (2 Nov). Tweak `example`: offers-and-chat / everything / trades-with-release. The 31 checkbox labels are design's proposal for the owner.
+
+**COPY-UNSIGNED (owner):**
+- "Member types" · "Switch a type on, then tick what desk_ana can do in it. A member can be in one type, several or all four." · "In 2 of 4 types · 9 of 31 things allowed" · "5 of 7 allowed" / "Off · 2 of 7 ticked" · "Switch on Records to use these. Your ticks are kept."
+- "They can send XMR from your escrow. Only for someone you trust fully."
+- "Never available to members: wallets, security, sessions, team settings, account type and deleting the account."
+- "Saving needs your passkey, security key or PGP key. With just a username and password, the change waits 24 h."
+- Sheet: "Let desk_ana release XMR?" · "They can send XMR from your escrow to finish trades. Only for someone you trust fully." · "Allow releasing XMR" / "Keep it off" · "Use my PGP key".
+- The four type names and the 31 labels:
+  - Chat: Read trade chats, Reply in trade chats, Send payment details in chat, Upload proof in chat, Nudge the other trader, See the trader's profile notes, Block a trader.
+  - Offers: See all offers, Turn offers on or off, Edit prices, Edit amount bands, Edit payment types and instructions, Edit currencies, Post a new offer, Delete an offer.
+  - Trades: Accept a trade, Decline a trade, Mark "I've paid", Confirm payment received, Release XMR, Ask to cancel, Open a dispute, Reply in a dispute, Leave feedback.
+  - Records: See trade history, Export trade history, See team activity log, See payout amounts, See reviews, Reply to reviews, See support tickets.
+
+**For the owner, with design's recommendation:**
+- Should the "never available" list also name holds? Recommendation: yes. "Never available to members: wallets, holds, security, sessions, team settings, account type and deleting the account."
+
+**FlexOffer-Post (+Wide).** Each payment type's price change is now "Above market" / "Below market" / "Same as band", plus a typed % (max 50%), the same as the bands. New copy: "Price with Zelle" · "Same as band" · "Fix the field marked in red to post this offer." (was "…the band marked in red…").

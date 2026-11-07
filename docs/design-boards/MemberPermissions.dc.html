@@ -12,7 +12,7 @@
 <style>
 body{margin:0}
 a{color:var(--monero-ink)}a:hover{color:var(--ink)}
-button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
 @media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
@@ -34,79 +34,63 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <span style="flex-grow: 1; min-width: 0; font-size: 16px; line-height: 22px; font-weight: 600;">desk_ana</span>
           <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; flex-shrink: 0; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c.8-3.5 3.2-5.5 6-5.5s5.2 2 6 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7"/><path d="M18 14.8c1.6.8 2.6 2.6 3 5.2"/></svg>Team member</span>
         </div>
-        <p role="status" style="display: flex; align-items: baseline; gap: 8px; margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">{{allowedN}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{totalN}}</span> allowed</span></p>
-        <span aria-hidden="true" style="display: grid; grid-template-columns: repeat(19, 1fr); gap: 3px; height: 8px;">
-          <sc-for list="{{segs}}" as="g" hint-placeholder-count="19"><span style="{{g.style}}"></span></sc-for>
-        </span>
-        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{laterN}}</span> of these can&#39;t be turned on yet. Account-wide settings always stay with you.</p>
+        <p role="status" style="margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); font-size: 15px; line-height: 22px; font-weight: 600;">In <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{typesOnN}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{typesN}}</span> types · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{allowedN}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{totalN}}</span> things allowed</p>
       </section>
 
-      <section aria-labelledby="mp-pre-h" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <h2 id="mp-pre-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Start from a preset</h2>
-          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Pick one, then change any switch below.</p>
-        </div>
-        <div role="group" aria-labelledby="mp-pre-h" style="display: flex; flex-wrap: wrap; gap: 8px;">
-          <sc-for list="{{chips}}" as="c" hint-placeholder-count="4">
-            <button type="button" aria-pressed="{{c.pressed}}" onClick="{{c.pick}}" style="{{c.style}}">{{c.label}}</button>
-          </sc-for>
-        </div>
-      </section>
+      <div style="display: flex; flex-direction: column; gap: 4px; padding: 8px 4px 0;">
+        <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Member types</h2>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Switch a type on, then tick what desk_ana can do in it. A member can be in one type, several or all four.</p>
+      </div>
 
-      <sc-for list="{{groups}}" as="g" hint-placeholder-count="5">
-        <section aria-labelledby="{{g.hid}}" style="display: flex; flex-direction: column; border-radius: 16px; background: var(--surface);">
-          <div style="display: flex; align-items: flex-start; gap: 14px; padding: 20px 20px 8px;">
-            <span aria-hidden="true" style="{{g.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="{{g.icon}}"/></svg></span>
-            <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-top: 8px;">
-              <h2 id="{{g.hid}}" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{g.title}}</h2>
-              <sc-if value="{{g.later}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; align-self: flex-start; height: 24px; margin: 4px 0 2px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--ink-muted) 16%, transparent); color: var(--ink); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Coming later</span></sc-if>
-              <sc-if value="{{g.hasSub}}" hint-placeholder-val="{{true}}"><p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{g.sub}}</p></sc-if>
-            </div>
-            <sc-if value="{{g.notLater}}" hint-placeholder-val="{{true}}"><span style="flex-shrink: 0; padding-top: 10px; font-size: 13px; line-height: 20px; color: var(--ink-muted); white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{g.onN}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{g.rowN}}</span></span></sc-if>
-          </div>
-          <ul aria-labelledby="{{g.hid}}" style="margin: 0; padding: 0 0 6px; list-style: none;">
-            <sc-for list="{{g.rows}}" as="r" hint-placeholder-count="3">
-              <li style="{{r.rowStyle}}">
-                <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
-                  <sc-if value="{{r.sensitive}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>Sensitive</span></sc-if>
-                  <span id="{{r.lid}}" style="{{r.nameStyle}}">{{r.name}}</span>
-                  <span id="{{r.did}}" style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{r.desc}}</span>
+      <sc-for list="{{types}}" as="t" hint-placeholder-count="4">
+        <section aria-labelledby="{{t.hid}}" style="{{t.cardStyle}}">
+          <div style="display: flex; align-items: center; gap: 4px; min-height: 64px; padding: 0 12px 0 8px;">
+            <h3 style="flex-grow: 1; min-width: 0; margin: 0; font-size: inherit; font-weight: inherit;">
+              <button type="button" aria-expanded="{{t.expanded}}" aria-controls="{{t.panelId}}" onClick="{{t.toggleOpen}}" style="display: flex; align-items: center; gap: 10px; width: 100%; min-height: 64px; padding: 0 8px; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;">
+                <svg style="{{t.chevStyle}}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+                <span style="display: flex; flex-direction: column; min-width: 0;">
+                  <span id="{{t.hid}}" style="{{t.nameStyle}}">{{t.name}}</span>
+                  <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><sc-if value="{{t.isOff}}" hint-placeholder-val="{{false}}">Off · </sc-if><span style="{{t.countStyle}}">{{t.n}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{t.total}}</span> {{t.countWord}}</span>
                 </span>
-                <button type="button" role="switch" aria-checked="{{r.on}}" aria-labelledby="{{r.lid}}" aria-describedby="{{r.did}}" disabled="{{r.disabled}}" onClick="{{r.toggle}}" style="{{r.btnStyle}}"><span aria-hidden="true" style="{{r.track}}"><span style="{{r.knob}}"></span></span></button>
-              </li>
-            </sc-for>
-          </ul>
-          <sc-if value="{{g.hasNote}}" hint-placeholder-val="{{false}}">
-            <div style="display: flex; gap: 10px; align-items: flex-start; margin: 0 20px 20px; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
-              <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-              <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">{{g.note}}</p>
+              </button>
+            </h3>
+            <button type="button" role="switch" aria-checked="{{t.onAttr}}" aria-label="{{t.switchLabel}}" onClick="{{t.toggleOn}}" style="display: flex; align-items: center; justify-content: center; width: 60px; height: 44px; flex-shrink: 0; padding: 0; border: 0; border-radius: 999px; background: transparent; cursor: pointer;"><span aria-hidden="true" style="{{t.track}}"><span style="{{t.knob}}"></span></span></button>
+          </div>
+          <sc-if value="{{t.open}}" hint-placeholder-val="{{true}}">
+            <div id="{{t.panelId}}" style="display: flex; flex-direction: column; padding: 0 0 8px; border-top: 1px solid var(--surface-raised);">
+              <sc-if value="{{t.isOff}}" hint-placeholder-val="{{false}}">
+                <p style="margin: 12px 20px 4px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Switch on {{t.name}} to use these. Your ticks are kept.</p>
+              </sc-if>
+              <ul aria-labelledby="{{t.hid}}" style="margin: 0; padding: 4px 0 0; list-style: none;">
+                <sc-for list="{{t.rows}}" as="r" hint-placeholder-count="7">
+                  <li style="{{r.rowStyle}}">
+                    <label for="{{r.cbId}}" style="{{r.labelStyle}}">
+                      <input id="{{r.cbId}}" type="checkbox" checked="{{r.ticked}}" disabled="{{r.disabled}}" onChange="{{r.toggle}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); flex-shrink: 0;">
+                      <span style="flex-grow: 1; min-width: 0;">{{r.name}}</span>
+                      <sc-if value="{{r.sensitive}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>Sensitive</span></sc-if>
+                    </label>
+                  </li>
+                  <sc-if value="{{r.warn}}" hint-placeholder-val="{{false}}">
+                    <li style="display: flex; gap: 10px; align-items: flex-start; margin: 0 20px 8px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+                      <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+                      <span style="font-size: 14px; line-height: 20px; color: var(--ink);">They can send XMR from your escrow. Only for someone you trust fully.</span>
+                    </li>
+                  </sc-if>
+                </sc-for>
+              </ul>
             </div>
           </sc-if>
         </section>
       </sc-for>
 
-      <section aria-labelledby="mp-lock-h" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; border: 1px solid var(--line);">
-        <div style="display: flex; align-items: flex-start; gap: 14px;">
-          <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span>
-          <div style="display: flex; flex-direction: column; gap: 2px; padding-top: 8px;">
-            <h2 id="mp-lock-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Always yours only</h2>
-            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">These can&#39;t be switched on for a member.</p>
-          </div>
-        </div>
-        <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
-          <sc-for list="{{locked}}" as="l" hint-placeholder-count="6">
-            <li style="{{l.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>{{l.name}}</span></li>
-          </sc-for>
-        </ul>
-        <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
-          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
-          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Members can never change payout wallets or start a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold.</p>
-        </div>
-      </section>
+      <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
+        <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Never available to members: wallets, security, sessions, team settings, account type and deleting the account.</p>
+      </div>
     </main>
 
     <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
-      <p style="display: flex; gap: 8px; margin: 0 0 8px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Saving needs your passkey, security key or PGP key.</span></p>
+      <p style="display: flex; gap: 8px; margin: 0 0 8px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Saving needs your passkey, security key or PGP key. With just a username and password, the change waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h.</span></p>
       <sc-if value="{{hasNote}}" hint-placeholder-val="{{false}}">
         <div role="status" style="display: flex; gap: 10px; align-items: flex-start; margin: 0 0 8px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span style="font-size: 14px; line-height: 20px;">{{note}}</span></div>
       </sc-if>
@@ -119,23 +103,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <section role="dialog" aria-modal="true" aria-labelledby="mp-ask-t" aria-describedby="mp-ask-d" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
           <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
           <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4"/><path d="M12 16h.01"/></svg></span>
-          <h2 id="mp-ask-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">{{askTitle}}</h2>
-          <sc-if value="{{askOne}}" hint-placeholder-val="{{true}}">
-            <p id="mp-ask-d" style="margin: 0; font-size: 16px; line-height: 24px;">{{askText}}</p>
-          </sc-if>
-          <sc-if value="{{askMany}}" hint-placeholder-val="{{false}}">
-            <div style="display: flex; flex-direction: column; gap: 12px;">
-              <p id="mp-ask-d" style="margin: 0; font-size: 16px; line-height: 24px;">{{askText}}</p>
-              <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
-                <sc-for list="{{askList}}" as="a" hint-placeholder-count="2">
-                  <li style="{{a.style}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 3px; color: var(--caution);"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg><span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 15px; line-height: 22px; font-weight: 600;">{{a.name}}</span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{a.line}}</span></span></li>
-                </sc-for>
-              </ul>
-            </div>
-          </sc-if>
+          <h2 id="mp-ask-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Let desk_ana release XMR?</h2>
+          <p id="mp-ask-d" style="margin: 0; font-size: 16px; line-height: 24px;">{{askText}}</p>
           <div style="display: flex; flex-direction: column; gap: 4px;">
-            <button type="button" onClick="{{askYes}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 2px solid var(--ink); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">{{askYesLabel}}</button>
-            <button type="button" onClick="{{askNo}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">{{askNoLabel}}</button>
+            <button type="button" onClick="{{askYes}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 2px solid var(--ink); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Allow releasing XMR</button>
+            <button type="button" onClick="{{askNo}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Keep it off</button>
           </div>
         </section>
       </div>
@@ -147,7 +119,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <h2 id="mp-ver-t" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Confirm it&#39;s you</h2>
           <p id="mp-ver-d" style="margin: 0; font-size: 16px; line-height: 24px;">{{verifyText}}</p>
           <div style="display: flex; flex-direction: column; gap: 8px;">
-            <sc-for list="{{methods}}" as="k" hint-placeholder-count="2">
+            <sc-for list="{{methods}}" as="k" hint-placeholder-count="3">
               <button type="button" onClick="{{k.use}}" style="display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; box-sizing: border-box; padding: 12px 16px; border: 1px solid var(--line); border-radius: 16px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; line-height: 22px; font-weight: 600; text-align: left; cursor: pointer;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg></span><span>{{k.label}}</span></button>
             </sc-for>
             <button type="button" onClick="{{verifyCancel}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Cancel</button>
@@ -159,13 +131,34 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
-    <aside aria-label="Decided by the owner: Team permissions are granular: member types with checkboxes" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q16)</span><span style="font-weight: 600;">Team permissions are granular: member types with checkboxes</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Three or four member types. Each type has 7 to 10 checkboxes the owner ticks one by one.</li><li>A member can belong to several types, or all of them, with only some boxes ticked in each.</li><li>This replaces the four presets drawn here. Redraw pending: the board will be rebuilt to this model.</li></ul></aside>
+    <aside aria-label="Decided by the owner: Team permissions are granular: member types with checkboxes" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q16)</span><span style="font-weight: 600;">Team permissions are granular: member types with checkboxes</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Three or four member types. Each type has 7 to 10 checkboxes the owner ticks one by one.</li><li>A member can belong to several types, or all of them, with only some boxes ticked in each.</li><li>This replaced the four presets. The board is now redrawn to this model (7 Nov): four types, each with its own checkboxes.</li></ul></aside>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>Types.</strong> Each type is a card with a disclosure header (64px): name, count, and a switch on the right. Switch on = desk_ana is in that type; the card opens to its checkboxes (44px rows, 22px boxes, ink accent). Switch off = the card closes and greys out. Its ticks are kept but disabled, and don&#39;t count, until the type is switched back on. Any card can still be opened to look. <strong>Sensitive.</strong> Release XMR carries a SENSITIVE chip. Ticking it asks first (owner rule, 2 Nov: sensitive permissions ask when turned on), then shows the caution callout under the row. Switching on a type that already has it ticked asks too. <strong>Count.</strong> The summary counts only the ticks in types that are on. Tweak <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">example</span>: offers-and-chat, everything, trades-with-release.</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">COPY-UNSIGNED (design&#39;s proposal for the owner): the four type names (Chat, Offers, Trades, Records) and all 31 checkbox labels; "Member types"; "Switch a type on, then tick what desk_ana can do in it. A member can be in one type, several or all four."; the summary "In 2 of 4 types · 9 of 31 things allowed"; the counts "5 of 7 allowed" and "Off · 2 of 7 ticked"; "Switch on Records to use these. Your ticks are kept."; "They can send XMR from your escrow. Only for someone you trust fully."; "Never available to members: wallets, security, sessions, team settings, account type and deleting the account."; "With just a username and password, the change waits 24 h."; "Use my PGP key".</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"preset":{"editor":"enum","options":["chat-only","offers","trades","everything","custom"],"default":"trades"},"$preview":{"width":390,"height":3973}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"example":{"editor":"enum","options":["offers-and-chat","everything","trades-with-release"],"default":"offers-and-chat"},"$preview":{"width":390,"height":2421}}'>
 class Component extends DCLogic {
-  constructor(props) { super(props); this.state = { on: null, saved: null, ask: null, note: '', verify: false }; }
+  constructor(props) { super(props); this.state = this.seed(props.example); }
+  seed(ex) {
+    // Owner decision Q16 (6 Nov): member types, each with its own checkboxes. Draft lists, design's proposal.
+    const all = { chat: ['cRead', 'cReply', 'cPay', 'cProof', 'cNudge', 'cNotes', 'cBlock'], offers: ['oSee', 'oToggle', 'oPrice', 'oBands', 'oPay', 'oCur', 'oPost', 'oDelete'], trades: ['tAccept', 'tDecline', 'tPaid', 'tGot', 'tRelease', 'tCancel', 'tDispute', 'tDReply', 'tFeedback'], records: ['rHist', 'rExport', 'rLog', 'rPayout', 'rReviews', 'rReply', 'rTickets'] };
+    let on, ticks;
+    if (ex === 'everything') {
+      on = { chat: true, offers: true, trades: true, records: true };
+      ticks = all;
+    } else if (ex === 'trades-with-release') {
+      on = { chat: true, offers: false, trades: true, records: false };
+      ticks = { chat: ['cRead', 'cReply', 'cNudge'], offers: [], trades: ['tAccept', 'tDecline', 'tGot', 'tRelease', 'tDispute', 'tDReply'], records: [] };
+    } else {
+      on = { chat: true, offers: true, trades: false, records: false };
+      ticks = { chat: ['cRead', 'cReply', 'cPay', 'cProof', 'cNudge'], offers: ['oSee', 'oToggle', 'oPrice', 'oBands'], trades: [], records: ['rHist', 'rReviews'] };
+    }
+    return { on, ticks, open: Object.assign({}, on), saved: { on, ticks }, ask: null, note: '', verify: false };
+  }
+  componentDidUpdate(prev) {
+    if (prev.example !== this.props.example) this.setState(this.seed(this.props.example));
+  }
   renderVals() {
     const THEMES = {
       night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
@@ -175,173 +168,103 @@ class Component extends DCLogic {
     const rootCss = (H) => THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
 
-    // Owner, 2 Nov: per-member permissions replace the two fixed roles (Offers / Trades).
-    // later = shown but can't be switched on until member escrow keys are built.
-    const GROUPS = [
-      { id: 'offers', title: 'Offers', sub: '', icon: 'M3 12V4h8l9 9-8 8zM7.5 7.5h.01' },
-      { id: 'trades', title: 'Trades on your offers', sub: 'You sell or buy through your offer.', icon: 'M4 8h13l-3-3M20 16H7l3 3' },
-      { id: 'taker', title: 'Trades on other traders’ offers', sub: 'desk_ana takes someone else’s offer for you.', later: true, note: 'Members can’t take offers yet. This needs extra escrow security for members, which isn’t built yet.', icon: 'M7 17L17 7M9 7h8v8' },
-      { id: 'disputes', title: 'Disputes', sub: '', icon: 'M5 21V4M5 4h12l-2 4 2 4H5' },
-      { id: 'reviews', title: 'Reviews and people', sub: '', icon: 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z' }
+    // COPY-UNSIGNED: type names and box labels are design's proposal for the owner.
+    const TYPES = [
+      { id: 'chat', name: 'Chat', boxes: [['cRead', 'Read trade chats'], ['cReply', 'Reply in trade chats'], ['cPay', 'Send payment details in chat'], ['cProof', 'Upload proof in chat'], ['cNudge', 'Nudge the other trader'], ['cNotes', 'See the trader’s profile notes'], ['cBlock', 'Block a trader']] },
+      { id: 'offers', name: 'Offers', boxes: [['oSee', 'See all offers'], ['oToggle', 'Turn offers on or off'], ['oPrice', 'Edit prices'], ['oBands', 'Edit amount bands'], ['oPay', 'Edit payment types and instructions'], ['oCur', 'Edit currencies'], ['oPost', 'Post a new offer'], ['oDelete', 'Delete an offer']] },
+      { id: 'trades', name: 'Trades', boxes: [['tAccept', 'Accept a trade'], ['tDecline', 'Decline a trade'], ['tPaid', 'Mark “I’ve paid”'], ['tGot', 'Confirm payment received'], ['tRelease', 'Release XMR', true], ['tCancel', 'Ask to cancel'], ['tDispute', 'Open a dispute'], ['tDReply', 'Reply in a dispute'], ['tFeedback', 'Leave feedback']] },
+      { id: 'records', name: 'Records', boxes: [['rHist', 'See trade history'], ['rExport', 'Export trade history'], ['rLog', 'See team activity log'], ['rPayout', 'See payout amounts'], ['rReviews', 'See reviews'], ['rReply', 'Reply to reviews'], ['rTickets', 'See support tickets']] }
     ];
-    const PERMS = [
-      { id: 'oPost', g: 'offers', name: 'Post new offers', desc: 'Create offers that show under your name.', sensitive: true },
-      { id: 'oEdit', g: 'offers', name: 'Edit offers', desc: 'Change the price, limits and payment methods.', sensitive: true },
-      { id: 'oToggle', g: 'offers', name: 'Turn offers on or off', desc: 'Pause an offer or put it back up.' },
-      { id: 'oDelete', g: 'offers', name: 'Delete offers', desc: 'Remove an offer for good.', sensitive: true },
-      { id: 'tSee', g: 'trades', name: 'See trades and their chat', desc: 'Open trades on your offers and read the chat.' },
-      { id: 'tReply', g: 'trades', name: 'Reply in trade chat', desc: 'Messages show as sent by a team member.' },
-      { id: 'tAccept', g: 'trades', name: 'Accept a new trade on an offer', desc: 'Every trade on your offers waits for someone to accept it. Trades are never accepted automatically.', sensitive: true },
-      { id: 'tPaid', g: 'trades', name: 'Confirm payment received', desc: 'Mark that the buyer’s payment has arrived.', sensitive: true },
-      { id: 'tRelease', g: 'trades', name: 'Release XMR to the buyer', desc: 'Send the XMR in escrow to the buyer to finish a trade.', sensitive: true },
-      { id: 'tCancel', g: 'trades', name: 'Cancel a trade', desc: 'End a trade before any payment is made. The escrow goes back to the seller.' },
-      { id: 'tNudge', g: 'trades', name: 'Nudge the other trader', desc: 'Send a reminder when the other trader goes quiet.' },
-      { id: 'kTake', g: 'taker', name: 'Take another trader’s offer', desc: 'Start a trade on someone else’s offer, as you.' },
-      { id: 'kPaid', g: 'taker', name: 'Mark “I’ve paid”', desc: 'Tell the seller the payment is sent.' },
-      { id: 'kProof', g: 'taker', name: 'Upload payment proof', desc: 'Add a receipt or screenshot to the trade.' },
-      { id: 'dOpen', g: 'disputes', name: 'Open a dispute', desc: 'Ask a moderator to step in on a trade.' },
-      { id: 'dReply', g: 'disputes', name: 'Reply and add evidence in a dispute', desc: 'Answer the moderator and add files.' },
-      { id: 'rLeave', g: 'reviews', name: 'Leave reviews after a trade', desc: 'Rate the other trader when a trade ends.' },
-      { id: 'rReply', g: 'reviews', name: 'Reply to or dispute a review', desc: 'Answer a review, or ask a moderator to check it.' },
-      { id: 'rBlock', g: 'reviews', name: 'Block a trader', desc: 'Stop a trader from trading with you.' }
-    ];
-    const LATER = ['kTake', 'kPaid', 'kProof'];
-
-    // Owner decided 2 Nov: every trade must be accepted by the person who posted the offer; never auto-accepted.
-    // Owner decided 2 Nov: Release XMR is a grantable member permission.
-    // Owner, 2 Nov: every Sensitive switch asks first when turned on, saying what it lets the member do.
-    const WARN = {
-      oPost: { title: 'Let desk_ana post offers?', yes: 'Allow posting offers', line: 'desk_ana can set prices and limits on offers that trade in your name.' },
-      oEdit: { title: 'Let desk_ana edit offers?', yes: 'Allow editing offers', line: 'desk_ana can set prices and limits on offers that trade in your name.' },
-      oDelete: { title: 'Let desk_ana delete offers?', yes: 'Allow deleting offers', line: 'desk_ana can remove your offers. Deleted offers can’t be brought back.' },
-      tAccept: { title: 'Let desk_ana accept new trades?', yes: 'Allow accepting trades', line: 'desk_ana can start trades on your offers for you.' },
-      tPaid: { title: 'Let desk_ana confirm payments?', yes: 'Allow confirming payments', line: 'desk_ana can tell the buyer your payment arrived. Only turn this on if they can see your bank or payment account.' },
-      tRelease: { title: 'Let desk_ana release XMR?', yes: 'Allow releasing XMR', line: 'They can finish trades and send the buyer’s XMR from your escrow.' }
-    };
-    const avail = PERMS;
-    const availIds = avail.map((p) => p.id);
-    const switchable = availIds.filter((id) => LATER.indexOf(id) < 0);
-
-    // Draft preset mapping (OPEN: owner to choose).
-    const PRESETS = [
-      { id: 'chat-only', label: 'Chat only', ids: ['tSee', 'tReply'] },
-      { id: 'offers', label: 'Offers manager', ids: ['oPost', 'oEdit', 'oToggle', 'tSee', 'tReply'] },
-      { id: 'trades', label: 'Trade handler', ids: ['tSee', 'tReply', 'tAccept', 'tPaid', 'tCancel', 'tNudge', 'dOpen', 'dReply', 'rLeave'] },
-      { id: 'everything', label: 'Everything allowed', ids: PERMS.map((p) => p.id).filter((id) => LATER.indexOf(id) < 0) }
-    ];
-    const clean = (ids) => switchable.filter((id) => ids.indexOf(id) >= 0);
-    const CUSTOM = ['tSee', 'tReply', 'tPaid', 'tCancel', 'tNudge', 'dOpen', 'dReply', 'rLeave', 'oToggle'];
-    const startPreset = PRESETS.find((p) => p.id === this.props.preset);
-    const base = clean(startPreset ? startPreset.ids : (this.props.preset === 'custom' ? CUSTOM : PRESETS[2].ids));
-    const on = clean(s.on || base);
-    const saved = clean(s.saved || base);
+    const SENS = ['tRelease'];
+    const total = TYPES.reduce((n, t) => n + t.boxes.length, 0);
+    const allowedIn = (on, ticks) => TYPES.reduce((n, t) => n + (on[t.id] ? ticks[t.id].length : 0), 0);
+    const allowed = allowedIn(s.on, s.ticks);
+    const typesOn = TYPES.filter((t) => s.on[t.id]).length;
     const same = (a, b) => a.length === b.length && a.every((x) => b.indexOf(x) >= 0);
-    const dirty = !same(on, saved);
-    const match = PRESETS.find((p) => same(on, clean(p.ids)));
-    const nameOf = (id) => PERMS.find((p) => p.id === id).name;
+    const dirty = TYPES.some((t) => !!s.on[t.id] !== !!s.saved.on[t.id] || !same(s.ticks[t.id], s.saved.ticks[t.id]));
 
-    const setOn = (ids, extra) => this.setState(Object.assign({ on: ids, note: '' }, extra || {}));
-    const applyPreset = (p) => {
-      const ids = clean(p.ids);
-      const newSens = ids.filter((id) => WARN[id] && on.indexOf(id) < 0);
-      if (newSens.length) this.setState({ ask: { ids: newSens, preset: p.id } });
-      else setOn(ids);
-    };
+    const setTicks = (tid, list, extra) => this.setState(Object.assign({ ticks: Object.assign({}, this.state.ticks, { [tid]: list }), note: '' }, extra || {}));
+    const setOn = (tid, v, extra) => this.setState(Object.assign({ on: Object.assign({}, this.state.on, { [tid]: v }), open: Object.assign({}, this.state.open, { [tid]: v }), note: '' }, extra || {}));
 
-    // Selection is never orange: the picked preset gets a 2px ink border on --surface-raised.
-    const chipStyle = (sel) => 'display: flex; align-items: center; min-height: 44px; box-sizing: border-box; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 15px; line-height: 20px; color: var(--ink); cursor: pointer; ' + (sel ? 'border: 2px solid var(--ink); background: var(--surface-raised); font-weight: 600;' : 'border: 1px solid var(--line); background: transparent;');
-    const chips = PRESETS.map((p) => ({
-      label: p.label, pressed: match === p ? 'true' : 'false',
-      pick: () => applyPreset(p), style: chipStyle(match === p)
-    }));
-    if (!match) chips.push({ label: 'Custom', pressed: 'true', pick: () => {}, style: chipStyle(true) });
+    // Switches: on = ink track, ground knob; off = raised track, muted knob.
+    const swTrack = (v) => 'display: flex; align-items: center; width: 52px; height: 32px; flex-shrink: 0; box-sizing: border-box; padding: 3px; border-radius: 999px; border: 1px solid ' + (v ? 'var(--ink); background: var(--ink); justify-content: flex-end;' : 'var(--line); background: var(--surface-raised); justify-content: flex-start;');
+    const swKnob = (v) => 'width: 24px; height: 24px; box-sizing: border-box; border-radius: 999px; ' + (v ? 'background: var(--ground);' : 'background: var(--ink-muted);');
 
-    const mapping = PRESETS.map((p) => ({ label: p.label, list: p.id === 'everything' ? 'every switch except the “Coming later” ones' : clean(p.ids).map(nameOf).join(', ') }));
-
-    // Switches: on = ink track, ground knob; off = raised track, muted knob; "Coming later" = off look, disabled and inert (--team is for member identity only).
-    const swTrack = (v, dis) => 'display: flex; align-items: center; width: 52px; height: 32px; flex-shrink: 0; box-sizing: border-box; padding: 3px; border-radius: 999px; border: 1px solid ' + (dis ? 'var(--surface-raised); background: var(--surface-raised); justify-content: flex-start;' : (v ? 'var(--ink); background: var(--ink); justify-content: flex-end;' : 'var(--line); background: var(--surface-raised); justify-content: flex-start;'));
-    const swKnob = (v, dis) => 'width: 24px; height: 24px; box-sizing: border-box; border-radius: 999px; ' + (dis ? 'background: var(--ink-muted); opacity: 0.5;' : (v ? 'background: var(--ground);' : 'background: var(--ink-muted);'));
-
-    const groups = GROUPS.map((g) => {
-      const list = avail.filter((p) => p.g === g.id);
-      const rows = list.map((p, i) => {
-        const later = LATER.indexOf(p.id) >= 0;
-        const v = on.indexOf(p.id) >= 0;
+    const types = TYPES.map((t) => {
+      const on = !!s.on[t.id];
+      const open = !!s.open[t.id];
+      const ticks = s.ticks[t.id];
+      const rows = t.boxes.map((b, i) => {
+        const ticked = ticks.indexOf(b[0]) >= 0;
         return {
-          name: p.name, desc: p.desc, sensitive: !!p.sensitive,
-          lid: 'mp-' + p.id + '-l', did: 'mp-' + p.id + '-d',
-          on: v ? 'true' : 'false', disabled: later,
+          name: b[1], sensitive: !!b[2], cbId: 'mp-' + b[0],
+          ticked, disabled: !on, warn: !!b[2] && ticked && on,
           toggle: () => {
-            if (later) return;
-            if (v) setOn(on.filter((x) => x !== p.id));
-            else if (WARN[p.id]) this.setState({ ask: { ids: [p.id], preset: null } });
-            else setOn(on.concat([p.id]));
+            if (!on) return;
+            if (ticked) setTicks(t.id, ticks.filter((x) => x !== b[0]));
+            else if (b[2]) this.setState({ ask: { kind: 'box', type: t.id, id: b[0] } });
+            else setTicks(t.id, ticks.concat([b[0]]));
           },
-          btnStyle: 'display: flex; align-items: center; justify-content: center; width: 60px; height: 44px; flex-shrink: 0; margin-right: -4px; padding: 0; border: 0; border-radius: 999px; background: transparent; cursor: ' + (later ? 'not-allowed;' : 'pointer;'),
-          track: swTrack(v, later), knob: swKnob(v, later),
-          nameStyle: 'font-size: 16px; line-height: 22px; font-weight: 600; color: ' + (later ? 'var(--ink-muted);' : 'var(--ink);'),
-          rowStyle: 'display: flex; align-items: center; gap: 12px; min-height: 64px; box-sizing: border-box; margin: 0 20px; padding: 14px 0;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '')
+          rowStyle: 'margin: 0 20px;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : ''),
+          labelStyle: 'display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 15px; line-height: 20px; cursor: ' + (on ? 'pointer; color: var(--ink);' : 'not-allowed; color: var(--ink-muted);')
         };
       });
       return {
-        hid: 'mp-' + g.id + '-h', title: g.title, sub: g.sub, hasSub: g.sub !== '', later: !!g.later, notLater: !g.later,
-        hasNote: !!g.note, note: g.note || '', rows, icon: g.icon,
-        onN: String(list.filter((p) => on.indexOf(p.id) >= 0).length), rowN: String(list.length),
-        tileStyle: 'display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: ' + (g.later ? 'var(--ink-muted);' : 'var(--ink);')
+        id: t.id, name: t.name, hid: 'mp-' + t.id + '-h', panelId: 'mp-' + t.id + '-p',
+        rows, open, isOff: !on,
+        expanded: open ? 'true' : 'false', onAttr: on ? 'true' : 'false',
+        switchLabel: 'desk_ana is in ' + t.name,
+        n: String(ticks.length), total: String(t.boxes.length), countWord: on ? 'allowed' : 'ticked',
+        countStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace;" + (on ? ' color: var(--ink);' : ''),
+        toggleOpen: () => this.setState({ open: Object.assign({}, this.state.open, { [t.id]: !open }) }),
+        toggleOn: () => {
+          if (on) setOn(t.id, false);
+          else if (ticks.some((x) => SENS.indexOf(x) >= 0)) this.setState({ ask: { kind: 'type', type: t.id } });
+          else setOn(t.id, true);
+        },
+        track: swTrack(on), knob: swKnob(on),
+        chevStyle: 'flex-shrink: 0; color: var(--ink-muted);' + (open ? ' transform: rotate(90deg);' : ''),
+        nameStyle: 'font-size: 16px; line-height: 22px; font-weight: 600; color: ' + (on ? 'var(--ink);' : 'var(--ink-muted);'),
+        // Off = greyed: no fill, faint border. On = surface card.
+        cardStyle: 'display: flex; flex-direction: column; border-radius: 16px; ' + (on ? 'background: var(--surface); border: 1px solid var(--surface);' : 'background: transparent; border: 1px solid var(--surface-raised);')
       };
     });
 
-    // Hero meter: one segment per permission. On = --team, off = faint team, coming later = empty.
-    const segs = [];
-    PERMS.forEach((p) => { if (on.indexOf(p.id) >= 0) segs.push(0); });
-    PERMS.forEach((p) => { if (on.indexOf(p.id) < 0 && LATER.indexOf(p.id) < 0) segs.push(1); });
-    LATER.forEach(() => segs.push(2));
-    const segStyles = segs.map((k) => ({ style: 'display: block; box-sizing: border-box; border-radius: 999px; ' + (k === 0 ? 'background: var(--team);' : k === 1 ? 'background: color-mix(in srgb, var(--team) 18%, var(--surface-raised));' : 'border: 1px dashed var(--line);') }));
-
-    const LOCKED = ['Payout wallets', 'Team and permissions', 'Login methods and security', 'Sessions and devices', 'Account type', 'Delete the account'];
-    const locked = LOCKED.map((n, i) => ({ name: n, style: 'display: flex; align-items: center; gap: 10px; min-height: 44px; margin: 0 14px; font-size: 15px; line-height: 20px; color: var(--ink-muted);' + (i > 0 ? ' border-top: 1px solid var(--surface);' : '') }));
-
-    // Sensitive confirm: from one switch, or from a preset that turns sensitive switches on.
     const ask = s.ask;
-    const askPreset = ask && ask.preset ? PRESETS.find((p) => p.id === ask.preset) : null;
-    const askIds = ask ? ask.ids : [];
-    const one = askIds.length === 1 ? WARN[askIds[0]] : null;
     const askYes = () => {
-      if (askPreset) setOn(clean(askPreset.ids), { ask: null });
-      else setOn(on.concat(askIds.filter((id) => on.indexOf(id) < 0)), { ask: null });
+      if (!ask) return;
+      if (ask.kind === 'type') setOn(ask.type, true, { ask: null });
+      else setTicks(ask.type, this.state.ticks[ask.type].concat([ask.id]), { ask: null });
     };
-    let askText = one ? one.line : '';
-    if (askPreset) askText = (one ? '“' + askPreset.label + '” turns this on. ' + one.line : '“' + askPreset.label + '” turns these on:');
 
-    // Board height = measured content height (night, fonts loaded) for the default state,
-    // plus what each state adds, so nothing is clipped and no empty band is left.
-    const H = Math.max(844, 3973
-      + (match ? 0 : 52)
-      + (s.note ? 58 : 0));
+    // Board height = measured content height (night, fonts loaded): closed cards + each open card's rows,
+    // + the off hint and the sensitive callout, + the saved note. Nothing clipped, no empty band.
+    const ROW = 44, PANEL = 13, OFFHINT = 34, WARN = 74;
+    let H = 1722;
+    types.forEach((t) => {
+      if (!t.open) return;
+      H += PANEL + t.rows.length * ROW + (t.rows.length - 1) + (t.isOff ? OFFHINT : 0) + t.rows.filter((r) => r.warn).length * WARN;
+    });
+    if (s.note) H += 58;
+    H = Math.max(844, H);
 
     return {
       rootStyle: rootCss(H),
-      allowedN: String(on.length), totalN: String(availIds.length), laterN: String(LATER.length),
-      segs: segStyles,
-      chips, mapping, groups, locked,
-      presetName: startPreset ? startPreset.label : 'Custom',
+      typesOnN: String(typesOn), typesN: String(TYPES.length), allowedN: String(allowed), totalN: String(total),
+      types,
       clean: !dirty,
       saveStyle: 'display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; ' + (dirty ? 'background: var(--monero); color: var(--on-monero); cursor: pointer;' : 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
       // Owner, 2 Nov: changing permissions always needs a passkey, security key or PGP key. Save asks first, like Devices.
+      // Owner, 2 Nov: with just a username and password, team changes wait 24 h (see Devices).
       save: () => { if (dirty) this.setState({ verify: true }); },
       verifying: s.verify && dirty,
-      verifyText: 'Saving lets desk_ana do ' + on.length + ' of ' + availIds.length + ' things. Saving needs your passkey, security key or PGP key.',
-      methods: ['Use my passkey', 'Use my security key'].map((label) => ({ label, use: () => this.setState({ verify: false, saved: on, note: 'Saved. desk_ana can now do ' + on.length + ' of ' + availIds.length + ' things.' }) })),
+      verifyText: 'Saving lets desk_ana do ' + allowed + ' of ' + total + ' things. Saving needs your passkey, security key or PGP key.',
+      methods: ['Use my passkey', 'Use my security key', 'Use my PGP key'].map((label) => ({ label, use: () => this.setState({ verify: false, saved: { on: this.state.on, ticks: this.state.ticks }, note: 'Saved. desk_ana can now do ' + allowed + ' of ' + total + ' things.' }) })),
       verifyCancel: () => this.setState({ verify: false }),
-      cancelEdits: () => this.setState({ on: saved, note: '' }),
+      cancelEdits: () => this.setState({ on: s.saved.on, ticks: s.saved.ticks, open: Object.assign({}, s.saved.on), note: '' }),
       hasNote: s.note !== '', note: s.note,
-      asking: s.ask !== null,
-      askOne: !!one, askMany: askIds.length > 1,
-      askTitle: one ? one.title : 'Turn on ' + askIds.length + ' sensitive permissions?',
-      askText,
-      askList: askIds.length > 1 ? askIds.map((id, i) => ({ name: nameOf(id), line: WARN[id].line, style: 'display: flex; gap: 10px; align-items: flex-start; margin: 0 14px; padding: 12px 0;' + (i > 0 ? ' border-top: 1px solid var(--surface);' : '') })) : [],
-      askYesLabel: one ? one.yes : 'Allow all ' + askIds.length,
-      askNoLabel: one ? 'Keep it off' : 'Keep them off',
+      asking: !!ask,
+      askText: 'They can send XMR from your escrow to finish trades. Only for someone you trust fully.',
       askYes,
       askNo: () => this.setState({ ask: null })
     };
