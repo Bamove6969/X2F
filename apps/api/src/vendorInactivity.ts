@@ -20,8 +20,8 @@
  * - held by the owner (G11, G12, 7 Nov): the lead is re-explaining the rule; nothing schedules a
  *   change to it here.
  * - an account a moderator already disabled is left as it is;
- * - no warning before the close, and nothing is deleted (names stay taken, offers stay as rows,
- *   reviews and the ban list are untouched).
+ * - no warning before the close; names stay taken, offers stay as rows, reviews and the ban list
+ *   are untouched; the account's PGP keys are deleted so the person can reuse one (owner G14).
  */
 import type pg from 'pg';
 import { addOwnerAlert } from './alerts.js';
@@ -72,6 +72,10 @@ export async function closeDueVendors(db: pg.Pool, now: Date): Promise<number> {
       );
       if ((r.rowCount ?? 0) > 0) {
         await c.query('update sessions set revoked_at = $1 where account_id = $2 and revoked_at is null', [now, id]);
+        // Owner G14 (7 Nov): the person may reuse their PGP key on a new account (a key's
+        // fingerprint is unique across accounts); names stay taken. A closed account never logs in
+        // again, so its keys go. Passkeys and security keys make a new credential for each account.
+        await c.query('delete from pgp_keys where account_id = $1', [id]);
         closed++;
       }
       await c.query('commit');

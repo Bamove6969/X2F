@@ -418,6 +418,21 @@ describe('removing a login method', () => {
     expect(rows[0].used_at).toBeNull();
   });
 
+  it("owner G13: a vendor's last passkey, security key or PGP key can't go, even with a password; after adding another it can", async () => {
+    const { id } = await account();
+    await addPassword(id);
+    const pgpId = await addPgp(id, await genKey());
+    await deps.db.query("update accounts set account_type = 'vendor', vendor_since = $2 where id = $1", [id, now]);
+    const b = await loggedIn(id);
+    const t = await token(b, id, { kind: 'remove-method', method: 'pgp', id: pgpId });
+    const refused = await b.del(`/v1/account/methods/pgp/${pgpId}`, { confirmToken: t });
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'last-login-method']);
+    await addCredential(id, 'passkey', false);
+    const t2 = await token(b, id, { kind: 'remove-method', method: 'pgp', id: pgpId });
+    expect((await b.del(`/v1/account/methods/pgp/${pgpId}`, { confirmToken: t2 })).statusCode).toBe(200);
+    expect((await listMethods(deps.db, id)).map((m) => m.type).sort()).toEqual(['passkey', 'password']);
+  });
+
   it('a trader whose only primary method is a password keeps it; TOTP and recovery codes can go', async () => {
     const { id } = await account();
     await addPassword(id);

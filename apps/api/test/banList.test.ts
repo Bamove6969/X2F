@@ -90,6 +90,26 @@ describe('recordBan', () => {
     expect((await recordBan(deps, b.id)).recorded).toBe(0);
   });
 
+  it("owner G27: banning a team account bans each member login's login name and PGP keys too", async () => {
+    const team = await seedAccount(deps, { loginName: uniq('teamlogin'), displayName: uniq('Team') });
+    const memberLogin = uniq('memberlogin');
+    const member = await seedAccount(deps, { loginName: memberLogin, kind: 'member' });
+    const key = await genKey();
+    await insertPgpKey(deps.db, deps.config, { accountId: member, fingerprint: key.fingerprint, armored: key.publicKey, now: deps.clock() });
+    await deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, 'Sam', 'sam', '{trades}', $2, $3, $2, $2)`,
+      [team, deps.clock(), member],
+    );
+    const fps = await keyFingerprints(key.publicKey);
+    // team: display + login; member: login + every fingerprint of its key
+    expect((await recordBan(deps, team)).recorded).toBe(2 + 1 + fps.length);
+    const { rows } = await deps.db.query<{ kind: string }>('select kind from banned_identifiers where account_id = $1 order by kind', [member]);
+    expect(rows.map((r) => r.kind)).toEqual(['login-name', ...fps.map(() => 'pgp-fingerprint')]);
+    expect(await codeOfError(create(names(uniq('Fresh'), memberLogin)))).toBe('409 names-unavailable');
+    expect((await recordBan(deps, team)).recorded).toBe(0);
+  });
+
   it('records nothing it is not told to: no wallet address, payment detail, IP address or device', async () => {
     const cols = await deps.db.query<{ column_name: string }>(
       "select column_name from information_schema.columns where table_name = 'banned_identifiers' order by column_name",

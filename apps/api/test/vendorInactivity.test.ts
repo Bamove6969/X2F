@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
+import { insertPgpKey } from '../src/auth/pgp.js';
 import { assertNotDisabled } from '../src/auth/sessions.js';
 import { closeDueVendors, closeInactiveVendors, VENDOR_CLOSE_CAP, VENDOR_INACTIVE_MS, VENDOR_REOPEN_MS, vendorInactivityJob } from '../src/vendorInactivity.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
+import { genKey } from './helpers/pgpKeys.js';
 import { Browser } from './helpers/totp.js';
 import { seedOffer, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -96,6 +98,17 @@ describe('closeInactiveVendors (Q77)', () => {
     expect(await closeDueVendors(deps.db, when)).toBeGreaterThanOrEqual(1);
     expect(await row(t.id)).toEqual({ last_login_at: START, disabled_at: when, closed_at: when, closed_reason: 'vendor-inactive' });
     expect(await liveSessions(t.id)).toBe(0);
+  });
+
+  it("owner G14: a closed vendor's PGP key can go on a new account (its key is released); its names stay taken", async () => {
+    const t = await vendor();
+    const key = await genKey();
+    await insertPgpKey(deps.db, deps.config, { accountId: t.id, fingerprint: key.fingerprint, armored: key.publicKey, now: START });
+    expect(await closeDueVendors(deps.db, at(VENDOR_INACTIVE_MS))).toBeGreaterThanOrEqual(1);
+    expect((await deps.db.query('select 1 from pgp_keys where account_id = $1', [t.id])).rowCount).toBe(0);
+    const fresh = await seedAccount(deps, { loginName: `fresh${t.id.slice(0, 8)}` });
+    await insertPgpKey(deps.db, deps.config, { accountId: fresh, fingerprint: key.fingerprint, armored: key.publicKey, now: START });
+    expect((await deps.db.query('select 1 from accounts where id = $1 and closed_at is not null', [t.id])).rowCount).toBe(1);
   });
 
   it('a closed vendor cannot log in (403 account-disabled), and its live offer is no longer listed', async () => {

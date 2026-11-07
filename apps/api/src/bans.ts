@@ -156,7 +156,8 @@ async function insertTag(db: Queryable, r: { kind: BannedKind; keyId: number; ta
  * Puts a banned account's identifiers on the ban list (the internal function Plan 4's ban action
  * calls, in its transaction when given one): its display name, its login name (its stored tag,
  * copied as it is: the plaintext is never kept), every fingerprint of every PGP key on it, and
- * `jabber` when given (the account's Jabber address; there is no column for it yet). Nothing else.
+ * `jabber` when given (the account's Jabber address; there is no column for it yet), and for a team
+ * account each member login's login name and PGP keys (owner G27). Nothing else.
  * Idempotent. Returns how many rows were new.
  */
 export async function recordBan(
@@ -173,6 +174,33 @@ export async function recordBan(
   const acc = rows[0];
   if (!acc) throw new ApiError(404, 'not-found');
   let recorded = await recordBannedValues(db, config, { kind: 'display-name', values: [acc.display_key], accountId, now });
+  recorded += await recordLoginAndKeys(deps, accountId, acc, now);
+  // Owner G27 (7 Nov): banning a team account bans its members' entries too: each member login
+  // that still exists gives its login name and its PGP keys (a member's display name is a random
+  // placeholder on its login account, so there is no public name to ban).
+  const members = await db.query<{ id: string; login_tag: Buffer | null; login_tag_key_id: number | null }>(
+    `select a.id, a.login_tag, a.login_tag_key_id from team_members m join accounts a on a.id = m.member_account_id
+      where m.account_id = $1 order by a.id`,
+    [accountId],
+  );
+  for (const m of members.rows) recorded += await recordLoginAndKeys(deps, m.id, m, now);
+  if (o.jabber !== undefined && o.jabber !== null) {
+    const bare = normalizeJabber(o.jabber);
+    if (bare === null) throw new ApiError(400, 'bad-request');
+    recorded += await recordBannedValues(db, config, { kind: 'jabber', values: [bare], accountId, now });
+  }
+  return { recorded };
+}
+
+/** One account's login name (its stored tag, copied as it is) and every fingerprint of its PGP keys. */
+async function recordLoginAndKeys(
+  deps: Pick<Deps, 'db' | 'config'>,
+  accountId: string,
+  acc: { login_tag: Buffer | null; login_tag_key_id: number | null },
+  now: Date,
+): Promise<number> {
+  const { db, config } = deps;
+  let recorded = 0;
   if (acc.login_tag !== null && acc.login_tag_key_id !== null) {
     recorded += await insertTag(db, { kind: 'login-name', keyId: acc.login_tag_key_id, tag: acc.login_tag, accountId, now });
   }
@@ -185,11 +213,5 @@ export async function recordBan(
     fingerprints.push(k.fingerprint);
     fingerprints.push(...(await keyFingerprints(openKey(config, k.armored_enc, k.fingerprint))));
   }
-  recorded += await recordBannedValues(db, config, { kind: 'pgp-fingerprint', values: fingerprints, accountId, now });
-  if (o.jabber !== undefined && o.jabber !== null) {
-    const bare = normalizeJabber(o.jabber);
-    if (bare === null) throw new ApiError(400, 'bad-request');
-    recorded += await recordBannedValues(db, config, { kind: 'jabber', values: [bare], accountId, now });
-  }
-  return { recorded };
+  return recorded + (await recordBannedValues(db, config, { kind: 'pgp-fingerprint', values: fingerprints, accountId, now }));
 }
