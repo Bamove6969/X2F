@@ -1,4 +1,4 @@
-import { validateHours, type LoginHours, type StaffRole } from '@x2f/staff';
+import { GRANTABLE_PERMS, validateHours, type LoginHours, type StaffRole } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { lockAccount, withTx } from '../auth/hold.js';
@@ -122,7 +122,7 @@ async function unassignOpenCases(c: pg.PoolClient, accountId: string, req: Fasti
 export interface MemberRow {
   accountId: string | null;
   inviteId: string | null;
-  username: string | null;
+  displayName: string | null;
   role: StaffRole;
   status: 'active' | 'switched-off' | 'waiting';
   hours: unknown;
@@ -154,12 +154,12 @@ export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]
   );
   return [
     ...staff.map((r): MemberRow => ({
-      accountId: r.account_id, inviteId: null, username: r.display_name, role: r.role,
+      accountId: r.account_id, inviteId: null, displayName: r.display_name, role: r.role,
       status: r.switched_off_at === null ? 'active' : 'switched-off', hours: r.hours,
       joinedAt: r.joined_at.toISOString(), lastActiveAt: r.last_active?.toISOString() ?? null, openCases: r.open_cases, expiresAt: null,
     })),
     ...invites.map((r): MemberRow => ({
-      accountId: null, inviteId: r.id, username: r.display_name, role: r.role, status: 'waiting', hours: r.hours,
+      accountId: null, inviteId: r.id, displayName: r.display_name, role: r.role, status: 'waiting', hours: r.hours,
       joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: r.expires_at.toISOString(),
     })),
   ];
@@ -231,6 +231,28 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       await log(c, req, 'staff.role-set', { staffId: id, from: target.role, to: role });
     });
     return { role };
+  });
+
+  // Owner Q60 / Q16: the per-person checkboxes (`grants`: tickets.handle, feedback.read), set with a
+  // tap bound to the person and the exact list (sorted). The owner's own row has none (owner-protected).
+  app.put('/staff/v1/members/:id/grants', opts, async (req) => {
+    const id = idParam(req);
+    const b = body(req);
+    const raw = b.grants;
+    if (!Array.isArray(raw) || raw.some((g) => typeof g !== 'string' || !(GRANTABLE_PERMS as readonly string[]).includes(g))) {
+      throw new ApiError(400, 'bad-request', { field: 'grants' });
+    }
+    const grants = [...new Set(raw as string[])].sort();
+    if (grants.length !== raw.length) throw new ApiError(400, 'bad-request', { field: 'grants' });
+    const tapId = tapIdOf(b);
+    const now = req.server.deps.clock();
+    await withTx(req.server.deps.db, async (c) => {
+      await lockTarget(c, id);
+      await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'set-grants', accountId: id, grants }, now, { sessionId: req.auth.sessionId });
+      await c.query('update staff_members set grants = $2::text[] where account_id = $1', [id, grants]);
+      await log(c, req, 'staff.grants-set', { staffId: id, ticketsHandle: grants.includes('tickets.handle'), feedbackRead: grants.includes('feedback.read') });
+    });
+    return { grants };
   });
 
   app.delete('/staff/v1/members/:id', opts, async (req, reply) => {

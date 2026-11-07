@@ -48,8 +48,8 @@ const acceptUrl = (token: string, step = '') => `/staff/v1/invites/accept/${toke
 
 async function pickNames(b: StaffBrowser, token: string) {
   const n = loginName();
-  const res = await b.post(acceptUrl(token, '/account'), { username: `Mod${n}`, loginName: n });
-  return { res, loginName: n, username: `Mod${n}` };
+  const res = await b.post(acceptUrl(token, '/account'), { displayName: `Mod${n}`, loginName: n });
+  return { res, loginName: n, displayName: `Mod${n}` };
 }
 
 async function addInviteKey(b: StaffBrowser, token: string, key: SoftAuthenticator, kind: 'security-key' | 'passkey' = 'security-key') {
@@ -115,7 +115,7 @@ describe('invites', () => {
 
     // A second use of the link.
     expect(errorOf(await invitee().get(acceptUrl(inv.token)))).toBe('invite-invalid');
-    expect(errorOf(await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Again1', loginName: 'againlogin1' }))).toBe('invite-invalid');
+    expect(errorOf(await invitee().post(acceptUrl(inv.token, '/account'), { displayName: 'Again1', loginName: 'againlogin1' }))).toBe('invite-invalid');
     expect(errorOf(await s.b.post(acceptUrl(inv.token, '/finish'), {}))).toBe('invite-invalid');
   });
 
@@ -180,7 +180,7 @@ describe('invites', () => {
     const id = await accountOf(n.loginName);
     const { rows } = await t.deps.db.query<{ disabled_at: Date | null }>('select disabled_at from accounts where id = $1', [id]);
     expect(rows[0]!.disabled_at).not.toBeNull();
-    const again = await b.post(acceptUrl(inv.token, '/account'), { username: 'Other1x', loginName: 'otherlogin1x' });
+    const again = await b.post(acceptUrl(inv.token, '/account'), { displayName: 'Other1x', loginName: 'otherlogin1x' });
     expect(again.statusCode).toBe(409);
     // Keys and PGP before the names: refused.
     const fresh = await createInvite('mod');
@@ -226,11 +226,11 @@ describe('members', () => {
     expect(res.statusCode).toBe(200);
     const rows = res.json().members as Array<Record<string, unknown>>;
     expect(rows).toContainEqual({
-      accountId: mod.id, inviteId: null, username: `D${mod.loginName}`, role: 'mod', status: 'active', hours: OFFICE,
+      accountId: mod.id, inviteId: null, displayName: `D${mod.loginName}`, role: 'mod', status: 'active', hours: OFFICE,
       joinedAt: MON_NOON.toISOString(), lastActiveAt: MON_NOON.toISOString(), openCases: 0, expiresAt: null,
     });
     expect(rows).toContainEqual({
-      accountId: null, inviteId: inv.inviteId, username: null, role: 'helper', status: 'waiting', hours: OFFICE,
+      accountId: null, inviteId: inv.inviteId, displayName: null, role: 'helper', status: 'waiting', hours: OFFICE,
       joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt,
     });
     expect(rows.find((r) => r.accountId === owner.id)).toMatchObject({ role: 'owner', status: 'active', hours: 'any' });
@@ -345,6 +345,49 @@ describe('open cases (was NEEDS_P4_CASE_ASSIGNEE)', () => {
     expect(await logEntries(t.deps, 'dispute.unassigned')).toContainEqual({ actor_kind: 'system', detail: JSON.stringify({ staffId: mod.id }) });
     const after = (await owner.browser.get('/staff/v1/members')).json().members as Array<{ accountId: string | null; openCases: number }>;
     expect(after.find((m) => m.accountId === mod.id)!.openCases).toBe(0);
+  });
+});
+
+describe('owner Q54: the public name is displayName; a field named username is refused', () => {
+  it('the invitee names the account with displayName and loginName; username is not taken', async () => {
+    const inv = await createInvite('helper');
+    const res = await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Public1x', loginName: 'secretlogin1x' });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('per-person grants (owner Q60)', () => {
+  it('the owner ticks feedback for a moderator with a tap bound to the exact list; the moderator then reads feedback', async () => {
+    const mod = await staffWithKeys(t, { role: 'mod' });
+    expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(403);
+    const put = (grants: unknown, tapId?: string) => owner.browser.send('PUT', `/staff/v1/members/${mod.id}/grants`, { grants, ...(tapId ? { tapId } : {}) });
+    expect(errorOf(await put(['feedback.read']))).toBe('tap-invalid');
+    // A tap for another list does not set this one.
+    const both = await tap(owner, { kind: 'set-grants', accountId: mod.id, grants: ['feedback.read', 'tickets.handle'] });
+    expect(errorOf(await put(['feedback.read'], both))).toBe('tap-invalid');
+    const res = await put(['feedback.read'], await tap(owner, { kind: 'set-grants', accountId: mod.id, grants: ['feedback.read'] }));
+    expect([res.statusCode, res.json()]).toEqual([200, { grants: ['feedback.read'] }]);
+    expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
+    expect((await mod.browser.get('/staff/v1/me')).json().nav).toContain('feedback');
+    // Lead review 7 Nov M5: a named row's sender is the owner's and seniors' to see, not a grant holder's.
+    await t.deps.db.query("insert into feedback_form (kind, body, account_id, from_code, created_on) values ('feedback', 'named', $1, null, '2026-11-02')", [mod.id]);
+    const asMod = (await mod.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null }>;
+    expect(asMod.find((i) => i.text === 'named')!.accountId).toBeNull();
+    const asOwner = (await owner.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null }>;
+    expect(asOwner.find((i) => i.text === 'named')!.accountId).toBe(mod.id);
+    expect(await logEntries(t.deps, 'staff.grants-set')).toContainEqual({
+      actor_kind: 'staff', detail: JSON.stringify({ feedbackRead: true, staffId: mod.id, ticketsHandle: false }),
+    });
+    // Unknown or repeated grants are 400; the owner's own row is protected.
+    expect((await put(['staff.manage'])).statusCode).toBe(400);
+    expect((await put(['feedback.read', 'feedback.read'])).statusCode).toBe(400);
+    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${owner.id}/grants`, { grants: [] }))).toBe('owner-protected');
+  });
+
+  it('a senior moderator reads feedback by role (owner Q60)', async () => {
+    const senior = await staffWithKeys(t, { role: 'senior' });
+    expect((await senior.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
+    expect((await senior.browser.get('/staff/v1/me')).json().nav).toEqual(['disputes', 'training', 'log', 'feedback']);
   });
 });
 

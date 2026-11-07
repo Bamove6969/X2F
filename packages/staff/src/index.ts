@@ -6,6 +6,7 @@ export { sha256 } from './sha256.js';
 export {
   GRANTABLE_PERMS,
   NAV,
+  navFor,
   PERMS,
   STAFF_ROLES,
   can,
