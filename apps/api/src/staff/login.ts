@@ -1,4 +1,4 @@
-import { NAV, windowEndsAt } from '@x2f/staff';
+import { navFor, windowEndsAt } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import { pgpLoginRoutes } from '../auth/pgp.js';
 import { logoutRoute, sessionPolicy } from '../auth/sessions.js';
@@ -54,7 +54,7 @@ export async function staffLoginRoutes(app: FastifyInstance): Promise<void> {
     return {
       username: req.staff.username,
       role: req.staff.role,
-      nav: NAV[req.staff.role],
+      nav: navFor(req.staff.role, req.staff.grants),
       sessionEndsAt: new Date(Math.min(...ends)).toISOString(),
     };
   });

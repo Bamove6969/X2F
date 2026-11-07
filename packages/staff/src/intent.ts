@@ -53,6 +53,8 @@ export type KeyTapIntent =
   // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods on the
   // staff site, each change confirmed by a tap of one of their security keys.
   | { kind: 'add-pgp-key'; fingerprint: string }
+  // Owner Q60/Q16: the per-person checkboxes (`grants`, sorted), set by the owner with a tap.
+  | { kind: 'set-grants'; accountId: string; grants: string[] }
   | { kind: 'remove-method'; methodType: 'pgp' | 'security-key' | 'passkey'; methodId: string }
   | {
       kind: 'ruling';
@@ -76,6 +78,7 @@ export const KEY_TAP_KINDS = [
   'settings',
   'add-pgp-key',
   'remove-method',
+  'set-grants',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 

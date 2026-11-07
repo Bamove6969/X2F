@@ -6,6 +6,7 @@ import {
   ESCROW_OUTCOMES,
   canonicalJson,
   tapChallenge,
+  GRANTABLE_PERMS,
   type AccountAction,
   type KeyTapIntent,
   type Perm,
@@ -325,6 +326,14 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
         methodType: oneOf(r, 'methodType', ['pgp', 'security-key', 'passkey'] as const),
         methodId: match(r, 'methodId', UUID).toLowerCase(),
       };
+    case 'set-grants': {
+      exactKeys(r, ['kind', 'accountId', 'grants']);
+      const g = r.grants;
+      if (!Array.isArray(g) || g.some((x) => typeof x !== 'string' || !(GRANTABLE_PERMS as readonly string[]).includes(x))) throw badRequest();
+      const grants = [...new Set(g as string[])].sort();
+      if (grants.length !== g.length) throw badRequest();
+      return { kind: 'set-grants', accountId: match(r, 'accountId', UUID).toLowerCase(), grants };
+    }
     case 'add-owner-key':
       exactKeys(r, ['kind', 'credentialId', 'publicKeySha256']);
       return { kind: 'add-owner-key', credentialId: match(r, 'credentialId', B64URL_ID), publicKeySha256: match(r, 'publicKeySha256', HEX64) };
@@ -378,6 +387,7 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
     case 'create-invite':
     case 'switch-on':
     case 'set-role':
+    case 'set-grants':
       return 'staff.manage';
     case 'settings':
       return 'settings.write';

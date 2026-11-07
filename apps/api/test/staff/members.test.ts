@@ -325,6 +325,35 @@ describe('members', () => {
   });
 });
 
+describe('per-person grants (owner Q60)', () => {
+  it('the owner ticks feedback for a moderator with a tap bound to the exact list; the moderator then reads feedback', async () => {
+    const mod = await staffWithKeys(t, { role: 'mod' });
+    expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(403);
+    const put = (grants: unknown, tapId?: string) => owner.browser.send('PUT', `/staff/v1/members/${mod.id}/grants`, { grants, ...(tapId ? { tapId } : {}) });
+    expect(errorOf(await put(['feedback.read']))).toBe('tap-invalid');
+    // A tap for another list does not set this one.
+    const both = await tap(owner, { kind: 'set-grants', accountId: mod.id, grants: ['feedback.read', 'tickets.handle'] });
+    expect(errorOf(await put(['feedback.read'], both))).toBe('tap-invalid');
+    const res = await put(['feedback.read'], await tap(owner, { kind: 'set-grants', accountId: mod.id, grants: ['feedback.read'] }));
+    expect([res.statusCode, res.json()]).toEqual([200, { grants: ['feedback.read'] }]);
+    expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
+    expect((await mod.browser.get('/staff/v1/me')).json().nav).toContain('feedback');
+    expect(await logEntries(t.deps, 'staff.grants-set')).toContainEqual({
+      actor_kind: 'staff', detail: JSON.stringify({ feedbackRead: true, staffId: mod.id, ticketsHandle: false }),
+    });
+    // Unknown or repeated grants are 400; the owner's own row is protected.
+    expect((await put(['staff.manage'])).statusCode).toBe(400);
+    expect((await put(['feedback.read', 'feedback.read'])).statusCode).toBe(400);
+    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${owner.id}/grants`, { grants: [] }))).toBe('owner-protected');
+  });
+
+  it('a senior moderator reads feedback by role (owner Q60)', async () => {
+    const senior = await staffWithKeys(t, { role: 'senior' });
+    expect((await senior.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
+    expect((await senior.browser.get('/staff/v1/me')).json().nav).toEqual(['disputes', 'training', 'log', 'feedback']);
+  });
+});
+
 describe('Task 7 tripwires (local tree only)', () => {
   const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
   const migrations = (): string => readdirSync(`${ROOT}apps/api/migrations`).map((f) => readFileSync(`${ROOT}apps/api/migrations/${f}`, 'utf8')).join('\n');

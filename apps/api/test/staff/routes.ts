@@ -56,6 +56,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/members/:id/switch-off', perm: 'staff.manage', allowed: OWNER, body: {} },
   { method: 'POST', url: '/staff/v1/members/:id/switch-on', perm: 'staff.manage', allowed: OWNER, body: {} },
   { method: 'PUT', url: '/staff/v1/members/:id/hours', perm: 'staff.manage', allowed: OWNER, body: { hours: 'any' } },
+  { method: 'PUT', url: '/staff/v1/members/:id/grants', perm: 'staff.manage', allowed: OWNER, body: { grants: [] } },
   { method: 'PUT', url: '/staff/v1/members/:id/role', perm: 'staff.manage', allowed: OWNER, body: { role: 'mod' } },
   { method: 'DELETE', url: '/staff/v1/members/:id', perm: 'staff.manage', allowed: OWNER },
   { method: 'GET', url: '/staff/v1/invites/accept/:token', perm: 'public-invite', allowed: 'public' },
@@ -78,6 +79,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Plan 5 Task 10 (owner 2026-11-02): a past-rep claim's verified dollar figure.
   { method: 'PUT', url: '/staff/v1/past-rep/:id/verified-usd', perm: 'reputation.verify', allowed: ['owner', 'senior'], body: { usdCents: 100 } },
   // Plan 5 Tasks 4 and 21: platform feedback and the feedback form, read by the owner.
-  { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: OWNER },
-  { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: OWNER },
+  // Owner Q60: senior moderators by role, moderators and helpers by grant.
+  { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
+  { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
 ];
