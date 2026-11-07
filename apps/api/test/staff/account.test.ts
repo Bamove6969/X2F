@@ -80,6 +80,23 @@ describe('one\'s own PGP keys on the staff site', () => {
     expect(errorOf(await del(keyIds[0]!))).toBe('owner-needs-two-keys');
   });
 
+  it('lead review I-2: a moderator keeps one security key (409 security-key-required); a second may go', async () => {
+    const mod = await staffWithKeys(t, { role: 'mod', keys: 2 });
+    await addPgpKey(t.deps, mod.id);
+    const ids = (await t.deps.db.query<{ id: string; credential_id: Buffer }>("select id, credential_id from webauthn_credentials where account_id = $1 and kind = 'security-key'", [mod.id])).rows;
+    // Remove the key that is not keys[0], tapping with keys[0].
+    const k0 = Buffer.from(mod.keys[0]!.credentialId, 'base64url');
+    const other = ids.find((r) => !r.credential_id.equals(k0))!.id;
+    const last = ids.find((r) => r.credential_id.equals(k0))!.id;
+    const del = async (id: string) =>
+      mod.browser.send('DELETE', `/staff/v1/account/methods/security-key/${id}`, { tapId: await tap(mod, { kind: 'remove-method', methodType: 'security-key', methodId: id }) });
+    expect((await del(other)).statusCode).toBe(204);
+    const res = await del(last);
+    expect([res.statusCode, errorOf(res)]).toEqual([409, 'security-key-required']);
+    const { rows } = await t.deps.db.query<{ has_security_key: boolean }>('select has_security_key from staff_members where account_id = $1', [mod.id]);
+    expect(rows[0]!.has_security_key).toBe(true);
+  });
+
   it('an unknown type or id is 404; a malformed tap intent is 400', async () => {
     const mod = await staffWithKeys(t, { role: 'mod' });
     expect((await mod.browser.send('DELETE', `/staff/v1/account/methods/password/${randomUUID()}`, { tapId: randomUUID() })).statusCode).toBe(404);
@@ -112,6 +129,31 @@ describe('sessions, alerts and push on the staff site', () => {
     expect((await owner.browser.post(`/staff/v1/account/alerts/${a.id}/seen`, {})).statusCode).toBe(204);
     expect(((await owner.browser.get('/staff/v1/account/alerts')).json() as Array<{ id: string; seenAt: string | null }>).find((x) => x.id === a.id)!.seenAt).not.toBeNull();
     expect((await owner.browser.post(`/staff/v1/account/alerts/${randomUUID()}/seen`, {})).statusCode).toBe(404);
+  });
+
+  it('lead review M1: marking an alert seen and unsubscribing are logged; a bare DELETE drops only this session\'s subscriptions', async () => {
+    const owner = await theOwner();
+    await addAlert(t.deps.db, owner.id, 'market-prices-paused', { currency: 'JPY' }, t.deps.clock());
+    const a = ((await owner.browser.get('/staff/v1/account/alerts')).json() as Array<{ id: string; kind: string; seenAt: string | null }>).find((x) => x.seenAt === null)!;
+    const before = (await logEntries(t.deps, 'staff.alert-seen')).length;
+    await owner.browser.post(`/staff/v1/account/alerts/${a.id}/seen`, {});
+    await owner.browser.post(`/staff/v1/account/alerts/${a.id}/seen`, {}); // already seen: not logged again
+    expect(await logEntries(t.deps, 'staff.alert-seen')).toHaveLength(before + 1);
+    const sub = () => {
+      const ecdh = createECDH('prime256v1');
+      ecdh.generateKeys();
+      return { endpoint: `https://fcm.googleapis.com/fcm/send/${randomBytes(24).toString('base64url')}`, keys: { p256dh: ecdh.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url') } };
+    };
+    const other = await insertSession(t.deps, owner.id, 'staff');
+    const { StaffBrowser } = await import('../helpers/staffApp.js');
+    const second = new StaffBrowser(t.app).withSession(other.token);
+    expect((await owner.browser.post('/staff/v1/account/push', sub())).statusCode).toBe(204);
+    expect((await second.post('/staff/v1/account/push', sub())).statusCode).toBe(204);
+    expect((await owner.browser.send('DELETE', '/staff/v1/account/push')).statusCode).toBe(204);
+    const { rows } = await t.deps.db.query('select session_id from push_subscriptions where account_id = $1', [owner.id]);
+    expect(rows).toEqual([{ session_id: other.sessionId }]);
+    expect((await logEntries(t.deps, 'staff.push-removed')).length).toBeGreaterThan(0);
+    await second.send('DELETE', '/staff/v1/account/push');
   });
 
   it('the owner subscribes on the staff site and the staff app pushes to it; unsubscribe removes it', async () => {

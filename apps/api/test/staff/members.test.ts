@@ -346,6 +346,12 @@ describe('per-person grants (owner Q60)', () => {
     expect([res.statusCode, res.json()]).toEqual([200, { grants: ['feedback.read'] }]);
     expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(200);
     expect((await mod.browser.get('/staff/v1/me')).json().nav).toContain('feedback');
+    // Lead review 7 Nov M5: a named row's sender is the owner's and seniors' to see, not a grant holder's.
+    await t.deps.db.query("insert into feedback_form (kind, body, account_id, from_code, created_on) values ('feedback', 'named', $1, null, '2026-11-02')", [mod.id]);
+    const asMod = (await mod.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null }>;
+    expect(asMod.find((i) => i.text === 'named')!.accountId).toBeNull();
+    const asOwner = (await owner.browser.get('/staff/v1/feedback/form')).json().items as Array<{ text: string; accountId: string | null }>;
+    expect(asOwner.find((i) => i.text === 'named')!.accountId).toBe(mod.id);
     expect(await logEntries(t.deps, 'staff.grants-set')).toContainEqual({
       actor_kind: 'staff', detail: JSON.stringify({ feedbackRead: true, staffId: mod.id, ticketsHandle: false }),
     });

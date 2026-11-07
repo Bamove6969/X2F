@@ -19,6 +19,7 @@ import {
   parseKeyTapIntent,
   startKeyTap,
   tapPermOf,
+  TAP_STARTS_PER_WINDOW,
   purgeKeyTaps,
   MAX_OPEN_TAPS,
   KEY_TAP_PURGE_MS,
@@ -458,6 +459,21 @@ describe('keyTapRoutes', () => {
     expect(tapPermOf({ kind: 'set-role', accountId: RULING.rulingId, role: 'senior' })).toBe('staff.manage');
     expect(tapPermOf({ kind: 'settings', largeTradeLimitUsd: 1, firstResponseH: 1, appealWindowH: 48 })).toBe('settings.write');
     expect(tapPermOf({ kind: 'add-owner-key', credentialId: 'a'.repeat(22), publicKeySha256: 'b'.repeat(64) })).toBe('owner');
+  });
+
+  it('lead review M4: 20 tap starts per account per 10 minutes, then 429; the stop is never held back', async () => {
+    const { id } = await staffWith();
+    const start = (payload: object) => app.inject({ method: 'POST', url: '/staff/v1/taps/start', headers: { 'x-test-account': id, 'x-test-perms': 'self,disputes.handle,site.control' }, payload });
+    let refused = 0;
+    for (let i = 0; i < TAP_STARTS_PER_WINDOW + 1; i++) {
+      // Spread over the open-taps cap: finish nothing, so expire them by moving the clock 2 minutes.
+      setNow(new Date(T0.getTime() + i * 25_000));
+      const res = await start({ ...RULING, step: 'propose' });
+      if (res.statusCode === 429) refused++;
+    }
+    expect(refused).toBeGreaterThan(0);
+    expect((await start(STOP)).statusCode).toBe(200);
+    setNow(T0);
   });
 
   it('refuses without a session, a malformed intent and an oversized response', async () => {

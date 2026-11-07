@@ -7,7 +7,7 @@ import type { AttestationPolicy, Deps } from '../../src/app.js';
 import { requireStaff } from '../../src/staff/guard.js';
 import { buildStaffApi } from '../../src/staff/app.js';
 import { staffListenFromEnv } from '../../src/staff/main.js';
-import { sweepHours, startHoursSweeper } from '../../src/staff/sweeper.js';
+import { sweepHours, sweepPass, startHoursSweeper } from '../../src/staff/sweeper.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from '../helpers/softAuthenticator.js';
 import {
   MODERATION_STUB,
@@ -216,6 +216,24 @@ describe('staff login with login hours', () => {
     }
     await sweeper.stop();
     expect(gone).toBe(true);
+  });
+
+  it('a failed hours sweep still purges stale taps (lead review 7 Nov M3)', async () => {
+    const s = await seedStaff(deps, { role: 'mod' });
+    const old = new Date(deps.clock().getTime() - 25 * 60 * 60_000);
+    const { rows: ins } = await deps.db.query<{ id: string }>(
+      `insert into key_taps (account_id, intent, nonce, started_at) values ($1, '{"kind":"emergency-stop"}', $2, $3) returning id`,
+      [s.id, randomBytes(16), old],
+    );
+    // A database whose sessions read fails: the sweep throws, the purge still runs.
+    const failing = {
+      query: (text: string, params?: unknown[]) =>
+        /from sessions s join staff_members/.test(text) ? Promise.reject(new Error('sweep down')) : deps.db.query(text, params),
+    } as unknown as typeof deps.db;
+    const errors: unknown[] = [];
+    await sweepPass({ db: failing, clock: deps.clock, events: app.events }, (e) => errors.push(e));
+    expect(errors.map((e) => (e as Error).message)).toEqual(['sweep down']);
+    expect((await deps.db.query('select 1 from key_taps where id = $1', [ins[0]!.id])).rowCount).toBe(0);
   });
 
   it('logs the owner in at any hour', async () => {

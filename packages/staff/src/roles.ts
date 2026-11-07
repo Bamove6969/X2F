@@ -6,7 +6,8 @@ export type StaffRole = (typeof STAFF_ROLES)[number];
  * Every permission a staff route can declare (Plan 4 Task 4: one per route). Added by later
  * revisions of Plan 4: `stats.read` (Revision 2026-10-28), `accounts.ban` (Task 27),
  * `reputation.review` (Revision 2026-10-29b, Plan 5 Task 19), `tickets.handle` (Task 30) and
- * `feedback.read` (owner only, Plan 5 Task 4) and `reputation.verify` (senior moderators and the
+ * `feedback.read` (Plan 5 Task 4; the owner and senior moderators by role, moderators and helpers by
+ * grant, owner Q60) and `reputation.verify` (senior moderators and the
  * owner, owner 2026-11-02: entering a past-reputation claim's verified dollar figure).
  */
 export const PERMS = [

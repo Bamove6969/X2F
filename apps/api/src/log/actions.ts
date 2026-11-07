@@ -122,6 +122,9 @@ export const LOG_ACTIONS = {
   'staff.method-added': { method: 'id' },
   'staff.method-removed': { method: 'id' },
   'staff.session-ended': {},
+  // Lead review 7 Nov M1: silencing actions on the staff site.
+  'staff.alert-seen': {},
+  'staff.push-removed': {},
   // Shifts and pay (Task 33).
   'staff.welcome-acknowledged': {},
   'shift.clocked-in': { shiftId: 'id' },

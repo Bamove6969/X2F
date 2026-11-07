@@ -58,11 +58,17 @@ export function staffAccountRoutes(app: FastifyInstance): void {
     await withTx(db, async (c) => {
       await lockAccount(c, me);
       await consumeKeyTap(c, tapId, me, { kind: 'remove-method', methodType, methodId: id }, now, { sessionId: req.auth.sessionId });
-      if (req.staff.role === 'owner' && methodType === 'security-key') {
+      if (methodType === 'security-key') {
         const { rows } = await c.query("select 1 from webauthn_credentials where id = $1 and account_id = $2 and kind = 'security-key' and attested", [id, me]);
-        if (rows.length > 0 && (await attestedKeyCount(c, me)) <= 2) throw new ApiError(409, 'owner-needs-two-keys');
+        const keys = rows.length > 0 ? await attestedKeyCount(c, me) : Infinity;
+        if (req.staff.role === 'owner' && keys <= 2) throw new ApiError(409, 'owner-needs-two-keys');
+        // Lead review 7 Nov I-2: a moderator or senior moderator taps rulings with a security key;
+        // without one they could never tap again.
+        if ((req.staff.role === 'mod' || req.staff.role === 'senior') && keys <= 1) throw new ApiError(409, 'security-key-required');
       }
       await applyRemoval(c, config, me, methodType, id, req.auth.sessionId, now);
+      // Keep staff_members.has_security_key true to what is stored (202's column).
+      await c.query('update staff_members set has_security_key = $2 where account_id = $1', [me, (await attestedKeyCount(c, me)) > 0]);
       await log(c, req, 'staff.method-removed', { method: methodType });
     });
     // The other sessions' streams end once the revocations have committed.
@@ -113,10 +119,23 @@ export function staffAccountRoutes(app: FastifyInstance): void {
   app.post('/staff/v1/account/alerts/:id/seen', opts, async (req: FastifyRequest, reply) => {
     const id = idParam(req);
     const { db, clock } = req.server.deps;
-    const r = await db.query('update alerts set seen_at = coalesce(seen_at, $3) where id = $1 and account_id = $2', [id, req.staff.accountId, clock()]);
-    if ((r.rowCount ?? 0) === 0) throw new ApiError(404, 'not-found');
+    await withTx(db, async (c) => {
+      const r = await c.query('update alerts set seen_at = coalesce(seen_at, $3) where id = $1 and account_id = $2 and seen_at is null', [id, req.staff.accountId, clock()]);
+      if ((r.rowCount ?? 0) === 0) {
+        const { rows } = await c.query('select 1 from alerts where id = $1 and account_id = $2', [id, req.staff.accountId]);
+        if (rows.length === 0) throw new ApiError(404, 'not-found');
+        return;
+      }
+      // Lead review 7 Nov M1: hiding an alert is logged, so a stolen session can't silence one unseen.
+      await log(c, req, 'staff.alert-seen', {});
+    });
     return reply.code(204).send();
   });
 
-  pushRoutesAt(app, '/staff/v1/account/push', opts);
+  pushRoutesAt(app, '/staff/v1/account/push', opts, {
+    // Lead review 7 Nov M1: on the staff site a bare DELETE drops only this session's subscriptions
+    // (the owner's other devices keep theirs), and every unsubscribe is logged.
+    sessionOnlyDelete: true,
+    onDelete: (c, req) => log(c, req, 'staff.push-removed', {}),
+  });
 }

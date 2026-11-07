@@ -37,6 +37,9 @@ export const KEY_TAP_TTL_MS = 2 * 60_000;
 const NONCE_BYTES = 16;
 /** Bound on the stored assertion JSON (a real one is well under 2 KiB). */
 const MAX_RESPONSE_CHARS = 16_384;
+/** Lead review 7 Nov M4: tap starts per account per window (in memory). */
+export const TAP_STARTS_PER_WINDOW = 20;
+export const TAP_START_WINDOW_MS = 10 * 60_000;
 /** RV5 m12: at most this many unfinished, unexpired taps per account at once. */
 export const MAX_OPEN_TAPS = 5;
 /**
@@ -455,9 +458,22 @@ export interface KeyTapRouteOptions {
  */
 export function keyTapRoutes(app: FastifyInstance, o: KeyTapRouteOptions): void {
   const config = { perm: 'self' as const };
+  // Lead review 7 Nov M4: starts per account in a sliding window, in memory (one API process at
+  // launch). The emergency stop and resume are never held back (as the open-taps cap, m12).
+  const starts = new Map<string, number[]>();
+  const rateLimit = (accountId: string, now: number): void => {
+    const recent = (starts.get(accountId) ?? []).filter((t) => t > now - TAP_START_WINDOW_MS);
+    if (recent.length >= TAP_STARTS_PER_WINDOW) {
+      starts.set(accountId, recent);
+      throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.max(1, Math.ceil((recent[0]! + TAP_START_WINDOW_MS - now) / 1000)) });
+    }
+    recent.push(now);
+    starts.set(accountId, recent);
+  };
   app.post('/staff/v1/taps/start', { config, preHandler: o.guard }, async (req) => {
     const intent = parseKeyTapIntent(req.body);
     if (!o.allows(req, tapPermOf(intent))) throw new ApiError(403, 'forbidden');
+    if (!UNCAPPED.has(intent.kind)) rateLimit(o.accountOf(req), req.server.deps.clock().getTime());
     const sessionId = o.sessionOf?.(req);
     return startKeyTap(req.server.deps, o.accountOf(req), intent, sessionId !== undefined ? { sessionId } : {});
   });
