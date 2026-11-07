@@ -249,6 +249,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <aside aria-label="Decided by the owner: Session length here changes this session only" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (F18)</span><span style="font-weight: 600;">Session length here changes this session only</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Picking a new length on Devices changes how long this login lasts. The next login asks again, with nothing pre-selected.</li></ul></aside>
     <aside aria-label="Decided by the owner: two-factor method for switching members" style="display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
       <span>Switching members on or off needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key. With just a username and password it waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h.</span>
@@ -295,7 +296,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"session":{"editor":"enum","options":["strong","username-password"],"default":"strong"},"$preview":{"width":390,"height":3537}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"session":{"editor":"enum","options":["strong","username-password"],"default":"strong"},"$preview":{"width":390,"height":3671}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { gone: [], ask: null, single: false, confirmOne: false, idle: null, devNote: '', optNote: '', off: [], kept: [], teamNote: '', verify: null, hold: null }; }
   renderVals() {
@@ -442,7 +443,7 @@ class Component extends DCLogic {
     // Board height = measured content height (night, fonts loaded): 3317 for the default state,
     // plus/minus what each state adds or removes, so nothing is clipped and no empty band is left.
     const teamN = team.length;
-    const H = Math.max(844, 3537
+    const H = Math.max(844, 3671
       - 77 * (2 - mine.length)
       - (teamN === 0 ? 215 : (teamN === 1 ? 127 : 0))
       + (vendor ? 72 : 0)

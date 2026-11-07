@@ -58,23 +58,41 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 00-14.9-4"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0014.9 4"/><path d="M20 20v-4h-4"/></svg><span>Market <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{marketText}}</span> · updates live</span></span>
           </div>
 
-          <div style="display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 12px;">
+          <div style="display: flex; flex-direction: column; gap: 12px;">
             <div style="display: flex; flex-direction: column; gap: 8px;">
-              <label for="oa-cur" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Currency</label>
+              <span id="oa-cur-l" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Currency</span>
               <span style="position: relative; display: flex;">
-                <select id="oa-cur" onChange="{{onCur}}" style="flex-grow: 1; min-width: 0; height: 48px; padding: 0 40px 0 14px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; appearance: none; -webkit-appearance: none; cursor: pointer;">
-                  <sc-for list="{{curOptions}}" as="o" hint-placeholder-count="4"><option value="{{o.code}}" selected="{{o.sel}}">{{o.label}}</option></sc-for>
-                </select>
-                <svg style="position: absolute; right: 12px; top: 14px; pointer-events: none; color: var(--ink);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                <button type="button" id="oa-cur" aria-haspopup="listbox" aria-expanded="{{menuExpanded}}" aria-controls="oa-cur-list" aria-labelledby="oa-cur-l oa-cur" onClick="{{toggleMenu}}" style="display: flex; align-items: center; gap: 10px; flex-grow: 1; min-width: 0; height: 48px; padding: 0 12px 0 14px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; text-align: left; cursor: pointer;"><svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true" style="flex-shrink: 0;"><rect x="0.5" y="0.5" width="19" height="13" rx="2" style="fill: none; stroke: var(--line);"/><text x="10" y="10" text-anchor="middle" style="fill: var(--ink-muted); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 9px;">{{cur.flag}}</text></svg><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{cur.label}}</span><svg style="flex-shrink: 0;" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{menuChevron}}"/></svg></button>
+                <sc-if value="{{menuOpen}}" hint-placeholder-val="{{false}}">
+                  <div id="oa-cur-list" role="listbox" aria-labelledby="oa-cur-l" style="position: absolute; top: 52px; left: 0; width: 360px; z-index: 5; display: flex; flex-direction: column; gap: 2px; padding: 6px; box-sizing: border-box; border-radius: 12px; background: var(--surface); border: 1px solid var(--surface-raised);">
+                    <div role="group" aria-label="Most used" style="display: flex; flex-direction: column; gap: 2px;">
+                    <sc-for list="{{curTop}}" as="o" hint-placeholder-count="4">
+                      <button type="button" role="option" aria-selected="{{o.ariaSel}}" aria-disabled="{{o.ariaDis}}" onClick="{{o.pick}}" style="{{o.style}}"><svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true" style="flex-shrink: 0;"><rect x="0.5" y="0.5" width="19" height="13" rx="2" style="fill: none; stroke: var(--line);"/><text x="10" y="10" text-anchor="middle" style="fill: var(--ink-muted); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 9px;">{{o.flag}}</text></svg><span style="{{o.textStyle}}"><span style="font-weight: 600;">{{o.code}}</span> · {{o.name}}</span><sc-if value="{{o.noRate}}" hint-placeholder-val="{{false}}"><span style="flex-shrink: 0; display: inline-flex; align-items: center; height: 22px; padding: 0 8px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; line-height: 16px; color: var(--ink-muted); white-space: nowrap;">No rate right now</span></sc-if><sc-if value="{{o.sel}}" hint-placeholder-val="{{false}}"><svg style="flex-shrink: 0; color: var(--ink);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></sc-if></button>
+                    </sc-for>
+                    </div>
+                    <sc-if value="{{hasCurRest}}" hint-placeholder-val="{{true}}">
+                      <div aria-hidden="true" style="height: 1px; margin: 4px 10px; background: var(--line);"></div>
+                      <div role="group" aria-label="Other currencies, A to Z" style="display: flex; flex-direction: column; gap: 2px;">
+                      <sc-for list="{{curRest}}" as="o" hint-placeholder-count="1">
+                        <button type="button" role="option" aria-selected="{{o.ariaSel}}" aria-disabled="{{o.ariaDis}}" onClick="{{o.pick}}" style="{{o.style}}"><svg width="20" height="14" viewBox="0 0 20 14" aria-hidden="true" style="flex-shrink: 0;"><rect x="0.5" y="0.5" width="19" height="13" rx="2" style="fill: none; stroke: var(--line);"/><text x="10" y="10" text-anchor="middle" style="fill: var(--ink-muted); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 9px;">{{o.flag}}</text></svg><span style="{{o.textStyle}}"><span style="font-weight: 600;">{{o.code}}</span> · {{o.name}}</span><sc-if value="{{o.noRate}}" hint-placeholder-val="{{false}}"><span style="flex-shrink: 0; display: inline-flex; align-items: center; height: 22px; padding: 0 8px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; line-height: 16px; color: var(--ink-muted); white-space: nowrap;">No rate right now</span></sc-if><sc-if value="{{o.sel}}" hint-placeholder-val="{{false}}"><svg style="flex-shrink: 0; color: var(--ink);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></sc-if></button>
+                      </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-if>
               </span>
             </div>
             <div style="display: flex; flex-direction: column; gap: 8px;">
-              <label for="oa-method" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{ad.methodLabel}}</label>
+              <span id="oa-pay-l" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{ad.methodLabel}}</span>
               <span style="position: relative; display: flex;">
-                <select id="oa-method" onChange="{{onMethod}}" style="flex-grow: 1; min-width: 0; height: 48px; padding: 0 40px 0 14px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; appearance: none; -webkit-appearance: none; text-overflow: ellipsis; cursor: pointer;">
-                  <sc-for list="{{methodOptions}}" as="o" hint-placeholder-count="6"><option value="{{o.id}}" selected="{{o.sel}}">{{o.label}}</option></sc-for>
-                </select>
-                <svg style="position: absolute; right: 12px; top: 14px; pointer-events: none; color: var(--ink);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                <button type="button" id="oa-pay" aria-haspopup="listbox" aria-expanded="{{payExpanded}}" aria-controls="oa-pay-list" aria-labelledby="oa-pay-l oa-pay" onClick="{{togglePay}}" style="display: flex; align-items: center; gap: 10px; flex-grow: 1; min-width: 0; height: 48px; padding: 0 12px 0 14px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; text-align: left; cursor: pointer;"><span style="flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{method.name}}<span style="color: var(--ink-muted);"> · {{payWinPre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{method.win}}</span> {{method.unit}}{{payWinPost}}</span></span><svg style="flex-shrink: 0;" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{payChevron}}"/></svg></button>
+                <sc-if value="{{payOpen}}" hint-placeholder-val="{{false}}">
+                  <div id="oa-pay-list" role="listbox" aria-labelledby="oa-pay-l" style="position: absolute; top: 52px; left: 0; width: 360px; z-index: 4; display: flex; flex-direction: column; gap: 2px; padding: 6px; box-sizing: border-box; border-radius: 12px; background: var(--surface); border: 1px solid var(--surface-raised);">
+                    <sc-for list="{{payRows}}" as="o" hint-placeholder-count="6">
+                      <button type="button" role="option" aria-selected="{{o.ariaSel}}" onClick="{{o.pick}}" style="{{o.style}}"><span style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;"><span style="font-size: 15px; line-height: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{o.name}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{o.winPre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.win}}</span> {{o.unit}}{{o.winPost}}<sc-if value="{{o.hasLimit}}" hint-placeholder-val="{{false}}"> · {{o.limitPre}} <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.limitVal}}</span>{{o.limitUnit}}</sc-if></span></span><span style="{{o.adjStyle}}">{{o.adjText}}</span><sc-if value="{{o.sel}}" hint-placeholder-val="{{false}}"><svg style="flex-shrink: 0; color: var(--ink);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg></sc-if></button>
+                    </sc-for>
+                  </div>
+                </sc-if>
               </span>
             </div>
           </div>
@@ -97,29 +115,6 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               <dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 24px; line-height: 32px; font-weight: 500;">{{method.win}}</span> <span style="font-size: 16px; font-weight: 600; color: var(--ink-muted);">{{method.unit}}</span></dd>
             </div>
           </dl>
-        </section>
-
-        <section aria-labelledby="oa-all" style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 16px; background: var(--surface);">
-          <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">
-            <h2 id="oa-all" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">All {{methodCount}} ways {{waysWord}}</h2>
-            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">In {{cur.code}}. Click one to use it.</span>
-          </div>
-      <div role="radiogroup" aria-labelledby="oa-all" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-            <sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
-              <button type="button" role="radio" aria-checked="{{r.checked}}" onClick="{{r.pick}}" style="{{r.style}}">
-                <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{r.p1}}"/><path d="{{r.p2}}"/><path d="{{r.p3}}"/></svg></span>
-                <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
-                  <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{r.name}}</span>
-                  <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{r.winPre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{r.win}}</span> {{r.unit}}{{r.winPost}}</span>
-                  <sc-if value="{{r.hasLimit}}" hint-placeholder-val="{{false}}"><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{r.limitPre}} <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{r.limitVal}}</span><span style="font-weight: 600; color: var(--monero-ink);">{{r.limitUnit}}</span></span></sc-if>
-                </span>
-                <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; text-align: right;">
-                  <span style="{{r.adjStyle}}">{{r.adjText}}</span>
-                  <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{r.price}}</span>
-                </span>
-              </button>
-            </sc-for>
-          </div>
         </section>
 
         <section aria-labelledby="oa-terms" style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 16px; background: var(--surface);">
@@ -169,7 +164,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             </div>
           </dl>
           <sc-if value="{{showVolume}}" hint-placeholder-val="{{true}}">
-            <span style="display: inline-flex; align-items: center; gap: 6px; margin-top: -4px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg style="flex-shrink: 0;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19h16"/><path d="M7 15v-4"/><path d="M12 15V8"/><path d="M17 15v-7"/></svg><span>Completed over <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{volumeText}}</span> in trades to date</span></span>
+            <span style="display: inline-flex; align-items: center; gap: 6px; margin-top: -4px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg style="flex-shrink: 0;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19h16"/><path d="M7 15v-4"/><path d="M12 15V8"/><path d="M17 15v-7"/></svg><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{volumeText}}</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> traded to date</span></span>
           </sc-if>
         </section>
 
@@ -216,9 +211,14 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px;">
         <li>Same anatomy as the phone board. Showing: <strong>{{sideName}}</strong>.</li>
-        <li>Volume line under the vendor stats is opt-in (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">volumeLine</span> tweak), USD, rounded down: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$10,000</span> steps to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$90,000</span>+, then <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$100,000</span>+, then <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50,000</span> steps. Showing: <strong>{{volumeState}}</strong>{{volumeRaw}}.</li>
-        <li>Opens on the currency and payment method you searched for. Both drop-downs sit in the hero, next to the price they change.</li>
-        <li>The method list stays for scanning: two columns, same selection as the drop-down.</li>
+        <li><strong>Volume line (opt-in, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">volumeLine</span> tweak).</strong> "<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{volumeText}}</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> traded to date", under the stat strip. The vendor turns it on; off by default. It counts XMR, not dollars (owner, 6 Nov, Q63). Rounded <em>down</em> to one decimal: it is a reputation figure, not an amount being moved, so the 6-decimal rule for amounts does not apply, and rounding down never overstates. Showing: <strong>{{volumeState}}</strong>{{volumeRaw}}.</li>
+        <li>Opens on the currency and payment method you searched for. Both drop-downs sit in the hero, next to the price they change, payment type right under currency.</li>
+        <li><strong>Currency drop-down (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">currencyMenu</span> tweak, showing: {{menuState}}).</strong> The six most-used currencies come first, always in this order: USD, EUR, GBP, CAD, AUD, JPY. Then a divider, then every other currency A to Z by code. An ad lists only the currencies its vendor ticked (up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">5</span>), in that same order. Every row starts with a flag. The picked row has the 2px ink ring on the raised surface, never orange. On wide the open list is 360 wide, wider than the field, so the no-rate tag fits.</li>
+        <li><strong>No market rate.</strong> ARS has no rate right now in this example. It stays in the list, greyed, and can't be picked (aria-disabled), with a "No rate right now" tag on the right. It comes back the moment a rate returns. Why show it rather than hide it: people can see their currency exists and will come back for it; hiding it looks like X2F dropped it.</li>
+        <li><strong>Flags:</strong> real flag images from a vetted flag set at build time (placeholder here).</li>
+        <li><strong>{{ad.methodLabel}} drop-down (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">payMenu</span> tweak, showing: {{payState}}).</strong> Right under Currency: pick the currency first, then the payment type. The closed field shows the chosen type and its time to pay ("Zelle · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> min to pay"). Each row: the type, its time to pay (plus its own limit, if it has one) and the price difference in mono ("<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+1.5%</span>"); same panel as the currency list, selection is the 2px ink border, never orange.</li>
+        <li><strong>"All ways to pay" list removed (7 Nov).</strong> Every fact it held (time, limit, price difference) is now in the drop-down rows; the price for the chosen type is the hero number. So the drop-down is the one way to choose.</li>
+        <li>Currencies and payment types on an ad are indexed, so buyer searches find them (owner F7).</li>
         <li>The trade panel is the right column, so the amount and the button stay next to the price. The secondary is a full outline button here; on the phone it's a tertiary link to keep the pinned footer short.</li>
         <li>Button: {{ad.cta}}. The vendor still has to accept.</li>
         <li>Escrow row: neutral 40px shield tile. The 2-of-3 key mark stays reserved for the three places in system v2 §1.</li>
@@ -228,20 +228,36 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px;">
           <li><strong>One ad covers every currency the vendor supports.</strong> The trader picks currency and payment method from the drop-downs; both are locked in for that trade. Payment-method rules (time to pay, name match…) come with the method.</li>
           <li><strong>Ad limit:</strong> <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> buy + <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> sell ads per vendor.</li>
-          <li><strong>Each currency has its own bands set by the vendor; nothing is converted.</strong> Up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">5</span> currencies per ad. Limits and tier prices shown are the chosen currency's own figures. A currency the vendor ticked but that has no market price is hidden from the Currency drop-down for that currency only.</li>
-          <li><strong>Volume line is opt-in.</strong> A vendor can show "Completed over <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50,000</span> in trades to date" on the header, rounded down in the steps above. Never shown unless the vendor turns it on.</li>
+          <li><strong>Each currency has its own bands set by the vendor; nothing is converted.</strong> Up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">5</span> currencies per ad. Limits and tier prices shown are the chosen currency's own figures. A currency the vendor ticked but that has no market price is hidden from the Currency drop-down for that currency only. <em>Design proposal, 6 Nov: show it greyed instead (see the notes above).</em></li>
+          <li><strong>Volume line is opt-in.</strong> Never shown unless the vendor turns it on. <em>Wording and unit replaced 6 Nov (Q63), below.</em></li>
         </ul>
       </aside>
+      <aside aria-label="Decided by the owner, 6 Nov" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q63, Q28, Q24/Q25)</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px;">
+          <li><strong>Q63.</strong> The reputation line shows the amount in XMR traded to date, not dollars: "<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">275.4</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> traded to date".</li>
+          <li><strong>Q64.</strong> Volume imported from other sites is one line per site ("Imported from LocalMonero: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">120.0</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span>"). This board shows no imported volume, so no such line is drawn.</li>
+          <li><strong>Q28, Q24/Q25.</strong> Currency drop-down: USD, EUR, GBP, CAD, AUD, JPY first, a divider, then all the rest A to Z. Every entry has a flag.</li>
+        </ul>
+      </aside>
+      <aside aria-label="Decided by the owner, 7 Nov" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (F6, F7)</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px;">
+          <li><strong>F6.</strong> On one ad, the taker picks the currency from a drop-down, then the payment type from a second drop-down.</li>
+          <li><strong>F7.</strong> Currencies and payment types on an ad are indexed, so buyer searches find them.</li>
+        </ul>
+      </aside>
+      <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">COPY-UNSIGNED, new 7 Nov (draft): the closed field "Zelle · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> min to pay" ("PayPal · pays in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">60</span> min" when buying) and the row meta "<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">60</span> min to pay · up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$500</span>".</p>
       <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Names, prices and terms are examples.</p>
     </section>
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["selling","buying"],"default":"selling"},"volumeLine":{"editor":"enum","options":["on","off"],"default":"on"},"$preview":{"width":1280,"height":1837}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["selling","buying"],"default":"selling"},"volumeLine":{"editor":"enum","options":["on","off"],"default":"on"},"currencyMenu":{"editor":"enum","options":["closed","open"],"default":"closed"},"payMenu":{"editor":"enum","options":["closed","open"],"default":"closed"},"$preview":{"width":1280,"height":2085}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { cur: null, method: null, mode: 0, amount: null };
+    this.state = { cur: null, method: null, mode: 0, amount: null, menu: null, pay: null };
   }
   renderVals() {
     const THEMES = {
@@ -254,7 +270,7 @@ class Component extends DCLogic {
     const volumeOn = this.props.volumeLine !== 'off';
     // Measured with lead/offerad-tools/measure.js. With the notes below the grid, the left column (hero, method list,
     // terms) is the tall one, so the height follows the method count per side and currency; the volume line doesn't change it.
-    const MAIN_HS = { selling: { USD: 1837, CAD: 1787, EUR: 1839, GBP: 1765 }, buying: { USD: 1951, EUR: 1929, GBP: 1877 } };
+    const MAIN_HS = { selling: { USD: 2085, CAD: 2085, EUR: 2085, GBP: 2085 }, buying: { USD: 2139, EUR: 2139, GBP: 2161 } };
 
     const RR = 'M5 6h14a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z';
     const RING = 'M3 12a9 9 0 1018 0a9 9 0 10-18 0';
@@ -341,16 +357,23 @@ class Component extends DCLogic {
     ad.profileLabel = 'Open ' + ad.vendor + "'s profile";
     ad.starsLabel = ad.rating + ' of 5 stars';
     const s = this.state;
-    // Volume line (owner, 2 Nov): opt-in, USD, rounded DOWN: $10,000 steps to $90,000+, then $100,000+, then $50,000 steps.
-    const VOLUME_USD = { selling: 214730, buying: 68400 }[side];
-    const volumeFloor = (n) => n < 100000 ? Math.floor(n / 10000) * 10000 : Math.floor(n / 50000) * 50000;
-    const volumeRounded = volumeFloor(VOLUME_USD);
-    const showVolume = volumeOn && volumeRounded >= 10000;
-    const volumeText = '$' + volumeRounded.toLocaleString('en-US');
+    // Volume line: opt-in (owner, 2 Nov), in XMR traded to date (owner, 6 Nov, Q63), rounded DOWN to 1 decimal (design call).
+    const VOLUME_XMR = { selling: 275.483112, buying: 96.730540 }[side];
+    const volumeRounded = Math.floor(VOLUME_XMR * 10) / 10;
+    const showVolume = volumeOn && volumeRounded >= 0.1;
+    const volumeText = volumeRounded.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-    const cur = ad.currencies.find((c) => c.code === s.cur) || ad.currencies.find((c) => c.code === ad.searched.cur) || ad.currencies[0];
+    // Currency drop-down (owner, 6 Nov, Q28): the six most-used first, a divider, then the rest A to Z by code.
+    // A currency with no market rate stays in the list, greyed and not selectable (design call, 6 Nov).
+    const FLAG = { USD: 'US', EUR: 'EU', GBP: 'GB', CAD: 'CA', AUD: 'AU', JPY: 'JP', ARS: 'AR' };
+    const TOP6 = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY'];
+    ad.currencies.push({ code: 'ARS', name: 'Argentine peso', sym: 'AR$', market: null, noRate: true, methods: [] });
+    const usable = ad.currencies.filter((c) => !c.noRate);
+    const cur = usable.find((c) => c.code === s.cur) || usable.find((c) => c.code === ad.searched.cur) || usable[0];
     cur.label = cur.code + ' · ' + cur.name;
-    const mainH = Math.max(800, MAIN_HS[side][cur.code] || 1951);
+    cur.flag = FLAG[cur.code] || '';
+    const menuOpen = s.menu == null ? this.props.currencyMenu === 'open' : !!s.menu;
+    const mainH = Math.max(800, MAIN_HS[side][cur.code] || 2161);
     const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + mainH + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     const method = cur.methods.find((m) => m.id === s.method) || cur.methods.find((m) => m.id === ad.searched.method) || cur.methods[0];
 
@@ -402,25 +425,34 @@ class Component extends DCLogic {
     }));
 
     // Drop-downs
-    const curOptions = ad.currencies.map((c) => ({ code: c.code, sel: c.code === cur.code, label: c.code + ' · ' + c.name }));
-    const methodOptions = cur.methods.map((m) => {
-      const lb = limitBits(cur, m);
-      return { id: m.id, sel: m.id === method.id, label: m.name + (m.adj ? ' · ' + pct(m.adj) : '') + (lb ? ' · ' + lb.pre + ' ' + lb.val + lb.unit : '') };
-    });
-    const rows = cur.methods.map((m) => {
+    const curRow = (c) => {
+      const on = c.code === cur.code;
+      const off = !!c.noRate;
+      return {
+        code: c.code, name: c.name, flag: FLAG[c.code] || '', sel: on, noRate: off,
+        ariaSel: on ? 'true' : 'false', ariaDis: off ? 'true' : 'false',
+        style: 'display: flex; align-items: center; gap: 10px; width: 100%; height: 48px; padding: 0 10px; box-sizing: border-box; border-radius: 6px; font-family: inherit; font-size: 15px; line-height: 20px; text-align: left; ' + (on ? 'border: 2px solid var(--ink); background: var(--surface-raised); color: var(--ink); cursor: pointer;' : off ? 'border: 2px solid transparent; background: transparent; color: var(--ink-muted); cursor: not-allowed;' : 'border: 2px solid transparent; background: transparent; color: var(--ink); cursor: pointer;'),
+        textStyle: 'flex-grow: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;',
+        pick: off ? () => {} : () => this.setState({ cur: c.code, method: null, amount: null, menu: false })
+      };
+    };
+    const curTop = TOP6.map((code) => ad.currencies.find((c) => c.code === code)).filter(Boolean).map(curRow);
+    const curRest = ad.currencies.filter((c) => TOP6.indexOf(c.code) < 0).sort((a, b) => a.code.localeCompare(b.code)).map(curRow);
+    const payOpen = s.pay == null ? this.props.payMenu === 'open' : !!s.pay;
+    const payRows = cur.methods.map((m) => {
       const on = m.id === method.id;
       const lb = limitBits(cur, m);
       return {
-        name: m.name, win: m.win, unit: m.unit,
+        name: m.name, win: m.win, unit: m.unit, sel: on, ariaSel: on ? 'true' : 'false',
         winPre: sell ? '' : 'Pays in ', winPost: sell ? ' to pay' : '',
-        hasLimit: !!lb, limitPre: lb ? (lb.pre === 'up to' ? 'Up to' : 'From') : '', limitVal: lb ? lb.val : '', limitUnit: lb ? lb.unit : '',
+        hasLimit: !!lb, limitPre: lb ? lb.pre : '', limitVal: lb ? lb.val : '', limitUnit: lb ? lb.unit : '',
         adjText: m.adj ? pct(m.adj) : 'No extra',
-        adjStyle: m.adj ? "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; color: var(--ink);" : 'font-size: 13px; line-height: 20px; color: var(--ink-muted);',
+        adjStyle: 'flex-shrink: 0; ' + (m.adj ? "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; color: var(--ink);" : 'font-size: 13px; line-height: 20px; color: var(--ink-muted);'),
         price: money(priceOf(cur, m), cur.sym),
         p1: ICONS[m.icon][0], p2: ICONS[m.icon][1], p3: ICONS[m.icon][2],
         checked: on ? 'true' : 'false',
-        style: 'display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 10px 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); color: var(--ink); font-family: inherit; text-align: left; cursor: pointer; border: 2px solid ' + (on ? 'var(--ink);' : 'transparent;'),
-        pick: () => this.setState({ method: m.id })
+        style: 'display: flex; align-items: center; gap: 10px; width: 100%; height: 48px; padding: 0 10px; box-sizing: border-box; border-radius: 6px; font-family: inherit; text-align: left; cursor: pointer; color: var(--ink); ' + (on ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 2px solid transparent; background: transparent;'),
+        pick: () => this.setState({ method: m.id, pay: false })
       };
     });
     const fromSearch = cur.code === ad.searched.cur && method.id === ad.searched.method;
@@ -440,9 +472,16 @@ class Component extends DCLogic {
       vsWord: total >= 0 ? 'above' : 'below',
       vsIcon: total >= 0 ? 'M7 17L17 7M9 7h8v8' : 'M7 7l10 10M17 9v8H9',
       hasMethodAdj: !!method.adj,
-      curOptions, methodOptions,
-      onCur: (e) => this.setState({ cur: e.target.value, method: null, amount: null }),
-      onMethod: (e) => this.setState({ method: e.target.value }),
+      payRows, payOpen, payExpanded: payOpen ? 'true' : 'false',
+      payChevron: payOpen ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6',
+      payState: payOpen ? 'open' : 'closed',
+      togglePay: () => this.setState({ pay: !payOpen }),
+      payWinPre: sell ? '' : 'pays in ', payWinPost: sell ? ' to pay' : '',
+      curTop, curRest, hasCurRest: curRest.length > 0,
+      menuOpen, menuExpanded: menuOpen ? 'true' : 'false',
+      menuChevron: menuOpen ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6',
+      menuState: menuOpen ? 'open' : 'closed',
+      toggleMenu: () => this.setState({ menu: !menuOpen }),
       fromSearch, notFromSearch: !fromSearch,
       searchText: ad.searched.cur + ' · ' + searchedMethod,
       limitLabel: 'Per trade' + (narrowed ? ' with ' + method.name : ''),
@@ -451,7 +490,7 @@ class Component extends DCLogic {
       windowLabel: (sell ? 'Time to pay · ' : 'Pays you within · ') + method.name,
       methodCount: cur.methods.length,
       waysWord: sell ? 'to pay' : 'to get paid',
-      rows, toggles,
+      toggles,
       amount,
       onAmount: (e) => this.setState({ amount: e.target.value }),
       amtLabel: toggleLabels[mode] + (inputIsFiat ? ', in ' + cur.code : ', in XMR'),
@@ -464,7 +503,7 @@ class Component extends DCLogic {
       convUnitStyle: 'font-weight: 600; color: ' + (convUnit === 'XMR' ? 'var(--monero-ink);' : 'var(--ink-muted);'),
       showVolume, volumeText,
       volumeState: showVolume ? 'on' : 'off',
-      volumeRaw: showVolume ? ' (actual $' + VOLUME_USD.toLocaleString('en-US') + ')' : '',
+      volumeRaw: showVolume ? ' (actual ' + VOLUME_XMR.toFixed(6) + ' XMR)' : '',
       sideName: sell ? 'selling (vendor sells XMR, you pay fiat)' : 'buying (vendor buys XMR, you receive fiat)',
       toggleNames: toggleLabels.join(' / ')
     };

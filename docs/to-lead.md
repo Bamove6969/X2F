@@ -263,3 +263,153 @@ How I checked: by reading the code on `origin/main` @ `55bc70f9` (apps/web), not
 - DisputeRoom · hero per the board (v119): chip + key mark; waiting state = hourglass countdown from 24 h with "A moderator steps in within 24 h at the most. Usually it's much sooner."; amount block 1.250000 XMR; drop the 48 h line.
 - MyOffers wide · table layout per MyOffers-Wide (clears NEEDS_DESIGN_MYOFFERS); selection bar at the top of the column.
 - LoginApprove "You're in" · add "Chrome on Windows is now one of your devices." (check that the board copy is still missing on main).
+
+## 7 Nov 2026: design review of branches before landing (job 3)
+
+Reviewed from code against the boards (canvas v119) and the v2 standards. Paths are relative to `apps/web/src/`.
+
+### `wip/lead-hold-v3` @ `b0bc72c4`: ready after one P1
+- **P1 · `ui/cantDoCodes.ts` teamCantDoText `weak-session`:** it offers "your username, password and authenticator code" as a way to invite members or change roles. Owner rule (handoff §4): an authenticator app isn't enough for team invites and permissions; only a passkey, security key or PGP key is. Fix: "Do this from a device where you logged in with a passkey, a security key or a PGP key." Rule source: owner, 1–2 Nov.
+- **P2, rule check for the lead · `WEAK_SESSION_TEXT`:** the same "username, password and authenticator code" option for logging out stronger devices. TOTP counts for logging in but not for sensitive actions. Confirm with the owner whether logging out devices is sensitive. Design recommends yes, and the same fix as P1.
+- **P2, rule check · `screens/auth/refusals.ts` heldNote:** "Logging in with a passkey, a security key or a PGP key you had before then cancels it." The hold decision (handoff §4) says such a key "approves the changes early" and "ending the hold that way discards them". The code says "cancels". Pick one with the owner; the copy must match what the server does.
+- **P2 · `cantDoCodes.ts` holdLoginText:** still 7 sentences in a CantDoThat sheet. Board (04 / RecoveryHold): two sentences, "This device can log in after <date>. Your account is on a 24-hour hold." plus a "See the hold" link to the RecoveryHold screen.
+- **P2 · X5:** `holdText(when)` still receives "until Tue 3:05 PM". It should be `6 Nov 2026, 15:00 UTC` in mono.
+- **Good:** "username and password" replaces "only one way of proving it's you" throughout (owner Q14). The ConfirmSheet and wallets lines ("You have no passkey, security key or PGP key yet…") read well. COPY-UNSIGNED.
+- **Open, no board change:** `counterpartyProblem` isn't shown yet; when it is, use the TradeTechIssue board.
+
+### `wip/third-p4-task15` @ `c0d889a5`: ready after P1 and the hourglass
+- **P1, rule check · `screens/Maintenance.tsx`:** it replaces the whole app. The Maintenance board shows "What still works: Trades already in escrow. You can release, refund or open a dispute as usual." Either the build or the board is wrong; the lead should confirm with the owner whether escrowed trades stay usable during maintenance (design recommends yes, as the board says). The comment also says "no board": there is one (Maintenance, Maintenance-Wide). Build it from the board: chip "Planned maintenance" / "Emergency maintenance", the headline, the owner's message with "From the X2F team · <date>", the start and end block (mono dates), "What still works", and the Get updates rows. "Check again" can stay as the one primary.
+- **P2 · `screens/dispute/DisputeRoom.tsx` DisputeHourglass:** it's built as a small line. Board (DisputeRoom v119, `moderator=waiting`): the hourglass countdown is the hero's one big number. Label 13/16 uppercase danger "Until a moderator steps in"; digits mono 40/44 500, units body 18/24 600 ink-muted ("23 h 12 min"); hourglass icon 24px danger beside it; line 14/20 muted "A moderator steps in within 24 h at the most. Usually it's much sooner." The XMR amount moves into an inner block (28/32, 6 decimals). The "over" state is fine as built ("Taking longer than usual" / "A moderator will step in as soon as they can."). COPY-UNSIGNED.
+- **P2 · DisputeRoom DeadlineLine:** "First reply due by Fri 16 Oct, 10:14 · You're number N in the queue" puts a second deadline next to the hourglass. Fix: drop "First reply due by…" while the hourglass runs. Keep "You're number N in the queue" as a 13/16 muted meta line under the hourglass (COPY). Dates: X5.
+- **P2 · `DisputeRuling.tsx` TxProofForm:** "Send proof" is a primary. On the losing seller's ruling screen, "Send appeal" becomes the primary too once text is typed, so the screen can end up with two orange buttons. Fix: while a `seller-sends-xmr` payment is due, Send proof is the primary and the appeal button is secondary. Labels per v2 §11: 13/16 uppercase muted "TRANSACTION ID", "TRANSACTION KEY"; inputs 48h, mono, `surface-raised`.
+- **P2 · X5:** `complyBy` and `replyDueAt` use `dayTime` (weekday, no year, no UTC).
+- **P3 · DisputeOpen "Talk to <name> first" notice:** fine as a plain info callout. Use v2 §12 info (`surface-raised` background, `ink-muted` icon), and put "Go to the chat" on its own line as a 44px tertiary link. COPY-UNSIGNED.
+- **P3 · `ui/SiteBanner.tsx`:** the titles "Info" and "Warning" add nothing; drop the title and let the message stand. Warning = caution callout, info = info callout.
+- **COPY-UNSIGNED (owner):** "There is one appeal per dispute, and its decision is final." · "Prove you sent it" / "Your wallet shows the transaction ID and the transaction key once the XMR is sent." · "Send it by <date>." / "<name> has until <date> to send it." · Maintenance copy.
+
+### `wip/lead-design-results` @ `e987d6b5`: not ready (8 P1)
+
+**Verdict: not ready.** There are 8 P1s. The biggest is that the 90-min dispute rule never takes effect: it is computed but always overridden by confirmBy. The paid room and the Refunded screen also don't use the boards' hero block.
+
+I checked every claim against `git show origin/wip/lead-design-results:<path>` and the v119 boards. Line numbers are on the branch.
+
+##### P1
+
+1. **The 90-min dispute rule never applies.** `PaidWaiting.tsx:73-78`: `disputeOpensAt = max(paid+90min, confirmBy)`. With Zelle's 2 h window, Open dispute only becomes available at confirmBy (16:05), not 15:35. The board's `after-wait` state (dispute available while 28 min are still left to confirm) can never appear.
+   - The server blocks it too: `packages/trade/src/machine.ts:416` returns `too-early` for the buyer before confirmBy.
+   - `screens/dispute/rules.ts:64-75` (`disputeEntry`) also waits for confirmBy.
+   - **Fix:** the machine and `disputeEntry` should allow the buyer's dispute at `paidAt + per-type wait`, which is 90 min for instant types. Then `disputeOpensAt` should return `paid + DISPUTE_AFTER_PAID_MS`, with no `Math.max` against confirmBy. This needs an API change.
+
+2. **Step 3 tells the buyer the wrong time.** `PaidWaiting.tsx:200-208` says "If they don't confirm by {confirmBy}, you can open a dispute." The board says: "If something goes wrong, you can open a dispute from `<mono>15:35 UTC</mono>`, `<mono>90</mono>` min after you marked it as paid. A moderator checks the chat and proof, then decides." Use `<When at={opensAt} form="time"/>` and the wait as a `<Duration>`. This depends on P1-1.
+
+3. **The paid status card breaks the hero rule (standard 11).** `PaidWaiting.tsx:110-153`, timer at `:156-184`.
+   - What's wrong:
+     - The card is a plain grey `x2f-panel` with an `x2f-h2` headline (24px, "Paid · waiting for X to confirm").
+     - There is no key mark.
+     - The timer is a separate card.
+     - The chip is `tone="escrow"` (teal) while waiting.
+   - What the board has: one caution hero.
+     - `padding:20px; border-radius:16px; gap:16px; background:linear-gradient(180deg, color-mix(in srgb,var(--caution) 14%,var(--surface)) 0%, var(--surface) 140px); border:1px solid color-mix(in srgb,var(--caution) 35%,transparent)`. On wide: padding 28px, gap 20px, 180px stop.
+     - Row 1: the chip (caution, check icon, "Paid") with the three-dot key mark on the right (62×14 svg, two filled dots, the third an outline ring).
+     - Then the lead as a `<p>` at 16/24, ink-muted, with no h1.
+     - Then a 1px divider in caution 25%.
+     - Then the timer, inside the same card.
+   - **Fix:** drop the h1 (the page h1 stays "Buying from …"), use the caution tone in both states, add the key mark, and move the TimerCard content inside the hero.
+
+4. **"2 hours" is written in words, breaking the duration rule.** `windowWords` at `PaidWaiting.tsx:80-85` is used at `:107/131/149/179`. It produces "up to 2 hours", "Their 2 hours to check…" and "Zelle gets 2 hours". The board has `<mono>2</mono> h`. **Fix:** render `<Duration ms={win.lengthMs}/>`. The nudge line at `:308`, "another in 10 min", also needs the 10 in mono: `<Duration ms={600000}/>`.
+
+5. **The button label isn't the agreed term.** It reads "Open a dispute" at `PaidWaiting.tsx:318` and `:324`, and `Refunded.tsx:199`. The terms list (standard 10) and every board say **"Open dispute"**.
+
+6. **The XMR unit has the wrong style (standard 7).** The digits should be mono and the "XMR" unit body 600 in `var(--monero-ink)`.
+   - `PaidWaiting.tsx:198`: the whole `"1.250000 XMR"` is in `x2f-when` (mono).
+   - `PaidWaiting.tsx:218`: the For row passes `xmr` as a string into the mono `dd`.
+   - `Refunded.tsx:146`: the Trade amount row is one mono string.
+   - `Refunded.tsx:189`: the number isn't mono at all (the board has it mono in ink).
+   - **Fix:** use an amount component: `<span class="x2f-num">1.250000</span> <span style="font-weight:600;color:var(--monero-ink)">XMR</span>`.
+
+7. **The Refunded screen has no hero.** `Refunded.tsx:159-165` has a loose chip, then an `x2f-h2` at 24px with the lead. The board's hero card:
+   - Tone is ink-muted (mod for the moderator variant), with gradient 14% to 160px, border 35%, padding 24/20/20, gap 20.
+   - Chip and key mark row.
+   - h1 in Familjen 32/36 700, -0.02em.
+   - Lead 16/24.
+   - A raised `dl` with "TRADE AMOUNT": `1.250000` mono 28/32 500, then XMR 15/600 monero-ink, then `$412.50` mono 16 muted. Then the "X2F fee · None" row, 48px high.
+   - **Fix:** move Trade amount and X2F fee out of "What happened" (`:144-150`) into the hero.
+
+8. **News: an inset shadow and an orange header action.** I checked these against News.dc.html.
+   - `ui.css:1766` gives `.x2f-post[data-new]` the shadow `box-shadow: inset 3px 0 0 var(--x2f-escrow)`. Standard 17 allows no box-shadow except the nav inset, and the board's new card is just `background:var(--surface); border:1px solid transparent`. Remove it.
+   - `ui.css:1858`: `.x2f-header-action` ("Mark all as read", `News.tsx:155`) is orange `--monero-ink`, which breaks the colour rules. The board has a pill: `height:44px; padding:0 14px; border-radius:999px; background:var(--surface); color:var(--ink); font-weight:600`, with an 18px double-check icon.
+
+##### P2
+
+9. **No trade progress stepper in the paid room.** `BuyerPay.tsx:579-622`: neither the phone nor the wide paid branch renders the "Trade progress" stepper. Both boards show 4 bars (Escrow / You pay / Seller checks / Released) with "Seller checks" current and a caution fill.
+
+10. **Wide layout order is wrong.** `PaidWaiting.tsx:245-255` puts the timer and Your payment side by side in a grid, then What happens next, with the actions at the very bottom (`BuyerPay.tsx:603`).
+    - Board order: hero (timer inside), then the actions row (Nudge left, spacer, Open dispute right; under it the "Available from…" hint right-aligned and the no-cancel line), then What happens next, then Your payment. Remove `x2f-room__grid`.
+
+11. **Phone footer order and sizes.** `PaidWaiting.tsx:299-334` puts Nudge first and the dispute at 48px.
+    - The board puts the dispute first. Locked: a 56px button at 18px on surface-raised. Ended: the danger-outline at 56px/18px with a 14% wash.
+    - So drop `data-size="medium"` on phone (`:317`) and keep it only on wide.
+    - Locked hint copy: "Available from `<When form="time">` · in `<Duration>`", with no trailing period (`:329-330`).
+
+12. **No soft dispute link for the after-wait state.** This state follows from P1-1. The board's `after-wait` shows "Open dispute ›" as a text link (danger 15/600, 44px, chevron 16) below Nudge, not the outlined button. Only the ended state gets the outlined button. `PaidWaiting.tsx:316-319` has a single style for both.
+
+13. **Nudge button colour.** `PaidWaiting.tsx:300` with `ui.css:2125` turns the whole button caution-coloured. The board has ink text, a `var(--line)` border, and only the bell icon in caution. **Fix:** remove `data-tone`, and colour `.x2f-button--secondary > svg` caution here.
+
+14. **Nudge sent state.** `PaidWaiting.tsx:299-310` keeps the button and adds a 13px footnote. The board hides the button (`canNudge:false`) and shows a status row instead: escrow check icon 18, 15/22 muted, min-height 48, centred. This conflicts with review N1, which kept the button on purpose; the owner or design needs to pick one.
+
+15. **Timer size.** `TimerCard.tsx:42-54` and `ui.css:2079/2098`.
+    - Board digits: 40/44, mono 500, -0.02em. Units: 18/24 600 ink-muted. Built: digits 28px; units weight 400 and not muted.
+    - Board ring: 64px, r=27, stroke 5, track in the tone colour at `stroke-opacity:0.2`. Built: 56px, r=24, stroke 6, track surface-raised.
+    - Board hint: 14/20. Built: 13/18.
+
+16. **"Your payment" box.** `PaidWaiting.tsx:226` and `ui.css:1076`: the `outline` prop gives a transparent box with a border. The board has `background:var(--surface)` and no border, so drop `outline`.
+    - The board's rows (`:238`, `ui.css:1701`) sit in a raised `dl`: `margin:0 20px 20px; border-radius:12px; background:var(--surface-raised)`, rows `min-height:48px; padding:0 14px`, surface dividers between them, values mono 15/500. Built has no box and 14px values.
+    - On wide the board lays this out as a 2-column grid.
+
+17. **"Payment proof" row missing.** `PaidWaiting.tsx:215-220` has no "Payment proof" row ("1 screenshot, blurred"). The board's design call says it stays, and reads "Add payment proof · optional" when there is none.
+
+18. **Refunded back link goes to the wrong place.** `Refunded.tsx:157`: `backTo="/buy"`. The board's back control is "Back to trades", so use `/trades`.
+
+19. **Refunded footer is missing a link.** `Refunded.tsx:212-216`: there is no tertiary **"Back to my trades"** under "Find another offer". Board: 44px, ink-muted 15/600, centred.
+
+20. **"What happened" is plain rows, not a timeline.** `Refunded.tsx:166-178`. The board has a timeline:
+    - A 12px dot per row: a 2px `--line` ring for each row, the last one filled in the tone colour.
+    - A 2px surface-raised connector between dots, 16px between rows.
+    - The last row at 600.
+    - The date sits on the right of the heading (mono 13 muted), not appended as " · date".
+    - Card: padding 20, radius 16, gap 16.
+
+21. **The moderator variant doesn't match.** `Refunded.tsx:76-82`.
+    - Board headline: "A moderator decided the dispute". Lead: "Moderator {name} ruled for {seller}…".
+    - Board rows include "Moderator ruled".
+    - The hero is `--mod` toned, with a "The moderator's reason" card (mod 8% / 40%) and a 48px outline "Read the ruling and appeal".
+    - Built shows "Refunded by the dispute decision" and, through `entry.kind==='opened'`, a "Go to the dispute" button (`:203-209`).
+
+22. **Owner call: buyer-cancelled dispute card.** `rules.ts:84-86` hides the card for a buyer's own cancel (owner, 29 Oct, question 4). The v119 board shows it, titled "Did you pay before you cancelled?". The owner and design need to settle which one wins before this ships.
+
+##### P3
+
+23. **Small Refunded mismatches.**
+    - Chip (`ui.css:128`): the board's muted chip has ink text on an ink-muted 16% fill; built is ink-muted text on surface-raised.
+    - Dispute card (`Refunded.tsx:180-201`): the board uses a row layout with a 40px icon tile (escrow 14%, radius 12). Built puts the icon inline in the h2.
+    - The link uses `.x2f-button--danger` at weight 400; the board has 15/600.
+
+24. **Steps list and chat link styling.** `ui.css:1712` (`.x2f-steps`) uses default decimals with gap 8. The board has 24px numbered circles (surface-raised, mono 13/500), list-style none, gap 12.
+    - `ui.css:2107`: `.x2f-inline-action` is underlined at weight 400; the board has no underline, 600.
+    - Step 1's amount (`PaidWaiting.tsx:193`) should be `<strong>` in mono 500, not bold body text.
+
+25. **COPY (owner signs).**
+    - `PaidWaiting.tsx:131`: the ended line reads "Their … ended at 1 Nov 2026, 16:05 UTC". The board has "satoshi_ghost's 2 h to check Zelle ended at 16:05 UTC".
+    - `PaidWaiting.tsx:146`: the board says "at 14:05 UTC" (time only).
+    - `Refunded.tsx:100` (buyer-cancel lead): the board says "All 1.250000 XMR in escrow (about $412.50) went back to satoshi_ghost. X2F took nothing from you. If you already sent the payment, open a dispute below."
+    - `Refunded.tsx:93` (time ran out): the board says "You didn't tap I've paid within the 90 minutes, so satoshi_ghost cancelled. Everything in escrow, 1.250000 XMR (about $412.50), went back to satoshi_ghost."
+    - Row labels: the board's buyer-cancel rows include "You cancelled", which built lacks. The board has "Refund confirmed" where built has "{N} confirmed it arrived" (`:128`).
+    - `Refunded.tsx:191-196`: the extra line "You can open one for 48 hours…" isn't on the board.
+
+What matches: the Refunded dispute body copy follows v119, apart from the mono number in P1-6. Step 2's wording matches v119. The disabled dispute uses aria-disabled on purpose for focus. The SellerCancelConfirm date change uses `<When>`, and no board covers that screen. I found no email, no dashed borders and no orange selection in the changed screens.
+
+### Design follow-ups from today
+- **F10, nudge sound:** the owner's pick replaces design's synthesized honk: Freesound 480002 (craigsmith, CC0), an old "Ahooga" horn, 1.84 s (`assets/sound/x2f-nudge-ahooga.wav` and `-soft` on comms). I removed my synthesized files from `docs/design-assets/sound`. BuyerPaidWaiting (+Wide) now carries the decision, and "You can send another in 15 min" (F10: once every 15 minutes). Canvas v121.
+- **v120:** the MyOffers (+Wide, Fold) "no rate" state (F4): currency chips; one off = a struck chip plus "No rate for ARS right now. Buyers can't pick it until it's back."; all off = "NOT LIVE · NO RATE" plus "We can't get a rate for ARS, so this offer can't go live. It goes live by itself when the rate is back.". FlexOffer-Post (+Wide): Above/Below market plus a typed % ("Up to 50%." / "Set 50% or less."), the empty-instructions helper, and "2 of 3 selling offers used". OfferAd (+Wide): Currency, then PAY WITH dropdowns; the list of ways to pay is folded into the dropdown. Devices (+Wide): F18 note. All new lines are COPY-UNSIGNED.
+- **Open, design's call next:** the per-payment-type price change on FlexOffer-Post still uses a ± stepper. For one pattern, design will switch it to the same Above/Below plus typed % (max 50%) unless the owner objects.
+- **Queued:** the MemberPermissions redraw for Q16 (member types with checkboxes).

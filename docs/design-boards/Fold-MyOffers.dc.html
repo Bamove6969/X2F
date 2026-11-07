@@ -17,6 +17,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
+  <div style="{{appStyle}}">
+  <span style="position: absolute; top: 4px; right: 16px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
   <section aria-label="My offers" style="position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
     <header style="display: flex; align-items: center; gap: 8px; padding: 16px;">
       <a href="Main.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; color: var(--ink);">
@@ -44,18 +46,41 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
       <sc-for list="{{offers}}" as="o" hint-placeholder-count="5">
         <article aria-label="{{o.switchLabel}}" style="{{o.cardStyle}}">
-          <label style="position: relative; display: flex; width: 44px; height: 44px; flex-shrink: 0; align-items: center; justify-content: center; cursor: pointer;">
+          <label style="position: relative; display: flex; width: 44px; height: 44px; flex-shrink: 0; align-items: center; justify-content: center; cursor: pointer; {{o.dim}}">
             <input type="checkbox" checked="{{o.sel}}" onChange="{{o.toggleSel}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); cursor: pointer;">
             <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;">{{o.selLabel}}</span>
           </label>
           <button type="button" aria-pressed="{{o.shownStr}}" aria-label="{{o.showLabel}}" onClick="{{o.show}}" style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1; min-width: 0; min-height: 44px; padding: 12px 0 8px; border: 0; background: transparent; color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;">
-            <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{o.title}}</span>
-            <span style="font-size: 16px; line-height: 24px; font-weight: 600; {{o.textStyle}}">{{o.methods}}</span>
-            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; {{o.textStyle}}">{{o.price}}</span> · {{o.limits}}</span>
-            <span style="{{o.statusStyle}}">{{o.status}}</span>
+            <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted); {{o.dim}}">{{o.title}}</span>
+            <span style="font-size: 16px; line-height: 24px; font-weight: 600; {{o.textStyle}} {{o.dim}}">{{o.methods}}</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted); {{o.dim}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; {{o.textStyle}}">{{o.price}}</span> · {{o.limits}}</span>
+            <span style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; {{o.dim}}">
+              <sc-for list="{{o.curs}}" as="c" hint-placeholder-count="2">
+                <span style="{{c.chipStyle}}">
+                  <span aria-hidden="true" style="display: inline-flex; width: 16px; height: 11px; box-sizing: border-box; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 2px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 8px; line-height: 9px; font-weight: 500; color: var(--ink-muted);">{{c.cc}}</span>
+                  <span style="{{c.codeStyle}}">{{c.code}}</span>
+                  <sc-if value="{{c.off}}" hint-placeholder-val="{{false}}">
+                    <svg style="flex-shrink: 0; color: var(--caution);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><path d="M12 20h.01"/><path d="M3 3l18 18"/></svg>
+                    <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;">no rate right now</span>
+                  </sc-if>
+                </span>
+              </sc-for>
+            </span>
+            <sc-if value="{{o.hasRateLine}}" hint-placeholder-val="{{false}}">
+              <span style="display: flex; gap: 6px; align-items: flex-start; margin: 2px 0 0; font-size: 13px; line-height: 18px; color: var(--ink);"><svg style="flex-shrink: 0; margin-top: 2px; color: var(--caution);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><path d="M12 20h.01"/><path d="M3 3l18 18"/></svg><span>{{o.rateLine}}</span></span>
+            </sc-if>
+            <sc-if value="{{o.showStatus}}" hint-placeholder-val="{{true}}">
+              <span style="{{o.statusStyle}}">{{o.status}}</span>
+            </sc-if>
+            <sc-if value="{{o.showNoRate}}" hint-placeholder-val="{{false}}">
+              <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 28px; margin-top: 4px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><path d="M12 20h.01"/><path d="M3 3l18 18"/></svg>
+                Not live · no rate
+              </span>
+            </sc-if>
           </button>
           <div style="display: flex; flex-direction: column; align-items: center; flex-shrink: 0;">
-            <button type="button" role="switch" aria-checked="{{o.onStr}}" aria-label="{{o.switchLabel}}" onClick="{{o.toggle}}" style="display: flex; width: 60px; height: 44px; padding: 0; align-items: center; justify-content: center; border: 0; background: transparent; cursor: pointer;">
+            <button type="button" role="switch" aria-checked="{{o.onStr}}" aria-label="{{o.switchLabel}}" onClick="{{o.toggle}}" style="{{o.dim}} display: flex; width: 60px; height: 44px; padding: 0; align-items: center; justify-content: center; border: 0; background: transparent; cursor: pointer;">
               <span aria-hidden="true" style="{{o.trackStyle}}"><span style="{{o.thumbStyle}}"></span></span>
             </button>
             <span aria-hidden="true" style="{{o.chevStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 6l6 6-6 6"/></svg></span>
@@ -94,12 +119,39 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <main style="flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 16px;">
       <section aria-label="Status" style="{{d.statusBox}}">
         <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
-          <span style="{{d.statusStyle}}">{{d.status}}</span>
-          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{d.statusSub}}</span>
+          <sc-if value="{{d.showStatus}}" hint-placeholder-val="{{true}}">
+            <span style="{{d.statusStyle}}">{{d.status}}</span>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{d.statusSub}}</span>
+          </sc-if>
+          <sc-if value="{{d.showNoRate}}" hint-placeholder-val="{{false}}">
+            <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><path d="M12 20h.01"/><path d="M3 3l18 18"/></svg>
+              Not live · no rate
+            </span>
+          </sc-if>
         </div>
-        <button type="button" role="switch" aria-checked="{{d.onStr}}" aria-label="{{d.switchLabel}}" onClick="{{d.toggle}}" style="display: flex; width: 60px; height: 44px; flex-shrink: 0; padding: 0; align-items: center; justify-content: center; border: 0; background: transparent; cursor: pointer;">
+        <button type="button" role="switch" aria-checked="{{d.onStr}}" aria-label="{{d.switchLabel}}" onClick="{{d.toggle}}" style="{{d.dim}} display: flex; width: 60px; height: 44px; flex-shrink: 0; padding: 0; align-items: center; justify-content: center; border: 0; background: transparent; cursor: pointer;">
           <span aria-hidden="true" style="{{d.trackStyle}}"><span style="{{d.thumbStyle}}"></span></span>
         </button>
+      </section>
+
+      <section aria-labelledby="fmo-cur" style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; background: var(--surface);">
+        <h3 id="fmo-cur" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Currencies</h3>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; {{d.dim}}">
+          <sc-for list="{{d.curs}}" as="c" hint-placeholder-count="2">
+            <span style="{{c.chipStyle}}">
+              <span aria-hidden="true" style="display: inline-flex; width: 16px; height: 11px; box-sizing: border-box; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 2px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 8px; line-height: 9px; font-weight: 500; color: var(--ink-muted);">{{c.cc}}</span>
+              <span style="{{c.codeStyle}}">{{c.code}}</span>
+              <sc-if value="{{c.off}}" hint-placeholder-val="{{false}}">
+                <svg style="flex-shrink: 0; color: var(--caution);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><path d="M12 20h.01"/><path d="M3 3l18 18"/></svg>
+                <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;">no rate right now</span>
+              </sc-if>
+            </span>
+          </sc-for>
+        </div>
+        <sc-if value="{{d.hasRateLine}}" hint-placeholder-val="{{false}}">
+          <p style="display: flex; gap: 6px; align-items: flex-start; margin: 0; font-size: 13px; line-height: 18px; color: var(--ink);"><svg style="flex-shrink: 0; margin-top: 2px; color: var(--caution);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><path d="M12 20h.01"/><path d="M3 3l18 18"/></svg><span>{{d.rateLine}}</span></p>
+        </sc-if>
       </section>
 
       <section aria-labelledby="fmo-price" style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; background: var(--surface);">
@@ -138,13 +190,29 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <a href="FlexOffer-Post.dc.html" aria-label="{{d.editLabel}}" style="display: flex; align-items: center; justify-content: center; height: 48px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Edit offer</a>
     </footer>
   </section>
+  </div>
+
+  <section aria-label="Design notes" style="display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <aside aria-label="Decided: currencies with no market rate" style="display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (F4)</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Every offer shows its currencies as small chips (flag and code). A currency with a market rate is a plain chip.</li>
+        <li>One currency has no rate: its chip is struck through, with a caution outline and a signal-off icon, and one caution line under the chips says so. The other currencies stay live.</li>
+        <li>No currency has a rate: the offer can’t go live. It shows a caution chip “Not live · no rate” and one line; the switch stays on and the rest of the card dims to 70%.</li>
+        <li>Nothing for the vendor to do: when the rate comes back, the currency (or the offer) goes live by itself; nothing for the vendor to do. X2F’s owner is notified when a currency drops or comes back (owner Q35).</li>
+        <li>Fold: the list cards work as on the phone; the detail pane gets a Currencies block with the same chips and line, and its status shows the same caution chip.</li>
+        <li>Preview with the rate tweak (all, one-missing, none). The chip label and the two caution lines are draft copy.</li>
+      </ul>
+    </aside>
+  </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":840,"height":1000}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"rate":{"editor":"enum","options":["all","one-missing","none"],"default":"all"},"$preview":{"width":840,"height":1485}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { on: { o1: true, o2: false, o3: true, o4: true, o5: false }, sel: {}, shown: 'o1' };
+    this.state = { on: { o1: true, o2: false, o3: true, o4: true, o5: false }, sel: {}, shown: null };
   }
   renderVals() {
     const THEMES = {
@@ -152,7 +220,12 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 840px; height: 1000px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: grid; grid-template-columns: 412px 16px 412px;";
+    // F4 (owner, 7 Nov): currencies with no market rate. "one-missing": o1 also covers ARS, which has no rate.
+    // "none": o3 is an ARS-only offer and ARS has no rate, so it can't go live (shown in the detail pane by default).
+    const rate = ['one-missing', 'none'].includes(this.props.rate) ? this.props.rate : 'all';
+    const H = { all: [1174, 1485], 'one-missing': [1216, 1527], none: [1248, 1559] };
+    const rootStyle = THEMES[theme] + "position: relative; width: 840px; height: " + H[rate][1] + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const appStyle = "position: relative; flex-shrink: 0; height: " + H[rate][0] + "px; overflow: hidden; display: grid; grid-template-columns: 412px 16px 412px;";
 
     const OFFERS = [
       { id: 'o1', side: 'Selling XMR', cur: 'USD', methods: 'Zelle · PayPal +2.0%', price: '+0.4% to +0.8%', priceSub: '2 tiers · follows the market', limits: '$50 – $2,000', edited: '30 Oct 2026, 18:40 UTC', who: 'Anyone', open: '1',
@@ -171,9 +244,39 @@ class Component extends DCLogic {
         tiers: [{ range: '€100 – €1,500', req: '', price: '−0.3%' }],
         methodRows: [{ name: 'Wise', adj: 'Base price' }], market: true }
     ];
+    if (rate === 'one-missing') Object.assign(OFFERS[0], { cur: 'USD · ARS', noRate: ['ARS'] });
+    if (rate === 'none') Object.assign(OFFERS[2], { cur: 'ARS', methods: 'Mercado Pago', limits: 'ARS 50,000 – 800,000', noRate: ['ARS'],
+      tiers: [{ range: 'ARS 50,000 – 800,000', req: '', price: '−0.5%' }], methodRows: [{ name: 'Mercado Pago', adj: 'Base price' }] });
+    const FLAG = { USD: 'US', CAD: 'CA', ARS: 'AR', EUR: 'EU', GBP: 'GB' };
+    // Currency chips: live = neutral on --surface-raised (--surface when the card behind is --surface-raised); no rate = struck code, 1px caution outline, signal-off icon.
+    const rateOf = (o, v, raisedBg) => {
+      const missing = o.noRate || [];
+      const codes = o.cur.split(' · ');
+      const allMissing = missing.length > 0 && codes.every((c) => missing.includes(c));
+      const noLive = v && allMissing;
+      const missList = missing.join(' and ');
+      return {
+        noLive, live: codes.filter((c) => !missing.includes(c)),
+        dim: noLive ? 'opacity: 0.7;' : '',
+        hasRateLine: missing.length > 0,
+        rateLine: allMissing
+          ? 'We can’t get a rate for ' + missList + ', so this offer can’t go live. It goes live by itself when the rate is back.'
+          : 'No rate for ' + missList + ' right now. ' + (o.side.startsWith('Selling') ? 'Buyers' : 'Sellers') + ' can’t pick it until it’s back.',
+        curs: codes.map((c) => {
+          const off = missing.includes(c);
+          return {
+            code: c, cc: FLAG[c] || c.slice(0, 2), off,
+            chipStyle: 'position: relative; display: inline-flex; align-items: center; gap: 6px; height: 28px; box-sizing: border-box; padding: 0 10px 0 8px; border-radius: 999px; ' + (off
+              ? 'background: transparent; border: 1px solid var(--caution);'
+              : 'background: ' + (raisedBg ? 'var(--surface)' : 'var(--surface-raised)') + '; border: 1px solid transparent;'),
+            codeStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 16px; font-weight: 600; " + (off ? 'color: var(--ink-muted); text-decoration: line-through;' : 'color: var(--ink);')
+          };
+        })
+      };
+    };
     const on = this.state.on;
     const sel = this.state.sel;
-    const shownId = this.state.shown;
+    const shownId = this.state.shown || (rate === 'none' ? 'o3' : 'o1');
     const nOn = OFFERS.filter((o) => on[o.id]).length;
     const track = (v) => 'position: relative; display: block; width: 52px; height: 32px; box-sizing: border-box; border-radius: 999px; ' + (v ? 'background: var(--ink); border: 1px solid var(--ink);' : 'background: var(--surface-raised); border: 1px solid var(--line);');
     const thumb = (v) => 'position: absolute; top: 3px; width: 24px; height: 24px; border-radius: 999px; ' + (v ? 'left: 23px; background: var(--ground);' : 'left: 3px; background: var(--ink-muted);');
@@ -188,6 +291,7 @@ class Component extends DCLogic {
       const v = !!on[o.id];
       const shown = o.id === shownId;
       const ring = sel[o.id] ? ' box-shadow: inset 0 0 0 2px var(--ink);' : '';
+      const r = rateOf(o, v, shown);
       const bg = shown ? 'background: var(--surface-raised); border: 1px solid ' + (v ? 'transparent' : 'var(--line)') + ';' : (v ? 'background: var(--surface); border: 1px solid transparent;' : 'background: transparent; border: 1px solid var(--line);');
       return {
         title: o.side + ' · ' + o.cur,
@@ -197,6 +301,8 @@ class Component extends DCLogic {
         switchLabel: o.side + ' in ' + o.cur + ' via ' + o.methods,
         showLabel: 'Show details: ' + o.side.toLowerCase() + ' in ' + o.cur + ' via ' + o.methods,
         trackStyle: track(v), thumbStyle: thumb(v),
+        curs: r.curs, dim: r.dim, hasRateLine: r.hasRateLine, rateLine: r.rateLine,
+        showStatus: !r.noLive, showNoRate: r.noLive,
         status: statusOf(v),
         statusStyle: 'font-size: 13px; line-height: 18px; font-weight: 600; ' + (v ? 'color: var(--ink);' : 'color: var(--ink-muted);'),
         cardStyle: 'display: flex; align-items: flex-start; gap: 4px; padding: 4px; border-radius: 12px; ' + bg + ring,
@@ -212,12 +318,15 @@ class Component extends DCLogic {
 
     const s = OFFERS.find((o) => o.id === shownId) || OFFERS[0];
     const sv = !!on[s.id];
+    const sr = rateOf(s, sv, false);
     const d = {
       title: s.side + ' · ' + s.cur,
       edited: s.edited,
       status: statusOf(sv),
       statusStyle: 'font-size: 16px; line-height: 24px; font-weight: 600; ' + (sv ? 'color: var(--ink);' : 'color: var(--ink-muted);'),
-      statusSub: sv ? 'Shown in the ' + s.cur + ' lists for ' + s.methods.split(' · ').map((m) => m.replace(/ [+−-][0-9.]+%$/, '')).join(' and ') + '.' : 'Nobody can see it until you turn it back on.',
+      curs: sr.curs, dim: sr.dim, hasRateLine: sr.hasRateLine, rateLine: sr.rateLine,
+      showStatus: !sr.noLive, showNoRate: sr.noLive,
+      statusSub: sv ? 'Shown in the ' + sr.live.join(' and ') + ' lists for ' + s.methods.split(' · ').map((m) => m.replace(/ [+−-][0-9.]+%$/, '')).join(' and ') + '.' : 'Nobody can see it until you turn it back on.',
       statusBox: 'display: flex; align-items: center; gap: 12px; padding: 12px 8px 12px 16px; border-radius: 12px; ' + (sv ? 'background: var(--surface); border: 1px solid transparent;' : 'background: transparent; border: 1px solid var(--line);'),
       onStr: sv ? 'true' : 'false',
       switchLabel: s.side + ' in ' + s.cur + ' via ' + s.methods,
@@ -234,7 +343,7 @@ class Component extends DCLogic {
     };
 
     return {
-      rootStyle, offers, d,
+      rootStyle, appStyle, offers, d,
       paneLabel: 'Details: ' + d.title,
       countLine: nOn + ' of ' + OFFERS.length + ' offers on',
       allChecked: allSel, allMixed: someSel, hasSel: nSel > 0, noSel: nSel === 0,
