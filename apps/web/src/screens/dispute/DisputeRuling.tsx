@@ -15,7 +15,7 @@ import type { DisputeTrade, DisputeView } from './api.js';
 import { TradeTitle } from './DisputeOpen.js';
 import { DisputeIcon } from './icons.js';
 import { ModeratorTag } from './ModeratorTag.js';
-import { APPEAL_MIN, APPEAL_WINDOW_H, appealSentText, dayTime, feeOwedLine, isTxHex, overturnLien, rulingCopy, rulingFinal } from './rules.js';
+import { APPEAL_MIN, APPEAL_WINDOW_H, appealSentText, dayTime, feeOwedLine, isTxHex, overturnLien, rulingCopy, rulingFinal, utcDateTime } from './rules.js';
 import './dispute.css';
 
 function AppealSection({
@@ -24,12 +24,15 @@ function AppealSection({
   other,
   serverClock,
   onAppeal,
+  quiet = false,
 }: {
   dispute: DisputeView;
   me: 'buyer' | 'seller';
   other: string;
   serverClock: () => Date;
   onAppeal: (why: string) => Promise<void>;
+  /** Design 7 Nov: while the proof of a payment the ruling orders is due, that is the screen's one primary. */
+  quiet?: boolean;
 }) {
   const [writing, setWriting] = useState(false);
   const [why, setWhy] = useState('');
@@ -111,7 +114,7 @@ function AppealSection({
             <Button variant="secondary" onClick={() => { setWriting(false); setWhy(''); }}>
               Cancel
             </Button>
-            <Button variant="primary" disabled={!ready || busy} onClick={() => void send()}>
+            <Button variant={quiet ? 'secondary' : 'primary'} disabled={!ready || busy} onClick={() => void send()}>
               Send appeal
             </Button>
           </div>
@@ -170,14 +173,14 @@ function TxProofForm({ onTxProof }: { onTxProof: (txHash: string, txKey: string)
     <section aria-label="Transfer proof" className="dispute-stack-8">
       <h2 className="dispute-strong-15">Prove you sent it</h2>
       <p className="dispute-muted">Your wallet shows the transaction ID and the transaction key once the XMR is sent.</p>
-      <label htmlFor={hashId} className="dispute-strong-15">
+      <label htmlFor={hashId} className="dispute-field-label">
         Transaction ID
       </label>
-      <input id={hashId} value={hash} onChange={(e) => setHash(e.target.value)} autoComplete="off" spellCheck={false} className="dispute-textarea dispute-mono" />
-      <label htmlFor={keyId} className="dispute-strong-15">
+      <input id={hashId} value={hash} onChange={(e) => setHash(e.target.value)} autoComplete="off" spellCheck={false} className="dispute-input-mono" />
+      <label htmlFor={keyId} className="dispute-field-label">
         Transaction key
       </label>
-      <input id={keyId} value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" spellCheck={false} className="dispute-textarea dispute-mono" />
+      <input id={keyId} value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" spellCheck={false} className="dispute-input-mono" />
       <Button variant="primary" disabled={!ready || busy} onClick={() => void send()}>
         Send proof
       </Button>
@@ -211,6 +214,8 @@ export function DisputeRuling({
   const now = serverClock();
   const copy = rulingCopy(dispute, trade.role, trade.counterparty, trade.amountAtomic, now);
   const chat = `/trade/${encodeURIComponent(trade.code)}/dispute?view=chat`;
+  // The ruling orders the seller to send the XMR and the proof form is wired: Send proof is the primary.
+  const proofDue = r.outcome === 'seller-sends-xmr' && trade.role === 'seller' && onTxProof !== undefined;
   return (
     <div className="dispute-screen">
       <TradeHeader
@@ -247,7 +252,7 @@ export function DisputeRuling({
               <span className="dispute-muted-14">
                 {/* COPY-UNSIGNED */}
                 {trade.role === 'seller' ? 'Send it by ' : `${trade.counterparty} has until `}
-                <span className="dispute-ink">{dayTime(new Date(dispute.complyBy))}</span>
+                <span className="dispute-ink dispute-mono">{utcDateTime(new Date(dispute.complyBy))}</span>
                 {trade.role === 'seller' ? '.' : ' to send it.'}
               </span>
             ) : null}
@@ -276,8 +281,8 @@ export function DisputeRuling({
             {feeOwedLine(dispute.feeOwedAtomic)}
           </Notice>
         ) : null}
-        {r.outcome === 'seller-sends-xmr' && trade.role === 'seller' && onTxProof ? <TxProofForm onTxProof={onTxProof} /> : null}
-        <AppealSection dispute={dispute} me={trade.role} other={trade.counterparty} serverClock={serverClock} onAppeal={onAppeal} />
+        {proofDue ? <TxProofForm onTxProof={onTxProof!} /> : null}
+        <AppealSection dispute={dispute} me={trade.role} other={trade.counterparty} serverClock={serverClock} onAppeal={onAppeal} quiet={proofDue} />
         <p className="dispute-footnote">{copy.footer}</p>
       </div>
     </div>

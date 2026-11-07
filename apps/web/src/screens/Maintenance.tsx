@@ -1,18 +1,28 @@
 import type { SiteInfo } from '../api/site.js';
 import { Button } from '../ui/Button.js';
 import { Notice } from '../ui/Notice.js';
+import { StatusChip } from '../ui/StatusChip.js';
 import './screens.css';
 
 /**
- * Plan 4 Task 8: while the site is in maintenance this replaces the whole app with the owner's
- * message. Trade timers are paused meanwhile (Plan 3 `maintenance_since`, A7), so nobody runs out
- * of time while X2F is down. Without a message from the owner, the kind's default text shows.
+ * Plan 4 Task 8, toward the Maintenance board (design review 7 Nov): a chip for the kind, the
+ * headline, the owner's message signed "From the X2F team", the paused-timers line and "Check
+ * again" as the one primary. While the site is in maintenance this replaces the whole app: the
+ * trader API answers every route with 503 `maintenance`, and trade timers are paused (Plan 3
+ * `maintenance_since`, A7), so nobody runs out of time.
+ * Not built, and why (lead):
+ * - the board's "What still works: trades already in escrow" is not true as built (the API refuses
+ *   every trade action in maintenance): OWNER-Q, design recommends yes;
+ * - the start and end block and the message's date: `GET /v1/site` sends no times;
+ * - the "Get updates" rows: no board text in the repo.
  */
-// COPY-UNSIGNED: no board; the emergency line follows the owner's Q15 words (2026-10-28).
+// COPY-UNSIGNED: the emergency line follows the owner's Q15 words (2026-10-28).
 export const MAINTENANCE_COPY = {
   title: 'X2F is down for maintenance',
+  chip: { planned: 'Planned maintenance', emergency: 'Emergency maintenance' },
   planned: "We're doing planned maintenance. We'll be back soon.",
   emergency: "Unscheduled but necessary maintenance. We'll be back as soon as possible.",
+  from: 'From the X2F team',
   timers: "Your trade timers are paused until we're back, so no time runs out meanwhile.",
   retry: 'Check again',
 } as const;
@@ -20,10 +30,12 @@ export const MAINTENANCE_COPY = {
 export function Maintenance({ maintenance, onRetry }: { maintenance: NonNullable<SiteInfo['maintenance']>; onRetry: () => void }) {
   return (
     <main className="x2f-screen" data-screen="maintenance">
+      <StatusChip tone={maintenance.kind === 'emergency' ? 'danger' : 'caution'} icon="clock" label={MAINTENANCE_COPY.chip[maintenance.kind]} />
       <h1 className="x2f-screen__title">{MAINTENANCE_COPY.title}</h1>
       <Notice tone="caution" live="off" data-part="maintenance-message">
         {maintenance.message ?? MAINTENANCE_COPY[maintenance.kind]}
       </Notice>
+      <p className="x2f-meta" data-part="maintenance-from">{MAINTENANCE_COPY.from}</p>
       <p className="x2f-sheet__body">{MAINTENANCE_COPY.timers}</p>
       <Button variant="primary" onClick={onRetry}>
         {MAINTENANCE_COPY.retry}

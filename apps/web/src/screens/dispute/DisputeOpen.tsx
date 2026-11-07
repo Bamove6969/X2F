@@ -11,7 +11,7 @@ import { Notice } from '../../ui/Notice.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import type { DisputeTrade, Reason } from './api.js';
 import { DisputeIcon } from './icons.js';
-import { disputeEntry, NOTE_MAX, reasonsFor, xmrInText } from './rules.js';
+import { disputeEntry, HOURGLASS_LINE, NOTE_MAX, reasonsFor, xmrInText } from './rules.js';
 import { EvidenceUpload, tradeProofs } from './seams.js';
 import './dispute.css';
 
@@ -87,7 +87,11 @@ export function DisputeOpen({
             never a block. COPY-UNSIGNED; DESIGNER-REVIEW (no board: the kit's Notice, plain). */}
         <Notice tone="plain" icon="info" live="off" title={`Talk to ${trade.counterparty} first`} data-part="talk-first">
           Most problems are sorted out in the trade chat. Tell them what went wrong and give them a chance to put it right. If you still
-          don't agree, open a dispute. <Link to={back}>Go to the chat</Link>
+          don't agree, open a dispute.
+          {/* Design 7 Nov P3: the link on its own line, a 44px tertiary link. */}
+          <Link to={back} className="dispute-tertiary-link">
+            Go to the chat
+          </Link>
         </Notice>
 
         {entry.kind === 'wait' ? (
@@ -149,7 +153,7 @@ export function DisputeOpen({
           <span className="dispute-stack-4">
             <span className="dispute-strong">A moderator will read this trade's chat to decide</span>
             <span className="dispute-muted">
-              That includes your messages from before the trade started. They may also ask you for an unblurred copy of your proof. A moderator usually replies within 4 hours.
+              That includes your messages from before the trade started. They may also ask you for an unblurred copy of your proof. {HOURGLASS_LINE}
             </span>
           </span>
         </section>

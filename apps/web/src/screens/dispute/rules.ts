@@ -29,6 +29,9 @@ export function reasonLabel(by: Party, r: DisputeReason): string {
   return reasonsFor(by).find(([id]) => id === r)?.[1] ?? 'Something else';
 }
 
+/** Owner Q38 via design (board DisputeRoom v119): the line under the hourglass, and on DisputeOpen before filing. COPY-UNSIGNED */
+export const HOURGLASS_LINE = "A moderator steps in within 24 h at the most. Usually it's much sooner.";
+
 export const NOTE_MAX = 1000;
 /** The board's appeal form enables "Send appeal" from 10 characters (not counting spaces at the ends). */
 export const APPEAL_MIN = 10;
@@ -164,6 +167,13 @@ export function dayTime(d: Date, timeZone?: string): string {
   const parts = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', ...(timeZone ? { timeZone } : {}) }).formatToParts(d);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
   return `${get('weekday')} ${get('day')} ${get('month')}, ${clockTime(d, timeZone)}`;
+}
+
+/** Design X5 (7 Nov): "6 Nov 2026, 15:00 UTC", shown in mono; the same for every viewer. */
+export function utcDateTime(d: Date): string {
+  const parts = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return `${get('day')} ${get('month')} ${get('year')}, ${clockTime(d, 'UTC')} UTC`;
 }
 
 /** "in 23 h" or "in 40 min" (whole hours down, minutes up, as the DisputeRoom board's "(in 23 h)"). */

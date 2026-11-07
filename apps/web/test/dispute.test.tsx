@@ -12,6 +12,8 @@ import { DisputeRuling } from '../src/screens/dispute/DisputeRuling.js';
 import { ModeratorTag } from '../src/screens/dispute/ModeratorTag.js';
 import {
   dayTime,
+  HOURGLASS_LINE,
+  utcDateTime,
   disputeEntry,
   inTime,
   rulingAllowsCosign,
@@ -306,7 +308,8 @@ describe('DisputeRoom', () => {
     const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const before = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={dispute()} serverClock={at(200)} />));
     expect(before.host.querySelector('[aria-label="Moderator joined"]')).toBeNull();
-    expect(before.host.textContent).toContain('1.25 XMR locked in escrow');
+    // Board v119: the amount is the hero's inner block, six decimals.
+    expect(before.host.querySelector('[data-part="escrow-amount"]')!.textContent?.trim()).toBe('Locked in escrow1.250000 XMR');
     const after = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={dispute({ moderator: { name: 'sarah.v', joinedAt: iso(168) } })} serverClock={at(200)} />));
     expect(after.host.querySelector('[aria-label="Moderator joined"]')?.textContent).toContain('Moderator sarah.v joined this dispute');
     expect(after.host.textContent).toContain('Replied in 38 min');
@@ -438,12 +441,12 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     expect(() => parseDispute(view({ feeOwedAtomic: 125 }))).toThrow();
   });
 
-  it('before a moderator replies: the first-reply time and the place in the queue', () => {
+  it('before a moderator replies: the hourglass is the one deadline, with the place in the queue under it (design 7 Nov)', () => {
     const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const d = parseDispute(view());
     const { host } = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={d} serverClock={at(200)} />));
-    expect(host.textContent).toContain(`First reply due by ${dayTime(new Date(T0 + (130 + 240) * MIN))}`);
-    expect(host.textContent).toContain("You're number 3 in the queue");
+    expect(host.textContent).not.toContain('First reply due by');
+    expect(host.querySelector('[data-part="hourglass"] .dispute-hero__meta')!.textContent).toBe("You're number 3 in the queue");
   });
 
   it('an hourglass counts down from 24 hours, the most before a moderator steps in; traders never see the 48-hour deadline (owner Q38)', () => {
@@ -453,7 +456,9 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     const glass = before.host.querySelector('[data-part="hourglass"]')!;
     expect(glass.getAttribute('data-state')).toBe('running');
     expect(glass.querySelector('[role="timer"]')?.textContent).toBe('22 h 50 min');
-    expect(glass.textContent).toContain("22 h 50 min at mostThat's the longest before a moderator steps in. It's usually much quicker.");
+    expect(glass.querySelector('.dispute-hero__label')!.textContent).toBe('Until a moderator steps in');
+    expect([...glass.querySelectorAll('.dispute-hero__num')].map((n) => n.textContent)).toEqual(['22', '50']);
+    expect(glass.querySelector('.dispute-hero__line')!.textContent).toBe(HOURGLASS_LINE);
     const text = before.host.textContent ?? '';
     expect(text).toContain('Replied in 38 min.');
     expect(text).not.toMatch(/due by|aiming|48 h|48 hours/);
@@ -498,7 +503,9 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     const d = { ...ruled({ outcome: 'seller-sends-xmr', destination: null }, { afterRefund: true, status: 'final' as const }), complyBy: iso(2000) };
     const plain = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
     expect(plain.host.textContent).toContain('You must send mira.k 1.25 XMR');
-    expect(plain.host.textContent).toContain(`Send it by ${dayTime(new Date(T0 + 2000 * MIN))}.`);
+    // Design X5: "D Mon YYYY, HH:MM UTC" in mono.
+    expect(plain.host.textContent).toContain(`Send it by ${utcDateTime(new Date(T0 + 2000 * MIN))}.`);
+    expect(utcDateTime(new Date('2026-11-06T15:00:00Z'))).toBe('6 Nov 2026, 15:00 UTC');
     // No proof route yet (NEEDS_TASK_12_TX_PROOF): no form without a handler.
     expect(plain.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
 
