@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { api } from '../api/client.js';
+import { utcDateTime } from '../ui/dates.js';
 
 /**
  * Plan 4 Task 28: the News inbox (owner, 2026-10-29; spec 6.6). `GET /v1/news` lists the messages
@@ -49,7 +50,7 @@ export function unseenOf(items: readonly NewsItem[], lastSeen: number): NewsItem
 
 /** "29 Oct 2026, 09:00" in the reader's own locale and time zone. */
 export function postedDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  return utcDateTime(new Date(iso));
 }
 
 /** Reads `GET /v1/news`, keeping only well-formed items (newest first, as the server sends them). */
