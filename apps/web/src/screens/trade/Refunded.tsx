@@ -2,8 +2,8 @@
  * The buyer's refunded trade (board Refunded.dc.html, variants buyer-cancelled, time-ran-out and
  * moderator; Plan 3 Task 27's RefundedSlot, moved here from dispute/DisputeSlot.tsx and filled out
  * from the board, design review 1 Nov 2026 shot 48). The escrow went back to the seller; the screen
- * says why (a chip, the headline and lead), what happened when ("What happened": the timeline from
- * the trade's own times, the trade amount and "X2F fee: None"), and, while the buyer may still
+ * says why (the hero: a chip and key mark, the headline and lead, the trade amount and "X2F fee:
+ * None"), what happened when ("What happened": the timeline from the trade's own times), and, while the buyer may still
  * dispute the refund (48 hours after it, owner 2026-10-29; never after a cancel, owner 2026-10-29
  * question 4), the board's dispute card. The frame is the trade room's own (.x2f-pay).
  *
@@ -20,7 +20,6 @@ import { methodOf, type TradeView } from '../../api/trade.js';
 import { Xmr } from '../../ui/Amount.js';
 import { KeyMark } from '../../ui/EscrowDots.js';
 import { formatDate } from '../../ui/dates.js';
-import { Facts, type Fact } from '../../ui/Facts.js';
 import { Icon } from '../../ui/icons.js';
 import { StatusChip, type Tone } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
@@ -141,7 +140,6 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
   // One day for every row: the day goes in the card's head and each row shows its time (the board).
   const days = new Set(timeline.map((r) => formatDate(r.at)));
   const oneDay = days.size === 1 ? [...days][0]! : null;
-  const facts: Fact[] = timeline.map((r) => ({ key: r.key, label: r.label, value: <When at={r.at} form={oneDay !== null ? 'time' : 'date-time'} /> }));
   // The hero's tone (design review P1-7): ink-muted for a finished refund, the moderator's after a
   // dispute decided it, caution while a cancel is still being returned.
   const tone = trade.dispute !== null ? 'mod' : story.chip.tone === 'caution' ? 'caution' : 'muted';
@@ -180,18 +178,30 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
             </div>
           </dl>
         </section>
-        <section className="x2f-panel" aria-labelledby="refunded-what">
-          {/* "What happened · 29 Oct 2026", the day in mono, when every row is on it (design session 2 Nov). */}
-          <h2 className="x2f-section-title" id="refunded-what">
-            What happened
+        {/* "What happened" as the board's timeline (design review P2-20): a dot per row joined by a
+            line, the last dot filled in the hero's tone and its row at 600; the day on the right of
+            the heading when every row is on it (design session 2 Nov). */}
+        <section className="x2f-outcome-card" aria-labelledby="refunded-what" data-part="refunded-what">
+          <div className="x2f-outcome-card__head">
+            <h2 className="x2f-section-title" id="refunded-what">
+              What happened
+            </h2>
             {oneDay !== null ? (
-              <>
-                {' · '}
-                <span className="x2f-when">{oneDay}</span>
-              </>
+              <span className="x2f-outcome-card__day" data-part="refunded-day">
+                {oneDay}
+              </span>
             ) : null}
-          </h2>
-          <Facts layout="rows" rows={facts} part="refunded-facts" />
+          </div>
+          <ol className="x2f-steps-line" data-tone={tone} data-part="refunded-facts">
+            {timeline.map((r) => (
+              <li key={r.key} data-key={r.key}>
+                <span className="x2f-steps-line__mark" aria-hidden="true" />
+                <span className="x2f-steps-line__text">
+                  <span>{r.label}</span> <When at={r.at} form={oneDay !== null ? 'time' : 'date-time'} />
+                </span>
+              </li>
+            ))}
+          </ol>
         </section>
         {entry.kind === 'open' ? (
           <section className="x2f-panel" data-tone="outline" aria-labelledby="refunded-dispute" data-part="refunded-dispute">

@@ -2,6 +2,9 @@
 // Task 27's trade-room slots (Task 22's registerTradeScreen): both traders in `disputed` get
 // DisputeSlot (room or ruling, from GET …/dispute only), the buyer in `refunded` gets RefundedSlot
 // with the 48-hour "Open a dispute" (TIMERS.disputeAfterRefundHours, lead 2026-10-29). The slots never fetch the trade itself.
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -227,12 +230,20 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     expect(hero.querySelector('.x2f-hero__amount .x2f-num[data-ink="true"]')?.textContent).toBe('1.250000');
     expect(hero.querySelector('.x2f-hero__amount .x2f-xmr__unit')?.textContent).toBe('XMR');
     expect(host.querySelector('[data-part="refunded-dispute"] .x2f-xmr .x2f-num[data-ink="true"]')?.textContent).toBe('1.250000');
-    const facts = [...host.querySelectorAll('[data-part="refunded-facts"] > div')].map((r) => [r.querySelector('dt')!.textContent, r.querySelector('dd')!.textContent]);
+    const facts = [...host.querySelectorAll('[data-part="refunded-facts"] > li')].map((r) => [r.querySelector('.x2f-steps-line__text > span')!.textContent, r.querySelector('time')!.textContent]);
     const keys = facts.map(([k]) => k);
     expect(keys).not.toContain('Trade amount');
     expect(keys).not.toContain('X2F fee');
     expect(keys).toContain(`Refund sent to ${S}`);
-    expect(host.querySelector('#refunded-what')?.textContent).toMatch(/^What happened · \d+ \w{3} \d{4}$/);
+    // The board's timeline (design review P2-20): the day on the right of the heading, a dot per row.
+    expect(host.querySelector('#refunded-what')?.textContent).toBe('What happened');
+    expect(host.querySelector('[data-part="refunded-day"]')?.textContent).toMatch(/^\d+ \w{3} \d{4}$/);
+    const what = host.querySelector('[data-part="refunded-what"]')!;
+    expect(what.className).toBe('x2f-outcome-card');
+    expect(what.querySelector('ol')?.className).toBe('x2f-steps-line');
+    expect(what.querySelector('ol')?.getAttribute('data-tone')).toBe('muted');
+    expect(what.querySelectorAll('li .x2f-steps-line__mark[aria-hidden="true"]')).toHaveLength(facts.length);
+    expect(keys.at(-1)).toBe(`Refund sent to ${S}`);
     expect(host.textContent).not.toMatch(/the seller/i);
     // Every time is the one format: "HH:MM UTC" under a dated head, or the full "D Mon YYYY, HH:MM UTC".
     for (const [k, val] of facts) expect(val, k!).toMatch(/^(\d+ \w{3} \d{4}, )?\d\d:\d\d UTC$/);
@@ -318,5 +329,36 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
       </MemoryRouter>,
     );
     expect([...noShow.host.querySelectorAll('a')].filter((a) => a.textContent === 'Open dispute')).toHaveLength(1);
+  });
+});
+
+describe('the Refunded board styles (design review P1-7, P2-20)', () => {
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/ui/ui.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = (sel: string) => {
+    const at = css.indexOf(`${sel} {`);
+    expect(at, sel).toBeGreaterThanOrEqual(0);
+    return css.slice(at, css.indexOf('}', at));
+  };
+
+  it('the outcome hero: 24/20/20, gap 20, the wash to 160 px; the h1 in Familjen 32/36 700', () => {
+    const hero = rule(".x2f-hero[data-kind='outcome']");
+    expect(hero).toContain('padding: 24px 20px 20px');
+    expect(hero).toContain('gap: 20px');
+    expect(hero).toContain('--x2f-hero-stop: 160px');
+    const title = rule('.x2f-hero__title');
+    expect(title).toContain('font-family: var(--x2f-font-display)');
+    expect(title).toContain('font-size: 32px');
+    expect(title).toContain('line-height: 36px');
+    expect(title).toContain('letter-spacing: -0.02em');
+  });
+
+  it('the timeline: 12 px ringed dots joined by a 2 px line, the last dot filled in the tone and its row at 600', () => {
+    const dot = rule('.x2f-steps-line__mark::before');
+    expect(dot).toContain('width: 12px');
+    expect(dot).toContain('border: 2px solid var(--x2f-line)');
+    expect(rule('.x2f-steps-line__mark::after')).toContain('background: var(--x2f-surface-raised)');
+    expect(rule('.x2f-steps-line > li:last-child .x2f-steps-line__mark::before')).toContain('background: var(--x2f-steps-tone)');
+    expect(rule('.x2f-steps-line > li:last-child .x2f-steps-line__text')).toContain('font-weight: 600');
+    expect(rule('.x2f-steps-line__text')).toContain('padding-bottom: var(--x2f-space-4)');
   });
 });

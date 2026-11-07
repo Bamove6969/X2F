@@ -2359,6 +2359,120 @@
   font-weight: 500;
 }
 
+/* An outcome screen's card (Refunded "What happened"): padding 20, radius 16, gap 16; the day in
+   mono 13 muted on the right of the heading. */
+.x2f-outcome-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  padding: 20px;
+  border-radius: var(--x2f-radius-lg);
+  background: var(--x2f-surface);
+}
+
+.x2f-outcome-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-outcome-card__day {
+  font-family: var(--x2f-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+  white-space: nowrap;
+}
+
+/* A timeline (Refunded "What happened"): a 12 px dot per row, a 2 px line ring, joined by a 2 px
+   surface-raised line, 16 px between rows; the last dot filled in the tone and its row at 600. */
+.x2f-steps-line {
+  --x2f-steps-tone: var(--x2f-ink-muted);
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-steps-line[data-tone='caution'] {
+  --x2f-steps-tone: var(--x2f-caution);
+}
+
+.x2f-steps-line[data-tone='mod'] {
+  --x2f-steps-tone: var(--x2f-moderator);
+}
+
+.x2f-steps-line > li {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.x2f-steps-line__mark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 12px;
+}
+
+.x2f-steps-line__mark::before {
+  content: '';
+  display: block;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  margin-top: 4px;
+  border: 2px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-pill);
+}
+
+.x2f-steps-line__mark::after {
+  content: '';
+  display: block;
+  flex-grow: 1;
+  width: 2px;
+  margin: 4px 0;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-steps-line > li:last-child .x2f-steps-line__mark::before {
+  border: 0;
+  background: var(--x2f-steps-tone);
+}
+
+.x2f-steps-line > li:last-child .x2f-steps-line__mark::after {
+  display: none;
+}
+
+.x2f-steps-line__text {
+  display: flex;
+  flex-grow: 1;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding-bottom: var(--x2f-space-4);
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.x2f-steps-line > li:last-child .x2f-steps-line__text {
+  padding-bottom: 0;
+  font-weight: 600;
+}
+
+.x2f-steps-line__text .x2f-when {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--x2f-ink-muted);
+}
+
 /* The muted chip in a hero: ink words on a 16% ink-muted wash (Refunded board). */
 .x2f-chip[data-look='tint'][data-tone='muted'] {
   background: color-mix(in srgb, var(--x2f-ink-muted) 16%, transparent);
