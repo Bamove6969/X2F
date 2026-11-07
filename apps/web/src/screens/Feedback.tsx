@@ -131,9 +131,8 @@ export function Feedback() {
     <main className="x2f-screen" data-screen="feedback">
       {/* The Feedback board (design build review 7 Nov): no "What is it?" choice; every message is sent as feedback. */}
       <h1 className="x2f-screen__title">Tell us what you think</h1>
-      <p className="x2f-sheet__body">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
       {/* COPY-UNSIGNED */}
-      <p className="x2f-note">A complaint, feedback, a recommendation, anything. Every comment is read.</p>
+      <p className="x2f-screen__lead">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
       {session.status === 'signed-out' && state.kind !== 'signed-out' ? (
         <p className="x2f-note" data-part="feedback-login-first">
           {/* COPY-UNSIGNED */}
