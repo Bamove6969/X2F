@@ -20,6 +20,7 @@ import { seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { Browser, ORIGIN } from './helpers/totp.js';
+import { publishRuling } from './helpers/disputes.js';
 import { driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
@@ -668,13 +669,8 @@ describe('the audit log covers every member action (review M3)', () => {
     await driveTo(deps, d.trade, 'secured');
     const opened = await m.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'a private note' });
     expect(opened.statusCode, opened.body).toBe(200);
-    const now = deps.clock();
-    await deps.db.query(
-      `insert into dispute_rulings (code, seq, round, outcome, reason, evidence, moderator_name, ruled_at, appeal_until)
-       values ($1, 1, 1, 'release-to-buyer', 'r', '["The trade chat"]', 'sarah.v', $2, $3)`,
-      [d.code, now, new Date(now.getTime() + 2 * DAY)],
-    );
-    await deps.db.query(`update disputes set status = 'ruled' where code = $1`, [d.code]);
+    // A moderator's round-1 ruling, through the dispute machine (Plan 4 Task 12 is not built yet).
+    await publishRuling(deps, d.code, { outcome: 'release-to-buyer' });
     const appealed = await m.browser.post(`/v1/trades/${d.code}/appeal`, { why: 'The moderator missed my bank statement.' });
     expect(appealed.statusCode, appealed.body).toBe(200);
 

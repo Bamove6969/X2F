@@ -23,6 +23,20 @@ const SHAPES = {
   ),
   chat: <path d="M4 5h16v11H8l-4 4z" />,
   send: <path d="M4 12l16-8-6 16-2-7z" />,
+  // Owner Q38's hourglass (no board yet: DESIGNER-REVIEW). Sand in the top bulb while it runs.
+  hourglass: (
+    <>
+      <path d="M6 3h12M6 21h12M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9" />
+      <path d="M9 7h6l-3 3z" fill="currentColor" />
+      <path d="M12 17l2.5 2h-5z" fill="currentColor" />
+    </>
+  ),
+  hourglassEmpty: (
+    <>
+      <path d="M6 3h12M6 21h12M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9" />
+      <path d="M8.5 19.5h7l-3.5-2.5z" fill="currentColor" />
+    </>
+  ),
 } satisfies Record<string, ReactElement>;
 
 export function DisputeIcon({ name, size = 24, stroke = 1.5 }: { name: keyof typeof SHAPES; size?: number; stroke?: number }) {

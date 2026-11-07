@@ -19,6 +19,8 @@ import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffPastRepRoutes } from './pastrep.js';
 import { staffPriceHealthRoutes } from './priceHealth.js';
+import { staffSettingsRoutes } from './settings.js';
+import { staffSiteRoutes } from './site.js';
 
 /**
  * The moderation process as the staff API sees it (Plan 4 Task 11 builds it; until then nothing
@@ -137,6 +139,9 @@ export async function buildStaffApi(
   staffMemberRoutes(app);
   staffInviteRoutes(app);
   ownerKeyRoutes(app);
+  // Plan 4 Task 8: the owner's settings (settings.write) and the site controls (site.control).
+  staffSettingsRoutes(app);
+  staffSiteRoutes(app);
   // Plan 4 Task 28: the owner writes News (site.control).
   staffNewsRoutes(app);
   // Owner Q13 (6 Nov): the owner's Price health page, moved from the trader API.

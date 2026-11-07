@@ -110,6 +110,13 @@ const json = (body: unknown) => JSON.stringify(body, (_k, v: unknown) => (typeof
  * (Plan 2 R10) and a 409 `no-wallet` to Add a wallet (spec 6.4), each with `returnTo`; the call
  * still throws, so the caller stops.
  */
+let maintenanceListener: (() => void) | null = null;
+
+/** Plan 4 Task 8: called when any API call answers 503 `maintenance` (the site shell listens). */
+export function setMaintenanceListener(fn: (() => void) | null): void {
+  maintenanceListener = fn;
+}
+
 export async function api<T = unknown>(path: string, init: ApiInit = {}): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json' };
   const req: RequestInit = { method: init.method ?? 'GET', credentials: 'same-origin', headers };
@@ -133,6 +140,8 @@ export async function api<T = unknown>(path: string, init: ApiInit = {}): Promis
   const err = new ApiCallError(res.status, typeof error === 'string' ? error : 'internal', extra);
   if (err.status === 403 && err.code === 'terms-required') redirect('/terms', '');
   if (err.status === 409 && err.code === 'no-wallet') redirect('/wallets', 'add=1');
+  // Plan 4 Task 8: the site went into maintenance; the shell re-reads GET /v1/site and shows it.
+  if (err.status === 503 && err.code === 'maintenance') maintenanceListener?.();
   throw err;
 }
 

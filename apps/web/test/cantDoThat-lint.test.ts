@@ -131,7 +131,9 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 51 -> 53 (design results, 2 Nov): BuyerPaidWaiting's "You can't cancel after marking as paid",
     // said ahead of time, and the Feedback anonymous hint "we can't follow up with you".
     // 54: Refunded's "Until they pay it back, they can't trade." (design's wording 7 Nov) explains a ruling about the other trader.
-    expect(notARefusal).toBeLessThanOrEqual(54);
+    // 55 (Plan 4 Task 15, 6 Nov 2026): owner Q38's hourglass says the time left ("... at most",
+    // DisputeRoom.tsx), not a rule.
+    expect(notARefusal).toBeLessThanOrEqual(55);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });
