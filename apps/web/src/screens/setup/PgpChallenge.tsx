@@ -146,7 +146,7 @@ export function PgpChallenge() {
             />
           </label>
           <RegisterError error={error} />
-          {error !== null && !error.names && !error.keyInUse ? (
+          {error !== null && !error.names && !error.keyInUse && !error.keyRefused ? (
             <button type="button" className="x2f-start__textbutton" disabled={busy} onClick={() => void resend()} data-part="pgp-new-message">
               Send a new message
             </button>

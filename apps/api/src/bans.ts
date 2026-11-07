@@ -14,9 +14,11 @@
  * - names: `createAccount`, `setLoginName` and a login name waiting out the hold (all through
  *   `namesTaken`: 409 `names-unavailable`, never saying why); a banned display name is also
  *   refused early by `assertDisplayNameFree` (409 `display-name-taken`; display names are public).
- * - PGP keys: `assertKeyNotBanned` (409 `key-unavailable`) when a key is pasted (sign-up start,
- *   add-key start, a team member's join) and again where it is written (`insertPgpKey`,
- *   `applyPgpKey`), so a key banned between the two steps is still refused.
+ * - PGP keys: `assertKeyNotBanned` (409 `key-unavailable`) only where a key is written, after its
+ *   code proved it: `insertPgpKey` (sign-up, a team member's and a staff invitee's join) and
+ *   `applyPgpKey` (an added key, at once or when the hold ends). Never at a start: a check there
+ *   would tell anyone, with no login and no proof, whether a key is banned (lead review 2026-11-06
+ *   item 1). A login's key refresh checks the merged key before writing it (`pgp.ts` login finish).
  * - Jabber: `jabberBanned` is the seam. There is no Jabber alert account in the code yet; its
  *   setup must refuse an address this answers true for (NEEDS_JABBER_SETUP).
  *

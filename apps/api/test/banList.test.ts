@@ -3,12 +3,13 @@ import * as openpgp from 'openpgp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAccount, assertDisplayNameFree, type NewNames } from '../src/accounts.js';
 import type { Deps } from '../src/app.js';
+import { issueConfirmToken } from '../src/auth/confirm.js';
 import { insertPgpKey } from '../src/auth/pgp.js';
 import { jabberBanned, keyFingerprints, normalizeJabber, recordBan, recordBannedValues } from '../src/bans.js';
 import { ApiError } from '../src/errors.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
-import { genKey } from './helpers/pgpKeys.js';
+import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
 
 // Owner, 2 Nov 2026: the ban list. When an account is banned its usernames (display and login
@@ -154,31 +155,71 @@ describe('a banned name can never be used again', () => {
 });
 
 describe('a banned PGP key can never be used again', () => {
-  it('at sign-up: the banned primary key → 409 key-unavailable', async () => {
+  // Lead review 2026-11-06 item 1: a refusal before the code is proved would let anyone, with no
+  // login and no proof, ask whether a key is banned. Every start answers as for any key; the
+  // refusal comes only from the write (insertPgpKey / applyPgpKey), after the code proved the key,
+  // with the same shape as the other refusal there (409 key-in-use).
+
+  /** Sign-up start then finish with `key` (the code decrypted with its private half). */
+  async function signUp(key: { publicKey: string; privateKey: string }, display = uniq('Newbie'), login = uniq('new.login')) {
+    const b = new Browser(app);
+    const start = await b.post('/v1/register/pgp/start', { displayName: display, loginName: login, publicKey: key.publicKey });
+    const code = start.statusCode === 200 ? codeOf(await decrypt(start.json().encryptedMessage, key.privateKey)) : '';
+    const finish = start.statusCode === 200
+      ? await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion })
+      : null;
+    return { start, finish, display };
+  }
+
+  it('at sign-up: start answers as for any key (no answer before proof); finish refuses 409 key-unavailable and creates nothing', async () => {
     const b = await banned();
-    const res = await new Browser(app).post('/v1/register/pgp/start', { displayName: uniq('Newbie'), loginName: uniq('new.login'), publicKey: b.key.publicKey });
-    expect(res.statusCode, res.body).toBe(409);
-    expect(res.json()).toEqual({ error: 'key-unavailable' });
+    const { start, finish, display } = await signUp(b.key);
+    expect(start.statusCode, start.body).toBe(200);
+    expect(Object.keys(start.json()).sort()).toEqual(Object.keys((await signUp(await genKey())).start.json()).sort());
+    expect(finish!.statusCode, finish!.body).toBe(409);
+    expect(finish!.json()).toEqual({ error: 'key-unavailable' });
+    expect((await deps.db.query('select 1 from accounts where display_key = $1', [display.toLowerCase()])).rowCount).toBe(0);
   });
 
-  it('a key whose subkey is banned is refused too', async () => {
+  it('the refusal after proof has the shape of the other one there (key-in-use): status, body keys, challenge used up', async () => {
+    const b = await banned();
+    const banRes = await signUp(b.key);
+    const inUse = await genKey();
+    await insertPgpKey(deps.db, deps.config, { accountId: await seedAccount(deps, { loginName: uniq('holder') }), fingerprint: inUse.fingerprint, armored: inUse.publicKey, now: deps.clock() });
+    const useRes = await signUp(inUse);
+    expect(useRes.finish!.statusCode).toBe(409);
+    expect(useRes.finish!.json()).toEqual({ error: 'key-in-use' });
+    expect(banRes.finish!.statusCode).toBe(useRes.finish!.statusCode);
+    expect(Object.keys(banRes.finish!.json())).toEqual(Object.keys(useRes.finish!.json()));
+  });
+
+  it('a key whose subkey is banned is refused too (after proof)', async () => {
     const k = await genKey({ subkeys: [{}, { sign: true }] });
     const key = await openpgp.readKey({ armoredKey: k.publicKey });
     const sub = key.getSubkeys()[1]!.getFingerprint();
     await recordBannedValues(deps.db, deps.config, { kind: 'pgp-fingerprint', values: [sub], accountId: null, now: deps.clock() });
-    const res = await new Browser(app).post('/v1/register/pgp/start', { displayName: uniq('Newbie'), loginName: uniq('new.login'), publicKey: k.publicKey });
-    expect(res.statusCode, res.body).toBe(409);
-    expect(res.json()).toEqual({ error: 'key-unavailable' });
+    const { start, finish } = await signUp(k);
+    expect(start.statusCode, start.body).toBe(200);
+    expect(finish!.statusCode, finish!.body).toBe(409);
+    expect(finish!.json()).toEqual({ error: 'key-unavailable' });
   });
 
-  it('as a new key on another account: POST /v1/account/pgp/start → 409 key-unavailable before any confirm', async () => {
+  it('as a new key on another account: POST /v1/account/pgp/start answers as for any key; finish refuses 409 key-unavailable and adds nothing', async () => {
     const b = await banned();
     const other = await seedAccount(deps, { loginName: uniq('keyadder') });
     const br = new Browser(app);
     expect((await br.post('/t/login', { accountId: other })).statusCode).toBe(200);
-    const res = await br.post('/v1/account/pgp/start', { publicKey: b.key.publicKey });
-    expect(res.statusCode, res.body).toBe(409);
-    expect(res.json()).toEqual({ error: 'key-unavailable' });
+    // A strong session with its confirm (this test is about the key, not the confirm or the hold).
+    const sid = (await deps.db.query<{ id: string }>("update sessions set strength = 'strong' where account_id = $1 returning id", [other])).rows[0]!.id;
+    const confirmToken = await issueConfirmToken(deps, { sessionId: sid, accountId: other, action: { kind: 'add-method', method: 'pgp' }, method: 'passkey' });
+    const start = await br.post('/v1/account/pgp/start', { publicKey: b.key.publicKey, confirmToken });
+    expect(start.statusCode, start.body).toBe(200);
+    const code = codeOf(await decrypt(start.json().encryptedMessage, b.key.privateKey));
+    await deps.db.query('delete from account_holds where account_id = $1', [other]);
+    const finish = await br.post('/v1/account/pgp/finish', { challengeId: start.json().challengeId, code });
+    expect(finish.statusCode, finish.body).toBe(409);
+    expect(finish.json()).toEqual({ error: 'key-unavailable' });
+    expect((await deps.db.query('select 1 from pgp_keys where account_id = $1', [other])).rowCount).toBe(0);
   });
 
   it('insertPgpKey (every sign-up and team join writes through it) refuses it whatever the route', async () => {

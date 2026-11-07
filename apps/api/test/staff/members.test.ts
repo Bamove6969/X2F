@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { keyCheckCode, type LoginHours } from '@x2f/staff';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { recordBannedValues } from '../../src/bans.js';
 import { verifyLogChain } from '../../src/log/verify.js';
 import { codeOf, decrypt, genKey, type Pair } from '../helpers/pgpKeys.js';
 import type { SoftAuthenticator } from '../helpers/softAuthenticator.js';
@@ -212,6 +213,24 @@ describe('invites', () => {
     expect(errorOf(await bad({ token: 'short' }))).toBe('bad-request');
     expect(errorOf(await bad({ expiresAt: new Date(MON_NOON.getTime() + 25 * HOUR).toISOString() }))).toBe('bad-request');
     expect(errorOf(await bad({ expiresAt: new Date(MON_NOON.getTime() - 1).toISOString() }))).toBe('bad-request');
+  });
+});
+
+describe('a banned PGP key on a staff invite (lead review 2026-11-06 item 1)', () => {
+  it('pgp/start answers as for any key (no answer before proof); pgp/finish reaches insertPgpKey and refuses 409 key-unavailable', async () => {
+    const inv = await createInvite('mod');
+    const b = invitee();
+    expect((await pickNames(b, inv.token)).res.statusCode).toBe(201);
+    const pair = await genKey();
+    await recordBannedValues(t.deps.db, t.deps.config, { kind: 'pgp-fingerprint', values: [pair.fingerprint.toLowerCase()], accountId: null, now: t.deps.clock() });
+    const start = await b.post(acceptUrl(inv.token, '/pgp/start'), { publicKey: pair.publicKey });
+    expect(start.statusCode, start.body).toBe(200);
+    const { challengeId, encryptedMessage } = start.json();
+    const code = codeOf(await decrypt(encryptedMessage, pair.privateKey, undefined, t.deps.clock()));
+    const finish = await b.post(acceptUrl(inv.token, '/pgp/finish'), { challengeId, code });
+    expect(finish.statusCode, finish.body).toBe(409);
+    expect(finish.json()).toEqual({ error: 'key-unavailable' });
+    expect((await t.deps.db.query('select 1 from pgp_keys where fingerprint = $1', [pair.fingerprint.toLowerCase()])).rowCount).toBe(0);
   });
 });
 

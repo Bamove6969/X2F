@@ -148,7 +148,9 @@ export async function insertPgpKey(
   config: Config,
   a: { accountId: string; fingerprint: string; armored: string; now: Date },
 ): Promise<void> {
-  // The ban list (owner 2 Nov 2026, bans.ts): checked again where the key is written.
+  // The ban list (owner 2 Nov 2026, bans.ts): the only ban check of a sign-up or join key, after the
+  // code proved it (lead review 2026-11-06 item 1), next to the key-in-use refusal below and with
+  // the same shape (409, `{ error }`); it runs for every key, banned or not (one query either way).
   await assertKeyNotBanned(db, config, a.armored);
   const sealed = sealKey(config, await storableKey(a.armored, a.now), a.fingerprint);
   try {
@@ -685,9 +687,10 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   const names = await assertNewNames(deps.db, b.displayName, b.loginName);
   const publicKey = str(b, 'publicKey');
   const inspection = await inspectOrRefuse(publicKey, now);
-  await assertKeyNotBanned(deps.db, deps.config, publicKey);
   await assertDisplayNameFree(deps.db, names, deps.config);
-  // Fingerprint clashes are not checked here: only `finish`, after the code proves the key, says key-in-use.
+  // Fingerprint clashes and the ban list are not checked here: only `finish`, after the code proves
+  // the key, says key-in-use or key-unavailable (insertPgpKey). A check here would tell anyone,
+  // with no proof, whether a key is in use or banned (lead review 2026-11-06 item 1).
   const { storable, pending } = await pendingKey(deps.config, publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {
     accountId: null, sessionId: null, purpose: 'register', purposeText: PGP_PURPOSE.register,
@@ -763,7 +766,7 @@ const inspected = new WeakMap<FastifyRequest, { armored: string; fingerprint: st
 const inspectNewKey: preHandlerAsyncHookHandler = async function (req) {
   const armored = str(body(req), 'publicKey');
   const r = await inspectOrRefuse(armored, req.server.deps.clock());
-  await assertKeyNotBanned(req.server.deps.db, req.server.deps.config, armored);
+  // The ban list is checked only once the code proves the key (applyPgpKey), never here.
   inspected.set(req, { armored, fingerprint: r.fingerprint });
 };
 
@@ -828,7 +831,7 @@ export async function issueTeamJoinChallenge(
   const purpose = a.purpose ?? 'team-join';
   const now = deps.clock();
   const inspection = await inspectOrRefuse(a.publicKey, now);
-  await assertKeyNotBanned(deps.db, deps.config, a.publicKey);
+  // The ban list is checked only at the write, after the code proves the key (insertPgpKey).
   const { storable, pending } = await pendingKey(deps.config, a.publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {
     accountId: a.accountId, sessionId: null, purpose, purposeText: PGP_PURPOSE[purpose],
@@ -868,7 +871,9 @@ export async function checkTeamJoinCode(
  * fingerprint is on any account, 409 `key-unavailable` when the key is on the ban list.
  */
 export async function applyPgpKey(db: Queryable, config: Config, accountId: string, fingerprint: string, sealed: Buffer, now: Date): Promise<void> {
-  // The ban list (owner 2 Nov 2026): a key banned while it waited out the hold is refused here too.
+  // The ban list (owner 2 Nov 2026, bans.ts): the only ban check of an added key, after the code
+  // proved it (never at start: lead review 2026-11-06 item 1). A key that waited out the hold is
+  // checked here too; there it is dropped as a key-in-use one is (hold.ts).
   await assertKeyNotBanned(db, config, openKey(config, sealed, fingerprint));
   try {
     await db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
