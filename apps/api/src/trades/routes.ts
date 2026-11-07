@@ -7,7 +7,6 @@ import { requireLiveSessionInTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
 import { assertLiveMember, auditMember, type AuditAction } from '../team/audit.js';
 import { assertMemberMaySend } from '../team/perms.js';
-import { usdRate } from '../traders/tradedTotal.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
@@ -100,7 +99,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     const other = t.buyerId === me ? t.sellerId : t.buyerId;
     const now = deps.clock();
     return toTradeView(t, me, now, {
-      counterparty: await traderSummary(deps.db, other, now, me, usdRate(deps)),
+      counterparty: await traderSummary(deps.db, other, now, me),
       profile: profile(t.methodId) ?? null,
       sellerWalletApp: row.seller_wallet_app,
       finalAlertSeenAt: row.final_alert_seen_at,

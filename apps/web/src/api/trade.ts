@@ -49,8 +49,8 @@ export interface TraderSummary {
   stage: 'starter' | 'building' | 'graduated';
   /** Owner Q63: the opt-in traded line's rounded-down whole XMR, or null (not shown in the trade room yet). */
   tradedOverXmr?: number | null;
-  /** Owner Q64, F17: verified imported volume per site, in whole XMR. */
-  imported?: { site: string; overXmr: number }[];
+  /** Owner Q64, p4-1: verified imported volume per site, in whole US dollars. */
+  imported?: { site: string; overUsd: number }[];
 }
 
 /** The counterparty's public display name; the one way screens read it (a login name is never sent or shown). */

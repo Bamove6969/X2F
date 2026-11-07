@@ -67,15 +67,15 @@ function posterLine(offer: Offer, now: Date): string {
 
 /**
  * Owner Q63 (6 Nov): the trader's opt-in volume line, in XMR. X is a step the trader has traded MORE
- * than (owner 2026-11-03). Owner Q64/F17: one more line per site with verified imported volume, also
- * in XMR. COPY-UNSIGNED, DESIGNER-REVIEW (design words "the XMR line").
+ * than (owner 2026-11-03). Owner Q64/p4-1: one more line per site with verified imported volume, in
+ * US dollars ("$X+ on <site>, verified"). COPY-UNSIGNED, DESIGNER-REVIEW (design words "the XMR line").
  */
 function tradedLine(xmr: number): string {
   return `${xmr.toLocaleString('en-US')}+ XMR traded to date`;
 }
 
-function importedLine(l: { site: string; overXmr: number }): string {
-  return `${l.overXmr.toLocaleString('en-US')}+ XMR on ${l.site}, verified`;
+function importedLine(l: { site: string; overUsd: number }): string {
+  return `$${l.overUsd.toLocaleString('en-US')}+ on ${l.site}, verified`;
 }
 
 function marginLine(offer: Offer, currency: string, copy: BrowseCopy, market: bigint | null): { text: string; favourable: boolean } | null {

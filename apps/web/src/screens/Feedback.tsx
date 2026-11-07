@@ -15,6 +15,7 @@
  * (tripwire NEEDS_DESIGN_CANTDOTHAT). The owner's words are used where he gave them (the checkbox
  * and the thank-you); the rest is marked COPY-UNSIGNED.
  */
+import { FEEDBACK_FORM_DAILY } from '@x2f/core';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
@@ -37,7 +38,7 @@ export const FEEDBACK_BAD_TEXT = 'Your comment has a hidden character the form d
  * Owner Q67 (6 Nov 2026): at most 10 sends a day, and the 11th says the limit is there to stop spam.
  * COPY-UNSIGNED, DESIGNER-REVIEW: design words it (the owner asked design to).
  */
-export const FEEDBACK_DAILY_LIMIT = "You've sent 10 today, the most for one day. The limit helps keep spam out. You can send more tomorrow.";
+export const FEEDBACK_DAILY_LIMIT = `You've sent ${FEEDBACK_FORM_DAILY} today, the most for one day. The limit helps keep spam out. You can send more tomorrow.`;
 
 /** The owner's wording, exactly (2026-10-29). copy-lint lets this one sentence keep its "!". */
 export const FEEDBACK_THANKS = 'Thank you! Each and every comment is appreciated and reviewed to help make this community a better place for us all.';

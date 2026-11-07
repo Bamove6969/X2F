@@ -4,6 +4,7 @@
 import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FEEDBACK_FORM_DAILY } from '@x2f/core';
 import { FEEDBACK_ANON_HINT, FEEDBACK_BAD_TEXT, FEEDBACK_DAILY_LIMIT, FEEDBACK_THANKS, Feedback, fromCode } from '../src/screens/Feedback.js';
 import { refreshSession } from '../src/session/useSession.js';
 import { logOut } from '../src/push/usePush.js';
@@ -252,6 +253,9 @@ describe('Feedback form', () => {
     type(daily.host.querySelector('textarea')!, 'Hi');
     await send(daily.host);
     expect(daily.host.querySelector('[role="alert"]')?.textContent).toBe(FEEDBACK_DAILY_LIMIT);
+    // The number comes from @x2f/core, the same constant the API counts against.
+    expect(FEEDBACK_DAILY_LIMIT).toContain(`You've sent ${FEEDBACK_FORM_DAILY} today`);
+    expect(FEEDBACK_FORM_DAILY).toBe(10);
     daily.unmount();
     const bad = await open('/feedback', { status: 400, json: { error: 'bad-request' } });
     type(bad.host.querySelector('textarea')!, 'Hi');

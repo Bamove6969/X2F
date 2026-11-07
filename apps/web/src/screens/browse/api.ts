@@ -57,8 +57,8 @@ export interface TraderSummary {
    * than X), X in whole XMR, already rounded down by the API; null (or missing) shows nothing.
    */
   tradedOverXmr: number | null;
-  /** Owner Q64, F17: verified imported volume, one line per site, in whole XMR (rounded down); [] for none. */
-  imported: { site: string; overXmr: number }[];
+  /** Owner Q64, p4-1: verified imported volume, one line per site, in whole US dollars (rounded down); [] for none. */
+  imported: { site: string; overUsd: number }[];
 }
 
 export type Pricing = { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
@@ -187,7 +187,7 @@ function parsePoster(v: unknown, at: string): TraderSummary {
     tradedOverXmr: o.tradedOverXmr === undefined || o.tradedOverXmr === null ? null : num(o, 'tradedOverXmr', at),
     imported: o.imported === undefined ? [] : list(o.imported, `${at}.imported`).map((v, i) => {
       const line = obj(v, `${at}.imported[${i}]`);
-      return { site: str(line, 'site', `${at}.imported[${i}]`), overXmr: num(line, 'overXmr', `${at}.imported[${i}]`) };
+      return { site: str(line, 'site', `${at}.imported[${i}]`), overUsd: num(line, 'overUsd', `${at}.imported[${i}]`) };
     }),
   };
 }

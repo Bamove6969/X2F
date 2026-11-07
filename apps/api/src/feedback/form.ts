@@ -20,6 +20,7 @@
 // insertion order in system columns (xmin, ctid), so someone with database access can still line
 // an anonymous row up with other rows written around the same moment. The route does not touch the
 // session (touch: false), and the form promises only "we don't record who sent it".
+import { FEEDBACK_FORM_DAILY } from '@x2f/core';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
@@ -30,11 +31,8 @@ export const FEEDBACK_KINDS = ['complaint', 'feedback', 'recommendation'] as con
 export type FeedbackKind = (typeof FEEDBACK_KINDS)[number];
 
 export const FEEDBACK_TEXT_MAX = 2000;
-/**
- * Sends per person per UTC day (in memory only): owner Q67 (6 Nov 2026), 10 a day, to stop spam. A
- * team member counts on their own, not against the team (owner Q69: "feedback is per member").
- */
-export const FEEDBACK_FORM_DAILY = 10;
+/** Sends per person per UTC day (in memory only); the number lives in @x2f/core, shared with the web. */
+export { FEEDBACK_FORM_DAILY };
 /** Owner 2026-11-02: at most one send per this many seconds per account (in memory only); no shared cap. */
 export const FEEDBACK_FORM_MIN_GAP_S = 30;
 /** As P5-A19 (Task 4's platform feedback): rows are deleted after a year. */

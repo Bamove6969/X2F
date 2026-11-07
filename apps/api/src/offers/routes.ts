@@ -15,7 +15,6 @@ import { blockedEitherWaySql } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
 import { hasPendingReview, pendingReviewSql } from '../reviews/gate.js';
 import { lastSeenSql, onlineSince, traderSummaries, type TraderSummary } from '../traders/summary.js';
-import { usdRate } from '../traders/tradedTotal.js';
 import { usableWallets } from '../wallets/routes.js';
 
 /**
@@ -566,7 +565,7 @@ export function offerRoutes(app: FastifyInstance): void {
         order by ${order}, o.created_at desc, o.id limit ${LIST_LIMIT}`,
       [side, method, currency, market === null ? null : market.toString(), onlineSince(now), viewerId, now],
     );
-    const posters = await traderSummaries(deps.db, rows.map((r) => r.account_id), now, viewerId, undefined, usdRate(deps));
+    const posters = await traderSummaries(deps.db, rows.map((r) => r.account_id), now, viewerId);
     const entries = rows.map((r) => ({ r, poster: posters.get(r.account_id)!, rate: rateOf(r, deps.prices) }));
     const cards = entries.map((e) => toCard(e.r, e.poster, e.rate));
     if (viewerId !== null) await markOpensAt(deps, viewerId, entries.map((e) => e.r), cards);
@@ -589,7 +588,7 @@ export function offerRoutes(app: FastifyInstance): void {
     // A block either way looks exactly like an offer that does not exist (Task 37).
     if (!mine && (r.blocked || !(r.listed && isAvailable(r.method_id)))) throw new ApiError(404, 'not-found');
     const now = deps.clock();
-    const poster = (await traderSummaries(deps.db, [r.account_id], now, viewerId, undefined, usdRate(deps))).get(r.account_id)!;
+    const poster = (await traderSummaries(deps.db, [r.account_id], now, viewerId)).get(r.account_id)!;
     const card = toCard(r, poster, rateOf(r, deps.prices));
     if (viewerId !== null && !mine) await markOpensAt(deps, viewerId, [r], [card]);
     return { ...card, side: r.side, methodId: r.method_id, currency: r.currency, terms: r.terms, status: r.status };

@@ -1,5 +1,4 @@
-import { tradedBucketXmr } from '@x2f/reputation';
-import type { Deps } from '../app.js';
+import { tradedBucketUsd, tradedBucketXmr } from '@x2f/reputation';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
@@ -19,9 +18,9 @@ import { verifiedPastRepBySite, type VerifiedSiteVolume } from '../pastrep/store
  *
  * The dollar total (`own_usd_cents`) is for moderators only, never public (owner Q63, 6 Nov). The
  * public line is in XMR: `tradedBucketXmr(own_xmr_atomic)` (migration 312), the account's own trades
- * only. Imported volume never joins it: it shows as separate per-site lines (owner Q64 + F17), from
+ * only. Imported volume never joins it: it shows as separate per-site lines (owner Q64, p4-1), from
  * the dollar figure a moderator verified on an APPROVED past-reputation claim (migration 310,
- * `pastrep/store.ts`) converted at the current XMR/USD price. An unverified (null), not-yet-approved
+ * `pastrep/store.ts`), bucketed in US dollars (owner p4-1). An unverified (null), not-yet-approved
  * (`signed`) or dead (rejected, removed, revoked) claim adds no line, and is read live, so a revoked
  * claim stops showing at once.
  */
@@ -70,38 +69,33 @@ export function tradedOverXmr(show: boolean, atomic: string | bigint): number | 
 }
 
 /**
- * Owner Q64: one line per site with a verified figure. Owner F17 (7 Nov): shown converted to XMR at
- * the current XMR/USD price, rounded down like the XMR line (a site at 10 XMR or less shows
- * nothing). With no USD price right now, no imported line shows (nothing to convert with).
+ * Owner Q64: one line per site with a verified figure. Owner p4-1 (7 Nov, replacing F17's XMR
+ * conversion): shown in US dollars, "$X+ on <site>, verified", X the @x2f/reputation
+ * `tradedBucketUsd` step of the site's verified figure (rounded DOWN, a plus needs MORE than the
+ * step, so a site at $10,000 or less shows nothing). No live price: the lines never vanish when
+ * the price pauses. The XMR line never includes them.
  */
 export interface ImportedLine {
   site: string;
-  overXmr: number;
+  overUsd: number;
 }
 
-const PICO = 1_000_000_000_000n;
-
-export function importedLines(volumes: readonly VerifiedSiteVolume[] | undefined, usdCentsPerXmr: bigint | null): ImportedLine[] {
-  if (usdCentsPerXmr === null || usdCentsPerXmr <= 0n) return [];
+export function importedLines(volumes: readonly VerifiedSiteVolume[] | undefined): ImportedLine[] {
   return (volumes ?? []).flatMap((v) => {
-    const overXmr = tradedBucketXmr((v.usdCents * PICO) / usdCentsPerXmr);
-    return overXmr === null ? [] : [{ site: v.site, overXmr }];
+    const overUsd = tradedBucketUsd(v.usdCents);
+    return overUsd === null ? [] : [{ site: v.site, overUsd }];
   });
 }
 
 /** The trader's own setting and their lines (shown to them whether or not they are public). */
-export async function tradedTotalSetting(
-  q: Queryable,
-  accountId: string,
-  usdCentsPerXmr: bigint | null,
-): Promise<{ show: boolean; tradedOverXmr: number | null; imported: ImportedLine[] }> {
+export async function tradedTotalSetting(q: Queryable, accountId: string): Promise<{ show: boolean; tradedOverXmr: number | null; imported: ImportedLine[] }> {
   const { rows } = await q.query<{ show: boolean; xmr: string }>(
     `select a.show_traded_total as show, ${tradedXmrSql('a.id')}::text as xmr from accounts a where a.id = $1`,
     [accountId],
   );
   const r = rows[0]!;
   const sites = await verifiedPastRepBySite(q, [accountId]);
-  return { show: r.show, tradedOverXmr: tradedBucketXmr(BigInt(r.xmr)), imported: importedLines(sites.get(accountId), usdCentsPerXmr) };
+  return { show: r.show, tradedOverXmr: tradedBucketXmr(BigInt(r.xmr)), imported: importedLines(sites.get(accountId)) };
 }
 
 /**
@@ -112,16 +106,11 @@ export async function tradedTotalSetting(
 export function tradedTotalRoutes(app: FastifyInstance): void {
   const trader = requireSession({ kinds: ['trader'] });
   const PATH = '/v1/account/profile/traded-total';
-  app.get(PATH, { preHandler: trader }, async (req) => tradedTotalSetting(req.server.deps.db, req.auth.accountId, usdRate(req.server.deps)));
+  app.get(PATH, { preHandler: trader }, async (req) => tradedTotalSetting(req.server.deps.db, req.auth.accountId));
   app.put(PATH, { preHandler: trader }, async (req) => {
     const body = req.body as { show?: unknown } | null;
     if (body === null || typeof body !== 'object' || Array.isArray(body) || typeof body.show !== 'boolean') throw new ApiError(400, 'bad-request');
     await req.server.deps.db.query('update accounts set show_traded_total = $2 where id = $1', [req.auth.accountId, body.show]);
-    return tradedTotalSetting(req.server.deps.db, req.auth.accountId, usdRate(req.server.deps));
+    return tradedTotalSetting(req.server.deps.db, req.auth.accountId);
   });
-}
-
-/** The current XMR price in US cents, or null when the USD market price is paused (owner F17). */
-export function usdRate(deps: Pick<Deps, 'prices'>): bigint | null {
-  return deps.prices.quote('USD')?.price.centsPerXmr ?? null;
 }
