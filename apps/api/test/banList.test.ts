@@ -262,6 +262,11 @@ describe('Jabber (seam: no Jabber alert account in the code yet)', () => {
   it('normalizes: case, spaces and the resource part', () => {
     expect(normalizeJabber('  Bad.Person@Example.ORG/phone ')).toBe('bad.person@example.org');
     expect(normalizeJabber('not-an-address')).toBeNull();
+    // Lead vendor review minor: a trailing dot, an internationalised domain and full-width letters fold together.
+    expect(normalizeJabber('bad.person@example.org.')).toBe('bad.person@example.org');
+    expect(normalizeJabber('bad@\u00e9xample.org')).toBe(normalizeJabber('bad@xn--xample-9ua.org'));
+    expect(normalizeJabber('\uff42\uff41\uff44@example.org')).toBe('bad@example.org');
+    expect(normalizeJabber('bad@exa mple.org')).toBeNull();
     expect(normalizeJabber('a@')).toBeNull();
   });
 

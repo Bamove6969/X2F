@@ -22,8 +22,10 @@
  * - Jabber: `jabberBanned` is the seam. There is no Jabber alert account in the code yet; its
  *   setup must refuse an address this answers true for (NEEDS_JABBER_SETUP).
  *
- * The ban action itself is staff-side (Plan 4) and calls `recordBan` in its own transaction.
+ * The ban action itself is staff-side (Plan 4) and calls `recordBan` in its own transaction; on
+ * this branch nothing calls `recordBan` yet (the staff ban route is Plan 4 Task 27's).
  */
+import { domainToASCII } from 'node:url';
 import { createHmac } from 'node:crypto';
 import * as openpgp from 'openpgp';
 import { loginTag, loginTags } from './accounts.js';
@@ -67,12 +69,17 @@ export async function keyFingerprints(armored: string): Promise<string[]> {
 }
 
 /**
- * A Jabber (XMPP) address as it is banned and checked: trimmed, lower-cased, without its
- * `/resource`; null when it is not `local@domain`.
+ * A Jabber (XMPP) address as it is banned and checked: trimmed, without its `/resource`, NFKC
+ * (full-width and other compatibility forms fold to plain ones), lower-cased; the domain without a
+ * trailing dot and in its ASCII (punycode) form, so `ÉXAMPLE.org.` and `xn--xample-9ua.org` match
+ * (lead vendor review, minor). Null when it is not `local@domain` or the domain is not valid.
  */
 export function normalizeJabber(jid: string): string | null {
-  const bare = jid.trim().split('/')[0]!.normalize('NFC').toLowerCase();
-  return /^[^\s@]+@[^\s@]+$/.test(bare) ? bare : null;
+  const bare = jid.trim().split('/')[0]!.normalize('NFKC').toLowerCase();
+  const m = /^([^\s@]+)@([^\s@]+)$/.exec(bare);
+  if (!m) return null;
+  const domain = domainToASCII(m[2]!.replace(/\.$/, ''));
+  return domain === '' ? null : `${m[1]}@${domain}`;
 }
 
 /** SQL: true when any of `$<ids>` (smallint[]) / `$<ids + 1>` (bytea[]) is a banned tag of a kind in `kinds`. */

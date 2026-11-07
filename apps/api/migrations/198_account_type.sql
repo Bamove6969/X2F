@@ -6,7 +6,8 @@
 --
 -- `account_type` is not `kind` ('trader' | 'staff' | 'owner' | 'member', who the row is): only a
 -- `kind = 'trader'` account can be a vendor. This file comes after offers (102) and team members
--- (015, 199) because the backfill below reads both.
+-- (015) because the backfill below reads both. (The design notes it cites live on the comms
+-- branch, not here.)
 alter table accounts add column account_type text not null default 'trader' check (account_type in ('trader', 'vendor'));
 alter table accounts add column vendor_since timestamptz;
 alter table accounts add constraint accounts_vendor_kind
