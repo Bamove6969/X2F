@@ -55,6 +55,9 @@ describe('parseLiveEvent', () => {
     { type: 'accepted', code: 'X2F-7KQ4-M9TD', by: 'Someone' },
     { type: 'chat', chat: 'c1' },
     { type: 'nudge', from: 'Someone', context: 'X2F-7KQ4-M9TD' },
+    // Plan 4 Task 11: written by the staff API only.
+    { type: 'moderator-joined', code: 'X2F-7KQ4-M9TD', username: 'sarah.v' },
+    { type: 'proof-requested', code: 'X2F-7KQ4-M9TD', username: 'sarah.v' },
   ])('accepts %o', (ev) => {
     expect(parseLiveEvent(JSON.stringify(ev))).toEqual(ev);
   });
@@ -63,6 +66,7 @@ describe('parseLiveEvent', () => {
     'not json',
     '{"type":"evil"}',
     '{"type":"accepted","code":"X"}',
+    '{"type":"moderator-joined","code":"X"}',
     '{"type":"trade","code":1,"state":"secured"}',
     '[]',
     'null',

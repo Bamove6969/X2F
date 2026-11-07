@@ -12,7 +12,10 @@ export type LiveEvent =
   | { type: 'chat'; chat: string }
   | { type: 'nudge'; from: string; context: string }
   /** Plan 2 Task 16: a new device waits for approval; the approval is fetched over the session (no detail here). */
-  | { type: 'login-approval'; id: string };
+  | { type: 'login-approval'; id: string }
+  /** Plan 4 Task 11, from the staff API only: a moderator joined the disputed trade's chat, or asks for the unblurred proof. */
+  | { type: 'moderator-joined'; code: string; username: string }
+  | { type: 'proof-requested'; code: string; username: string };
 
 const FIELDS: Record<LiveEvent['type'], readonly string[]> = {
   trade: ['code', 'state'],
@@ -20,6 +23,8 @@ const FIELDS: Record<LiveEvent['type'], readonly string[]> = {
   chat: ['chat'],
   nudge: ['from', 'context'],
   'login-approval': ['id'],
+  'moderator-joined': ['code', 'username'],
+  'proof-requested': ['code', 'username'],
 };
 
 /** One SSE `data` payload as a known event with only its own string fields, or null. */

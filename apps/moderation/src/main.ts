@@ -14,8 +14,9 @@ export { createLink, relayRegisterMessage, type ChatWorkItem, type Fetch, type L
 
 /**
  * The moderation service: a SEPARATE process that holds the moderator keystore (MOD_KEYSTORE_KEY)
- * and the long-term moderation signing key (MOD_SIGNING_SECRET). It opens NO listening socket and
- * depends on neither fastify nor `@x2f/api`: it only makes outbound, signed requests. Its own
+ * and the long-term moderation signing key (MOD_SIGNING_SECRET). It opens no TCP listener and
+ * depends on neither fastify nor `@x2f/api`: it makes outbound, signed requests, and (Plan 4 Task 11)
+ * answers the API's chat and proof reads only on a Unix socket (`internal/server.ts`). Its own
  * database (`x2f_moderation`) is unreadable to the API's database role.
  *
  * Each loop it pulls `GET <api-internal>/internal/v1/work`. For every trade with both traders
@@ -311,7 +312,20 @@ function envString(env: Record<string, string | undefined>, name: string): strin
   return v;
 }
 
-// `tsx apps/moderation/src/main.ts`: the moderation process. No listening socket of any kind.
+/**
+ * Plan 4 Task 11: the internal API's settings. `MOD_INTERNAL_SOCKET` (an absolute path) unset: the
+ * internal API does not start. Set, it needs `MOD_INTERNAL_SECRET` (base64 of 32 bytes, shared with
+ * the API only) and `MOD_API_READER_DATABASE_URL` (the API's database as a member of the read-only
+ * role `x2f_mod_reader`, migration 208). Errors name the variable, never the value.
+ */
+export function internalFromEnv(env: Record<string, string | undefined>): { socketPath: string; secret: Uint8Array; apiReaderUrl: string } | null {
+  const socketPath = env.MOD_INTERNAL_SOCKET;
+  if (socketPath === undefined || socketPath === '') return null;
+  if (!socketPath.startsWith('/')) throw new Error('moderation: MOD_INTERNAL_SOCKET is malformed (an absolute Unix socket path)');
+  return { socketPath, secret: envBytes(env, 'MOD_INTERNAL_SECRET', 32), apiReaderUrl: envString(env, 'MOD_API_READER_DATABASE_URL') };
+}
+
+// `tsx apps/moderation/src/main.ts`: the moderation process. Its one listener is the Unix socket.
 if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href) {
   const env = process.env;
   const { default: pgMod } = await import('pg');
@@ -331,8 +345,25 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
     },
     { log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) },
   );
+  const internal = internalFromEnv(env);
+  let apiReader: pg.Pool | null = null;
+  let server: { close(): Promise<void> } | null = null;
+  if (internal) {
+    const { pgApiView } = await import('./internal/apiView.js');
+    const { startInternalServer } = await import('./internal/server.js');
+    apiReader = new pgMod.Pool({ connectionString: internal.apiReaderUrl, max: 2 });
+    apiReader.on('error', () => process.stderr.write('{"level":50,"msg":"api reader idle client error"}\n'));
+    server = await startInternalServer(internal.socketPath, {
+      secret: internal.secret,
+      api: pgApiView(apiReader),
+      db,
+      keystoreKey: envBytes(env, 'MOD_KEYSTORE_KEY', 32),
+    });
+  }
   const shutdown = async () => {
+    await server?.close();
     await handle.stop();
+    await apiReader?.end();
     await db.end();
   };
   process.once('SIGTERM', () => void shutdown());

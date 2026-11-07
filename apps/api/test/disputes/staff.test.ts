@@ -12,7 +12,8 @@ import type { FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
-import { ModerationError, type ModChatMessage } from '../../src/disputes/moderationClient.js';
+import { isIncidentId } from '@x2f/staff';
+import { ModerationError, NO_MODERATION, type ModChatMessage } from '../../src/disputes/moderationClient.js';
 import { loadDispute } from '../../src/disputes/store.js';
 import { buildStaffApi, type ModerationClient } from '../../src/staff/app.js';
 import { appealDirect, publishRuling } from '../helpers/disputes.js';
@@ -527,6 +528,168 @@ describe('helpers', () => {
       const res = await helper.b.send(m, u, m === 'POST' ? {} : undefined);
       expect({ u, status: res.statusCode, error: errorOf(res) }).toEqual({ u, status: 403, error: 'forbidden' });
     }
+  });
+});
+
+describe('G37: incident IDs and taking a case', () => {
+  it('every dispute has a nine-character incident ID with a good check character, shown to both traders, in the queue and the case', async () => {
+    const mod = await staff('mod');
+    const { code, buyer, seller } = await disputed();
+    const { rows } = await deps.db.query<{ incident_id: string }>('select incident_id from disputes where code = $1', [code]);
+    const id = rows[0]!.incident_id;
+    expect(isIncidentId(id)).toBe(true);
+    for (const p of [buyer, seller]) {
+      expect(((await p.browser.get(`/v1/trades/${code}/dispute`)).json() as { incidentId: string }).incidentId).toBe(id);
+    }
+    const q = (await mod.b.get('/staff/v1/disputes?filter=all')).json() as { rows: Array<{ code: string; incidentId: string }> };
+    expect(q.rows.find((r) => r.code === code)!.incidentId).toBe(id);
+    // A moderator can open the case by the ID a trader quotes, typed loosely.
+    const byId = await mod.b.get(url(`${id.slice(0, 4).toLowerCase()}-${id.slice(4)}`));
+    expect(byId.statusCode, byId.body).toBe(200);
+    expect(byId.json()).toMatchObject({ code, incidentId: id });
+    // A wrong check character finds nothing.
+    const wrong = id.slice(0, 8) + (id[8] === '0' ? '1' : '0');
+    expect((await mod.b.get(url(wrong))).statusCode).toBe(404);
+    // Many IDs: all well formed and distinct.
+    const many = await deps.db.query<{ id: string }>('select x2f_incident_id() as id from generate_series(1, 200)');
+    expect(many.rows.every((r) => isIncidentId(r.id))).toBe(true);
+    expect(new Set(many.rows.map((r) => r.id)).size).toBe(200);
+  });
+
+  it('the case shows who took it and when, and when they first opened it, from the log', async () => {
+    const { code } = await disputed();
+    const mod = await staff('mod');
+    expect((await mod.b.post(url(code, '/take'), {})).statusCode).toBe(200);
+    setNow(new Date(START.getTime() + 7 * MIN));
+    await mod.fresh();
+    const v = (await mod.b.get(url(code))).json() as Record<string, unknown>;
+    expect(v).toMatchObject({
+      assignee: mod.name, assignedToYou: true, mayWork: true,
+      taken: { by: mod.name, at: START.toISOString(), openedAt: new Date(START.getTime() + 7 * MIN).toISOString() },
+    });
+    const other = await staff('mod');
+    expect((await other.b.get(url(code))).json()).toMatchObject({ assignedToYou: false, mayWork: false, taken: { by: mod.name } });
+    setNow(START);
+  });
+});
+
+describe('a frozen party still works the disputed trade (G7, G33)', () => {
+  it('reads the dispute and the chat, and posts in it', async () => {
+    const mod = await staff('mod');
+    const { code, chat, seller } = await disputed();
+    await mod.fresh();
+    await mod.b.post(url(code, '/take'), {});
+    setNow(new Date(START.getTime() + 49 * H));
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' })).statusCode).toBe(200);
+    expect((await seller.browser.post('/t/login', { accountId: seller.id })).statusCode).toBe(200);
+    expect((await seller.browser.get(`/v1/trades/${code}/dispute`)).statusCode).toBe(200);
+    expect((await seller.browser.get(`/v1/chats/${chat}/envelopes?after=0`)).statusCode).toBe(200);
+    // The chat is attested (stood in here); the seller's message goes through.
+    const c = moderation.chats.get(code)!;
+    await deps.db.query('insert into chat_attestations (chat, attestation, sig) values ($1, $2, $3) on conflict do nothing', [chat, { v: 1 }, 'aa']);
+    const envelope = await seal({ trade: c.channel, from: 'seller', seq: 0, type: 'chat.msg', payload: { text: 'Here is more context.' }, to: ['buyer', 'seller', 'mod'], me: c.ids.seller, participants: c.participants });
+    const posted = await seller.browser.post(`/v1/chats/${chat}/envelopes`, envelope);
+    expect(posted.statusCode, posted.body).toBe(201);
+    setNow(START);
+  });
+});
+
+describe('the proof request in the trader view', () => {
+  it('only the trader named sees who asked and when', async () => {
+    const mod = await staff('mod');
+    const { code, buyer, seller } = await disputed();
+    await mod.fresh();
+    await mod.b.post(url(code, '/take'), {});
+    expect((await mod.b.post(url(code, '/proof-request'), { side: 'buyer' })).statusCode).toBe(204);
+    const asBuyer = (await buyer.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: unknown };
+    const asSeller = (await seller.browser.get(`/v1/trades/${code}/dispute`)).json() as { proofRequest: unknown };
+    expect(asBuyer.proofRequest).toEqual({ username: mod.name, at: START.toISOString() });
+    expect(asSeller.proofRequest).toBeNull();
+  });
+});
+
+describe('more on chat and the queue', () => {
+  it('a second moderator reading the chat is announced too, with their name', async () => {
+    const mod = await staff('mod');
+    const senior = await staff('senior');
+    const { code, buyer } = await disputed();
+    await mod.fresh();
+    await senior.fresh();
+    await mod.b.post(url(code, '/take'), {});
+    const sb = stream(buyer.id);
+    try {
+      await mod.b.post(url(code, '/chat'), {});
+      await senior.b.post(url(code, '/chat'), {});
+      await senior.b.post(url(code, '/chat'), {});
+      expect(eventsOf(sb.frames, 'moderator-joined')).toEqual([
+        { type: 'moderator-joined', code, username: mod.name },
+        { type: 'moderator-joined', code, username: senior.name },
+      ]);
+    } finally {
+      sb.stop();
+    }
+  });
+
+  it('a moderator is never handed an appeal by next; a senior who was not involved is', async () => {
+    const { code } = await disputed();
+    await publishRuling(deps, code, { outcome: 'release-to-buyer' });
+    await appealDirect(deps, code, 'seller');
+    const mod = await staff('mod');
+    const senior = await staff('senior');
+    // Drain the queue as a moderator: the appeal is never among what it takes.
+    for (let i = 0; i < 100; i++) {
+      const got = (await mod.b.post('/staff/v1/disputes/next', {})).json() as { code: string | null };
+      expect(got.code).not.toBe(code);
+      if (got.code === null) break;
+    }
+    expect((await loadDispute(deps.db, code))!.assignee).toBeNull();
+    for (let i = 0; i < 100; i++) {
+      const got = (await senior.b.post('/staff/v1/disputes/next', {})).json() as { code: string | null };
+      if (got.code === code || got.code === null) break;
+    }
+    expect((await loadDispute(deps.db, code))!.assignee).toBe(senior.id);
+  });
+
+  it('without a moderation process the read is refused 503 (logged, no text)', async () => {
+    const none = await buildStaffApi({ ...deps, staffOrigin: STAFF_ORIGIN, moderation: NO_MODERATION, traderEvents: trader.events });
+    try {
+      const mod = await staff('mod', none);
+      const { code } = await disputed();
+      await mod.fresh();
+      await mod.b.post(url(code, '/take'), {});
+      const res = await mod.b.post(url(code, '/chat'), {});
+      expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 503, error: 'moderation-unavailable' });
+    } finally {
+      await none.close();
+    }
+  });
+
+  it('a moderation answer that is not a fresh mod envelope for this chat is not stored', async () => {
+    const mod = await staff('mod');
+    const { code, chat } = await disputed();
+    await mod.fresh();
+    await mod.b.post(url(code, '/take'), {});
+    const realSend = moderation.chatSend.bind(moderation);
+    try {
+      // A trader's envelope passed off as the moderator's.
+      moderation.chatSend = async (a) => {
+        await realSend(a);
+        const c = moderation.chats.get(code)!;
+        return { envelope: await seal({ trade: c.channel, from: 'buyer', seq: 0, type: 'chat.msg', payload: { text: 'x' }, to: ['buyer', 'seller', 'mod'], me: c.ids.buyer, participants: c.participants }) };
+      };
+      const res = await mod.b.post(url(code, '/messages'), { text: 'Hello' });
+      expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 502, error: 'moderation-unavailable' });
+    } finally {
+      moderation.chatSend = realSend;
+    }
+    expect((await mod.b.post(url(code, '/messages'), { text: 'One.' })).statusCode).toBe(201);
+    // The same seq again (a replay) is refused.
+    moderation.chats.get(code)!.seq = 0;
+    const replay = await mod.b.post(url(code, '/messages'), { text: 'Two.' });
+    expect({ status: replay.statusCode, error: errorOf(replay) }).toEqual({ status: 502, error: 'moderation-unavailable' });
+    const { rows } = await deps.db.query("select count(*)::int as n from chat_envelopes where chat = $1 and sender_role = 'mod'", [chat]);
+    expect(rows[0]).toEqual({ n: 1 });
   });
 });
 

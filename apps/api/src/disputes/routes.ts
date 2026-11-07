@@ -34,6 +34,8 @@ export type RulingOutcome = 'release-to-buyer' | 'refund-to-seller' | 'seller-se
 
 /** What `GET /v1/trades/:code/dispute` returns. Names are public display names; no address is ever whole. */
 export interface DisputeView {
+  /** G37 (owner 7 Nov): the dispute's incident ID, shown to both traders at the top of the trade and to the moderator. */
+  incidentId: string;
   /** 'system' when the timer loop escalated the trade (late funds, a lapse nobody refunded). */
   openedBy: Party | 'system';
   reason: DisputeReason;
@@ -75,6 +77,11 @@ export interface DisputeView {
     destination: { walletApp: string | null; addressEnd: string } | null;
   } | null;
   appeal: { by: Party; at: string } | null;
+  /**
+   * Plan 4 Task 11: the moderator's latest request for this trader's unblurred proof (only the side
+   * it names sees it), from server records only.
+   */
+  proofRequest: { username: string; at: string } | null;
   /** The appeal window's length in hours, from the owner's settings. */
   appealWindowH: number;
   serverNow: string;
@@ -138,6 +145,10 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
   const rec = await loadDisputeRecord(q, row.code);
   if (rec === null) return null;
   const d = rec.dispute;
+  const extra = (await q.query<{ incident_id: string; proof_request_side: Party | null; proof_requested_at: Date | null; proof_requested_by: string | null }>(
+    'select incident_id, proof_request_side, proof_requested_at, proof_requested_by from disputes where code = $1 and seq = $2',
+    [row.code, d.seq],
+  )).rows[0]!;
   const r = (await q.query<RulingRow>('select * from dispute_rulings where code = $1 and seq = $2 order by round desc limit 1', [row.code, d.seq])).rows[0];
   let queuePosition: number | null = null;
   if (d.status === 'open' && d.assignee === null) {
@@ -170,6 +181,7 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
     };
   }
   return {
+    incidentId: extra.incident_id,
     openedBy: d.openedBy,
     reason: rec.reason,
     openedAt: d.openedAt.toISOString(),
@@ -186,6 +198,10 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
       rec.moderatorName !== null && rec.moderatorJoinedAt !== null ? { name: rec.moderatorName, joinedAt: rec.moderatorJoinedAt.toISOString() } : null,
     ruling,
     appeal: d.appealBy !== null && d.appealedAt !== null ? { by: d.appealBy, at: d.appealedAt.toISOString() } : null,
+    proofRequest:
+      extra.proof_request_side === side && extra.proof_requested_at !== null && extra.proof_requested_by !== null
+        ? { username: extra.proof_requested_by, at: extra.proof_requested_at.toISOString() }
+        : null,
     // Lead review 7 Nov: the appeal window's length as the owner set it (settings), for the ruling page.
     appealWindowH: (await disputeSettings(q)).appealWindowH,
     serverNow: now.toISOString(),

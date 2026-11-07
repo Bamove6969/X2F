@@ -485,6 +485,12 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     const code = await codeOf(deps.db, req);
     const t = await caseTrade(deps.db, code);
     await logged(req, code, 'proof.unblurred-requested', { side }, workable(req));
+    // The trader named sees the request in the dispute view too (the live event is only a hint).
+    await deps.db.query(
+      `update disputes set proof_request_side = $2, proof_requested_at = $3, proof_requested_by = $4
+        where code = $1 and seq = (select max(seq) from disputes where code = $1)`,
+      [code, side, deps.clock(), req.staff.displayName],
+    );
     publish([side === 'buyer' ? t.buyer : t.seller], { type: 'proof-requested', code, username: req.staff.displayName });
     return reply.code(204).send();
   });

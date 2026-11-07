@@ -453,6 +453,14 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     expect(() => parseDispute(view({ feeOwedAtomic: 125 }))).toThrow();
   });
 
+  it('Plan 4 Task 11: reads the incident ID and the proof request; absent ones read as null', () => {
+    const d = parseDispute(view({ incidentId: 'K7QM4T2XB', proofRequest: { username: 'sarah.v', at: iso(300) } }));
+    expect(d).toMatchObject({ incidentId: 'K7QM4T2XB', proofRequest: { username: 'sarah.v', at: iso(300) } });
+    expect(parseDispute(dispute())).toMatchObject({ incidentId: null, proofRequest: null });
+    expect(() => parseDispute(view({ incidentId: 'k7qm' }))).toThrow();
+    expect(() => parseDispute(view({ proofRequest: { username: 'sarah.v' } }))).toThrow();
+  });
+
   it('before a moderator replies: the hourglass is the one deadline, with the place in the queue under it (design 7 Nov)', () => {
     const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const d = parseDispute(view());

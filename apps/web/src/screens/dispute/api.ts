@@ -47,6 +47,13 @@ export interface RulingView {
 }
 
 export interface DisputeView {
+  /**
+   * Plan 4 Task 11 (G37, owner 7 Nov): the dispute's incident ID, nine characters, shown to both
+   * traders at the top of the trade (where and how is design's: DESIGNER-REVIEW). Absent from an older view.
+   */
+  incidentId?: string | null;
+  /** Plan 4 Task 11: the moderator asked THIS trader for the unblurred proof (who, when). */
+  proofRequest?: { username: string; at: string } | null;
   /** 'system' when the trade was escalated (late funds after it ended, a lapse nobody refunded). */
   openedBy: Party | 'system';
   reason: DisputeReason;
@@ -110,6 +117,8 @@ const PARTIES = ['buyer', 'seller'] as const;
 /** A Task 10 field: absent (an older view) reads as null; present, it must have the right shape. */
 const later = <T>(v: unknown, read: (v: unknown) => T): T | null => (v === undefined || v === null ? null : read(v));
 const ATOMIC = /^[0-9]{1,30}$/;
+/** An incident ID as the API stores it (@x2f/staff `isIncidentId` checks its check character too). */
+const INCIDENT = /^[0-9A-HJKMNP-TV-Z]{9}$/;
 
 /**
  * The dispute screens' view of a trade, mapped from Task 22's TradeView (one parser of the trade
@@ -173,6 +182,14 @@ export function parseDispute(v: unknown): DisputeView {
     appeal = { by: oneOf(a.by, PARTIES, 'appeal.by'), at: iso(a.at, 'appeal.at') };
   }
   return {
+    incidentId: later(d.incidentId, (v) => {
+      if (typeof v !== 'string' || !INCIDENT.test(v)) throw new ShapeError('incidentId');
+      return v;
+    }),
+    proofRequest: later(d.proofRequest, (v) => {
+      const p = rec(v, 'proofRequest');
+      return { username: str(p.username, 'proofRequest.username'), at: iso(p.at, 'proofRequest.at') };
+    }),
     openedBy: oneOf(d.openedBy, ['buyer', 'seller', 'system'] as const, 'openedBy'),
     reason: oneOf(d.reason, ['paid', 'silent', 'terms', 'other', 'escalated'] as const, 'reason'),
     openedAt: iso(d.openedAt, 'openedAt'),

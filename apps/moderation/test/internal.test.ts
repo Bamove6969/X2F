@@ -393,3 +393,21 @@ describe('pgApiView on the API schema (x2f_mod_reader only)', () => {
     }
   });
 });
+
+describe('internalFromEnv', () => {
+  it('starts nothing without MOD_INTERNAL_SOCKET; with it, needs the secret and the reader URL', async () => {
+    const { internalFromEnv } = await import('../src/main.js');
+    expect(internalFromEnv({})).toBeNull();
+    const secret = Buffer.from(SECRET).toString('base64');
+    const ok = internalFromEnv({ MOD_INTERNAL_SOCKET: '/run/x2f/mod.sock', MOD_INTERNAL_SECRET: secret, MOD_API_READER_DATABASE_URL: 'postgres://r@db/x2f' });
+    expect(ok).toEqual({ socketPath: '/run/x2f/mod.sock', secret: SECRET, apiReaderUrl: 'postgres://r@db/x2f' });
+    for (const [env, name] of [
+      [{ MOD_INTERNAL_SOCKET: 'mod.sock', MOD_INTERNAL_SECRET: secret, MOD_API_READER_DATABASE_URL: 'x' }, 'MOD_INTERNAL_SOCKET'],
+      [{ MOD_INTERNAL_SOCKET: '/run/x2f/mod.sock', MOD_API_READER_DATABASE_URL: 'x' }, 'MOD_INTERNAL_SECRET'],
+      [{ MOD_INTERNAL_SOCKET: '/run/x2f/mod.sock', MOD_INTERNAL_SECRET: 'c2hvcnQ=', MOD_API_READER_DATABASE_URL: 'x' }, 'MOD_INTERNAL_SECRET'],
+      [{ MOD_INTERNAL_SOCKET: '/run/x2f/mod.sock', MOD_INTERNAL_SECRET: secret }, 'MOD_API_READER_DATABASE_URL'],
+    ] as const) {
+      expect(() => internalFromEnv(env)).toThrow(name);
+    }
+  });
+});
