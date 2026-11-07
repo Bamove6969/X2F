@@ -117,7 +117,7 @@ describe('staff login with login hours', () => {
     const me = await b.get('/staff/v1/me');
     expect(me.statusCode).toBe(200);
     // The 2-hour idle limit (14:00) comes before the end of the window (17:00).
-    expect(me.json()).toEqual({ username: `D${s.loginName}`, role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: '2026-11-02T14:00:00.000Z' });
+    expect(me.json()).toEqual({ displayName: `D${s.loginName}`, role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: '2026-11-02T14:00:00.000Z' });
   });
 
   it('refuses the same login 1 minute after the window closes, only after the key verifies', async () => {

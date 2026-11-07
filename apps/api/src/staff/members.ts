@@ -110,7 +110,7 @@ async function unassignOpenCases(_c: Queryable, _accountId: string): Promise<voi
 export interface MemberRow {
   accountId: string | null;
   inviteId: string | null;
-  username: string | null;
+  displayName: string | null;
   role: StaffRole;
   status: 'active' | 'switched-off' | 'waiting';
   hours: unknown;
@@ -139,12 +139,12 @@ export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]
   );
   return [
     ...staff.map((r): MemberRow => ({
-      accountId: r.account_id, inviteId: null, username: r.display_name, role: r.role,
+      accountId: r.account_id, inviteId: null, displayName: r.display_name, role: r.role,
       status: r.switched_off_at === null ? 'active' : 'switched-off', hours: r.hours,
       joinedAt: r.joined_at.toISOString(), lastActiveAt: r.last_active?.toISOString() ?? null, openCases: 0, expiresAt: null,
     })),
     ...invites.map((r): MemberRow => ({
-      accountId: null, inviteId: r.id, username: r.display_name, role: r.role, status: 'waiting', hours: r.hours,
+      accountId: null, inviteId: r.id, displayName: r.display_name, role: r.role, status: 'waiting', hours: r.hours,
       joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: r.expires_at.toISOString(),
     })),
   ];

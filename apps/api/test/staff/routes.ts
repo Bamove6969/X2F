@@ -60,7 +60,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'PUT', url: '/staff/v1/members/:id/role', perm: 'staff.manage', allowed: OWNER, body: { role: 'mod' } },
   { method: 'DELETE', url: '/staff/v1/members/:id', perm: 'staff.manage', allowed: OWNER },
   { method: 'GET', url: '/staff/v1/invites/accept/:token', perm: 'public-invite', allowed: 'public' },
-  { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { username: 'Matrix1', loginName: 'matrix1' } },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { displayName: 'Matrix1', loginName: 'matrix1' } },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/key/start', perm: 'public-invite', allowed: 'public', body: {} },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/key/finish', perm: 'public-invite', allowed: 'public', body: {} },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/pgp/start', perm: 'public-invite', allowed: 'public', body: {} },

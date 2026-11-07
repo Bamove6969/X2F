@@ -29,7 +29,7 @@ export function staffLoginCheck(deps: { db: Queryable; clock: () => Date }): (ac
  *   (Plan 2's plugins, kinds staff and owner, always two factors); a security key whose AAGUID is no
  *   longer on the current allowlist is not offered and is refused (`recheckAllowlist`, Plan 4 M1);
  * - `POST /staff/v1/logout` (never 401, clears the staff cookie);
- * - `GET /staff/v1/me` → `{ username, role, nav, sessionEndsAt }`, where `sessionEndsAt` is the
+ * - `GET /staff/v1/me` → `{ displayName, role, nav, sessionEndsAt }`, where `sessionEndsAt` is the
  *   earliest of the idle limit, the absolute limit and the end of the login window.
  */
 export async function staffLoginRoutes(app: FastifyInstance): Promise<void> {
@@ -52,7 +52,7 @@ export async function staffLoginRoutes(app: FastifyInstance): Promise<void> {
     const windowEnd = req.staff.role === 'owner' ? null : windowEndsAt(req.staff.hours, now);
     if (windowEnd !== null) ends.push(windowEnd.getTime());
     return {
-      username: req.staff.username,
+      displayName: req.staff.displayName,
       role: req.staff.role,
       nav: navFor(req.staff.role, req.staff.grants),
       sessionEndsAt: new Date(Math.min(...ends)).toISOString(),

@@ -31,7 +31,7 @@ import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type In
 // is unused, not cancelled and not expired, else 404 `invite-invalid`; only then does it spend the
 // process-wide start or register budget, so made-up tokens cannot drain it for a real invitee):
 // - `GET /staff/v1/invites/accept/:token` → `{ role, hours, expiresAt }`;
-// - `POST …/:token/account { username, loginName }` → 201: the public name and the private login
+// - `POST …/:token/account { displayName, loginName }` → 201: the public name and the private login
 //   name (FU-D), once (409 `wrong-state` after that). The account is created disabled: it cannot
 //   log in until `finish`;
 // - `POST …/:token/key/start { kind? }` → `{ options }`, challenge `inviteRegistrationChallenge(tokenHash)`
@@ -172,7 +172,7 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     if (open.account_id !== null) throw new ApiError(409, 'wrong-state');
     req.server.budgets.register.take();
     const b = body(req);
-    const names = await assertNewNames(deps.db, b.username, b.loginName);
+    const names = await assertNewNames(deps.db, b.displayName, b.loginName);
     const now = deps.clock();
     await withTx(deps.db, async (c) => {
       const i = await openInvite(c, tokenOf(req), now, true);
