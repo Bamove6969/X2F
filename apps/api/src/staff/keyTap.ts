@@ -43,6 +43,8 @@ export const KEY_TAP_PURGE_MS = 24 * 60 * 60_000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX64 = /^[0-9a-f]{64}$/;
+/** A v4 OpenPGP fingerprint, 40 hex characters. */
+const FINGERPRINT = /^[0-9a-fA-F]{40}$/;
 const B64URL_ID = /^[A-Za-z0-9_-]{16,1364}$/;
 const TOKEN_HASH = /^[A-Za-z0-9_-]{16,128}$/;
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
@@ -313,6 +315,16 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     case 'set-role':
       exactKeys(r, ['kind', 'accountId', 'role']);
       return { kind: r.kind, accountId: match(r, 'accountId', UUID).toLowerCase(), role: oneOf(r, 'role', INVITABLE) };
+    case 'add-pgp-key':
+      exactKeys(r, ['kind', 'fingerprint']);
+      return { kind: 'add-pgp-key', fingerprint: match(r, 'fingerprint', FINGERPRINT).toLowerCase() };
+    case 'remove-method':
+      exactKeys(r, ['kind', 'methodType', 'methodId']);
+      return {
+        kind: 'remove-method',
+        methodType: oneOf(r, 'methodType', ['pgp', 'security-key', 'passkey'] as const),
+        methodId: match(r, 'methodId', UUID).toLowerCase(),
+      };
     case 'add-owner-key':
       exactKeys(r, ['kind', 'credentialId', 'publicKeySha256']);
       return { kind: 'add-owner-key', credentialId: match(r, 'credentialId', B64URL_ID), publicKeySha256: match(r, 'publicKeySha256', HEX64) };
@@ -371,6 +383,11 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
       return 'settings.write';
     case 'add-owner-key':
       return 'owner';
+    case 'add-pgp-key':
+    case 'remove-method':
+      // One's own login methods: any staff member or the owner, for their own account only (the
+      // action route binds the tap to the signed-in account).
+      return 'self';
   }
 }
 

@@ -32,6 +32,19 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/login/pgp/finish', perm: 'public-login', allowed: 'public', body: {} },
   { method: 'POST', url: '/staff/v1/logout', perm: 'public-login', allowed: 'public', body: {} },
   { method: 'GET', url: '/staff/v1/me', perm: 'self', allowed: EVERY_ROLE },
+  // Lead re-review 6 Nov items 1-2: one's own methods, sessions, alerts and push (bodies stop at
+  // validation or name nothing, so the matrix checks the guard alone).
+  { method: 'GET', url: '/staff/v1/account/methods', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'POST', url: '/staff/v1/account/pgp/start', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  { method: 'POST', url: '/staff/v1/account/pgp/finish', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  { method: 'DELETE', url: '/staff/v1/account/methods/:type/:id', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'GET', url: '/staff/v1/account/sessions', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'DELETE', url: '/staff/v1/account/sessions/:id', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'GET', url: '/staff/v1/account/alerts', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'POST', url: '/staff/v1/account/alerts/:id/seen', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  { method: 'GET', url: '/staff/v1/account/push', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'POST', url: '/staff/v1/account/push', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  { method: 'DELETE', url: '/staff/v1/account/push', perm: 'self', allowed: EVERY_ROLE, body: { endpoint: 'https://push.example/none' } },
   // Task 5: security-key taps. The bodies stop at validation (400), so the matrix checks the guard
   // alone; which intents each role may start (RV5 m7) is keyTap.test.ts's.
   { method: 'POST', url: '/staff/v1/taps/start', perm: 'self', allowed: EVERY_ROLE, body: { kind: 'matrix' } },

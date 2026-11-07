@@ -50,6 +50,10 @@ export type KeyTapIntent =
   | { kind: 'set-role'; accountId: string; role: Invitable }
   | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string }
   | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number }
+  // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods on the
+  // staff site, each change confirmed by a tap of one of their security keys.
+  | { kind: 'add-pgp-key'; fingerprint: string }
+  | { kind: 'remove-method'; methodType: 'pgp' | 'security-key' | 'passkey'; methodId: string }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -70,6 +74,8 @@ export const KEY_TAP_KINDS = [
   'set-role',
   'add-owner-key',
   'settings',
+  'add-pgp-key',
+  'remove-method',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 

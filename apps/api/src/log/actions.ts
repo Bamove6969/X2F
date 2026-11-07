@@ -117,6 +117,11 @@ export const LOG_ACTIONS = {
   'staff.hours-set': { staffId: 'uuid' },
   'staff.grants-set': { staffId: 'uuid', ticketsHandle: 'bool' },
   'staff.session-ended-hours': { staffId: 'uuid' },
+  // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods or ends
+  // one of their sessions on the staff site (the method kind only: never a fingerprint or a label).
+  'staff.method-added': { method: 'id' },
+  'staff.method-removed': { method: 'id' },
+  'staff.session-ended': {},
   // Shifts and pay (Task 33).
   'staff.welcome-acknowledged': {},
   'shift.clocked-in': { shiftId: 'id' },
