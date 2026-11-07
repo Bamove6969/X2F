@@ -584,7 +584,7 @@ function apply(s: Room, e: Record<string, unknown>): { status: number; json: unk
   const v = s.view;
   switch (e.type) {
     case 'mark-paid':
-      s.view = { ...v, state: 'paid', paidAt: PAY_NOW, confirmBy: new Date(Date.parse(PAY_NOW) + 120 * 60_000).toISOString(), buyerDisputeFrom: new Date(Date.parse(PAY_NOW) + 60 * 60_000).toISOString() };
+      s.view = { ...v, state: 'paid', paidAt: PAY_NOW, confirmBy: new Date(Date.parse(PAY_NOW) + 120 * 60_000).toISOString(), disputeOpensAt: new Date(Date.parse(PAY_NOW) + 90 * 60_000).toISOString(), disputeWaitMin: 90 };
       break;
     case 'propose-cancel':
       s.view = { ...v, cancelProposedBy: v.role };
@@ -684,7 +684,8 @@ const PAID_SELLER = {
   state: 'paid',
   paidAt: new Date(Date.parse(PAY_NOW) - 8 * 60_000).toISOString(),
   confirmBy: new Date(Date.parse(PAY_NOW) + 112 * 60_000).toISOString(),
-  buyerDisputeFrom: new Date(Date.parse(PAY_NOW) + 52 * 60_000).toISOString(),
+  disputeOpensAt: new Date(Date.parse(PAY_NOW) + 82 * 60_000).toISOString(),
+  disputeWaitMin: 90,
   nextDeadline: new Date(Date.parse(PAY_NOW) + 112 * 60_000).toISOString(),
   fee: { atomic: '12500000000' },
 } as TradeView;
@@ -837,7 +838,8 @@ const disputeTrade = (o: Record<string, unknown> = {}) => ({
   counterparty: { displayName: 'satoshi_ghost', completedTrades: 12, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
   paidAt: T('08:02'),
   confirmBy: T('10:02'),
-  buyerDisputeFrom: T('09:02'),
+  disputeOpensAt: T('09:32'),
+  disputeWaitMin: 90,
   payBy: T('09:30'),
   serverNow: T('10:14'),
   ...o,

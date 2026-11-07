@@ -17,6 +17,7 @@ function takeArgs() {
     amountAtomic: 1_250_000_000_000n,
     lockedRate: { currency: 'USD', centsPerXmr: 33000n },
     confirmWindowMin: 120,
+    buyerDisputeWaitMin: 90,
     minFiatCents: 10_000n,
     maxFiatCents: 50_000n,
   };
@@ -34,6 +35,7 @@ function taken(code = 'ABCD2345EFGH6789'): Trade {
       amountAtomic: 1_250_000_000_000n,
       lockedRate: { currency: 'USD', centsPerXmr: 33000n },
       confirmWindowMin: 120,
+      buyerDisputeWaitMin: 90,
       minFiatCents: 10_000n,
       maxFiatCents: 50_000n,
     },

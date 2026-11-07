@@ -46,7 +46,7 @@ const ms = (iso: string | null): number | null => (iso === null ? null : Date.pa
  * Whether this side may open a dispute now, mirroring the state machine's `open-dispute` rules
  * (the API decides; this only keeps the screen from sending what would be refused):
  * - securing or secured: either side;
- * - paid: the seller at once, the buyer from the server's `buyerDisputeFrom`: 60 minutes after
+ * - paid: the seller at once, the buyer from the server's `disputeOpensAt`: 60 minutes after
  *   marking paid (TIMERS.buyerDisputeAfterPaidMin; owner 2026-11-06 Q10, was 30), later by any
  *   maintenance during the wait; no longer the end of the seller's confirm window;
  * - settling: either side once the signing window has passed;
@@ -65,7 +65,7 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
     case 'paid': {
       if (t.role === 'seller') return { kind: 'open' };
       // The server's time, which maintenance moves (owner 2026-11-06 Q10), never paidAt + 60 here.
-      const by = ms(t.buyerDisputeFrom);
+      const by = ms(t.disputeOpensAt);
       if (ms(t.paidAt) === null || by === null) return { kind: 'none' };
       if (n >= by) return { kind: 'open' };
       // The rule in working time ("within 60 min"), however long a maintenance paused it; minutes,

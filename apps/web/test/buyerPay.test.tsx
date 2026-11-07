@@ -55,7 +55,8 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     payBy: null,
     paidAt: null,
     confirmBy: null,
-    buyerDisputeFrom: null,
+    disputeOpensAt: null,
+    disputeWaitMin: 90,
     finalAlertAt: null,
     finalAlertSeenAt: null,
     settleBy: null,
@@ -740,20 +741,20 @@ describe('review minors 1, 5 and 7', () => {
     expect(document.querySelector('[data-grown]')).toBeNull();
   });
 
-  it("in paid, Open dispute waits 60 minutes from marking paid (owner 2026-11-06 Q10; too-early before it), not for confirmBy", () => {
-    // 59:59 after marking paid: still waiting, 1 min left.
-    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-(59 * 60 + 59) / 60), buyerDisputeFrom: at(1 / 60), confirmBy: at(60) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+  it("in paid, Open dispute waits for the server's disputeOpensAt (owner 2026-11-07 F9: 90 minutes on an instant type; too-early before it), not for confirmBy", () => {
+    // 89:59 after marking paid: still waiting, 1 min left.
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-(89 * 60 + 59) / 60), disputeOpensAt: at(1 / 60), confirmBy: at(30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(maybe('Open dispute')).toBeUndefined();
     expect(text()).toContain('Dispute opens in 1 min');
     r.unmount();
-    // 60:00 after marking paid, with the seller's window still open: the link is there.
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-60), buyerDisputeFrom: at(0), confirmBy: at(60) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    // 90:00 after marking paid, with the seller's window still open: the link is there.
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-90), disputeOpensAt: at(0), confirmBy: at(30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(maybe('Open dispute')).toBeDefined();
   });
 
-  it("in paid, the wait follows the server's buyerDisputeFrom, which maintenance moved later (owner 2026-11-06 Q10)", () => {
-    // Marked paid 70 min ago, but a 40-minute maintenance paused the wait: 30 min left.
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-70), buyerDisputeFrom: at(30), confirmBy: at(90) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+  it("in paid, the wait follows the server's disputeOpensAt, which maintenance moved later (owner 2026-11-06 Q10)", () => {
+    // Marked paid 100 min ago, but a 40-minute maintenance paused the 90-minute wait: 30 min left.
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-100), disputeOpensAt: at(30), confirmBy: at(60) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(maybe('Open dispute')).toBeUndefined();
     expect(text()).toContain('Dispute opens in 30 min');
   });

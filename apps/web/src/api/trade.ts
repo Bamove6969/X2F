@@ -101,7 +101,7 @@ export interface TradeView {
    * In `paid`, when the buyer may open a dispute (owner 2026-11-06 Q10: 60 minutes after marking
    * paid, later by any maintenance during the wait); the server's own time, null until marked paid.
    */
-  buyerDisputeFrom: string | null;
+  disputeOpensAt: string | null;
   finalAlertAt: string | null;
   /** When the buyer's device posted the final-alert seen-receipt (Task 25's FinalAlert); sent to the buyer only, null for the seller. */
   finalAlertSeenAt: string | null;
