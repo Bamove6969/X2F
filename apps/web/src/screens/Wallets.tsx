@@ -352,7 +352,8 @@ function WalletsScreen() {
       const action = await walletsAction(drafts.map((d) => d.address));
       const result: WalletView[] | Held = await withConfirm(action, post, prove);
       // Plan 2 Task 17 review round 2 N-I4: added from a login with one way of proving it's you
-      // (PGP alone included), the wallets wait out the 24-hour hold (202 held): nothing is listed yet.
+      // (a username and password; a PGP key login is strong, owner Q81), the wallets wait 24 hours
+      // (202): nothing is listed yet.
       if (isHeld(result)) {
         setBatch([]);
         setLabel('');

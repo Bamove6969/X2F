@@ -2,8 +2,8 @@
  * The 24 h wait of a username + password session's changes (hold model v3, owner 1-2 Nov 2026; see
  * hold.ts for the whole model).
  *
- * - **Staging:** a change by a session whose login waits (`waits(strength)`: a password alone, and
- *   PGP alone until the owner says otherwise) to its login methods, payout wallets, login name,
+ * - **Staging:** a change by a session whose login waits (`waits(strength)`: a username and password
+ *   with nothing stronger; a PGP key login is strong, owner 6 Nov 2026 Q81) to its login methods, payout wallets, login name,
  *   security settings, recovery code or a team member's permissions is not applied: `gateChange`
  *   (hold.ts) stores it here as a draft of that session (202 `{ status: 'staged', changeId }`). The
  *   session reviews its drafts (`GET /v1/account/hold`) and submits them together.
@@ -12,7 +12,7 @@
  *   this submission (one date for the banner). Nobody is logged out and trading goes on. The owner
  *   is told at once on every channel: alert `hold-changes-submitted` `{ count, changes,
  *   takesEffectAt }` (the list of changes) and a push to every device (Jabber later).
- * - **Cancelling:** any logged-in session of the account owner, a password-only one included
+ * - **Cancelling:** any logged-in session of the account owner, a username-and-password one included
  *   (`DELETE /v1/account/hold/changes`, or one by id; alert `hold-changes-cancelled`).
  * - **Discarding early:** a login with a passkey, security key or PGP key the account held when the
  *   changes were submitted (`methods_before`) discards them in the login's transaction (alert

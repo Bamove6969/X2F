@@ -396,8 +396,8 @@ export interface AuthApi {
   /**
    * The first wallet during sign-up needs no token; every later one does (P2-C2): use `withConfirm`.
    * Confirmed with PGP, a passkey or a security key it is usable at once; with a password (and any
-   * TOTP code) `usableFrom` is 24 hours later. From a login that waits (Task 17; PGP alone
-   * included, lead decision 2026-10-30) nothing is added yet: 202 `Held` (the 24-hour hold).
+   * TOTP code) `usableFrom` is 24 hours later. From a login that waits (a username and
+   * password; a PGP key login is strong, owner 6 Nov 2026 Q81) nothing is added yet: 202 (staged).
    */
   addWallet(b: WalletDraft & Token): Promise<Wallet | Held>;
   /**

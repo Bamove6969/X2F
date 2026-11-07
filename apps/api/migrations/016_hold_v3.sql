@@ -9,8 +9,8 @@ alter table account_holds drop constraint account_holds_reason_check;
 alter table account_holds add constraint account_holds_reason_check
   check (reason in ('weak-change', 'weak-new-device', 'weak-backup-login', 'recovery-code'));
 
--- 2. Changes made by a session whose login waits (a username + password alone; PGP alone too until
--- the owner says otherwise): staged as drafts (`submitted_at` null) for the session to review, then
+-- 2. Changes made by a session whose login waits (a username and password, nothing stronger; a PGP
+-- key login is strong since the owner's Q81, part 5 below): staged as drafts (`submitted_at` null) for the session to review, then
 -- submitted together, then applied 24 h after the account's latest submission (`due_at`, one date
 -- for every waiting change). Stored as the change's own table stores it (a password hash, a sealed
 -- secret, a public key, code hashes): never a plain secret. A login with a passkey, security key or
@@ -76,3 +76,15 @@ create table recovery_code_reveals (
   code_enc bytea not null,
   created_at timestamptz not null
 );
+
+-- 5. Owner 6 Nov 2026 (Q81): "PGP will include a username and PGP, so it will be considered strong.
+-- Therefore, it won't have a hold time." A PGP key login is strong (strength.ts `STRONG_COMBOS`):
+-- the sessions and login approvals stored as 'pgp-single' (a PGP key alone, model of 10-29) become
+-- 'strong', and 'pgp-single' is no longer a stored value, so every `strength = 'strong'` check and
+-- `waits` agree.
+update sessions set strength = 'strong' where strength = 'pgp-single';
+alter table sessions drop constraint sessions_strength_check;
+alter table sessions add constraint sessions_strength_check check (strength in ('strong', 'weak-single'));
+update login_approvals set strength = 'strong' where strength = 'pgp-single';
+alter table login_approvals drop constraint login_approvals_strength_check;
+alter table login_approvals add constraint login_approvals_strength_check check (strength in ('strong', 'weak-single'));

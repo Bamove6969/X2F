@@ -13,7 +13,7 @@
  *   24-hour hold (403 `recovery-hold` `{ holdUntil }`, before the confirm token is spent). Owner
  *   1 Nov 2026 (landing review I1): an invite needs a strong session, at any time (403
  *   `weak-session`, before the confirm token is spent); a removal does not. Hold model v3 (owner
- *   2 Nov 2026): a role change by a password-only session is staged like the other changes of
+ *   2 Nov 2026): a role change by a username-and-password session is staged like the other changes of
  *   such a session (202 `{ status: 'staged', changeId }`, applied 24 h after it is submitted;
  *   hold.ts); inside the sign-up window it is still refused (403 `weak-session`).
  * - `GET /v1/team/audit?from&to&member` → the audit log, newest first.

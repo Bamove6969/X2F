@@ -195,7 +195,7 @@ async function withTx<T>(deps: Pick<Deps, 'db'>, fn: (db: pg.PoolClient) => Prom
  *
  * Hold model v3 (owner 1-2 Nov 2026; hold.ts), all in this one transaction with the account locked:
  * - a login that proved a passkey, security key or PGP key discards the changes waiting from a
- *   password-only session that were submitted while that method was held (holdChanges.ts);
+ *   username-and-password session that were submitted while that method was held (holdChanges.ts);
  * - an account hold (a recovery-code login's) whose time is up settles first; while one runs, only
  *   a login whose passkey, security key or PGP key the account held when it started gets in (no
  *   approval: the approving devices may be the thief's; never refused by the device limit, the
@@ -264,7 +264,7 @@ export async function traderLogin(
     const row = acct.rows[0];
     if (!row || row.kind !== 'trader') return session();
     // Hold model v3: the owner's pre-existing passkey, security key or PGP key discards the changes
-    // waiting from a password-only session, whatever happens to this login next.
+    // waiting from a username-and-password session, whatever happens to this login next.
     discarded = await discardChangesIfOwner(db, a.accountId, a.proven, now);
     // A hold whose time is up is settled here (its pending change applies) before anything is counted.
     const hold = await holdInTx(db, settle, a.accountId, now);

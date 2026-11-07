@@ -145,8 +145,8 @@ export interface Caller {
  *
  * Hold model v3 (owner 2 Nov 2026): during an account hold (a recovery-code login) every session of
  * the account is logged out, so no owner session is left to ask; the 1 Nov wish that a removal
- * asked for during a hold waits for its end has no case left. A role change by a password-only
- * session is staged and waits 24 h (routes/team.ts, `gateChange`); a removal by one still applies
+ * asked for during a hold waits for its end has no case left. A role change by a username-and-
+ * password session is staged and waits 24 h (routes/team.ts, `gateChange`); a removal by one still applies
  * at once (it only takes access away; OPEN QUESTION to the owner, see the v3 report).
  */
 async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { strong: boolean }): Promise<void> {
@@ -263,7 +263,7 @@ export async function setRoles(
   return toView(row);
 }
 
-/** The roles write (the route's, or a waiting one applied 24 h after a password-only session submitted it). Null for a member who is not live. */
+/** The roles write (the route's, or a waiting one applied 24 h after a username-and-password session submitted it). Null for a member who is not live. */
 async function updateRoles(c: Queryable, accountId: string, memberId: string, roles: TeamRole[], now: Date): Promise<{ row: MemberRow; sessions: string[] } | null> {
   const { rows } = await c.query<MemberRow>(
     `update team_members set roles = $3
@@ -278,7 +278,7 @@ async function updateRoles(c: Queryable, accountId: string, memberId: string, ro
 }
 
 /**
- * Hold model v3: a member's roles waiting from a password-only session, applied when their 24 h
+ * Hold model v3: a member's roles waiting from a username-and-password session, applied when their 24 h
  * are up (hold.ts `applyChange`, account locked). Throws 404 `not-found` (the change is dropped)
  * when the member is no longer live. Returns the member's sessions whose live streams must close.
  */

@@ -10,7 +10,7 @@
  *   exactly the drafts this session reviewed (409 `changes-changed` otherwise); pushed to every
  *   device of the account.
  * - `DELETE /v1/account/hold/changes` and `DELETE /v1/account/hold/changes/:id` → 204: any session
- *   of the account owner, a password-only one included, cancels the waiting changes (or one of
+ *   of the account owner, a username-and-password one included, cancels the waiting changes (or one of
  *   them, or one of its own drafts); 404 for nothing to cancel by that id.
  * Every write re-checks its session under the account lock (`requireLiveSessionInTx`,
  * `LIVE_SESSION_ROUTES`). Team members get 403 `owner-only` (`requireSession`'s default).

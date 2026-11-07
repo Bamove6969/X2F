@@ -103,8 +103,8 @@ export interface NewSession {
   firstSession: boolean;
   holdUntil?: Date;
   /**
-   * Task 17: how strong the login was (`loginStrength`). Default: a passkey or security key alone
-   * is strong; anything else single waits (`pgp-single` for a PGP key, else `weak-single`). A
+   * Task 17: how strong the login was (`loginStrength`). Default: a passkey, security key or (Q81,
+   * owner 6 Nov 2026) PGP key alone is strong; anything else single waits (`weak-single`). A
    * password with its TOTP code passes 'strong'.
    */
   strength?: LoginStrength;
@@ -127,7 +127,7 @@ export async function openSession(
   a: NewSession,
 ): Promise<{ sessionId: string; after: () => void }> {
   const strength: LoginStrength =
-    a.strength ?? (a.method === 'passkey' || a.method === 'security-key' ? 'strong' : a.method === 'pgp' ? 'pgp-single' : 'weak-single');
+    a.strength ?? (a.method === 'passkey' || a.method === 'security-key' || a.method === 'pgp' ? 'strong' : 'weak-single');
   const now = deps.clock();
   const token = randomBytes(32).toString('base64url');
   const label = cleanLabel(a.deviceLabel);

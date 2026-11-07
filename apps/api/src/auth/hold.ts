@@ -2,9 +2,9 @@
  * The 24-hour hold, model v3 (owner 1-2 Nov 2026; lead brief 2026-11-02; it replaces Task 17's
  * model of 2026-10-29c for everything but the recovery-code login). Two separate things:
  *
- * 1. **A username + password session's changes wait 24 h** (holdChanges.ts): a session whose login
- *    waits (`waits(strength)`: a password alone; PGP alone too until the owner says otherwise)
- *    changing its login methods, payout wallets, login name, security settings, recovery code or a
+ * 1. **A username-and-password session's changes wait 24 h** (holdChanges.ts): a session whose
+ *    login waits (`waits(strength)`: a username and password with nothing stronger; a PGP key login
+ *    is strong, owner 6 Nov 2026 Q81, strength.ts) changing its login methods, payout wallets, login name, security settings, recovery code or a
  *    team member's permissions (`SECURITY_CHANGE_ROUTES`, `PATCH /v1/team/members/:id`) gets each
  *    change staged (`gateChange`, 202 `{ status: 'staged', changeId }`), reviews them and submits
  *    them; they apply 24 h after the latest submission. Nobody is logged out, trades and offers go
@@ -100,7 +100,7 @@ export type PendingChange =
   | { kind: 'logout-timer'; idleHours: IdleHours }
   /** Review round 2 N-I4 (lead decision 2026-10-30): payout wallets added by a session whose login waits; `method` is the confirm's. */
   | { kind: 'wallets'; items: PendingWallet[]; method: ConfirmMethod | null }
-  /** Model v3: a team member's permissions changed by a password-only session. */
+  /** Model v3: a team member's permissions changed by a username-and-password session. */
   | { kind: 'team-roles'; memberId: string; roles: TeamRole[] };
 
 export interface Hold {
@@ -493,7 +493,8 @@ export const SECURITY_CHANGE_ROUTES: readonly string[] = [
   'PUT /v1/account/security/one-device',
   'PUT /v1/account/security/logout-timer',
   // Review round 2 N-I4 (lead decision 2026-10-30): a payout wallet added by a session whose login
-  // waits (PGP alone included) waits out the hold like the rest, whatever the confirm method.
+  // waits (a username and password; a PGP key login is strong since Q81) is staged like the rest,
+  // whatever the confirm method.
   'POST /v1/wallets',
 ];
 

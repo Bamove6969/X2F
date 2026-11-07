@@ -141,7 +141,7 @@ export function ConfirmSheet({
       'That code did not work. It may have expired: get a new message and try again.',
     );
 
-  // With an authenticator app the server needs its code with the password (a password alone is a
+  // With an authenticator app the server needs its code with the password (the password without it is a
   // miss and counts as one), so Confirm waits for both and always sends the code.
   const passwordReady = password !== '' && (!hasTotp || totp.trim() !== '');
 
