@@ -39,6 +39,7 @@ function secured(): Trade {
       amountAtomic: AMOUNT,
       lockedRate: { currency: 'USD', centsPerXmr: 33000n },
       confirmWindowMin: 120,
+      buyerDisputeWaitMin: 90,
       minFiatCents: 10_000n,
       maxFiatCents: 50_000n,
     },

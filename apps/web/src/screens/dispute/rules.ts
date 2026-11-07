@@ -46,13 +46,25 @@ const ms = (iso: string | null): number | null => (iso === null ? null : Date.pa
  * Whether this side may open a dispute now, mirroring the state machine's `open-dispute` rules
  * (the API decides; this only keeps the screen from sending what would be refused):
  * - securing or secured: either side;
- * - paid: the seller at once, the buyer from the server's `disputeOpensAt`: 60 minutes after
- *   marking paid (TIMERS.buyerDisputeAfterPaidMin; owner 2026-11-06 Q10, was 30), later by any
- *   maintenance during the wait; no longer the end of the seller's confirm window;
+ * - paid: the seller at once, the buyer from the server's `disputeOpensAt`: the trade's own wait
+ *   after marking paid (`disputeWaitMin`, per payment type; owner 2026-11-07 F9), later by any
+ *   maintenance during the wait (owner 2026-11-06 Q10); no longer the end of the seller's confirm window;
  * - settling: either side once the signing window has passed;
  * - refunded: the buyer, until 48 hours after the refund (owner 2026-10-29; was 90 days).
  * `wait` carries the explanation shown instead of sending anything.
  */
+/**
+ * A buyer's dispute wait in words, as the owner says them (2026-11-07 F9): "90 minutes", "3 hours",
+ * "24 hours", "2 days", "3 days", "4 days". Whole days from 2 days, whole hours from 2 hours,
+ * otherwise minutes.
+ */
+export function waitInWords(min: number): string {
+  const DAY = 24 * 60;
+  if (min >= 2 * DAY && min % DAY === 0) return `${min / DAY} days`;
+  if (min >= 120 && min % 60 === 0) return `${min / 60} hours`;
+  return min === 1 ? '1 minute' : `${min} minutes`;
+}
+
 export type Entry = { kind: 'open' } | { kind: 'wait'; text: string; until: Date } | { kind: 'opened' } | { kind: 'none' };
 
 export function disputeEntry(t: DisputeTrade, now: Date): Entry {
@@ -64,13 +76,13 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
       return { kind: 'open' };
     case 'paid': {
       if (t.role === 'seller') return { kind: 'open' };
-      // The server's time, which maintenance moves (owner 2026-11-06 Q10), never paidAt + 60 here.
+      // The server's time, which maintenance moves (owner 2026-11-06 Q10), never paidAt + the wait here.
       const by = ms(t.disputeOpensAt);
       if (ms(t.paidAt) === null || by === null) return { kind: 'none' };
       if (n >= by) return { kind: 'open' };
-      // The rule in working time ("within 60 min"), however long a maintenance paused it; minutes,
-      // not "1 h", as the owner says it. DESIGN: wording (number only; the sentence is unchanged).
-      const window = `${TIMERS.buyerDisputeAfterPaidMin} min`;
+      // The rule in working time ("within 90 minutes"), however long a maintenance paused it.
+      // DESIGN: wording (the wait in words only; the sentence is unchanged).
+      const window = waitInWords(t.disputeWaitMin);
       return {
         kind: 'wait',
         until: new Date(by),

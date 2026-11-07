@@ -62,6 +62,7 @@ export const PAY_SECURING: TradeView = {
   paidAt: null,
   confirmBy: null,
   disputeOpensAt: null,
+  disputeWaitMin: 90,
   finalAlertAt: null,
   finalAlertSeenAt: null,
   settleBy: null,

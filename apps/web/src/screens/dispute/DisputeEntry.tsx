@@ -1,6 +1,6 @@
 // The way into a dispute from the trade room (Tasks 23, 24 and Task 27's RefundedSlot place it):
 // the BuyerPay board's rose "Open dispute", the board's explanation while the buyer must still wait
-// (60 minutes from marking paid, paused by maintenance, owner 2026-11-06 Q10), and the buyer's "Open a dispute" on a
+// (the trade's wait from marking paid, per payment type, owner 2026-11-07 F9; paused by maintenance, Q10), and the buyer's "Open a dispute" on a
 // refunded trade within 48 hours (owner 2026-10-29; was 90 days). Nothing while the state machine would refuse a dispute.
 import { Button } from '../../ui/Button.js';
 import type { DisputeTrade } from './api.js';
