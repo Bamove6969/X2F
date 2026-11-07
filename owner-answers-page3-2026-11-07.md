@@ -225,3 +225,109 @@ Please refer to Design for the best wording here.
 What colour should a link turn when the pointer is over it?
 
 Answer: The dark ink colour
+
+## G41
+What colour should "XMR" be next to an amount?
+
+Answer: The true colour of Monero. Look at getmonero.org and you can see the true colour of Monero. Make it that colour unless design decides to change it.
+
+## G42
+Should the active Buy/Sell tab have a 2-pixel dark border?
+
+Answer: I'm going to say yes, but I want it brought to design for review
+
+## G43
+Keep the new disabled-button and sheet-title look everywhere in the app?
+
+Answer: I'm not familiar with this. I would recommend posing this question to Designer, unless she needs any input from me on it as well.
+
+## G44
+Some board items aren't built on the offers screens: market price card, per-method icons, section counts, Site news link, Deposit row, empty-search heading. Build them?
+
+Answer: Design decides the order, the aesthetic, the look, and everything about it, so just get her opinion and then build it
+
+## G45
+Should design confirm two new looks: the blue "information" note, and rounder corners on icon buttons?
+
+Answer: Absolutely, if it has to do with aesthetics or visual appeal, then it lands at designer's door
+
+## G46
+The Devices screen needs wording for five things, such as the empty team card and "2 of 1 devices". Who writes it?
+
+Answer: Since I don't even know what the five things are, I would recommend these are things that you bring to design. And if she needs my input, and ask her, do you need input on anything? Then bring it back to me with what she needs from me, and I will give it, and then this is for her to finish.
+
+## G47
+Is it fine that a folding phone opened flat has no Back button, as on the board?
+
+Answer: I guess it depends on the different folding phones. I'm only familiar with the Pixel Fold phone and I know mine does not have a back button, I just swipe from the left. But we need to do our research on the iPhone Duo and all the Samsung fold phones and the other fold phones and how they do things. And it needs to detect the type of fold phone it's on. And she needs to design the pages for those devices if they are different.
+
+## G48
+Should the fold screen's payment label change to the 6 Nov board's "Pay now"?
+
+Answer: Wait until the fold boards are final
+
+## G49
+What are X2F's real Matrix and Telegram addresses?
+
+Answer: We need to work on this right before the design is nearing completion, so within the next few days we will get these set up
+
+## G50
+How long does the buyer get to redeem a gift card code?
+
+Answer: Once the provider of the gift card has handed over the details, the person who has escrowed the Monero has 45 minutes to check the validity of the gift card. To ensure the gift card provider doesn't get scammed, they should provide video proof. We should allow for video proof, not just photo proof. This video proof should show them actually logging into the gift card and showing the details right before sending the proof, and then uploading the video. That way, if they get screwed by the other person, the moderator can help them.
+
+## G51
+How old may a gift card be?
+
+Answer: Within 30 days
+
+## G52
+Partial balances on gift cards?
+
+Answer: The gift card must represent the full value written on the gift card. If it is a gift card that shows a between amount, like a Visa gift card that says 200 to 500, then that's different. In that case, it will certainly require video proof from the sender of the gift card and the due diligence of checking the gift card from the receiver of the gift card. But that is the only situation in which gift cards are allowed to have the partial value is when they have a range written on the gift card. Turn to designer to find out how to word all that.
+
+## G53
+Which gift card brands are allowed?
+
+Answer: I'd like to be shown the entire list and then be given the opportunity to either add some, take some away, or approve it. So bring me the list.
+
+## G54
+Does the "XMR traded to date" line include imported volume from other sites?
+
+Answer: No, X2F trades only; imports stay on their own lines
+
+## G55
+Is the nudge sound right?
+
+Answer: Sounds good
+
+## G56
+After a buyer cancels, should the refund screen offer a dispute card?
+
+Answer: I think instead we should have a reminder to them that before they pay, they need to realise that this is likely a final decision. The funds will be transferred to the trader, so make sure you are absolutely certain that this is your decision. And that way I don't think we need to ask them if they sent the money after they cancel, because why would they send the money then cancel, especially if we warn them ahead of time that this is likely a final outcome and it will be resulting in them receiving whatever Monero. Please turn to design for wording on this.
+
+## G57
+Is logging out your devices a sensitive action, needing a strong login?
+
+Answer: Only the lead agent will have the ability to kick out team members unless we decide to have a granular ability that can be granted to a team member that gives them the ability to kick out other team members. Perhaps you have a senior team member that you trust more than anything. I'm not saying that we are going to do that, but that is a possibility. So at this point, only a team leader can kick out other team members.
+
+If a team leader logs in and decides to kick out team members and they only have a username and password, it will kick out the team members immediately because we cannot assume that it could wait 24 hours because it could be disastrous. So yes, it will kick them out right away. If they're trying to delete them, it will not delete them right away, it'll kick them out right away, but the deletion will turn into effect after 24 hours.
+
+Since they're kicked out, we might as well say the changes are quasi in effect, even though they're not officially in effect yet, because since they can't log in, they can't really see. So the changes are technically in a 24-hour hold, but since the team members have been kicked out, then it's just a countdown until they come into effect.
+
+Now, if the person just goes in to make changes to the team members and is not trying to kick them out or delete them, those changes will not go into effect for 24 hours. That will be a holding period that they will have to wait through before any of those changes are felt. And that again is if they just have a username and password.
+
+## G58
+When a strong login ends a hold early, do queued changes get cancelled or approved?
+
+Answer: Since I explained before that I want changes to appear on the screen as a visual where it shows on the left what they were before you made the changes and the effect they are going to have after you made the changes. So when a team member made the changes who only has a username and password but has been granted the ability to make some minor changes, so that triggered a 24-hour hold before the changes came into effect. And then the team lead logged in who has the strong login abilities. I want it to somehow be on the screen or notify them that there are changes that have been applied or requested, and it shows them the same type of format. And it shows them the countdown to when those changes are going to take into effect, 23 hours and 12 minutes. And they can choose to just click approve now or cancel all or make changes, and they can make changes.
+
+## G59
+If you lose every PGP key while logged out, how do you get back in?
+
+Answer: Are you asking me this question as the owner? If you're asking me as the owner, I'll have to use one of my two backup security keys to get in. If you're asking this question for someone else, then you're going to have to re-ask the question and make it clear it was for somebody else.
+
+## G60
+If a moderator loses their only security key, how do they recover?
+
+Answer: If they don't have their recovery code, they have to reach out to the owner. The owner will have to vet them, and based on the owner's decision, he will be able to help them log back in by resetting their security parameters. He will probably just give them a username and a password to log in with, and then they can set up the additional security methods.

@@ -63,3 +63,16 @@ Explanations asked for: Q3 ranges, Q19 watcher (done), Q26, Q29 and Q33 (My offe
 - Incident ID: 8 to 9 characters, same as the dispute's, shown to both people at the top of the trade and to the moderator. A moderator accepting a dispute is logged at once: who and when, and when the trade was opened (G37).
 ## design
 - Ban notice wording from G39: "We're sorry, but your account has been banned. If you feel this has been done in error, please reach out to a moderator at [Matrix] [Telegram]..." Link hover: dark ink (G40). No-date warnings (G16). Hold before-and-after view (G29). Cancel wording (G2).
+
+# Owner decisions, third page part 2, 7 Nov (G41-G60)
+## claude2
+- Gift cards: the person holding the escrow has 45 minutes to check a card once its details are handed over. Proof can be video as well as photo: the sender should show logging into the card right before sending, and upload the video (G50). Cards bought within the last 30 days (G51). The card must carry its full written value; only a range card, like a Visa 200 to 500, may be partial, and that requires video proof (G52). Brand list goes to the owner first (G53).
+- Refund after a buyer cancels: no dispute card. Instead warn before they pay/cancel that this is likely final (G56). Design words it.
+- Team and holds: only a team lead can kick out team members; a username-and-password lead's kick takes effect at once; a delete kicks at once, deletion final after 24 h; other team changes wait 24 h (G57). When a strong lead logs in during a wait, show the changes in the before and after view with the countdown, and offer Approve now, Cancel all, or Make changes (G58). This replaces "discard".
+## claude3
+- "XMR traded to date" is X2F trades only; imports on their own lines (G54).
+- Staff who lose their key and recovery code contact the owner, who vets them and resets them with a username and password, then they set up security again (G60). Build the owner's reset, tapped.
+- Owner recovery: the owner uses a backup security key if all PGP keys are lost (G59). Lead is confirming whether one key or both.
+## design
+- XMR colour: Monero's true colour from getmonero.org unless design changes it (G41). Active Buy/Sell tab border: design reviews (G42). Disabled-button and sheet-title look, board items, blue note, icon corners: design's call (G43, G44, G45). Devices wording: design writes; tell the lead if the owner's input is needed (G46). Folding phones: research Pixel Fold, Samsung folds and others, and whether Back differs; design for them if different (G47). Fold label waits for final boards (G48). Gift card wording, warning before the final decision (G52, G56). Before-and-after approval view with countdown and Approve now, Cancel all, Make changes (G58).
+- Matrix and Telegram addresses: set up in the next few days, near the end of design (G49).
