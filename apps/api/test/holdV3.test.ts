@@ -530,6 +530,49 @@ describe('a recovery-code login', () => {
     expect(errorOf(await partner.browser.post(`/v1/trades/${unfunded.code}/events`, { type: 'fund-started' }))).toBe('counterparty-unavailable');
   });
 
+  it('lead review item 4: both parties held, the trade resumes when the second hold ends, whichever ends first', async () => {
+    for (const firstEnds of ['seller', 'buyer'] as const) {
+      const seller = await ownerWithCode();
+      const buyer = await ownerWithCode();
+      const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+      const s = await driveTo(deps, trade, 'secured');
+      expect((await backupLogin(new Browser(app), seller.name, seller.code)).statusCode).toBe(200);
+      expect((await backupLogin(new Browser(app), buyer.name, buyer.code)).statusCode).toBe(200);
+      const pausedAt = async () => (await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code])).rows[0]!.p;
+      expect(await pausedAt()).not.toBeNull();
+      const [a, b] = firstEnds === 'seller' ? [seller, buyer] : [buyer, seller];
+      expect(await endHoldByModerator(deps, a.id, { staffId: null })).toBe(true);
+      await syncHeldTradesJob(noPublish).run(deps.db, now);
+      expect(await pausedAt(), `${firstEnds} first: still held by the other`).not.toBeNull();
+      expect(await endHoldByModerator(deps, b.id, { staffId: null })).toBe(true);
+      await syncHeldTradesJob(noPublish).run(deps.db, now);
+      expect(await pausedAt(), `${firstEnds} first: resumed`).toBeNull();
+      expect((await deps.db.query('select 1 from held_trades where code = $1', [s.code])).rowCount).toBe(0);
+    }
+  });
+
+  it('lead review item 4: a hold ending during maintenance resumes its trade once maintenance is over', async () => {
+    const t = await ownerWithCode();
+    const partner = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: partner.id, buyerId: t.id, poster: 'seller' });
+    const s = await driveTo(deps, trade, 'secured');
+    expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
+    await deps.db.query('update site_flags set maintenance_since = $1', [now]);
+    try {
+      expect(await endHoldByModerator(deps, t.id, { staffId: null })).toBe(true);
+      await syncHeldTradesJob(noPublish).run(deps.db, now);
+      const row = await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code]);
+      expect(row.rows[0]!.p).not.toBeNull();
+      expect((await deps.db.query('select 1 from held_trades where code = $1', [s.code])).rowCount).toBe(1);
+    } finally {
+      await deps.db.query('update site_flags set maintenance_since = null');
+    }
+    await syncHeldTradesJob(noPublish).run(deps.db, now);
+    const after = await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code]);
+    expect(after.rows[0]!.p).toBeNull();
+    expect((await deps.db.query('select 1 from held_trades where code = $1', [s.code])).rowCount).toBe(0);
+  });
+
   it("the held account's own recovery session cannot move its held trades either", async () => {
     const t = await ownerWithCode();
     const partner = await trader();

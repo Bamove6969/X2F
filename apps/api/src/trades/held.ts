@@ -13,8 +13,9 @@
  *   else: the partner is told "<name>'s account has a temporary problem", never hold, security or
  *   vendor. Chat and opening a dispute stay open (the moderator decides a paused trade).
  * - When the hold ends (by time, the owner's pre-existing method or a moderator) the rows are
- *   released in that transaction (`releaseHeldTrades`); the sync then resumes each trade it paused
- *   (unless the site is in maintenance, whose own loop resumes it) and deletes the rows.
+ *   released in that transaction (`releaseHeldTrades`); the sync then deletes them, and when a
+ *   trade's last row goes it resumes the trade if it is paused (only holds and maintenance pause a
+ *   trade). During maintenance a released row waits; it is decided once maintenance is over.
  *
  * - A `cancel` row's trade gets the machine's system `system-cancel` (the same sync, after the
  *   commit): the trade closes as cancelled. Should the machine refuse it (coins seen or "Fund
@@ -98,14 +99,22 @@ export async function syncHeldTrades(deps: Pick<Deps, 'db' | 'clock'> & { publis
       }
       continue;
     }
-    // Released: resume what this hold paused, unless another open hold (the other party's) still holds it.
+    // Released (lead hold v3 review item 4: no trade may stay paused for good). Only holds and
+    // maintenance pause a trade, so the resume is decided per trade when its last open row goes:
+    // while another account's hold still holds it this row just goes; during maintenance the row
+    // stays and is decided once maintenance is over; else a paused open trade is resumed, whichever
+    // hold paused it (both parties held, or a pause the machine refused because the trade already was).
     const other = await deps.db.query('select 1 from held_trades where code = $1 and account_id <> $2 and released_at is null', [r.code, r.account_id]);
-    if (r.paused === 'paused' && other.rows.length === 0 && !maintenance) {
-      try {
-        await applyEvent(store, r.code, { type: 'resume' }, 'system');
-        n++;
-      } catch (e) {
-        if (!(e instanceof ApiError) && !(e instanceof TradeRuleError)) throw e;
+    if (other.rows.length === 0) {
+      if (maintenance) continue;
+      const t = await deps.db.query('select 1 from trades where code = $1 and paused_at is not null and closed_at is null', [r.code]);
+      if (t.rows.length > 0) {
+        try {
+          await applyEvent(store, r.code, { type: 'resume' }, 'system');
+          n++;
+        } catch (e) {
+          if (!(e instanceof ApiError) && !(e instanceof TradeRuleError)) throw e;
+        }
       }
     }
     await deps.db.query('delete from held_trades where code = $1 and account_id = $2 and released_at is not null', [r.code, r.account_id]);
