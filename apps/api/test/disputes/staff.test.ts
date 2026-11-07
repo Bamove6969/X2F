@@ -6,9 +6,10 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { generateIdentity, open, ReplayGuard, seal, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { open, ReplayGuard, seal, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { channelFor } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
+import sodium from 'libsodium-wrappers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { ModerationError, type ModChatMessage } from '../../src/disputes/moderationClient.js';
@@ -20,6 +21,21 @@ import { tradeApp } from '../helpers/tradeApp.js';
 import { driveTo, seedTrade } from '../helpers/trades.js';
 
 const START = new Date('2026-11-02T12:00:00Z');
+
+/**
+ * A chat identity for the test's stand-in moderation process, made the way chat.test.ts does (the
+ * API's tree may not name the protocol's identity maker: tools/separation-check.ts).
+ */
+async function keyPair(): Promise<Identity> {
+  await sodium.ready;
+  const kp = sodium.crypto_sign_keypair();
+  return {
+    signPublic: sodium.to_hex(kp.publicKey),
+    boxPublic: sodium.to_hex(sodium.crypto_sign_ed25519_pk_to_curve25519(kp.publicKey)),
+    signSecret: kp.privateKey,
+    boxSecret: sodium.crypto_sign_ed25519_sk_to_curve25519(kp.privateKey),
+  };
+}
 const MIN = 60_000;
 const H = 60 * MIN;
 
@@ -124,7 +140,7 @@ async function disputed(at = START) {
   const opened = await buyer.browser.post(`/v1/trades/${t.code}/chat`, {});
   expect(opened.statusCode, opened.body).toBe(200);
   const chat = (opened.json() as { chat: string }).chat;
-  const ids = { buyer: await generateIdentity(), seller: await generateIdentity(), mod: await generateIdentity() };
+  const ids = { buyer: await keyPair(), seller: await keyPair(), mod: await keyPair() };
   const participants = Object.fromEntries((['buyer', 'seller', 'mod'] as const).map((r) => [r, { signPublic: ids[r].signPublic, boxPublic: ids[r].boxPublic }])) as Participants;
   moderation.chats.set(t.code, { chat, channel: await channelFor(chat, 'chat'), ids, participants, seq: 0 });
   return { seller, buyer, code: t.code, chat };
@@ -428,7 +444,8 @@ describe('the freeze', () => {
   it('freezes a party who ignored the dispute: no new trades, an open escrow trade still finishes, no end time, lifted only by a moderator', async () => {
     const mod = await staff('mod');
     const { code, seller } = await disputed();
-    await mod.b.post(url(code, '/take'), {});
+    await mod.fresh();
+    expect((await mod.b.post(url(code, '/take'), {})).statusCode).toBe(200);
     // Another trade of the same seller, already paid: it must still release under the freeze.
     const buyer2 = await newTrader();
     const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer2.id, poster: 'seller' });
@@ -450,7 +467,7 @@ describe('the freeze', () => {
     const poster = await newTrader();
     const offer = await deps.db.query<{ id: string }>(
       `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-       values ($1, 'buy', 'zelle', 'USD', 'market', 0, 1000, 100000, 0, '', 'live', $2, $2) returning id`,
+       values ($1, 'buy', 'ZELLE', 'USD', 'market', 0, 1000, 100000, 0, '', 'live', $2, $2) returning id`,
       [poster.id, deps.clock()],
     );
     expect((await seller.browser.post('/t/login', { accountId: seller.id })).statusCode).toBe(200);
@@ -516,13 +533,18 @@ describe('helpers', () => {
 describe('Task 11 tripwires (local tree only)', () => {
   const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 
-  it('NEEDS_P5_PROOF_ENVELOPE: the unblurred proof is read through the proof package once it lands', () => {
-    // Plan 5's proof package (`proof.unblurred` sealed to the mod only: PROOF_RECIPIENTS,
-    // sealProofEnvelope) is on unlanded branches. When it lands: give apps/moderation's internal
-    // server a real `ProofSource` (open the trade's `proof.unblurred` envelope with the mod's chat
-    // identity, decrypt the unblurred copy with its key) and make the proof-request route publish
-    // to the trader who uploaded the proof instead of the side the moderator names.
-    expect(existsSync(`${ROOT}packages/proof`), 'the proof package landed: wire the ProofSource (see this test)').toBe(false);
+  it('NEEDS_P5_PROOF_ENVELOPE: the unblurred proof is read through the proof pipeline once its storage lands', async () => {
+    // @x2f/proof (sealProofEnvelope, `proof.unblurred` sealed to the mod only, decryptProof) is on
+    // main, but no API table stores a proof's ciphertext yet (Plan 5 Tasks 13-15). When one lands:
+    // give apps/moderation's internal server a real `ProofSource` (open the trade's
+    // `proof.unblurred` chat envelope with the chat's mod identity, read the ciphertext through the
+    // reader role, `decryptProof` with kind 'unblurred'), and make the proof-request route ask the
+    // trader who uploaded the proof instead of the side the moderator names.
+    const { readdirSync, readFileSync } = await import('node:fs');
+    const dir = `${ROOT}apps/api/migrations/`;
+    const sql = readdirSync(dir).map((f) => readFileSync(dir + f, 'utf8')).join('\n');
+    expect(/create table\s+\w*proof/i.test(sql), 'a proof table landed: wire the ProofSource (see this test)').toBe(false);
+    expect(existsSync(`${ROOT}packages/proof`)).toBe(true);
   });
 
 });

@@ -5,14 +5,15 @@ import type { Deps } from '../../src/app.js';
 import { SESSION_COOKIE, STAFF_SESSION_COOKIE } from '../../src/auth/sessions.js';
 import { buildStaffApi, type ModerationClient } from '../../src/staff/app.js';
 import type { PushTransport } from '../../src/push/send.js';
+import { NO_MODERATION } from '../../src/disputes/moderationClient.js';
 import { seedAccount } from './accounts.js';
 import { testApp } from './app.js';
 import { captureLogs } from './logs.js';
 
 export const STAFF_ORIGIN = 'https://staff.x2f.test';
 export const TRADER_ORIGIN = 'https://x2f.test';
-/** The moderation client stub (Task 11 builds the real one). */
-export const MODERATION_STUB: ModerationClient = { name: 'moderation' };
+/** No moderation process: every chat or proof call answers `moderation-unavailable`. */
+export const MODERATION_STUB: ModerationClient = NO_MODERATION;
 
 /** The trader API and the staff API on one database and one clock; `overrides` go to `testApp`. */
 export async function staffApps(overrides: Partial<Deps> = {}, staffOptions: { pushTransport?: PushTransport } = {}): Promise<{
