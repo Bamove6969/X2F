@@ -177,6 +177,8 @@ describe('maintenance', () => {
   it('turns the trader API to 503 maintenance except GET /v1/site; the staff API still answers; off again restores it', async () => {
     setNow(T0);
     const t = await trader();
+    // Owner G19: no default kind (an emergency is internal): turning it on without one is 400.
+    expect((await owner.send('PUT', '/staff/v1/site/maintenance', { on: true })).statusCode).toBe(400);
     const on = await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, message: 'Upgrading the database. Back by 14:00 UTC.', kind: 'planned' });
     expect(on.statusCode, on.body).toBe(200);
     expect(on.json()).toMatchObject({ maintenance: { since: T0.toISOString(), message: 'Upgrading the database. Back by 14:00 UTC.', kind: 'planned' } });
