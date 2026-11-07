@@ -3,12 +3,14 @@
 // never moves its end, and there is no fixed maximum. Extending re-proves a login method on the
 // server (a confirm token for `extend-session`), never a client flag.
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { randomBytes } from 'node:crypto';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { SESSION_CHOICE_WINDOW_MS } from '@x2f/accounts';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { insertPgpKey } from '../src/auth/pgp.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
+import { sessionAccountType } from '../src/routes/account.js';
 import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
@@ -83,7 +85,7 @@ const extendToken = (b: Browser & { sessionId: string }, accountId: string) =>
 describe('choosing the session length', () => {
   it('a new trader session lasts 2 hours until a length is chosen, and me offers the choices with none chosen', async () => {
     const { b } = await trader();
-    expect(await sessionOf(b)).toEqual({ lengthHours: null, choices: [2, 4, 6, 12], expiresAt: iso(2 * HOUR), canExtend: true, serverNow: iso(0) });
+    expect(await sessionOf(b)).toEqual({ lengthHours: null, choices: [2, 4, 8, 12], expiresAt: iso(2 * HOUR), canExtend: true, serverNow: iso(0) });
     // Using the session never moves its end.
     at(2 * HOUR - MIN);
     expect((await sessionOf(b))!.expiresAt).toBe(iso(2 * HOUR));
@@ -91,25 +93,25 @@ describe('choosing the session length', () => {
     expect((await b.get('/v1/account/me')).statusCode).toBe(401);
   });
 
-  it('the chosen length counts from the login, and using the session never moves the end', async () => {
+  it('the chosen length starts when it is chosen (owner G24), and using the session never moves the end', async () => {
     const { b } = await trader();
     at(5 * MIN);
-    const res = await setLength(b, 6);
+    const res = await setLength(b, 8);
     expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toMatchObject({ lengthHours: 6, expiresAt: iso(6 * HOUR) });
-    for (let m = 60; m < 6 * 60; m += 60) {
+    expect(res.json()).toMatchObject({ lengthHours: 8, expiresAt: iso(8 * HOUR + 5 * MIN) });
+    for (let m = 60; m < 8 * 60; m += 60) {
       at(m * MIN);
       expect((await b.get('/v1/account/me')).statusCode).toBe(200);
     }
-    at(6 * HOUR - MIN);
-    expect((await sessionOf(b))!.expiresAt).toBe(iso(6 * HOUR));
-    at(6 * HOUR);
+    at(8 * HOUR + 4 * MIN);
+    expect((await sessionOf(b))!.expiresAt).toBe(iso(8 * HOUR + 5 * MIN));
+    at(8 * HOUR + 5 * MIN);
     expect((await b.get('/v1/account/me')).statusCode).toBe(401);
   });
 
   it('refuses a length that is not one of the account type’s choices', async () => {
     const { b } = await trader();
-    for (const bad of [0, 1, 3, 8, 10, 24, 2.5, '6', null, true, [6]]) {
+    for (const bad of [0, 1, 3, 6, 10, 24, 2.5, '8', null, true, [8]]) {
       const res = await setLength(b, bad);
       expect(res.statusCode, String(bad)).toBe(400);
       expect(errorOf(res)).toBe('bad-request');
@@ -118,43 +120,63 @@ describe('choosing the session length', () => {
     expect((await sessionOf(b))!.lengthHours).toBeNull();
   });
 
-  it('once chosen, a shorter length applies now and a longer one from the next "Stay logged in"', async () => {
-    const { id, b } = await trader();
-    expect((await setLength(b, 6)).statusCode).toBe(200);
-    at(HOUR);
-    expect((await setLength(b, 2)).json()).toMatchObject({ lengthHours: 2, expiresAt: iso(2 * HOUR) });
-    // Lengthening never adds time without a login method: the end stays, the next extend uses 12.
-    expect((await setLength(b, 12)).json()).toMatchObject({ lengthHours: 12, expiresAt: iso(2 * HOUR) });
-    at(2 * HOUR - MIN);
-    const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id) });
-    expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toMatchObject({ lengthHours: 12, expiresAt: iso(14 * HOUR - MIN) });
+  it('partway through, a new length starts now (owner G24): a shorter one at once, never in the past (review M3)', async () => {
+    const { b } = await trader();
+    expect((await setLength(b, 8)).statusCode).toBe(200);
+    at(3 * HOUR);
+    expect((await setLength(b, 4)).json()).toMatchObject({ lengthHours: 4, expiresAt: iso(7 * HOUR) });
+    at(6 * HOUR);
+    expect((await setLength(b, 2)).json()).toMatchObject({ lengthHours: 2, expiresAt: iso(8 * HOUR) });
+    at(8 * HOUR - MIN);
+    expect((await b.get('/v1/account/me')).statusCode).toBe(200);
+    at(8 * HOUR);
+    expect((await b.get('/v1/account/me')).statusCode).toBe(401);
   });
 
-  it('the free first choice is open only right after the login: later, a longer length adds no time without a proof', async () => {
+  it('partway through, a length that would end later needs a login method: then it starts now (G24, G10)', async () => {
+    // A stolen cookie must not stretch a session with no proof (lead decision 6 Nov 2026, kept):
+    // the person confirms it's them, and the extend makes the new length start now.
+    const { id, b } = await trader();
+    expect((await setLength(b, 4)).statusCode).toBe(200);
+    at(3 * HOUR);
+    const longer = await setLength(b, 4);
+    expect(longer.statusCode).toBe(403);
+    expect(longer.json()).toEqual({ error: 'confirm-required', action: 'extend-session' });
+    expect(await sessionOf(b)).toMatchObject({ lengthHours: 4, expiresAt: iso(4 * HOUR) });
+    const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id), hours: 4 });
+    expect(res.json()).toMatchObject({ lengthHours: 4, expiresAt: iso(7 * HOUR) });
+  });
+
+  it('the free first choice is open only right after the login: later, a longer length needs a proof', async () => {
     // Lead decision 6 Nov 2026 (risk 1 of the sessions review): a stolen cookie must not stretch an
     // unchosen 2-hour session to 12 hours. Inside SESSION_CHOICE_WINDOW_MS the question after the
-    // login sets the end from the login; after it the length is recorded for the next extend only.
+    // login sets the end from now; after it a later end needs "Stay logged in" with a login method.
     const early = await trader();
     at(SESSION_CHOICE_WINDOW_MS - 1);
-    expect((await setLength(early.b, 12)).json()).toMatchObject({ lengthHours: 12, expiresAt: iso(12 * HOUR) });
+    expect((await setLength(early.b, 12)).json()).toMatchObject({ lengthHours: 12, expiresAt: iso(12 * HOUR + SESSION_CHOICE_WINDOW_MS - 1) });
 
     setNow(T0);
     const late = await trader();
     at(SESSION_CHOICE_WINDOW_MS);
     const res = await setLength(late.b, 12);
-    expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toMatchObject({ lengthHours: 12, expiresAt: iso(2 * HOUR) });
+    expect(res.statusCode, res.body).toBe(403);
+    expect(errorOf(res)).toBe('confirm-required');
+    expect(await sessionOf(late.b)).toMatchObject({ lengthHours: null, expiresAt: iso(2 * HOUR) });
     at(2 * HOUR);
     expect((await late.b.get('/v1/account/me')).statusCode).toBe(401);
   });
 
-  it('after the window, the length chosen still applies from the next "Stay logged in"', async () => {
-    const { id, b } = await trader();
-    at(HOUR);
-    expect((await setLength(b, 6)).json()).toMatchObject({ lengthHours: 6, expiresAt: iso(2 * HOUR) });
-    const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id) });
-    expect(res.json()).toMatchObject({ lengthHours: 6, expiresAt: iso(7 * HOUR) });
+  it("a shorter length ends the session's live streams, so none outlives the new end (review M1)", async () => {
+    const { b } = await trader();
+    expect((await setLength(b, 12)).statusCode).toBe(200);
+    const spy = vi.spyOn(app.events, 'closeSession');
+    try {
+      at(HOUR);
+      expect((await setLength(b, 2)).statusCode).toBe(200);
+      expect(spy).toHaveBeenCalledWith(expect.any(String), b.sessionId);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('changes only the calling session', async () => {
@@ -236,16 +258,16 @@ describe('"Stay logged in?": extending the session', () => {
     const { id, b } = await trader();
     expect((await setLength(b, 2)).statusCode).toBe(200);
     at(2 * HOUR - 4 * MIN);
-    const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id), hours: 6 });
+    const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id), hours: 8 });
     expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toMatchObject({ lengthHours: 6, expiresAt: iso(8 * HOUR - 4 * MIN) });
-    expect(await sessionOf(b)).toMatchObject({ lengthHours: 6, expiresAt: iso(8 * HOUR - 4 * MIN) });
+    expect(res.json()).toMatchObject({ lengthHours: 8, expiresAt: iso(10 * HOUR - 4 * MIN) });
+    expect(await sessionOf(b)).toMatchObject({ lengthHours: 8, expiresAt: iso(10 * HOUR - 4 * MIN) });
   });
 
   it('refuses hours that are not a choice, before the token is spent', async () => {
     const { id, b } = await trader();
     const token = await extendToken(b, id);
-    for (const bad of [0, 3, 24, '6', null, true, [6]]) {
+    for (const bad of [0, 3, 6, 24, '8', null, true, [8]]) {
       const res = await b.post('/v1/account/session/extend', { confirmToken: token, hours: bad });
       expect(res.statusCode, String(bad)).toBe(400);
       expect(errorOf(res)).toBe('bad-request');
@@ -253,15 +275,75 @@ describe('"Stay logged in?": extending the session', () => {
     expect((await b.post('/v1/account/session/extend', { confirmToken: token, hours: 4 })).json()).toMatchObject({ lengthHours: 4, expiresAt: iso(4 * HOUR) });
   });
 
-  it('a session whose length was never chosen extends by the shortest choice', async () => {
+  it('a session whose length was never chosen extends by the shortest choice, which becomes its length (review M4)', async () => {
     const { id, b } = await trader();
     at(HOUR);
     const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id) });
-    expect(res.json()).toMatchObject({ lengthHours: null, expiresAt: iso(3 * HOUR) });
+    expect(res.json()).toMatchObject({ lengthHours: 2, expiresAt: iso(3 * HOUR) });
+    expect(await sessionOf(b)).toMatchObject({ lengthHours: 2, expiresAt: iso(3 * HOUR) });
+  });
+
+  it('an account in a 24-hour hold can still extend its session (owner G8)', async () => {
+    const { id, b } = await trader();
+    await deps.db.query(
+      `insert into account_holds (account_id, started_at, hold_until, reason, pending_change, started_methods, started_by)
+       values ($1, $2, $3, 'weak-change', null, '{}', null)`,
+      [id, T0, new Date(T0.getTime() + DAY)],
+    );
+    at(HOUR);
+    const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id), hours: 4 });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json()).toMatchObject({ lengthHours: 4, expiresAt: iso(5 * HOUR) });
+  });
+
+  it('extending raises no alert (owner G9)', async () => {
+    const { id, b } = await trader();
+    const count = async () => Number((await deps.db.query<{ n: string }>('select count(*) as n from alerts where account_id = $1', [id])).rows[0]!.n);
+    const before = await count();
+    at(HOUR);
+    expect((await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id), hours: 4 })).statusCode).toBe(200);
+    expect(await count()).toBe(before);
+  });
+
+  it('an account with an authenticator code may still extend with its password alone (owner G10); other confirms still need the code', async () => {
+    const b = new Browser(app);
+    const name = `pt${String(++n).padStart(4, '0')}x`;
+    const reg = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
+    expect(reg.statusCode, reg.body).toBe(201);
+    const { rows } = await deps.db.query<{ account_id: string }>('select account_id from sessions order by created_at desc, id desc limit 1');
+    await deps.db.query('insert into totp (account_id, secret_enc, created_at) values ($1, $2, $3)', [rows[0]!.account_id, randomBytes(48), T0]);
+    expect((await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'set-password' } })).statusCode).toBe(401);
+    const ok = await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'extend-session' } });
+    expect(ok.statusCode, ok.body).toBe(200);
+    const res = await b.post('/v1/account/session/extend', { ...(ok.json() as { confirmToken: string }), hours: 2 });
+    expect(res.statusCode, res.body).toBe(200);
+  });
+
+  it('a session on old Terms can still prove itself to stay logged in, and only for that (review M5)', async () => {
+    const b = new Browser(app);
+    const name = `ps${String(++n).padStart(4, '0')}x`;
+    const reg = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
+    expect(reg.statusCode, reg.body).toBe(201);
+    const { rows } = await deps.db.query<{ account_id: string }>('select account_id from sessions order by created_at desc, id desc limit 1');
+    await deps.db.query(`update accounts set terms_version = '2000-01-01' where id = $1`, [rows[0]!.account_id]);
+    expect(errorOf(await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'set-password' } }))).toBe('terms-required');
+    const ok = await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'extend-session' } });
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect((await b.post('/v1/account/session/extend', ok.json() as { confirmToken: string })).statusCode).toBe(200);
   });
 });
 
 describe('who has a session length', () => {
+  it('the choices follow the account type (review M7): accounts.account_type when it is there, else trader', async () => {
+    const { id } = await trader();
+    // This database has no account_type column yet (the vendor branch adds it): every account is a trader.
+    expect(await sessionAccountType(deps.db, id)).toBe('trader');
+    const vendor = { query: async () => ({ rows: [{ account_type: 'vendor' }] }) } as unknown as Parameters<typeof sessionAccountType>[0];
+    expect(await sessionAccountType(vendor, id)).toBe('vendor');
+    const odd = { query: async () => ({ rows: [{ account_type: 'something-else' }] }) } as unknown as Parameters<typeof sessionAccountType>[0];
+    expect(await sessionAccountType(odd, id)).toBe('trader');
+  });
+
   it('staff and owner sessions keep their fixed rules: no length to choose', async () => {
     for (const kind of ['staff', 'owner'] as const) {
       const { b } = await trader(kind);
@@ -293,7 +375,7 @@ describe('who has a session length', () => {
 
   it('a team member chooses the length of their own session and extends it (owner, Q73)', async () => {
     const { teamId, m } = await member();
-    expect(await sessionOf(m)).toMatchObject({ lengthHours: null, choices: [2, 4, 6, 12], canExtend: true });
+    expect(await sessionOf(m)).toMatchObject({ lengthHours: null, choices: [2, 4, 8, 12], canExtend: true });
     expect((await setLength(m, 4)).json()).toMatchObject({ lengthHours: 4, expiresAt: iso(4 * HOUR) });
     expect(errorOf(await m.post('/v1/account/session/extend', {}))).toBe('confirm-required');
     at(4 * HOUR - 4 * MIN);

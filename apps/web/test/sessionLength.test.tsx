@@ -11,18 +11,36 @@ import { afterLogin } from '../src/screens/auth/authApi.js';
 import { SESSION_LENGTH_PATH, SessionLengthScreen } from '../src/screens/auth/SessionLength.js';
 import { SessionPrompt } from '../src/screens/auth/SessionPrompt.js';
 import { Devices } from '../src/screens/settings/Devices.js';
-import { publishSessionWatch, resetSessionWatch } from '../src/session/sessionWatch.js';
+import { currentSessionWatch, publishSessionWatch, resetSessionWatch } from '../src/session/sessionWatch.js';
+import { currentIdleReminder, resetIdleReminder } from '../src/session/idleReminderWatch.js';
 import { fire, render } from './render.js';
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 type Handler = (url: string, init: RequestInit | undefined) => Response | undefined;
+
+/** BroadcastChannel between "tabs" of one test: delivers to every other open channel of the same name. */
+class FakeChannel {
+  static all = new Set<FakeChannel>();
+  onmessage: ((e: { data: unknown }) => void) | null = null;
+  posted: unknown[] = [];
+  constructor(readonly name: string) {
+    FakeChannel.all.add(this);
+  }
+  postMessage(data: unknown) {
+    this.posted.push(data);
+    for (const c of [...FakeChannel.all]) if (c !== this && c.name === this.name) c.onmessage?.({ data });
+  }
+  close() {
+    FakeChannel.all.delete(this);
+  }
+}
 let handler: Handler;
 let calls: Array<{ url: string; method: string; body: unknown }>;
 
 const T0 = Date.parse('2026-11-02T12:00:00Z');
 const info = (o: Partial<SessionInfo> = {}): SessionInfo => ({
-  lengthHours: 4, choices: [2, 4, 6, 12], expiresAt: new Date(T0 + 4 * 3_600_000).toISOString(), canExtend: true, serverNow: new Date(T0).toISOString(), ...o,
+  lengthHours: 4, choices: [2, 4, 8, 12], expiresAt: new Date(T0 + 4 * 3_600_000).toISOString(), canExtend: true, serverNow: new Date(T0).toISOString(), ...o,
 });
 const ME = { displayName: 'mira.k', needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false, suggestions: [], termsCurrent: true };
 
@@ -30,6 +48,9 @@ beforeEach(() => {
   calls = [];
   handler = () => undefined;
   resetSessionWatch();
+  resetIdleReminder();
+  FakeChannel.all.clear();
+  vi.stubGlobal('BroadcastChannel', FakeChannel);
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string, init?: RequestInit) => {
@@ -84,6 +105,17 @@ describe('after login: the session length comes first', () => {
     expect(go).toEqual([`${SESSION_LENGTH_PATH}?returnTo=%2Fwallets`]);
   });
 
+  it('sets up the warning and the idle reminder with the full me, methods included (review 3)', async () => {
+    const session = info();
+    handler = (url) =>
+      url === '/v1/account/me'
+        ? json(200, { ...ME, methods: ['password', 'passkey'], idleReminderMinutes: 30, session })
+        : url.startsWith('/v1/news') ? json(200, []) : undefined;
+    await afterLogin(() => undefined, '/wallets');
+    expect(currentSessionWatch()).toEqual({ info: session, methods: ['password', 'passkey'] });
+    expect(currentIdleReminder()).toBe(30);
+  });
+
   it('goes straight on for a session with no length to choose (staff, backup)', async () => {
     handler = (url) => (url === '/v1/account/me' ? json(200, { ...ME, session: null }) : url.startsWith('/v1/news') ? json(200, []) : undefined);
     const go: string[] = [];
@@ -106,7 +138,7 @@ describe('SessionLength board: the question after every login', () => {
   it("offers the account type's choices with nothing pre-selected; Continue waits for a choice", async () => {
     handler = (url, init) => {
       if (url === '/v1/account/me') return json(200, { ...ME, session: info({ lengthHours: null }) });
-      if (url === '/v1/account/session/length' && init?.method === 'PUT') return json(200, info({ lengthHours: 6 }));
+      if (url === '/v1/account/session/length' && init?.method === 'PUT') return json(200, info({ lengthHours: 8 }));
       return undefined;
     };
     const { host } = mount();
@@ -114,15 +146,16 @@ describe('SessionLength board: the question after every login', () => {
     expect(host.textContent).toContain("You're logged in as mira.k.");
     const select = part(host, 'session-length-select') as HTMLSelectElement;
     expect(select.value).toBe('');
-    expect([...select.options].map((o) => o.textContent)).toEqual(['Choose a time', '2 hours', '4 hours', '6 hours', '12 hours']);
+    expect(select.tagName).toBe('SELECT');
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Choose a time', '2 hours', '4 hours', '8 hours', '12 hours']);
     const go = part(host, 'session-length-continue') as HTMLButtonElement;
     expect(go.disabled).toBe(true);
     expect(host.textContent).toContain('Pick a time to continue.');
-    choose(select, '6');
+    choose(select, '8');
     expect(go.disabled).toBe(false);
     click(go);
     await settle();
-    expect(calls.filter((c) => c.method === 'PUT')).toEqual([{ url: '/v1/account/session/length', method: 'PUT', body: { hours: 6 } }]);
+    expect(calls.filter((c) => c.method === 'PUT')).toEqual([{ url: '/v1/account/session/length', method: 'PUT', body: { hours: 8 } }]);
     expect(part(host, 'where')?.textContent).toBe('/wallets');
   });
 
@@ -158,11 +191,13 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     expect(document.body.textContent).not.toContain('Stay logged in?');
     tick(3_000);
     expect(document.body.textContent).toContain('Stay logged in?');
-    expect(document.body.textContent).toContain("Your 4-hour session ends in 5 minutes. Confirm it's you to stay logged in.");
+    // Review M2: no fixed "5 minutes" or stored length in the words; the countdown tells the time.
+    expect(document.body.textContent).toContain("Your session is about to end. Confirm it's you to stay logged in.");
+    expect(document.body.textContent).not.toContain('5 minutes');
     expect(document.querySelector('[data-part="session-countdown"]')?.textContent).toContain('Logging out in 4:59');
     // The same choices as at login, the session's own length picked.
     const select = document.querySelector('[data-part="session-extend"] [data-part="session-length-select"]') as HTMLSelectElement;
-    expect([...select.options].filter((o) => !o.disabled).map((o) => o.value)).toEqual(['2', '4', '6', '12']);
+    expect([...select.options].filter((o) => !o.disabled).map((o) => o.value)).toEqual(['2', '4', '8', '12']);
     expect(select.value).toBe('4');
     type(document.querySelector('#confirm-password'), 'Correct-Horse-9');
     click(document.querySelector('[data-part="confirm-password"]'));
@@ -208,16 +243,73 @@ describe('SessionExtend board: "Stay logged in?"', () => {
   });
 
   it('with no answer the person is logged out when the time is up', async () => {
-    handler = (url) => (url === '/v1/logout' ? json(200, { ok: true }) : undefined);
+    handler = (url) => (url === '/v1/logout' ? json(200, { ok: true }) : url === '/v1/account/me' ? json(401, { error: 'not-authenticated' }) : undefined);
     render(<MemoryRouter><SessionPrompt /></MemoryRouter>);
     act(() => publishSessionWatch({ info: info(), methods: ['passkey'] }));
     tick(4 * 3_600_000 - 60_000);
     expect(document.body.textContent).toContain('Stay logged in?');
     tick(61_000);
     await settle();
-    expect(calls.map((c) => [c.method, c.url])).toEqual([['POST', '/v1/logout']]);
+    // Review 2: it asks the server first whether another tab extended the session.
+    expect(calls.map((c) => [c.method, c.url])).toEqual([['GET', '/v1/account/me'], ['POST', '/v1/logout']]);
     expect(document.body.textContent).toContain("You're logged out");
     expect(document.body.textContent).toContain('Your session time ran out. Log in again to keep trading.');
+  });
+
+  it('another tab extended the session: at the old end it re-reads me, watches the new end and stays logged in (review 2)', async () => {
+    const later = info({ expiresAt: new Date(T0 + 8 * 3_600_000).toISOString() });
+    handler = (url) => (url === '/v1/account/me' ? json(200, { ...ME, methods: ['passkey'], session: later }) : url === '/v1/logout' ? json(200, { ok: true }) : undefined);
+    render(<MemoryRouter><SessionPrompt /></MemoryRouter>);
+    act(() => publishSessionWatch({ info: info(), methods: ['passkey'] }));
+    tick(4 * 3_600_000 - 60_000);
+    expect(document.body.textContent).toContain('Stay logged in?');
+    tick(61_000);
+    await settle();
+    expect(calls.map((c) => [c.method, c.url])).toEqual([['GET', '/v1/account/me']]);
+    expect(document.body.textContent).not.toContain("You're logged out");
+    expect(document.body.textContent).not.toContain('Stay logged in?');
+    expect(currentSessionWatch()?.info.expiresAt).toBe(later.expiresAt);
+    // The new end is watched: the prompt comes again 5 minutes before it.
+    tick(4 * 3_600_000 - SESSION_PROMPT_MS - 62_000);
+    expect(document.body.textContent).not.toContain('Stay logged in?');
+    tick(3_000);
+    expect(document.body.textContent).toContain('Stay logged in?');
+  });
+
+  it('tabs share an extended end (review 2): an extend in one tab closes the prompt in the others', async () => {
+    handler = (url, init) => {
+      if (url === '/v1/confirm/password' && init?.method === 'POST') return json(200, { confirmToken: 'tok' });
+      if (url === '/v1/account/session/extend' && init?.method === 'POST') return json(200, info({ expiresAt: new Date(T0 + 8 * 3_600_000).toISOString() }));
+      return undefined;
+    };
+    render(<MemoryRouter><SessionPrompt /></MemoryRouter>);
+    act(() => publishSessionWatch({ info: info(), methods: ['password'] }));
+    tick(4 * 3_600_000 - 60_000);
+    expect(document.body.textContent).toContain('Stay logged in?');
+    // Another tab extends: its end reaches this one, which goes back to waiting.
+    const other = new FakeChannel('x2f-session');
+    const later = info({ expiresAt: new Date(T0 + 12 * 3_600_000).toISOString(), lengthHours: 12 });
+    act(() => other.postMessage({ type: 'session-info', info: later }));
+    expect(document.body.textContent).not.toContain('Stay logged in?');
+    expect(currentSessionWatch()).toEqual({ info: later, methods: ['password'] });
+    // This tab's own extend is sent to the others.
+    tick(8 * 3_600_000 - 60_000);
+    type(document.querySelector('#confirm-password'), 'Correct-Horse-9');
+    click(document.querySelector('[data-part="confirm-password"]'));
+    await settle();
+    expect(other.posted).toHaveLength(1);
+    expect(FakeChannel.all.size).toBe(2);
+    const mine = [...FakeChannel.all].find((c) => c !== other)!;
+    expect(mine.posted).toEqual([{ type: 'session-info', info: info({ expiresAt: new Date(T0 + 8 * 3_600_000).toISOString() }) }]);
+  });
+
+  it('with an authenticator app, staying logged in asks only for the password (owner G10)', async () => {
+    handler = () => undefined;
+    render(<MemoryRouter><SessionPrompt /></MemoryRouter>);
+    act(() => publishSessionWatch({ info: info(), methods: ['password', 'totp'] }));
+    tick(4 * 3_600_000 - 60_000);
+    expect(document.querySelector('#confirm-password')).not.toBeNull();
+    expect(document.querySelector('#confirm-totp')).toBeNull();
   });
 
   it('"Log out" ends the session at once', async () => {
@@ -243,22 +335,52 @@ describe('SessionExtend board: "Stay logged in?"', () => {
 });
 
 describe('Devices board: "Stay logged in for"', () => {
-  it("shows this session's length and changes it", async () => {
+  it("shows this session's length and changes it (this session only, owner F18)", async () => {
     handler = (url, init) => {
       if (url === '/v1/account/sessions') return json(200, []);
       if (url === '/v1/account/security/devices') return json(200, { oneDevice: false, maxDevices: 3 });
-      if (url === '/v1/account/me') return json(200, { ...ME, session: info({ lengthHours: 6 }) });
+      if (url === '/v1/account/me') return json(200, { ...ME, session: info({ lengthHours: 8 }) });
       if (url === '/v1/account/session/length' && init?.method === 'PUT') return json(200, info({ lengthHours: 2 }));
       return undefined;
     };
     const { host } = render(<MemoryRouter><Devices /></MemoryRouter>);
     await settle();
     const select = part(host, 'session-length-select') as HTMLSelectElement;
-    expect(select.value).toBe('6');
+    expect(select.value).toBe('8');
     expect(host.textContent).toContain("Longer sessions so you don't miss a trade while you sleep.");
     choose(select, '2');
     await settle();
     expect(calls.filter((c) => c.method === 'PUT')).toEqual([{ url: '/v1/account/session/length', method: 'PUT', body: { hours: 2 } }]);
     expect(select.value).toBe('2');
+    expect(host.textContent).toContain('Saved.');
+  });
+
+  it('a time that ends later asks to confirm it\'s you, then starts now (owner G24)', async () => {
+    const extended = info({ lengthHours: 12, expiresAt: new Date(T0 + 12 * 3_600_000).toISOString() });
+    handler = (url, init) => {
+      if (url === '/v1/account/sessions') return json(200, []);
+      if (url === '/v1/account/security/devices') return json(200, { oneDevice: false, maxDevices: 3 });
+      if (url === '/v1/account/me') return json(200, { ...ME, session: info() });
+      if (url === '/v1/account/session/length' && init?.method === 'PUT') return json(403, { error: 'confirm-required', action: 'extend-session' });
+      if (url === '/v1/account/session/extend' && init?.method === 'POST') return json(200, extended);
+      return undefined;
+    };
+    const asked: unknown[] = [];
+    const { host } = render(
+      <MemoryRouter>
+        <Devices prove={async (a) => (asked.push(a), 'tok')} />
+      </MemoryRouter>,
+    );
+    await settle();
+    choose(part(host, 'session-length-select'), '12');
+    await settle();
+    expect(asked).toEqual([{ kind: 'extend-session' }]);
+    expect(calls.filter((c) => c.method !== 'GET').map((c) => [c.method, c.url, c.body])).toEqual([
+      ['PUT', '/v1/account/session/length', { hours: 12 }],
+      ['POST', '/v1/account/session/extend', { confirmToken: 'tok', hours: 12 }],
+    ]);
+    expect((part(host, 'session-length-select') as HTMLSelectElement).value).toBe('12');
+    expect(currentSessionWatch()?.info).toEqual(extended);
+    expect(host.textContent).toContain('Saved.');
   });
 });
