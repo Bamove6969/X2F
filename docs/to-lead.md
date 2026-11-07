@@ -438,3 +438,18 @@ What matches: the Refunded dispute body copy follows v119, apart from the mono n
 ## 7 Nov 2026: canvas v125, final nudge sound
 
 BuyerPaidWaiting (+Wide) notes now name the final sound: the real two-blast "Ahooga", 3.64 s (first blast sped up at the same pitch, second at its original speed, nothing stretched; superseded figures removed in v125), `assets/sound/x2f-nudge-final.wav` and `-soft` on comms, Freesound 480002 (CC0). It replaces the 1.84 s cut; to cut from the original WAV before launch.
+
+## 7 Nov 2026: pictures for the owner (G1, G38)
+
+**G1, the screen after "I've paid"** (picture: `docs/design-shots/2026-11-07/g1-buyer-paid-waiting.png`; left: right after paying, right: once the dispute wait has passed). What the buyer sees, top to bottom:
+1. Header "Buying from satoshi_ghost"; progress bar on "Seller checks".
+2. A yellow card: "PAID". "You marked this trade as paid at 14:05 UTC. satoshi_ghost has been told and has up to 2 h to check Zelle and release." Under it, a big countdown "1 h 58 min" with a ring.
+3. "What happens next", three steps: (1) the seller looks for $412.50 with the memo K7M2-…; (2) "When they release, 1.250000 XMR goes to your wallet once your app co-signs. Keep this page open until it arrives."; (3) "If something goes wrong, you can open a dispute from 15:35 UTC, 90 min after you marked it as paid. A moderator checks the chat and proof, then decides."
+4. Buttons: "Open dispute" (greyed until 15:35, with "Available from 15:35 UTC · in 88 min"), "Nudge satoshi_ghost", and "You can't cancel after marking as paid."
+The words to sign are steps 2 and 3. The rest was signed before or is unchanged.
+
+**G38, what tapping or hovering over a badge does** (picture: `docs/design-shots/2026-11-07/g38-badge-visibility.png`). Each badge (Trusted, Fast, Clean record…) has its own setting:
+- **Featured:** always shown on your offer card next to your name (up to 2).
+- **Middle option:** not on the card. A small "+2" shows instead, and a buyer taps it (phone) or points at it (desktop) to see those badges, each with one line on what it means ("Fast: replies in about 4 min on average.").
+- **Hidden:** nobody sees it, and there's no "+2".
+- **Design's recommendation:** keep the middle option and call it **"When tapped"** (it works on both phone and desktop), helper "Shows when someone taps the +N on your offer." Or, if the owner prefers fewer choices, drop it.
