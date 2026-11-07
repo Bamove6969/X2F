@@ -267,6 +267,15 @@ test('a held user sees the API refusal as text', async ({ page }) => {
   await expect(page).toHaveURL(/\/post/);
 });
 
+test('the offer cap refusal says the number the API sent (cap-dispute review M2: { perSide } is an owner setting)', async ({ page }) => {
+  await stub(page, { post: { status: 409, body: { error: 'too-many-offers', perSide: 5 } } });
+  await page.goto('/post?method=ZELLE');
+  await fillBoard(page);
+  await f(page).post.click();
+  await expect(page.getByRole('dialog')).toHaveAccessibleDescription(/^You can have 5 buying and 5 selling offers\. /);
+  await expect(page).toHaveURL(/\/post/);
+});
+
 test('an account with no wallet lands on Add a wallet and returns to the filled form', async ({ page }) => {
   await stub(page, { post: { status: 409, body: { error: 'no-wallet' } } });
   await page.goto('/post?method=ZELLE');
