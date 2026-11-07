@@ -4,6 +4,7 @@ import type { Deps } from '../src/app.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { startRetention, type RetentionLog } from '../src/retention.js';
 import { applyEvent, type TradePublisher } from '../src/trades/store.js';
+import { publishRuling } from './helpers/disputes.js';
 import { driveTo, fakeAddress, happyPath, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
@@ -59,12 +60,8 @@ describe('log hygiene over a whole trade (P3-I15)', () => {
     expect((await buyer.browser.post(`${durl}/dispute`, { reason: 'paid', note: 'a\u0000b' })).statusCode).toBe(400);
     expect((await buyer.browser.post(`${durl}/dispute`, { reason: 'paid', note: 'private to the moderator' })).statusCode).toBe(200);
     for (const who of [seller, buyer, third]) await who.browser.get(`${durl}/dispute`);
-    await deps.db.query(
-      `insert into dispute_rulings (code, seq, round, outcome, reason, moderator_name, ruled_at, appeal_until)
-       values ($1, 1, 1, 'release-to-buyer', 'Paid.', 'sarah.v', now(), now() + interval '2 days')`,
-      [second.trade.code],
-    );
-    await deps.db.query(`update disputes set status = 'ruled' where code = $1`, [second.trade.code]);
+    // A moderator's round-1 ruling, through the dispute machine (Plan 4 Task 12 is not built yet).
+    await publishRuling(deps, second.trade.code, { outcome: 'release-to-buyer' });
     await third.browser.post(`${durl}/appeal`, { why: 'Please look again at this.' });
     expect((await seller.browser.post(`${durl}/appeal`, { why: 'Please look again at this.' })).statusCode).toBe(200);
 

@@ -1,7 +1,7 @@
 import { addressEnd } from '@x2f/accounts';
+import { DisputeRuleError, RULING_DEADLINE_H, RULING_GOAL_H, applyDispute, involvedIn, traderStatus, type InvolvementEntry, type TraderDisputeStatus } from '@x2f/staff';
 import { TradeRuleError, type Party, type Trade } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { FINISH_OPEN_TRADES } from '../trades/routes.js';
 import type { Queryable } from '../db/pool.js';
@@ -10,12 +10,16 @@ import { auditMember } from '../team/audit.js';
 import { applyEvent, noPublish, rowToTrade, type TradePublisher, type TradeRow } from '../trades/store.js';
 import { tradeFor } from '../trades/routes.js';
 import { roleOf } from '../trades/view.js';
-import { NEXT_SEQ } from './store.js';
+import { appendLog } from '../log/append.js';
+import { disputeSettings } from './settings.js';
+import { loadDisputeRecord, startDispute, withDispute } from './store.js';
 
 /**
- * Trader-side disputes (Plan 3 Task 27; spec 2.3, 6.6). Plan 3 opens disputes and takes appeals;
- * Plan 4 writes rulings, the ruling deadline and the moderator's join, which this file only reads.
- * Participants only (anyone else gets the same 404 as an unknown code), trader sessions only.
+ * Trader-side disputes (Plan 3 Task 27; spec 2.3, 6.6), on Plan 4's dispute machine (Task 10):
+ * opening a dispute starts the machine (`newDispute`, with the settings snapshot), the appeal is the
+ * machine's `appeal`, and the view shows its deadlines. Plan 4's staff routes write rulings and the
+ * moderator's join, which this file only reads. Participants only (anyone else gets the same 404 as
+ * an unknown code), trader sessions only. Owner 2026-11-02: a dispute never blocks trading by itself.
  */
 
 /** Reason codes a trader may give, relative to whoever opens the dispute (108_disputes.sql). */
@@ -35,9 +39,26 @@ export interface DisputeView {
   reason: DisputeReason;
   openedAt: string;
   afterRefund: boolean;
-  /** The published ruling deadline, once Plan 4 sets it. */
+  /** The current round's ruling deadline ("ruling due by …"; the plan's `rulingDueAt`). */
   dueAt: string | null;
-  status: 'open' | 'ruled' | 'appealed' | 'final' | 'closed';
+  /**
+   * The target time: round 1 aims to be resolved within 24 hours (RULING_GOAL_H; owner 2026-11-03,
+   * "every dispute within 24 hours or less"), before the 48-hour hard deadline `dueAt`; the appeal
+   * round aims at its own 48 hours (APPEAL_GOAL_H), so its goal is its deadline. Derived from
+   * `dueAt`, so a maintenance shift moves it too.
+   */
+  goalAt: string;
+  /** The current round's first-reply deadline (the owner's first-response setting). */
+  replyDueAt: string;
+  firstReplyAt: string | null;
+  /** While nobody has taken the case: 1 + the unassigned open disputes due for a reply earlier. */
+  queuePosition: number | null;
+  /** 1, or 2 once appealed (the appeal round's ruling is final and binding). */
+  round: 1 | 2;
+  /** `traderStatus()` of the machine's status. */
+  status: TraderDisputeStatus;
+  /** A `seller-sends-xmr` ruling: when the seller's payment is due. */
+  complyBy: string | null;
   /** From server records only (Plan 4 writes it when a moderator first opens the chat). */
   moderator: { name: string; joinedAt: string } | null;
   /** The latest ruling (the appeal round over the first). */
@@ -54,19 +75,9 @@ export interface DisputeView {
     destination: { walletApp: string | null; addressEnd: string } | null;
   } | null;
   appeal: { by: Party; at: string } | null;
+  /** The appeal window's length in hours, from the owner's settings. */
+  appealWindowH: number;
   serverNow: string;
-}
-
-interface DisputeRow {
-  seq: number;
-  opened_by: Party | 'system';
-  reason: DisputeReason;
-  opened_at: Date;
-  after_refund: boolean;
-  due_at: Date | null;
-  status: DisputeView['status'];
-  moderator_name: string | null;
-  moderator_joined_at: Date | null;
 }
 
 interface RulingRow {
@@ -124,10 +135,18 @@ function paidSide(outcome: RulingOutcome): Party | null {
 
 async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: string, now: Date): Promise<DisputeView | null> {
   // The current dispute is the trade's latest (highest seq); earlier ones are kept but not shown.
-  const d = (await q.query<DisputeRow>('select * from disputes where code = $1 order by seq desc limit 1', [row.code])).rows[0];
-  if (!d) return null;
+  const rec = await loadDisputeRecord(q, row.code);
+  if (rec === null) return null;
+  const d = rec.dispute;
   const r = (await q.query<RulingRow>('select * from dispute_rulings where code = $1 and seq = $2 order by round desc limit 1', [row.code, d.seq])).rows[0];
-  const a = (await q.query<{ by: Party; at: Date }>('select by, at from dispute_appeals where code = $1 and seq = $2', [row.code, d.seq])).rows[0];
+  let queuePosition: number | null = null;
+  if (d.status === 'open' && d.assignee === null) {
+    const ahead = await q.query<{ n: number }>(
+      `select count(*)::int as n from disputes where status = 'open' and assignee is null and reply_due_at < $1`,
+      [d.replyDueAt],
+    );
+    queuePosition = 1 + (ahead.rows[0]?.n ?? 0);
+  }
 
   let ruling: DisputeView['ruling'] = null;
   if (r) {
@@ -151,35 +170,26 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
     };
   }
   return {
-    openedBy: d.opened_by,
-    reason: d.reason,
-    openedAt: d.opened_at.toISOString(),
-    afterRefund: d.after_refund,
-    dueAt: d.due_at?.toISOString() ?? null,
-    status: d.status,
+    openedBy: d.openedBy,
+    reason: rec.reason,
+    openedAt: d.openedAt.toISOString(),
+    afterRefund: d.afterRefund,
+    dueAt: d.rulingDueAt.toISOString(),
+    goalAt: new Date(d.rulingDueAt.getTime() - (d.round === 1 ? (RULING_DEADLINE_H - RULING_GOAL_H) * 3_600_000 : 0)).toISOString(),
+    replyDueAt: d.replyDueAt.toISOString(),
+    firstReplyAt: d.firstReplyAt?.toISOString() ?? null,
+    queuePosition,
+    round: d.round,
+    status: traderStatus(d.status),
+    complyBy: d.complyBy?.toISOString() ?? null,
     moderator:
-      d.moderator_name !== null && d.moderator_joined_at !== null ? { name: d.moderator_name, joinedAt: d.moderator_joined_at.toISOString() } : null,
+      rec.moderatorName !== null && rec.moderatorJoinedAt !== null ? { name: rec.moderatorName, joinedAt: rec.moderatorJoinedAt.toISOString() } : null,
     ruling,
-    appeal: a ? { by: a.by, at: a.at.toISOString() } : null,
+    appeal: d.appealBy !== null && d.appealedAt !== null ? { by: d.appealBy, at: d.appealedAt.toISOString() } : null,
+    // Lead review 7 Nov: the appeal window's length as the owner set it (settings), for the ruling page.
+    appealWindowH: (await disputeSettings(q)).appealWindowH,
     serverNow: now.toISOString(),
   };
-}
-
-async function inTransaction<T>(db: pg.Pool, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
-  const client = await db.connect();
-  try {
-    await client.query('begin');
-    try {
-      const out = await fn(client);
-      await client.query('commit');
-      return out;
-    } catch (err) {
-      await client.query('rollback');
-      throw err;
-    }
-  } finally {
-    client.release();
-  }
 }
 
 export interface DisputeRouteOptions {
@@ -224,10 +234,9 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     try {
       await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, { type: 'open-dispute' }, side, async (client, prev, _next, now) => {
         if (prev.dispute !== null) throw new ApiError(409, 'dispute-exists');
-        await client.query(
-          `insert into disputes (code, seq, opened_by, reason, note, opened_at, after_refund) values ($1, ${NEXT_SEQ}, $2, $3, $4, $5, $6)`,
-          [row.code, side, reason, note, now, prev.state === 'refunded'],
-        );
+        // Plan 4 Task 10: the machine starts here, with the owner's settings as they are now (the
+        // large-trade limit is a snapshot) and the trade's USD value; `dispute.opened` is logged.
+        await startDispute(client, prev, { openedBy: side, reason, note, afterRefund: prev.state === 'refunded', now, prices: deps.prices });
         // Task 18: a team member's dispute is in the account owner's audit log (the reason, never the note).
         await auditMember(client, req.auth, { action: 'dispute-opened', tradeCode: row.code, detail: { reason } }, now);
       });
@@ -243,36 +252,48 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     return view;
   });
 
-  // An appeal to a second moderator (spec 2.3): either side, once per dispute, only against a
-  // first-round ruling and strictly before its appeal window ends.
+  // The appeal (spec 2.3; owner 2026-11-02): ONE appeal per dispute, by either side, only against
+  // a published first-round ruling and strictly before its window ends (publish + appeal_window_h,
+  // 48 h). The appeal round's ruling is completely binding (round 2 has no appeal).
   app.post('/v1/trades/:code/appeal', { preHandler: trader }, async (req) => {
     const b = bodyOf(req, ['why']);
     if (!isText(b.why, APPEAL_MAX) || b.why.trim().length < APPEAL_MIN) throw new ApiError(400, 'bad-request');
     const why = b.why;
     const { row, side } = await participant(req);
     const deps = req.server.deps;
-    await inTransaction(deps.db, async (client) => {
-      // The current dispute (highest seq), locked; an earlier dispute is never appealed again.
-      const d = (await client.query<{ seq: number; status: string }>(
-        'select seq, status from disputes where code = $1 order by seq desc limit 1 for update',
-        [row.code],
-      )).rows[0];
-      // Only a published first-round ruling can be appealed (never an open, appealed, final or closed case).
-      if (!d || d.status !== 'ruled') throw new ApiError(409, 'wrong-state');
-      const now = deps.clock();
-      const r = (await client.query<RulingRow>('select * from dispute_rulings where code = $1 and seq = $2 order by round desc limit 1', [row.code, d.seq])).rows[0];
-      if (!r || r.round !== 1 || r.appeal_until === null) throw new ApiError(409, 'wrong-state');
-      if (now.getTime() >= r.appeal_until.getTime()) throw new ApiError(409, 'too-late');
-      const { rowCount } = await client.query(
-        'insert into dispute_appeals (code, seq, by, why, at) values ($1, $2, $3, $4, $5) on conflict (code, seq) do nothing',
-        [row.code, d.seq, side, why, now],
-      );
-      if (rowCount !== 1) throw new ApiError(409, 'wrong-state');
-      // Guarded transition: ruled -> appealed only (the row is locked above; the guard keeps it so).
-      const moved = await client.query(`update disputes set status = 'appealed' where code = $1 and seq = $2 and status = 'ruled'`, [row.code, d.seq]);
-      if (moved.rowCount !== 1) throw new ApiError(409, 'wrong-state');
-      await auditMember(client, req.auth, { action: 'appeal-filed', tradeCode: row.code }, now);
-    });
+    try {
+      await withDispute({ db: deps.db, clock: deps.clock, events: req.server.events }, { code: row.code }, async (d, client, now) => {
+        const s = await disputeSettings(client);
+        const by = { kind: 'trader' as const, side };
+        // Refused here, before anything is written, when the machine would refuse it: only a
+        // published first-round ruling, strictly before `appealEndsAt` (one appeal only, owner).
+        applyDispute(d, { type: 'appeal', involved: [] }, by, now, s);
+        const { rowCount } = await client.query(
+          'insert into dispute_appeals (code, seq, by, why, at) values ($1, $2, $3, $4, $5) on conflict (code, seq) do nothing',
+          [d.code, d.seq, side, why, now],
+        );
+        if (rowCount !== 1) throw new DisputeRuleError('wrong-state');
+        await auditMember(client, req.auth, { action: 'appeal-filed', tradeCode: row.code }, now);
+        // R37 (Task 24): `appeal.opened` FIRST, then, holding the log lock on this client, everyone
+        // with an earlier log entry on the trade is involved in round 1 and can take no part in the appeal.
+        const entry = await appendLog(client, { at: now, actor: by, tradeCode: d.code, action: 'appeal.opened', detail: { side } });
+        const log = await client.query<{ id: string; trade_code: string | null; actor_kind: InvolvementEntry['actorKind']; actor_id: string | null; action: string }>(
+          `select id::text as id, trade_code, actor_kind, actor_id::text as actor_id, action from activity_log
+           where trade_code = $1 and actor_kind = 'staff' and id < $2`,
+          [d.code, entry.id],
+        );
+        const involved = involvedIn(
+          log.rows.map((r) => ({ id: r.id, tradeCode: r.trade_code, actorKind: r.actor_kind, actorId: r.actor_id, action: r.action })),
+          d.code,
+          { beforeId: entry.id },
+        );
+        // NEEDS_TASK_25_LIEN_ON_APPEAL: the appellant's round-1 lien is suspended here (Task 25).
+        return applyDispute(d, { type: 'appeal', involved: [...involved] }, by, now, s);
+      });
+    } catch (err) {
+      if (err instanceof DisputeRuleError) throw new ApiError(409, err.code === 'too-late' ? 'too-late' : 'wrong-state');
+      throw err;
+    }
     return loadView(deps.db, row, side, req.auth.accountId, deps.clock());
   });
 }

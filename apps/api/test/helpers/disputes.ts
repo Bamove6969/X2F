@@ -1,0 +1,43 @@
+import { randomUUID } from 'node:crypto';
+import { applyDispute, type Actor, type Dispute, type RulingOutcome } from '@x2f/staff';
+import type { Deps } from '../../src/app.js';
+import { DISPUTE_DEFAULTS } from '../../src/disputes/settings.js';
+import { withDispute } from '../../src/disputes/store.js';
+
+/**
+ * What Plan 4 Task 12 will do when a moderator rules (its staff routes are not built yet): through
+ * the dispute machine, on the server clock, so the dispute's columns and its trader-visible
+ * `dispute_rulings` row agree. Round 1: a moderator takes the case and proposes; under the
+ * large-trade limit with no account action it is published at once and the 48-hour appeal window
+ * opens. Round 2 (after an appeal): an uninvolved senior moderator rules and it is final.
+ */
+export async function publishRuling(
+  deps: Pick<Deps, 'db' | 'clock'>,
+  code: string,
+  o: { outcome: RulingOutcome; evidence?: unknown; staffId?: string; moderatorName?: string },
+): Promise<Dispute> {
+  const S = { appealWindowH: DISPUTE_DEFAULTS.appealWindowH, firstResponseH: DISPUTE_DEFAULTS.firstResponseH };
+  return withDispute(deps, { code }, async (d, client, now) => {
+    const role = d.round === 1 ? 'mod' : 'senior';
+    const staff: Actor = { kind: 'staff', id: o.staffId ?? randomUUID(), role };
+    let x = applyDispute(d, { type: 'assign', staffId: staff.id, role }, staff, now, S);
+    x = applyDispute(x, { type: 'propose', ruling: { id: randomUUID(), outcome: o.outcome, accountAction: { kind: 'none' }, proposer: staff.id } }, staff, now, S);
+    await client.query(
+      `insert into dispute_rulings (code, seq, round, outcome, reason, evidence, moderator_name, ruled_at, appeal_until)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [x.code, x.seq, x.round, o.outcome, "The payment is in the seller's activity.", JSON.stringify(o.evidence ?? ['The trade chat']),
+        o.moderatorName ?? 'sarah.v', now, x.round === 1 ? x.appealEndsAt : null],
+    );
+    return x;
+  });
+}
+
+/** An appeal as the machine takes it, without the trader route (for tests that need round 2 directly). */
+export async function appealDirect(deps: Pick<Deps, 'db' | 'clock'>, code: string, side: 'buyer' | 'seller'): Promise<Dispute> {
+  const S = { appealWindowH: DISPUTE_DEFAULTS.appealWindowH, firstResponseH: DISPUTE_DEFAULTS.firstResponseH };
+  return withDispute(deps, { code }, async (d, client, now) => {
+    const next = applyDispute(d, { type: 'appeal', involved: [] }, { kind: 'trader', side }, now, S);
+    await client.query('insert into dispute_appeals (code, seq, by, why, at) values ($1, $2, $3, $4, $5)', [code, d.seq, side, 'Please look again at this.', now]);
+    return next;
+  });
+}

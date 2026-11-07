@@ -22,6 +22,8 @@ export interface DisputeTrade {
   /** Task 3's method profile sentence ("What is this?"), when the API has one. */
   whatItIs: string;
   amountAtomic: string;
+  /** Who posted the offer: the poster pays the 1% fee, so it decides what a ruling pays out (lead review 7 Nov). */
+  poster: Party;
   currency: string;
   paidAt: string | null;
   confirmBy: string | null;
@@ -55,10 +57,29 @@ export interface DisputeView {
   openedAt: string;
   afterRefund: boolean;
   dueAt: string | null;
+  /**
+   * Plan 4 Task 10: when round 1 aims to be ruled (24 hours, owner 2026-11-03: a goal, never a
+   * deadline), before the hard `dueAt`. The other Task 10 fields below are optional here too: a view
+   * from before Task 10, or the room's stand-in before the record arrives, has none (read as null).
+   */
+  goalAt?: string | null;
+  /** When the first reply is due, while nobody has replied. */
+  replyDueAt?: string | null;
+  /** While nobody has taken the case: this dispute's place in the queue. */
+  queuePosition?: number | null;
+  /** A `seller-sends-xmr` ruling: when the seller's payment is due. */
+  complyBy?: string | null;
+  /**
+   * Revision 2026-10-29c "Fees on settled disputes": the 1% this side still owes for the trade,
+   * atomic units, sent only to the side that owes it (Task 12's fees_owed; NEEDS_TASK_12_FEES_OWED).
+   */
+  feeOwedAtomic?: string | null;
   status: 'open' | 'ruled' | 'appealed' | 'final' | 'closed';
   moderator: { name: string; joinedAt: string } | null;
   ruling: RulingView | null;
   appeal: { by: Party; at: string } | null;
+  /** The appeal window's length in hours, from the owner's settings (absent from an older API: 48). */
+  appealWindowH?: number | null;
   serverNow: string;
 }
 
@@ -90,6 +111,9 @@ const oneOf = <T extends string>(v: unknown, list: readonly T[], what: string): 
   return v as T;
 };
 const PARTIES = ['buyer', 'seller'] as const;
+/** A Task 10 field: absent (an older view) reads as null; present, it must have the right shape. */
+const later = <T>(v: unknown, read: (v: unknown) => T): T | null => (v === undefined || v === null ? null : read(v));
+const ATOMIC = /^[0-9]{1,30}$/;
 
 /**
  * The dispute screens' view of a trade, mapped from Task 22's TradeView (one parser of the trade
@@ -105,6 +129,7 @@ export function tradeFromView(v: TradeView): DisputeTrade {
     methodId: v.methodId,
     whatItIs: methodOf(v).whatItIs,
     amountAtomic: v.amountAtomic,
+    poster: v.poster,
     currency: v.lockedRate.currency,
     paidAt: v.paidAt,
     confirmBy: v.confirmBy,
@@ -159,10 +184,25 @@ export function parseDispute(v: unknown): DisputeView {
     openedAt: iso(d.openedAt, 'openedAt'),
     afterRefund: d.afterRefund === true,
     dueAt: isoOrNull(d.dueAt, 'dueAt'),
+    goalAt: later(d.goalAt, (v) => iso(v, 'goalAt')),
+    replyDueAt: later(d.replyDueAt, (v) => iso(v, 'replyDueAt')),
+    queuePosition: later(d.queuePosition, (v) => {
+      if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) throw new ShapeError('queuePosition');
+      return v;
+    }),
+    complyBy: later(d.complyBy, (v) => iso(v, 'complyBy')),
+    feeOwedAtomic: later(d.feeOwedAtomic, (v) => {
+      if (typeof v !== 'string' || !ATOMIC.test(v)) throw new ShapeError('feeOwedAtomic');
+      return v;
+    }),
     status: oneOf(d.status, ['open', 'ruled', 'appealed', 'final', 'closed'] as const, 'status'),
     moderator,
     ruling,
     appeal,
+    appealWindowH: later(d.appealWindowH, (v) => {
+      if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) throw new ShapeError('appealWindowH');
+      return v;
+    }),
     serverNow: iso(d.serverNow, 'serverNow'),
   };
 }

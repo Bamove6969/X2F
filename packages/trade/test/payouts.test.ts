@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { feeFor } from '@x2f/core';
-import { escrowPlan, payoutsFor, type SettleKind } from '../src/index.js';
+import { escrowPlan, payoutsFor, type RulingKind, type SettleKind } from '../src/index.js';
 
 const BUYER = 'buyer-payout-address';
 const SELLER = 'seller-refund-address';
@@ -11,7 +11,7 @@ const FEE_AMOUNT = 12_500_000_000n; // 0.0125 XMR
 const KINDS: SettleKind[] = ['release', 'mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'];
 const REFUNDS: SettleKind[] = ['mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'];
 
-function args(kind: SettleKind, poster: 'seller' | 'buyer', balanceAtomic: bigint, amountAtomic = AMOUNT) {
+function args(kind: SettleKind | RulingKind, poster: 'seller' | 'buyer', balanceAtomic: bigint, amountAtomic = AMOUNT) {
   const plan = escrowPlan({ amountAtomic, poster });
   return {
     kind,
@@ -165,5 +165,36 @@ describe('payoutsFor: inconsistent inputs fail closed', () => {
 
   test('an empty address', () => {
     expect(() => payoutsFor({ ...args('auto-refund', 'buyer', AMOUNT), sellerRefund: '' })).toThrow(RangeError);
+  });
+});
+
+// Plan 4 Task 15, Revision 2026-10-29c "Fees on settled disputes": a settled dispute pays the 1%,
+// the poster pays. The moderator builds these sets; each trader's app co-signs only its own exactly.
+describe('payoutsFor: dispute rulings (moderator-built)', () => {
+  test('dispute-buyer is the release: the buyer first, then the exact fee, any surplus to the seller', () => {
+    for (const poster of ['seller', 'buyer'] as const) {
+      const funds = escrowPlan({ amountAtomic: AMOUNT, poster }).sellerFundsAtomic;
+      expect(payoutsFor(args('dispute-buyer', poster, funds + 7n))).toEqual(payoutsFor(args('release', poster, funds + 7n)));
+    }
+  });
+
+  test('dispute-seller, poster seller: the seller gets the balance less the fee, and the fee wallet exactly the fee', () => {
+    expect(payoutsFor(args('dispute-seller', 'seller', AMOUNT + FEE_AMOUNT))).toEqual([
+      { address: SELLER, amountAtomic: AMOUNT },
+      { address: FEE, amountAtomic: FEE_AMOUNT },
+    ]);
+    // A surplus stays with the seller; the fee is never more than feeFor(amount).
+    expect(payoutsFor(args('dispute-seller', 'seller', AMOUNT + FEE_AMOUNT + 5n))).toEqual([
+      { address: SELLER, amountAtomic: AMOUNT + 5n },
+      { address: FEE, amountAtomic: FEE_AMOUNT },
+    ]);
+  });
+
+  test('dispute-seller, poster buyer: no fee in the escrow, the whole balance to the seller (the poster owes the fee, Task 12)', () => {
+    expect(payoutsFor(args('dispute-seller', 'buyer', AMOUNT))).toEqual([{ address: SELLER, amountAtomic: AMOUNT }]);
+  });
+
+  test('dispute-seller, poster seller, with no more than the fee in the escrow: refused', () => {
+    expect(() => payoutsFor(args('dispute-seller', 'seller', FEE_AMOUNT))).toThrow(RangeError);
   });
 });
