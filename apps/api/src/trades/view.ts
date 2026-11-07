@@ -58,6 +58,11 @@ export interface TradeView {
   payBy: string | null;
   paidAt: string | null;
   confirmBy: string | null;
+  /**
+   * In `paid`, when the buyer may open a dispute (owner 2026-11-06 Q10: 60 minutes after marking
+   * paid, later by any maintenance during the wait). Both sides see it; null until marked paid.
+   */
+  buyerDisputeFrom: string | null;
   finalAlertAt: string | null;
   /**
    * When the buyer's first seen-receipt for the final alert landed (Task 19); null = not seen. Task
@@ -136,6 +141,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     payBy: iso(t.payBy),
     paidAt: iso(t.paidAt),
     confirmBy: iso(t.confirmBy),
+    buyerDisputeFrom: iso(t.buyerDisputeFrom),
     finalAlertAt: iso(t.finalAlertAt),
     finalAlertSeenAt: role === 'buyer' ? iso(ctx.finalAlertSeenAt) : null,
     settleBy: iso(t.settleBy),

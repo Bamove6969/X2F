@@ -1,6 +1,9 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
+import { MIGRATIONS_DIR } from '../src/db/migrate.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -122,6 +125,21 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect((await buyer.browser.get(`/v1/trades/${t.code}`)).json()).toMatchObject({ buyerDisputeFrom: at(100 * MIN).toISOString() });
     setNow(at(100 * MIN));
     expect((await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' })).statusCode).toBe(200);
+  });
+
+  it('migration 118 gives a trade already marked paid its wait on the pause-adjusted paid time; one not paid stays null', async () => {
+    const sql = await readFile(join(MIGRATIONS_DIR, '118_buyer_dispute_from.sql'), 'utf8');
+    const backfill = sql.slice(sql.indexOf('update trades'));
+    const a = await tradeIn('paid'); // paid at START, confirmBy +120 (a 2-hour window)
+    const b = await tradeIn('paid');
+    const c = await tradeIn('secured');
+    // As before 118: no wait stored; b had a 40-minute maintenance, so its confirmBy is +160.
+    await deps.db.query('update trades set buyer_dispute_from = null where code = any($1)', [[a.t.code, b.t.code, c.t.code]]);
+    await deps.db.query('update trades set confirm_by = $2 where code = $1', [b.t.code, at(160 * MIN)]);
+    await deps.db.query(backfill);
+    expect((await loadTrade(deps.db, a.t.code))!.buyerDisputeFrom).toEqual(at(60 * MIN));
+    expect((await loadTrade(deps.db, b.t.code))!.buyerDisputeFrom).toEqual(at(100 * MIN));
+    expect((await loadTrade(deps.db, c.t.code))!.buyerDisputeFrom).toBeNull();
   });
 
   it('lets either side open one while the escrow is securing or secured', async () => {

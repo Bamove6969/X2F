@@ -25,6 +25,8 @@ export interface DisputeTrade {
   currency: string;
   paidAt: string | null;
   confirmBy: string | null;
+  /** When the buyer may dispute in `paid` (the server's, moved by maintenance; owner 2026-11-06 Q10). */
+  buyerDisputeFrom: string | null;
   settleBy: string | null;
   closedAt: string | null;
   dispute: { by: 'buyer' | 'seller' | 'system'; at: string } | null;
@@ -104,6 +106,7 @@ export function tradeFromView(v: TradeView): DisputeTrade {
     currency: v.lockedRate.currency,
     paidAt: v.paidAt,
     confirmBy: v.confirmBy,
+    buyerDisputeFrom: v.buyerDisputeFrom ?? null,
     settleBy: v.settleBy,
     closedAt: v.closedAt,
     dispute: v.dispute,

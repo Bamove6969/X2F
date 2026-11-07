@@ -74,6 +74,13 @@ export interface Trade {
   extensions: number;
   paidAt: Date | null;
   confirmBy: Date | null;
+  /**
+   * In `paid`, when the buyer may open a dispute (owner 2026-11-06 Q10: 60 minutes after marking
+   * paid, `TIMERS.buyerDisputeAfterPaidMin`). A deadline like `confirmBy`: maintenance that starts
+   * while the wait runs moves it later by the paused time (`onResume`); once it has passed, a later
+   * pause leaves it. Null until marked paid.
+   */
+  buyerDisputeFrom: Date | null;
   finalAlertAt: Date | null;
   cancelProposedBy: Party | null;
   settling: SettleKind | null;
@@ -242,6 +249,7 @@ export function newTrade(
     extensions: 0,
     paidAt: null,
     confirmBy: null,
+    buyerDisputeFrom: null,
     finalAlertAt: null,
     cancelProposedBy: null,
     settling: null,
@@ -399,6 +407,9 @@ function onResume(t: Trade, now: Date): Trade {
     fundBy: move(t.fundBy),
     payBy: move(t.payBy),
     confirmBy: move(t.confirmBy),
+    // The buyer's dispute wait is frozen too (owner 2026-11-06 Q10); the poster's own clocks above
+    // move exactly as they always did.
+    buyerDisputeFrom: move(t.buyerDisputeFrom),
     settleBy: move(t.settleBy),
     finalAlertAt: opens(t.finalAlertAt, TIMERS.finalAlertMin),
     lapsedAt: opens(t.lapsedAt, TIMERS.lapseCosignMin),
@@ -413,8 +424,9 @@ function onDispute(t: Trade, by: Party, now: Date): Trade {
     case 'secured':
       return open();
     case 'paid':
-      // The buyer from 30 minutes after marking paid (owner 2026-11-01), the seller at once.
-      if (by === 'buyer' && (t.paidAt === null || now.getTime() < addMin(t.paidAt, TIMERS.buyerDisputeAfterPaidMin).getTime())) return fail('too-early');
+      // The buyer from 60 minutes after marking paid, frozen by maintenance (owner 2026-11-06 Q10;
+      // `buyerDisputeFrom`), the seller at once.
+      if (by === 'buyer' && (t.buyerDisputeFrom === null || now.getTime() < t.buyerDisputeFrom.getTime())) return fail('too-early');
       return open();
     case 'settling':
       if (t.settleBy === null || !past(now, t.settleBy)) return fail('too-early');
@@ -504,6 +516,7 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
         state: 'paid',
         paidAt: now,
         confirmBy: addMin(base(t, now), t.confirmWindowMin),
+        buyerDisputeFrom: addMin(base(t, now), TIMERS.buyerDisputeAfterPaidMin),
         finalAlertAt: null,
         // No cancel after "I've paid" (Revision 2026-10-29b): any open proposal is withdrawn here.
         cancelProposedBy: null,

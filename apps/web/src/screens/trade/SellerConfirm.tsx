@@ -371,7 +371,7 @@ function ConfirmWindow({ deadline, clock, buyer, place }: { deadline: string; cl
       <span id="x2f-confirm-tip" role="tooltip" className="x2f-release__tip" hidden={!open}>
         Time you have to check {place} and release, or report that the money didn&apos;t arrive. Instant apps like Zelle get 2 hours;
         bank wires get up to 24.{' '}
-        {/* COPY-UNSIGNED (cap-dispute review I1): owner wording pending for the 30-minute dispute rule. */}
+        {/* DESIGN: wording (cap-dispute review I1). Owner 2026-11-06 Q36: the buyer waits 60 minutes; maintenance pauses it (Q10). */}
         {buyer} can ask a moderator to step in from {TIMERS.buyerDisputeAfterPaidMin} minutes after marking paid. Nothing is
         released without you or a moderator.
       </span>

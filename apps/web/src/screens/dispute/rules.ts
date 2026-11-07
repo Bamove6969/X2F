@@ -46,8 +46,9 @@ const ms = (iso: string | null): number | null => (iso === null ? null : Date.pa
  * Whether this side may open a dispute now, mirroring the state machine's `open-dispute` rules
  * (the API decides; this only keeps the screen from sending what would be refused):
  * - securing or secured: either side;
- * - paid: the seller at once, the buyer from 30 minutes after marking paid (owner 2026-11-01,
- *   TIMERS.buyerDisputeAfterPaidMin; no longer the end of the seller's confirm window);
+ * - paid: the seller at once, the buyer from the server's `buyerDisputeFrom`: 60 minutes after
+ *   marking paid (TIMERS.buyerDisputeAfterPaidMin; owner 2026-11-06 Q10, was 30), later by any
+ *   maintenance during the wait; no longer the end of the seller's confirm window;
  * - settling: either side once the signing window has passed;
  * - refunded: the buyer, until 48 hours after the refund (owner 2026-10-29; was 90 days).
  * `wait` carries the explanation shown instead of sending anything.
@@ -63,12 +64,13 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
       return { kind: 'open' };
     case 'paid': {
       if (t.role === 'seller') return { kind: 'open' };
-      const paid = ms(t.paidAt);
-      if (paid === null) return { kind: 'none' };
-      const wait = TIMERS.buyerDisputeAfterPaidMin * 60_000;
-      const by = paid + wait;
+      // The server's time, which maintenance moves (owner 2026-11-06 Q10), never paidAt + 60 here.
+      const by = ms(t.buyerDisputeFrom);
+      if (ms(t.paidAt) === null || by === null) return { kind: 'none' };
       if (n >= by) return { kind: 'open' };
-      const window = formatRemaining(wait, 'minutes');
+      // The rule in working time ("within 60 min"), however long a maintenance paused it; minutes,
+      // not "1 h", as the owner says it. DESIGN: wording (number only; the sentence is unchanged).
+      const window = `${TIMERS.buyerDisputeAfterPaidMin} min`;
       return {
         kind: 'wait',
         until: new Date(by),

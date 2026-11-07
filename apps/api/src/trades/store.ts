@@ -63,6 +63,8 @@ export interface TradeRow {
   extensions: number;
   paid_at: Date | null;
   confirm_by: Date | null;
+  /** Migration 118 (owner 2026-11-06 Q10): when the buyer may dispute in `paid`; moved by maintenance. */
+  buyer_dispute_from: Date | null;
   final_alert_at: Date | null;
   /** Task 19: when the buyer's first seen-receipt for the final alert landed (null = not seen). */
   final_alert_seen_at: Date | null;
@@ -132,6 +134,7 @@ export function rowToTrade(r: TradeRow): Trade {
     extensions: r.extensions,
     paidAt: r.paid_at,
     confirmBy: r.confirm_by,
+    buyerDisputeFrom: r.buyer_dispute_from,
     finalAlertAt: r.final_alert_at,
     cancelProposedBy: r.cancel_proposed_by,
     settling: r.settling,
@@ -172,6 +175,7 @@ function stateColumns(t: Trade): [string, unknown][] {
     ['extensions', t.extensions],
     ['paid_at', t.paidAt],
     ['confirm_by', t.confirmBy],
+    ['buyer_dispute_from', t.buyerDisputeFrom],
     ['final_alert_at', t.finalAlertAt],
     ['cancel_proposed_by', t.cancelProposedBy],
     ['settling', t.settling],

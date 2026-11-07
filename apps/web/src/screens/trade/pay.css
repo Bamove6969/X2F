@@ -400,7 +400,7 @@
   line-height: 22px;
 }
 
-/* "Dispute opens in N min" in place of the link for 30 minutes after marking paid (review Minor 7; owner 2026-11-01), and the wide
+/* "Dispute opens in N min" in place of the link for 60 minutes after marking paid (review Minor 7; owner 2026-11-06 Q10), and the wide
    seller room's "Chat isn't available here yet." while no chat panel is installed (round 2, Minor 3). */
 .x2f-room__dispute-wait,
 .x2f-room__hint {

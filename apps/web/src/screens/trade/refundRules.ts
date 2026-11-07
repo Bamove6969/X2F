@@ -68,6 +68,7 @@ export function tradeFromView(v: RefundView): Trade {
     extensions: v.extensions,
     paidAt: date(v.paidAt, 'paidAt'),
     confirmBy: date(v.confirmBy, 'confirmBy'),
+    buyerDisputeFrom: date(v.buyerDisputeFrom ?? null, 'buyerDisputeFrom'),
     finalAlertAt: date(v.finalAlertAt, 'finalAlertAt'),
     cancelProposedBy: v.cancelProposedBy,
     settling: v.settling,

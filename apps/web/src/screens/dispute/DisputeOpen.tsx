@@ -1,6 +1,6 @@
 // DisputeOpen (Plan 3 Task 27), board design/x2f-app/DisputeOpen.dc.html. The trader picks what
 // went wrong and tells the moderator; the screen says plainly that a moderator will read the whole
-// chat. Before the state machine allows a dispute (the buyer, until 30 minutes after marking paid)
+// chat. Before the state machine allows a dispute (the buyer, until 60 minutes after marking paid)
 // it explains when and sends nothing. Evidence goes through Plan 5's on-device pipeline
 // (seams.tsx); until then nothing can be picked.
 import { useId, useState, type ReactNode } from 'react';
@@ -47,7 +47,7 @@ export function DisputeOpen({
   const entry = disputeEntry(trade, at);
   const allowed = entry.kind === 'open';
   const back = `/trade/${encodeURIComponent(trade.code)}`;
-  // The buyer may dispute from 30 minutes after marking paid (owner 2026-11-01), often before the
+  // The buyer may dispute from 60 minutes after marking paid (owner 2026-11-06 Q10), often before the
   // seller's confirm window ends: the flag says it ran out only once it has.
   const timedOut =
     trade.state === 'paid' && trade.role === 'buyer' && allowed && trade.confirmBy !== null && at.getTime() >= Date.parse(trade.confirmBy);
