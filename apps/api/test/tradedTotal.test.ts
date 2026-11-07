@@ -262,6 +262,16 @@ describe('verified imported volume, one line per site (owner Q64)', () => {
    * Owner F17: a site's line in XMR at the test app's current XMR/USD price, rounded down like the
    * XMR line; [] when it is 10 XMR or less.
    */
+  // A fixed XMR price of $300.00 for this block (the test app has no price sources of its own).
+  let realPrices: Deps['prices'];
+  beforeAll(() => {
+    realPrices = deps.prices;
+    const usd = { price: { currency: 'USD', centsPerXmr: 30_000n }, at: START, sources: [], exponent: 2, usdCentsPerXmr: 30_000n, fx: null };
+    deps.prices = { ...realPrices, quote: (c: string) => (c === 'USD' ? usd : realPrices.quote(c)) } as Deps['prices'];
+  });
+  afterAll(() => {
+    deps.prices = realPrices;
+  });
   const lineOf = (site: string, usdCents: bigint) => {
     const rate = usdRate(deps);
     if (rate === null) return [];
@@ -274,21 +284,21 @@ describe('verified imported volume, one line per site (owner Q64)', () => {
   it('each verified, approved site is its own line; the XMR line is not lifted; figures never appear', async () => {
     // The test app has a USD price, so these lines are not empty by default.
     expect(usdRate(deps)).not.toBeNull();
-    expect(lineOf('Paxful', dollars(150_000))).toHaveLength(1);
+    expect(lineOf('Paxful', dollars(99_000))).toHaveLength(1);
     const seller = await trader();
     const buyer = await trader();
     const code = await trade(seller, buyer, xmr(5));
     const a = await claim(seller.id, 'approved', 'LocalMonero');
     const b = await claim(seller.id, 'approved', 'Paxful');
     await verify(a.id, dollars(23_456) + 78n);
-    await verify(b.id, dollars(150_000));
+    await verify(b.id, dollars(99_000));
     expect((await optIn(seller, true)).json()).toEqual({
-      show: true, tradedOverXmr: null, imported: [...lineOf('LocalMonero', dollars(23_456) + 78n), ...lineOf('Paxful', dollars(150_000))],
+      show: true, tradedOverXmr: null, imported: [...lineOf('LocalMonero', dollars(23_456) + 78n), ...lineOf('Paxful', dollars(99_000))],
     });
     const viewed = await summaryOf(buyer, code);
-    expect(viewed.summary).toMatchObject({ tradedOverXmr: null, imported: [...lineOf('LocalMonero', dollars(23_456) + 78n), ...lineOf('Paxful', dollars(150_000))] });
+    expect(viewed.summary).toMatchObject({ tradedOverXmr: null, imported: [...lineOf('LocalMonero', dollars(23_456) + 78n), ...lineOf('Paxful', dollars(99_000))] });
     expect((await setting(buyer)).json()).toEqual({ show: false, tradedOverXmr: null, imported: [] });
-    for (const body of [viewed.body, (await setting(seller)).body]) expect(body).not.toMatch(/2345678|23,456|15000000|verified_?usd|usd_?cents/i);
+    for (const body of [viewed.body, (await setting(seller)).body]) expect(body).not.toMatch(/2345678|23,456|9900000|99,000|verified_?usd|usd_?cents/i);
   });
 
   it('off by default: no line for others even with a verified figure; the trader sees their own', async () => {
@@ -332,6 +342,6 @@ describe('verified imported volume, one line per site (owner Q64)', () => {
     expect(await totals(solo.id)).toBeNull();
     expect((await traderSummaries(deps.db, [solo.id], START, viewer.id)).get(solo.id)).toMatchObject({ tradedOverXmr: null, imported: [] });
     expect((await optIn(solo, true)).json()).toEqual({ show: true, tradedOverXmr: null, imported: lineOf(c.site, dollars(25_000)) });
-    expect((await traderSummaries(deps.db, [solo.id], START, viewer.id)).get(solo.id)).toMatchObject({ completedTrades: 0, imported: lineOf(c.site, dollars(25_000)) });
+    expect((await traderSummaries(deps.db, [solo.id], START, viewer.id, undefined, usdRate(deps))).get(solo.id)).toMatchObject({ completedTrades: 0, imported: lineOf(c.site, dollars(25_000)) });
   });
 });
