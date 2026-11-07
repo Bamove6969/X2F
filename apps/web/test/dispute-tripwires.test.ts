@@ -21,13 +21,12 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
   });
 
   it('NEEDS_PLAN_4_RULING_PAYOUT: the ruling page says where the XMR goes until the API reports the payout executed', () => {
-    // C11 review I1. Spec / Plan 4 ("A1 dropped", Revision 2026-10-29c): the coins move at the ruling.
-    // Today nothing executes a ruling's payout and rulingAllowsCosign (screens/dispute/rules.ts) holds
-    // the co-sign until the ruling is final, so DisputeRuling says "Goes to …" and the appeal line does
-    // not say the XMR has moved. Plan 4's execution task owns the gate change (coins move at the
-    // ruling, with or without an appeal, still through cosignPolicy; update dispute.test.tsx's
-    // rulingAllowsCosign cases) and an executed flag on the dispute view. When the view reports the
-    // payout executed: show the board's "Sent to …" once it is, and delete this check.
+    // C11 review I1. Spec / Plan 4 ("A1 dropped", Revision 2026-10-29c) and owner Q37 (6 Nov): the
+    // coins move at the ruling. rulingAllowsCosign (screens/dispute/rules.ts) allows the co-sign from
+    // the ruling on (Task 15), but nothing executes a ruling's payout yet, so DisputeRuling says
+    // "Goes to …" and the appeal line does not say the XMR has moved. Plan 4's execution task adds an
+    // executed flag on the dispute view. When the view reports the payout executed: show the board's
+    // "Sent to …" once it is, and delete this check.
     const view = readFileSync(ROOT + 'apps/web/src/screens/dispute/api.ts', 'utf8');
     const routes = readFileSync(ROOT + 'apps/api/src/disputes/routes.ts', 'utf8');
     expect(/executed|payoutTx|paidOutAt/i.test(view + routes), 'the dispute view reports the payout executed: flip the ruling copy to "Sent to …"').toBe(false);
@@ -62,5 +61,34 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     const migrations = readdirSync(ROOT + 'apps/api/migrations').map((f) => readFileSync(ROOT + 'apps/api/migrations/' + f, 'utf8')).join('\n');
     const view = readFileSync(ROOT + 'apps/api/src/trades/view.ts', 'utf8');
     expect(/refund_reason/.test(migrations) || /refundReason/.test(view), 'refund_reason landed: switch rules.ts refundReason to view.refundReason').toBe(false);
+  });
+  it('NEEDS_TASK_12_FEES_OWED: the ruling page shows the owed-fee line only when the dispute view carries feeOwedAtomic', () => {
+    // Revision 2026-10-29c "Fees on settled disputes": Task 12's publish writes fees_owed and the
+    // trader view tells the debtor. Task 10's view has no such field yet, so DisputeRuling (via
+    // parseDispute's optional feeOwedAtomic) shows nothing. When the API sends it: check the name and
+    // shape (a digit string, only in the debtor's view) against api.ts parseDispute, check that the
+    // collection the line promises ("deducted automatically from your future trades": feeOwedAtomic in
+    // the next trades' signed terms) is built, or change the line, and delete this.
+    const routes = readFileSync(ROOT + 'apps/api/src/disputes/routes.ts', 'utf8');
+    expect(/feeOwed|fees_owed/.test(routes), 'the dispute view sends the owed fee: check parseDispute against it').toBe(false);
+  });
+
+  it('NEEDS_TASK_25_LIENS: the appeal lines promise a lien that Plan 4 Task 25 builds', () => {
+    // Lead review 7 Nov: rules.ts overturnLien and appealSentText tell the receiver an overturn
+    // gives them a lien ("You can't trade until you pay the XMR back"). No lien exists yet. When
+    // Task 25 lands (a liens table): check that an overturn really places one on the receiver, that
+    // it blocks trading as the line says, and that the amount it names is what was paid out (the
+    // payout, not the trade amount, on a buyer's ad); then delete this.
+    const migrations = readdirSync(ROOT + 'apps/api/migrations').join('\n');
+    expect(/lien/i.test(migrations), 'liens landed: check the lien lines in screens/dispute/rules.ts').toBe(false);
+  });
+
+  it('NEEDS_TASK_12_TX_PROOF: the seller-sends-xmr proof form is shown only with a handler', () => {
+    // Plan 4 Task 15 (A6/A8): the seller sends the XMR and proves it (tx hash, tx key). No API route
+    // takes the proof yet, and the view does not carry the buyer's address, so DisputeScreen passes no
+    // onTxProof and the ruling shows the amount and the time only. When the route lands: pass
+    // onTxProof from DisputeScreen and DisputeSlot, show the buyer's address, and delete this.
+    const routes = readFileSync(ROOT + 'apps/api/src/disputes/routes.ts', 'utf8');
+    expect(/tx-proof|txKey|tx_key/.test(routes), 'the tx-proof route landed: wire onTxProof and the buyer address').toBe(false);
   });
 });

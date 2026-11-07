@@ -149,9 +149,10 @@ test.describe('/buy/:methodId (BuyOffers board)', () => {
   test('logged out, the buy lists render and no browse request fails', async ({ page }) => {
     const seen = await stub(page, { signedIn: false });
     const failed: string[] = [];
+    // GET /v1/site is the app shell's (Plan 4 Task 8: banner, maintenance), not a browse request.
     page.on('response', (r) => {
       const path = new URL(r.url()).pathname;
-      if (path.startsWith('/v1/') && path !== '/v1/account/me' && r.status() >= 400) failed.push(`${r.status()} ${path}`);
+      if (path.startsWith('/v1/') && path !== '/v1/account/me' && path !== '/v1/site' && r.status() >= 400) failed.push(`${r.status()} ${path}`);
     });
     await page.goto('/buy');
     await expect(page.locator('main a').first()).toBeVisible();
