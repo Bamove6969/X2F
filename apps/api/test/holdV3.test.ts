@@ -18,6 +18,7 @@ import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { HOLD_MS, endHoldByModerator, extendHoldByModerator, lockAccount, settleDueHolds, withTx } from '../src/auth/hold.js';
 import { MAX_HOLD_CHANGES, settleDueChanges } from '../src/auth/holdChanges.js';
+import { purgeExpired } from '../src/auth/challenges.js';
 import { RECOVERY_CODE_COUNT } from '../src/auth/recovery.js';
 import { syncHeldTradesJob } from '../src/trades/held.js';
 import { applyEvent, noPublish } from '../src/trades/store.js';
@@ -295,6 +296,26 @@ describe('a username + password session: changes are staged, reviewed, submitted
     await t.b.post('/v1/logout');
     const { rows } = await deps.db.query('select 1 from hold_changes where id = $1', [id]);
     expect(rows).toHaveLength(0);
+  });
+
+  it('lead review item 2: an expired session with a draft is purged with it; the purge never stops; a deleted account too', async () => {
+    const t = await passwordTrader();
+    const draft = ((await changePassword(t.b, t.id)).json() as { changeId: string }).changeId;
+    const t2 = await passwordTrader();
+    const waiting = ((await changePassword(t2.b, t2.id)).json() as { changeId: string }).changeId;
+    expect((await submit(t2.b, [waiting])).statusCode).toBe(200);
+    // Both sessions expire without a logout (never revoked).
+    await deps.db.query('update sessions set expires_at = $2 where account_id = any($1)', [[t.id, t2.id], new Date(now.getTime() - 1000)]);
+    expect(await purgeExpired.run(deps.db, now)).toBeGreaterThanOrEqual(2);
+    expect((await deps.db.query('select 1 from hold_changes where id = $1', [draft])).rowCount).toBe(0);
+    // A submitted change outlives its session and waits for its date.
+    const kept = await deps.db.query<{ session_id: string | null }>('select session_id from hold_changes where id = $1', [waiting]);
+    expect(kept.rows).toEqual([{ session_id: null }]);
+    // An account with a live session and a draft can be deleted.
+    const t3 = await passwordTrader();
+    await changePassword(t3.b, t3.id);
+    await deps.db.query('delete from accounts where id = $1', [t3.id]);
+    expect((await deps.db.query('select 1 from hold_changes where account_id = $1', [t3.id])).rowCount).toBe(0);
   });
 
   it('any logged-in session, password-only included, cancels the waiting changes; nothing applies at 24 h', async () => {

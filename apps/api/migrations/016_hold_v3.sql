@@ -51,6 +51,21 @@ create trigger hold_change_drafts_die_with_session after update of revoked_at on
   for each row when (old.revoked_at is null and new.revoked_at is not null)
   execute function hold_change_drafts_die_with_session();
 
+-- A session deleted outright (the purge of expired sessions, an account's deletion) takes its
+-- drafts first: the `set null` above would otherwise break the draft check and fail the whole
+-- delete, so one trader's draft could stop the site-wide purge (lead hold v3 review, item 2).
+create function hold_change_drafts_go_before_session() returns trigger
+  language plpgsql
+  set search_path = public, pg_catalog
+as $$
+begin
+  delete from hold_changes where session_id = old.id and submitted_at is null;
+  return old;
+end $$;
+
+create trigger hold_change_drafts_go_before_session before delete on sessions
+  for each row execute function hold_change_drafts_go_before_session();
+
 -- 3. The trades of an account in a recovery-code hold (one row per trade and held account):
 -- `cancel` for a trade not yet funded, `pause` for one whose escrow is or may be funded. `paused`
 -- records what this hold applied: the machine's `pause` (only those are resumed) or `system-cancel`. No
