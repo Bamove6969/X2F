@@ -31,6 +31,12 @@ export const CANT_DO_CODES = [
   'last-login-method',
   'method-not-allowed',
   'account-disabled',
+  // Hold model v3 (API only so far; the web screens are not on v3 yet, so no words here): a new
+  // device with nothing to approve it and no passkey, security key or PGP key; the 20-change cap;
+  // a trade event refused because the partner's account has a temporary problem.
+  'approval-unavailable',
+  'too-many-changes',
+  'counterparty-unavailable',
   // Plan 3 Task 26: the nudge limit. Task 6: no more payment-time extensions.
   'too-soon',
   'no-extensions-left',
@@ -69,6 +75,8 @@ export type CantDoCode = (typeof CANT_DO_CODES)[number];
 /** Every other code the web knows, with why it is not a "can't do that" refusal. */
 export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'bad-request': 'a malformed request (a fault)',
+  // Hold model v3: the drafts submitted are not the ones there are (another tab changed them): reload and review again.
+  'changes-changed': 'a state conflict: the list changed since it was reviewed',
   'not-found': 'nothing there',
   'unsupported-media-type': 'a fault',
   internal: 'a server fault',

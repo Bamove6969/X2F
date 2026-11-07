@@ -29,9 +29,10 @@ describe('holdSentence', () => {
     const t = holdSentence('2026-10-27T15:00:00Z');
     expect(t).toContain(`wait until ${localTime(new Date('2026-10-27T15:00:00Z'))}.`);
     expect(t).toContain('Trades already open can still be finished.');
-    expect(t).toContain('a passkey, a security key, or your password and authenticator code');
-    // Owner 2026-10-29 14:12: a PGP key alone does not end the hold.
-    expect(t).not.toContain('PGP');
+    // Hold model v3 (owner 2 Nov 2026) and Q81 (6 Nov): a passkey, security key or PGP key held
+    // before ends the hold; an authenticator code does not.
+    expect(t).toContain('a passkey, a security key or a PGP key you had before the hold ends it');
+    expect(t).not.toContain('authenticator');
   });
 
   it('without a time (or a broken one) says a day', () => {

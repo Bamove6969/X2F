@@ -69,6 +69,12 @@ export interface TradeView {
   poster: Party;
   state: TradeState;
   counterparty: TraderSummary;
+  /**
+   * Hold model v3: the partner's account has a temporary problem (a recovery-code hold: the trade is
+   * paused or was cancelled). Never says why. Not shown on screen yet (the web's v3 port).
+   * Optional: live-event views and older API builds may leave it out.
+   */
+  counterpartyProblem?: boolean;
   methodId: string;
   profile: unknown;
   amountAtomic: string;
