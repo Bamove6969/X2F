@@ -1,0 +1,6 @@
+# Lead review: wip/third-p4-task15 114264ab. CHANGES REQUIRED. No Critical.
+1. Maintenance.tsx:26 and staff/site.ts:46, Maintenance.tsx header: "Your trade timers are paused" is false: nothing sends pause or resume; timerEvents has no caller; startTimers is on held wip/second-p3-task10. Drop the line until the loop is real; don't promise it. Owner decides on the timer loop.
+2. DisputeRoom.tsx:34: hourglassShows ignores dispute.moderator: add && d.moderator === null, plus a test. Board: "joined" replaces the hourglass with the "Replied in" line.
+3. rules.ts:249, :257: "1.25 XMR goes to you" is wrong when the buyer is the poster (payoutsFor pays amount minus fee; release/view.ts:70-71). Pass poster into rulingCopy.
+Minor: rules.ts:296 lien wording and a web tripwire; DisputeRuling.tsx:94 hard-coded 48 h, send the window from the API; staff/members.ts:117 log dispute.unassigned as system; disputes/timers.ts:23 vs :70 one bad row shouldn't stop the pass; DisputeRoom "Locked in escrow" on system escalations; stale comments rules.ts:106, payouts.ts:15. rules.ts:354 ruling round: settle in Task 13.
+Owner call: fee on system escalations (payouts.ts:84, policy.ts:167): cancels never pay the fee, so add a no-fee kind for openedBy system.
