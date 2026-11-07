@@ -38,6 +38,10 @@ export interface WatchItem {
   settleKind: SettleKind | null;
   /** Paused for maintenance (review M3). */
   paused: boolean;
+  /** `trades.final_alert_seen_at` when `final_alert_delivered` is true; null otherwise. */
+  finalAlertSeenAt: Date | null;
+  /** `trades.final_alert_at`: the API's own, shifted by every maintenance pause it applied (Task 10 review I1). */
+  finalAlertAt: Date | null;
 }
 
 export interface Link {
@@ -46,7 +50,10 @@ export interface Link {
   postReport(report: unknown): Promise<number>;
   /** Like postReport, with the API's refusal code (`{ error }`) when it gives one. */
   report(report: unknown): Promise<{ status: number; error: string | null }>;
-  /** The API's view of every attested trade it still lists (Task 9 watcher). Malformed items are left out. */
+  /**
+   * The API's view of every attested trade it still lists (Task 9 watcher), plus the buyer's
+   * final-alert seen-receipt time (Task 10; null when not seen or absent). Malformed items are left out.
+   */
   pullWatch(): Promise<Map<string, WatchItem>>;
   registerChannel(channel: string, signPublics: Record<Role, string>): Promise<number>;
   /** The signed relay close of one channel (Task 7's `closeTrade`); 200 when done. */
@@ -131,10 +138,15 @@ export function createLink(o: {
       const body = (await res.json()) as { trades?: unknown };
       const out = new Map<string, WatchItem>();
       if (!Array.isArray(body.trades)) return out;
-      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown; settleKind?: unknown; paused?: unknown }>) {
+      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown; settleKind?: unknown; paused?: unknown; finalAlertSeenAt?: unknown; finalAlertAt?: unknown }>) {
         if (typeof t?.trade !== 'string' || typeof t.state !== 'string') continue;
         const settleKind = SETTLE_KINDS.includes(t.settleKind as SettleKind) ? (t.settleKind as SettleKind) : null;
-        out.set(t.trade, { state: t.state, settleKind, paused: t.paused === true });
+        const date = (v: unknown): Date | null => {
+          if (typeof v !== 'string') return null;
+          const d = new Date(v);
+          return Number.isNaN(d.getTime()) ? null : d;
+        };
+        out.set(t.trade, { state: t.state, settleKind, paused: t.paused === true, finalAlertSeenAt: date(t.finalAlertSeenAt), finalAlertAt: date(t.finalAlertAt) });
       }
       return out;
     },

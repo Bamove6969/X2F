@@ -1,11 +1,13 @@
 // Plan 3 Task 9: the API timer loop (`startTimers`) applying `timerEvents` through the trade store.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, type Trade } from '@x2f/trade';
 const addMin = (d: Date, min: number): Date => new Date(d.getTime() + min * 60_000);
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { loadTrade } from '../src/trades/store.js';
-import { startTimers } from '../src/trades/timers.js';
+import { siteMaintenanceSince, startTimers } from '../src/trades/timers.js';
 import { applyEvent } from '../src/trades/store.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
@@ -125,6 +127,22 @@ describe('startTimers', () => {
     expect(resumed.pausedAt).toBeNull();
     expect(resumed.payBy!.getTime() - payBy.getTime()).toBe(20 * 60_000);
     await timers.stop();
+  });
+
+  it('siteMaintenanceSince reads site_flags.maintenance_since (what main.ts passes; the NEEDS_SITE_FLAGS landing)', async () => {
+    expect(await siteMaintenanceSince(deps.db)).toBeNull();
+    const since = new Date('2026-11-02T10:00:00Z');
+    await deps.db.query('update site_flags set maintenance_since = $1', [since]);
+    try {
+      expect(await siteMaintenanceSince(deps.db)).toEqual(since);
+    } finally {
+      await deps.db.query('update site_flags set maintenance_since = null');
+    }
+  });
+
+  it('main.ts starts the timer loop with the site maintenance flag', () => {
+    const main = readFileSync(fileURLToPath(new URL('../src/main.ts', import.meta.url)), 'utf8');
+    expect(main).toMatch(/startTimers\(\{[^}]*maintenanceSince: \(\) => siteMaintenanceSince\(db\)/s);
   });
 
   it('a failing pass is logged and the loop keeps running; stop() ends it', async () => {

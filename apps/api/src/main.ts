@@ -2,7 +2,7 @@ import { assertLoginNamesTagged } from './accounts.js';
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
 import { buildInternalListener } from './internal/routes.js';
 import { tradeEventPublisher } from './events/tradePublisher.js';
-import { startTimers } from './trades/timers.js';
+import { siteMaintenanceSince, startTimers } from './trades/timers.js';
 import { addOwnerAlert } from './alerts.js';
 import { fileAttestationPolicy } from './auth/attestation.js';
 import { openLeakedList } from './auth/leaked.js';
@@ -122,11 +122,12 @@ if (internal) {
 const staffListen = staffListenFromEnv(process.env);
 const staff = staffListen ? await startStaffApi(deps, staffListen) : null;
 
-// Plan 3 Task 9: the timer loop (deadline ticks, lapse escalation; maintenance pause/resume once
-// Plan 4's site_flags exists, tripwire NEEDS_SITE_FLAGS).
+// Plan 3 Task 9: the timer loop (deadline ticks, lapse escalation, and maintenance pause/resume
+// from `site_flags.maintenance_since`).
 const timers = startTimers({
   db,
   clock: deps.clock,
+  maintenanceSince: () => siteMaintenanceSince(db),
   publish: tradeEventPublisher({ events: app.events, push: app.push }),
   log: (e) => app.log.info({ reason: e.reason }, 'trade timers'),
 });

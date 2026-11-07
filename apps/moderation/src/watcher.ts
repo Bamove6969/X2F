@@ -15,6 +15,7 @@ import {
   type WatchState,
 } from '@x2f/trade';
 import type pg from 'pg';
+import { NO_DESK_FACTS, sweepKindAgrees, type Desk } from './desk.js';
 import type { Link, WatchItem } from './link.js';
 
 /**
@@ -41,6 +42,11 @@ export interface WatcherOptions {
   argsFor: (trade: string) => Promise<ModPartyArgs | null>;
   now: () => Date;
   log: (e: { reason: string }) => void;
+  /**
+   * Opens the trade's moderator desk (Task 10: signals, shadow trade, guarded refunds) once its
+   * party runs. Absent: no desk (Task 9's tests).
+   */
+  openDesk?: (a: ModPartyArgs) => Promise<Desk>;
 }
 
 export interface Watcher {
@@ -265,6 +271,7 @@ const accepted = (r: { status: number; error: string | null }): boolean => r.sta
 
 export function createWatcher(o: WatcherOptions): Watcher {
   const running = new Map<string, PartyHandle>();
+  const desks = new Map<string, Desk>();
   /** The ModPartyArgs each running party was started with (this service's own records: terms, fee wallet). */
   const argsOf = new Map<string, ModPartyArgs>();
   /** When this watcher started: the 6 h fallback waits WATCH_RESTART_GRACE_MS after it (review M3). */
@@ -273,6 +280,16 @@ export function createWatcher(o: WatcherOptions): Watcher {
   /** settle-kind-unknown back-off per trade (in memory: a restart retries at once, then backs off again). */
   const backoff = new Map<string, { until: number; delayMs: number }>();
   let stopped = false;
+
+  /** Opens the trade's desk (Task 10) if it is not open; a failure is retried on the next pass (review M2). */
+  const ensureDesk = async (a: ModPartyArgs): Promise<void> => {
+    if (!o.openDesk || desks.has(a.trade)) return;
+    try {
+      desks.set(a.trade, await o.openDesk(a));
+    } catch {
+      o.log({ reason: 'desk-open-failed' });
+    }
+  };
 
   const start = (a: ModPartyArgs): Promise<void> => {
     const code = a.trade;
@@ -288,6 +305,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
         }
         running.set(code, handle);
         argsOf.set(code, a);
+        await ensureDesk(a);
         handle.ready().then(
           async (address) => {
             await o.db.query('update mod_watch set escrow_address = coalesce(escrow_address, $2), updated_at = now() where trade = $1', [code, address]);
@@ -307,6 +325,9 @@ export function createWatcher(o: WatcherOptions): Watcher {
   const stopParty = async (code: string): Promise<void> => {
     const h = running.get(code);
     running.delete(code);
+    const d = desks.get(code);
+    desks.delete(code);
+    await d?.stop().catch(() => undefined);
     argsOf.delete(code);
     await h?.stop().catch(() => undefined);
   };
@@ -343,8 +364,19 @@ export function createWatcher(o: WatcherOptions): Watcher {
       return true;
     }
     const state = reviveWatchState(row.state);
+    // Defence in depth (Task 10 review round 2, R2-M1 note): a refund kind the API names is proven
+    // against only when this trade's desk saw its cause (`sweepKindAgrees`); otherwise no proof counts.
+    // With desks configured, a desk that failed to open again counts as one that saw nothing (fail safe:
+    // a refund kind is not proven without it; `release`/`mutual-cancel` are unaffected).
+    await ensureDesk(args);
+    const deskNow = desks.get(row.trade);
+    const settleKind =
+      deskNow ? deskNow.sweepKind(item.settleKind)
+      : o.openDesk ? (sweepKindAgrees(NO_DESK_FACTS, item.settleKind) ? item.settleKind : null)
+      : item.settleKind;
+    if (settleKind !== item.settleKind && (f.outgoing ?? []).some((x) => !state.sweepTxs.includes(x.txHash))) o.log({ reason: 'sweep-kind-vetoed' });
     const spend = await spendEvidence(f, state, {
-      settleKind: item.settleKind,
+      settleKind,
       terms: args.terms,
       feeWallet: args.feeWallet,
       ...(handle.proveSweep ? { prove: (h, k, m) => handle.proveSweep!(h, k, m) } : {}),
@@ -361,6 +393,22 @@ export function createWatcher(o: WatcherOptions): Watcher {
       upSince,
     });
     if (!(await post(row.trade, step.reports))) return true;
+    // Task 10: the desk sees the same accepted facts, then decides the refunds the moderator signs alone.
+    await ensureDesk(args);
+    const desk = desks.get(row.trade);
+    if (desk) {
+      await desk
+        .step({
+          handle,
+          api: item,
+          escrowAddress: row.escrow_address,
+          reports: step.reports,
+          chain: step.state.closedAt === null ? step.state.lastChain : null,
+          settledTx: step.state.settledTx,
+          funds: { balance: facts.funds.balance, unlocked: facts.funds.unlocked },
+        })
+        .catch(() => o.log({ reason: 'desk-step-failed' }));
+    }
     if (step.closeChannels) {
       for (const kind of ['escrow', 'signals'] as const) {
         const status = await o.link.closeChannel(await channelFor(row.trade, kind));
@@ -415,7 +463,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
             closedHere = false;
           }
           if (!closedHere) continue;
-          item = { state: 'cancelled', settleKind: null, paused: false };
+          item = { state: 'cancelled', settleKind: null, paused: false, finalAlertSeenAt: null, finalAlertAt: null };
         }
         const apiState = item.state as TradeState;
         try {

@@ -491,8 +491,10 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
 
     case 'escalate': {
       // Only when the escrow holds coins: a lapse nobody refunded, late funds after the end, or a
-      // settlement the moderator was not shown spending the escrow 6 h after it started (Task 9 I/O).
-      if (s !== 'lapsed' && s !== 'settling' && !CLOSED.includes(s)) return fail('wrong-state');
+      // settlement the moderator was not shown spending the escrow 6 h after it started (Task 9 I/O),
+      // or a requested refund the moderator may not sign alone (Task 10: no seen-receipt for the
+      // buyer's final alert, or its own records disagree with the API's).
+      if (s !== 'lapsed' && s !== 'settling' && s !== 'refund_requested' && !CLOSED.includes(s)) return fail('wrong-state');
       // A buyer's cancel whose refund never showed all its confirmations (Task 39 review M3) goes to a
       // moderator whatever the escrow reads: nobody knows where the coins are.
       if (t.receivedAtomic <= 0n && !awaitingCancelConfirm(t)) return fail('wrong-state');
