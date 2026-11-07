@@ -6,6 +6,7 @@ export { sha256 } from './sha256.js';
 export {
   GRANTABLE_PERMS,
   NAV,
+  navFor,
   PERMS,
   STAFF_ROLES,
   can,
@@ -41,6 +42,7 @@ export {
   needsSecond,
   newDispute,
   shiftDeadlines,
+  traderStatus,
   type Actor,
   type Dispute,
   type DisputeEvent,
@@ -49,5 +51,6 @@ export {
   type DisputeStatus,
   type Round1,
   type RulingDraft,
+  type TraderDisputeStatus,
 } from './dispute.js';
 export { appealReviewers, involvedIn, type InvolvementEntry } from './appealReviewers.js';

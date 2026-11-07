@@ -24,6 +24,7 @@ import { reviewRoutes } from './reviews/routes.js';
 import { tradedTotalRoutes } from './traders/tradedTotal.js';
 import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import { newsRoutes } from './news/routes.js';
+import { maintenanceGate, siteRoutes } from './site/routes.js';
 import { feedbackFormRoutes } from './feedback/form.js';
 import { feedbackRoutes } from './feedback/mood.js';
 import { pastRepRoutes } from './pastrep/routes.js';
@@ -251,6 +252,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // CSRF: before any body is parsed, unsafe methods need an exact configured Origin (Task 4).
   app.addHook('onRequest', originHook);
 
+  // Plan 4, Task 8: while maintenance is on, every /v1/* route but GET /v1/site answers 503 `maintenance`.
+  app.addHook('onRequest', maintenanceGate);
+
   // Only JSON bodies: the built-in text/plain parser would let a cross-site form post a JSON body.
   app.removeContentTypeParser('text/plain');
 
@@ -265,6 +269,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   });
 
   app.get('/healthz', async () => ({ ok: true }));
+  // Plan 4, Task 8: the banner, the emergency stop and maintenance as every visitor sees them.
+  siteRoutes(app);
   logoutRoute(app);
   passwordRoutes(app);
   await pgpRoutes(app);

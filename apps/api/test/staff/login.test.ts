@@ -7,7 +7,7 @@ import type { AttestationPolicy, Deps } from '../../src/app.js';
 import { requireStaff } from '../../src/staff/guard.js';
 import { buildStaffApi } from '../../src/staff/app.js';
 import { staffListenFromEnv } from '../../src/staff/main.js';
-import { sweepHours, startHoursSweeper } from '../../src/staff/sweeper.js';
+import { sweepHours, sweepPass, startHoursSweeper } from '../../src/staff/sweeper.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from '../helpers/softAuthenticator.js';
 import {
   MODERATION_STUB,
@@ -117,7 +117,7 @@ describe('staff login with login hours', () => {
     const me = await b.get('/staff/v1/me');
     expect(me.statusCode).toBe(200);
     // The 2-hour idle limit (14:00) comes before the end of the window (17:00).
-    expect(me.json()).toEqual({ username: `D${s.loginName}`, role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: '2026-11-02T14:00:00.000Z' });
+    expect(me.json()).toEqual({ displayName: `D${s.loginName}`, role: 'mod', nav: ['disputes', 'training', 'log'], sessionEndsAt: '2026-11-02T14:00:00.000Z' });
   });
 
   it('refuses the same login 1 minute after the window closes, only after the key verifies', async () => {
@@ -199,6 +199,41 @@ describe('staff login with login hours', () => {
     await sweeper.stop();
     const { rows } = await deps.db.query('select revoked_at from sessions where id = $1', [sess.sessionId]);
     expect(rows[0].revoked_at).not.toBeNull();
+  });
+
+  it('the sweeper also purges stale key taps (RV5 m8, lead re-review item 4)', async () => {
+    const s = await seedStaff(deps, { role: 'mod' });
+    const old = new Date(deps.clock().getTime() - 25 * 60 * 60_000);
+    const { rows: ins } = await deps.db.query<{ id: string }>(
+      `insert into key_taps (account_id, intent, nonce, started_at) values ($1, '{"kind":"emergency-stop"}', $2, $3) returning id`,
+      [s.id, randomBytes(16), old],
+    );
+    const sweeper = startHoursSweeper({ db: deps.db, clock: deps.clock, events: app.events }, (e) => { throw e; }, 20);
+    let gone = false;
+    for (let i = 0; i < 100 && !gone; i++) {
+      gone = (await deps.db.query('select 1 from key_taps where id = $1', [ins[0]!.id])).rowCount === 0;
+      if (!gone) await new Promise((r) => setTimeout(r, 20));
+    }
+    await sweeper.stop();
+    expect(gone).toBe(true);
+  });
+
+  it('a failed hours sweep still purges stale taps (lead review 7 Nov M3)', async () => {
+    const s = await seedStaff(deps, { role: 'mod' });
+    const old = new Date(deps.clock().getTime() - 25 * 60 * 60_000);
+    const { rows: ins } = await deps.db.query<{ id: string }>(
+      `insert into key_taps (account_id, intent, nonce, started_at) values ($1, '{"kind":"emergency-stop"}', $2, $3) returning id`,
+      [s.id, randomBytes(16), old],
+    );
+    // A database whose sessions read fails: the sweep throws, the purge still runs.
+    const failing = {
+      query: (text: string, params?: unknown[]) =>
+        /from sessions s join staff_members/.test(text) ? Promise.reject(new Error('sweep down')) : deps.db.query(text, params),
+    } as unknown as typeof deps.db;
+    const errors: unknown[] = [];
+    await sweepPass({ db: failing, clock: deps.clock, events: app.events }, (e) => errors.push(e));
+    expect(errors.map((e) => (e as Error).message)).toEqual(['sweep down']);
+    expect((await deps.db.query('select 1 from key_taps where id = $1', [ins[0]!.id])).rowCount).toBe(0);
   });
 
   it('logs the owner in at any hour', async () => {

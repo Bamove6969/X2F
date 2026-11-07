@@ -21,6 +21,12 @@ export interface StaffRouteRow {
   grantable?: true;
   /** The request body (a valid one where the route needs it, so allowed roles reach the handler). */
   body?: unknown;
+  /**
+   * Plan 4 Task 8: what an allowed caller gets instead of a 2xx, for a route whose own check answers
+   * 401 or 403 past the guard (a tapped action without a valid tap: 403 `tap-invalid`). The allowed
+   * roles must get exactly this, the others the guard's refusal.
+   */
+  allowedAnswer?: { status: number; error: string };
 }
 
 export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
@@ -32,6 +38,19 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/login/pgp/finish', perm: 'public-login', allowed: 'public', body: {} },
   { method: 'POST', url: '/staff/v1/logout', perm: 'public-login', allowed: 'public', body: {} },
   { method: 'GET', url: '/staff/v1/me', perm: 'self', allowed: EVERY_ROLE },
+  // Lead re-review 6 Nov items 1-2: one's own methods, sessions, alerts and push (bodies stop at
+  // validation or name nothing, so the matrix checks the guard alone).
+  { method: 'GET', url: '/staff/v1/account/methods', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'POST', url: '/staff/v1/account/pgp/start', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  { method: 'POST', url: '/staff/v1/account/pgp/finish', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  { method: 'DELETE', url: '/staff/v1/account/methods/:type/:id', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'GET', url: '/staff/v1/account/sessions', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'DELETE', url: '/staff/v1/account/sessions/:id', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'GET', url: '/staff/v1/account/alerts', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'POST', url: '/staff/v1/account/alerts/:id/seen', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  { method: 'GET', url: '/staff/v1/account/push', perm: 'self', allowed: EVERY_ROLE },
+  { method: 'POST', url: '/staff/v1/account/push', perm: 'self', allowed: EVERY_ROLE, body: {} },
+  { method: 'DELETE', url: '/staff/v1/account/push', perm: 'self', allowed: EVERY_ROLE, body: { endpoint: 'https://push.example/none' } },
   // Task 5: security-key taps. The bodies stop at validation (400), so the matrix checks the guard
   // alone; which intents each role may start (RV5 m7) is keyTap.test.ts's.
   { method: 'POST', url: '/staff/v1/taps/start', perm: 'self', allowed: EVERY_ROLE, body: { kind: 'matrix' } },
@@ -43,10 +62,11 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/members/:id/switch-off', perm: 'staff.manage', allowed: OWNER, body: {} },
   { method: 'POST', url: '/staff/v1/members/:id/switch-on', perm: 'staff.manage', allowed: OWNER, body: {} },
   { method: 'PUT', url: '/staff/v1/members/:id/hours', perm: 'staff.manage', allowed: OWNER, body: { hours: 'any' } },
+  { method: 'PUT', url: '/staff/v1/members/:id/grants', perm: 'staff.manage', allowed: OWNER, body: { grants: [] } },
   { method: 'PUT', url: '/staff/v1/members/:id/role', perm: 'staff.manage', allowed: OWNER, body: { role: 'mod' } },
   { method: 'DELETE', url: '/staff/v1/members/:id', perm: 'staff.manage', allowed: OWNER },
   { method: 'GET', url: '/staff/v1/invites/accept/:token', perm: 'public-invite', allowed: 'public' },
-  { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { username: 'Matrix1', loginName: 'matrix1' } },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', allowed: 'public', body: { displayName: 'Matrix1', loginName: 'matrix1' } },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/key/start', perm: 'public-invite', allowed: 'public', body: {} },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/key/finish', perm: 'public-invite', allowed: 'public', body: {} },
   { method: 'POST', url: '/staff/v1/invites/accept/:token/pgp/start', perm: 'public-invite', allowed: 'public', body: {} },
@@ -55,7 +75,15 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/owner/keys', perm: 'self', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/owner/keys/start', perm: 'self', allowed: OWNER, body: {} },
   { method: 'POST', url: '/staff/v1/owner/keys/finish', perm: 'self', allowed: OWNER, body: {} },
-  { method: 'DELETE', url: '/staff/v1/owner/keys/:id', perm: 'self', allowed: OWNER },
+  // Plan 4 Task 8: the owner's settings and the site controls (a sample tap id is never valid).
+  { method: 'GET', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER },
+  { method: 'PUT', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER, body: { firstResponseH: 5 } },
+  { method: 'GET', url: '/staff/v1/site', perm: 'site.control', allowed: OWNER },
+  { method: 'POST', url: '/staff/v1/site/stop', perm: 'site.control', allowed: OWNER, body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
+  { method: 'POST', url: '/staff/v1/site/resume', perm: 'site.control', allowed: OWNER, body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
+  { method: 'PUT', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER, body: { text: 'Matrix is down for an hour.', kind: 'info' } },
+  { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER },
+  { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', allowed: OWNER, body: { on: false } },
   // Plan 4 Task 28: News, written by the owner.
   { method: 'POST', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'A message.' } },
   { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'Edited.' } },
@@ -65,6 +93,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Plan 5 Task 10 (owner 2026-11-02): a past-rep claim's verified dollar figure.
   { method: 'PUT', url: '/staff/v1/past-rep/:id/verified-usd', perm: 'reputation.verify', allowed: ['owner', 'senior'], body: { usdCents: 100 } },
   // Plan 5 Tasks 4 and 21: platform feedback and the feedback form, read by the owner.
-  { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: OWNER },
-  { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: OWNER },
+  // Owner Q60: senior moderators by role, moderators and helpers by grant.
+  { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
+  { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
 ];

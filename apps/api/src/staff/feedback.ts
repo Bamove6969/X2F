@@ -22,7 +22,10 @@ const nextOf = (items: readonly { createdOn: string; id: string }[]) => {
 };
 
 /**
- * Plan 5 Tasks 4 and 21 on the staff API (perm `feedback.read`, the owner only):
+ * Plan 5 Tasks 4 and 21 on the staff API (perm `feedback.read`: the owner and senior moderators by
+ * role, moderators and helpers when the owner ticks it, owner Q60). A named form row's `accountId`
+ * goes only to the owner and senior moderators (lead review 7 Nov M5): a moderator or helper
+ * reading by grant gets `accountId: null` on every row, so feedback can't be used to look people up.
  * - `GET /staff/v1/feedback?before` → `{ items: { id, mood, note, createdOn }[], counts, next }`,
  *   the one-tap "How's X2F doing?" answers (`listFeedback`) with the 30-day Great / OK / Needs work
  *   counts (`feedbackMoodCounts`);
@@ -43,6 +46,8 @@ export function staffFeedbackRoutes(app: FastifyInstance): void {
   app.get('/staff/v1/feedback/form', opts, async (req) => {
     const before = cursorOf(req);
     const items = await listFeedbackForm(req.server.deps.db, before ? { before } : {});
-    return { items, next: nextOf(items) };
+    // Lead review 7 Nov M5: who sent a named row is for the owner and senior moderators only.
+    const named = req.staff.role === 'owner' || req.staff.role === 'senior';
+    return { items: named ? items : items.map((i) => ({ ...i, accountId: null })), next: nextOf(items) };
   });
 }

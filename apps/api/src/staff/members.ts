@@ -1,4 +1,4 @@
-import { validateHours, type LoginHours, type StaffRole } from '@x2f/staff';
+import { GRANTABLE_PERMS, validateHours, type LoginHours, type StaffRole } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { lockAccount, withTx } from '../auth/hold.js';
@@ -100,17 +100,29 @@ async function lockTarget(c: Queryable, accountId: string): Promise<Target> {
   return { role: r.role, switchedOff: r.switched_off_at !== null };
 }
 
+/** A member's open cases: disputes assigned to them that still wait on a moderator (Task 10's statuses). */
+const OPEN_CASE_STATUSES = ['open', 'appealed'] as const;
+
 /**
- * NEEDS_P4_CASE_ASSIGNEE (members.test.ts): disputes have no assignee until Tasks 10-12, so a
- * switched-off member holds no cases yet. Then: clear their open cases' assignee here, in the
- * switch-off transaction, logging each, and count them in `openCases`.
+ * Was NEEDS_P4_CASE_ASSIGNEE: a switched-off or removed member's open cases go back to the queue
+ * (assignee cleared) in the same transaction, each logged as `dispute.unassigned` with its trade
+ * code. A proposal already waiting for approval keeps its proposer: the approval is the senior's.
  */
-async function unassignOpenCases(_c: Queryable, _accountId: string): Promise<void> {}
+async function unassignOpenCases(c: pg.PoolClient, accountId: string, req: FastifyRequest): Promise<void> {
+  const { rows } = await c.query<{ code: string }>(
+    'update disputes set assignee = null where assignee = $1 and status = any($2::text[]) returning code',
+    [accountId, OPEN_CASE_STATUSES],
+  );
+  for (const r of rows) {
+    // Lead review 7 Nov: the system unassigns (a consequence of the switch-off, logged by its own entry).
+    await appendLog(c, { at: req.server.deps.clock(), actor: { kind: 'system' }, tradeCode: r.code, action: 'dispute.unassigned', detail: { staffId: accountId } });
+  }
+}
 
 export interface MemberRow {
   accountId: string | null;
   inviteId: string | null;
-  username: string | null;
+  displayName: string | null;
   role: StaffRole;
   status: 'active' | 'switched-off' | 'waiting';
   hours: unknown;
@@ -123,12 +135,15 @@ export interface MemberRow {
 export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]> {
   const { rows: staff } = await db.query<{
     account_id: string; display_name: string; role: StaffRole; hours: unknown; switched_off_at: Date | null; joined_at: Date; last_active: Date | null;
+    open_cases: number;
   }>(
     `select m.account_id, a.display_name, m.role, m.hours, m.switched_off_at, m.joined_at,
-            (select max(s.last_seen_at) from sessions s where s.account_id = m.account_id and s.app = 'staff') as last_active
+            (select max(s.last_seen_at) from sessions s where s.account_id = m.account_id and s.app = 'staff') as last_active,
+            (select count(*)::int from disputes d where d.assignee = m.account_id and d.status = any($1::text[])) as open_cases
        from staff_members m join accounts a on a.id = m.account_id
       where m.removed_at is null
       order by (m.role = 'owner') desc, m.joined_at, m.account_id`,
+    [OPEN_CASE_STATUSES],
   );
   const { rows: invites } = await db.query<{ id: string; role: StaffRole; hours: unknown; expires_at: Date; display_name: string | null }>(
     `select i.id, i.role, i.hours, i.expires_at, a.display_name
@@ -139,12 +154,12 @@ export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]
   );
   return [
     ...staff.map((r): MemberRow => ({
-      accountId: r.account_id, inviteId: null, username: r.display_name, role: r.role,
+      accountId: r.account_id, inviteId: null, displayName: r.display_name, role: r.role,
       status: r.switched_off_at === null ? 'active' : 'switched-off', hours: r.hours,
-      joinedAt: r.joined_at.toISOString(), lastActiveAt: r.last_active?.toISOString() ?? null, openCases: 0, expiresAt: null,
+      joinedAt: r.joined_at.toISOString(), lastActiveAt: r.last_active?.toISOString() ?? null, openCases: r.open_cases, expiresAt: null,
     })),
     ...invites.map((r): MemberRow => ({
-      accountId: null, inviteId: r.id, username: r.display_name, role: r.role, status: 'waiting', hours: r.hours,
+      accountId: null, inviteId: r.id, displayName: r.display_name, role: r.role, status: 'waiting', hours: r.hours,
       joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: r.expires_at.toISOString(),
     })),
   ];
@@ -165,7 +180,7 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       if (target.switchedOff) throw new ApiError(409, 'wrong-state');
       await c.query('update accounts set disabled_at = $2 where id = $1', [id, now]);
       await c.query('update staff_members set switched_off_at = $2 where account_id = $1', [id, now]);
-      await unassignOpenCases(c, id);
+      await unassignOpenCases(c, id, req);
       await log(c, req, 'staff.switched-off', { staffId: id });
     });
     // After the commit (disabled_at already refuses every request): revoke the sessions and end
@@ -218,6 +233,28 @@ export function staffMemberRoutes(app: FastifyInstance): void {
     return { role };
   });
 
+  // Owner Q60 / Q16: the per-person checkboxes (`grants`: tickets.handle, feedback.read), set with a
+  // tap bound to the person and the exact list (sorted). The owner's own row has none (owner-protected).
+  app.put('/staff/v1/members/:id/grants', opts, async (req) => {
+    const id = idParam(req);
+    const b = body(req);
+    const raw = b.grants;
+    if (!Array.isArray(raw) || raw.some((g) => typeof g !== 'string' || !(GRANTABLE_PERMS as readonly string[]).includes(g))) {
+      throw new ApiError(400, 'bad-request', { field: 'grants' });
+    }
+    const grants = [...new Set(raw as string[])].sort();
+    if (grants.length !== raw.length) throw new ApiError(400, 'bad-request', { field: 'grants' });
+    const tapId = tapIdOf(b);
+    const now = req.server.deps.clock();
+    await withTx(req.server.deps.db, async (c) => {
+      await lockTarget(c, id);
+      await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'set-grants', accountId: id, grants }, now, { sessionId: req.auth.sessionId });
+      await c.query('update staff_members set grants = $2::text[] where account_id = $1', [id, grants]);
+      await log(c, req, 'staff.grants-set', { staffId: id, ticketsHandle: grants.includes('tickets.handle'), feedbackRead: grants.includes('feedback.read') });
+    });
+    return { grants };
+  });
+
   app.delete('/staff/v1/members/:id', opts, async (req, reply) => {
     const id = idParam(req);
     const { db, clock } = req.server.deps;
@@ -226,7 +263,7 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       const target = await lockTarget(c, id);
       await c.query('update accounts set disabled_at = coalesce(disabled_at, $2) where id = $1', [id, now]);
       await c.query('update staff_members set switched_off_at = coalesce(switched_off_at, $2), removed_at = $2 where account_id = $1', [id, now]);
-      if (!target.switchedOff) await unassignOpenCases(c, id);
+      if (!target.switchedOff) await unassignOpenCases(c, id, req);
       await log(c, req, 'staff.removed', { staffId: id });
     });
     await endAllSessions({ db, clock, events: req.server.events }, id);

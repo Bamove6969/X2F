@@ -103,8 +103,14 @@ describe('owner lockout', () => {
     const list = async () => (await owner.browser.get('/staff/v1/owner/keys')).json().keys as Array<{ id: string; keyCheckCode: string }>;
     const before = await list();
     expect(before).toHaveLength(2);
+    // Removing a key goes through the tapped account route (lead review 7 Nov I-1).
+    const delKey = async (id: string) =>
+      owner.browser.send('DELETE', `/staff/v1/account/methods/security-key/${id}`, {
+        tapId: await tap(owner, { kind: 'remove-method', methodType: 'security-key', methodId: id }, owner.keys[1]),
+      });
+    expect((await owner.browser.send('DELETE', `/staff/v1/owner/keys/${before[0]!.id}`)).statusCode).toBe(404);
     // Two keys: removing either is refused.
-    const del = await owner.browser.send('DELETE', `/staff/v1/owner/keys/${before[0]!.id}`);
+    const del = await delKey(before[0]!.id);
     expect(del.statusCode).toBe(409);
     expect(errorOf(del)).toBe('owner-needs-two-keys');
 
@@ -132,11 +138,9 @@ describe('owner lockout', () => {
     ]);
     const gone = k0[0]!.id;
     expect(before.map((k) => k.id)).toContain(gone);
-    expect((await owner.browser.send('DELETE', `/staff/v1/owner/keys/${gone}`)).statusCode).toBe(204);
-    expect(await logEntries(t.deps, 'owner.key-removed')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ credentialId: gone }) });
-    expect(errorOf(await owner.browser.send('DELETE', `/staff/v1/owner/keys/${fin.json().id}`))).toBe('owner-needs-two-keys');
-    // Not the owner's key: 404.
-    expect((await owner.browser.send('DELETE', '/staff/v1/owner/keys/00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);
+    expect((await delKey(gone)).statusCode).toBe(204);
+    expect(await logEntries(t.deps, 'staff.method-removed')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ method: 'security-key' }) });
+    expect(errorOf(await delKey(fin.json().id))).toBe('owner-needs-two-keys');
   });
 
   it('the owner key routes are the owner\'s only', async () => {
