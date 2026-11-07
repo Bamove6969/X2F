@@ -256,19 +256,9 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
   });
 });
 
-describe('after a staff two-factor login (Task 10 flow in flows.test.ts)', () => {
-  it('me() shows the staff account', async () => {
-    const { username, soft, key } = await staffWithKeyAndPgp(srv);
-    const browser: AuthApi = jar().api;
-    const first = await loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft));
-    if (first.status !== 'second-factor') throw new Error('expected a second factor');
-    const start = await browser.loginPgpStart({ key: key.publicKey, pendingId: first.pendingId });
-    await browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, pendingId: first.pendingId });
-    await expect(browser.me()).resolves.toMatchObject({
-      displayName: `D${username}`, needsLoginName: false, kind: 'staff', logoutTimer: { idleHours: 2, adjustable: false },
-    });
-  });
-});
+// Staff and the owner log in only on the staff API (owner 2026-11-03; owner Q13, 6 Nov): their me()
+// is GET /staff/v1/me, tested in apps/api/test/staff/login.test.ts. The owner's refusal here is in
+// flows.test.ts ('owner (Q13)').
 
 describe('new-device approval (Plan 2 Task 16)', () => {
   async function passwordUser(): Promise<{ own: Jar; username: string }> {

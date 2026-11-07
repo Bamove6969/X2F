@@ -73,7 +73,7 @@ export const KEY_TAP_KINDS = [
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 
-/** Shortest nonce accepted (bytes). The server issues 32. */
+/** Shortest nonce accepted (bytes). The server issues 16 (Task 5, `startKeyTap`). */
 const MIN_NONCE = 16;
 
 /**

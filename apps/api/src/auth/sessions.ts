@@ -11,6 +11,38 @@ import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, trustDevice } from './dev
 import type { LoginStrength } from './strength.js';
 
 export const SESSION_COOKIE = '__Host-x2f_session';
+/** Plan 4 Task 4: the staff API's own session cookie (its own origin, so its own cookie jar too). */
+export const STAFF_SESSION_COOKIE = '__Host-x2f_staff';
+
+/**
+ * Which app's sessions a Fastify instance reads and writes (Plan 4 Task 4, migration 202). A session
+ * row records the app that started it, and `requireSession` accepts only its own app's rows, so a
+ * staff session is refused on the trader API (and a trader session on the staff API) even when its
+ * token is sent under the other app's cookie name.
+ */
+export interface SessionRealm {
+  cookie: string;
+  app: 'trader' | 'staff';
+}
+export const TRADER_REALM: SessionRealm = { cookie: SESSION_COOKIE, app: 'trader' };
+export const STAFF_REALM: SessionRealm = { cookie: STAFF_SESSION_COOKIE, app: 'staff' };
+
+/**
+ * The account kinds the trader API's login mounts serve (`/v1/login/webauthn`, `/v1/login/pgp`).
+ * Owner 2026-11-03 (Q19): staff have two separate logins, an ordinary trader account for trading and
+ * the staff account, which logs in only on the staff API (`staffLoginRoutes`). A staff account is
+ * not in these kinds, so the lookup treats it as not found (security review RV5 I1): start and
+ * finish answer exactly as for a login name or key that does not exist (decoy options or message,
+ * then 401 `webauthn-failed` / `code-invalid`), and nothing tells that the account is there. Team
+ * members are vendor-side and stay. The owner is refused here the same way (owner Q13, 6 Nov: "the
+ * owner uses only the staff site"); the owner's Price health moved to `GET /staff/v1/price-health`.
+ */
+export const TRADER_LOGIN_KINDS: readonly AccountKind[] = ['trader', 'member'];
+
+/** The realm the request's app decorated (`buildApi`: trader; `buildStaffApi`: staff). */
+export function realmOf(req: FastifyRequest): SessionRealm {
+  return (req.server as { sessionRealm?: SessionRealm }).sessionRealm ?? TRADER_REALM;
+}
 /** 32 random bytes, base64url without padding. */
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
@@ -71,7 +103,7 @@ export function sessionPolicy(
 const tokenHash = (token: string): Buffer => createHash('sha256').update(token).digest();
 
 function presentedToken(req: FastifyRequest): string | null {
-  const v = req.cookies?.[SESSION_COOKIE];
+  const v = req.cookies?.[realmOf(req).cookie];
   return typeof v === 'string' && TOKEN.test(v) ? v : null;
 }
 
@@ -134,6 +166,7 @@ export async function openSession(
   ensureDeviceCookie(req, reply);
   const device = deviceHash(req);
   const presented = presentedToken(req);
+  const realm = realmOf(req);
 
   const acct = await db.query<{ kind: AccountKind; idle_hours: IdleHours }>('select kind, idle_hours from accounts where id = $1', [a.accountId]);
   let row = acct.rows[0];
@@ -164,14 +197,14 @@ export async function openSession(
   let replaced: { id: string; account_id: string } | null = null;
   if (presented) {
     const old = await db.query<{ id: string; account_id: string }>(
-      'update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null returning id, account_id',
-      [tokenHash(presented), now],
+      'update sessions set revoked_at = $2 where token_hash = $1 and app = $3 and revoked_at is null returning id, account_id',
+      [tokenHash(presented), now, realm.app],
     );
     replaced = old.rows[0] ?? null;
   }
   const { rows } = await db.query<{ id: string }>(
-    `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, expires_at, hold_until, strength, member_id)
-     values ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10) returning id`,
+    `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, expires_at, hold_until, strength, member_id, app)
+     values ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10, $11) returning id`,
     [
       member ? member.teamId : a.accountId, tokenHash(token), a.level, label,
       // A member's session never gets the sign-up window (its exemptions are the account owner's).
@@ -181,6 +214,7 @@ export async function openSession(
       a.level === 'recovery' ? (a.holdUntil ?? null) : null,
       strength,
       member?.id ?? null,
+      realm.app,
     ],
   );
   const sessionId = rows[0]!.id;
@@ -206,7 +240,7 @@ export async function openSession(
     // Task 17 (owner, 2026-10-29): every new login is pushed to the account's other devices. A
     // member's login is an alert to the account owner instead (Task 18).
     if (!a.firstSession && !member) void req.server.push.send(a.accountId, 'new-login', { exceptSession: sessionId }).catch(() => undefined);
-    void reply.setCookie(SESSION_COOKIE, token, { ...COOKIE_ATTRS, maxAge: Math.floor(policy.absoluteMs / 1000) });
+    void reply.setCookie(realm.cookie, token, { ...COOKIE_ATTRS, maxAge: Math.floor(policy.absoluteMs / 1000) });
   };
   return { sessionId, after };
 }
@@ -255,6 +289,7 @@ interface SessionRow {
   member_roles: TeamRole[] | null;
   member_name: string | null;
   member_disabled: boolean | null;
+  app: SessionRealm['app'];
 }
 
 /** Marks the preHandlers `requireSession` returns, so the app can list the routes that run with a session. */
@@ -307,7 +342,7 @@ export function requireSession(
       `select s.id, s.account_id, s.level, s.onboarding_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
               s.hold_until, a.kind, a.idle_hours, a.disabled_at, a.terms_version, s.member_id,
               (tm.removed_at is null and tm.joined_at is not null and tm.account_id = s.account_id) as member_live,
-              tm.roles as member_roles, tm.display_name as member_name, ma.disabled_at is not null as member_disabled
+              tm.roles as member_roles, tm.display_name as member_name, ma.disabled_at is not null as member_disabled, s.app
          from sessions s join accounts a on a.id = s.account_id
          left join team_members tm on tm.id = s.member_id
          left join accounts ma on ma.id = tm.member_account_id
@@ -317,6 +352,8 @@ export function requireSession(
     const row = rows[0];
     const now = deps.clock();
     if (!row || row.revoked_at !== null) throw new ApiError(401, 'not-authenticated');
+    // Plan 4 Task 4: only this app's sessions (a staff session on the trader API, or the reverse).
+    if (row.app !== realmOf(req).app) throw new ApiError(401, 'not-authenticated');
     // Task 18 review M9(c): a member's sessions are rows of the team account (`startSession`); a
     // session of a member login account itself is never valid, whatever inserted it.
     if (row.kind === 'member') throw new ApiError(401, 'not-authenticated');
@@ -459,18 +496,18 @@ export async function endAllSessions(deps: EndDeps, accountId: string): Promise<
  * stale Terms, expired, disabled account), and always clears the cookie. Never 401: a browser
  * holding a dead cookie can still get rid of it.
  */
-export function logoutRoute(app: FastifyInstance): void {
-  app.post('/v1/logout', async (req, reply) => {
+export function logoutRoute(app: FastifyInstance, url = '/v1/logout', config: Record<string, unknown> = {}): void {
+  app.post(url, { config }, async (req, reply) => {
     const token = presentedToken(req);
     if (token) {
       const { db, clock } = req.server.deps;
       const r = await db.query<{ id: string; account_id: string }>(
-        'update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null returning id, account_id',
-        [tokenHash(token), clock()],
+        'update sessions set revoked_at = $2 where token_hash = $1 and app = $3 and revoked_at is null returning id, account_id',
+        [tokenHash(token), clock(), realmOf(req).app],
       );
       for (const row of r.rows) req.server.events.closeSession(row.account_id, row.id);
     }
-    void reply.clearCookie(SESSION_COOKIE, COOKIE_ATTRS);
+    void reply.clearCookie(realmOf(req).cookie, COOKIE_ATTRS);
     return { ok: true };
   });
 }
