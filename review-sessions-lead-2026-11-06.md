@@ -1,0 +1,8 @@
+# Lead review: wip/lead-sessions c1bb6dbd. CHANGES REQUIRED. No Critical; server-side security held.
+Merge main first: conflicts in apps/api/src/auth/sessions.ts, apps/api/test/schema.test.ts, packages/auth-client/test/flows-t11-t12.test.ts.
+1. staff/login.ts:49-51: sessionPolicy returning | null breaks tsc; add a guard or staff helper. sessions.ts insert keep BOTH app and period_started_at. Cookie: realm.cookie plus the null fallback. flows-t11-t12: main's side. schema.test: union of migration lists. Rerun all checks after the merge.
+2. Second tab revokes a session just extended: SessionPrompt.tsx:55-63, sessionWatch.ts. Before logging out re-read me; if the end moved, republish and reset to 'wait'. Add a BroadcastChannel.
+3. Warning and idle reminder not set up after a normal login: Login.tsx, afterLogin authApi.ts:67 don't call refreshSession (App.tsx:164). publishSessionInfo sessionWatch.ts:25 stores methods: []. Call refreshSession in afterLogin, or publish the full me.
+Minor: M1 close the SSE stream on a shortened session (events/routes.ts:120, account.ts:387). M2 SessionPrompt.tsx:114 wording uses lengthHours and a constant 5; Devices.tsx:198; SessionLength.tsx:117. M3 a shorter choice can end the session at once (account.ts:387): ask first or floor it; "Log out" shows "Your session time ran out". M4 store coalesce($4, length_hours, $3) (account.ts:428). M5 confirm routes vs allowStaleTerms. M6 duplicate publishIdleReminder(null) SessionPrompt.tsx:131-132.
+M7 sessionAccountType always 'trader': wire to vendor type once vendor lands.
+Owner calls: extend needs one factor while a member's login needs two; a password-only account extends with the password alone; an account in a hold can still extend; extending raises no alert.
