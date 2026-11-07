@@ -77,17 +77,21 @@ export interface SessionInfo {
 }
 
 /**
- * Which session lengths an account gets. Every account is a trader for now; vendor accounts (owner,
- * 2 Nov 2026: Settings > Account type) will answer 'vendor' here.
+ * Which session lengths an account gets (owner G23, 7 Nov 2026; review M7): its
+ * `accounts.account_type` ('trader' | 'vendor', Settings > Account type). The column comes with the
+ * vendor work (wip/lead-vendor's 198_account_type); read through `to_jsonb` so this works before and
+ * after it lands, and anything but 'vendor' (no column, no row) answers 'trader'. A team member's
+ * session is a session of the team account (`accountId`), so it gets the team account's choices.
  */
-export function sessionAccountType(_kind: AccountKind): SessionAccountType {
-  return 'trader';
+export async function sessionAccountType(db: Queryable, accountId: string): Promise<SessionAccountType> {
+  const { rows } = await db.query<{ account_type: string | null }>(`select to_jsonb(a) ->> 'account_type' as account_type from accounts a where a.id = $1`, [accountId]);
+  return rows[0]?.account_type === 'vendor' ? 'vendor' : 'trader';
 }
 
-function sessionInfo(kind: AccountKind, row: { length_hours: number | null; expires_at: Date }, now: Date): SessionInfo {
+function sessionInfo(type: SessionAccountType, row: { length_hours: number | null; expires_at: Date }, now: Date): SessionInfo {
   return {
     lengthHours: row.length_hours,
-    choices: [...sessionHoursFor(sessionAccountType(kind))],
+    choices: [...sessionHoursFor(type)],
     expiresAt: row.expires_at.toISOString(),
     canExtend: true,
     serverNow: now.toISOString(),
@@ -183,7 +187,7 @@ const extendHoursValid: preHandlerAsyncHookHandler = async function (req) {
   const body = req.body;
   if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
   const hours = (body as { hours?: unknown }).hours;
-  if (hours !== undefined && !isSessionHours(sessionAccountType(req.auth.kind), hours)) throw new ApiError(400, 'bad-request');
+  if (hours !== undefined && !isSessionHours(await sessionAccountType(req.server.deps.db, req.auth.accountId), hours)) throw new ApiError(400, 'bad-request');
 };
 
 async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOverview> {
@@ -226,7 +230,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
     member,
-    session: row.kind === 'trader' && row.level === 'full' ? sessionInfo(row.kind, row, now) : null,
+    session: row.kind === 'trader' && row.level === 'full' ? sessionInfo(await sessionAccountType(deps.db, accountId), row, now) : null,
     idleReminderMinutes: row.kind === 'trader' ? await idleReminderOf(deps.db, methodsOf) : null,
   };
 }
@@ -359,14 +363,17 @@ export function accountRoutes(app: FastifyInstance): void {
 
   /**
    * Session length (owner, 2 Nov 2026; boards SessionLength, Devices). `PUT /v1/account/session/length
-   * { hours }` sets the calling session's own length: full trader sessions only, a team member's
-   * included (its own login); 400 `bad-request` unless `hours` is one of the account type's choices.
-   * - Not chosen yet, within SESSION_CHOICE_WINDOW_MS of the login (the question after every
-   *   login): the session lasts `hours` from its login.
-   * - Otherwise (Devices and sessions, or a first choice made later; lead decision 6 Nov 2026): a
-   *   shorter length applies at once; a longer one never adds time without a login method, so the
-   *   end stays and the next "Stay logged in" uses it.
-   * Not a held change: it can only end this session sooner, or set its length at the login itself.
+   * { hours }` sets the calling session's own length, this session only (owner F18): full trader
+   * sessions only, a team member's included (its own login); 400 `bad-request` unless `hours` is one
+   * of the account type's choices (owner G23). The new length starts now (owner G24): the session
+   * ends `now + hours`, never in the past (review M3).
+   * - A shorter end, or the first choice within SESSION_CHOICE_WINDOW_MS of the login (the question
+   *   after every login), applies at once.
+   * - A later end otherwise needs a login method (lead decision 6 Nov 2026: a stolen cookie must not
+   *   stretch a session): 403 `confirm-required` `{ action: 'extend-session' }`, nothing changed;
+   *   the app then confirms it's them and calls `POST /v1/account/session/extend` with `hours`.
+   * A shortened session's live streams are ended (review M1); the app reconnects with the new end.
+   * Not a held change: it only ends this session sooner, or sets its length at the login itself.
    */
   app.put(
     '/v1/account/session/length',
@@ -376,38 +383,46 @@ export function accountRoutes(app: FastifyInstance): void {
       const body = req.body;
       if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
       const hours = (body as { hours?: unknown }).hours;
-      if (!isSessionHours(sessionAccountType(req.auth.kind), hours)) throw new ApiError(400, 'bad-request');
+      if (!isSessionHours(await sessionAccountType(d.db, req.auth.accountId), hours)) throw new ApiError(400, 'bad-request');
       const now = d.clock();
-      return withTx(d.db, async (db) => {
+      const { info, shortened } = await withTx(d.db, async (db) => {
         // Tasks 16-17: the calling session must still be live where it writes.
         await requireLiveSessionInTx(db, req.auth, now);
+        const cur = await db.query<{ length_hours: number | null; expires_at: Date; period_started_at: Date }>(
+          'select length_hours, expires_at, period_started_at from sessions where id = $1 for update',
+          [req.auth.sessionId],
+        );
+        const old = cur.rows[0]!;
+        const end = new Date(now.getTime() + hours * 3_600_000);
         // The free first choice: the length was never chosen and the login was a moment ago. An
         // extend sets the length, so an unchosen session's period is still its login.
+        const firstChoice = old.length_hours === null && now.getTime() < old.period_started_at.getTime() + SESSION_CHOICE_WINDOW_MS;
+        if (end.getTime() > old.expires_at.getTime() && !firstChoice) throw new ApiError(403, 'confirm-required', { action: 'extend-session' });
         const { rows } = await db.query<{ length_hours: number | null; expires_at: Date }>(
-          `update sessions
-              set expires_at = case when length_hours is null and $3::timestamptz < period_started_at + $4 * interval '1 millisecond'
-                                    then period_started_at + $2 * interval '1 hour'
-                                    else least(expires_at, period_started_at + $2 * interval '1 hour') end,
-                  length_hours = $2
-            where id = $1
+          `update sessions set period_started_at = $3, expires_at = $4, length_hours = $2 where id = $1
         returning length_hours, expires_at`,
-          [req.auth.sessionId, hours, now, SESSION_CHOICE_WINDOW_MS],
+          [req.auth.sessionId, hours, now, end],
         );
-        return sessionInfo(req.auth.kind, rows[0]!, now);
+        return { info: sessionInfo(await sessionAccountType(db, req.auth.accountId), rows[0]!, now), shortened: end.getTime() < old.expires_at.getTime() };
       });
+      // Review M1: a stream opened before keeps the old end as its lifetime; end it now.
+      if (shortened) req.server.events.closeSession(req.auth.accountId, req.auth.sessionId);
+      return info;
     },
   );
 
   /**
    * `POST /v1/account/session/extend { confirmToken, hours? }`: "Stay logged in?" (owner, 2 Nov
-   * 2026, board SessionExtend; Q73, 6 Nov). The person re-proves one of their own login methods on
-   * the server (a confirm token for `extend-session` from a confirm route: passkey, security key,
-   * PGP key, or the password with its authenticator code when the account has one; a team member
-   * with their own PGP key, passkey or security key), and the session lasts `hours` from now (one
-   * of the choices offered at login; absent, its own length, or the shortest choice if none was
-   * chosen). `hours` becomes the session's length. No fixed maximum. The cookie is set again with a
-   * fresh lifetime. Full trader sessions only, a team member's included; recovery sessions are
-   * refused (`recovery-session`). Bad `hours` → 400 `bad-request` before the token is spent.
+   * 2026, board SessionExtend; Q73, 6 Nov), and a longer length chosen partway (owner G24). The
+   * person re-proves one of their own login methods on the server (a confirm token for
+   * `extend-session` from a confirm route: passkey, security key, PGP key, or the password, alone
+   * even when the account has an authenticator code, owner G10; a team member with their own PGP
+   * key, passkey or security key), and the session lasts `hours` from now (one of the account
+   * type's choices; absent, its own length, or the shortest choice if none was chosen). That time
+   * becomes the session's length (review M4). No fixed maximum. The cookie is set again with a fresh
+   * lifetime. An account in a 24-hour hold may extend (owner G8), and extending raises no alert
+   * (owner G9). Full trader sessions only, a team member's included; recovery sessions are refused
+   * (`recovery-session`). Bad `hours` → 400 `bad-request` before the token is spent.
    */
   app.post(
     '/v1/account/session/extend',
@@ -427,13 +442,13 @@ export function accountRoutes(app: FastifyInstance): void {
         const { rows } = await db.query<{ length_hours: number | null; expires_at: Date }>(
           `update sessions
               set period_started_at = $2,
-                  length_hours = coalesce($4::smallint, length_hours),
+                  length_hours = coalesce($4::smallint, length_hours, $3),
                   expires_at = $2::timestamptz + coalesce($4::smallint, length_hours, $3) * interval '1 hour'
             where id = $1
         returning length_hours, expires_at`,
           [req.auth.sessionId, now, UNCHOSEN_SESSION_HOURS, hours],
         );
-        return sessionInfo(req.auth.kind, rows[0]!, now);
+        return sessionInfo(await sessionAccountType(db, req.auth.accountId), rows[0]!, now);
       });
       refreshSessionCookie(req, reply);
       return info;

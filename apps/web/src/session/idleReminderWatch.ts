@@ -13,6 +13,10 @@ export function publishIdleReminder(minutes: number | null): void {
   for (const l of [...listeners]) l();
 }
 
+export function currentIdleReminder(): number | null {
+  return current;
+}
+
 /** Tests only: forget the setting. */
 export function resetIdleReminder(): void {
   current = null;

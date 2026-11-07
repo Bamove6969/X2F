@@ -26,7 +26,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
-import { confirmerOf, issueConfirmToken, requireConfirm } from './confirm.js';
+import { confirmerOf, issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
@@ -930,8 +930,9 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
   await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...TRADER_LOGIN_KINDS] }), { prefix: '/v1/login/pgp' });
 
   // Members reach these only for MEMBER_CONFIRM_ACTIONS ("Stay logged in", owner Q73): `confirmerOf`.
-  app.post('/v1/confirm/pgp/start', { preHandler: requireSession({ member: 'any' }) }, confirmStart);
-  app.post('/v1/confirm/pgp/finish', { preHandler: requireSession({ member: 'any' }) }, confirmFinish);
+  // Review M5: on old Terms only "Stay logged in" (`staleTermsOnlyToExtend`).
+  app.post('/v1/confirm/pgp/start', { preHandler: [requireSession({ member: 'any', allowStaleTerms: true }), staleTermsOnlyToExtend] }, confirmStart);
+  app.post('/v1/confirm/pgp/finish', { preHandler: requireSession({ member: 'any', allowStaleTerms: true }) }, confirmFinish);
 
   app.post(
     '/v1/account/pgp/start',

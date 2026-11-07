@@ -12,7 +12,7 @@ import {
 import { ApiError } from '../errors.js';
 import { ARGON2_SLOTS } from '../limits.js';
 import { parseConfirmAction } from './actionInput.js';
-import { issueConfirmToken, requireConfirm } from './confirm.js';
+import { issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { methodAllowed, passwordAllowed } from './methods.js';
 import { traderLogin } from './approval.js';
@@ -275,7 +275,9 @@ async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {
   const action = parseConfirmAction((req.body as Record<string, unknown>).action);
   const totp = (req.body as Record<string, unknown>).totp;
   if (totp !== undefined && typeof totp !== 'string') throw new ApiError(400, 'bad-request');
-  const enrolled = await hasTotp(deps.db, req.auth.accountId);
+  // Owner G10 (7 Nov 2026): the password alone is enough to stay logged in, even with an
+  // authenticator code enrolled; every other confirm still needs the code.
+  const enrolled = action.kind !== 'extend-session' && (await hasTotp(deps.db, req.auth.accountId));
   if (enrolled && totp === undefined) {
     // Refused before any Argon2 work and counted as a password failure, so neither the answer nor
     // the throttle tells whether the password was right.
@@ -396,7 +398,8 @@ export function passwordRoutes(app: FastifyInstance): void {
   const opts = { bodyLimit: PASSWORD_BODY_LIMIT };
   app.post('/v1/register/password', opts, registerHandler);
   app.post('/v1/login/password', opts, loginHandler);
-  app.post('/v1/confirm/password', { ...opts, preHandler: requireSession() }, confirmHandler);
+  // Review M5: on old Terms only "Stay logged in" (`staleTermsOnlyToExtend`).
+  app.post('/v1/confirm/password', { ...opts, preHandler: [requireSession({ allowStaleTerms: true }), staleTermsOnlyToExtend] }, confirmHandler);
   app.put(
     '/v1/account/password',
     {

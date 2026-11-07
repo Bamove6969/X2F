@@ -129,11 +129,11 @@ describe('createAuthApi requests', () => {
   });
 
   it('uses PUT for setting the password and the session length, POST for staying logged in', async () => {
-    const info = { lengthHours: 6, choices: [2, 4, 6, 12], expiresAt: '2026-11-02T18:00:00.000Z', canExtend: true, serverNow: '2026-11-02T12:00:00.000Z' };
+    const info = { lengthHours: 8, choices: [2, 4, 8, 12], expiresAt: '2026-11-02T18:00:00.000Z', canExtend: true, serverNow: '2026-11-02T12:00:00.000Z' };
     const { sent, fetch } = recorder(() => Response.json(info));
     const api = createAuthApi({ fetch });
     await api.setPassword({ password: 'x' });
-    await expect(api.setSessionLength({ hours: 6 })).resolves.toEqual(info);
+    await expect(api.setSessionLength({ hours: 8 })).resolves.toEqual(info);
     await expect(api.extendSession({ confirmToken: 't' })).resolves.toEqual(info);
     // Owner Q73: the extend picks one of the login choices.
     await expect(api.extendSession({ confirmToken: 'u', hours: 12 })).resolves.toEqual(info);
@@ -143,7 +143,7 @@ describe('createAuthApi requests', () => {
       ['POST', '/v1/account/session/extend'],
       ['POST', '/v1/account/session/extend'],
     ]);
-    expect(bodyOf(sent[1]!)).toEqual({ hours: 6 });
+    expect(bodyOf(sent[1]!)).toEqual({ hours: 8 });
     expect(bodyOf(sent[2]!)).toEqual({ confirmToken: 't' });
     expect(bodyOf(sent[3]!)).toEqual({ confirmToken: 'u', hours: 12 });
   });

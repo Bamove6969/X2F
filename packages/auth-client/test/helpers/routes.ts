@@ -58,7 +58,7 @@ export const SAMPLE_CALLS: { [K in keyof AuthApi]: Parameters<AuthApi[K]> } = {
   addWallets: [{ wallets: [{ app: 'cake', label: 'Main', address: 'x' }] }],
   getWalletRule: [],
   removeWallet: [UUID],
-  setSessionLength: [{ hours: 6 }],
+  setSessionLength: [{ hours: 8 }],
   extendSession: [{ confirmToken: 'x', hours: 4 }],
   setIdleReminder: [{ minutes: 30 }],
   getTeam: [],

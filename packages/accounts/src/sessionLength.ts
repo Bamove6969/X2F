@@ -10,13 +10,14 @@
  */
 
 /**
- * Which choices an account gets. Every account is a trader for now; vendor accounts (Settings >
- * Account type, owner 2 Nov) are not built yet and slot in here.
+ * Which choices an account gets (owner G23, 7 Nov 2026): traders 2, 4, 8 or 12 hours, vendors 2, 6,
+ * 12 or 24, from a drop-down with nothing pre-selected. The API reads the account's type
+ * (`sessionAccountType`, apps/api routes/account.ts) and refuses any other number.
  */
 export type SessionAccountType = 'trader' | 'vendor';
 
 const CHOICES: Record<SessionAccountType, readonly number[]> = {
-  trader: [2, 4, 6, 12],
+  trader: [2, 4, 8, 12],
   vendor: [2, 6, 12, 24],
 };
 
@@ -44,10 +45,11 @@ export const UNCHOSEN_SESSION_HOURS = 2;
 export const SESSION_PROMPT_MS = 5 * 60_000;
 
 /**
- * The first choice of a length (the question after the login) sets the session's end from the login
- * only this long after it (lead decision 6 Nov 2026): later, a stolen cookie of an unchosen 2-hour
- * session could otherwise stretch it to 12 or 24 hours with no proof. After the window the choice is
- * recorded and starts at the next "Stay logged in", as on Devices.
+ * A chosen length starts when it is chosen (owner G24, 7 Nov 2026): the session then ends `now +
+ * length`. The first choice (the question after the login) may move the end later with no proof only
+ * this long after the login (lead decision 6 Nov 2026): later, a stolen cookie of an unchosen 2-hour
+ * session could otherwise stretch it to 12 or 24 hours. After the window a choice that would end the
+ * session later needs a login method ("Stay logged in", `extend-session`); a shorter one applies at once.
  */
 export const SESSION_CHOICE_WINDOW_MS = 10 * 60_000;
 

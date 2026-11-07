@@ -2,9 +2,12 @@
  * Session length (owner, 2 Nov 2026; SessionLength board on wip/design-brief). After every login
  * the person picks how long this session lasts, from a drop-down with nothing pre-selected;
  * Continue waits for a choice. The choices come from the server (`me().session.choices`, by account
- * type: traders 2, 4, 6 or 12 hours, vendors later 2, 6, 12 or 24). `afterLogin` sends a session
- * with no length here with `returnTo`; a session with nothing to choose (staff, backup) or one that
- * has its length goes straight on. The same field is on Devices and sessions.
+ * type, owner G23: traders 2, 4, 8 or 12 hours, vendors 2, 6, 12 or 24). `afterLogin` sends a
+ * session with no length here with `returnTo`; a session with nothing to choose (staff, backup) or
+ * one that has its length goes straight on. The time starts when it is chosen (owner G24). The
+ * same field is on Devices and sessions. Sign-up never asks it (owner G25): the person logs in.
+ * Late (after SESSION_CHOICE_WINDOW_MS) a time that ends the session later needs a login method:
+ * the screen then goes on and "Stay logged in?" asks before the end.
  *
  * Built with the UI kit's field, select and button styles; the board's v2 look comes later.
  * Words: SESSION_COPY (COPY-UNSIGNED).
@@ -12,7 +15,8 @@
 import { useEffect, useId, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { returnToFrom } from '../../api/client.js';
-import { publishSessionInfo } from '../../session/sessionWatch.js';
+import { AuthApiError } from '@x2f/auth-client';
+import { shareSessionInfo } from '../../session/sessionWatch.js';
 import { Button } from '../../ui/Button.js';
 import { DEVICES_PATH } from '../settings/devicesCopy.js';
 import { authApi } from './authApi.js';
@@ -114,9 +118,15 @@ export function SessionLengthScreen() {
     setError(null);
     try {
       const info = await authApi.setSessionLength({ hours: pick });
-      publishSessionInfo(info, me.methods);
+      shareSessionInfo(info, me.methods);
       void navigate(returnTo, { replace: true });
-    } catch {
+    } catch (e) {
+      // Too late for the free first choice: the session keeps the shortest time and "Stay logged
+      // in?" asks before its end.
+      if (e instanceof AuthApiError && e.code === 'confirm-required') {
+        void navigate(returnTo, { replace: true });
+        return;
+      }
       setError(C.saveFailed);
       setBusy(false);
     }

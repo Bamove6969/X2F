@@ -106,7 +106,7 @@ describe('onboarding', () => {
     expect(me.suggestions).toEqual(['add-authenticator', 'add-backup']);
     // Session length (owner, 2 Nov 2026): nothing chosen after the login, then the chosen length;
     // staying logged in re-proves the password through the confirm route.
-    expect(me.session).toMatchObject({ lengthHours: null, choices: [2, 4, 6, 12], canExtend: true });
+    expect(me.session).toMatchObject({ lengthHours: null, choices: [2, 4, 8, 12], canExtend: true });
     await expect(own.api.setSessionLength({ hours: 4 })).resolves.toMatchObject({ lengthHours: 4 });
     expect((await own.api.me()).session).toMatchObject({ lengthHours: 4 });
     const { confirmToken } = await own.api.confirmPassword({ password: GOOD, action: { kind: 'extend-session' } });

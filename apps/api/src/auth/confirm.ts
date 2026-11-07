@@ -102,6 +102,25 @@ export async function confirmerOf(
   return { accountId: await personAccountId(db, auth), kind: 'member' };
 }
 
+/**
+ * Review M5: "Stay logged in?" must work for a session on old Terms (the extend route sets
+ * `allowStaleTerms`, as `me` and the session length do), so the confirm routes set it too and this
+ * preHandler, placed after `requireSession({ allowStaleTerms: true })` on the routes whose body names
+ * the action (password, PGP and WebAuthn start), keeps R10 for every other action: a trader on a
+ * stale Terms version gets 403 `terms-required` `{ version }` unless the action is `extend-session`.
+ * The finish routes need no check: they redeem a challenge one of these starts issued, and every
+ * route that spends a token checks the Terms itself.
+ */
+export const staleTermsOnlyToExtend: preHandlerAsyncHookHandler = async function (req) {
+  const body = req.body;
+  const action = body !== null && typeof body === 'object' ? (body as { action?: unknown }).action : undefined;
+  if (action !== null && typeof action === 'object' && (action as { kind?: unknown }).kind === 'extend-session') return;
+  if (req.auth.kind !== 'trader') return;
+  const deps = req.server.deps;
+  const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [req.auth.accountId]);
+  if (rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
+};
+
 type ActionOf = ConfirmAction | ((req: FastifyRequest) => ConfirmAction | Promise<ConfirmAction>);
 
 /**

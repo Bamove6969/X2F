@@ -22,7 +22,7 @@ import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { hasCertificateChain, isUnknownAuthenticator } from './attestation.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
-import { confirmerOf, issueConfirmToken, requireConfirm } from './confirm.js';
+import { confirmerOf, issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { assertMethodAllowed } from './methods.js';
@@ -969,8 +969,9 @@ export function webauthnRoutes(app: FastifyInstance): void {
   app.post('/v1/register/webauthn/start', registerStart);
   app.post('/v1/register/webauthn/finish', registerFinish);
   // Members reach these only for MEMBER_CONFIRM_ACTIONS ("Stay logged in", owner Q73): `confirmerOf`.
-  app.post('/v1/confirm/webauthn/start', { preHandler: requireSession({ member: 'any' }) }, confirmStart);
-  app.post('/v1/confirm/webauthn/finish', { preHandler: requireSession({ member: 'any' }) }, confirmFinish);
+  // Review M5: on old Terms only "Stay logged in" (`staleTermsOnlyToExtend`).
+  app.post('/v1/confirm/webauthn/start', { preHandler: [requireSession({ member: 'any', allowStaleTerms: true }), staleTermsOnlyToExtend] }, confirmStart);
+  app.post('/v1/confirm/webauthn/finish', { preHandler: requireSession({ member: 'any', allowStaleTerms: true }) }, confirmFinish);
   app.post(
     '/v1/account/webauthn/start',
     {

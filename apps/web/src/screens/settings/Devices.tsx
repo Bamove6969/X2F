@@ -28,7 +28,7 @@ import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/Confirm
 import { authApi } from '../auth/authApi.js';
 import { SessionLengthField } from '../auth/SessionLength.js';
 import { SESSION_COPY } from '../auth/sessionCopy.js';
-import { publishSessionInfo } from '../../session/sessionWatch.js';
+import { shareSessionInfo } from '../../session/sessionWatch.js';
 import { heldNote, refusalText, weakSessionCantDo } from '../auth/refusals.js';
 import { DEVICES_TITLE, deviceKind, initials } from './devicesCopy.js';
 import { OwnerOnly } from './OwnerOnly.js';
@@ -193,20 +193,22 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
     }
   };
 
+  // This session only (owner F18). The new time starts now (owner G24): the server ends the session
+  // `now + hours`; a time that would end it later answers confirm-required, and then "Stay logged
+  // in" with a login method makes the same change (the server decides, review M2).
   const changeLength = async (hours: number) => {
     if (length === null) return;
-    const longer = length.lengthHours !== null && hours > length.lengthHours;
     setBusy(true);
     setLengthNote(null);
     setError(null);
     try {
-      const next = await authApi.setSessionLength({ hours });
+      const run = (t?: string) => (t === undefined ? authApi.setSessionLength({ hours }) : authApi.extendSession({ confirmToken: t, hours }));
+      const next = prove === undefined ? await run() : await withConfirm({ kind: 'extend-session' }, run, prove);
       setLength(next);
-      publishSessionInfo(next);
-      // A longer time never adds time without a login method (the safe default, an owner question).
-      setLengthNote(longer ? SESSION_COPY.longerLater : SESSION_COPY.saved);
-    } catch {
-      setError(SESSION_COPY.saveFailed);
+      shareSessionInfo(next);
+      setLengthNote(SESSION_COPY.saved);
+    } catch (e) {
+      if (!isConfirmAbort(e)) setError(SESSION_COPY.saveFailed);
     } finally {
       setBusy(false);
     }

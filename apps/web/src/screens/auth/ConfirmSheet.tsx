@@ -122,7 +122,8 @@ export function ConfirmMethods({
   submitLabel?: string;
 }) {
   const hasPassword = methods.includes('password');
-  const hasTotp = methods.includes('totp');
+  // Owner G10 (7 Nov 2026): the password alone keeps you logged in, authenticator app or not.
+  const hasTotp = methods.includes('totp') && action.kind !== 'extend-session';
   const [busy, setBusy] = useState<MethodType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [password, setPassword] = useState('');

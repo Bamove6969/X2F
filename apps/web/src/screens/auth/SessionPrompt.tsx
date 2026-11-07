@@ -9,6 +9,11 @@
  * length, from now; with no answer by the end the person is logged out. A session the server says
  * cannot extend (`canExtend` false; none today) is logged out at its end with no prompt.
  *
+ * Several tabs watch one session (review 2): an extend here is sent to the others
+ * (`shareSessionInfo`), a later end from another tab closes this prompt, and at the end this tab
+ * first re-reads `me` (a quiet read: a 401 does not leave the page) and, when the end has moved,
+ * watches the new one instead of logging out.
+ *
  * The prompt opens before the end, not at it, so the session never runs past its chosen length
  * without a login method. Times come from the server clock (`serverClock`), checked every second so
  * a sleeping tab catches up when it wakes.
@@ -17,10 +22,10 @@
  * board's v2 look comes later. Words: SESSION_COPY (COPY-UNSIGNED).
  */
 import { useEffect, useMemo, useState } from 'react';
-import { SESSION_PROMPT_MS, UNCHOSEN_SESSION_HOURS } from '@x2f/auth-client';
+import { SESSION_PROMPT_MS, UNCHOSEN_SESSION_HOURS, createAuthApi } from '@x2f/auth-client';
 import { goLogin, serverClock } from '../../api/client.js';
 import { publishIdleReminder } from '../../session/idleReminderWatch.js';
-import { publishSessionInfo, publishSessionWatch, useSessionWatch } from '../../session/sessionWatch.js';
+import { listenAcrossTabs, publishSessionWatch, shareSessionInfo, useSessionWatch, type SessionWatch } from '../../session/sessionWatch.js';
 import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { Sheet } from '../../ui/Sheet.js';
@@ -35,6 +40,22 @@ type Phase = 'wait' | 'ask' | 'extended' | 'out';
 // COPY-UNSIGNED (SessionExtend board); kept beside its logOut(env) call (logout tripwire).
 const LOG_OUT = 'Log out';
 
+/**
+ * Reads `me` without the app's 401 handling (`authApi` sends a gone session to /login): at the
+ * session's end a 401 is the expected answer, and the prompt then shows "You're logged out".
+ */
+const quietApi = createAuthApi({ fetch: (input, init) => globalThis.fetch(input, init) });
+
+/** The session's end as the server has it now (another tab may have extended it), or null. */
+async function endOnServer(): Promise<SessionWatch | null> {
+  try {
+    const me = await quietApi.me();
+    return me.session == null ? null : { info: me.session, methods: me.methods };
+  } catch {
+    return null;
+  }
+}
+
 export function SessionPrompt() {
   const watch = useSessionWatch();
   const [phase, setPhase] = useState<Phase>('wait');
@@ -46,15 +67,24 @@ export function SessionPrompt() {
   // How long to stay logged in: the session's own length until the person picks another choice.
   const [pick, setPick] = useState<number>(own);
   useEffect(() => setPick(own), [own]);
+  // Review 2: the other tabs' extends and length changes.
+  useEffect(() => listenAcrossTabs(), []);
 
   useEffect(() => {
     if (clock === null || !Number.isFinite(end) || info === null) return;
     // A session watched again after a logout is a new login: the old "You're logged out" goes.
     setPhase((p) => (p === 'out' ? 'wait' : p));
     let gone = false;
-    const timeUp = () => {
+    const timeUp = async () => {
       if (gone) return;
       gone = true;
+      // Review 2: another tab may have extended the session; then watch its new end instead.
+      const fresh = await endOnServer();
+      if (fresh !== null && Date.parse(fresh.info.expiresAt) > end) {
+        setPhase('wait');
+        publishSessionWatch(fresh);
+        return;
+      }
       setPhase('out');
       publishSessionWatch(null);
       publishIdleReminder(null);
@@ -63,8 +93,10 @@ export function SessionPrompt() {
     };
     const tick = () => {
       const now = clock().getTime();
-      if (now >= end) timeUp();
+      if (now >= end) void timeUp();
       else if (info.canExtend && now >= end - SESSION_PROMPT_MS) setPhase((p) => (p === 'wait' || p === 'extended' ? 'ask' : p));
+      // A later end (an extend in another tab) closes the question.
+      else setPhase((p) => (p === 'ask' ? 'wait' : p));
     };
     tick();
     const id = setInterval(tick, 1000);
@@ -100,7 +132,7 @@ export function SessionPrompt() {
   const onToken = async (confirmToken: string) => {
     setError(null);
     try {
-      publishSessionInfo(await authApi.extendSession({ confirmToken, hours: pick }));
+      shareSessionInfo(await authApi.extendSession({ confirmToken, hours: pick }));
       setPhase('extended');
     } catch {
       setError(C.extendFailed);
@@ -111,7 +143,7 @@ export function SessionPrompt() {
     // Escape and the backdrop do not answer the question: only a login method or "Log out" does.
     <Sheet open title={C.extendTitle} closeButton={false} wide="dialog" onClose={() => undefined}>
       <div className="x2f-stack" data-part="session-extend">
-        <p className="x2f-body">{C.extendBody(hours, Math.round(SESSION_PROMPT_MS / 60_000))}</p>
+        <p className="x2f-body">{C.extendBody}</p>
         <SessionLengthField choices={info.choices} value={pick} onChange={setPick} hints={false} />
         <p className="x2f-fine" data-part="session-countdown">
           {C.loggingOutIn}
@@ -129,7 +161,6 @@ export function SessionPrompt() {
             setPhase('out');
             publishSessionWatch(null);
             publishIdleReminder(null);
-      publishIdleReminder(null);
             void logOut(browserPushEnv()).catch(() => undefined);
           }}
           data-part="session-log-out"

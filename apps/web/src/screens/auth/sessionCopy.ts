@@ -26,8 +26,9 @@ export const SESSION_COPY = {
   // SessionExtend board
   extendTitle: 'Stay logged in?',
   // DESIGN: wording (owner Q73, 6 Nov 2026: the warning comes 5 minutes before the end; the person
-  // picks how long from the login choices). Replaces the board's "is up" sentence.
-  extendBody: (h: number, minutes: number) => `Your ${h}-hour session ends in ${minutes} minutes. Confirm it's you to stay logged in.`,
+  // picks how long from the login choices). Replaces the board's "is up" sentence. Review M2: no
+  // fixed minutes or stored length here; the countdown under it tells the time left.
+  extendBody: "Your session is about to end. Confirm it's you to stay logged in.",
   loggingOutIn: 'Logging out in ',
   stayLoggedIn: 'Stay logged in',
   // The "Log out" words stay beside the logOut(env) call in SessionPrompt.tsx (test/logout-tripwire.test.ts).
@@ -37,8 +38,7 @@ export const SESSION_COPY = {
   outTitle: "You're logged out",
   outBody: 'Your session time ran out. Log in again to keep trading.',
   logIn: 'Log in',
-  // Devices board. Not on the board: when a longer time starts (the safe default, an owner question).
-  longerLater: "A longer time starts the next time you confirm it's you.",
+  // Devices board. A new time starts now (owner G24); one that ends later asks to confirm it's you.
   saved: 'Saved.',
 } as const;
 

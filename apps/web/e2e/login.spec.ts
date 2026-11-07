@@ -497,13 +497,13 @@ for (const viewport of PHONE_VIEWPORTS) {
 // Session length (owner, 2 Nov 2026; SessionLength board): after every login the person picks how
 // long the session lasts, nothing pre-selected, then goes on to where the login was going.
 test('after login a session with no length asks for one, then lands on the default screen', async ({ page }) => {
-  const session = { lengthHours: null, choices: [2, 4, 6, 12], expiresAt: '2099-01-01T02:00:00.000Z', canExtend: true, serverNow: '2099-01-01T00:00:00.000Z' };
+  const session = { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: '2099-01-01T02:00:00.000Z', canExtend: true, serverNow: '2099-01-01T00:00:00.000Z' };
   await page.route('**/v1/account/me', json(overview({ session })));
   await page.route('**/v1/login/password', json({ status: 'ok' }));
   let saved: unknown = null;
   await page.route('**/v1/account/session/length', (r) => {
     saved = JSON.parse(r.request().postData() ?? '{}');
-    return json({ ...session, lengthHours: 6, expiresAt: '2099-01-01T06:00:00.000Z' })(r);
+    return json({ ...session, lengthHours: 8, expiresAt: '2099-01-01T08:00:00.000Z' })(r);
   });
   await page.goto('/login');
   await page.click('[data-method="password"]');
@@ -513,8 +513,8 @@ test('after login a session with no length asks for one, then lands on the defau
   await expect(page).toHaveURL(/\/session-length\?returnTo=/);
   await expect(page.locator('[data-part="session-length-select"]')).toHaveValue('');
   await expect(page.locator('[data-part="session-length-continue"]')).toBeDisabled();
-  await page.selectOption('[data-part="session-length-select"]', '6');
+  await page.selectOption('[data-part="session-length-select"]', '8');
   await page.click('[data-part="session-length-continue"]');
   await expect(page).toHaveURL(/\/sell$/);
-  expect(saved).toEqual({ hours: 6 });
+  expect(saved).toEqual({ hours: 8 });
 });
