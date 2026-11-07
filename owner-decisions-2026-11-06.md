@@ -85,3 +85,13 @@ Explanations asked for: Q3 ranges, Q19 watcher (done), Q26, Q29 and Q33 (My offe
 - Seller's 90 minutes (g66): from when the escrow is fully funded. After that the seller can cancel and get the funds back. The nudge sounds help.
 - Buyer cancel (g67): the buyer may cancel after escrow, until they tap "I've paid". After that only a dispute.
 - Team and holds (g61): the owner needs more detail. Re-asked on page 4 (who may see, cancel or end a waiting change).
+
+## 7 Nov, page 4 (LGV6jCxgWycepbWCJiAFiB); raw answers in ~/x2f-comms/owner-answers-raw/page4
+- Imported volume (p4-1): show it in US dollars ("$X+ on <site>, verified"). No XMR conversion of imported volume. ("XMR traded to date" stays X2F trades only, G54.)
+- Times (p4-2): all times are UTC only, with no time zone option, like every site. Design's UTC-only deadlines (X5) stand.
+- Gift cards (p4-3): keep "Other". The lead researches a major gift card site's top 30 brands; the list = those 30 + Other.
+- Owner recovery (p4-4): either backup security key alone is enough, because the key's PIN is also required. The owner will also use passkeys, PGP keys and a recovery key.
+- 60-day close (p4-5, p4-6): applies to every account. An open trade or dispute pauses the clock (fine with the owner, though rare). No warning notice: the rule is explained clearly at signup, in the rules list at the end ("accounts not signed into for 60 days are closed for security; X2F is for active traders"). Design writes it more elegantly. Revisit if users complain.
+- SonarQube (p4-7): the token is in the 1Password service vault, so the lead (PC only) sets it up from there. The vault token stays off cloud sessions.
+- Team logins (p4-8): team members may not use a stronger login method than the team lead uses. The lead's security is the maximum for the team. Who can see, untick or cancel waiting changes, or end a hold, is a granular team permission the lead grants. Default: only the lead acts; members without the permission just see that a hold is on.
+- Watcher (p4-9): always on, every 15 seconds, as built (option B). This lifts the owner hold on watcher Tasks 9 I/O, 9-view and 10, and on the trade timer code. Maintenance freezes trade timers, but 24-hour account holds keep counting (g62).
