@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { MAX_CONFIRM_WINDOW_MIN } from '@x2f/trade';
 
 /** One payment method in `data/payment-methods.json` (spec 2.6). */
 export interface CatalogMethod {
@@ -23,7 +24,11 @@ export interface MethodProfile {
   landsIn: string;
   checkPrompt: string;
   arrival: 'instant' | 'same-day' | 'days';
-  /** The seller's confirmation window: 120 for instant apps, up to 1440 for wires. */
+  /**
+   * The seller's confirmation window, which is also the buyer's wait from "I've paid" before a
+   * dispute (machine.ts `confirmBy`). Owner F9 (7 Nov) with the F1 research table it approved:
+   * instant types 90 min; same or next day 24 h; slow types 48 h to 4 days.
+   */
   confirmWindowMin: number;
   fields: { key: string; label: string; kind: FieldKind }[];
 }
@@ -32,6 +37,9 @@ export interface MethodProfile {
 export const LAUNCH_PROFILE_IDS = ['ZELLE', 'CASH_APP', 'REVOLUT', 'TRANSFERWISE', 'ACH_TRANSFER', 'SEPA', 'PAY_BY_MAIL', 'CUSTOM'] as const;
 
 export const GIFT_CARD_GROUP = 'Gift cards & vouchers';
+
+/** The shortest confirm window: the instant types' 90 minutes (owner F9, 7 Nov; was 120). */
+export const MIN_CONFIRM_WINDOW_MIN = 90;
 
 const DATA = new URL('../../../../data/', import.meta.url);
 const ARRIVALS = ['instant', 'same-day', 'days'] as const;
@@ -82,8 +90,13 @@ export function loadProfiles(raw: unknown, methods: readonly CatalogMethod[]): M
     if (landsIn.toLowerCase().includes(method.name.toLowerCase())) throw bad(file, `${p.id}: landsIn must not name the method`);
     const arr = ARRIVALS.find((a) => a === arrival);
     if (!arr) throw bad(file, `${p.id}: arrival`);
-    if (typeof confirmWindowMin !== 'number' || !Number.isInteger(confirmWindowMin) || confirmWindowMin < 120 || confirmWindowMin > 1440) {
-      throw bad(file, `${p.id}: confirmWindowMin must be 120-1440`);
+    if (
+      typeof confirmWindowMin !== 'number' ||
+      !Number.isInteger(confirmWindowMin) ||
+      confirmWindowMin < MIN_CONFIRM_WINDOW_MIN ||
+      confirmWindowMin > MAX_CONFIRM_WINDOW_MIN
+    ) {
+      throw bad(file, `${p.id}: confirmWindowMin must be ${MIN_CONFIRM_WINDOW_MIN}-${MAX_CONFIRM_WINDOW_MIN}`);
     }
     if (!Array.isArray(fields) || fields.length === 0) throw bad(file, `${p.id}: fields`);
     const outFields = fields.map((f: unknown) => {

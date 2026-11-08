@@ -759,6 +759,24 @@ describe('help tips (review Minor 2)', () => {
   });
 });
 
+describe("no dispute for the buyer before I've paid (design proto review P1, 8 Nov)", () => {
+  it('securing and secured offer no Open dispute at all (the machine refuses it: too-early)', () => {
+    for (const view of [tradeView(), tradeView(SECURED)]) {
+      const r = mount(props({ view }));
+      expect(maybe('Open dispute')).toBeUndefined();
+      expect(document.querySelector('a[href$="/dispute"]')).toBeNull();
+      expect(maybe('Cancel trade')).toBeDefined();
+      r.unmount();
+    }
+  });
+
+  it('a 24 h wait shows its UTC date and hours', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(1439) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const locked = byText('Open dispute', 'button');
+    expect(document.getElementById(locked.getAttribute('aria-describedby')!)!.textContent).toBe('Available from 26 Oct 2026, 11:59 UTC · in 23 h');
+  });
+});
+
 describe('review minors 1, 5 and 7', () => {
   const grown = { ...SECURED, amountAtomic: '1312500000000', fiatCents: '43313', grown: { at: at(-1), fromAtomic: '1250000000000', fromFiatCents: '41250' } };
   const grownEscrow = () => fakeEscrow({ amountAtomic: 1_312_500_000_000n, fiatCents: 43_313n });
@@ -781,9 +799,12 @@ describe('review minors 1, 5 and 7', () => {
   });
 
   it("in paid, Open dispute waits for confirmBy (the buyer's dispute is too-early before it)", () => {
-    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
-    expect(maybe('Open dispute')).toBeUndefined();
-    expect(text()).toContain('Dispute opens in');
+    // Board BuyerPaidWaiting window=in-window: Open dispute disabled, "Available from 15:35 UTC · in 88 min".
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-2), confirmBy: at(88) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(document.querySelector('a[href$="/dispute"]')).toBeNull();
+    const locked = byText('Open dispute', 'button') as HTMLButtonElement;
+    expect(locked.disabled).toBe(true);
+    expect(document.getElementById(locked.getAttribute('aria-describedby')!)!.textContent).toBe('Available from 13:28 UTC · in 88 min');
     r.unmount();
     mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(maybe('Open dispute')).toBeDefined();

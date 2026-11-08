@@ -141,7 +141,7 @@ describe('take, setup and funding', () => {
   test('newTrade refuses bad terms', () => {
     const bad = [
       { ...TAKE, poster: 'seller' as const, amountAtomic: 1n }, // fiat total rounds to 0
-      { ...TAKE, poster: 'seller' as const, confirmWindowMin: 1441 },
+      { ...TAKE, poster: 'seller' as const, confirmWindowMin: 5761 }, // longer than 4 days (owner F9's slowest types)
       { ...TAKE, poster: 'seller' as const, confirmWindowMin: 0 },
       { ...TAKE, poster: 'seller' as const, minFiatCents: 50_000n }, // $412.50 below the minimum
       { ...TAKE, poster: 'seller' as const, maxFiatCents: 40_000n }, // above the maximum
@@ -150,6 +150,8 @@ describe('take, setup and funding', () => {
     ];
     for (const a of bad) expect(() => newTrade(a, T0)).toThrow(RangeError);
     expect(newTrade({ ...TAKE, poster: 'seller', confirmWindowMin: 1440 }, T0).confirmWindowMin).toBe(1440);
+    // Owner F9 (7 Nov): slow payment types get 48 h to 4 days before a dispute.
+    expect(newTrade({ ...TAKE, poster: 'seller', confirmWindowMin: 5760 }, T0).confirmWindowMin).toBe(5760);
   });
 
   test('tick past setupBy → cancelled, no penalty', () => {
@@ -735,7 +737,7 @@ describe('release and settling', () => {
   });
 
   test('reproduced: a settlement during a dispute is recorded', () => {
-    const d = apply(secured(), { type: 'open-dispute' }, 'buyer', at(31));
+    const d = apply(secured(), { type: 'open-dispute' }, 'seller', at(31));
     expect(apply(d, { type: 'settled', kind: 'auto-refund', txHash: 'bb'.repeat(32) }, 'system', at(40)).state).toBe('refunded');
   });
 
@@ -778,12 +780,34 @@ describe('release and settling', () => {
 });
 
 describe('open-dispute', () => {
-  test('either side in securing or secured', () => {
-    for (const by of ['buyer', 'seller'] as const) {
-      expect(apply(securing(), { type: 'open-dispute' }, by, at(6)).state).toBe('disputed');
-      const d = apply(secured(), { type: 'open-dispute' }, by, at(31));
-      expect(d.dispute).toEqual({ by, at: at(31) });
-    }
+  test('the seller in securing or secured', () => {
+    expect(apply(securing(), { type: 'open-dispute' }, 'seller', at(6)).state).toBe('disputed');
+    const d = apply(secured(), { type: 'open-dispute' }, 'seller', at(31));
+    expect(d.dispute).toEqual({ by: 'seller', at: at(31) });
+  });
+
+  test("never the buyer before I've paid (design proto review P1): too-early in securing and secured, whatever the time", () => {
+    // Nothing has happened yet that a moderator could rule on; before paying the buyer can cancel instead (g67).
+    expect(rule(() => apply(securing(), { type: 'open-dispute' }, 'buyer', at(6)))).toBe('too-early');
+    for (const min of [31, 119, 121, 600]) expect(rule(() => apply(secured(), { type: 'open-dispute' }, 'buyer', at(min)))).toBe('too-early');
+  });
+
+  test("the buyer's wait is the method's window from I've paid (owner F9: 90 min for instant types), paused by maintenance", () => {
+    const instant = run(
+      [
+        [{ type: 'setup-done', escrowAddress: '4Escrow' }, 'system', 1],
+        [chain(FUNDS, FUNDS, 10), 'system', 30],
+        [{ type: 'mark-paid', fiatCents: 41250n }, 'buyer', 40],
+      ],
+      newTrade({ ...TAKE, poster: 'seller', confirmWindowMin: 90 }, T0),
+    );
+    expect(instant.confirmBy).toEqual(at(130));
+    expect(rule(() => apply(instant, { type: 'open-dispute' }, 'buyer', at(129, 59_999)))).toBe('too-early');
+    expect(apply(instant, { type: 'open-dispute' }, 'buyer', at(130)).state).toBe('disputed');
+    // 20 min of maintenance during the wait moves it by 20 min.
+    const resumed = run([[{ type: 'pause' }, 'system', 60], [{ type: 'resume' }, 'system', 80]], instant);
+    expect(resumed.confirmBy).toEqual(at(150));
+    expect(rule(() => apply(resumed, { type: 'open-dispute' }, 'buyer', at(140)))).toBe('too-early');
   });
 
   test('in paid: the seller any time, the buyer only from confirmBy', () => {
@@ -856,7 +880,7 @@ describe('open-dispute', () => {
 
   test('other states → wrong-state; tick in disputed changes nothing', () => {
     expect(rule(() => apply(funding(), { type: 'open-dispute' }, 'buyer', at(2)))).toBe('wrong-state');
-    const d = apply(secured(), { type: 'open-dispute' }, 'buyer', at(31));
+    const d = apply(secured(), { type: 'open-dispute' }, 'seller', at(31));
     expect(apply(d, { type: 'tick' }, 'system', at(10_000))).toEqual(d);
   });
 });
@@ -1087,7 +1111,7 @@ describe('states are all reachable', () => {
       refunded().state,
       run([[{ type: 'tick' }, 'system', 32]], funding()).state,
       apply(taken(), { type: 'buyer-cancel' }, 'buyer', at(1)).state,
-      apply(secured(), { type: 'open-dispute' }, 'buyer', at(31)).state,
+      apply(secured(), { type: 'open-dispute' }, 'seller', at(31)).state,
     ]);
     expect(seen.size).toBe(12);
   });

@@ -41,6 +41,7 @@ export { moneroUri } from './moneroUri.js';
 export { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
 export {
   CLIENT_EVENTS,
+  MAX_CONFIRM_WINDOW_MIN,
   SYSTEM_EVENTS,
   TradeRuleError,
   apply,

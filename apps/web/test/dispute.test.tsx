@@ -99,8 +99,9 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
     expect(disputeEntry(trade({ role: 'seller' }), new Date(T0))).toEqual({ kind: 'open' });
   });
 
-  it('opens for either side while securing or secured, and not in funding or after release', () => {
-    for (const state of ['securing', 'secured']) expect(disputeEntry(trade({ state }), new Date(T0)).kind).toBe('open');
+  it("opens for the seller while securing or secured, never the buyer before I've paid (proto review P1), and not in funding or after release", () => {
+    for (const state of ['securing', 'secured']) expect(disputeEntry(trade({ state, role: 'seller' }), new Date(T0)).kind).toBe('open');
+    for (const state of ['securing', 'secured']) expect(disputeEntry(trade({ state, role: 'buyer' }), new Date(T0)).kind).toBe('none');
     for (const state of ['setup', 'funding', 'released', 'cancelled', 'lapsed']) expect(disputeEntry(trade({ state }), new Date(T0)).kind).toBe('none');
     expect(disputeEntry(trade({ state: 'disputed' }), new Date(T0)).kind).toBe('opened');
   });

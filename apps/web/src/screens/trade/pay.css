@@ -452,6 +452,22 @@
   font-size: 14px;
 }
 
+/* The buyer's locked Open dispute and when it opens (board BuyerPaidWaiting window=in-window). */
+.x2f-room__dispute-locked {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  min-width: 0;
+}
+
+.x2f-room__dispute-locked .x2f-room__dispute-wait {
+  min-height: 0;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: right;
+}
+
 .x2f-paid__actions {
   display: flex;
   flex-direction: column;

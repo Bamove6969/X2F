@@ -187,8 +187,12 @@ const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
  * seller's "Fund escrow" record (it only takes the seller's walk-away away; their wallet opens anyway).
  */
 const WHILE_PAUSED: readonly string[] = ['mark-paid', 'buyer-cancel', 'fund-started'];
-/** The longest seller confirm window (wires, 24 h). */
-const MAX_CONFIRM_WINDOW_MIN = 1440;
+/**
+ * The longest seller confirm window, which is also the buyer's wait before a dispute: 4 days, for
+ * the slowest payment types (owner F9, 7 Nov: instant 90 min, same or next day 24 h, slow 48 h to
+ * 4 days, "raise the 24 h maximum").
+ */
+export const MAX_CONFIRM_WINDOW_MIN = 5760;
 
 /** A new trade at take: amounts, fee and the fiat total are fixed here (OD-5). */
 export function newTrade(
@@ -420,6 +424,9 @@ function onDispute(t: Trade, by: Party, now: Date): Trade {
   switch (t.state) {
     case 'securing':
     case 'secured':
+      // Not the buyer before "I've paid" (design proto review P1, 8 Nov): nothing has happened a
+      // moderator could rule on, and until then the buyer can cancel (g67). After it, the wait below.
+      if (by === 'buyer') return fail('too-early');
       return open();
     case 'paid':
       if (by === 'buyer' && (t.confirmBy === null || now.getTime() < t.confirmBy.getTime())) return fail('too-early');

@@ -368,9 +368,10 @@ function ConfirmWindow({ deadline, clock, buyer, place }: { deadline: string; cl
         </span>
       </button>
       <span id="x2f-confirm-tip" role="tooltip" className="x2f-release__tip" hidden={!open}>
-        Time you have to check {place} and release, or report that the money didn&apos;t arrive. Instant apps like Zelle get 2 hours;
-        bank wires get up to 24. If time runs out, {buyer} can ask a moderator to step in. Nothing is released without you or a
-        moderator.
+        {/* COPY-UNSIGNED: the board's "Instant apps like Zelle get 2 h; bank wires get up to 24 h" before owner F9 (7 Nov). */}
+        Time you have to check {place} and release, or report that the money didn&apos;t arrive. Instant apps like Zelle get 90 min;
+        same or next day transfers get 24 h; slow ones like mail get up to 4 days. If time runs out, {buyer} can ask a moderator to
+        step in. Nothing is released without you or a moderator.
       </span>
     </>
   );

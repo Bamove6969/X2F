@@ -48,7 +48,7 @@ const ms = (iso: string | null): number | null => (iso === null ? null : Date.pa
 /**
  * Whether this side may open a dispute now, mirroring the state machine's `open-dispute` rules
  * (the API decides; this only keeps the screen from sending what would be refused):
- * - securing or secured: either side;
+ * - securing or secured: the seller only (the buyer can cancel instead until "I've paid");
  * - paid: the seller at once, the buyer only from the end of the seller's confirm window;
  * - settling: either side once the signing window has passed;
  * - refunded: the buyer, until 48 hours after the refund (owner 2026-10-29; was 90 days).
@@ -62,7 +62,8 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
   switch (t.state) {
     case 'securing':
     case 'secured':
-      return { kind: 'open' };
+      // Never the buyer before "I've paid" (design proto review P1, 8 Nov): the machine refuses it (too-early).
+      return t.role === 'buyer' ? { kind: 'none' } : { kind: 'open' };
     case 'paid': {
       if (t.role === 'seller') return { kind: 'open' };
       const by = ms(t.confirmBy);
