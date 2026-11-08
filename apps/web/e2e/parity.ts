@@ -45,19 +45,7 @@ export const MAX_DIFF_PIXEL_RATIO = 0.03;
  * to be brought up to date with the phone screens). Desktop-only parts with no phone counterpart
  * (the progress steps, the counterparty card, the chat) are not exceptions.
  */
-const Q12_LOCKED =
-  "Owner Q12 (2026-11-06): no payment details and no sum to send before the escrow is secured. This board copy shows the securing state with them; design's newer BuyerPay board (escrow=securing, wip/design-brief docs/design-boards) shows a locked \"Payment details\" card instead.";
-
 export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: string }[]>> = {
-  SellerRefund: [
-    { text: 'mira.k gets a final alert and 15 minutes to say they already paid.', why: 'Owner G2 (7 Nov): the final-alert steps are gone from SellerRefund; the G2 board (docs/design-boards/SellerRefund.dc.html on wip/design-brief) keeps only the late-dispute warning. design/x2f-app/SellerRefund.dc.html predates it.' },
-    { text: 'If they stay silent, your 1.25 XMR comes back to your wallet automatically. No moderator needed.', why: 'Owner G2 (7 Nov): the final-alert steps are gone from SellerRefund; the G2 board (docs/design-boards/SellerRefund.dc.html on wip/design-brief) keeps only the late-dispute warning. design/x2f-app/SellerRefund.dc.html predates it.' },
-    { text: 'If they say they paid, a moderator checks both sides before anything moves.', why: 'Owner G2 (7 Nov): the final-alert steps are gone from SellerRefund; the G2 board (docs/design-boards/SellerRefund.dc.html on wip/design-brief) keeps only the late-dispute warning. design/x2f-app/SellerRefund.dc.html predates it.' },
-    {
-      text: 'Nudge mira.k',
-      why: 'Owner G2 (7 Nov): once Cancel is available the G2 board reads "Nudge again"; "Nudge mira.k" is the locked state\'s primary (e2e/refund.spec.ts checks both).',
-    },
-  ],
   TradeFund: [
     {
       text: 'Rate (locked when you fund)',
@@ -90,16 +78,6 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: "Private details are blurred automatically for you to check next. It's best-effort, so please double-check before sending. Location and device info are removed.",
       why: 'The proof slot hint on the BuyerPay phone board reads "Private details are blurred for you to check next. Location and device info are removed."; the phone board wins.',
     },
-  ],
-  BuyerPay: [
-    { text: 'Send exactly', why: Q12_LOCKED },
-    { text: '$412.50 USD', why: Q12_LOCKED },
-    { text: 'USD', why: Q12_LOCKED },
-    { text: 'Zelle to', why: Q12_LOCKED },
-    { text: '[SELLER ZELLE ID]', why: Q12_LOCKED },
-    { text: 'Memo', why: Q12_LOCKED },
-    { text: 'K7M2-9QXA-4FTR-8WPN', why: Q12_LOCKED },
-    { text: 'Pay from an account in your own name. Payments from someone else\'s account may be rejected or frozen. Use at your own risk.', why: Q12_LOCKED },
   ],
   SetupTerms: [
     {
@@ -291,6 +269,9 @@ export async function boardTexts(page: Page, board: string, o: { within?: string
       const doc = new DOMParser().parseFromString(html, 'text/html');
       const root = doc.querySelector('x-dc') ?? doc.body;
       for (const el of Array.from(root.querySelectorAll('script, style, helmet, title, template, noscript, svg'))) el.remove();
+      // The board's own design notes (a "Design notes" section beside the app frame) annotate the
+      // board for the team; they are not app copy.
+      for (const el of Array.from(root.querySelectorAll('[aria-label="Design notes"]'))) el.remove();
       for (const el of Array.from(root.querySelectorAll('sc-if'))) {
         if (el.getAttribute('hint-placeholder-val') === '{{false}}') el.remove();
       }

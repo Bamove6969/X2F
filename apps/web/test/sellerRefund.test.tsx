@@ -110,11 +110,11 @@ describe('SellerRefund: the board copy', () => {
       `Trade ${BOARD.code}`,
       'Payment window ended',
       "mira.k didn't mark the payment in time",
-      'Your 1.25 XMR is still safe in escrow. Nudge mira.k, or give them more time.',
-      'If you cancel',
-      "Even after your refund, mira.k can still open a dispute if they sent the money anyway. A moderator can pause your account from trading until it's resolved, then reviews it fairly. If their payment reached you, you'll be asked to send mira.k the 1.25 XMR as agreed. Refusing leads to an account suspension and a possible lifetime ban.",
+      'Your 1.250000 XMR is still safe in escrow. Nudge mira.k, or give them more time.',
+      'If mira.k paid after all',
+      "Even after your refund, mira.k can still open a dispute if they sent the money anyway. A moderator can pause your account from trading until it's resolved, then reviews it fairly. If their payment reached you, you'll be asked to send mira.k the 1.250000 XMR as agreed. Refusing leads to an account suspension and a possible lifetime ban.",
       "Check your bank account first. If mira.k's Zelle payment did arrive, release instead of cancelling.",
-      'No word from mira.k? After 90 min and at least one nudge, you can cancel and get your 1.25 XMR back.',
+      'No word from mira.k? After 90 min and at least one nudge, you can cancel and get your 1.250000 XMR back.',
     ]) {
       expect(text).toContain(s);
     }
@@ -124,7 +124,7 @@ describe('SellerRefund: the board copy', () => {
     const primary = m.host.querySelectorAll('[data-primary]');
     expect(primary).toHaveLength(1);
     expect(primary[0]!.textContent).toBe('Nudge mira.k');
-    expect(m.button('Cancel & get refund')).toBeNull();
+    expect(m.button('Cancel and get refund')).toBeNull();
     expect(m.button('Give 30 more min')).not.toBeNull();
     expect(m.host.querySelector('[data-refund-cancel]')?.getAttribute('data-refund-cancel')).toBe('locked');
     for (const u of m.host.querySelectorAll<HTMLElement>('[data-username]')) expect(u.textContent).toBe('mira.k');
@@ -133,12 +133,12 @@ describe('SellerRefund: the board copy', () => {
   it('available (90 min and one nudge): Cancel is the one primary, then Give 30 more min and Nudge again', () => {
     const m = mount(sellerNudgedView());
     const text = m.host.textContent ?? '';
-    expect(text).toContain('Your 1.25 XMR is still safe in escrow. You can take it back, or give mira.k more time.');
-    expect(text).toContain('You can nudge again every 15 min, as often as you need. You can cancel now.');
+    expect(text).toContain('Your 1.250000 XMR is still safe in escrow. You can take it back, or give mira.k more time.');
+    expect(text).toContain('You can nudge again every 15 min, as often as you need. You can cancel now and get your 1.250000 XMR back.');
     expect(text).not.toContain('No word from mira.k?');
     const primary = m.host.querySelectorAll('[data-primary]');
     expect(primary).toHaveLength(1);
-    expect(primary[0]!.textContent).toBe('Cancel & get refund');
+    expect(primary[0]!.textContent).toBe('Cancel and get refund');
     expect((primary[0] as HTMLButtonElement).disabled).toBe(false);
     expect(m.button('Nudge again')).not.toBeNull();
     expect(m.button('Give 30 more min')).not.toBeNull();
@@ -154,7 +154,7 @@ describe('SellerRefund: the board copy', () => {
     const { host } = mount(sellerNudgedView());
     const primary = host.querySelectorAll('[data-primary]');
     expect(primary).toHaveLength(1);
-    expect(primary[0]!.textContent).toBe('Cancel & get refund');
+    expect(primary[0]!.textContent).toBe('Cancel and get refund');
     const warning = host.querySelector('[data-late-dispute]')!;
     expect(warning.textContent).toMatch(/^Even after your refund/);
     expect(warning.compareDocumentPosition(primary[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -167,28 +167,28 @@ describe('SellerRefund: the board copy', () => {
 
   it("the escrow amount is what the escrow holds (a seller's own ad funds amount + 1%)", () => {
     const { host } = mount(sellerView({ poster: 'seller', receivedAtomic: '1262500000000' }));
-    expect(host.textContent).toContain('Your 1.2625 XMR is still safe in escrow.');
+    expect(host.textContent).toContain('Your 1.262500 XMR is still safe in escrow.');
     // The XMR owed after a lost dispute is the trade amount, not the escrow balance.
-    expect(host.textContent).toContain("you'll be asked to send mira.k the 1.25 XMR as agreed");
+    expect(host.textContent).toContain("you'll be asked to send mira.k the 1.250000 XMR as agreed");
   });
 
   it("the XMR owed is the amount this device accepts (Task 12's status), not the API's, when the device has one", () => {
     // The API says 9.99 XMR; the device fixed 1.25 (Task 12 review I3: never the API's amount when the device has its own).
     const lying = sellerView({ amountAtomic: '9990000000000' });
     const device = mount(lying, { escrow: escrowFake(1_250_000_000_000n).escrow });
-    expect(device.host.textContent).toContain("you'll be asked to send mira.k the 1.25 XMR as agreed");
+    expect(device.host.textContent).toContain("you'll be asked to send mira.k the 1.250000 XMR as agreed");
     expect(device.host.textContent).not.toContain('9.99');
     // No device amount yet (null): the view's amount is shown.
     const none = mount(lying, { escrow: escrowFake(null).escrow });
-    expect(none.host.textContent).toContain("you'll be asked to send mira.k the 9.99 XMR as agreed");
+    expect(none.host.textContent).toContain("you'll be asked to send mira.k the 9.990000 XMR as agreed");
   });
 });
 
 describe('SellerRefund: Cancel & get refund', () => {
   it('posts request-refund, then sends one signal and one tx set, then re-reads the trade', async () => {
     const m = mount(sellerNudgedView());
-    fire(m.button('Cancel & get refund')!, new MouseEvent('click', { bubbles: true }));
-    fire(m.button('Cancel & get refund')!, new MouseEvent('click', { bubbles: true }));
+    fire(m.button('Cancel and get refund')!, new MouseEvent('click', { bubbles: true }));
+    fire(m.button('Cancel and get refund')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(requests).toEqual([{ path: EVENTS, body: { type: 'request-refund' } }]);
     expect(m.calls).toEqual(['signal:trade.refund-request', 'build']);
@@ -200,7 +200,7 @@ describe('SellerRefund: Cancel & get refund', () => {
   it('a refusal from the API sends no signal and no tx set, says so, and re-reads the trade', async () => {
     answers[EVENTS] = [{ status: 409, body: { error: 'wrong-state' } }];
     const m = mount(sellerNudgedView());
-    fire(m.button('Cancel & get refund')!, new MouseEvent('click', { bubbles: true }));
+    fire(m.button('Cancel and get refund')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(m.calls).toEqual([]);
     expect(m.host.querySelector('[role="alert"]')?.textContent).toBe('That did not work. Try again.');
@@ -211,7 +211,7 @@ describe('SellerRefund: Cancel & get refund', () => {
     vi.useFakeTimers({ now: Date.parse(SERVER_NOW) + 10 * MIN, toFake: ['Date'] });
     try {
       const m = mount(sellerNudgedView({ payBy: new Date(Date.parse(SERVER_NOW) + 2 * MIN).toISOString() }));
-      const b = m.button('Cancel & get refund')!;
+      const b = m.button('Cancel and get refund')!;
       expect(b.disabled).toBe(true);
       fire(b, new MouseEvent('click', { bubbles: true }));
       await settle();
@@ -265,7 +265,7 @@ describe('SellerRefund: Give 30 more min', () => {
     const m = mount(sellerNudgedView({ extensions: 2 }));
     expect(m.button('Give 30 more min')).toBeNull();
     // Cancel & get refund and Nudge stay.
-    expect(m.button('Cancel & get refund')?.disabled).toBe(false);
+    expect(m.button('Cancel and get refund')?.disabled).toBe(false);
     expect(m.button('Nudge again')).not.toBeNull();
   });
 });
@@ -286,7 +286,7 @@ describe('SellerRefund: Nudge', () => {
     fire(m.button('Nudge mira.k')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(m.refresh).toHaveBeenCalledTimes(1);
-    expect(m.host.querySelector('[data-primary]')!.textContent).toBe('Cancel & get refund');
+    expect(m.host.querySelector('[data-primary]')!.textContent).toBe('Cancel and get refund');
     expect(m.button('Nudge again')).not.toBeNull();
   });
 
@@ -321,7 +321,7 @@ describe('SellerRefund: a refund half done when the view flips to refund_request
   it('the signal fails once: once the request is accepted and the view flips, the run resumes and builds exactly once', async () => {
     const e = flakyEscrow({ signal: 1 });
     const m = mount(sellerNudgedView(), { escrow: e.escrow });
-    fire(m.button('Cancel & get refund')!, new MouseEvent('click', { bubbles: true }));
+    fire(m.button('Cancel and get refund')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(requests).toEqual([{ path: EVENTS, body: { type: 'request-refund' } }]);
     expect(e.calls).toEqual(['signal:trade.refund-request']);
@@ -340,7 +340,7 @@ describe('SellerRefund: a refund half done when the view flips to refund_request
   it('the build fails on the resume too: it says so with Retry, and Retry builds once more without a second event or signal', async () => {
     const e = flakyEscrow({ signal: 1, build: 1 });
     const m = mount(sellerNudgedView(), { escrow: e.escrow });
-    fire(m.button('Cancel & get refund')!, new MouseEvent('click', { bubbles: true }));
+    fire(m.button('Cancel and get refund')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     m.show(sellerRequestedView());
     await settle();
@@ -359,7 +359,7 @@ describe('SellerRefund: a refund half done when the view flips to refund_request
 
   it('the seller cancelled on another device: this screen was rendered but never tapped, so the flip to refund_requested posts nothing (review item 8)', async () => {
     const m = mount(sellerNudgedView());
-    expect(m.button('Cancel & get refund')).not.toBeNull();
+    expect(m.button('Cancel and get refund')).not.toBeNull();
     m.show(sellerRequestedView());
     await settle();
     expect(requests).toEqual([]);
@@ -383,6 +383,6 @@ describe('SellerRefund after the request (seller, refund_requested)', () => {
     expect(host.textContent).toContain('mira.k gets a final alert and 15 minutes to say they already paid.');
     expect(host.querySelector('[role="timer"]')?.textContent).toBe('14:00');
     expect(host.querySelectorAll('[data-primary]')).toHaveLength(0);
-    expect([...host.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Cancel & get refund');
+    expect([...host.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Cancel and get refund');
   });
 });

@@ -7,7 +7,7 @@
  * - **Locked** (no nudge since the escrow was secured, `refundNeedsNudge`): **Nudge <buyer>** is
  *   the primary, Give 30 more min, and the note that Cancel unlocks after 90 min and one nudge.
  *   An accepted nudge re-reads the trade, whose `sellerNudgedAt` then unlocks Cancel.
- * - **Available**: **Cancel & get refund** (primary): `request-refund`, the `trade.refund-request`
+ * - **Available**: **Cancel and get refund** (primary): `request-refund`, the `trade.refund-request`
  *   signal, then `buildRefund()` (refundFlow.ts). The buyer gets the final alert; the moderator
  *   co-signs only once its own guard allows (Task 10). Then Give 30 more min and Nudge again (one
  *   per 15 min, as many as needed: owner 7 Nov).
@@ -24,6 +24,7 @@
  * chat anchor for now.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { formatXmr } from '@x2f/trade';
 import { Link } from 'react-router';
 import { sendNudge } from '../../nudge/useNudge.js';
 import { Button } from '../../ui/Button.js';
@@ -45,6 +46,20 @@ const NUDGE_SENT = 'Nudge sent.';
 /** The buyer's public name, marked for the username rules (Global Constraints). */
 function Name({ name }: { name: string }) {
   return <span data-username="">{name}</span>;
+}
+
+/** A number in the board's mono digits (design v2: numbers mono, units in the body face). */
+function Num({ children }: { children: string | number }) {
+  return <span className="x2f-num">{children}</span>;
+}
+
+/** An XMR amount as the boards write it: always 6 decimals ("1.250000 XMR"), the digits mono. */
+function Xmr({ atomic }: { atomic: string | bigint }) {
+  return (
+    <>
+      <Num>{formatXmr(BigInt(atomic))}</Num> <span className="x2f-refund__unit">XMR</span>
+    </>
+  );
 }
 
 export function SellerRefund(props: RefundScreenProps) {
@@ -81,12 +96,12 @@ function Header({ view }: Pick<RefundScreenProps, 'view'>) {
  */
 function LateDispute({ view, escrow }: Pick<RefundScreenProps, 'view' | 'escrow'>) {
   const name = publicName(view.counterparty);
-  const owed = xmrText(escrow.amountAtomic ?? view.amountAtomic);
+  const owed = escrow.amountAtomic ?? view.amountAtomic;
   return (
     <p className="x2f-refund__late" data-late-dispute="">
       Even after your refund, <Name name={name} /> can still open a dispute if they sent the money anyway. A moderator can pause your account
       from trading until it's resolved, then reviews it fairly. If their payment reached you, you'll be asked to send <Name name={name} /> the{' '}
-      {owed} XMR as agreed. Refusing leads to an account suspension and a possible lifetime ban.
+      <Xmr atomic={owed} /> as agreed. Refusing leads to an account suspension and a possible lifetime ban.
     </p>
   );
 }
@@ -167,10 +182,10 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
   const mayRefund = canRequestRefund(view, now) && busy === null;
   const offerExtend = canExtend(view, now);
   const method = methodOf(view);
-  const held = xmrText(view.receivedAtomic);
+  const held = <Xmr atomic={view.receivedAtomic} />;
   const extendButton = offerExtend ? (
     <Button variant="secondary" disabled={busy !== null} onClick={() => void go('extend', extend())}>
-      Give 30 more min
+      Give <Num>30</Num> more min
     </Button>
   ) : null;
 
@@ -186,7 +201,7 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
             <Name name={name} /> didn't mark the payment in time
           </h1>
           <p className="x2f-refund__lead">
-            Your {held} XMR is still safe in escrow.{' '}
+            Your {held} is still safe in escrow.{' '}
             {locked ? (
               <>
                 Nudge <Name name={name} />, or give them more time.
@@ -199,7 +214,9 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
           </p>
         </section>
         <section aria-label="How the refund works" className="x2f-refund__card">
-          <h2 className="x2f-refund__card-title">If you cancel</h2>
+          <h2 className="x2f-refund__card-title">
+            If <Name name={name} /> paid after all
+          </h2>
           <LateDispute view={view} escrow={escrow} />
         </section>
         <section className="x2f-refund__check">
@@ -226,13 +243,13 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
             </Button>
             {extendButton}
             <p className="x2f-refund__note" data-refund-lock-note="">
-              No word from <Name name={name} />? After 90 min and at least one nudge, you can cancel and get your {held} XMR back.
+              No word from <Name name={name} />? After <Num>90</Num> min and at least one nudge, you can cancel and get your {held} back.
             </p>
           </>
         ) : (
           <>
             <Button variant="primary" disabled={!mayRefund} onClick={() => void go('refund', refundRun(view.code, deps))}>
-              Cancel &amp; get refund
+              Cancel and get refund
             </Button>
             <div className="x2f-refund__row">
               {extendButton}
@@ -242,7 +259,7 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
               </Button>
             </div>
             <p className="x2f-refund__note" data-refund-lock-note="">
-              You can nudge again every 15 min, as often as you need. You can cancel now.
+              You can nudge again every <Num>15</Num> min, as often as you need. You can cancel now and get your {held} back.
             </p>
           </>
         )}
@@ -281,7 +298,7 @@ function useFlowDeps(code: string, escrow: RefundScreenProps['escrow']): RefundF
 }
 
 /**
- * After Cancel & get refund: the buyer's final alert is running (seller, refund_requested). A run
+ * After Cancel and get refund: the buyer's final alert is running (seller, refund_requested). A run
  * this page started and did not finish (the signal or the tx set) is resumed here on mount; when
  * it fails again the seller sees why and Retry.
  */
