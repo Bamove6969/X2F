@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { DEMO_DIR, DEMO_PASSWORD } from './config.js';
 import { assertDemo } from './guard.js';
 import { throwawayAddress } from './secrets.js';
+import { stepOf, TOTP_FILE, totpCode } from './totp.js';
 import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.js';
 
 const ORIGIN = process.env.DEMO_ORIGIN ?? '';
@@ -98,8 +99,15 @@ async function signUp(p: Person): Promise<DemoClient> {
     displayName: p.displayName, loginName: p.loginName, password: DEMO_PASSWORD, deviceLabel: 'Demo seed', acceptedTerms: TERMS_TEXT_VERSION,
   });
   await c.ok('POST', '/v1/wallets', { app: 'cake', label: 'Demo wallet', address: await throwawayAddress() });
+  // An authenticator (during sign-up's onboarding window, no confirm needed): password + code is a
+  // strong login, so a demo login on a new browser never starts the 24-hour hold (R42).
+  const start = await c.ok<{ challengeId: string; secret: string }>('POST', '/v1/account/totp/start', {});
+  await c.ok('POST', '/v1/account/totp/finish', { challengeId: start.challengeId, code: totpCode(start.secret, stepOf(Date.now())) });
+  totp[p.loginName] = start.secret;
   return c;
 }
+
+const totp: Record<string, string> = {};
 
 const failures: string[] = [];
 for (const p of [...CAST, ...OWNER]) {
@@ -117,13 +125,15 @@ for (const f of failures) console.log(`demo seed: offer refused: ${f}`);
 
 const logins = [
   'X2F demo logins (password for all: ' + DEMO_PASSWORD + ')',
+  'Then the authenticator code: npm run demo:code <login name> (or add the secret below to an authenticator app).',
   '',
   'Your accounts (trade with yourself; use one browser profile or device per account):',
-  ...OWNER.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName}`),
+  ...OWNER.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName.padEnd(14)} authenticator secret ${totp[p.loginName]}`),
   '',
   'The cast (offers already posted):',
-  ...CAST.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName}`),
+  ...CAST.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName.padEnd(14)} authenticator secret ${totp[p.loginName]}`),
 ];
+writeFileSync(TOTP_FILE, JSON.stringify(totp, null, 2), { mode: 0o600 });
 writeFileSync(join(DEMO_DIR, 'logins.txt'), `${logins.join('\n')}\n`);
 // monero-ts keeps a worker alive: exit once the seed is written.
 process.exit(0);

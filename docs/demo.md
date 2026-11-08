@@ -33,12 +33,26 @@ What runs, all bound to 127.0.0.1:
 | Demo moderator (moderation service, miner, faucet) | no port |
 
 Process ids are in `.demo/pids.json`, logs in `.demo/logs/<name>.log`, the logins in
-`.demo/logins.txt`, the secrets in `.demo/secrets/` (all gitignored).
+`.demo/logins.txt`, the secrets in `.demo/secrets/` (the authenticator secrets in
+`.demo/secrets/totp.json`; all gitignored).
 
 ## Accounts
 
 Every demo account's password is **`Demo-Monero-2026!`**. Sign in with the **login name** (the
-private one), not the display name.
+private one), not the display name. The login then asks for an authenticator code: run
+
+```sh
+npm run demo:code ana-demo     # or with no name: every account's current code
+```
+
+and type the 6 digits (each code works once; a new one comes every 30 seconds). Or add the
+account's authenticator secret from `.demo/logins.txt` to any authenticator app. Password plus
+authenticator code is a strong login, so a demo account works at once in a new browser; a
+password alone would start the 24-hour hold (R42) and leave the account unable to trade.
+
+If the same account is already logged in somewhere else (another browser, or a script), a new
+login asks that device to approve it (number matching, Plan 2 Task 16): log the other one out
+first, or approve from it.
 
 Yours, with no offers, to trade with yourself (one browser profile or device per account, since
 each trade's escrow keys live in that browser):
@@ -60,7 +74,7 @@ gift cards, Wise, PayPal):
 | `kettle-login` | kettle.moss |
 | `lowtide-login` | lowtide_rx |
 
-Every account has a password only (no second factor) and one throwaway payout wallet.
+Every account has a password, an authenticator (throwaway secret) and one throwaway payout wallet.
 
 ## What is fake
 
@@ -73,7 +87,8 @@ Every account has a password only (no second factor) and one throwaway payout wa
 - **The fiat payment.** Nothing is paid; the buyer just taps "I've paid".
 - **Every secret.** The server keys, key rings, PGP signing key, VAPID keys, moderation signing
   key and keystore key, the X2F fee wallet (whose keys are thrown away) and the Postgres password
-  are random per start, in `.demo/secrets/` (chmod 600), and die with the demo.
+  are random per start, in `.demo/secrets/` (chmod 600), and die with the demo. So are the demo
+  accounts' authenticator secrets.
 - **The leaked-password list** has a single entry ("password").
 - **Pieces production does not have wired yet**, played by the demo moderator
   (`tools/demo/moderator.ts`): the moderator's escrow party, the chain watcher that applies
