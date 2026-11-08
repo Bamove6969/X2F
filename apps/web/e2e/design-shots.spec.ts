@@ -597,7 +597,7 @@ function apply(s: Room, e: Record<string, unknown>): { status: number; json: unk
 
 /**
  * Opens /trade/:code on the fixtures build with the fixture escrow ready for the board trade.
- * `warned` false leaves Task 38's warnings to show; `chat` keeps Task 20's real chat in the room.
+ * `warned` false leaves Task 38's release warning to show; `chat` keeps Task 20's real chat in the room.
  */
 async function openRoom(
   page: Page,
@@ -624,7 +624,6 @@ async function openRoom(
       if (f.chat) window.__x2fRealChat = true;
       if (f.warned) {
         try {
-          localStorage.setItem(`x2f.warned.pay.${f.code}`, '1');
           localStorage.setItem(`x2f.warned.release.${f.code}`, '1');
         } catch {
           // No store: the warning shows.
@@ -650,7 +649,7 @@ test('36 BuyerPay while the escrow secures', async ({ page }) => {
 // Shot 37 (Task 38's pay warning) is gone: board Warn-IvePaid is superseded by owner Q12, since
 // I've paid only opens once the escrow is secured.
 test("38-39 Task 39: the two-step I've paid, marked as paid", async ({ page }) => {
-  await openRoom(page, PAY_SECURED, { warned: false });
+  await openRoom(page, PAY_SECURED);
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await page.locator('[data-primary]').first().click();
   const sheet = page.getByRole('dialog');

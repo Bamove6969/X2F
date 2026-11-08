@@ -6,8 +6,7 @@ import { BuyerCancelling, BuyerPay, SellerWaiting, TASK23_SLOTS } from '../src/s
 import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
-import { resetWarned, setWarned } from '../src/screens/trade/warned.js';
-import { PAY_WARNING_LEAD } from '../src/screens/trade/PayWarning.js';
+import { resetWarned } from '../src/screens/trade/warned.js';
 import { FinalAlert } from '../src/screens/trade/FinalAlert.js';
 import { buyerAlertView, SERVER_NOW } from '../e2e/refundViews.js';
 
@@ -107,8 +106,6 @@ function fakeEscrow(over: Partial<TradeEscrow> = {}): TradeEscrow {
 }
 
 beforeEach(() => {
-  // Task 38's pay warning is tested on its own (below); elsewhere the buyer went past it already.
-  setWarned('pay', CODE);
   calls = [];
   answer = () => ({ status: 200, json: tradeView() });
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -458,7 +455,7 @@ describe("the pay warning is superseded by owner Q12 (board Warn-IvePaid): it ne
     fresh();
     mount(props());
     expect(alert()).toBeNull();
-    expect(text()).not.toContain(PAY_WARNING_LEAD);
+    expect(text()).not.toContain('Before you pay');
   });
 
   it("not in front of the sheet once secured, even never warned, even with new coins still confirming: I've paid goes straight to the confirm sheet", async () => {

@@ -92,21 +92,11 @@ const sheet = (page: Page) => page.getByRole('dialog');
 /** The device's own figures for the board trade: 1.25 XMR at $330.00, $412.50 (and its deal). */
 const DEVICE = { phase: 'ready' as const, amountAtomic: PAY_SECURED.amountAtomic, fiatCents: PAY_SECURED.fiatCents, deal: { poster: 'seller' as const, takeAmountAtomic: PAY_SECURED.amountAtomic } };
 
-/** `warned: false` leaves no Task 38 pay mark (owner Q12 made the warning unreachable: it must not show either way). */
-async function open(page: Page, view: TradeView, before?: Server['before'], o: { warned?: boolean } = {}): Promise<Server> {
+async function open(page: Page, view: TradeView, before?: Server['before']): Promise<Server> {
   const s = await serve(page, view, before);
   await page.addInitScript((e) => {
     window.__x2fFixtureEscrow = e;
   }, DEVICE);
-  if (o.warned !== false) {
-    await page.addInitScript((code) => {
-      try {
-        window.localStorage.setItem(`x2f.warned.pay.${code}`, '1');
-      } catch {
-        // No store: the warning shows, and the test fails loudly.
-      }
-    }, view.code);
-  }
   await page.goto(ROOM);
   await expect(room(page)).toHaveAttribute('data-trade-state', view.state);
   return s;
@@ -249,7 +239,7 @@ test.describe('cancel', () => {
 
 test.describe("owner Q12: no payment details and no I've paid before the escrow is secured", () => {
   test("securing: the details are a locked card, I've paid is closed and says why, nothing is posted; Task 38's pay warning never opens", async ({ page }) => {
-    const s = await open(page, PAY_SECURING, undefined, { warned: false });
+    const s = await open(page, PAY_SECURING);
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
     await expect(page.getByText('[SELLER ZELLE ID]')).toHaveCount(0);
     await expect(page.getByText('Send exactly', { exact: true })).toHaveCount(0);
@@ -264,8 +254,8 @@ test.describe("owner Q12: no payment details and no I've paid before the escrow 
     expect(await escrowCalls(page)).toEqual([]);
   });
 
-  test("secured, never warned: the details show and I've paid goes straight to the confirm sheet", async ({ page }) => {
-    await open(page, PAY_SECURED, undefined, { warned: false });
+  test("secured: the details show and I've paid goes straight to the confirm sheet", async ({ page }) => {
+    await open(page, PAY_SECURED);
     await expect(page.getByText('[SELLER ZELLE ID]')).toBeVisible();
     await primary(page).click();
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
@@ -377,7 +367,7 @@ test.describe('phone sizes', () => {
 
     test(`the locked pay screen and the seller's room at ${vp.width}x${vp.height} fit`, async ({ page }) => {
       await page.setViewportSize(vp);
-      const s = await open(page, PAY_SECURING, undefined, { warned: false });
+      const s = await open(page, PAY_SECURING);
       await expect(page.locator('[data-pay-block="not-secured"]')).toBeVisible();
       await expectFitsPhone(page);
       s.view = { ...PAY_SECURED, role: 'seller', counterparty: { ...PAY_SECURED.counterparty, displayName: 'mira.k' } };

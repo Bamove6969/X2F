@@ -10,8 +10,8 @@
  *   `escrow.markPaid(fiatCents)` (the `trade.paid` signal). A `total-changed` refusal sends
  *   nothing: the trade is re-read and the sheet asks again with the new total. Owner Q12: "I've
  *   paid" and the seller's payment details only once the escrow is secured (10 of 10); before
- *   that the button is closed and the details are a locked card, so Task 38's PayWarning (board
- *   Warn-IvePaid, superseded by Q12) is never shown.
+ *   that the button is closed and the details are a locked card (board Warn-IvePaid, Task 38's
+ *   pay warning, is superseded by Q12 and gone).
  * - Cancel trade (buyer, spec 2.3): one tap before "I've paid" (`buyer-cancel`, then
  *   `escrow.buyerCancel()`, which sends `trade.cancel`). After "I've paid" there is no cancel at
  *   all (owner, Revision 2026-10-29b; Task 39): the link is gone and the API refuses it.

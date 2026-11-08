@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buyerCancelMode, escrowChip, escrowConfirming, finishBlock, payBlock, payTimer, sellerCancelMode, timelineSteps, counterpartyLine, showProposal } from '../src/screens/trade/payModel.js';
+import { buyerCancelMode, escrowChip, finishBlock, payBlock, payTimer, sellerCancelMode, timelineSteps, counterpartyLine, showProposal } from '../src/screens/trade/payModel.js';
 import type { TradeView } from '../src/screens/trade/payTypes.js';
 
 const T0 = Date.parse('2026-10-25T12:00:00.000Z');
@@ -76,13 +76,6 @@ describe('who may cancel (spec 2.3)', () => {
     expect(buyerCancelMode(view({ state: 'paid', paidAt: at(-1) }))).toBe('none');
     expect(buyerCancelMode(view({ state: 'secured', paidAt: at(-1) }))).toBe('none');
     expect(buyerCancelMode(view({ state: 'settling' }))).toBe('none');
-  });
-
-  it('the escrow is confirming while securing, or secured with coins still locked', () => {
-    expect(escrowConfirming(view({ state: 'securing' }))).toBe(true);
-    expect(escrowConfirming(view({ state: 'secured', releasable: false }))).toBe(true);
-    expect(escrowConfirming(view({ state: 'secured', releasable: true }))).toBe(false);
-    expect(escrowConfirming(view({ state: 'paid', releasable: false }))).toBe(false);
   });
 
   it('the seller never cancels alone: only propose, or withdraw a standing proposal; nothing after "I\'ve paid"', () => {

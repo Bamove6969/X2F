@@ -72,14 +72,6 @@ export function buyerCancelMode(v: Pick<TradeView, 'state' | 'paidAt'>): 'one-ta
   return 'none';
 }
 
-/**
- * The escrow is still confirming (Revision 2026-10-29b: the pay warning shows when the pay screen
- * opens then): funding seen but not secured, or secured with coins that are not all unlocked.
- */
-export function escrowConfirming(v: Pick<TradeView, 'state' | 'releasable'>): boolean {
-  return v.state === 'securing' || (v.state === 'secured' && !v.releasable);
-}
-
 /** The seller never cancels alone after funding (spec 2.3): only propose a mutual cancel, or withdraw one. */
 export function sellerCancelMode(v: Pick<TradeView, 'state' | 'cancelProposedBy'>): 'propose' | 'proposed' | 'none' {
   if (!CANCEL_STATES.includes(v.state)) return 'none';
