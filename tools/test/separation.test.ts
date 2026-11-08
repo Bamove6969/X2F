@@ -86,4 +86,21 @@ describe('separation-check', () => {
       'apps/moderation/src/d.ts: apps/moderation must not import @x2f/api',
     ]);
   });
+
+  it('flags any import of the demo stack from apps/* or packages/* (docs/demo.md)', async () => {
+    const root = await tree({
+      'apps/api/src/a.ts': "import { assertDemo } from '../../../tools/demo/guard.js';\n",
+      'apps/web/src/b.ts': "\nconst m = await import('@x2f/demo/moderator.js');\n",
+      'packages/escrow/src/c.ts': "import '@x2f/demo';\n",
+      'packages/trade/package.json': '{\n  "dependencies": { "@x2f/demo": "0.0.0" }\n}\n',
+      'apps/relay/src/ok.ts': "import { x } from './tools/demolition.js';\nconst s = 'tools/demo is only named in a string';\n",
+    });
+    const found = (await scanSeparation(root)).sort((a, b) => a.file.localeCompare(b.file));
+    expect(found).toEqual([
+      { file: 'apps/api/src/a.ts', rule: 'apps/* must not import the demo stack (../../../tools/demo/guard.js)', line: 1 },
+      { file: 'apps/web/src/b.ts', rule: 'apps/* must not import the demo stack (@x2f/demo/moderator.js)', line: 2 },
+      { file: 'packages/escrow/src/c.ts', rule: 'packages/* must not import the demo stack (@x2f/demo)', line: 1 },
+      { file: 'packages/trade/package.json', rule: 'packages/* must not depend on @x2f/demo', line: 2 },
+    ]);
+  });
 });

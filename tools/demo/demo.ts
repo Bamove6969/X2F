@@ -36,177 +36,192 @@ async function waitFor(what: string, check: () => Promise<boolean>, timeoutMs = 
 }
 const httpUp = (url: string) => async () => (await fetch(url)).status < 500;
 
-if (Object.keys(readPids()).length > 0) {
-  step('stopping the previous demo first');
+async function main(): Promise<void> {
+  if (Object.keys(readPids()).length > 0) {
+    step('stopping the previous demo first');
+    await stopAll(() => undefined);
+  }
+  rmSync(DEMO_DIR, { recursive: true, force: true });
+  mkdirSync(LOG_DIR, { recursive: true });
+  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
+
+  // ── Tailscale (optional, private tailnet only) ──────────────────────────────
+  let tsIp = '';
+  const ts = spawnSync('tailscale', ['ip', '-4'], { encoding: 'utf8' });
+  if (ts.status === 0) tsIp = (ts.stdout.split('\n')[0] ?? '').trim();
+  const LOCAL_ORIGIN = `http://localhost:${PORTS.gateway}`;
+  const TS_ORIGIN = tsIp ? `https://${tsIp}:${PORTS.gatewayTls}` : '';
+  // The web build talks to the relay and node proxy through one origin, baked in at build time.
+  const PRIMARY = TS_ORIGIN || LOCAL_ORIGIN;
+  const primaryWs = PRIMARY.replace(/^http/, 'ws');
+
+  step('making throwaway secrets in .demo/secrets');
+  const s = await makeSecrets();
+  let tlsKey = '';
+  let tlsCert = '';
+  if (tsIp) {
+    tlsKey = join(SECRETS_DIR, 'tls-key.pem');
+    tlsCert = join(SECRETS_DIR, 'tls-cert.pem');
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-days', '30',
+      '-subj', '/CN=x2f-demo', '-addext', `subjectAltName=IP:${tsIp}`, '-keyout', tlsKey, '-out', tlsCert], { stdio: 'ignore' });
+    chmodSync(tlsKey, 0o600);
+  }
+
+  // ── Postgres ────────────────────────────────────────────────────────────────
+  step('starting Postgres (docker, 127.0.0.1 only, data on tmpfs)');
+  execFileSync('docker', ['rm', '-f', PG_CONTAINER], { stdio: 'ignore' });
+  execFileSync('docker', ['run', '-d', '--name', PG_CONTAINER, '--label', 'x2f-demo=1', '-p', `${HOST}:${PORTS.postgres}:5432`,
+    '-e', `POSTGRES_PASSWORD=${s.pgPassword}`, '--tmpfs', '/var/lib/postgresql/data', PG_IMAGE], { stdio: 'ignore' });
+  const pgUrl = (db: string) => `postgres://postgres:${s.pgPassword}@${HOST}:${PORTS.postgres}/${db}`;
+  await waitFor('Postgres', async () => {
+    const c = new pg.Client({ connectionString: pgUrl('postgres') });
+    await c.connect();
+    await c.end();
+    return true;
+  });
+  {
+    const c = new pg.Client({ connectionString: pgUrl('postgres') });
+    await c.connect();
+    await c.query('create database x2f');
+    await c.query('create database x2f_moderation');
+    await c.end();
+    const pool = new pg.Pool({ connectionString: pgUrl('x2f') });
+    const applied = await migrate(pool);
+    await pool.end();
+    step(`migrated the API database (${applied.length} migrations)`);
+  }
+
+  // ── monerod (regtest) ───────────────────────────────────────────────────────
+  step('checking monerod (tools/regtest/fetch-monerod.sh)');
+  execFileSync('bash', [join(ROOT, 'tools/regtest/fetch-monerod.sh')], { stdio: 'inherit' });
+  const monerod = join(ROOT, '.regtest/bin', process.arch === 'arm64' ? 'monero-aarch64-linux-gnu-v0.18.5.3' : 'monero-x86_64-linux-gnu-v0.18.5.3', 'monerod');
+  const chainDir = join(DEMO_DIR, 'chain');
+  mkdirSync(chainDir, { recursive: true });
+  startDetached('monerod', monerod, [
+    '--regtest', '--offline', '--fixed-difficulty', '1', '--no-zmq', '--non-interactive', '--disable-rpc-ban',
+    '--data-dir', chainDir,
+    '--rpc-bind-ip', HOST, '--rpc-bind-port', String(PORTS.monerodRpc),
+    '--rpc-restricted-bind-ip', HOST, '--rpc-restricted-bind-port', String(PORTS.monerodRestricted),
+    '--p2p-bind-ip', HOST, '--p2p-bind-port', String(PORTS.monerodP2p),
+    '--rpc-max-connections-per-private-ip', '60', '--rpc-max-connections-per-public-ip', '60', '--rpc-max-connections', '200',
+  ], {});
+  await waitFor('monerod', async () => (await fetch(`${MONEROD_RPC}/get_info`)).ok);
+  await assertRegtestDaemon(MONEROD_RPC);
+  await assertRegtestDaemon(MONEROD_RESTRICTED);
+  step('monerod is up and reports regtest');
+
+  // ── the web build ───────────────────────────────────────────────────────────
+  step('building apps/web for this demo (regtest, demo moderation key)');
+  execFileSync('npx', ['vite', 'build', '--outDir', WEB_DIST, '--emptyOutDir'], {
+    cwd: join(ROOT, 'apps/web'),
+    stdio: ['ignore', 'ignore', 'inherit'],
+    env: {
+      ...process.env,
+      VITE_MONERO_NETWORK: 'regtest',
+      VITE_MOD_SIGNING_PUBLIC: s.modSigningPublic,
+      VITE_FEE_WALLET: s.feeWallet,
+      VITE_RELAY_URL: `${primaryWs}/relay`,
+      VITE_NODE_PROXY_URL: `${PRIMARY}/node`,
+    },
+  });
+
+  // ── services ────────────────────────────────────────────────────────────────
+  const origins = [LOCAL_ORIGIN, `http://127.0.0.1:${PORTS.gateway}`, ...(TS_ORIGIN ? [TS_ORIGIN] : [])];
+  const demo = { X2F_DEMO: '1' };
+
+  startTs('relay', 'apps/relay/src/main.ts', {
+    RELAY_MOD_SIGNING_PUBLIC: s.modSigningPublic, RELAY_HOST: HOST, RELAY_PORT: String(PORTS.relay),
+    RELAY_ADMIN_HOST: HOST, RELAY_ADMIN_PORT: String(PORTS.relayAdmin),
+  });
+  startTs('node-proxy', 'apps/node-proxy/src/main.ts', {
+    NODE_PROXY_UPSTREAM: MONEROD_RESTRICTED, NODE_PROXY_WEB_ORIGIN: PRIMARY, NODE_PROXY_HOST: HOST, NODE_PROXY_PORT: String(PORTS.nodeProxy),
+  });
+  const apiEnv: Record<string, string> = {
+    X2F_SITE_NAME: 'X2F demo',
+    X2F_ORIGINS: origins.join(','),
+    X2F_RP_ID: 'localhost',
+    DATABASE_URL: pgUrl('x2f'),
+    X2F_LEAKED_LIST_PATH: s.leakedListPath,
+    X2F_SERVER_KEY: s.serverKey,
+    X2F_ATTESTATION_DIR: join(ROOT, 'apps/api/data/fido-mds'),
+    // Regtest uses the mainnet address format; the node itself is --regtest --offline.
+    X2F_MONERO_NETWORK: 'mainnet',
+    X2F_TERMS_VERSION: TERMS_TEXT_VERSION,
+    X2F_PGP_SIGNING_KEY_PATH: s.pgpKeyPath,
+    X2F_PGP_SIGNING_FINGERPRINT: s.pgpFingerprint,
+    X2F_PASSWORD_PEPPERS: s.passwordPeppers,
+    X2F_RECOVERY_CODE_KEYS: s.recoveryCodeKeys,
+    X2F_TOTP_KEYS: s.totpKeys,
+    X2F_LOGIN_NAME_KEYS: s.loginNameKeys,
+    X2F_VAPID_PUBLIC: s.vapidPublic,
+    X2F_VAPID_PRIVATE: s.vapidPrivate,
+    X2F_HOST: HOST,
+    X2F_PORT: String(PORTS.api),
+    X2F_WEB_ROOT: WEB_DIST,
+    X2F_RELAY_ORIGIN: primaryWs,
+    X2F_NODE_PROXY_ORIGIN: PRIMARY,
+    X2F_MOD_SIGNING_PUBLIC: s.modSigningPublic,
+    X2F_INTERNAL_HOST: HOST,
+    X2F_INTERNAL_PORT: String(PORTS.apiInternal),
+    X2F_MONEROD_URL: MONEROD_RESTRICTED,
+    // The staff API on its own loopback origin (Plan 4 Task 4).
+    X2F_STAFF_ORIGIN: `http://${HOST}:${PORTS.staff}`,
+    X2F_STAFF_HOST: HOST,
+    X2F_STAFF_PORT: String(PORTS.staff),
+    ...(process.env.PRICE_SOURCES ? { PRICE_SOURCES: process.env.PRICE_SOURCES } : {}),
+    ...(process.env.FX_SOURCES ? { FX_SOURCES: process.env.FX_SOURCES } : {}),
+  };
+  startTs('api', 'apps/api/src/main.ts', apiEnv);
+  await waitFor('the API', httpUp(`http://${HOST}:${PORTS.api}/v1/site`));
+
+  startTs('moderator', 'tools/demo/moderator.ts', {
+    ...demo,
+    MONERO_DAEMON_URI: MONEROD_RPC,
+    DATABASE_URL: pgUrl('x2f'),
+    MOD_DATABASE_URL: pgUrl('x2f_moderation'),
+    X2F_API_INTERNAL_URL: `http://${HOST}:${PORTS.apiInternal}`,
+    RELAY_ADMIN_URL: `http://${HOST}:${PORTS.relayAdmin}`,
+    DEMO_RELAY_WS: `ws://${HOST}:${PORTS.relay}`,
+    MOD_KEYSTORE_KEY: s.modKeystoreKey,
+    MOD_SIGNING_SECRET: s.modSigningSecret,
+    X2F_FEE_WALLET: s.feeWallet,
+    DEMO_STATE_DIR: STATE_DIR,
+  });
+  startTs('gateway', 'tools/demo/gateway.ts', {
+    ...demo,
+    DEMO_API_PORT: String(PORTS.api), DEMO_RELAY_PORT: String(PORTS.relay), DEMO_NODE_PROXY_PORT: String(PORTS.nodeProxy),
+    DEMO_GATEWAY_PORT: String(PORTS.gateway), DEMO_GATEWAY_TLS_PORT: String(PORTS.gatewayTls), DEMO_PRIMARY_ORIGIN: PRIMARY, DEMO_ORIGINS: origins.join(','),
+    ...(tsIp ? { DEMO_TAILSCALE_IP: tsIp, DEMO_TLS_KEY: tlsKey, DEMO_TLS_CERT: tlsCert } : {}),
+  });
+  await waitFor('the gateway', httpUp(`${LOCAL_ORIGIN}/`));
+  await waitFor('the node proxy', httpUp(`http://${HOST}:${PORTS.nodeProxy}/get_info`));
+
+  step('seeding demo traders and offers');
+  execFileSync(process.execPath, ['--import', 'tsx', join(ROOT, 'tools/demo/seed.ts')], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: { ...process.env, ...demo, DEMO_ORIGIN: LOCAL_ORIGIN, DATABASE_URL: pgUrl('x2f'), MONERO_DAEMON_URI: MONEROD_RPC },
+  });
+
+  const info = {
+    web: LOCAL_ORIGIN,
+    ...(TS_ORIGIN ? { tailnet: TS_ORIGIN } : {}),
+    logs: LOG_DIR,
+  };
+  writeFileSync(join(DEMO_DIR, 'urls.json'), JSON.stringify(info, null, 2));
+  console.log('\nX2F demo is running (regtest, fake money). Stop it with: npm run demo:stop');
+  console.log(`  Open:     ${LOCAL_ORIGIN}`);
+  if (TS_ORIGIN) console.log(`  Tailnet:  ${TS_ORIGIN}  (self-signed certificate; your tailnet only)`);
+  else console.log('  Tailnet:  not available (tailscale is not installed on this machine)');
+  console.log('  Logins:   see docs/demo.md (or .demo/logins.txt)');
+  console.log(`  Logs:     ${LOG_DIR}`);
+}
+
+// Exits once everything is up: the started processes are detached and outlive this one (monero-ts
+// keeps a worker alive otherwise).
+main().then(() => process.exit(0), async (e: unknown) => {
+  console.error(`demo: failed: ${(e as Error).message}`);
+  console.error('demo: stopping what was started (logs stay in .demo/logs)');
   await stopAll(() => undefined);
-}
-rmSync(DEMO_DIR, { recursive: true, force: true });
-mkdirSync(LOG_DIR, { recursive: true });
-mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
-
-// ── Tailscale (optional, private tailnet only) ──────────────────────────────
-let tsIp = '';
-const ts = spawnSync('tailscale', ['ip', '-4'], { encoding: 'utf8' });
-if (ts.status === 0) tsIp = (ts.stdout.split('\n')[0] ?? '').trim();
-const LOCAL_ORIGIN = `http://localhost:${PORTS.gateway}`;
-const TS_ORIGIN = tsIp ? `https://${tsIp}:${PORTS.gatewayTls}` : '';
-// The web build talks to the relay and node proxy through one origin, baked in at build time.
-const PRIMARY = TS_ORIGIN || LOCAL_ORIGIN;
-const primaryWs = PRIMARY.replace(/^http/, 'ws');
-
-step('making throwaway secrets in .demo/secrets');
-const s = await makeSecrets();
-let tlsKey = '';
-let tlsCert = '';
-if (tsIp) {
-  tlsKey = join(SECRETS_DIR, 'tls-key.pem');
-  tlsCert = join(SECRETS_DIR, 'tls-cert.pem');
-  execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-days', '30',
-    '-subj', '/CN=x2f-demo', '-addext', `subjectAltName=IP:${tsIp}`, '-keyout', tlsKey, '-out', tlsCert], { stdio: 'ignore' });
-  chmodSync(tlsKey, 0o600);
-}
-
-// ── Postgres ────────────────────────────────────────────────────────────────
-step('starting Postgres (docker, 127.0.0.1 only, data on tmpfs)');
-execFileSync('docker', ['rm', '-f', PG_CONTAINER], { stdio: 'ignore' });
-execFileSync('docker', ['run', '-d', '--name', PG_CONTAINER, '--label', 'x2f-demo=1', '-p', `${HOST}:${PORTS.postgres}:5432`,
-  '-e', `POSTGRES_PASSWORD=${s.pgPassword}`, '--tmpfs', '/var/lib/postgresql/data', PG_IMAGE], { stdio: 'ignore' });
-const pgUrl = (db: string) => `postgres://postgres:${s.pgPassword}@${HOST}:${PORTS.postgres}/${db}`;
-await waitFor('Postgres', async () => {
-  const c = new pg.Client({ connectionString: pgUrl('postgres') });
-  await c.connect();
-  await c.end();
-  return true;
+  process.exit(1);
 });
-{
-  const c = new pg.Client({ connectionString: pgUrl('postgres') });
-  await c.connect();
-  await c.query('create database x2f');
-  await c.query('create database x2f_moderation');
-  await c.end();
-  const pool = new pg.Pool({ connectionString: pgUrl('x2f') });
-  const applied = await migrate(pool);
-  await pool.end();
-  step(`migrated the API database (${applied.length} migrations)`);
-}
-
-// ── monerod (regtest) ───────────────────────────────────────────────────────
-step('checking monerod (tools/regtest/fetch-monerod.sh)');
-execFileSync('bash', [join(ROOT, 'tools/regtest/fetch-monerod.sh')], { stdio: 'inherit' });
-const monerod = join(ROOT, '.regtest/bin', process.arch === 'arm64' ? 'monero-aarch64-linux-gnu-v0.18.5.3' : 'monero-x86_64-linux-gnu-v0.18.5.3', 'monerod');
-const chainDir = join(DEMO_DIR, 'chain');
-mkdirSync(chainDir, { recursive: true });
-startDetached('monerod', monerod, [
-  '--regtest', '--offline', '--fixed-difficulty', '1', '--no-zmq', '--non-interactive', '--disable-rpc-ban',
-  '--data-dir', chainDir,
-  '--rpc-bind-ip', HOST, '--rpc-bind-port', String(PORTS.monerodRpc),
-  '--rpc-restricted-bind-ip', HOST, '--rpc-restricted-bind-port', String(PORTS.monerodRestricted),
-  '--p2p-bind-ip', HOST, '--p2p-bind-port', String(PORTS.monerodP2p),
-  '--rpc-max-connections-per-private-ip', '60', '--rpc-max-connections-per-public-ip', '60', '--rpc-max-connections', '200',
-], {});
-await waitFor('monerod', async () => (await fetch(`${MONEROD_RPC}/get_info`)).ok);
-await assertRegtestDaemon(MONEROD_RPC);
-await assertRegtestDaemon(MONEROD_RESTRICTED);
-step('monerod is up and reports regtest');
-
-// ── the web build ───────────────────────────────────────────────────────────
-step('building apps/web for this demo (regtest, demo moderation key)');
-execFileSync('npx', ['vite', 'build', '--outDir', WEB_DIST, '--emptyOutDir'], {
-  cwd: join(ROOT, 'apps/web'),
-  stdio: ['ignore', 'ignore', 'inherit'],
-  env: {
-    ...process.env,
-    VITE_MONERO_NETWORK: 'regtest',
-    VITE_MOD_SIGNING_PUBLIC: s.modSigningPublic,
-    VITE_FEE_WALLET: s.feeWallet,
-    VITE_RELAY_URL: `${primaryWs}/relay`,
-    VITE_NODE_PROXY_URL: `${PRIMARY}/node`,
-  },
-});
-
-// ── services ────────────────────────────────────────────────────────────────
-const origins = [LOCAL_ORIGIN, `http://127.0.0.1:${PORTS.gateway}`, ...(TS_ORIGIN ? [TS_ORIGIN] : [])];
-const demo = { X2F_DEMO: '1' };
-
-startTs('relay', 'apps/relay/src/main.ts', {
-  RELAY_MOD_SIGNING_PUBLIC: s.modSigningPublic, RELAY_HOST: HOST, RELAY_PORT: String(PORTS.relay),
-  RELAY_ADMIN_HOST: HOST, RELAY_ADMIN_PORT: String(PORTS.relayAdmin),
-});
-startTs('node-proxy', 'apps/node-proxy/src/main.ts', {
-  NODE_PROXY_UPSTREAM: MONEROD_RESTRICTED, NODE_PROXY_WEB_ORIGIN: PRIMARY, NODE_PROXY_HOST: HOST, NODE_PROXY_PORT: String(PORTS.nodeProxy),
-});
-const apiEnv: Record<string, string> = {
-  X2F_SITE_NAME: 'X2F demo',
-  X2F_ORIGINS: origins.join(','),
-  X2F_RP_ID: 'localhost',
-  DATABASE_URL: pgUrl('x2f'),
-  X2F_LEAKED_LIST_PATH: s.leakedListPath,
-  X2F_SERVER_KEY: s.serverKey,
-  X2F_ATTESTATION_DIR: join(ROOT, 'apps/api/data/fido-mds'),
-  // Regtest uses the mainnet address format; the node itself is --regtest --offline.
-  X2F_MONERO_NETWORK: 'mainnet',
-  X2F_TERMS_VERSION: TERMS_TEXT_VERSION,
-  X2F_PGP_SIGNING_KEY_PATH: s.pgpKeyPath,
-  X2F_PGP_SIGNING_FINGERPRINT: s.pgpFingerprint,
-  X2F_PASSWORD_PEPPERS: s.passwordPeppers,
-  X2F_RECOVERY_CODE_KEYS: s.recoveryCodeKeys,
-  X2F_TOTP_KEYS: s.totpKeys,
-  X2F_LOGIN_NAME_KEYS: s.loginNameKeys,
-  X2F_VAPID_PUBLIC: s.vapidPublic,
-  X2F_VAPID_PRIVATE: s.vapidPrivate,
-  X2F_HOST: HOST,
-  X2F_PORT: String(PORTS.api),
-  X2F_WEB_ROOT: WEB_DIST,
-  X2F_RELAY_ORIGIN: primaryWs,
-  X2F_NODE_PROXY_ORIGIN: PRIMARY,
-  X2F_MOD_SIGNING_PUBLIC: s.modSigningPublic,
-  X2F_INTERNAL_HOST: HOST,
-  X2F_INTERNAL_PORT: String(PORTS.apiInternal),
-  X2F_MONEROD_URL: MONEROD_RESTRICTED,
-  ...(process.env.PRICE_SOURCES ? { PRICE_SOURCES: process.env.PRICE_SOURCES } : {}),
-  ...(process.env.FX_SOURCES ? { FX_SOURCES: process.env.FX_SOURCES } : {}),
-};
-startTs('api', 'apps/api/src/main.ts', apiEnv);
-await waitFor('the API', httpUp(`http://${HOST}:${PORTS.api}/v1/site`));
-
-startTs('moderator', 'tools/demo/moderator.ts', {
-  ...demo,
-  MONERO_DAEMON_URI: MONEROD_RPC,
-  DATABASE_URL: pgUrl('x2f'),
-  MOD_DATABASE_URL: pgUrl('x2f_moderation'),
-  X2F_API_INTERNAL_URL: `http://${HOST}:${PORTS.apiInternal}`,
-  RELAY_ADMIN_URL: `http://${HOST}:${PORTS.relayAdmin}`,
-  DEMO_RELAY_WS: `ws://${HOST}:${PORTS.relay}`,
-  MOD_KEYSTORE_KEY: s.modKeystoreKey,
-  MOD_SIGNING_SECRET: s.modSigningSecret,
-  X2F_FEE_WALLET: s.feeWallet,
-  DEMO_STATE_DIR: STATE_DIR,
-});
-startTs('gateway', 'tools/demo/gateway.ts', {
-  ...demo,
-  DEMO_API_PORT: String(PORTS.api), DEMO_RELAY_PORT: String(PORTS.relay), DEMO_NODE_PROXY_PORT: String(PORTS.nodeProxy),
-  DEMO_GATEWAY_PORT: String(PORTS.gateway), DEMO_GATEWAY_TLS_PORT: String(PORTS.gatewayTls), DEMO_PRIMARY_ORIGIN: PRIMARY,
-  ...(tsIp ? { DEMO_TAILSCALE_IP: tsIp, DEMO_TLS_KEY: tlsKey, DEMO_TLS_CERT: tlsCert } : {}),
-});
-await waitFor('the gateway', httpUp(`${LOCAL_ORIGIN}/`));
-await waitFor('the node proxy', httpUp(`http://${HOST}:${PORTS.nodeProxy}/get_info`));
-
-step('seeding demo traders and offers');
-execFileSync(process.execPath, ['--import', 'tsx', join(ROOT, 'tools/demo/seed.ts')], {
-  cwd: ROOT,
-  stdio: 'inherit',
-  env: { ...process.env, ...demo, DEMO_ORIGIN: LOCAL_ORIGIN, DATABASE_URL: pgUrl('x2f'), MONERO_DAEMON_URI: MONEROD_RPC },
-});
-
-const info = {
-  web: LOCAL_ORIGIN,
-  ...(TS_ORIGIN ? { tailnet: TS_ORIGIN } : {}),
-  logs: LOG_DIR,
-};
-writeFileSync(join(DEMO_DIR, 'urls.json'), JSON.stringify(info, null, 2));
-console.log('\nX2F demo is running (regtest, fake money). Stop it with: npm run demo:stop');
-console.log(`  Open:     ${LOCAL_ORIGIN}`);
-if (TS_ORIGIN) console.log(`  Tailnet:  ${TS_ORIGIN}  (self-signed certificate; your tailnet only)`);
-else console.log('  Tailnet:  not available (tailscale is not installed on this machine)');
-console.log('  Logins:   see docs/demo.md (or .demo/logins.txt)');
-console.log(`  Logs:     ${LOG_DIR}`);

@@ -86,9 +86,9 @@ const CAST: Person[] = [
 
 // The owner's own accounts, to trade with himself (one per browser profile or device).
 const OWNER: Person[] = [
-  { displayName: 'demo_ana', loginName: 'ana', offers: [] },
-  { displayName: 'demo_ben', loginName: 'ben', offers: [] },
-  { displayName: 'demo_cy', loginName: 'cy', offers: [] },
+  { displayName: 'demo_ana', loginName: 'ana-demo', offers: [] },
+  { displayName: 'demo_ben', loginName: 'ben-demo', offers: [] },
+  { displayName: 'demo_cy', loginName: 'cy-demo', offers: [] },
 ];
 
 async function signUp(p: Person): Promise<DemoClient> {
@@ -108,6 +108,9 @@ for (const p of [...CAST, ...OWNER]) {
     const r = await c.call('POST', '/v1/offers', o);
     if (r.status >= 300) failures.push(`${p.displayName} ${String(o.methodId)} ${String(o.currency)}: ${r.status} ${JSON.stringify(r.body)}`);
   }
+  // Logged out again: a login while the account has an open session elsewhere waits for that
+  // device's approval (Plan 2 Task 16), and nobody holds the seed's session.
+  await c.ok('POST', '/v1/logout');
   console.log(`demo seed: ${p.displayName}`);
 }
 for (const f of failures) console.log(`demo seed: offer refused: ${f}`);

@@ -26,6 +26,8 @@ const TLS_PORT = Number(env('DEMO_GATEWAY_TLS_PORT'));
 /** The one origin the node proxy accepts (the web build's origin). */
 const PRIMARY = env('DEMO_PRIMARY_ORIGIN');
 const TS_IP = process.env.DEMO_TAILSCALE_IP ?? '';
+/** Every origin the demo is opened from (localhost, 127.0.0.1, the tailnet one); the node proxy is told it is the primary one. */
+const ORIGINS = new Set(env('DEMO_ORIGINS').split(','));
 
 /** 100.64.0.0/10, Tailscale's CGNAT range: the only non-loopback address the gateway binds. */
 function isTailscaleIp(ip: string): boolean {
@@ -42,10 +44,15 @@ function target(url: string): { port: number; path: string; node: boolean } {
 function handle(req: IncomingMessage, res: ServerResponse): void {
   const t = target(req.url ?? '/');
   const headers = { ...req.headers };
-  // The node proxy accepts one exact origin; a request from the tailnet origin is passed as the primary one.
-  if (t.node && typeof headers.origin === 'string') headers.origin = PRIMARY;
+  // The node proxy accepts one exact origin (the web build's): a request from another demo origin
+  // is passed on as the primary one, and its CORS answer is given back to the origin that asked.
+  const from = typeof headers.origin === 'string' ? headers.origin : null;
+  const known = t.node && from !== null && ORIGINS.has(from);
+  if (known) headers.origin = PRIMARY;
   const up = http.request({ host: '127.0.0.1', port: t.port, path: t.path, method: req.method, headers }, (r) => {
-    res.writeHead(r.statusCode ?? 502, r.headers);
+    const out = { ...r.headers };
+    if (known && out['access-control-allow-origin'] === PRIMARY) out['access-control-allow-origin'] = from;
+    res.writeHead(r.statusCode ?? 502, out);
     r.pipe(res);
   });
   up.on('error', () => {
