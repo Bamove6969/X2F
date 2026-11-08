@@ -78,7 +78,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         Nudge mira.k
       </button>
       <button type="button" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Give <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">30</span> more min</button>
-      <p style="margin: 0; padding: 0 8px 8px; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">No word from mira.k? After <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">90</span> min and one nudge, you can cancel and get your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> back.</p>
+      <p style="margin: 0; padding: 0 8px 8px; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">No word from mira.k? After <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">90</span> min and at least one nudge, you can cancel and get your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> back.</p>
     </sc-if>
     <sc-if value="{{available}}" hint-placeholder-val="{{false}}">
       <button type="button" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Cancel and get refund</button>
@@ -89,7 +89,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           Nudge again
         </button>
       </div>
-      <p style="margin: 0; padding: 0 8px 8px; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">You can cancel now. Your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> goes straight back to your wallet.</p>
+      <p style="margin: 0; padding: 0 8px 8px; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">You can nudge again every <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">15</span> min, as often as you need. You can cancel now. Your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> goes straight back to your wallet.</p>
     </sc-if>
   </footer>
   </div>
@@ -120,7 +120,7 @@ class Component extends DCLogic {
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const available = this.props.cancel === 'available';
     // Measured (night, fonts loaded): app screen per cancel state, plus the design notes under it.
-    const APP_H = available ? 1175 : 1151;
+    const APP_H = available ? 1193 : 1151;
     const NOTES_H = 545;
     const H = APP_H + NOTES_H;
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + APP_H + 'px; display: flex; flex-direction: column;';
@@ -138,7 +138,7 @@ class Component extends DCLogic {
       locked: !available,
       available,
       heroNext: available ? 'You can take it back, or give mira.k more time.' : 'Nudge mira.k, or give them more time.',
-      cancelName: available ? 'available (after a nudge)' : 'locked (no nudge yet)'
+      cancelName: available ? 'available (90 min and at least one nudge)' : 'locked (no nudge yet)'
     };
   }
 }

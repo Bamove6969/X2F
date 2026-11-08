@@ -590,3 +590,7 @@ Head-designer decision: the brand tile (initials, neutral) is the kit piece for 
 ## 8 Nov 2026: build vs boards, the gap list
 
 `docs/design-build-gaps/README.md` is the job order for the build team (9 jobs); `account.md`, `browse.md`, `trade.md` hold about 330 one-line gaps with file:line, P1–P4, from main @ cbf8e50e against canvas v131. Headline: 1 board matches, ~55 partial, ~60 not built; the shared kit (trader identity, badges, hero, stepper, icon tiles, chat) is absent everywhere; three owner rules are contradicted in the build (Q12 pay gating, G56/G2 cancel, one private username / recovery-code-only backup / team permission types). First job is those rules, second is the kit built once. The P4 wording lines are for the owner's page, not the build.
+
+## 8 Nov 2026: nudges uncapped (canvas v133)
+
+SellerRefund: "After 90 min and one nudge" → "After 90 min and at least one nudge"; the available state adds "You can nudge again every 15 min, as often as you need." (COPY-UNSIGNED). BuyerPaidWaiting (+Wide) already said "once every 15 minutes" and "Nudge sent. You can send another in …"; no board said one nudge was the maximum. Design-note labels aligned.
