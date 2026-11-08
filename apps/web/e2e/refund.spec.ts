@@ -14,6 +14,7 @@ import type { TradeView } from '../src/api/trade.js';
 import { PAY_SECURED } from '../src/fixtures/payBoard.js';
 import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
+import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 import { BOARD, SERVER_NOW, buyerAlertView, sellerNudgedView, sellerView } from './refundViews.js';
 
 type RefundView = TradeView;
@@ -343,4 +344,24 @@ for (const [width, height] of [
       for (const h of heights) expect(h).toBeGreaterThanOrEqual(44);
     });
   }
+}
+
+// Task 9 I/O, open edge 2: once a trader's side of a settlement is claimed done, the room waits for
+// the network with no countdown, even past settleBy (the settle window no longer reverts it).
+for (const viewport of PHONE_VIEWPORTS) {
+  test(`a claimed refund waits for the network, no timer past settleBy; unclaimed counts down (${viewport})`, async ({ page }) => {
+    const settling = { state: 'settling' as const, settling: 'auto-refund' as const, finalAlertAt: later(SERVER_NOW, -20) };
+    const s = await stubTrade(page, sellerView({ ...settling, settleBy: later(SERVER_NOW, -30), releaseClaimedAt: later(SERVER_NOW, -40), nextDeadline: null }));
+    await open(page);
+    await setPhone(page, viewport);
+    const card = page.locator('.x2f-trade-status[data-trade-state="settling"]');
+    await expect(card.getByText('Refund sent, waiting for the network', { exact: true })).toBeVisible();
+    await expect(page.getByRole('timer')).toHaveCount(0);
+    await expectPhoneLayout(page);
+    s.trade.view = sellerView({ ...settling, settleBy: later(SERVER_NOW, 10), nextDeadline: later(SERVER_NOW, 10) });
+    await page.reload();
+    await expect(card.getByRole('timer')).toHaveText('10 min');
+    await expect(card.getByText('waiting for the network')).toHaveCount(0);
+    await expectPhoneLayout(page);
+  });
 }
