@@ -24,6 +24,11 @@
     "w": 390,
     "h": 844
   },
+  "CancelRequest": {
+    "sha256": "b8c50e204b8b16abe2c408cd749212e3f11b7e30331a5e5bc682f5e55263f1c5",
+    "w": 390,
+    "h": 844
+  },
   "Desktop": {
     "sha256": "8da041a5a627b296e4426c36222e3755677fe4acb8f26ad168007ab1d41e8f2f",
     "w": 1280,
