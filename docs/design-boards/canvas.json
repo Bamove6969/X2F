@@ -1202,6 +1202,15 @@
       "page": "all",
       "title": "Badges \u00b7 design proposal, 7 Nov",
       "is_interactive": true
+    },
+    "GiftCardBrand.dc.html": {
+      "h": 3525,
+      "is_interactive": true,
+      "page": "all",
+      "title": "3a \u00b7 Gift card brand",
+      "w": 390,
+      "x": 1410,
+      "y": 0
     }
   },
   "createdOnFiles": {
@@ -1377,6 +1386,7 @@
     "Main.dc.html",
     "SellOffers.dc.html",
     "PostOffer.dc.html",
+    "GiftCardBrand.dc.html",
     "TradeFund.dc.html",
     "BuyerPay.dc.html",
     "SellerConfirm.dc.html",

@@ -50,4 +50,4 @@ Plain consequence lines (shown in the dispute screen):
 - Video proof allowed and encouraged: log in to the card, show the details, then send (G50).
 - Cards bought within the last 30 days (G51).
 - Full written value only; range cards (e.g. Visa $200–$500) may be partial and always need the video (G52).
-- Brand list: goes to the owner to approve, add or remove (G53). Design's draft for that list: Amazon, Apple, Google Play, Steam, Visa prepaid, Mastercard prepaid, Walmart, Target, eBay, Razer Gold; legal check per brand (Q30).
+- Brand list (G53, p4-3): the lead's research, top 30 plus Other, awaiting the owner's yes on page 5: Amazon, Apple, Google Play, Uber, Uber Eats, DoorDash, Walmart, Best Buy, Home Depot, Steam, PlayStation, Xbox, IKEA, Sephora, Starbucks, Airbnb, Roblox, Nintendo eShop, Visa prepaid, Mastercard prepaid, Instacart, Air Canada, Petro-Canada, Esso, SkipTheDishes, Sobeys, Winners, Lululemon, Tim Hortons, Target, + Other. Proposed by the lead: Home Hardware, Canadian Tire. Drawn as a draft on the GiftCardBrand board (canvas v132): initials tiles, no logos or brand colours; legal check per brand (Q30).
