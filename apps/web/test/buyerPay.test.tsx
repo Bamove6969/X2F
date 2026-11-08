@@ -200,12 +200,20 @@ describe('BuyerPay (BuyerPay board), phone', () => {
     expect(t).not.toContain('Send exactly');
     expect(t).not.toContain('$412.50');
     expect(t).toContain('Payment details');
-    expect(t).toContain('They appear when the escrow is secured, in about 14 min');
+    expect(t).toContain('They appear when the escrow is secured, in about 14 min.');
+    // The board's padlock tile beside the title.
+    expect(document.querySelector('[data-locked] [data-lock-tile] svg')).not.toBeNull();
     expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
     const paid = byText("I've paid", 'button') as HTMLButtonElement;
     expect(paid.hasAttribute('data-primary')).toBe(true);
     expect(paid.disabled).toBe(true);
-    expect(document.querySelector('[data-pay-block="not-secured"]')?.textContent).toBe('Opens once the escrow is secured.');
+    // The reason is the button's muted caption (board: aria-describedby="pay-when"), not a red notice.
+    const why = document.querySelector<HTMLElement>('[data-pay-block="not-secured"]')!;
+    expect(why.textContent).toBe('Opens once the escrow is secured.');
+    expect(why.classList.contains('x2f-room__error')).toBe(false);
+    expect(why.classList.contains('x2f-pay__caption')).toBe(true);
+    expect(paid.getAttribute('aria-describedby')).toBe(why.id);
+    expect(document.querySelectorAll('[data-pay-block]')).toHaveLength(1);
     await click(paid);
     expect(dialog()).toBeNull();
     expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
@@ -218,7 +226,7 @@ describe('BuyerPay (BuyerPay board), phone', () => {
     expect(text()).toContain('Releasable in 2 min');
     expect(text()).not.toContain('Securing escrow');
     expect(text()).not.toContain('[SELLER ZELLE ID]');
-    expect(text()).toContain('They appear when the escrow is secured, in about 2 min');
+    expect(text()).toContain('They appear when the escrow is secured, in about 2 min.');
     expect((byText("I've paid", 'button') as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -234,6 +242,18 @@ describe('BuyerPay (BuyerPay board), phone', () => {
     expect(t).not.toContain('They appear when the escrow is secured');
     expect((byText("I've paid", 'button') as HTMLButtonElement).disabled).toBe(false);
     expect(document.querySelector('[data-pay-block]')).toBeNull();
+  });
+
+  it("paid: the payment details the buyer paid to stay on screen, never the locked card (review 2026-11-07, 1)", () => {
+    for (const wide of [false, true]) {
+      const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }), wide }));
+      const t = text();
+      expect(t).toContain('[SELLER ZELLE ID]');
+      expect(t).toContain('Send exactly');
+      expect(t).not.toContain('They appear when the escrow is secured');
+      expect(document.querySelector('[data-locked]')).toBeNull();
+      r.unmount();
+    }
   });
 
   it('the counterparty is shown by its public display name, in data-username', () => {

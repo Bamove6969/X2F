@@ -244,10 +244,11 @@ test.describe("owner Q12: no payment details and no I've paid before the escrow 
     await expect(page.getByText('[SELLER ZELLE ID]')).toHaveCount(0);
     await expect(page.getByText('Send exactly', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Payment details', { exact: true })).toBeVisible();
-    await expect(page.getByText('They appear when the escrow is secured, in about 14 min')).toBeVisible();
+    await expect(page.getByText('They appear when the escrow is secured, in about 14 min.', { exact: true })).toBeVisible();
     await expect(primary(page)).toHaveText("I've paid");
     await expect(primary(page)).toBeDisabled();
     await expect(page.locator('[data-pay-block="not-secured"]')).toHaveText('Opens once the escrow is secured.');
+    await expect(primary(page)).toHaveAttribute('aria-describedby', (await page.locator('[data-pay-block="not-secured"]').getAttribute('id'))!);
     await primary(page).click({ force: true });
     await expect(sheet(page)).toHaveCount(0);
     expect(s.posts).toEqual([]);

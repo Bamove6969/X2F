@@ -148,10 +148,16 @@ type PayView = Pick<TradeView, 'fiatCents' | 'amountAtomic'>;
 /**
  * Owner Q12 (2026-11-06): the seller's payment details and "I've paid" only once the escrow is
  * secured, 10 of 10 confirmations with the coins unlocked, as the server says (the machine refuses
- * `mark-paid` with `too-early` before `secured`). `refund_requested` comes after `secured`.
+ * `mark-paid` with `too-early` before `secured`). `refund_requested` comes after `secured`; in
+ * `paid` the details the buyer paid to stay on screen (review 2026-11-07, 1; the fold glance shows
+ * them too), and the button there is "Marked as paid", never this gate.
+ *
+ * Lead default (2026-11-07): "secured" means the trade's own funds are 10 of 10 and unlocked (the
+ * machine's `secured` state). Later top-ups, dust included, never re-lock paying: a trade stays
+ * `secured` while new coins confirm, so a seller can't hold the buyer off while `payBy` runs.
  */
 export function paySecured(v: Pick<TradeView, 'state'>): boolean {
-  return v.state === 'secured' || v.state === 'refund_requested';
+  return v.state === 'secured' || v.state === 'refund_requested' || v.state === 'paid';
 }
 type PayEscrow = Pick<TradeEscrow, 'phase' | 'error' | 'refusal' | 'fiatCents' | 'amountAtomic'>;
 

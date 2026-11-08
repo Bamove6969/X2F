@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buyerCancelMode, escrowChip, finishBlock, payBlock, payTimer, sellerCancelMode, timelineSteps, counterpartyLine, showProposal } from '../src/screens/trade/payModel.js';
+import { buyerCancelMode, escrowChip, finishBlock, payBlock, paySecured, payTimer, sellerCancelMode, timelineSteps, counterpartyLine, showProposal } from '../src/screens/trade/payModel.js';
 import type { TradeView } from '../src/screens/trade/payTypes.js';
 
 const T0 = Date.parse('2026-10-25T12:00:00.000Z');
@@ -153,6 +153,10 @@ describe("payBlock: I've paid only on the device's own total (review I1)", () =>
     expect(payBlock(v('41250', '1250000000000', 'refund_requested'), e())).toBeNull();
     // A stopped escrow still says so first: its notice has the Try again.
     expect(payBlock(v('41250', '1250000000000', 'securing'), e({ error: 'escrow-failed', phase: 'error' }))).toBe('escrow-stopped');
+  });
+  it('paySecured: from secured on while the buyer pays or has paid (review 2026-11-07, 1)', () => {
+    for (const state of ['secured', 'refund_requested', 'paid'] as const) expect(paySecured({ state })).toBe(true);
+    for (const state of ['setup', 'funding', 'securing'] as const) expect(paySecured({ state })).toBe(false);
   });
   it('finishBlock: amount-unknown is what Finish is for; every other refusal blocks it', () => {
     expect(finishBlock(v('41250'), e({ refusal: 'amount-unknown', phase: 'signing' }))).toBeNull();
