@@ -24,9 +24,11 @@ import { modPartyArgs, timerEvents, type ModPartyArgs, type TradeEvent } from '@
 import { MoneroNetworkType, MoneroWalletConfig, MoneroWalletFull } from 'monero-ts';
 import pg from 'pg';
 import { applyEvent, loadTradeRow, rowToTrade, type TradeRow } from '../../apps/api/src/trades/store.js';
-import { assertDemo } from './guard.js';
+import { assertDemo, assertDemoFlag } from './guard.js';
 
 const env = process.env;
+// The flag first, before anything is read or opened.
+assertDemoFlag(env);
 const need = (k: string): string => {
   const v = env[k];
   if (!v) throw new Error(`demo moderator: ${k} is missing`);

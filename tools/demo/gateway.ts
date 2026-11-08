@@ -10,9 +10,10 @@ import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import https from 'node:https';
 import net from 'node:net';
 import type { Duplex } from 'node:stream';
-import { assertDemoFlag } from './guard.js';
+import { assertDemo } from './guard.js';
 
-assertDemoFlag(process.env);
+// X2F_DEMO=1 and a regtest daemon on 127.0.0.1, before anything listens.
+await assertDemo(process.env, process.env.DEMO_MONEROD_RPC ?? '');
 const env = (k: string): string => {
   const v = process.env[k];
   if (!v) throw new Error(`gateway: ${k} is missing`);

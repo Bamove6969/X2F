@@ -9,7 +9,7 @@ release, leave feedback). It is not a deployment and nothing in it is ever used 
 
 ```sh
 npm run demo        # starts everything in the background, prints the URL, then returns
-npm run demo:stop   # stops every demo process and removes the demo Postgres container
+npm run demo:stop   # stops every demo process, removes the demo Postgres container, deletes .demo/secrets
 ```
 
 `npm run demo` sets `X2F_DEMO=1` itself. Starting again first stops the previous demo and wipes
@@ -105,10 +105,10 @@ offers cannot be taken (409 `price-unavailable`).
 
 - **`X2F_DEMO` must be exactly `1`.** Every demo process (`demo.ts`, the gateway, the moderator,
   the seeder) refuses to start otherwise (`tools/demo/guard.ts`).
-- **Regtest only.** The moderator and the seeder ask their daemon `get_info` and refuse unless it
+- **Regtest only.** The gateway, the moderator and the seeder ask their daemon `get_info` and refuse unless it
   reports `nettype: fakechain` with none of `mainnet`, `stagenet` or `testnet`, and unless its
-  URL is on 127.0.0.1; `demo.ts` checks both monerod RPC ports the same way before starting any
-  service. The guard is covered by `tools/test/demo-guard.test.ts`.
+  URL is on 127.0.0.1; `demo.ts` checks both monerod RPC ports the same way before it starts the
+  API, relay, node proxy or any other service. The guard is covered by `tools/test/demo-guard.test.ts`.
 - **This machine only.** Everything binds to 127.0.0.1. The one exception: when
   `tailscale ip -4` succeeds, the gateway also serves HTTPS (a self-signed certificate made per
   start) on that Tailscale address, ports 4443 (the app) and 4444 (the node proxy), so your own devices on your tailnet can open it.
