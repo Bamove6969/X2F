@@ -755,3 +755,10 @@ The owner asked design to treat his 12 comments as a brief for the whole app and
 - Truth check for the build: only true if the server never holds a key that opens chats (keys only for buyer, seller, their team members' devices, and the moderation service). If team-member devices get keys, say so in the team docs.
 - Heights: DisputeRoom 1574→1606 (joined 1561, sent 1729), PaymentDetails 1974→2006, TeamChat 912→928 (lead 882), TeamChat-Wide 1144→1180 (lead 1132). Canvas v159.
 - Lock icon (owner request): every chat lock note now leads with a 16 px lock in var(--escrow) and "End-to-end encrypted." in 600 escrow colour, same as the secured-escrow treatment. Block(+W) and TeamChat-Wide gained the icon they lacked. No height changes. Canvas v160.
+
+## 8 Nov 2026 (night): reply to the lead's E2E truth check — READY
+- (1) 30 / 90-after-dispute: the board copy already follows the owner's 8 Nov ruling; it becomes true when wip/lead-chat-retention lands. Copy stays COPY-UNSIGNED until then.
+- (2) Team members in trade chats: head-designer ruling. TeamChat(+W) stays drawn as the target design, because the owner approved team members answering in trade chats (p10-2). It must not ship before the team-member key path exists. Until then, the build either hides team replies or the board's team rows are out of scope. No other board promises member access.
+- (3) Moderator key from the first message: the trader wording "If a dispute is opened, a moderator can read this conversation" stays. It depends on the dispute-only read rule; please add that rule to the spec and the separation-check.
+- Compromised-server caveat: agreed for the written spec. No trader-facing copy for it.
+- Security list: noted what is scheduled and what went to the owner on page 11. Nothing from design is waiting on it.
