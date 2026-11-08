@@ -208,7 +208,9 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     expect(chip.getAttribute('data-tone')).toBe('neutral');
     expect(chip.textContent).toBe('Cancelled');
     expect(host.querySelector('h1')?.textContent).toBe('You cancelled this trade');
-    expect(host.querySelector('.dispute-lead')?.textContent).toBe('All 1.250000 XMR (about $412.50) went back to satoshi_ghost. X2F took nothing from you.');
+    // "the seller", never the name (owner 2026-10-29; lead 8 Nov).
+    expect(host.querySelector('.dispute-lead')?.textContent).toBe('All 1.250000 XMR (about $412.50) went back to the seller. X2F took nothing from you.');
+    expect(host.querySelector('[aria-label="Trade status"]')?.textContent).not.toContain('satoshi_ghost');
     expect(host.textContent).not.toContain('Refunded');
   });
 

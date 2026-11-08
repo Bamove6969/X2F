@@ -440,7 +440,9 @@ function onDispute(t: Trade, by: Party, now: Date): Trade {
       if (by === 'buyer') return fail('too-early');
       return open();
     case 'paid':
-      if (by === 'buyer' && (t.confirmBy === null || now.getTime() < t.confirmBy.getTime())) return fail('too-early');
+      // Either side waits the payment method's full time from "I've paid" (confirmBy, moved by
+      // maintenance) before a dispute (owner p9-4, 8 Nov; the seller used to dispute at once).
+      if (t.confirmBy === null || now.getTime() < t.confirmBy.getTime()) return fail('too-early');
       return open();
     case 'settling':
       if (t.settleBy === null || !past(now, t.settleBy)) return fail('too-early');

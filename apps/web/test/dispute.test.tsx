@@ -96,7 +96,15 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
       text: "You can open a dispute if the seller hasn't confirmed within 2 h of your payment.",
     });
     expect(disputeEntry(trade(), new Date(T0 + 120 * MIN))).toEqual({ kind: 'open' });
-    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0))).toEqual({ kind: 'open' });
+  });
+
+  it("makes the seller wait for the same confirmBy in paid (owner p9-4)", () => {
+    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0 + 119 * MIN))).toEqual({
+      kind: 'wait',
+      until: new Date(T0 + 120 * MIN),
+      text: "You can open a dispute if the payment hasn't arrived within 2 h of the buyer marking it paid.",
+    });
+    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0 + 120 * MIN))).toEqual({ kind: 'open' });
   });
 
   it("opens for the seller while securing or secured, never the buyer before I've paid (proto review P1), and not in funding or after release", () => {

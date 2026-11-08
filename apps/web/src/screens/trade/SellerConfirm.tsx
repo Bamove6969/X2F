@@ -11,6 +11,7 @@ import { clearReleaseAsked, markReleaseAsked, releaseAsked } from './release/mar
 import { ReleaseWarning } from './ReleaseWarning.js';
 import { setWarned, warned } from './warned.js';
 import { confirmSkipped, skipConfirm } from './confirmSkip.js';
+import { DisputeLocked } from './DisputeLocked.js';
 import { utcDate, utcDateTime } from '../../ui/dates.js';
 import { ESCROW_STOPPED, amounts, publicName, firstPerson, profileCopy, refusalCopy, type MethodInfo, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
 import './release/release.css';
@@ -40,7 +41,9 @@ import './release/release.css';
  * it): the release then waits for "It's in my account", once per trade on this device (warned.ts),
  * or never again once the seller ticked "Do not show me this warning again" (owner p7-2,
  * confirmSkip.ts). "Payment not received" before the confirm window ends (the method's wait) says
- * to check again first, and only after it goes to the dispute screen; "Open dispute" stays.
+ * to check again first, and only after it goes to the dispute screen. "Open dispute" is locked
+ * with its UTC time until then too: the seller waits the method's full time from "I've paid"
+ * before a dispute, as the buyer does (owner p9-4, 8 Nov; the machine refuses it, too-early).
  */
 export function SellerConfirm({
   escrowCode,
@@ -198,6 +201,15 @@ export function SellerConfirm({
     setAttempt((n) => n + 1);
   };
   const confirmEnded = trade.confirmBy === null || clock().getTime() >= Date.parse(trade.confirmBy);
+  // Re-render once the confirm window ends on screen, so the dispute ways open by themselves.
+  const [, setEndedTick] = useState(0);
+  useEffect(() => {
+    if (confirmEnded || trade.confirmBy === null) return;
+    const left = Date.parse(trade.confirmBy) - clock().getTime();
+    if (!Number.isFinite(left)) return;
+    const id = setTimeout(() => setEndedTick((n) => n + 1), Math.min(left + 250, 2_147_000_000));
+    return () => clearTimeout(id);
+  }, [confirmEnded, trade.confirmBy, clock]);
 
   const problem = stopped ? ESCROW_STOPPED : escrow.refusal !== null ? refusalCopy(escrow.refusal, buyer) : null;
 
@@ -346,9 +358,13 @@ export function SellerConfirm({
                 Payment not received
               </Button>
             )}
-            <Link className="x2f-button x2f-button--danger" to={`/trade/${escrowCode}/dispute`} onClick={retract}>
-              Open dispute
-            </Link>
+            {confirmEnded ? (
+              <Link className="x2f-button x2f-button--danger" to={`/trade/${escrowCode}/dispute`} onClick={retract}>
+                Open dispute
+              </Link>
+            ) : (
+              <DisputeLocked until={trade.confirmBy!} serverClock={clock} />
+            )}
           </div>
         )}
         {notYet && !confirmEnded && trade.confirmBy !== null && !(releasing && !foreign) ? (

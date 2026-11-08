@@ -108,6 +108,9 @@ export function PaidFlowSheet({ view, escrow, refresh, open, onClose }: PaidFlow
   /**
    * Owner p7-2: this user ticked "Do not show me this warning again", so an opening marks paid at
    * once with this device's total ('direct'); anything but a clean yes ('ask') shows the sheet.
+   * Only this "Are you sure…?" step can be skipped. The no-proof warning ("Mark paid without
+   * proof?", ProofBlur, not built yet) goes BEFORE this point and is always shown (lead, 8 Nov):
+   * when it lands, an opening without proof shows it first and only its answer may lead here.
    */
   const [direct, setDirect] = useState<'idle' | 'running' | 'ask'>('idle');
   const total = deviceTotal(view, escrow);

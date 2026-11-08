@@ -49,7 +49,8 @@ const ms = (iso: string | null): number | null => (iso === null ? null : Date.pa
  * Whether this side may open a dispute now, mirroring the state machine's `open-dispute` rules
  * (the API decides; this only keeps the screen from sending what would be refused):
  * - securing or secured: the seller only (the buyer can cancel instead until "I've paid");
- * - paid: the seller at once, the buyer only from the end of the seller's confirm window;
+ * - paid: either side only from confirmBy, the payment method's full wait from "I've paid"
+ *   (owner p9-4, 8 Nov; the seller used to dispute at once);
  * - settling: either side once the signing window has passed;
  * - refunded: the buyer, until 48 hours after the refund (owner 2026-10-29; was 90 days).
  * `wait` carries the explanation shown instead of sending anything.
@@ -65,7 +66,6 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
       // Never the buyer before "I've paid" (design proto review P1, 8 Nov): the machine refuses it (too-early).
       return t.role === 'buyer' ? { kind: 'none' } : { kind: 'open' };
     case 'paid': {
-      if (t.role === 'seller') return { kind: 'open' };
       const by = ms(t.confirmBy);
       const paid = ms(t.paidAt);
       if (by === null) return { kind: 'none' };
@@ -74,7 +74,11 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
       return {
         kind: 'wait',
         until: new Date(by),
-        text: `You can open a dispute if the seller hasn't confirmed within ${window} of your payment.`,
+        text:
+          t.role === 'seller'
+            ? // COPY-UNSIGNED (owner p9-4: the other side waits the method's full time too).
+              `You can open a dispute if the payment hasn't arrived within ${window} of the buyer marking it paid.`
+            : `You can open a dispute if the seller hasn't confirmed within ${window} of your payment.`,
       };
     }
     case 'settling': {

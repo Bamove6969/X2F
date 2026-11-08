@@ -94,6 +94,19 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect(await eventTypes(t.code)).not.toContain('open-dispute');
   });
 
+  it("refuses the seller too in paid until the confirm window ends (owner p9-4), then opens it", async () => {
+    const { seller, t } = await tradeIn('paid');
+    setNow(at(119 * MIN));
+    const early = await seller.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    expect(early.statusCode).toBe(409);
+    expect(errorOf(early)).toBe('too-early');
+    expect(await disputeRow(t.code)).toBeUndefined();
+    expect(await eventTypes(t.code)).not.toContain('open-dispute');
+    setNow(at(120 * MIN));
+    expect((await seller.browser.post(dispute(t.code), { reason: 'paid', note: '' })).statusCode).toBe(200);
+    expect(await disputeRow(t.code)).toMatchObject({ opened_by: 'seller' });
+  });
+
   it('opens a dispute once the window has ended: the trade, its event and the dispute row in one go', async () => {
     const { buyer, seller, t } = await tradeIn('paid');
     setNow(at(120 * MIN));

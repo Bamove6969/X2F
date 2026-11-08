@@ -233,8 +233,14 @@ describe('SellerConfirm', () => {
       "Payments can take a while to arrive. Check your bank account again. If the money still isn't there at 13:52 UTC, tap Payment not received again to ask a moderator.",
     );
     expect(calls).toHaveLength(0);
+    // Open dispute is locked with its UTC time too (owner p9-4: the seller waits the method's full time).
+    expect([...s.host.querySelectorAll('a')].some((a) => a.textContent === 'Open dispute')).toBe(false);
+    const locked = s.button('Open dispute')!;
+    expect(locked.disabled).toBe(true);
+    expect(document.getElementById(locked.getAttribute('aria-describedby')!)!.textContent).toBe('Available from 13:52 UTC · in 112 min');
     s.unmount();
     const late = sellerConfirm(trade({ confirmBy: '2026-10-25T11:59:00.000Z' }));
+    expect([...late.host.querySelectorAll('a')].find((a) => a.textContent === 'Open dispute')?.getAttribute('href')).toBe('/trade/K7M2-9QXA-4FTR-8WPN/dispute');
     const link = [...late.host.querySelectorAll('a')].find((a) => a.textContent === 'Payment not received');
     expect(link?.getAttribute('href')).toBe('/trade/K7M2-9QXA-4FTR-8WPN/dispute');
   });

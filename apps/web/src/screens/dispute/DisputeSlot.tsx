@@ -8,7 +8,6 @@
 import { useEffect, useState } from 'react';
 import { TIMERS, formatFiat, formatXmr } from '@x2f/trade';
 import { methodOf } from '../../api/trade.js';
-import { publicName } from '../trade/payTypes.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { registerTradeScreen, type TradeScreenProps } from '../trade/TradeRoom.js';
@@ -113,9 +112,10 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
     ? {
         // Board Refunded variant=buyer-cancelled. The trade amount, as on every other screen (not
         // the escrow with a seller-poster's 1% fee in it); "in escrow" left out for that reason.
+        // "the seller", never the name, on refund and cancel results (owner 2026-10-29 beats the board; lead 8 Nov).
         // COPY-UNSIGNED (the board's words; the owner's P4 wording page has not signed it off).
         title: 'You cancelled this trade',
-        text: `All ${formatXmr(BigInt(view.amountAtomic))} XMR (about ${formatFiat(BigInt(view.fiatCents), view.lockedRate.currency)}) went back to ${publicName(view.counterparty)}. X2F took nothing from you.`,
+        text: `All ${formatXmr(BigInt(view.amountAtomic))} XMR (about ${formatFiat(BigInt(view.fiatCents), view.lockedRate.currency)}) went back to the seller. X2F took nothing from you.`,
       }
     : refundReason(view.settling, trade.dispute);
   const entry = disputeEntry(trade, now);

@@ -681,7 +681,7 @@ describe('release and settling', () => {
     const hash = 'bb'.repeat(32);
     const rr = run([[{ type: 'request-refund' }, 'seller', 121]], nudged());
     const lapsed = run([[chain(10n, 10n, 10), 'system', 3], [{ type: 'tick' }, 'system', 32]], funding());
-    const disputed = apply(paid(), { type: 'open-dispute' }, 'seller', at(41));
+    const disputed = apply(paid(), { type: 'open-dispute' }, 'seller', at(160));
     for (const t of [funding(), securing(), secured(), settling(), disputed, paid(), rr, lapsed]) {
       expect(apply(t, { type: 'settled', kind: 'release', txHash: hash }, 'system', at(200)).state).toBe('released');
       for (const kind of ['mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'] as const) {
@@ -754,10 +754,10 @@ describe('release and settling', () => {
   });
 
   test('reproduced: a release that lands while the trade is disputed is recorded', () => {
-    const d = apply(paid(), { type: 'open-dispute' }, 'seller', at(41));
-    const r = apply(d, { type: 'settled', kind: 'release', txHash: 'bb'.repeat(32) }, 'system', at(90));
+    const d = apply(paid(), { type: 'open-dispute' }, 'seller', at(160));
+    const r = apply(d, { type: 'settled', kind: 'release', txHash: 'bb'.repeat(32) }, 'system', at(170));
     expect(r.state).toBe('released');
-    expect(r.closedAt).toEqual(at(90));
+    expect(r.closedAt).toEqual(at(170));
   });
 
   test('reproduced: the buyer taps I have paid at minute 200, after the auto-refund window opened; the auto-refund lands', () => {
@@ -811,10 +811,19 @@ describe('open-dispute', () => {
     expect(rule(() => apply(resumed, { type: 'open-dispute' }, 'buyer', at(140)))).toBe('too-early');
   });
 
-  test('in paid: the seller any time, the buyer only from confirmBy', () => {
-    expect(apply(paid(), { type: 'open-dispute' }, 'seller', at(41)).state).toBe('disputed');
-    expect(rule(() => apply(paid(), { type: 'open-dispute' }, 'buyer', at(159)))).toBe('too-early');
-    expect(apply(paid(), { type: 'open-dispute' }, 'buyer', at(160)).state).toBe('disputed');
+  test("in paid: either side only from confirmBy, the method's wait from I've paid (owner p9-4)", () => {
+    for (const by of ['buyer', 'seller'] as const) {
+      expect(rule(() => apply(paid(), { type: 'open-dispute' }, by, at(41)))).toBe('too-early');
+      expect(rule(() => apply(paid(), { type: 'open-dispute' }, by, at(159, 59_999)))).toBe('too-early');
+      expect(apply(paid(), { type: 'open-dispute' }, by, at(160)).state).toBe('disputed');
+    }
+  });
+
+  test("the seller's wait in paid moves with maintenance, as the buyer's does", () => {
+    const resumed = run([[{ type: 'pause' }, 'system', 50], [{ type: 'resume' }, 'system', 70]], paid());
+    expect(resumed.confirmBy).toEqual(at(180));
+    expect(rule(() => apply(resumed, { type: 'open-dispute' }, 'seller', at(170)))).toBe('too-early');
+    expect(apply(resumed, { type: 'open-dispute' }, 'seller', at(180)).state).toBe('disputed');
   });
 
   test('in settling only after settleBy', () => {

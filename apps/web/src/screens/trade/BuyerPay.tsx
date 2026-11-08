@@ -40,7 +40,7 @@ import { buyerCancelMode, escrowChip, finishBlock, payBlock, paySecured, payTime
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
-import { utcDate, utcDateTime } from '../../ui/dates.js';
+import { DisputeLocked } from './DisputeLocked.js';
 import { registerTradeScreen, type MemberScreenProps, type TradeSlot } from './TradeRoom.js';
 import { ChatButton, ChatSlot } from './TradeChatButton.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
@@ -419,36 +419,6 @@ function useTick(ms: number): void {
     const id = setInterval(() => setN((n) => n + 1), ms);
     return () => clearInterval(id);
   }, [ms]);
-}
-
-/** "in 88 min" up to two hours (the board's), then "in 23 h" (whole hours down, as DisputeRoom's "(in 23 h)"). */
-function waitLeft(ms: number): string {
-  const min = Math.max(1, Math.ceil(Math.max(0, ms) / 60_000));
-  return min < 120 ? `in ${min} min` : `in ${Math.floor(min / 60)} h`;
-}
-
-/**
- * "Open dispute", locked until the buyer's wait is over (board BuyerPaidWaiting window=in-window:
- * "Available from 15:35 UTC · in 88 min"). The time is UTC for every viewer (design X5); a wait that
- * ends on another day names the date. COPY-UNSIGNED beyond the board's line.
- */
-export function DisputeLocked({ until, serverClock }: { until: string; serverClock: () => Date }) {
-  useTick(15_000);
-  const id = useId();
-  const end = new Date(until);
-  const now = serverClock();
-  const full = utcDateTime(end);
-  const when = utcDate(end) === utcDate(now) ? full.slice(full.indexOf(', ') + 2) : full;
-  return (
-    <span className="x2f-room__dispute-locked">
-      <Button variant="quiet" disabled aria-describedby={id}>
-        Open dispute
-      </Button>
-      <span id={id} className="x2f-room__dispute-wait" data-dispute-wait="">
-        Available from <span className="x2f-mono">{when}</span> · <span className="x2f-mono">{waitLeft(end.getTime() - now.getTime())}</span>
-      </span>
-    </span>
-  );
 }
 
 /**
