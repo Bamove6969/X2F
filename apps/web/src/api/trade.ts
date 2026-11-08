@@ -103,6 +103,12 @@ export interface TradeView {
   /** When the buyer's device posted the final-alert seen-receipt (Task 25's FinalAlert); sent to the buyer only, null for the seller. */
   finalAlertSeenAt: string | null;
   settleBy: string | null;
+  /**
+   * When a trader's side of the settlement was reported done (Task 9 I/O, lead decision b): the
+   * trade then waits for the network's sweep and the settle window no longer reverts it. Null
+   * until then. `settleBy` is unchanged (a dispute stays open after it).
+   */
+  releaseClaimedAt: string | null;
   pausedAt: string | null;
   closedAt: string | null;
   /** The seller's "Confirm cancel" after a buyer-cancel refund (owner 2026-10-29); null until then. */

@@ -12,8 +12,8 @@ import {
 } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
-import { loadChatIdentity, startModeration, type ChatWorkItem, type Fetch } from '../src/main.js';
+import { afterAll, afterEach, beforeAll, describe, expect, inject, it } from 'vitest';
+import { loadChatIdentity, startModeration, type ChatWorkItem, type Fetch, type ModerationHandle } from '../src/main.js';
 import { MOD_TEMPLATE_DB } from './setup/postgres.js';
 
 const API = 'http://api-internal.test';
@@ -73,11 +73,20 @@ function fakeApi(chatWork: () => ChatWorkItem[]) {
   return { fetch, reports };
 }
 
-function moderation(fetch: Fetch) {
-  return startModeration(
-    { apiInternalUrl: API, relayAdminUrl: 'http://relay.test', daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95) },
-    { fetch, now: () => NOW, intervalMs: 0 },
+/** The running service: one at a time (instance lock, security review 7 Nov finding 2), so a new start is a restart. */
+const live: ModerationHandle[] = [];
+afterEach(async () => {
+  await Promise.all(live.splice(0).map((h) => h.stop()));
+});
+
+async function moderation(fetch: Fetch): Promise<ModerationHandle> {
+  await Promise.all(live.splice(0).map((h) => h.stop()));
+  const h = await startModeration(
+    { apiInternalUrl: API, relayAdminUrl: 'http://relay.test', daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95), relayUrl: 'ws://relay.test', network: 'regtest' },
+    { fetch, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, runParty: () => {} },
   );
+  live.push(h);
+  return h;
 }
 
 describe('the chat mod identity', () => {
@@ -118,5 +127,42 @@ describe('the chat mod identity', () => {
     expect(net.reports).toEqual([{ kind: 'chat-refused', chat, reason: 'bad-proof' }]);
     expect((await db.query('select 1 from signed_chats where chat = $1', [chat])).rows).toHaveLength(0);
     await mod.stop();
+  });
+});
+
+describe('the work loop (review M3)', () => {
+  it('logs a pass that throws and keeps running, so the process and the chain watcher live on', async () => {
+    const reasons: string[] = [];
+    const failing: Fetch = async () => {
+      throw new Error('api down');
+    };
+    let unhandled = 0;
+    const onUnhandled = () => void unhandled++;
+    process.on('unhandledRejection', onUnhandled);
+    const mod = await startModeration(
+      { apiInternalUrl: API, relayAdminUrl: 'http://relay.test', daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95), relayUrl: 'ws://relay.test', network: 'regtest' },
+      {
+        fetch: failing,
+        now: () => NOW,
+        intervalMs: 5,
+        watchIntervalMs: 0,
+        runParty: () => {},
+        // a throw that escapes tick(): the log itself fails on the pass's own reason
+        log: (e) => {
+          reasons.push(e.reason);
+          if (e.reason === 'work-unavailable') throw new Error('log sink down');
+        },
+      },
+    );
+    const failed = () => reasons.filter((r) => r === 'work-pass-failed').length;
+    try {
+      const deadline = Date.now() + 5_000;
+      while (failed() < 2 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
+      expect(failed()).toBeGreaterThanOrEqual(2);
+      expect(unhandled).toBe(0);
+    } finally {
+      await mod.stop();
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 });
