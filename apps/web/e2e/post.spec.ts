@@ -74,8 +74,8 @@ async function stub(page: Page, o: Stubs = {}): Promise<Request[]> {
 const f = (page: Page) => ({
   method: page.getByLabel('Payment method'),
   currency: page.getByLabel('Currency'),
-  min: page.getByLabel('Smallest trade'),
-  max: page.getByLabel('Largest trade'),
+  min: page.getByLabel('Smallest trade', { exact: true }),
+  max: page.getByLabel('Largest trade', { exact: true }),
   terms: page.getByLabel('Your terms (optional)'),
   minTrades: page.getByRole('radiogroup', { name: 'Minimum completed trades' }),
   minTradesChoice: (name: string) => page.getByRole('radiogroup', { name: 'Minimum completed trades' }).getByRole('radio', { name, exact: true }),
