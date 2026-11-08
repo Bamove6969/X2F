@@ -280,6 +280,17 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
 
   const feed = (t: Trade | null, e: TradeEvent, by: 'buyer' | 'seller' | 'system', now: Date): { trade: Trade | null; refused: string | null } => {
     if (t === null) return { trade: null, refused: 'no-shadow' };
+    if (e.type === 'request-refund' && by === 'seller') {
+      // Owner G2 / g66 (main, Job 1): the machine's request-refund also needs a seller nudge since
+      // secured, and `sellerNudgedAt` is written only by the API's nudge route, never by an event, so
+      // the shadow cannot see one. Lead decision (a), 8 Nov: the desk takes the seller's accepted
+      // refund-request signal as the nudge, at the time it accepts it. The real nudge rule is
+      // enforced by the API: this service signs alone only while the API shows `refund_requested`
+      // (autoRefundStep), which the API allows only after a real nudge. The shadow still checks payBy
+      // (the 90 min) itself. A signed nudge signal to the mod is a recorded follow-up (coordination.md).
+      const x = applyShadow({ ...t, sellerNudgedAt: now }, e, by, now);
+      return x.refused ? { trade: t, refused: x.refused } : x;
+    }
     return applyShadow(t, e, by, now);
   };
 

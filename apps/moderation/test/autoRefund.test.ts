@@ -347,6 +347,31 @@ describe('the auto-refund', () => {
     await m.handle.stop();
   });
 
+  it('lead decision (a), merge with main: a refund request before payBy is still refused by the shadow (too-early, no nudge kept); one after payBy is taken, its acceptance time standing for the seller’s nudge', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    await secured(ctx, l);
+    later(ctx, 30 * MIN); // well inside the buyer's 90 minutes
+    await acked(l, l.seller, 'trade.refund-request', {});
+    let rec = await record(l.code);
+    expect(rec.shadow!.state).toBe('secured');
+    expect(rec.shadow!.sellerNudgedAt ?? null).toBeNull();
+    expect(rec.pending).toEqual(['request-refund']);
+    await m.handle.watch(); // retried: still too early
+    rec = await record(l.code);
+    expect(rec.shadow!.state).toBe('secured');
+    expect(rec.shadow!.sellerNudgedAt ?? null).toBeNull();
+    later(ctx, 61 * MIN); // payBy passed
+    await m.handle.watch();
+    rec = await record(l.code);
+    expect(rec.shadow!.state).toBe('refund_requested');
+    expect(rec.shadow!.sellerNudgedAt).toEqual(ctx.clock.now);
+    expect(rec.shadow!.finalAlertAt).toEqual(ctx.clock.now);
+    expect(rec.pending).toEqual([]);
+    await m.handle.stop();
+  });
+
   it('the seller’s refund request opened before the shadow’s own payBy is retried, not lost', async () => {
     const { net, fetch } = fakeNetwork(ctx);
     const m = await moderation(ctx, fetch);
@@ -626,7 +651,8 @@ describe('autoRefundStep (pure)', () => {
     );
     t = apply(t, { type: 'setup-done', escrowAddress: 'E' }, 'system', atMin(1));
     t = apply(t, { type: 'chain', receivedAtomic: FUNDS, unlockedAtomic: FUNDS, confirmations: 10 }, 'system', atMin(10));
-    return apply(t, { type: 'request-refund' }, 'seller', refundAt); // payBy 100, finalAlertAt 101 by default
+    // The seller's nudge (owner G2 / g66), as the desk records it: at the refund request it took (lead decision a).
+    return apply({ ...t, sellerNudgedAt: refundAt }, { type: 'request-refund' }, 'seller', refundAt); // payBy 100, finalAlertAt 101 by default
   };
   const base = (over: Partial<AutoRefundInputs> = {}): AutoRefundInputs => ({
     now: atMin(117, 1),
