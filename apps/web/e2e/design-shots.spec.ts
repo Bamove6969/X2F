@@ -389,7 +389,7 @@ test("27 a Trades member's device when an offer is taken: a notice, not the acce
   await shot(page, '27-team-member-offer-taken-notice');
 });
 
-test("28-29 a member's trade room: waiting for the owner's device; Propose cancel", async ({ page }) => {
+test("28-29 a member's trade room: waiting for the owner's device; a standing proposal and Withdraw (no Propose cancel)", async ({ page }) => {
   const trade = sellerView().code;
   const later = new Date(Date.now() + 25 * 60_000).toISOString();
   let view = { ...sellerView(), payBy: later, nextDeadline: later, serverNow: new Date().toISOString() };
@@ -404,7 +404,9 @@ test("28-29 a member's trade room: waiting for the owner's device; Propose cance
   const room = page.locator('[data-screen="trade"][data-member]');
   await expect(room.locator('[data-part="member-waiting"]')).toBeVisible();
   await shot(page, '28-team-member-trade-waiting');
-  await room.getByRole('button', { name: 'Propose cancel' }).click();
+  await expect(room.getByRole('button', { name: 'Propose cancel' })).toHaveCount(0);
+  view = { ...view, cancelProposedBy: 'seller' };
+  await page.reload();
   await expect(room.getByRole('button', { name: 'Withdraw' })).toBeVisible();
   await shot(page, '29-team-member-trade-cancel-proposed');
 });
@@ -673,10 +675,12 @@ test("38-39 Task 39: the two-step I've paid, marked as paid", async ({ page }) =
   await shot(page, '39-trade-marked-paid');
 });
 
-test("40-41 the seller's waiting room: Propose cancel, then the buyer's accept card", async ({ page }) => {
+test("40-41 the seller's waiting room (no Propose cancel), a standing proposal, then the buyer's accept card", async ({ page }) => {
   const s = await openRoom(page, SELLER_SECURED);
   await expect(page.getByText('Waiting for mira.k to pay')).toBeVisible();
-  await page.getByRole('button', { name: 'Propose cancel' }).click();
+  await expect(page.getByRole('button', { name: 'Propose cancel' })).toHaveCount(0);
+  s.view = { ...SELLER_SECURED, cancelProposedBy: 'seller' };
+  await page.reload();
   await expect(page.getByText('You proposed cancelling. Waiting for mira.k.')).toBeVisible();
   await shot(page, '40-trade-seller-proposed-cancel');
   s.view = { ...PAY_SECURED, cancelProposedBy: 'seller' };
