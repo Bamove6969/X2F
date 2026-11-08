@@ -67,7 +67,7 @@ jobs:
               // CVSS 7.0 and up is high, 9.0 and up critical. Unscored: fall back to the
               // advisory text label, and if there is none treat it as high (fail closed).
               const text = g.ids.map(i => String(byId.get(i)?.database_specific?.severity ?? "")).join(" ").toUpperCase();
-              const high = Number.isFinite(score) ? score >= 7 : (/CRITICAL|HIGH/.test(text) || text === "");
+              const high = Number.isFinite(score) ? score >= 7 : (/CRITICAL|HIGH/.test(text) || text.trim() === "");
               (high ? bad : other).push(label);
             }
           }
