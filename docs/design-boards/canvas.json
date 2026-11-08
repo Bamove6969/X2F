@@ -37,7 +37,7 @@
       "y": 21998
     },
     "BuyQuote.dc.html": {
-      "h": 1861,
+      "h": 2767,
       "is_interactive": true,
       "page": "all",
       "title": "3 \u00b7 Buy: amount, wallet, what you get",
@@ -46,7 +46,7 @@
       "y": 21998
     },
     "BuyerPay.dc.html": {
-      "h": 2563,
+      "h": 2599,
       "is_interactive": true,
       "page": "all",
       "title": "2 \u00b7 Buyer pays and uploads proof",
@@ -1027,7 +1027,7 @@
       "x": 5800,
       "y": 60758,
       "w": 390,
-      "h": 1649,
+      "h": 1817,
       "page": "all",
       "title": "G4 \u00b7 After login: session length",
       "is_interactive": true
@@ -1268,7 +1268,7 @@
     },
     "MyTrades.dc.html": {
       "x": 7640,
-      "y": 34027,
+      "y": 36449,
       "w": 390,
       "h": 1822,
       "page": "all",
@@ -1277,7 +1277,7 @@
     },
     "MyTrades-Wide.dc.html": {
       "x": 8110,
-      "y": 34027,
+      "y": 36449,
       "w": 1280,
       "h": 1207,
       "page": "all",
