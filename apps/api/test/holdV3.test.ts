@@ -147,8 +147,9 @@ async function passkeyLogin(b: Browser, auth: SoftAuthenticator) {
   return b.post('/v1/login/webauthn/finish', { challengeId: s.challengeId, response: auth.authenticate(s.options, ORIGIN), deviceLabel: 'Phone' });
 }
 
-async function pgpLogin(b: Browser, key: Pair) {
-  const start = await b.post('/v1/login/pgp/start', { key: key.publicKey });
+/** Owner G6: the trader PGP login takes the username with the key. */
+async function pgpLogin(b: Browser, key: Pair, loginName: string) {
+  const start = await b.post('/v1/login/pgp/start', { key: key.publicKey, loginName });
   const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey));
   return b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop' });
 }
@@ -779,7 +780,7 @@ describe('a new device with nothing logged in to approve it', () => {
     const id = (await accountIdByLoginName(deps, name))!;
     await onboarding(id, null);
     await b.post('/v1/logout');
-    expect((await pgpLogin(new Browser(app), key)).json()).toEqual({ status: 'ok' });
+    expect((await pgpLogin(new Browser(app), key, name)).json()).toEqual({ status: 'ok' });
     expect(await accountHoldOf(id)).toBeNull();
   });
 });

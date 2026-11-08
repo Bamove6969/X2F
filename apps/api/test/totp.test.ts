@@ -326,7 +326,7 @@ describe('password login with TOTP (second factor)', () => {
 
     // PGP is never throttled by the totp key.
     const owner = new Browser(app);
-    const start = await owner.post('/v1/login/pgp/start', { key: key.publicKey });
+    const start = await owner.post('/v1/login/pgp/start', { key: key.publicKey, loginName: username });
     const { challengeId, encryptedMessage } = start.json() as { challengeId: string; encryptedMessage: string };
     const code = codeOf(await decrypt(encryptedMessage, key.privateKey));
     const fin = await owner.post('/v1/login/pgp/finish', { challengeId, code, deviceLabel: 'Test browser' });

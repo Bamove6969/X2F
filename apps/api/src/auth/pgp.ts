@@ -20,7 +20,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHook
 import * as openpgp from 'openpgp';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
-import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, openNames, sealNames } from '../accounts.js';
+import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, loginTagMatch, openNames, sealNames } from '../accounts.js';
 import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -531,6 +531,11 @@ function usedFingerprints(payload: Record<string, unknown>): string[] {
 
 export interface PgpLoginOptions {
   kinds: AccountKind[];
+  /**
+   * Owner G6 (7 Nov): the username is mandatory on every account, so the trader PGP login takes
+   * `loginName` with the key; a key that is not that account's answers as an unknown key (decoy).
+   */
+  requireLoginName?: boolean;
   afterAuthenticate?: (accountId: string) => Promise<void>;
   /** Route `config` for both routes (Plan 4's staff app marks them `{ perm: 'public-login' }`). */
   routeConfig?: Record<string, unknown>;
@@ -617,6 +622,7 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
   const b = body(req);
   const pasted = str(b, 'key');
   const pendingId = optStr(b, 'pendingId');
+  const loginName = opts.requireLoginName ? str(b, 'loginName') : undefined;
   if (!pasted.includes('-----BEGIN PGP')) {
     throw new ApiError(400, 'key-unreadable', { detail: 'Paste your whole public key, from -----BEGIN PGP PUBLIC KEY BLOCK----- to the end.' });
   }
@@ -631,7 +637,16 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
     [fingerprint],
   );
   const found = rows[0];
-  const account = found && opts.kinds.includes(found.kind) ? found : undefined;
+  // Owner G6: the name must be the key's account's (one lookup whether or not the key is known).
+  let nameOk = true;
+  if (loginName !== undefined) {
+    const name = loginNameLookup(deps.config, loginName);
+    const m = await deps.db.query(`select 1 from accounts a where a.id = $3 and ${loginTagMatch('a', 1)}`, [
+      name.candidates.ids, name.candidates.tags, found?.id ?? NIL_UUID,
+    ]);
+    nameOk = (m.rowCount ?? 0) > 0;
+  }
+  const account = found && nameOk && opts.kinds.includes(found.kind) ? found : undefined;
   // The start limit is per key and device (I-2b), so no trusted-device lookup is needed here (I1).
   const startPayload = { startTag: startTag(deps.config, fingerprint) };
 
@@ -923,7 +938,7 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/register/pgp/start', { bodyLimit: PGP_BODY_LIMIT }, registerStart);
   app.post('/v1/register/pgp/finish', registerFinish);
 
-  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...TRADER_LOGIN_KINDS] }), { prefix: '/v1/login/pgp' });
+  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...TRADER_LOGIN_KINDS], requireLoginName: true }), { prefix: '/v1/login/pgp' });
 
   app.post('/v1/confirm/pgp/start', { preHandler: requireSession() }, confirmStart);
   app.post('/v1/confirm/pgp/finish', { preHandler: requireSession() }, confirmFinish);

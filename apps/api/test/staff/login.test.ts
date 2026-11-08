@@ -420,8 +420,9 @@ async function traderKeyLogin(b: StaffBrowser, loginName: string, key: SoftAuthe
 }
 
 /** A PGP login on the trader API: start with the whole key, decrypt whatever comes back, finish. */
-async function traderPgpLogin(b: StaffBrowser, key: { publicKey: string; privateKey: string }, extra: Record<string, unknown> = {}) {
-  const start = await b.post('/v1/login/pgp/start', { key: key.publicKey, ...extra });
+async function traderPgpLogin(b: StaffBrowser, key: { publicKey: string; privateKey: string }, loginName: string, extra: Record<string, unknown> = {}) {
+  // Owner G6: the trader PGP login takes the username with the key.
+  const start = await b.post('/v1/login/pgp/start', { key: key.publicKey, loginName, ...extra });
   expect(start.statusCode).toBe(200);
   const { rows } = await deps.db.query<{ account_id: string | null }>('select account_id from challenges where id = $1', [start.json().challengeId]);
   const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey, undefined, deps.clock()));
@@ -516,7 +517,7 @@ describe('staff accounts log in only on the staff site (owner 2026-11-03, Q19; R
     const results = [];
     for (const key of [k, await genKey()]) {
       const b = traderBrowser();
-      const start = await b.post('/v1/login/pgp/start', { key: key.publicKey });
+      const start = await b.post('/v1/login/pgp/start', { key: key.publicKey, loginName: s.loginName });
       const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey, undefined, deps.clock()));
       const finish = await b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Desk' });
       results.push({
@@ -547,7 +548,7 @@ describe('staff accounts log in only on the staff site (owner 2026-11-03, Q19; R
     await insertPgpKey(deps.db, deps.config, { accountId: owner.id, fingerprint: k.fingerprint, armored: k.publicKey, now: deps.clock() });
     const pgp = [];
     for (const kk of [k, await genKey()]) {
-      const r = await traderPgpLogin(traderBrowser(), kk);
+      const r = await traderPgpLogin(traderBrowser(), kk, owner.loginName);
       pgp.push({ decoy: r.decoy, finish: [r.finish.statusCode, r.finish.json()] });
     }
     expect(pgp[0]).toEqual(pgp[1]);
@@ -607,7 +608,7 @@ describe('staff accounts log in only on the staff site (owner 2026-11-03, Q19; R
     const tk = await genKey();
     await insertPgpKey(deps.db, deps.config, { accountId: traderId, fingerprint: tk.fingerprint, armored: tk.publicKey, now: deps.clock() });
     const tb = traderBrowser();
-    const traderTry = await traderPgpLogin(tb, tk);
+    const traderTry = await traderPgpLogin(tb, tk, t);
     expect(traderTry.finish.json()).toEqual({ status: 'ok' });
     expect(tb.cookies[SESSION_COOKIE]).toBeDefined();
 
@@ -615,7 +616,7 @@ describe('staff accounts log in only on the staff site (owner 2026-11-03, Q19; R
     const memberId = await seedAccount(deps, { loginName: m, kind: 'member' });
     const mk = await genKey();
     await insertPgpKey(deps.db, deps.config, { accountId: memberId, fingerprint: mk.fingerprint, armored: mk.publicKey, now: deps.clock() });
-    const memberTry = await traderPgpLogin(traderBrowser(), mk);
+    const memberTry = await traderPgpLogin(traderBrowser(), mk, m);
     expect(memberTry.decoy).toBe(false);
     expect(memberTry.finish.json()).toMatchObject({ status: 'second-factor' });
   });

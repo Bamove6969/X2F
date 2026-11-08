@@ -206,8 +206,9 @@ async function pgpTrader(): Promise<{ b: Browser; id: string; name: string; key:
   return { b, id: rows[0]!.id, name, key };
 }
 
-async function pgpLogin(b: Browser, key: Pair) {
-  const start = await b.post('/v1/login/pgp/start', { key: key.publicKey });
+/** Owner G6: the trader PGP login takes the username with the key. */
+async function pgpLogin(b: Browser, key: Pair, loginName: string) {
+  const start = await b.post('/v1/login/pgp/start', { key: key.publicKey, loginName });
   const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey));
   return b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop' });
 }
@@ -376,9 +377,9 @@ describe('one weak way (hold model v3: its changes are staged and wait; nothing 
   });
 
   it('PGP alone on a new device with nothing logged in gets in (a PGP key is enough there); nothing is held', async () => {
-    const { b, id, key } = await pgpTrader();
+    const { b, id, name, key } = await pgpTrader();
     await b.post('/v1/logout');
-    expect((await pgpLogin(new Browser(app), key)).json()).toEqual({ status: 'ok' });
+    expect((await pgpLogin(new Browser(app), key, name)).json()).toEqual({ status: 'ok' });
     expect(await holdOf(deps, id)).toBeNull();
   });
 
@@ -389,7 +390,7 @@ describe('one weak way (hold model v3: its changes are staged and wait; nothing 
     await onboarding(deps, id, null);
     // A fresh PGP login (not the sign-up session) in the trusted browser.
     await b.post('/v1/logout');
-    expect((await pgpLogin(b, key)).json()).toEqual({ status: 'ok' });
+    expect((await pgpLogin(b, key, name)).json()).toEqual({ status: 'ok' });
     const st = await deps.db.query<{ strength: string }>('select strength from sessions where id = $1', [await sessionOf(b)]);
     expect(st.rows[0]!.strength).toBe('strong');
     expect((await b.get('/v1/account/me')).json()).toMatchObject({ changesWait: false, pendingChanges: null });
@@ -403,7 +404,7 @@ describe('one weak way (hold model v3: its changes are staged and wait; nothing 
     expect(await changesOf(id)).toEqual([]);
     expect((await backup(new Browser(app), name, fresh[0]!)).statusCode).toBe(200);
     expect(await holdOf(deps, id)).toMatchObject({ reason: 'recovery-code' });
-    expect((await pgpLogin(new Browser(app), key)).json()).toEqual({ status: 'ok' });
+    expect((await pgpLogin(new Browser(app), key, name)).json()).toEqual({ status: 'ok' });
     expect(await holdOf(deps, id)).toBeNull();
   });
 
