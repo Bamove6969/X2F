@@ -28,6 +28,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </div>
     <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">USD · market <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$329.90</span> / XMR</span>
     <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Buy XMR</h1>
+    <span style="margin-top: 6px;"><span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC</span></span>
   </header>
 
   <main style="flex-grow: 1; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 16px;">
@@ -55,21 +56,22 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </section>
 
     <sc-if value="{{valid}}" hint-placeholder-val="{{true}}">
-      <h2 style="margin: 8px 0 -4px; font-size: 18px; line-height: 24px; font-weight: 600;">{{count}} · best price first</h2>
+      <label style="position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer;"><input type="checkbox" checked="{{wm.on}}" onChange="{{wm.toggle}}" style="position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0;"><span aria-hidden="true" style="{{wm.box}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><span style="font-size: 15px; line-height: 20px; font-weight: 600;">Display amounts including vendor markup</span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{wm.hint}}</span></span></label>
+      <h2 style="margin: 0 0 -4px; font-size: 18px; line-height: 24px; font-weight: 600;">{{count}} · best price first</h2>
       <sc-for list="{{cards}}" as="c" hint-placeholder-count="4">
         <article aria-label="{{c.name}}" style="{{c.cardStyle}}">
           <div style="display: flex; flex-direction: column; gap: 12px; min-width: 0;"><span style="display: flex; align-items: center; gap: 12px; min-width: 0;"><span aria-hidden="true" style="{{c.avatarStyle}}">{{c.init}}<sc-if value="{{c.online}}" hint-placeholder-val="{{true}}"><span style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--surface);"></span></sc-if></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0;"><span style="{{c.nameStyle}}">{{c.name}}</span><sc-if value="{{c.vendor}}" hint-placeholder-val="{{true}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; flex-shrink: 0;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></sc-if></span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><sc-if value="{{c.online}}" hint-placeholder-val="{{true}}"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Online · </span></sc-if><sc-for list="{{c.statParts}}" as="sp" hint-placeholder-count="5"><span style="{{sp.style}}">{{sp.t}}</span></sc-for></span></span></span><sc-if value="{{c.hasChips}}" hint-placeholder-val="{{true}}"><span style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;"><sc-for list="{{c.featured}}" as="b" hint-placeholder-count="2"><button type="button" aria-haspopup="dialog" aria-label="{{b.label}}" style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{b.chipStyle}}"><span aria-hidden="true" style="{{b.seal22}}"><sc-if value="{{b.isIcon}}" hint-placeholder-val="{{true}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.d}}"/></svg></sc-if><sc-if value="{{b.isNum}}" hint-placeholder-val="{{false}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 8px; line-height: 1; font-weight: 500; letter-spacing: -0.02em;">{{b.num}}</span></sc-if></span>{{b.name}}</span></button></sc-for><sc-if value="{{c.hasMore}}" hint-placeholder-val="{{false}}"><button type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="{{c.moreLabel}}" style="display: inline-flex; align-items: center; height: 44px; margin: -7px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+{{c.moreCount}}</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button></sc-if></span></sc-if></div>
           <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;">
-            <div style="display: flex; flex-direction: column; gap: 2px;">
+            <div style="display: flex; flex-direction: column; gap: 2px; align-self: center;">
               <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="{{c.priceStyle}}">{{c.priceText}}</span><span style="font-size: 14px; color: var(--ink-muted);">/ <span style="font-weight: 600; color: var(--monero-ink);">XMR</span></span></span>
-              <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{c.vsText}}</span>
             </div>
             <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right;">
               <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">You get</span>
               <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{c.xmrText}}</span> <span style="font-size: 14px; font-weight: 600; color: var(--monero-ink);">XMR</span></span>
             </div>
           </div>
-          <span style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span><sc-if value="{{c.tierHas}}" hint-placeholder-val="{{true}}">Band <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{c.tierFrom}}</span> – <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{c.tierTo}}</span></sc-if><sc-if value="{{c.tierNone}}" hint-placeholder-val="{{false}}">No band for this amount</sc-if> · Releases in about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{c.rel}}</span> min</span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;"><span>Takes</span><sc-for list="{{c.chips}}" as="m" hint-placeholder-count="2"><span style="{{m.style}}">{{m.label}}</span></sc-for></span></span>
+          <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding-top: 12px; border-top: 1px solid var(--surface-raised);"><span style="display: flex; flex-direction: column; gap: 2px; flex-shrink: 0;"><span style="{{c.amt.markStyle}}">{{c.amt.mark}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{c.amt.markLabel}}</span></span><span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0;"><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{c.bandCap}}</span><span style="display: grid; grid-template-columns: auto auto; justify-content: end; column-gap: 6px; row-gap: 2px; font-size: 14px; line-height: 20px; color: var(--ink); white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; text-align: right;">{{c.amt.xmr}}</span><span style="font-size: 13px; font-weight: 600; color: var(--monero-ink);">XMR</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; text-align: right;">{{c.amt.fiat}}</span><span style="font-size: 13px; font-weight: 600; color: var(--ink-muted);">USD</span></span></span></div>
+          <span style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span><sc-if value="{{c.tierNone}}" hint-placeholder-val="{{false}}">No band for this amount · </sc-if>Releases in about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{c.rel}}</span> min</span><span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px;"><span>Takes</span><sc-for list="{{c.chips}}" as="m" hint-placeholder-count="2"><span style="{{m.style}}">{{m.label}}</span></sc-for></span></span>
           <sc-if value="{{c.notOk}}" hint-placeholder-val="{{false}}">
             <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
               <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>
@@ -135,10 +137,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <p style="margin: 0; max-width: 720px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">The market price, sellers and prices are examples.</p>
     <p style="margin: 0; max-width: 720px; font-size: 13px; line-height: 18px;">Tapping a badge or +N opens the badge sheet, see <a href="OfferAd.dc.html">OfferAd</a>.</p>
     <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;">Craft pass, 7 Nov: band limits on each card set in mono; the OfferAd link takes the link colour. Trader blocks and badges unchanged.</p>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><strong>8 Nov, owner #11 (ad amounts).</strong> Each card: markup bottom-left of the price (the total for your band and method: "+0.6%" mono over "Vendor markup", or "incl. Zelle +0.3%" when the method adds to it) and the band that fits your amount on two rows in mono, figures right-aligned: the range in XMR and the range in USD. The vendor set these bands in USD, so the XMR row is converted ("≈"). "Display amounts including vendor markup" sits above the list (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">withMarkup</span> tweak, showing: {{wm.state}}; default off): off converts at the market rate, on at each offer's price for your band. Caption over the rows: "Your band" (tiered), "Limits" (one band), "Trades only" (no band for your amount, whole range shown).</p>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><span style="display: inline-flex; align-items: center; height: 20px; padding: 0 6px; margin-right: 6px; border-radius: 6px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px;">Anticipated · design, 8 Nov</span>Follows owner #3: "Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC" under the title, where the market price shows (no provider named, Q34).</p>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;">COPY-UNSIGNED, 8 Nov: "Display amounts including vendor markup" (owner's words), "Converted at the market rate, before markup.", "Converted at each offer's price, markup included.", "Vendor markup", "incl. Zelle +0.3%" (was "… above market · incl. Zelle +0.3%"), "Your band", "Limits", "Trades only", "Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC".</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["greyed","hidden"],"default":"greyed"},"$preview":{"width":390,"height":2469}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["greyed","hidden"],"default":"greyed"},"withMarkup":{"editor":"enum","options":["off","on"],"default":"off"},"$preview":{"width":390,"height":3336}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -236,6 +241,28 @@ class Component extends DCLogic {
       return { meth, tier, total, price, xmr: valid ? amt / price : 0 };
     };
 
+
+    // Ad amounts (owner #11, 8 Nov). A range is set in one unit by the poster; the other is converted:
+    // at the market rate, or at the offer's own price when "Display amounts including vendor markup" is on.
+    const withMarkup = this.state.wm == null ? this.props.withMarkup === 'on' : this.state.wm;
+    const MKT = MARKET;
+    const amtUsd = (n, cents) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 });
+    const adAmt = (a) => {
+      const [price, pct, unit, lo, hi] = a;
+      const rate = withMarkup ? price : MKT;
+      const xmr = unit === 'xmr' ? lo.toFixed(6) + ' – ' + hi.toFixed(6) : '≈ ' + (lo / rate).toFixed(6) + ' – ' + (hi / rate).toFixed(6);
+      const fiat = unit === 'xmr' ? '≈ ' + amtUsd(lo * rate, true) + ' – ' + amtUsd(hi * rate, true) : amtUsd(lo, lo % 1 !== 0) + ' – ' + amtUsd(hi, hi % 1 !== 0);
+      return { price: amtUsd(price, true), xmr, fiat,
+        mark: pct === 0 ? '0%' : (pct > 0 ? '+' : '−') + Math.abs(pct).toFixed(1) + '%',
+        markLabel: pct === 0 ? 'At market' : 'Vendor markup',
+        markStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; color: " + (pct === 0 ? 'var(--ink-muted);' : 'var(--escrow);') };
+    };
+    const wm = {
+      on: withMarkup, state: withMarkup ? 'on' : 'off',
+      box: 'display: flex; flex-shrink: 0; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 6px; ' + (withMarkup ? 'border: 2px solid var(--ink); background: var(--ink); color: var(--ground);' : 'border: 1px solid var(--line); background: var(--surface-raised); color: transparent;'),
+      hint: withMarkup ? "Converted at each offer's price, markup included." : 'Converted at the market rate, before markup.',
+      toggle: () => this.setState({ wm: !withMarkup })
+    };
     const cards = OFFERS.filter((o) => o.methods.some((x) => x.id === s.method)).map((o) => {
       const q = quote(o, s.method);
       let reason = '';
@@ -262,6 +289,8 @@ class Component extends DCLogic {
         tierText: q.tier ? 'Band ' + money(q.tier.from) + ' – ' + money(q.tier.to) : 'No band for this amount',
         tierHas: !!q.tier, tierNone: !q.tier, tierFrom: q.tier ? money(q.tier.from) : '', tierTo: q.tier ? money(q.tier.to) : '',
         xmrText: q.xmr.toFixed(6),
+        amt: (() => { const band = q.tier || { from: o.tiers[0].from, to: o.tiers[o.tiers.length - 1].to }; const a = adAmt([q.price, Math.round(q.total * 10) / 10, 'fiat', band.from, band.to]); a.markLabel = q.meth.adj ? 'incl. ' + methodTag(q.meth) : (Math.abs(q.total) < 0.001 ? 'At market' : 'Vendor markup'); if (!ok) a.markStyle = a.markStyle.replace('var(--escrow)', 'var(--ink-muted)'); return a; })(),
+        bandCap: q.tier ? (o.tiers.length > 1 ? 'Your band' : 'Limits') : 'Trades only',
         chips: o.methods.map((x) => ({ label: inRange(x) ? methodTag(x) : rangeText(x), style: CHIP + (inRange(x) ? 'border: 1px solid var(--line); color: var(--ink);' : 'border: 1px solid var(--surface-raised); color: var(--ink-muted);') })),
         tradeLabel: 'Trade with ' + o.name,
         price: q.price,
@@ -304,7 +333,7 @@ class Component extends DCLogic {
       onMethod: (e) => this.setState({ method: e.target.value }),
       forLine: valid ? 'Prices for ' + usd2(amt) + ' via ' + methodName : '',
       count: shown.length + (shown.length === 1 ? ' offer' : ' offers'),
-      cards: shown,
+      cards: shown, wm,
       hasHidden: hiddenCount > 0,
       hiddenLine: hiddenCount + (hiddenCount === 1 ? ' more offer isn’t' : ' more offers aren’t') + ' shown. You don’t meet their rules for ' + (valid ? usd2(amt) : 'this amount') + '.',
       sheetOpen: sheet.open, sheet,

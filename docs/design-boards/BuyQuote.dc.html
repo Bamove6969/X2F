@@ -29,7 +29,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         Chat
       </a>
     </div>
-    <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Zelle · USD · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$330.00</span> / XMR · Example</span>
+    <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Zelle · USD · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{rateText}}</span> / XMR · Example</span>
     <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Buying from satoshi_ghost</h1>
   </header>
 
@@ -41,6 +41,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <div style="display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 14px; box-sizing: border-box; border-radius: 6px; border: 1px solid {{amtBorder}}; background: var(--surface-raised);">
         <span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; color: var(--ink-muted);">$</span>
         <input id="amt" type="text" inputmode="decimal" value="{{amount}}" onChange="{{onAmount}}" aria-describedby="amt-help" style="flex-grow: 1; min-width: 0; height: 44px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 500; outline: none;">
+        <button type="button" onClick="{{setMax}}" aria-label="Use the largest amount, {{maxText}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; min-width: 44px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Max</button>
+        <span aria-hidden="true" style="width: 1px; height: 20px; background: var(--line);"></span>
         <span style="font-size: 16px; font-weight: 600; color: var(--ink-muted);">USD</span>
       </div>
       <span id="amt-help" style="{{helpStyle}}"><sc-if value="{{notOk}}" hint-placeholder-val="{{false}}"><svg style="flex-shrink: 0; margin-top: 1px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16h.01"/></svg></sc-if>{{help}}</span>
@@ -53,7 +55,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">In {{walletName}}, address ending <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{walletAddr}}</span></span>
       </div>
       <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Rate</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">$330.00</span> / XMR</dd></div>
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Rate</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{rateText}}</span> / XMR</dd></div>
         <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Network fee</dt><dd style="margin: 0; font-size: 15px;">Paid by satoshi_ghost</dd></div>
         <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
@@ -61,6 +63,36 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 52px; padding: 0 14px; font-size: 16px; line-height: 22px; font-weight: 600;"><dt>You send via Zelle</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">${{usd}}</span> USD</dd></div>
       </dl>
+    </section>
+
+    <section data-m="offer-bands" aria-labelledby="ob-title" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V14M10 20V9M16 20V12M22 20V5"/></svg></span>
+        <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+          <h2 id="ob-title" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">This offer's bands</h2>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">The price changes with the amount</span>
+        </span>
+      </div>
+      <div role="radiogroup" aria-label="Amounts in XMR" style="display: flex; gap: 6px;">
+        <sc-for list="{{obViews}}" as="v" hint-placeholder-count="2">
+          <button type="button" role="radio" aria-checked="{{v.on}}" onClick="{{v.pick}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{v.style}}">{{v.label}}</span></button>
+        </sc-for>
+      </div>
+      <ul aria-label="Bands" style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px;">
+        <sc-for list="{{obBands}}" as="b" hint-placeholder-count="2">
+          <li aria-current="{{b.cur}}" style="{{b.style}}">
+            <span style="display: flex; align-items: center; justify-content: space-between; gap: 8px;"><span style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{b.label}}</span><sc-if value="{{b.mine}}" hint-placeholder-val="{{true}}"><span style="display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border-radius: 6px; background: var(--ink); color: var(--ground); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">Your amount</span></sc-if></span><span style="font-size: 13px; line-height: 20px; color: var(--ink-muted); white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500; color: var(--ink);">{{b.rate}}</span> / XMR</span></span>
+            <span style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px;"><span style="font-size: 15px; line-height: 20px; white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{b.usd}}</span> <span style="font-size: 13px; font-weight: 600; color: var(--ink-muted);">USD</span></span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted); white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--escrow);">{{b.mark}}</span> {{b.markWord}}</span></span>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted); white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">≈ {{b.xmr}}</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span></span>
+          </li>
+        </sc-for>
+      </ul>
+      <sc-for list="{{obClips}}" as="c" hint-placeholder-count="1">
+        <p style="display: flex; gap: 8px; align-items: flex-start; margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);"><svg style="flex-shrink: 0; margin-top: 2px; color: var(--ink-muted);" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{c.icon}}"/></svg><span>{{c.pre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{c.at}}</span>{{c.mid}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{c.rate}}</span>.</span></p>
+      </sc-for>
+      <sc-if value="{{obWithout}}" hint-placeholder-val="{{false}}">
+        <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC</span>
+      </sc-if>
     </section>
 
     <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0;">
@@ -82,6 +114,27 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
       <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Nothing changes after you tap Trade. satoshi_ghost then has <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> min to lock the XMR in escrow. You only pay once it's locked.</p>
     </div>
+    <section data-m="what-applies" aria-labelledby="wa-title" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l1.5 1.5L8 5"/><path d="M4 12l1.5 1.5L8 11"/><path d="M4 18l1.5 1.5L8 17"/><path d="M11 6h9M11 12h9M11 18h9"/></svg></span>
+        <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+          <h2 id="wa-title" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What applies to you</h2>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{waRole}}</span>
+        </span>
+      </div>
+      <div id="wa-groups" style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
+        <sc-for list="{{waGroups}}" as="g" hint-placeholder-count="3">
+          <sc-if value="{{g.div}}" hint-placeholder-val="{{false}}"><div aria-hidden="true" style="height: 1px; margin: 0 14px; background: var(--surface);"></div></sc-if>
+          <div style="display: flex; flex-direction: column; gap: 8px; padding: 12px 14px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;"><h3 style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{g.title}}</h3><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 16px; font-weight: 500; color: var(--ink-muted);">{{g.count}}</span></div>
+            <ul aria-label="{{g.title}}" style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px;">
+              <sc-for list="{{g.lines}}" as="l" hint-placeholder-count="1"><li style="display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 20px; color: var(--ink);"><span aria-hidden="true" style="flex-shrink: 0; width: 5px; height: 5px; margin-top: 8px; border-radius: 999px; background: var(--ink-muted);"></span><span><sc-for list="{{l.parts}}" as="p" hint-placeholder-count="1"><span style="{{p.s}}">{{p.t}}</span></sc-for></span></li></sc-for>
+            </ul>
+          </div>
+        </sc-for>
+      </div>
+      <button type="button" aria-expanded="{{waExpanded}}" aria-controls="wa-groups" onClick="{{waToggle}}" style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 44px; margin-left: -2px; padding: 0 2px; border: 0; border-radius: 12px; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">{{waToggleLabel}}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{waChevStyle}}"><path d="M6 9l6 6 6-6"/></svg></button>
+    </section>
   </main>
 
   <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
@@ -96,14 +149,17 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px 32px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
     <p style="margin: 0; font-size: 13px; line-height: 18px;">Craft pass, 7 Nov: the seller is drawn as a person (compact trader block from the Badges kit, same data as BuyOffers); "You receive" is the screen's hero (v2 §6 neutral wash, no key mark before a trade exists); wallet rows get 40 px wallet tiles.</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>8 Nov, owner #4 and #11 (bands on the quote).</strong> Right under the amount and rate: "This offer's bands", so the buyer never goes back a screen to see where the price clips. Each band: its range in the offer's unit (USD, set by the vendor) and in XMR ("≈"), its rate and markup; the band holding your amount has the 2 px ink ring and a "Your amount" tag. Under the list, where it clips: "Above <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$500</span> the rate changes to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$331.88</span>." (and the reverse once you are in band 2). "With markup / Without" (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">bandsView</span> tweak, showing: {{obViewState}}; default with) converts the XMR column at each band's price, or at the market rate (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$329.90</span>) with the freshness line. Example bands for satoshi_ghost: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50 – $500</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$330.00</span> (the cast trade, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$412.50</span> → <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> XMR) and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$500.01 – $1,500</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$331.88</span>; the brief's sample sentence said "Above $1,500", but this offer's largest trade is <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$1,500</span>, so the clip sits at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$500</span>. The Rate row, the header line and You receive follow the band.</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>Max (owner #5, "I do really like the max button").</strong> Kept from the prototype: a Max text button inside the You pay field fills the offer's largest trade (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$1,500</span>); the bands card then moves the ring to band 2.</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;">COPY-UNSIGNED, 8 Nov: "This offer's bands", "The price changes with the amount", "With markup", "Without", "Band 1" / "Band 2", "Your amount", "+0.03% markup" / "market rate", "Above $500 the rate changes to $331.88." / "Below $500.01 the rate changes to $330.00.", "Max", "Use the largest amount, $1,500" (label), the freshness line.</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1427}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"bandsView":{"editor":"enum","options":["with","without"],"default":"with"},"role":{"editor":"enum","options":["auto","buyer-taker","seller-taker","poster-selling","poster-buying"],"default":"auto"},"$preview":{"width":390,"height":2767}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { amount: '412.50', wallet: 'cake' };
+    this.state = { amount: '412.50', wallet: 'cake', obView: null };
   }
   renderVals() {
     const THEMES = {
@@ -111,11 +167,32 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 1427px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
-    const RATE = 330.00, MIN = 50, MAX = 1500;
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + ((this.state.obView || this.props.bandsView) === 'without' ? 2363 : 2333) + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const MIN = 50, MAX = 1500, MKT = 329.90;
     const raw = String(this.state.amount).replace(/[^0-9.]/g, '');
     const usd = parseFloat(raw);
     const valid = !isNaN(usd) && usd >= MIN && usd <= MAX;
+    // This offer's bands (owner #4 + #11, 8 Nov): set in USD by the vendor; the rate depends on the band.
+    const BANDS = [{ from: 50, to: 500, rate: 330.00 }, { from: 500.01, to: 1500, rate: 331.88 }];
+    const bi = valid ? BANDS.findIndex((b) => usd >= b.from && usd <= b.to) : -1;
+    const RATE = bi >= 0 ? BANDS[bi].rate : BANDS[0].rate;
+    const d$ = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
+    const obView = this.state.obView || (this.props.bandsView === 'without' ? 'without' : 'with');
+    const withMk = obView === 'with';
+    const obBands = BANDS.map((b, i) => {
+      const r = withMk ? b.rate : MKT, mine = i === bi;
+      const mk = (b.rate / MKT - 1) * 100;
+      return { label: 'Band ' + (i + 1), mine, cur: mine ? 'true' : 'false',
+        usd: d$(b.from) + ' – ' + d$(b.to), xmr: (b.from / r).toFixed(6) + ' – ' + (b.to / r).toFixed(6),
+        rate: '$' + r.toFixed(2), mark: withMk ? '+' + mk.toFixed(2) + '%' : '', markWord: withMk ? 'markup' : 'market rate',
+        style: 'display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); border: 2px solid ' + (mine ? 'var(--ink);' : 'transparent;') };
+    });
+    const UP = 'M7 17L17 7M9 7h8v8', DOWN = 'M7 7l10 10M17 9v8H9';
+    const obClips = [];
+    if (bi >= 0 && bi < BANDS.length - 1) obClips.push({ icon: UP, pre: 'Above ', at: d$(BANDS[bi].to), mid: ' the rate changes to ', rate: '$' + BANDS[bi + 1].rate.toFixed(2) });
+    if (bi > 0) obClips.push({ icon: DOWN, pre: 'Below ', at: d$(BANDS[bi].from), mid: ' the rate changes to ', rate: '$' + BANDS[bi - 1].rate.toFixed(2) });
+    const VIEW = (on) => 'display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 36px; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 14px; ' + (on ? 'border: 2px solid var(--ink); background: var(--surface-raised); color: var(--ink); font-weight: 600;' : 'border: 1px solid var(--line); background: transparent; color: var(--ink);');
+    const obViews = [['with', 'With markup'], ['without', 'Without']].map(([id, label]) => ({ label, on: obView === id ? 'true' : 'false', style: VIEW(obView === id), pick: () => this.setState({ obView: id }) }));
     const defs = [
       { id: 'cake', name: 'Cake Wallet', addr: '…k3Fz', note: ' · gets payouts' },
       { id: 'ledger', name: 'Ledger (via Feather)', addr: '…9QbP', note: ' · for large trades' },
@@ -136,16 +213,52 @@ class Component extends DCLogic {
       helpStyle = 'display: flex; gap: 6px; font-size: 13px; line-height: 18px; color: var(--danger);';
     }
     return { rootStyle,
+      obBands, obClips, obViews, obWithout: !withMk, obViewState: obView, rateText: '$' + RATE.toFixed(2),
+      maxText: d$(MAX), setMax: () => this.setState({ amount: MAX.toLocaleString('en-US') + '.00' }),
       amount: this.state.amount,
       amtBorder: valid ? 'var(--line)' : 'var(--danger)',
       help, helpStyle, wallets,
       walletName: w.name, walletAddr: w.addr,
       xmr: valid ? (usd / RATE).toFixed(6) : '0.000000',
-      usd: valid ? usd.toFixed(2) : '0.00',
+      usd: valid ? usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00',
       ok: valid, notOk: !valid,
       onAmount: (e) => this.setState({ amount: e.target.value })
     };
   }
+}
+// "What applies to you" card (owner C6, 8 Nov; trade-terms-by-role.md). Information only, no agree step (C8).
+// One wrapper so the card stays one insertion: it adds the card's values and grows the board by WA_ADD (measured;
+// on wide the right column sets the height, so WA_ADD holds floors instead).
+{
+  const WA_DATA = {"seller-taker":[{"title":"Your responsibilities","lines":["Fund the escrow in full.","Pick the currency, then the payment type, on the ad.","Gift card: check it within 45 minutes of getting its details."]},{"title":"What affects you","lines":["The buyer only sees \"Pay now\" once your escrow is secured.","The buyer can cancel until they tap \"I've paid\"; your XMR comes back.","After \"I've paid\", the buyer waits 90 min, 24 h or 48 h to 4 days, by payment type, before a dispute.","Proofs show the trade code, amount and time; names and account numbers are blurred.","You're warned if a proof has no readable date.","Maintenance pauses the trade timers.","On hold, you can both still enter, chat and reach a moderator; no coins move until a moderator decides.","In a dispute, a moderator steps in within 24 hours at most.","A ruling moves the coins at once; a lien covers a reversal.","Feedback and your totals follow the final outcome."]},{"title":"Your options","lines":["Nudge the buyer once every 15 minutes, as often as you need.","Before you fund: cancel at once.","After you fund: cancel and get your XMR back once 90 minutes have passed since full funding and you've nudged at least once."]}],"buyer-taker":[{"title":"Your responsibilities","lines":["Pay only when \"Pay now\" shows; it never shows before the escrow is secured.","Pick the currency, then the payment type, on the ad.","Follow the payment instructions for the type you picked.","Tap \"I've paid\" once the money is sent.","Post proof with the trade code, amount and time visible.","Gift card: bought in the last 30 days, full written value, and a video of you logging into it before you send."]},{"title":"What affects you","lines":["Amounts can be shown with or without the vendor's markup.","The ad may need 5, 10, 25 or 50 completed trades from you.","Names and account numbers in your proof are blurred; the trade code, amount and time aren't.","If the blur hides the trade code, or there's no readable date, you're warned and can still post.","Maintenance pauses the trade timers.","On hold, you can both still enter, chat and reach a moderator; no coins move until a moderator decides.","In a dispute, a moderator steps in within 24 hours at most.","A ruling moves the coins at once; a lien covers a reversal.","Feedback and your totals follow the final outcome."]},{"title":"Your options","lines":["Nudge the seller once every 15 minutes, as often as you need.","Cancel until you tap \"I've paid\"; you're warned first that it's likely final.","After \"I've paid\", only a dispute: after 90 min, 24 h or 48 h to 4 days, by payment type.","Post proof even if the amount isn't detected; X2F logs it to improve.","Post the payment details in the trade chat."]}],"poster-selling":[{"title":"Your responsibilities","lines":["Answer a trade request within 60 minutes, or it closes.","Fund the escrow in full.","Gift card: check it within 45 minutes of getting its details."]},{"title":"What affects you","lines":["You pay 1% when the trade completes.","No fee on a full reversal; during an appeal the fee waits for the outcome.","The buyer only sees \"Pay now\" once your escrow is secured.","The buyer can cancel until they tap \"I've paid\"; your XMR comes back.","After \"I've paid\", the buyer waits 90 min, 24 h or 48 h to 4 days, by payment type, before a dispute.","Proofs show the trade code, amount and time; names and account numbers are blurred.","You're warned if a proof has no readable date.","Maintenance pauses the trade timers.","On hold, you can both still enter, chat and reach a moderator; no coins move until a moderator decides.","In a dispute, a moderator steps in within 24 hours at most.","A ruling moves the coins at once; a lien covers a reversal.","Feedback and your totals follow the final outcome."]},{"title":"Your options","lines":["Nudge the buyer once every 15 minutes, as often as you need.","Before you fund: cancel at once.","After you fund: cancel and get your XMR back once 90 minutes have passed since full funding and you've nudged at least once."]}],"poster-buying":[{"title":"Your responsibilities","lines":["Answer a trade request within 60 minutes, or it closes.","Pay only when \"Pay now\" shows; it never shows before the escrow is secured.","Tap \"I've paid\" once the money is sent.","Post proof with the trade code, amount and time visible.","Gift card: bought in the last 30 days, full written value, and a video of you logging into it before you send."]},{"title":"What affects you","lines":["You pay 1% when the trade completes.","No fee on a full reversal; during an appeal the fee waits for the outcome.","Names and account numbers in your proof are blurred; the trade code, amount and time aren't.","If the blur hides the trade code, or there's no readable date, you're warned and can still post.","Maintenance pauses the trade timers.","On hold, you can both still enter, chat and reach a moderator; no coins move until a moderator decides.","In a dispute, a moderator steps in within 24 hours at most.","A ruling moves the coins at once; a lien covers a reversal.","Feedback and your totals follow the final outcome."]},{"title":"Your options","lines":["Nudge the seller once every 15 minutes, as often as you need.","Cancel until you tap \"I've paid\"; you're warned first that it's likely final.","After \"I've paid\", only a dispute: after 90 min, 24 h or 48 h to 4 days, by payment type.","Post proof even if the amount isn't detected; X2F logs it to improve."]}]};
+  const WA_META = {"buyer-taker": "You're buying from a sell ad", "seller-taker": "You're selling to a buy ad", "poster-selling": "A trade on your sell ad", "poster-buying": "A trade on your buy ad"};
+  const WA_ADD = {"buyer-taker": [434, 1236], "seller-taker": [414, 1052], "poster-selling": [414, 1124], "poster-buying": [414, 1144]};
+  const WA_DEFAULT = "buyer-taker";
+  const waParts = (t) => t.split(/(\d+(?:[.,]\d+)*%?)/).filter((x) => x !== '').map((x) => ({ t: x, s: /^\d/.test(x) ? "font-family: 'Atkinson Hyperlegible Mono', monospace;" : '' }));
+  const waBase = Component.prototype.renderVals;
+  Component.prototype.renderVals = function () {
+    const v = waBase.call(this);
+    const st = this.state || {};
+    let role = this.props.role;
+    if (!WA_DATA[role]) role = typeof WA_DEFAULT === 'string' ? WA_DEFAULT : WA_DEFAULT[this.props.side === 'buying' ? 'buying' : 'selling'];
+    const open = !!st.waOpen;
+    const groups = WA_DATA[role];
+    const total = groups.reduce((n, g) => n + g.lines.length, 0);
+    const grow = (WA_ADD[role] || [0, 0])[open ? 1 : 0];
+    const floor = WA_ADD['floor:' + role];
+    const bump = (css) => (css || '').replace(/(^|[;\s])height: (\d+)px/, (m, a, h) => a + 'height: ' + (floor ? Math.max(Number(h), floor[open ? 1 : 0]) : Number(h) + grow) + 'px');
+    if (v.rootStyle) v.rootStyle = bump(v.rootStyle);
+    if (v.screenStyle) v.screenStyle = bump(v.screenStyle);
+    return Object.assign(v, {
+      waRole: WA_META[role] + ' · information only',
+      waGroups: groups.map((g, i) => ({ div: i > 0, title: g.title, count: String(g.lines.length),
+        lines: (open ? g.lines : g.lines.slice(0, 1)).map((t) => ({ parts: waParts(t) })) })),
+      waExpanded: open ? 'true' : 'false',
+      waToggleLabel: open ? 'Show less' : 'Show all ' + total,
+      waChevStyle: open ? 'transform: rotate(180deg);' : '',
+      waToggle: () => this.setState({ waOpen: !open })
+    });
+  };
 }
 </script>
 </body>

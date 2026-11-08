@@ -35,12 +35,14 @@ h1,h2,h3{text-wrap:balance}
         <span style="color: var(--ink-muted);">Market price</span>
         <span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">$329.90</span> <span style="color: var(--ink-muted);">/ XMR</span></span>
       </div>
+      <span style="margin-top: -6px; padding-left: 14px;"><span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC</span></span>
       <div role="radiogroup" aria-label="Sort" style="display: flex; gap: 8px; align-items: center;">
         <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Sort</span>
         <sc-for list="{{sorts}}" as="s" hint-placeholder-count="3">
           <button type="button" role="radio" aria-checked="{{s.on}}" onClick="{{s.pick}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{s.style}}">{{s.label}}</span></button>
         </sc-for>
       </div>
+      <label style="position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer;"><input type="checkbox" checked="{{wm.on}}" onChange="{{wm.toggle}}" style="position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0;"><span aria-hidden="true" style="{{wm.box}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><span style="font-size: 15px; line-height: 20px; font-weight: 600;">Display amounts including vendor markup</span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{wm.hint}}</span></span></label>
     </div>
 
     <ul aria-label="Offers" style="list-style: none; margin: 0; flex-grow: 1; min-height: 0; overflow-y: auto; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 12px;">
@@ -56,8 +58,12 @@ h1,h2,h3{text-wrap:balance}
             </span>
             <sc-if value="{{o.hasChips}}" hint-placeholder-val="{{true}}"><span style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-left: 52px;"><sc-for list="{{o.chips}}" as="b" hint-placeholder-count="2"><span style="{{b.chipStyle}}"><span aria-hidden="true" style="{{b.seal22}}"><sc-if value="{{b.isIcon}}" hint-placeholder-val="{{true}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{b.d}}"/></svg></sc-if><sc-if value="{{b.isNum}}" hint-placeholder-val="{{false}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 8px; line-height: 1; font-weight: 500; letter-spacing: -0.02em;">{{b.num}}</span></sc-if></span>{{b.name}}</span></sc-for><sc-if value="{{o.hasMore}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px 0 11px; box-sizing: border-box; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-size: 13px; line-height: 16px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.more}}</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></sc-if></span></sc-if>
             <span style="{{o.bottomStyle}}">
-              <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted); white-space: nowrap;">{{o.range}}</span>
-              <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 24px; font-weight: 500; letter-spacing: -0.01em;">{{o.price}}</span>
+              <span style="display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; align-self: flex-end;"><span style="{{o.amt.markStyle}}">{{o.amt.mark}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{o.amt.markLabel}}</span></span>
+              <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0;">
+                <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 24px; font-weight: 500; letter-spacing: -0.01em;">{{o.price}}</span>
+                <span style="font-size: 13px; line-height: 18px; white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.amt.xmr}}</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span></span>
+                <span style="font-size: 13px; line-height: 18px; white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.amt.fiat}}</span> <span style="font-weight: 600; color: var(--ink-muted);">USD</span></span>
+              </span>
             </span>
           </button>
         </li>
@@ -137,7 +143,7 @@ h1,h2,h3{text-wrap:balance}
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":840,"height":1012}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"withMarkup":{"editor":"enum","options":["off","on"],"default":"off"},"$preview":{"width":840,"height":1012}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -179,11 +185,33 @@ class Component extends DCLogic {
     const rootStyle = THEMES[theme] + "position: relative; width: 840px; height: 1012px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: grid; grid-template-columns: 412px 16px 412px;";
 
     const defs = [
-      { id: 'satoshi', name: 'satoshi_ghost', init: 'SG', xmr: '275.4', rate: 330.00, online: true, seen: 'Online', trades: 1284, pos: 99.4, min: 50, max: 1500, release: '~8 min', vendor: true, badges: ['trusted', 'fast', 'clean', 'veteran', 'm100'] },
-      { id: 'kettle', name: 'kettle.moss', init: 'KM', xmr: '31.2', rate: 331.50, online: false, seen: 'Seen 40 min ago', trades: 96, pos: 98, min: 100, max: 3000, release: '~20 min', vendor: true, badges: ['pgp'] },
-      { id: 'lowtide', name: 'lowtide_rx', init: 'LR', xmr: '2.9', rate: 333.00, online: true, seen: 'Online', trades: 12, pos: 100, min: 20, max: 400, release: '~30 min', vendor: true, badges: ['fresh'] },
-      { id: 'mira', name: 'mira.k', init: 'MK', xmr: '41.7', rate: 334.00, online: true, seen: 'Online', trades: 212, pos: 99, min: 200, max: 2500, release: '~15 min', vendor: false, badges: ['trusted', 'pgp', 'fast', 'hw', 'm100'] }
+      { id: 'satoshi', name: 'satoshi_ghost', init: 'SG', xmr: '275.4', rate: 330.00, pct: 0.1, unit: 'fiat', lo: 50, hi: 1500, online: true, seen: 'Online', trades: 1284, pos: 99.4, min: 50, max: 1500, release: '~8 min', vendor: true, badges: ['trusted', 'fast', 'clean', 'veteran', 'm100'] },
+      { id: 'kettle', name: 'kettle.moss', init: 'KM', xmr: '31.2', rate: 331.50, pct: 0.5, unit: 'xmr', lo: 0.3, hi: 9, online: false, seen: 'Seen 40 min ago', trades: 96, pos: 98, min: 99.45, max: 2983.50, release: '~20 min', vendor: true, badges: ['pgp'] },
+      { id: 'lowtide', name: 'lowtide_rx', init: 'LR', xmr: '2.9', rate: 333.00, pct: 0.9, unit: 'fiat', lo: 20, hi: 400, online: true, seen: 'Online', trades: 12, pos: 100, min: 20, max: 400, release: '~30 min', vendor: true, badges: ['fresh'] },
+      { id: 'mira', name: 'mira.k', init: 'MK', xmr: '41.7', rate: 334.00, pct: 1.2, unit: 'fiat', lo: 200, hi: 2500, online: true, seen: 'Online', trades: 212, pos: 99, min: 200, max: 2500, release: '~15 min', vendor: false, badges: ['trusted', 'pgp', 'fast', 'hw', 'm100'] }
     ];
+
+    // Ad amounts (owner #11, 8 Nov). A range is set in one unit by the poster; the other is converted:
+    // at the market rate, or at the offer's own price when "Display amounts including vendor markup" is on.
+    const withMarkup = this.state.wm == null ? this.props.withMarkup === 'on' : this.state.wm;
+    const MKT = 329.90;
+    const amtUsd = (n, cents) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 });
+    const adAmt = (a) => {
+      const [price, pct, unit, lo, hi] = a;
+      const rate = withMarkup ? price : MKT;
+      const xmr = unit === 'xmr' ? lo.toFixed(6) + ' – ' + hi.toFixed(6) : '≈ ' + (lo / rate).toFixed(6) + ' – ' + (hi / rate).toFixed(6);
+      const fiat = unit === 'xmr' ? '≈ ' + amtUsd(lo * rate, true) + ' – ' + amtUsd(hi * rate, true) : amtUsd(lo, lo % 1 !== 0) + ' – ' + amtUsd(hi, hi % 1 !== 0);
+      return { price: amtUsd(price, true), xmr, fiat,
+        mark: pct === 0 ? '0%' : (pct > 0 ? '+' : '−') + Math.abs(pct).toFixed(1) + '%',
+        markLabel: pct === 0 ? 'At market' : 'Vendor markup',
+        markStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; color: " + (pct === 0 ? 'var(--ink-muted);' : 'var(--escrow);') };
+    };
+    const wm = {
+      on: withMarkup, state: withMarkup ? 'on' : 'off',
+      box: 'display: flex; flex-shrink: 0; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 6px; ' + (withMarkup ? 'border: 2px solid var(--ink); background: var(--ink); color: var(--ground);' : 'border: 1px solid var(--line); background: var(--surface-raised); color: transparent;'),
+      hint: withMarkup ? "Converted at each offer's price, markup included." : 'Converted at the market rate, before markup.',
+      toggle: () => this.setState({ wm: !withMarkup })
+    };
     const money = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
     const sort = this.state.sort;
     const ordered = defs.slice().sort((a, b) => {
@@ -209,6 +237,7 @@ class Component extends DCLogic {
       positive: d.pos + '% positive',
       pos: d.pos + '%',
       range: money(d.min) + ' – ' + money(d.max),
+      amt: adAmt([d.rate, d.pct, d.unit, d.lo, d.hi]),
       release: d.release,
       init: d.init, xmr: d.xmr, online: d.online,
       // Online in escrow teal, as the Badges trader block; "Seen ..." stays muted.
@@ -235,7 +264,7 @@ class Component extends DCLogic {
         // On the selected (surface-raised) card the avatar steps back to surface so it keeps its edge.
         avStyle: on ? avBase.replace('background: var(--surface-raised)', 'background: var(--surface)').replace('border: 2px solid var(--surface-raised)', 'border: 2px solid var(--surface)') : avBase,
         dotStyle: 'position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid ' + (on ? 'var(--surface-raised)' : 'var(--surface)') + ';',
-        bottomStyle: 'display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 0 0 52px; border-top: 1px solid ' + (on ? 'var(--surface)' : 'var(--surface-raised)') + ';',
+        bottomStyle: 'display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 12px 0 0 52px; border-top: 1px solid ' + (on ? 'var(--surface)' : 'var(--surface-raised)') + ';',
         pick: () => this.setState({ selected: d.id })
       });
     });
@@ -251,7 +280,7 @@ class Component extends DCLogic {
     return {
       rootStyle,
       sorts,
-      offers,
+      offers, wm,
       sel: view(s),
       paneLabel: 'Offer from ' + s.name,
       amount: this.state.amount,

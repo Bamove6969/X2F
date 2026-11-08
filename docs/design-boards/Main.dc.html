@@ -20,6 +20,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
+  <div style="position: relative; display: flex; flex-direction: column; flex-grow: 1;">
   <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
     <div style="display: flex; align-items: center; justify-content: space-between; height: 44px;">
       <div style="display: flex; align-items: center; gap: 4px;">
@@ -48,6 +49,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </select>
       </div>
       <span style="display: inline-flex; align-items: baseline; gap: 8px; margin-top: -8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">$329.90</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">/ <span style="color: var(--monero-ink);">XMR</span></span></span>
+      <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC</span>
       <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Offers set their price from this, plus or minus their margin.</p>
       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;"><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{hs.methods}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">methods</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{hs.people}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">buyers</span></span><span style="display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 10px; background: var(--surface-raised); min-width: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500;">{{hs.best}}</span><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">best rate</span></span></div>
     </section>
@@ -76,6 +78,28 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{sec.title}}</h2>
           <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 16px; color: var(--ink-muted);">{{sec.count}}</span>
         </div>
+        <sc-if value="{{sec.isPick}}" hint-placeholder-val="{{true}}">
+        <div data-part="method-pick" style="display: flex; flex-direction: column; border-radius: 16px; background: var(--surface);">
+          <button type="button" aria-haspopup="dialog" aria-expanded="{{pickExpanded}}" aria-controls="mp-sheet" onClick="{{openPicker}}" style="display: flex; align-items: center; gap: 14px; min-height: 72px; padding: 12px 10px 12px 16px; box-sizing: border-box; border: 0; border-radius: 16px 16px 0 0; background: transparent; color: var(--ink); font: inherit; text-align: left; cursor: pointer;">
+            <span style="{{shown.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{shown.icon}}"/></svg></span>
+            <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
+              <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Payment method</span>
+              <span style="font-size: 18px; line-height: 24px; font-weight: 600;">{{shown.name}}</span>
+            </span>
+            <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="{{pickChevron}}"/></svg></span>
+          </button>
+          <span aria-hidden="true" style="height: 1px; margin: 0 16px; background: var(--surface-raised);"></span>
+          <a href="SellOffers.dc.html" style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box; border-radius: 0 0 16px 16px; color: var(--ink); text-decoration: none;">
+            <span style="flex-grow: 1; min-width: 0; font-size: 15px; line-height: 20px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{shown.n}}</span>{{shown.mid}}</span>
+            <span style="display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; gap: 2px;">
+              <span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{shown.pre}}</span>
+              <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500;">{{shown.rate}}</span>
+            </span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--ink-muted); flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg>
+          </a>
+        </div>
+        </sc-if>
+        <sc-if value="{{sec.isList}}" hint-placeholder-val="{{true}}">
         <div style="display: flex; flex-direction: column; border-radius: 16px; background: var(--surface); overflow: hidden;">
           <sc-for list="{{sec.rows}}" as="m" hint-placeholder-count="4">
             <a href="SellOffers.dc.html" style="{{m.rowStyle}}">
@@ -99,6 +123,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             </a>
           </sc-for>
         </div>
+        </sc-if>
       </section>
     </sc-for>
     <sc-if value="{{empty}}" hint-placeholder-val="{{false}}">
@@ -117,17 +142,56 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <a href="Wallet.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 60px; color: var(--ink-muted); font-size: 12px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
     <a href="Profile.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 60px; color: var(--ink-muted); font-size: 12px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
   </nav>
+  <sc-if value="{{pickOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; z-index: 10; background: var(--scrim);">
+      <div style="position: absolute; top: 0; left: 0; right: 0; height: 844px; display: flex; align-items: flex-end;">
+        <section id="mp-sheet" role="dialog" aria-modal="true" aria-labelledby="mp-sheet-t" style="width: 100%; max-height: 724px; box-sizing: border-box; padding: 10px 16px 0; border-radius: 16px 16px 0 0; border-top: 1px solid var(--surface-raised); background: var(--surface); display: flex; flex-direction: column; gap: 16px; overflow: hidden;">
+          <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <h2 id="mp-sheet-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Buyers paying in USD</h2>
+            <button type="button" aria-label="Close" onClick="{{closePicker}}" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; margin-right: -10px; align-items: center; justify-content: center; border: 0; border-radius: 12px; background: transparent; color: var(--ink); cursor: pointer;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          </div>
+          <sc-if value="{{pickSearch}}" hint-placeholder-val="{{true}}">
+            <label for="mp-q" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Search methods with buyers</label>
+            <span style="position: relative; display: block; flex-shrink: 0;">
+              <svg style="position: absolute; left: 14px; top: 14px; color: var(--ink-muted);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+              <input id="mp-q" type="search" value="{{pickQuery}}" onChange="{{onPickQuery}}" placeholder="Search {{pickTotal}} methods" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 14px 0 44px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+            </span>
+          </sc-if>
+          <div role="radiogroup" aria-label="Buyers paying in USD" style="display: flex; flex-direction: column; gap: 4px; margin: 0 -8px; padding: 0 8px 24px; overflow-y: auto;">
+            <sc-for list="{{pickRows}}" as="o" hint-placeholder-count="8">
+              <button type="button" role="radio" aria-checked="{{o.ariaSel}}" onClick="{{o.pick}}" style="{{o.style}}">
+                <span style="{{o.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{o.icon}}"/></svg></span>
+                <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
+                  <span style="font-size: 16px; line-height: 22px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{o.name}}</span>
+                  <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{o.pre}} <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.rate}}</span></span>
+                </span>
+                <span style="flex-shrink: 0; font-size: 13px; line-height: 20px; color: var(--ink-muted); white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500; color: var(--ink);">{{o.n}}</span>{{o.unit}}</span>
+              </button>
+            </sc-for>
+            <sc-if value="{{pickNone}}" hint-placeholder-val="{{false}}">
+              <p style="margin: 0; padding: 12px 4px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">No method with buyers matches "{{pickQuery}}".</p>
+            </sc-if>
+          </div>
+        </section>
+      </div>
+    </div>
+  </sc-if>
+  </div>
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px 32px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
     <p style="margin: 0; font-size: 13px; line-height: 18px;">Craft pass, 7 Nov: the market price hero gets three stat tiles computed from the list (methods with buyers, buyers, best rate). New "Active trades" section above search: one row per open trade with the small 2-of-3 key mark tile in the state tone (caution while waiting), as v2 §1 lists for Main. Headline wraps balanced (no orphan). Search empty state: the v2 §16 tile with two small blocks in family tones (new shared empty-state mark). COPY-UNSIGNED: "Active trades", "Waiting for payment", "methods", "buyers", "best rate".</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>8 Nov, owner #1 (method drop-down).</strong> "Buyers paying in USD" is now one card, not a list: the top row is a drop-down trigger (the method's 40 px icon tile, "Payment method" label, the name 18/24 600, a 44 px chevron box) and the row under it leads to that method's offers with the same line as before. Tapping the trigger opens a bottom sheet (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">methodPicker</span> tweak, showing: {{pickState}}): sheet title 24/30, a search field only when more than <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">8</span> methods have live offers, then every method with live offers in the chosen currency, in the chosen sort: icon tile, name, best rate, and the offer count right-aligned in mono. The current one has the 2 px ink ring. Picking one closes the sheet and updates the card in place. Methods with no live offers stay listed under "All payment methods"; search still lists rows. Drawn at the bottom of the first <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">844</span> px, the phone viewport. Matches wip/lead-method-dropdown (Sheet, radios, tap picks and closes, Escape closes without picking).</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;"><span style="display: inline-flex; align-items: center; height: 20px; padding: 0 6px; margin-right: 6px; border-radius: 6px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px;">Anticipated · design, 8 Nov</span>Follows owner #3 ("Is that the actual current rate?"): the market price carries its source and freshness on a muted line, "Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC". It names no provider, per Q34 (sources not shown to users). Time is the last fetch, UTC only (p4-2).</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;">COPY-UNSIGNED, 8 Nov: "Payment method", "Search <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">17</span> methods", "<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">34</span> offers" / "<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span> offer", "No method with buyers matches "…".", "Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC".</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":6473}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"methodPicker":{"editor":"enum","options":["closed","open"],"default":"closed"},"$preview":{"width":390,"height":5902}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { sort: 'buyers', query: '' };
+    this.state = { sort: 'buyers', query: '', picked: null, pickOpen: null, pickQuery: '' };
   }
   renderVals() {
     const THEMES = {
@@ -135,7 +199,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 6473px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 5902px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     // [name, group, example USD buyers, example best USD rate]. Names: Haveno's method list (data/payment-methods.json).
     const data = [
       ["Uphold", "Payment apps", 0, 0.00],
@@ -249,16 +313,32 @@ class Component extends DCLogic {
     let sections;
     if (q) {
       const hits = data.filter((d) => d[0].toLowerCase().indexOf(q) >= 0).sort(cmp);
-      sections = hits.length ? [{ title: hits.length + (hits.length === 1 ? ' match' : ' matches'), count: '', rows: hits.map(toRow) }] : [];
+      sections = hits.length ? [{ title: hits.length + (hits.length === 1 ? ' match' : ' matches'), count: '', rows: hits.map(toRow), isPick: false, isList: true }] : [];
     } else {
       // Top section comes only from live offers in the chosen currency, never from our own guesses.
       const live = data.filter((d) => d[2] > 0).sort(cmp);
       const rest = data.filter((d) => d[2] === 0).sort((a, b) => a[0].localeCompare(b[0]));
       sections = [
-        { title: 'Buyers paying in USD', count: String(live.length), rows: live.map(toRow) },
-        { title: 'All payment methods', count: String(rest.length), rows: rest.map(toRow) }
+        { title: 'Buyers paying in USD', count: String(live.length), rows: [], isPick: live.length > 0, isList: false },
+        { title: 'All payment methods', count: String(rest.length), rows: rest.map(toRow), isPick: false, isList: true }
       ];
     }
+
+    // The live card's method picker (owner #1, 8 Nov): every method with live offers in the chosen currency, in the chosen sort.
+    const liveSorted = data.filter((d) => d[2] > 0).sort(cmp);
+    const shownD = liveSorted.find((d) => d[0] === this.state.picked) || liveSorted[0];
+    const shown = toRow(shownD, 0);
+    const pickOpen = this.state.pickOpen == null ? this.props.methodPicker === 'open' : this.state.pickOpen;
+    const pq = this.state.pickQuery.trim().toLowerCase();
+    const pickRows = liveSorted.filter((d) => !pq || d[0].toLowerCase().indexOf(pq) >= 0).map((d) => {
+      const on = d[0] === shownD[0];
+      const r = toRow(d, 0);
+      return { name: d[0], icon: r.icon, pre: r.pre, rate: r.rate, n: String(d[2]), unit: d[2] === 1 ? ' offer' : ' offers',
+        ariaSel: on ? 'true' : 'false',
+        tileStyle: 'display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink); background: ' + (on ? 'var(--surface);' : 'var(--surface-raised);'),
+        style: 'display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 10px 12px; box-sizing: border-box; border-radius: 12px; font-family: inherit; text-align: left; color: var(--ink); cursor: pointer; flex-shrink: 0; ' + (on ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 2px solid transparent; background: transparent;'),
+        pick: () => this.setState({ picked: d[0], pickOpen: false, pickQuery: '' }) };
+    });
     const sortDefs = [['buyers', 'Most buyers'], ['rate', 'Best rate'], ['az', 'A–Z']];
     const sorts = sortDefs.map(([id, label]) => ({
       label,
@@ -272,6 +352,17 @@ class Component extends DCLogic {
     const hs = { methods: String(liveAll.length), people: String(liveAll.reduce((n, d) => n + d[2], 0)), best: '$' + liveAll.map((d) => d[3]).reduce((a, b) => Math.max(a, b)).toFixed(2) };
     return { rootStyle, hs,
       sections, sorts, query,
+      shown, pickOpen, pickRows,
+      pickExpanded: pickOpen ? 'true' : 'false',
+      pickChevron: pickOpen ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6',
+      pickState: pickOpen ? 'open' : 'closed',
+      pickSearch: liveSorted.length > 8,
+      pickTotal: String(liveSorted.length),
+      pickQuery: this.state.pickQuery,
+      pickNone: pickRows.length === 0,
+      openPicker: () => this.setState({ pickOpen: true }),
+      closePicker: () => this.setState({ pickOpen: false, pickQuery: '' }),
+      onPickQuery: (e) => this.setState({ pickQuery: e.target.value }),
       total: data.length,
       empty: !!q && sections.length === 0,
       onQuery: (e) => this.setState({ query: e.target.value })
