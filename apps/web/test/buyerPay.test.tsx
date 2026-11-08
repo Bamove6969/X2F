@@ -527,6 +527,14 @@ describe('buyer cancel (spec 2.3; owner G56, g67)', () => {
     expect(calls).toEqual([]);
   });
 
+  it('names the trade amount, never the escrow with the poster\'s 1% fee in it (design proto review P2, board CancelRequest buyer-confirms)', async () => {
+    // The seller posted, so the escrow holds 1.25 + 0.0125 XMR; the buyer has only ever seen 1.250000.
+    mount(props({ view: tradeView({ ...SECURED, receivedAtomic: '1262500000000', fee: { atomic: '12500000000' } }) }));
+    await click(byText('Cancel trade', 'button'));
+    expect(sheet()!.textContent).toContain('The 1.250000 XMR goes back to satoshi_ghost');
+    expect(sheet()!.textContent).not.toContain('1.262500');
+  });
+
   it('before "I\'ve paid", the sheet\'s Cancel trade re-reads the trade, posts buyer-cancel and then starts the refund (trade.cancel)', async () => {
     answer = (b) => ({ status: 200, json: b.type ? tradeView({ state: 'settling', settling: 'buyer-cancel' }) : tradeView(SECURED) });
     mount(props({ view: tradeView(SECURED) }));
