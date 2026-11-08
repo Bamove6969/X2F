@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
-import { KEY_EXPIRED, KEY_REVOKED, LOGIN_NAME_SET, SECURITY_KEY_LIMIT, STEP_EXPIRED, holdSentence, isExpired, localTime, refusalText, waitSentence } from '../src/screens/auth/refusals.js';
+import { KEY_EXPIRED, KEY_REVOKED, LOGIN_NAME_SET, SECURITY_KEY_LIMIT, STEP_EXPIRED, holdSentence, isExpired, utcTime, refusalText, waitSentence } from '../src/screens/auth/refusals.js';
 
 const NOW = new Date('2026-10-26T15:00:00Z');
 const FALLBACK = 'Could not do that. Try again.';
@@ -16,7 +16,7 @@ describe('waitSentence', () => {
   });
 
   it('gives a clock time for a longer wait (the TOTP backup daily cap)', () => {
-    expect(waitSentence(9 * 3600, NOW)).toBe(`Too many tries. Try again after ${localTime(new Date('2026-10-27T00:00:00Z'))}.`);
+    expect(waitSentence(9 * 3600, NOW)).toBe(`Too many tries. Try again after ${utcTime(new Date('2026-10-27T00:00:00Z'))}.`);
   });
 
   it('a missing wait reads as a minute, never "in NaN"', () => {
@@ -27,7 +27,7 @@ describe('waitSentence', () => {
 describe('holdSentence', () => {
   it('names the local time the hold ends, what still works and what ends it (Plan 2 Task 17)', () => {
     const t = holdSentence('2026-10-27T15:00:00Z');
-    expect(t).toContain(`wait until ${localTime(new Date('2026-10-27T15:00:00Z'))}.`);
+    expect(t).toContain(`wait until ${utcTime(new Date('2026-10-27T15:00:00Z'))}.`);
     expect(t).toContain('Trades already open can still be finished.');
     // Hold model v3 (owner 2 Nov 2026) and Q81 (6 Nov): a passkey, security key or PGP key held
     // before ends the hold; an authenticator code does not.

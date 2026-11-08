@@ -66,12 +66,26 @@ export interface TradeView {
    */
   finalAlertSeenAt: string | null;
   settleBy: string | null;
+  /**
+   * When the moderator's watcher reported that a buyer or seller says their side of the
+   * settlement is done (Task 9 I/O, lead decision b): from then on the trade waits for the network
+   * to show the sweep, and the settle window no longer reverts it. The claim time only, for both
+   * traders; nothing else about the moderator. `settleBy` is unchanged (a dispute stays open after it).
+   * Null outside `settling`: an escalation from `settling` leaves the claim on the trade, and it is
+   * not live there (plan Revision 2026-10-29), so the view never sends it (lead decision M5).
+   */
+  releaseClaimedAt: string | null;
   pausedAt: string | null;
   closedAt: string | null;
   /** The seller's "Confirm cancel" after a buyer-cancel refund (owner 2026-10-29); null until then. */
   cancelConfirmedAt: string | null;
   /** When the seller's Confirm cancel became available; the trade closes by itself 48 h later (owner 2026-10-29). */
   cancelConfirmableAt: string | null;
+  /**
+   * When the seller first nudged the buyer after the escrow was secured (owner G2, g66; migration
+   * 119); null = not yet. The seller's refund stays locked until it is set and the 90 minutes are over.
+   */
+  sellerNudgedAt: string | null;
   nextDeadline: string | null;
   serverNow: string;
   /**
@@ -147,10 +161,12 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     finalAlertAt: iso(t.finalAlertAt),
     finalAlertSeenAt: role === 'buyer' ? iso(ctx.finalAlertSeenAt) : null,
     settleBy: iso(t.settleBy),
+    releaseClaimedAt: t.state === 'settling' ? iso(t.releaseClaimedAt) : null,
     pausedAt: iso(t.pausedAt),
     closedAt: iso(t.closedAt),
     cancelConfirmedAt: iso(t.cancelConfirmedAt),
     cancelConfirmableAt: iso(t.cancelConfirmableAt),
+    sellerNudgedAt: iso(t.sellerNudgedAt),
     nextDeadline: iso(nextDeadline(t)),
     serverNow: serverNow.toISOString(),
     counterpartyProblem: ctx.counterpartyProblem ?? false,

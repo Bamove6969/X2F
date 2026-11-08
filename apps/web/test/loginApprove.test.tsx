@@ -74,6 +74,8 @@ describe('the new device (ApproveOnDevice)', () => {
     });
     await settle();
     expect(part(host, 'approve-in')).not.toBeNull();
+    // LoginApprove board (design 7 Nov): this device is named as one of the person's devices now.
+    expect(part(host, 'approve-now-yours')!.textContent).toMatch(/ is now one of your devices\.$/);
     expect(onLoggedIn).not.toHaveBeenCalled();
     click(part(host, 'approve-continue'));
     expect(onLoggedIn).toHaveBeenCalledOnce();

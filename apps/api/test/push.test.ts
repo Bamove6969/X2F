@@ -620,7 +620,9 @@ describe('recordFinalAlert (request-refund; wired in by Task 6/10)', () => {
     expect(await recordFinalAlert(app, CODE, t.id)).toBe(false);
   });
 
-  it.todo('Task 10: the API records final_alert_delivered from recordFinalAlert on request-refund and reports it to moderation');
+  // Task 10 (done): recordFinalAlert's answer is NOT a delivery proof (Revision 2026-10-25); only the
+  // buyer's seen-receipt sets final_alert_delivered, and the internal watch list hands moderation
+  // final_alert_seen_at only once it is true (test/watchReports.test.ts).
 });
 
 describe('privacy', () => {

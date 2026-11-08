@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { feeFor } from '@x2f/core';
-import { escrowPlan, payoutsFor, type SettleKind } from '../src/index.js';
+import { escrowPlan, payoutsFor, sweepMinimums, type AttestedTerms, type RulingKind, type SettleKind } from '../src/index.js';
 
 const BUYER = 'buyer-payout-address';
 const SELLER = 'seller-refund-address';
@@ -11,7 +11,7 @@ const FEE_AMOUNT = 12_500_000_000n; // 0.0125 XMR
 const KINDS: SettleKind[] = ['release', 'mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'];
 const REFUNDS: SettleKind[] = ['mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'];
 
-function args(kind: SettleKind, poster: 'seller' | 'buyer', balanceAtomic: bigint, amountAtomic = AMOUNT) {
+function args(kind: SettleKind | RulingKind, poster: 'seller' | 'buyer', balanceAtomic: bigint, amountAtomic = AMOUNT) {
   const plan = escrowPlan({ amountAtomic, poster });
   return {
     kind,
@@ -165,5 +165,81 @@ describe('payoutsFor: inconsistent inputs fail closed', () => {
 
   test('an empty address', () => {
     expect(() => payoutsFor({ ...args('auto-refund', 'buyer', AMOUNT), sellerRefund: '' })).toThrow(RangeError);
+  });
+});
+
+// Plan 4 Task 15, Revision 2026-10-29c "Fees on settled disputes": a settled dispute pays the 1%,
+// the poster pays. The moderator builds these sets; each trader's app co-signs only its own exactly.
+describe('payoutsFor: dispute rulings (moderator-built)', () => {
+  test('dispute-buyer is the release: the buyer first, then the exact fee, any surplus to the seller', () => {
+    for (const poster of ['seller', 'buyer'] as const) {
+      const funds = escrowPlan({ amountAtomic: AMOUNT, poster }).sellerFundsAtomic;
+      expect(payoutsFor(args('dispute-buyer', poster, funds + 7n))).toEqual(payoutsFor(args('release', poster, funds + 7n)));
+    }
+  });
+
+  test('dispute-seller, poster seller: the seller gets the balance less the fee, and the fee wallet exactly the fee', () => {
+    expect(payoutsFor(args('dispute-seller', 'seller', AMOUNT + FEE_AMOUNT))).toEqual([
+      { address: SELLER, amountAtomic: AMOUNT },
+      { address: FEE, amountAtomic: FEE_AMOUNT },
+    ]);
+    // A surplus stays with the seller; the fee is never more than feeFor(amount).
+    expect(payoutsFor(args('dispute-seller', 'seller', AMOUNT + FEE_AMOUNT + 5n))).toEqual([
+      { address: SELLER, amountAtomic: AMOUNT + 5n },
+      { address: FEE, amountAtomic: FEE_AMOUNT },
+    ]);
+  });
+
+  test('dispute-seller, poster buyer: no fee in the escrow, the whole balance to the seller (the poster owes the fee, Task 12)', () => {
+    expect(payoutsFor(args('dispute-seller', 'buyer', AMOUNT))).toEqual([{ address: SELLER, amountAtomic: AMOUNT }]);
+  });
+
+  test('dispute-seller, poster seller, with no more than the fee in the escrow: refused', () => {
+    expect(() => payoutsFor(args('dispute-seller', 'seller', FEE_AMOUNT))).toThrow(RangeError);
+  });
+});
+
+describe('sweepMinimums: what a sweep shown only through an import must provably pay (review I1)', () => {
+  const terms = (poster: 'seller' | 'buyer', take = AMOUNT): AttestedTerms => ({
+    deal: { poster, takeAmountAtomic: take.toString(), currency: 'EUR', centsPerXmr: '15000', maxFiatCents: '100000' },
+    buyerPayout: BUYER,
+    sellerRefund: SELLER,
+  });
+
+  test('release: at least the take-time buyer payout (fee off it on a buyer ad) and the take-time fee, to the signed addresses', () => {
+    expect(sweepMinimums({ kind: 'release', terms: terms('seller'), feeWallet: FEE, sweptAtomic: 5n * AMOUNT })).toEqual([
+      { address: BUYER, amountAtomic: AMOUNT },
+      { address: FEE, amountAtomic: FEE_AMOUNT },
+    ]);
+    expect(sweepMinimums({ kind: 'release', terms: terms('buyer'), feeWallet: FEE, sweptAtomic: AMOUNT })).toEqual([
+      { address: BUYER, amountAtomic: AMOUNT - FEE_AMOUNT },
+      { address: FEE, amountAtomic: FEE_AMOUNT },
+    ]);
+  });
+
+  test('a grown release only pays more: an honest one always meets the minimums', () => {
+    for (const poster of ['seller', 'buyer'] as const) {
+      const min = sweepMinimums({ kind: 'release', terms: terms(poster), feeWallet: FEE, sweptAtomic: 0n })!;
+      const grown = payoutsFor(args('release', poster, 3n * AMOUNT, 2n * AMOUNT));
+      for (const m of min) expect(grown.find((g) => g.address === m.address)!.amountAtomic).toBeGreaterThanOrEqual(m.amountAtomic);
+    }
+  });
+
+  test('a seller-buyer refund (lapse, mutual cancel): everything the sweep spent, to the seller', () => {
+    for (const kind of ['lapse-refund', 'mutual-cancel'] as SettleKind[]) {
+      expect(sweepMinimums({ kind, terms: terms('seller'), feeWallet: FEE, sweptAtomic: 777n })).toEqual([{ address: SELLER, amountAtomic: 777n }]);
+    }
+  });
+
+  test('a kind the moderator co-signs is never shown through an import: null', () => {
+    for (const kind of ['auto-refund', 'buyer-cancel'] as SettleKind[]) {
+      expect(sweepMinimums({ kind, terms: terms('seller'), feeWallet: FEE, sweptAtomic: 777n })).toBeNull();
+    }
+  });
+
+  test('bad input fails closed', () => {
+    expect(() => sweepMinimums({ kind: 'release', terms: { ...terms('seller'), buyerPayout: FEE }, feeWallet: FEE, sweptAtomic: 1n })).toThrow(RangeError);
+    expect(() => sweepMinimums({ kind: 'mutual-cancel', terms: terms('seller'), feeWallet: FEE, sweptAtomic: 0n })).toThrow(RangeError);
+    expect(() => sweepMinimums({ kind: 'nope' as SettleKind, terms: terms('seller'), feeWallet: FEE, sweptAtomic: 1n })).toThrow(RangeError);
   });
 });

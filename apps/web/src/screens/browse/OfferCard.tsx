@@ -66,12 +66,16 @@ function posterLine(offer: Offer, now: Date): string {
 }
 
 /**
- * C12b: the trader's opt-in volume line. X is a step the trader has traded MORE than (owner
- * 2026-11-03: exactly $10,000.00 shows nothing, $10,000.01 shows $10,000+). Owner: "along the lines of
- * 'Over $90,000+'"; the exact words are Design's. COPY-UNSIGNED
+ * Owner Q63 (6 Nov): the trader's opt-in volume line, in XMR. X is a step the trader has traded MORE
+ * than (owner 2026-11-03). Owner Q64/p4-1: one more line per site with verified imported volume, in
+ * US dollars ("$X+ on <site>, verified"). COPY-UNSIGNED, DESIGNER-REVIEW (design words "the XMR line").
  */
-function tradedLine(usd: number): string {
-  return `$${usd.toLocaleString('en-US')}+ in trades to date`;
+function tradedLine(xmr: number): string {
+  return `${xmr.toLocaleString('en-US')}+ XMR traded to date`;
+}
+
+function importedLine(l: { site: string; overUsd: number }): string {
+  return `$${l.overUsd.toLocaleString('en-US')}+ on ${l.site}, verified`;
 }
 
 function marginLine(offer: Offer, currency: string, copy: BrowseCopy, market: bigint | null): { text: string; favourable: boolean } | null {
@@ -214,7 +218,12 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
             <span data-username>{name}</span>
           </span>
           <span className="x2f-offer__sub">{posterLine(offer, now)}</span>
-          {offer.poster.tradedOverUsd !== null ? <span className="x2f-offer__sub">{tradedLine(offer.poster.tradedOverUsd)}</span> : null}
+          {offer.poster.tradedOverXmr !== null ? <span className="x2f-offer__sub">{tradedLine(offer.poster.tradedOverXmr)}</span> : null}
+          {offer.poster.imported.map((l) => (
+            <span key={l.site} className="x2f-offer__sub" data-part="imported-line">
+              {importedLine(l)}
+            </span>
+          ))}
           <Badges offer={offer} />
         </div>
         {!closed && !offer.poster.online ? (

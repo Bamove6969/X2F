@@ -8,6 +8,7 @@ import { REVIEW_DETACH_GRANULARITY, detachReviews, eraseOverturnedReviews, erase
 import { applyEvent, loadTradeRow } from '../src/trades/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
+import { appealDirect, publishRuling } from './helpers/disputes.js';
 
 // Plan 5 Task 3: reviews (spec 5.1; no blind reveal since the owner's answer of 2026-11-02: a review
 // shows as soon as it is submitted), and Skip review (owner 2026-11-01), real Postgres. The gate on the take,
@@ -463,6 +464,30 @@ describe('an overturned trade loses its reviews (C12, owner 2026-11-02)', () => 
   const counts = async (code: string) => ({
     reviews: (await deps.db.query('select 1 from reviews where trade_code = $1', [code])).rowCount,
     skips: (await deps.db.query('select 1 from review_skips where trade_code = $1', [code])).rowCount,
+  });
+
+  it("Plan 4's own ruling path: saveDispute erases on an overturn in the ruling's transaction, keeps on a decision that stands (NEEDS_P4_OVERTURN_ERASES_REVIEWS)", async () => {
+    const run = async (round2: 'release-to-buyer' | 'refund-to-seller') => {
+      const { seller, buyer, t } = await tradeIn('released');
+      await jump(new Date(START.getTime() + DAY), buyer, seller);
+      expect((await review(seller, t.code)).statusCode).toBe(201);
+      expect((await skip(buyer, t.code)).statusCode).toBe(204);
+      await applyEvent(deps, t.code, { type: 'escalate' }, 'system');
+      await publishRuling(deps, t.code, { outcome: 'release-to-buyer' });
+      await appealDirect(deps, t.code, 'seller');
+      expect(await counts(t.code)).toEqual({ reviews: 1, skips: 1 });
+      const d = await publishRuling(deps, t.code, { outcome: round2 });
+      expect(d.status === 'final' || d.status === 'closed').toBe(true);
+      return { seller, buyer, t, d };
+    };
+    const over = await run('refund-to-seller');
+    expect(over.d.overturned).toBe(true);
+    expect(await counts(over.t.code)).toEqual({ reviews: 0, skips: 0 });
+    expect(await reviewableSince(deps.db, over.t.code)).toBeNull();
+    expect(refusal(await review(over.buyer, over.t.code))).toEqual({ status: 409, error: 'not-reviewable' });
+    const stands = await run('release-to-buyer');
+    expect(stands.d.overturned).toBe(false);
+    expect(await counts(stands.t.code)).toEqual({ reviews: 1, skips: 1 });
   });
 
   it('a dispute that ends like a normal trade ("Decision stands") keeps the reviews and the skip', async () => {

@@ -47,7 +47,11 @@ export async function seedOffer(deps: Pick<Deps, 'db' | 'clock'>, posterId: stri
  */
 export async function seedTrade(
   deps: Pick<Deps, 'db' | 'clock'>,
-  a: { sellerId: string; buyerId: string; poster: 'seller' | 'buyer'; amountAtomic?: bigint; offerId?: string; methodId?: string; usdCents?: bigint } & Partial<TradeSides>,
+  a: {
+    sellerId: string; buyerId: string; poster: 'seller' | 'buyer'; amountAtomic?: bigint; offerId?: string; methodId?: string; usdCents?: bigint;
+    /** The offer's fiat limits in cents (default 1,000 to 100,000); a test of large or tiny amounts widens them. */
+    minFiatCents?: bigint; maxFiatCents?: bigint;
+  } & Partial<TradeSides>,
 ): Promise<SeededTrade> {
   const offerId = a.offerId ?? (await seedOffer(deps, a.poster === 'seller' ? a.sellerId : a.buyerId, a.poster));
   const trade = newTrade(
@@ -61,8 +65,8 @@ export async function seedTrade(
       amountAtomic: a.amountAtomic ?? AMOUNT,
       lockedRate: RATE,
       confirmWindowMin: 120,
-      minFiatCents: 1_000n,
-      maxFiatCents: 100_000n,
+      minFiatCents: a.minFiatCents ?? 1_000n,
+      maxFiatCents: a.maxFiatCents ?? 100_000n,
     },
     deps.clock(),
   );
@@ -73,6 +77,15 @@ export async function seedTrade(
   };
   await insertTrade(deps.db, trade, sides, a.usdCents ?? null);
   return { code: trade.code, trade, sides };
+}
+
+/**
+ * Owner G2 / g66: the seller's refund needs at least one nudge since the escrow was secured. Tests
+ * that are not about the nudge record one directly (the nudge route's own write is covered in
+ * nudge.test.ts), at the trade's secured_at.
+ */
+export async function markSellerNudged(deps: Pick<Deps, 'db'>, code: string): Promise<void> {
+  await deps.db.query('update trades set seller_nudged_at = secured_at where code = $1 and secured_at is not null', [code]);
 }
 
 /** The events (and who sends them) that move a fresh trade along the happy path, one state at a time. */

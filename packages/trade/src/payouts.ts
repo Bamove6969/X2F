@@ -11,18 +11,31 @@
  * funded amount within the offer's limits (the state machine does that, so the
  * amount here is already the grown one). Whatever is left above
  * sellerFundsAtomic (dust, above the offer maximum, or after "I've paid") goes
- * back to the seller. Every refund or cancel pays everything to the seller,
- * which is also all the moderator service may ever sign (spec 3.3).
+ * back to the seller. Every refund or cancel pays everything to the seller.
+ * A moderator's ruling pays by the `dispute-buyer` / `dispute-seller` sets
+ * (Plan 4 Task 15, Revision 2026-10-29c: the poster pays the 1% fee).
  */
 import type { Payout } from '@x2f/escrow';
+import type { AttestedTerms } from './attestation.js';
 import { escrowPlan } from './money.js';
 
 export type SettleKind = 'release' | 'mutual-cancel' | 'buyer-cancel' | 'auto-refund' | 'lapse-refund';
 
 export const SETTLE_KINDS: readonly SettleKind[] = ['release', 'mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'];
 
+/**
+ * A moderator-built set for a published ruling (Plan 4 Tasks 13-15, Revision 2026-10-29c "Fees on
+ * settled disputes": a settled dispute pays the 1%, the poster pays):
+ * - 'dispute-buyer': the release (buyer first, then the exact fee, any surplus to the seller);
+ * - 'dispute-seller': poster seller, the seller gets the balance less the fee and the fee wallet
+ *   exactly the fee; poster buyer (no fee in the escrow), the whole balance to the seller (the poster
+ *   still owes the fee, Plan 4 Task 12's fees_owed).
+ * Kept apart from SettleKind: no trader route settles these, only the moderator builds them.
+ */
+export type RulingKind = 'dispute-buyer' | 'dispute-seller';
+
 export interface PayoutFacts {
-  kind: SettleKind;
+  kind: SettleKind | RulingKind;
   amountAtomic: bigint;
   feeAtomic: bigint;
   poster: 'seller' | 'buyer';
@@ -53,7 +66,8 @@ export function payoutsFor(f: PayoutFacts): Payout[] {
   const balance = f.balanceAtomic;
 
   switch (f.kind) {
-    case 'release': {
+    case 'release':
+    case 'dispute-buyer': {
       if (balance < f.sellerFundsAtomic) throw new RangeError('underfunded');
       const surplus = balance - f.sellerFundsAtomic;
       const toBuyer = f.poster === 'seller' ? f.amountAtomic : f.amountAtomic - f.feeAtomic;
@@ -69,6 +83,60 @@ export function payoutsFor(f: PayoutFacts): Payout[] {
     case 'lapse-refund':
       // Every refund: the whole balance, surplus included, to the seller's signed refund address.
       return out([{ address: f.sellerRefund, amountAtomic: balance }]);
+    case 'dispute-seller': {
+      if (f.poster === 'buyer') return out([{ address: f.sellerRefund, amountAtomic: balance }]);
+      if (balance <= f.feeAtomic) throw new RangeError('underfunded');
+      return out([
+        { address: f.sellerRefund, amountAtomic: balance - f.feeAtomic },
+        { address: f.feeWallet, amountAtomic: f.feeAtomic },
+      ]);
+    }
+    default:
+      throw new RangeError('unknown settle kind');
+  }
+}
+
+/**
+ * Review I1 (2026-10-29): the least a sweep must provably pay (by its tx key) before the moderator's
+ * watcher counts a sweep that its wallet shows only through a party's imported multisig info, i.e. a
+ * seller–buyer settlement it did not co-sign. A trade party could otherwise forge partial key images
+ * so that the mod's wallet attributes some unrelated tx to the escrow. With this check such a "fake"
+ * sweep is harmless: the tx really paid the right parties at least what they are owed.
+ *
+ * From the moderator's OWN signed terms only (addresses and the take-time deal), never an API read,
+ * plus the sweep's spent amount as the mod's wallet records it:
+ * - `release`: the buyer's signed payout gets at least the take-time buyer amount (amount on a
+ *   seller's ad, amount − fee on a buyer's ad) and the fee wallet at least the take-time fee. A grown
+ *   trade (payoutsFor) only pays more, so an honest release always passes; the seller's surplus is
+ *   not checked (only the seller could lose it, and only by forging against itself).
+ * - `lapse-refund`, `mutual-cancel` (the seller–buyer refunds): the seller's signed refund address gets
+ *   everything the sweep spent.
+ * - `auto-refund`, `buyer-cancel`: the moderator co-signs these, so its own wallet shows them; null
+ *   (an import never shows one).
+ * Payout 0 bears the network fee: the check allows it to be short by exactly the tx's fee.
+ */
+export function sweepMinimums(a: { kind: SettleKind; terms: AttestedTerms; feeWallet: string; sweptAtomic: bigint }): Payout[] | null {
+  const { terms, feeWallet } = a;
+  const addresses = [terms.buyerPayout, terms.sellerRefund, feeWallet];
+  for (const x of addresses) if (typeof x !== 'string' || x === '') throw new RangeError('missing address');
+  if (new Set(addresses).size !== addresses.length) throw new RangeError('duplicate address');
+  switch (a.kind) {
+    case 'release': {
+      const take = BigInt(terms.deal.takeAmountAtomic);
+      const plan = escrowPlan({ amountAtomic: take, poster: terms.deal.poster });
+      const toBuyer = terms.deal.poster === 'seller' ? take : take - plan.feeAtomic;
+      return out([
+        { address: terms.buyerPayout, amountAtomic: toBuyer },
+        { address: feeWallet, amountAtomic: plan.feeAtomic },
+      ]);
+    }
+    case 'lapse-refund':
+    case 'mutual-cancel':
+      if (typeof a.sweptAtomic !== 'bigint' || a.sweptAtomic <= 0n) throw new RangeError('nothing-to-pay');
+      return [{ address: terms.sellerRefund, amountAtomic: a.sweptAtomic }];
+    case 'auto-refund':
+    case 'buyer-cancel':
+      return null;
     default:
       throw new RangeError('unknown settle kind');
   }

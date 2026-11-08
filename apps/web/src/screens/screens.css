@@ -21,6 +21,12 @@
   font-weight: var(--x2f-heading-weight);
 }
 
+/* The one lead line under a screen title (Feedback, News): body size, muted, no margin of its own. */
+.x2f-screen__lead {
+  margin: 0;
+  color: var(--x2f-ink-muted);
+}
+
 .x2f-screen__foot {
   margin: 0;
   text-align: center;
@@ -56,10 +62,12 @@
 .x2f-input {
   width: 100%;
   box-sizing: border-box;
-  padding: 12px var(--x2f-space-2);
+  /* Design build review 7 Nov: 48 px fields on surface-raised; a textarea is 96 px tall. */
+  min-height: 48px;
+  padding: 0 14px;
   border: 1px solid var(--x2f-line);
   border-radius: var(--x2f-radius-sm);
-  background: var(--x2f-surface);
+  background: var(--x2f-surface-raised);
   color: var(--x2f-ink);
   font-family: inherit;
   font-size: 16px;
@@ -68,6 +76,11 @@
 .x2f-input:focus-visible {
   outline: 2px solid var(--x2f-ink);
   outline-offset: 2px;
+}
+
+textarea.x2f-input {
+  min-height: 96px;
+  padding: 12px 14px;
 }
 
 .x2f-textarea {
@@ -301,4 +314,16 @@
   margin: 0;
   font-family: var(--x2f-font-mono);
   font-size: 18px;
+}
+
+/* Plan 4 Task 8: the owner's maintenance message keeps its line breaks. */
+[data-part='maintenance-message'] .x2f-outcome__body {
+  white-space: pre-line;
+}
+
+/* Maintenance: the owner's signature under the message (design 7 Nov). */
+[data-screen='maintenance'] .x2f-meta {
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
 }

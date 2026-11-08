@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { applyEvent } from '../src/trades/store.js';
 import { toTradeView, type TraderSummary } from '../src/trades/view.js';
-import { AMOUNT, fakeAddress, happyPath, seedTrade } from './helpers/trades.js';
+import { AMOUNT, driveTo, fakeAddress, happyPath, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
 let app: FastifyInstance;
@@ -120,6 +120,45 @@ describe('GET /v1/trades/:code', () => {
     }
   });
 
+  it('shows both traders when a release was claimed while settling, and nothing else about the mod (Task 9 I/O, open edge 2)', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    await driveTo(deps, trade, 'settling');
+    for (const who of [seller, buyer]) {
+      const v = (await who.browser.get(`/v1/trades/${trade.code}`)).json() as View;
+      expect(v).toMatchObject({ state: 'settling', releaseClaimedAt: null });
+      expect(v.settleBy).not.toBeNull();
+      expect(v.nextDeadline).toBe(v.settleBy);
+    }
+    const claimed = await applyEvent(deps, trade.code, { type: 'release-claimed' }, 'system');
+    for (const who of [seller, buyer]) {
+      const v = (await who.browser.get(`/v1/trades/${trade.code}`)).json() as View;
+      // The claim time only; the settle window stays as it was (a party may still dispute after it).
+      expect(v).toMatchObject({
+        state: 'settling', releaseClaimedAt: claimed.releaseClaimedAt!.toISOString(),
+        settleBy: claimed.settleBy!.toISOString(), nextDeadline: null,
+      });
+      expect(Object.keys(v).filter((k) => /claim|mod/i.test(k))).toEqual(['releaseClaimedAt']);
+    }
+  });
+
+  it('sends no claim outside settling: an escalated claimed trade shows releaseClaimedAt null (lead decision M5)', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    await driveTo(deps, trade, 'settling');
+    await applyEvent(deps, trade.code, { type: 'release-claimed' }, 'system');
+    const escalated = await applyEvent(deps, trade.code, { type: 'escalate' }, 'system');
+    expect(escalated.state).toBe('disputed');
+    // The stored claim survives the escalation; the view does not publish it.
+    expect(escalated.releaseClaimedAt).not.toBeNull();
+    for (const who of [seller, buyer]) {
+      const v = (await who.browser.get(`/v1/trades/${trade.code}`)).json() as View;
+      expect(v).toMatchObject({ state: 'disputed', releaseClaimedAt: null });
+    }
+  });
+
   it('answers 404 to a third trader and for an unknown code, 403 to staff, 401 without a session', async () => {
     const seller = await trader();
     const buyer = await trader();
@@ -139,7 +178,7 @@ describe('toTradeView', () => {
     const seller = await trader();
     const buyer = await trader();
     const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'buyer' });
-    const cp: TraderSummary = { displayName: 'x', completedTrades: 0, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], stage: 'starter', tradedOverUsd: null };
+    const cp: TraderSummary = { displayName: 'x', completedTrades: 0, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], stage: 'starter', tradedOverXmr: null, imported: [] };
     expect(() => toTradeView(trade, '00000000-0000-0000-0000-000000000000', new Date(), { counterparty: cp, profile: null, sellerWalletApp: null, finalAlertSeenAt: null })).toThrow();
     expect(toTradeView(trade, buyer.id, new Date(), { counterparty: cp, profile: null, sellerWalletApp: null, finalAlertSeenAt: null }).fee).toEqual({ atomic: FEE });
     expect('fee' in toTradeView(trade, seller.id, new Date(), { counterparty: cp, profile: null, sellerWalletApp: null, finalAlertSeenAt: null })).toBe(false);

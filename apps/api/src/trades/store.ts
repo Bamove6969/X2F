@@ -70,6 +70,7 @@ export interface TradeRow {
   settling: Trade['settling'];
   settle_from: TradeState | null;
   settle_by: Date | null;
+  release_claimed_at: Date | null;
   paused_at: Date | null;
   tx_hash: string | null;
   dispute_by: By | null;
@@ -79,6 +80,11 @@ export interface TradeRow {
   cancel_confirmed_at: Date | null;
   /** Migration 116: when the seller's Confirm cancel became available (the refund fully confirmed). */
   cancel_confirmable_at: Date | null;
+  /**
+   * Migration 119 (owner G2, g66): when the seller first nudged the buyer after the escrow was
+   * secured. Written only by the nudge route, never by `stateColumns` (no event changes it).
+   */
+  seller_nudged_at: Date | null;
   buyer_payout: string | null;
   seller_refund: string | null;
   seller_wallet_app: string | null;
@@ -137,12 +143,14 @@ export function rowToTrade(r: TradeRow): Trade {
     settling: r.settling,
     settleFrom: r.settle_from,
     settleBy: r.settle_by,
+    releaseClaimedAt: r.release_claimed_at ?? null,
     pausedAt: r.paused_at,
     txHash: r.tx_hash,
     dispute: r.dispute_by !== null && r.dispute_at !== null ? { by: r.dispute_by, at: r.dispute_at } : null,
     closedAt: r.closed_at,
     cancelConfirmedAt: r.cancel_confirmed_at,
     cancelConfirmableAt: r.cancel_confirmable_at,
+    sellerNudgedAt: r.seller_nudged_at ?? null,
   };
 }
 
@@ -177,6 +185,7 @@ function stateColumns(t: Trade): [string, unknown][] {
     ['settling', t.settling],
     ['settle_from', t.settleFrom],
     ['settle_by', t.settleBy],
+    ['release_claimed_at', t.releaseClaimedAt],
     ['paused_at', t.pausedAt],
     ['tx_hash', t.txHash],
     ['dispute_by', t.dispute?.by ?? null],
@@ -260,6 +269,7 @@ const STORED = {
   settled: { kind: 'value', txHash: 'value' },
   'open-dispute': {},
   escalate: {},
+  'release-claimed': {},
   pause: {},
   resume: {},
   'system-cancel': {},
@@ -362,7 +372,7 @@ export async function applyEvent(
       ]);
       // Task 27: a system escalation writes its dispute row with the trade (a trader's own
       // opening writes it through `within`, with the reason they gave).
-      if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, code, now);
+      if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, next, now);
       // C12b: a completed trade adds its take-time USD value to both sides' running totals, a settled
       // buyer cancel to the buyer's cancel count (idempotent per trade; traders/tradedTotal.ts).
       if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) await countTradeTotals(client, code);

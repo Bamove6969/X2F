@@ -19,14 +19,16 @@ import { getMethod } from '../methods/profiles.js';
  * a normal trade after the dispute, the feedback remains"). In today's code "overturned" is Plan 4's
  * `Dispute.overturned` (packages/staff/src/dispute.ts `resolveFinal`): an appeal's round-2 ruling
  * whose outcome differs from round 1's ("Decision overruled"), on any of the trade's disputes. It
- * is read from the trader-facing `dispute_rulings` rows (108), which Plan 4 writes when a ruling is
- * published (round 2 is final at once), so it needs no Plan 4 column. A dispute without an appeal,
+ * is read from Plan 4's `disputes.overturned` (207, set when the appeal round is final), and from
+ * the trader-facing `dispute_rulings` rows (108) as well. A dispute without an appeal,
  * or an appeal that keeps round 1's outcome ("Decision stands"), is a normal finish: not overturned.
  */
-export const overturnedSql = (t: string): string => `exists (
+export const overturnedSql = (t: string): string => `(exists (
+    select 1 from disputes d where d.code = ${t}.code and d.overturned is true)
+  or exists (
     select 1 from dispute_rulings r2
       join dispute_rulings r1 on r1.code = r2.code and r1.seq = r2.seq and r1.round = 1
-     where r2.code = ${t}.code and r2.round = 2 and r2.outcome <> r1.outcome)`;
+     where r2.code = ${t}.code and r2.round = 2 and r2.outcome <> r1.outcome))`;
 
 /**
  * When the trade (alias `t`) became reviewable, as SQL (timestamptz, null while it is not), P5-A3 and

@@ -136,6 +136,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'method-unavailable': 'a catalog fact (the method is off the list); Suggest a method covers it',
   'no-wallet': 'sends the person to Add a wallet',
   'trading-paused': 'maintenance, with its own message (Plan 3 emergency stop)',
+  // Plan 4 Tasks 5 and 8: staff-API answers (a security-key tap, the owner's banner limit) that
+  // traders never get, and maintenance, which the app shows as the Maintenance screen.
+  'banner-too-long': "an input check on the owner's banner (staff app only)",
+  maintenance: "the site is in maintenance: the Maintenance screen with the owner's message",
   'out-of-range': 'an input check on the amount',
   'ad-busy': 'someone else is taking the offer (try again)',
   'wallet-not-ready': 'pick another wallet (the wait is explained on Wallets)',
@@ -224,6 +228,11 @@ export const CANT_DO_TITLE = {
   devices: "That device can't be logged out from here",
   chat: "This chat can't open",
   team: "This can't be done on the team",
+  // Design build review 7 Nov: a title that says why (CantDoThat titles). COPY-UNSIGNED
+  teamOwnerOnly: 'Only the owner can do this',
+  // COPY-UNSIGNED: 'forbidden' is a role issue, not an owner-only one (lead's review, 7 Nov).
+  teamRole: "Your role doesn't include this",
+  teamWeak: 'Needs a Strong login',
   // COPY-UNSIGNED: the design review's title for shot 19 (too-many-members, now a server fallback).
   teamFull: 'Your team is full',
   // Hold model v3, owner G36: the 20-change cap. COPY-UNSIGNED
@@ -307,7 +316,7 @@ export function extendCantDoText(code: CantDoCode): string | null {
 export const NUDGE_TOO_SOON_CODE = 'too-soon' satisfies CantDoCode;
 
 /** 429 `too-soon` on a nudge (Plan 3 Task 26). */
-export const NUDGE_TOO_SOON = 'You can nudge once every 10 minutes.';
+export const NUDGE_TOO_SOON = 'You can nudge once every 15 minutes.';
 
 /** The block's refusal code (Plan 3 Task 37). */
 export const CANNOT_BLOCK_CODE = 'cannot-block' satisfies CantDoCode;
@@ -450,6 +459,15 @@ export const TOO_MANY_MEMBERS_CODE = 'too-many-members' satisfies CantDoCode;
  * member was refused on. `max` is the member limit the API sent with `too-many-members`.
  * COPY-UNSIGNED
  */
+/** The team refusal's title: who may do it, or why this device can't (design build review 7 Nov). */
+export function teamCantDoTitle(code: CantDoCode | string): string {
+  if (code === 'owner-only') return CANT_DO_TITLE.teamOwnerOnly;
+  if (code === 'forbidden') return CANT_DO_TITLE.teamRole;
+  if (code === 'weak-session') return CANT_DO_TITLE.teamWeak;
+  if (code === TOO_MANY_MEMBERS_CODE) return CANT_DO_TITLE.teamFull;
+  return CANT_DO_TITLE.team;
+}
+
 export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): string {
   switch (code) {
     case 'owner-only':

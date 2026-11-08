@@ -40,6 +40,8 @@ const TRADE: Record<`trade.${TradeEvent['type']}`, Schema> = {
   'trade.settled': { kind: 'id', txHash: 'hex64' },
   'trade.open-dispute': {},
   'trade.escalate': {},
+  // Plan 3 Task 9 I/O: the watcher saw a party's release claim (no tx hash, no amount).
+  'trade.release-claimed': {},
   'trade.pause': {},
   'trade.resume': {},
   'trade.system-cancel': {},
@@ -72,6 +74,8 @@ export const LOG_ACTIONS = {
   // Disputes and cases (Tasks 10–11).
   'dispute.opened': { reason: 'id', afterRefund: 'bool', seq: 'number' },
   'dispute.assigned': { staffId: 'uuid' },
+  // A switched-off or removed member's open case goes back to the queue (Task 7 x Task 10).
+  'dispute.unassigned': { staffId: 'uuid' },
   'case.opened': {},
   'chat.read': {},
   'chat.message-sent': {},

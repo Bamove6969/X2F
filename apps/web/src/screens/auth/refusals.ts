@@ -35,15 +35,15 @@ function refusalOf(e: unknown): Refusal | null {
   return null;
 }
 
-/** Design X5: the time as "6 Nov 2026, 15:00 UTC", the same for every viewer (was "Tue 3:05 PM", local). */
-export function localTime(at: Date): string {
+/** Design X5: the time as "6 Nov 2026, 15:00 UTC", the same for every viewer (was `localTime`, "Tue 3:05 PM"). */
+export function utcTime(at: Date): string {
   return utcDateTime(at);
 }
 
 /** "until 6 Nov 2026, 15:00 UTC" for `holdUntil` (an ISO time), or "for a day" if the server sent none. */
 function untilWords(holdUntil: string | null | undefined): string {
   const at = holdUntil ? new Date(holdUntil) : null;
-  return at === null || Number.isNaN(at.getTime()) ? 'for a day' : `until ${localTime(at)}`;
+  return at === null || Number.isNaN(at.getTime()) ? 'for a day' : `until ${utcTime(at)}`;
 }
 
 /**
@@ -91,7 +91,7 @@ export function waitSentence(seconds: number | undefined, now: Date = new Date()
     const min = Math.max(1, Math.ceil(s / 60));
     return `Too many tries. Try again in ${min} ${min === 1 ? 'minute' : 'minutes'}.`;
   }
-  return `Too many tries. Try again after ${localTime(new Date(now.getTime() + s * 1000))}.`;
+  return `Too many tries. Try again after ${utcTime(new Date(now.getTime() + s * 1000))}.`;
 }
 
 export const KEY_EXPIRED = 'That key has expired. Extend it in your PGP app, then paste it again.';

@@ -5,7 +5,7 @@
 // code; a named row holds the account id (so staff can reach out) and the refusal code. Both keep
 // only the day. Nothing about a submission is logged, its text least of all.
 //
-// Limits: FEEDBACK_FORM_DAILY sends per account per UTC day, counted in memory only (never stored,
+// Limits: FEEDBACK_FORM_DAILY sends per person (a team member on their own) per UTC day, counted in memory only (never stored,
 // so it links no row to anyone; a restart forgets it), and at most one send per
 // FEEDBACK_FORM_MIN_GAP_S seconds per account (owner 2026-11-02; no shared budget for everyone).
 // Over the daily count: 429 `slow-down` with `retryAfterSeconds` to the next UTC midnight; too soon
@@ -20,6 +20,7 @@
 // insertion order in system columns (xmin, ctid), so someone with database access can still line
 // an anonymous row up with other rows written around the same moment. The route does not touch the
 // session (touch: false), and the form promises only "we don't record who sent it".
+import { FEEDBACK_FORM_DAILY } from '@x2f/core';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
@@ -30,8 +31,8 @@ export const FEEDBACK_KINDS = ['complaint', 'feedback', 'recommendation'] as con
 export type FeedbackKind = (typeof FEEDBACK_KINDS)[number];
 
 export const FEEDBACK_TEXT_MAX = 2000;
-/** Sends per account per UTC day (in memory only). */
-export const FEEDBACK_FORM_DAILY = 5;
+/** Sends per person per UTC day (in memory only); the number lives in @x2f/core, shared with the web. */
+export { FEEDBACK_FORM_DAILY };
 /** Owner 2026-11-02: at most one send per this many seconds per account (in memory only); no shared cap. */
 export const FEEDBACK_FORM_MIN_GAP_S = 30;
 /** As P5-A19 (Task 4's platform feedback): rows are deleted after a year. */
@@ -182,15 +183,19 @@ export function feedbackFormRoutes(app: FastifyInstance): void {
       sent.clear();
     }
     const accountId = req.auth.accountId;
-    const count = sent.get(accountId) ?? 0;
+    // Owner Q69: a team member's sends are their own (the in-memory key only; a named row still holds
+    // the team account, which staff can reach).
+    const who = req.auth.memberId !== null ? `member:${req.auth.memberId}` : accountId;
+    const count = sent.get(who) ?? 0;
     if (count >= FEEDBACK_FORM_DAILY) {
       const midnight = Date.parse(`${today}T00:00:00Z`) + DAY_MS;
-      throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.max(1, Math.ceil((midnight - now.getTime()) / 1000)) });
+      // `limit: 'daily'` lets the form say why (owner Q67: the cap is there to stop spam).
+      throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.max(1, Math.ceil((midnight - now.getTime()) / 1000)), limit: 'daily' });
     }
     // Both taken synchronously, before any await, so a parallel burst from one account gets exactly
     // one 202; both given back if the insert fails: a database error never uses up a send or the gap.
-    const until = gap.take(accountId, now.getTime());
-    sent.set(accountId, count + 1);
+    const until = gap.take(who, now.getTime());
+    sent.set(who, count + 1);
     try {
       await req.server.deps.db.query('insert into feedback_form (kind, body, account_id, from_code, created_on) values ($1, $2, $3, $4, $5)', [
         f.kind,
@@ -200,8 +205,8 @@ export function feedbackFormRoutes(app: FastifyInstance): void {
         today,
       ]);
     } catch (e) {
-      if (day === today) sent.set(accountId, Math.max(0, (sent.get(accountId) ?? 1) - 1));
-      gap.give(accountId, until);
+      if (day === today) sent.set(who, Math.max(0, (sent.get(who) ?? 1) - 1));
+      gap.give(who, until);
       throw e;
     }
     return reply.code(202).send({});
