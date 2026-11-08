@@ -347,7 +347,7 @@ export function TradeFund({ view, escrow, serverClock, refresh }: TradeScreenPro
         <Grown view={view} />
         {!funded && received > 0n && received < funds ? (
           <p className="x2f-notice" role="status" data-short="">
-            Received {formatXmr(received)} of {formatXmrExact(funds)} XMR, send the rest
+            Received {formatXmrExact(received)} of {formatXmrExact(funds)} XMR, send the rest
           </p>
         ) : null}
         <GiftCard view={view} />

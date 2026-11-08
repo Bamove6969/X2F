@@ -600,6 +600,15 @@ describe('figures to send are exact, never truncated to 6 places (review kit rou
     expect(shownSend(host)).toBe(copied[0]);
   });
 
+  it('a received amount with digits past the 6th: "Received" is exact too, so the two figures never read the same', async () => {
+    desktop();
+    current = { ...odd, receivedAtomic: '610529700000' };
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL, receivedAtomic: 610_529_700_000n }));
+    const host = await room();
+    expect(host.textContent).toContain('Received 0.6105297 of 0.610529733574 XMR, send the rest');
+    expect(host.textContent).toContain('Send the rest: 0.000000033574 XMR');
+  });
+
   it('the rest with no device reading yet (address only) is exact too', async () => {
     current = { ...odd, receivedAtomic: '610529000000' };
     setTradeEscrowHook(() => verified({ deal: ODD_DEAL, receivedAtomic: null }));
