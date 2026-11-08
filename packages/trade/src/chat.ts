@@ -18,8 +18,10 @@ export const CHAT_BODY_MAX_BYTES = 16 * 1024;
 export const CHAT_TEXT_MAX_BYTES = 2000;
 /** Pre-trade chats are deleted after this many days without a message. */
 export const CHAT_PRETRADE_IDLE_DAYS = 7;
-/** A trade's chat is deleted this many days after the trade closes (never while disputed). */
-export const CHAT_AFTER_CLOSE_DAYS = 90;
+/** A trade's chat is deleted this many days after a trade that was never disputed closes (owner, 8 Nov). */
+export const CHAT_AFTER_CLOSE_DAYS = 30;
+/** A disputed trade's chat is deleted this many days after the dispute closes, never while one is open (owner, 8 Nov). */
+export const CHAT_AFTER_DISPUTE_DAYS = 90;
 
 const DAY_MS = 86_400_000;
 const B64 = /^[A-Za-z0-9+/]*={0,2}$/;
@@ -146,8 +148,12 @@ export interface ChatRetentionFacts {
   tradeLinked: boolean;
   /** When that trade closed, or null while it is open (or there is none). */
   tradeClosedAt: Date | null;
-  /** A dispute is open on the trade. */
+  /** A dispute is open on the trade: the trade is `disputed`, or any dispute is not yet `closed`. */
   disputeOpen: boolean;
+  /** The trade has ever had a dispute. */
+  disputed: boolean;
+  /** When the latest of its disputes closed (`disputes.closed_at`), or null if none has. */
+  disputeClosedAt: Date | null;
   createdAt: Date;
   lastMessageAt: Date | null;
 }
@@ -155,24 +161,42 @@ export interface ChatRetentionFacts {
 const valid = (d: Date | null): d is Date => d instanceof Date && Number.isFinite(d.getTime());
 
 /**
- * purgeChats' rule: never while a dispute is open; a trade's chat CHAT_AFTER_CLOSE_DAYS (90) days
- * after the trade closes, the trade's own retention from the plan (never while it is open); a
- * pre-trade chat CHAT_PRETRADE_IDLE_DAYS (7) days after its last message (or its creation).
+ * purgeChats' rule (owner, 8 Nov: "erased for good 30 days after the trade ends, or 90 days after a
+ * dispute closes"):
+ * - never while a dispute is open;
+ * - a trade that was never disputed: CHAT_AFTER_CLOSE_DAYS (30) days after it closes;
+ * - a trade that had a dispute: CHAT_AFTER_DISPUTE_DAYS (90) days after the dispute closes, so one
+ *   opened inside the 30 days stops the 30-day erasure;
+ * - a pre-trade chat: CHAT_PRETRADE_IDLE_DAYS (7) days after its last message (or its creation).
  *
- * For a linked chat `disputeOpen` is redundant with `tradeClosedAt === null`: the trade machine
- * nulls `closedAt` when a dispute opens and sets it at the ruling, so a disputed chat is kept by
- * the open-trade rule and its 90 days count from the ruling. The flag is kept as belt and braces
- * against a closedAt that was not nulled.
+ * "A dispute closes" is the machine's `closed` status, the only one with a `disputes.closed_at`. It
+ * comes after the appeal: `published` is the 48-hour appeal window (the coins have moved and the
+ * trade has closed, so the trade's own state cannot tell), `appealed` is round 2, and `final` and
+ * `complying` still wait for a payout or a payment. With several disputes on a trade (a later
+ * system escalation) the latest close counts, and all must be closed.
  *
- * Any invalid date, in either branch and whether or not that branch reads it, keeps the chat:
- * a corrupt row is never a reason to delete.
+ * The 90 days count from the later of the dispute's close and the trade's, so a chat can never be
+ * due the moment its trade closes. Any invalid date, in either branch and whether or not that
+ * branch reads it, keeps the chat, and so does a disputed trade with no close time: a corrupt row
+ * is never a reason to delete.
  */
 export function chatPurgeDue(c: ChatRetentionFacts, now: Date): boolean {
   const nullable = (d: Date | null): boolean => d === null || valid(d);
-  if (c.disputeOpen || !valid(now) || !valid(c.createdAt) || !nullable(c.lastMessageAt) || !nullable(c.tradeClosedAt)) return false;
+  if (
+    c.disputeOpen ||
+    !valid(now) ||
+    !valid(c.createdAt) ||
+    !nullable(c.lastMessageAt) ||
+    !nullable(c.tradeClosedAt) ||
+    !nullable(c.disputeClosedAt)
+  ) {
+    return false;
+  }
   if (c.tradeLinked) {
     if (!valid(c.tradeClosedAt)) return false;
-    return now.getTime() > c.tradeClosedAt.getTime() + CHAT_AFTER_CLOSE_DAYS * DAY_MS;
+    if (!c.disputed) return now.getTime() > c.tradeClosedAt.getTime() + CHAT_AFTER_CLOSE_DAYS * DAY_MS;
+    if (!valid(c.disputeClosedAt)) return false;
+    return now.getTime() > Math.max(c.disputeClosedAt.getTime(), c.tradeClosedAt.getTime()) + CHAT_AFTER_DISPUTE_DAYS * DAY_MS;
   }
   const last = c.lastMessageAt ?? c.createdAt;
   if (!valid(last)) return false;

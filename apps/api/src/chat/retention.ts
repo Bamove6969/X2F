@@ -5,8 +5,8 @@ import { PURGE_ROLE } from '../trades/purge.js';
 
 /**
  * Decides from a chat's facts whether it is due for deletion now. The default is @x2f/trade's
- * `chatPurgeDue` (90 days after the linked trade closes, never while disputed; 7 idle days before a
- * trade). Plan 7's self-delete plugs its per-side times in here without a schema change
+ * `chatPurgeDue` (30 days after an undisputed trade closes, 90 after a dispute closes, never while
+ * one is open; 7 idle days before a trade). Plan 7's self-delete plugs its per-side times in here without a schema change
  * (Revision 2026-10-28).
  */
 export type ChatPurgeRule = (facts: ChatRetentionFacts, now: Date) => boolean;
@@ -20,18 +20,32 @@ interface FactRow {
   last_message_at: Date | null;
   closed_at: Date | null;
   state: string | null;
+  dispute_by: string | null;
+  disputes: number;
+  disputes_open: number;
+  dispute_closed_at: Date | null;
 }
 
 const factsOf = (r: FactRow): ChatRetentionFacts => ({
   tradeLinked: r.trade_code !== null,
   tradeClosedAt: r.closed_at,
-  disputeOpen: r.state === 'disputed',
+  disputeOpen: r.state === 'disputed' || r.disputes_open > 0,
+  disputed: r.dispute_by !== null || r.disputes > 0,
+  disputeClosedAt: r.dispute_closed_at,
   createdAt: r.created_at,
   lastMessageAt: r.last_message_at,
 });
 
-const FACTS = `select c.code, c.trade_code, c.created_at, c.last_message_at, t.closed_at, t.state
-                 from chats c left join trades t on t.code = c.trade_code`;
+// `closed` is the machine's last status and the only one with a closed_at; every other status
+// counts as open, including `published` (the appeal window, on a trade that has already closed).
+const FACTS = `select c.code, c.trade_code, c.created_at, c.last_message_at, t.closed_at, t.state, t.dispute_by,
+                      d.total as disputes, d.still_open as disputes_open, d.last_closed as dispute_closed_at
+                 from chats c
+                 left join trades t on t.code = c.trade_code
+                 left join lateral (select count(*)::int as total,
+                                           (count(*) filter (where x.status <> 'closed'))::int as still_open,
+                                           max(x.closed_at) as last_closed
+                                      from disputes x where x.code = t.code) d on true`;
 
 /**
  * Deletes every chat the rule says is due (its identities, attestation and envelopes go with it,
@@ -74,10 +88,12 @@ async function deleteChats(db: pg.Pool, codes: string[], now: Date, due: ChatPur
         return 0;
       }
       await client.query(`set local role ${PURGE_ROLE}`);
-      // Checked again under the purge role: a chat whose trade went into dispute since it was read stays.
+      // Checked again under the purge role: a chat whose trade went into dispute since it was read stays,
+      // and so does one with any dispute not yet closed (120 grants the role just these two columns).
       const { rowCount } = await client.query(
         `delete from chats c where c.code = any($1)
-           and not exists (select 1 from trades t where t.code = c.trade_code and t.state = 'disputed')`,
+           and not exists (select 1 from trades t where t.code = c.trade_code and t.state = 'disputed')
+           and not exists (select 1 from disputes d where d.code = c.trade_code and d.status <> 'closed')`,
         [still],
       );
       await client.query('commit');
