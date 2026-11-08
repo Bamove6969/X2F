@@ -48,6 +48,13 @@ button.row:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--
   </header>
 
   <main style="flex-grow: 1; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 24px;">
+    <sc-if value="{{pwChanged}}" hint-placeholder-val="{{false}}">
+    <section role="status" aria-labelledby="st-pw" style="display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 32px 24px; box-sizing: border-box; text-align: center; border-radius: 16px; background: var(--surface);">
+      <span aria-hidden="true" style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: var(--surface-raised); color: var(--ink);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7.5 12h.01M12 12h.01M16.5 12h.01"/></svg></span>
+      <h2 id="st-pw" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">New password from <span class="mono" style="font-size: 20px; line-height: 30px; font-weight: 500; letter-spacing: 0; white-space: nowrap;">8 Nov 2026, 15:00 UTC</span></h2>
+      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Your old password works until then. If you didn&#39;t make this change, log in with it and cancel.</p>
+    </section>
+    </sc-if>
 
     <section aria-labelledby="st-acc" style="display: flex; flex-direction: column; gap: 8px;">
       <h2 id="st-acc" class="lbl">Account</h2>
@@ -238,6 +245,15 @@ button.row:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--
       </ul>
       <span style="color: var(--ink-muted);">Preview with the accountType tweak. Showing: {{accountTypeName}}</span>
     </aside>
+    <aside aria-label="Decided by the owner: changing the password on a username-and-password account" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (g64)</span>
+      <span style="font-weight: 600;">A username-and-password account has one login method: it can&#39;t remove it, but it can change it, and the change is held <span class="mono">24</span> h.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>The new password takes effect after <span class="mono">24</span> h; the old one keeps working until then, so the real owner can log in with it and cancel.</li>
+        <li>Drawn as the result card at the top of this screen (tweak <span class="mono">passwordChanged</span>): "New password from <span class="mono">8 Nov 2026, 15:00 UTC</span>" and one line. The Login methods row is unchanged.</li>
+        <li>Removing a login method on a team member is a team change and waits <span class="mono">24</span> h too.</li>
+      </ul>
+    </aside>
     <aside aria-label="Open for the owner: grouping of the switches" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
       <span style="font-weight: 600;">Which switches belong under Security vs a separate Privacy page? (design&#39;s draft grouping shown)</span>
@@ -250,7 +266,7 @@ button.row:hover{background:color-mix(in srgb, var(--surface-raised) 60%, var(--
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["trader","vendor"],"default":"trader"},"$preview":{"width":390,"height":2828}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["trader","vendor"],"default":"trader"},"passwordChanged":{"editor":"enum","options":["no","yes"],"default":"no"},"$preview":{"width":390,"height":3110}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { wait: false, seckey: false, one: false, nudges: true, volume: false }; }
   renderVals() {
@@ -260,7 +276,9 @@ class Component extends DCLogic {
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     // Board height = measured content height (night, fonts loaded). The vendor variant's longer words wrap one more line.
-    const H = this.props.accountType === 'vendor' ? 2846 : 2828;
+    const PW_H = 303; // measured height of the password-changed result card plus its gap
+    const pw = this.props.passwordChanged === 'yes';
+    const H = (this.props.accountType === 'vendor' ? 3128 : 3110) + (pw ? PW_H : 0);
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
     // Switch on = ink (selection is never orange). Same anatomy as Devices.
@@ -274,7 +292,7 @@ class Component extends DCLogic {
     const vendor = this.props.accountType === 'vendor';
     return {
       rootStyle,
-      isVendor: vendor, isTrader: !vendor,
+      isVendor: vendor, isTrader: !vendor, pwChanged: pw,
       accountTypeName: vendor ? 'vendor' : 'trader',
       typeMeta: vendor ? 'Vendor · posts offers and can have a team' : 'Trader · switch to Vendor to post offers',
       sessionH: vendor ? '12' : '4',

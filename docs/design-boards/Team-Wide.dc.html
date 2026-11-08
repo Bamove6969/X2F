@@ -244,12 +244,12 @@ class Component extends DCLogic {
     const s = this.state;
     const MAX = 3;
     // Owner, 2 Nov: per-member permissions (MemberPermissions) replace the two fixed roles. Same four presets and counts.
-    const TOTAL = 31;
+    const TOTAL = 34;
     const PRESETS = [
       { id: 'chat-only', label: 'Chat only', n: 2, desc: 'See trades and reply in trade chat.', sens: [] },
       { id: 'offers', label: 'Offers manager', n: 5, desc: 'Post, edit and pause offers, plus trade chat.', sens: ['posting offers', 'editing offers'] },
       { id: 'trades', label: 'Trade handler', n: 9, desc: 'Accept trades, confirm payment, cancel, disputes and chat.', sens: ['accepting trades', 'confirming payments'] },
-      { id: 'everything', label: 'Everything allowed', n: 31, desc: 'Every permission.', sens: ['posting, editing and deleting offers', 'accepting trades', 'confirming payments', 'releasing XMR'] }
+      { id: 'everything', label: 'Everything allowed', n: 34, desc: 'Every permission.', sens: ['posting, editing and deleting offers', 'accepting trades', 'confirming payments', 'releasing XMR'] }
     ];
     const presetOf = (id) => PRESETS.find((p) => p.id === id);
     const initials = (n) => { const p = n.split(/[_.\-\s]+/).filter(Boolean); return ((p.length > 1 ? p[0].charAt(0) + p[1].charAt(0) : n.slice(0, 2)) || '?').toUpperCase(); };

@@ -38,7 +38,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
       <div style="display: flex; flex-direction: column; gap: 4px; padding: 8px 4px 0;">
         <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Member types</h2>
-        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Switch a type on, then tick what desk_ana can do in it. A member can be in one type, several or all four.</p>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Switch a type on, then tick what desk_ana can do in it. A member can be in one type, several or all five.</p>
       </div>
 
       <sc-for list="{{types}}" as="t" hint-placeholder-count="4">
@@ -47,7 +47,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <h3 style="flex-grow: 1; min-width: 0; margin: 0; font-size: inherit; font-weight: inherit;">
               <button type="button" aria-expanded="{{t.expanded}}" aria-controls="{{t.panelId}}" onClick="{{t.toggleOpen}}" style="display: flex; align-items: center; gap: 10px; width: 100%; min-height: 64px; padding: 0 8px; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;">
                 <svg style="{{t.chevStyle}}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-                <span aria-hidden="true" style="{{t.tileStyle}}"><sc-if value="{{t.isChat}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg></sc-if><sc-if value="{{t.isOffers}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg></sc-if><sc-if value="{{t.isTrades}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg></sc-if><sc-if value="{{t.isRecords}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4"/><path d="M10 12h6M10 16h6"/></svg></sc-if></span>
+                <span aria-hidden="true" style="{{t.tileStyle}}"><sc-if value="{{t.isChat}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg></sc-if><sc-if value="{{t.isOffers}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg></sc-if><sc-if value="{{t.isTrades}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg></sc-if><sc-if value="{{t.isRecords}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4"/><path d="M10 12h6M10 16h6"/></svg></sc-if><sc-if value="{{t.isHolds}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></sc-if></span>
                 <span style="display: flex; flex-direction: column; min-width: 0;">
                   <span id="{{t.hid}}" style="{{t.nameStyle}}">{{t.name}}</span>
                   <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><sc-if value="{{t.isOff}}" hint-placeholder-val="{{false}}">Off · </sc-if><span style="{{t.countStyle}}">{{t.n}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{t.total}}</span> {{t.countWord}}</span>
@@ -60,6 +60,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <div id="{{t.panelId}}" style="display: flex; flex-direction: column; padding: 0 0 8px; border-top: 1px solid var(--surface-raised);">
               <sc-if value="{{t.isOff}}" hint-placeholder-val="{{false}}">
                 <p style="margin: 12px 20px 4px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Switch on {{t.name}} to use these. Your ticks are kept.</p>
+              </sc-if>
+              <sc-if value="{{t.hasDesc}}" hint-placeholder-val="{{false}}">
+                <p style="margin: 12px 20px 4px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{t.desc}}</p>
               </sc-if>
               <ul aria-labelledby="{{t.hid}}" style="margin: 0; padding: 4px 0 0; list-style: none;">
                 <sc-for list="{{t.rows}}" as="r" hint-placeholder-count="7">
@@ -91,6 +94,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
     <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
       <p style="display: flex; gap: 8px; margin: 0 0 8px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Saving needs your passkey, security key or PGP key. With just a username and password, the change waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h.</span></p>
+      <p style="display: flex; gap: 8px; margin: 0 0 8px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg><span>Members can&#39;t use a stronger login than the team lead&#39;s.</span></p>
       <sc-if value="{{hasNote}}" hint-placeholder-val="{{false}}">
         <div role="status" style="display: flex; gap: 10px; align-items: flex-start; margin: 0 0 8px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span style="font-size: 14px; line-height: 20px;">{{note}}</span></div>
       </sc-if>
@@ -132,27 +136,28 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
     <aside aria-label="Decided by the owner: Team permissions are granular: member types with checkboxes" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q16)</span><span style="font-weight: 600;">Team permissions are granular: member types with checkboxes</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Three or four member types. Each type has 7 to 10 checkboxes the owner ticks one by one.</li><li>A member can belong to several types, or all of them, with only some boxes ticked in each.</li><li>This replaced the four presets. The board is now redrawn to this model (7 Nov): four types, each with its own checkboxes.</li></ul></aside>
+<aside aria-label="Decided by the owner: holds and waiting changes are a permission group; members never out-login the lead" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (p4-8)</span><span style="font-weight: 600;">A fifth type, Holds and waiting changes, with three rights: see waiting changes, untick or cancel waiting changes, end a hold.</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Off by default for members; only the lead acts. A member without the right sees only that a hold is on (no list, no countdown).</li><li>The total becomes <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">34</span> (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">31</span> + <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span>) on Team, TeamRefusal and MemberApproval; Everything allowed is <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">34</span>.</li><li>Team members can&#39;t use a login method stronger than the team lead&#39;s (one line under the Save note).</li></ul></aside>
     <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>Types.</strong> Each type is a card with a disclosure header (64px): name, count, and a switch on the right. Switch on = desk_ana is in that type; the card opens to its checkboxes (44px rows, 22px boxes, ink accent). Switch off = the card closes and greys out. Its ticks are kept but disabled, and don&#39;t count, until the type is switched back on. Any card can still be opened to look. <strong>Sensitive.</strong> Release XMR carries a SENSITIVE chip. Ticking it asks first (owner rule, 2 Nov: sensitive permissions ask when turned on), then shows the caution callout under the row. Switching on a type that already has it ticked asks too. <strong>Count.</strong> The summary counts only the ticks in types that are on. Tweak <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">example</span>: offers-and-chat, everything, trades-with-release.</p>
-    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">COPY-UNSIGNED (design&#39;s proposal for the owner): the four type names (Chat, Offers, Trades, Records) and all 31 checkbox labels; "Member types"; "Switch a type on, then tick what desk_ana can do in it. A member can be in one type, several or all four."; the summary "In 2 of 4 types · 9 of 31 things allowed"; the counts "5 of 7 allowed" and "Off · 2 of 7 ticked"; "Switch on Records to use these. Your ticks are kept."; "They can send XMR from your escrow. Only for someone you trust fully."; "Never available to members: wallets, security, sessions, team settings, account type and deleting the account."; "With just a username and password, the change waits 24 h."; "Use my PGP key".</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">COPY-UNSIGNED (design&#39;s proposal for the owner): the four type names (Chat, Offers, Trades, Records) and all 34 checkbox labels; "Member types"; "Switch a type on, then tick what desk_ana can do in it. A member can be in one type, several or all five."; the summary "In 2 of 5 types · 9 of 34 things allowed"; the counts "5 of 7 allowed" and "Off · 2 of 7 ticked"; "Switch on Records to use these. Your ticks are kept."; "They can send XMR from your escrow. Only for someone you trust fully."; "Never available to members: wallets, security, sessions, team settings, account type and deleting the account."; "With just a username and password, the change waits 24 h."; "Use my PGP key"; the fifth type name "Holds and waiting changes" and its three labels; "Without these, desk_ana only sees that a hold is on."; "Members can&#39;t use a stronger login than the team lead&#39;s."</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"example":{"editor":"enum","options":["offers-and-chat","everything","trades-with-release"],"default":"offers-and-chat"},"$preview":{"width":390,"height":2429}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"example":{"editor":"enum","options":["offers-and-chat","everything","trades-with-release"],"default":"offers-and-chat"},"$preview":{"width":390,"height":2841}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.seed(props.example); }
   seed(ex) {
     // Owner decision Q16 (6 Nov): member types, each with its own checkboxes. Draft lists, design's proposal.
-    const all = { chat: ['cRead', 'cReply', 'cPay', 'cProof', 'cNudge', 'cNotes', 'cBlock'], offers: ['oSee', 'oToggle', 'oPrice', 'oBands', 'oPay', 'oCur', 'oPost', 'oDelete'], trades: ['tAccept', 'tDecline', 'tPaid', 'tGot', 'tRelease', 'tCancel', 'tDispute', 'tDReply', 'tFeedback'], records: ['rHist', 'rExport', 'rLog', 'rPayout', 'rReviews', 'rReply', 'rTickets'] };
+    const all = { chat: ['cRead', 'cReply', 'cPay', 'cProof', 'cNudge', 'cNotes', 'cBlock'], offers: ['oSee', 'oToggle', 'oPrice', 'oBands', 'oPay', 'oCur', 'oPost', 'oDelete'], trades: ['tAccept', 'tDecline', 'tPaid', 'tGot', 'tRelease', 'tCancel', 'tDispute', 'tDReply', 'tFeedback'], records: ['rHist', 'rExport', 'rLog', 'rPayout', 'rReviews', 'rReply', 'rTickets'], holds: ['hSee', 'hUntick', 'hEnd'] };
     let on, ticks;
     if (ex === 'everything') {
-      on = { chat: true, offers: true, trades: true, records: true };
+      on = { chat: true, offers: true, trades: true, records: true, holds: true };
       ticks = all;
     } else if (ex === 'trades-with-release') {
-      on = { chat: true, offers: false, trades: true, records: false };
-      ticks = { chat: ['cRead', 'cReply', 'cNudge'], offers: [], trades: ['tAccept', 'tDecline', 'tGot', 'tRelease', 'tDispute', 'tDReply'], records: [] };
+      on = { chat: true, offers: false, trades: true, records: false, holds: false };
+      ticks = { chat: ['cRead', 'cReply', 'cNudge'], offers: [], trades: ['tAccept', 'tDecline', 'tGot', 'tRelease', 'tDispute', 'tDReply'], records: [], holds: [] };
     } else {
-      on = { chat: true, offers: true, trades: false, records: false };
-      ticks = { chat: ['cRead', 'cReply', 'cPay', 'cProof', 'cNudge'], offers: ['oSee', 'oToggle', 'oPrice', 'oBands'], trades: [], records: ['rHist', 'rReviews'] };
+      on = { chat: true, offers: true, trades: false, records: false, holds: false };
+      ticks = { chat: ['cRead', 'cReply', 'cPay', 'cProof', 'cNudge'], offers: ['oSee', 'oToggle', 'oPrice', 'oBands'], trades: [], records: ['rHist', 'rReviews'], holds: [] };
     }
     return { on, ticks, open: Object.assign({}, on), saved: { on, ticks }, ask: null, note: '', verify: false };
   }
@@ -173,7 +178,9 @@ class Component extends DCLogic {
       { id: 'chat', name: 'Chat', boxes: [['cRead', 'Read trade chats'], ['cReply', 'Reply in trade chats'], ['cPay', 'Send payment details in chat'], ['cProof', 'Upload proof in chat'], ['cNudge', 'Nudge the other trader'], ['cNotes', 'See the trader’s profile notes'], ['cBlock', 'Block a trader']] },
       { id: 'offers', name: 'Offers', boxes: [['oSee', 'See all offers'], ['oToggle', 'Turn offers on or off'], ['oPrice', 'Edit prices'], ['oBands', 'Edit amount bands'], ['oPay', 'Edit payment types and instructions'], ['oCur', 'Edit currencies'], ['oPost', 'Post a new offer'], ['oDelete', 'Delete an offer']] },
       { id: 'trades', name: 'Trades', boxes: [['tAccept', 'Accept a trade'], ['tDecline', 'Decline a trade'], ['tPaid', 'Mark “I’ve paid”'], ['tGot', 'Confirm payment received'], ['tRelease', 'Release XMR', true], ['tCancel', 'Ask to cancel'], ['tDispute', 'Open a dispute'], ['tDReply', 'Reply in a dispute'], ['tFeedback', 'Leave feedback']] },
-      { id: 'records', name: 'Records', boxes: [['rHist', 'See trade history'], ['rExport', 'Export trade history'], ['rLog', 'See team activity log'], ['rPayout', 'See payout amounts'], ['rReviews', 'See reviews'], ['rReply', 'Reply to reviews'], ['rTickets', 'See support tickets']] }
+      { id: 'records', name: 'Records', boxes: [['rHist', 'See trade history'], ['rExport', 'Export trade history'], ['rLog', 'See team activity log'], ['rPayout', 'See payout amounts'], ['rReviews', 'See reviews'], ['rReply', 'Reply to reviews'], ['rTickets', 'See support tickets']] },
+      // Owner p4-8 (7 Nov): holds are a permission group, off for members by default; without it a member only sees that a hold is on.
+      { id: 'holds', name: 'Holds and waiting changes', desc: 'Without these, desk_ana only sees that a hold is on.', boxes: [['hSee', 'See waiting changes'], ['hUntick', 'Untick or cancel waiting changes'], ['hEnd', 'End a hold']] }
     ];
     const SENS = ['tRelease'];
     const total = TYPES.reduce((n, t) => n + t.boxes.length, 0);
@@ -224,7 +231,7 @@ class Component extends DCLogic {
         },
         track: swTrack(on), knob: swKnob(on),
         chevStyle: 'flex-shrink: 0; color: var(--ink-muted);' + (open ? ' transform: rotate(90deg);' : ''),
-        isChat: t.id === 'chat', isOffers: t.id === 'offers', isTrades: t.id === 'trades', isRecords: t.id === 'records',
+        isChat: t.id === 'chat', isHolds: t.id === 'holds', hasDesc: !!t.desc, desc: t.desc || '', isOffers: t.id === 'offers', isTrades: t.id === 'trades', isRecords: t.id === 'records',
         tileStyle: 'display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; ' + (on ? 'background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);' : 'background: var(--surface-raised); color: var(--ink-muted);'),
         nameStyle: 'font-size: 16px; line-height: 22px; font-weight: 600; color: ' + (on ? 'var(--ink);' : 'var(--ink-muted);'),
         // Off = greyed: no fill, faint border. On = surface card.
@@ -242,10 +249,10 @@ class Component extends DCLogic {
     // Board height = measured content height (night, fonts loaded): closed cards + each open card's rows,
     // + the off hint and the sensitive callout, + the saved note. Nothing clipped, no empty band.
     const ROW = 44, PANEL = 13, OFFHINT = 34, WARN = 74;
-    let H = 1730;
+    let H = 2142;
     types.forEach((t) => {
       if (!t.open) return;
-      H += PANEL + t.rows.length * ROW + (t.rows.length - 1) + (t.isOff ? OFFHINT : 0) + t.rows.filter((r) => r.warn).length * WARN;
+      H += PANEL + t.rows.length * ROW + (t.rows.length - 1) + (t.isOff ? OFFHINT : 0) + (t.hasDesc ? OFFHINT : 0) + t.rows.filter((r) => r.warn).length * WARN;
     });
     if (s.note) H += 58;
     H = Math.max(844, H);
