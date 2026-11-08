@@ -288,68 +288,64 @@ test.describe('SellQuote', () => {
   });
 });
 
-// The offer's bands carried over from the offers screen (owner 2026-11-08: "a reminder of what the
-// buyers bands (Ranges) are ... where it clips").
-const bands = (page: Page) => page.locator('section[aria-label="Price bands"]');
+// "This offer's bands" (BuyQuote board, canvas v142; owner 2026-11-08 #4, #11): the offer's bands
+// carried over from the offers screen, the amount's band ringed, live, and the markup switch.
+const bands = (page: Page) => page.locator('section[data-part="offer-bands"]');
 const marked = (page: Page) => bands(page).locator('[data-part="band"][aria-current="true"]');
 const clip = (page: Page) => bands(page).locator('[data-part="band-clip"]');
 
 test.describe("the offer's bands on the quote", () => {
-  test('from the offers screen to the quote: the same range and price, the band marked, and where it clips as the amount changes', async ({ page }) => {
+  test('from the offers screen to the quote: the same range, the band ringed live as the amount changes', async ({ page }) => {
     await stubApi(page, base);
     await page.goto(`/buy/${B.method.id}?currency=${B.currency}`);
     const offerCard = page.locator('article.x2f-offer').first();
     const range = (await offerCard.locator('.x2f-offer__range').innerText()).trim();
-    const price = (await offerCard.locator('.x2f-offer__margin').innerText()).trim();
     await offerCard.getByRole('button', { name: `Trade with ${B.offer.poster.displayName}` }).click();
     await expect(page).toHaveURL(new RegExp(`/buy/${B.method.id}/${B.offer.id}`));
 
-    // A small card right under "What you get".
+    // Right under "What you get".
     await expect(bands(page)).toBeVisible();
-    expect(await card(page).evaluate((el) => el.nextElementSibling?.getAttribute('aria-label'))).toBe('Price bands');
+    await expect(page.getByRole('heading', { name: "This offer's bands" })).toBeVisible();
+    expect(await card(page).evaluate((el) => el.nextElementSibling?.getAttribute('data-part'))).toBe('offer-bands');
     await expect(bands(page).locator('[data-part="band-range"]')).toHaveText([range]);
-    await expect(bands(page).locator('[data-part="band-price"]')).toHaveText([price]);
+    await expect(bands(page).locator('[data-part="band-rate"]')).toHaveText(['$330.00']);
     await expect(marked(page)).toHaveCount(0);
-    await expect(clip(page)).toHaveText('$50 – $1,500 per trade.');
+    // One band: the rate never changes with the amount, so no clip line.
+    await expect(clip(page)).toHaveCount(0);
 
     const amount = page.locator('#quote-amount');
     await amount.fill('412.50');
     await expect(marked(page)).toHaveCount(1);
     await expect(marked(page)).toContainText('Your amount');
-    await expect(clip(page)).toHaveText('Up to $1,500 at this price, the largest trade.');
     await amount.fill('49.99');
     await expect(marked(page)).toHaveCount(0);
-    await expect(clip(page)).toHaveText('Your amount is below $50, the smallest trade.');
     await amount.fill('50');
-    await expect(marked(page)).toHaveCount(1);
-    await amount.fill('1500');
     await expect(marked(page)).toHaveCount(1);
     await amount.fill('1500.01');
     await expect(marked(page)).toHaveCount(0);
-    await expect(clip(page)).toHaveText('Your amount is above $1,500, the largest trade.');
+    // Max fills the largest trade, which is inside the top band.
+    await page.getByRole('button', { name: 'Max' }).click();
+    await expect(amount).toHaveValue('1500.00');
+    await expect(marked(page)).toHaveCount(1);
   });
 
-  test('each band in fiat and XMR; the markup switch moves the XMR between the offer price and the market price', async ({ page }) => {
+  test('With markup / Without: the XMR at the band price or at the market rate, with the freshness line', async ({ page }) => {
     const MARKED_UP = { ...B.offer, pricing: { mode: 'market', marginBps: 250 }, rate: '33825' };
     await stubApi(page, { ...base, offers: [MARKED_UP] });
     await page.goto(`${BUY}&amount=${B.amount}`);
     const xmr = bands(page).locator('[data-part="band-xmr"]');
-    await expect(bands(page).locator('[data-part="band-price"]')).toHaveText(['2.5% above market']);
-    const sw = page.getByRole('switch', { name: 'Display amounts including vendor markup' });
-    await expect(sw).toHaveAttribute('aria-checked', 'true');
-    await expect(xmr).toHaveText(['0.147819 – 4.434589 XMR']);
-    await sw.click();
-    await expect(sw).toHaveAttribute('aria-checked', 'false');
-    await expect(xmr).toHaveText(['0.151515 – 4.545454 XMR']);
+    const withMarkup = bands(page).getByRole('radio', { name: 'With markup' });
+    await expect(withMarkup).toHaveAttribute('aria-checked', 'true');
+    await expect(bands(page).locator('[data-part="band-markup"]')).toHaveText(['+2.50%']);
+    await expect(bands(page).locator('[data-part="band-rate"]')).toHaveText(['$338.25']);
+    await expect(xmr).toHaveText(['≈ 0.147819 – 4.434589']);
+    await expect(bands(page).locator('[data-part="band-updated"]')).toHaveCount(0);
+    await bands(page).getByRole('radio', { name: 'Without' }).click();
+    await expect(withMarkup).toHaveAttribute('aria-checked', 'false');
+    await expect(bands(page).locator('[data-part="band-rate"]')).toHaveText(['$330.00']);
+    await expect(xmr).toHaveText(['≈ 0.151515 – 4.545454']);
+    await expect(bands(page).locator('[data-part="band-updated"]')).toContainText(/Market rate · updated \d\d:\d\d UTC/);
     await expect(bands(page).locator('[data-part="band-range"]')).toHaveText(['$50 – $1,500']);
-  });
-
-  test('SellQuote: Max sits in the top band, at its clip', async ({ page }) => {
-    await stubApi(page, { ...base, offers: [MIRA_BUYS] });
-    await page.goto(SELL);
-    await page.getByRole('button', { name: 'Max' }).click();
-    await expect(marked(page)).toHaveCount(1);
-    await expect(clip(page)).toHaveText('Up to $1,500 at this price, the largest trade.');
   });
 });
 

@@ -35,11 +35,29 @@ export function bandAt(bands: readonly Band[], fiatCents: bigint): BandAt {
   return { kind: 'between' };
 }
 
-const whole = (minor: bigint, currency: string) => formatMinor(minor, currency, { whole: true });
+/**
+ * Money in the currency's minor units with `exponent` places (2 on the offers card, which has no
+ * price route; the quote passes the route's exponent: whole yen, 3-place dinars). `whole` drops a
+ * zero fraction ("$50", but "$500.01").
+ */
+export function money(minor: bigint, currency: string, exponent = 2, whole = false): string {
+  if (exponent === 2) return formatMinor(minor, currency, { whole });
+  const unit = 10n ** BigInt(exponent);
+  const frac = (minor % unit).toString().padStart(exponent, '0');
+  const dropFrac = whole && minor % unit === 0n;
+  const nf = new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: exponent, maximumFractionDigits: exponent });
+  return nf
+    .formatToParts(minor / unit)
+    .filter((p) => !(dropFrac && (p.type === 'decimal' || p.type === 'fraction')))
+    .map((p) => (p.type === 'fraction' ? frac : p.value))
+    .join('');
+}
+
+const whole = (minor: bigint, currency: string, exponent = 2) => money(minor, currency, exponent, true);
 
 /** A range as the offers card shows it: "$50 – $1,500", cents kept only when there are some ("$500.01"). */
-export function rangeText(from: bigint, to: bigint, currency: string): string {
-  return `${whole(from, currency)} – ${whole(to, currency)}`;
+export function rangeText(from: bigint, to: bigint, currency: string, exponent = 2): string {
+  return `${whole(from, currency, exponent)} – ${whole(to, currency, exponent)}`;
 }
 
 /** The offer's whole range per trade, as on its card. */
@@ -118,15 +136,15 @@ export interface Clip {
  * each at its own price (the markup always: these are the rates a trade would lock). None outside
  * a band, and none for a neighbour whose rate is not known.
  */
-export function clipLines(bands: readonly Band[], at: BandAt | null, currency: string, market: bigint | null): Clip[] {
+export function clipLines(bands: readonly Band[], at: BandAt | null, currency: string, market: bigint | null, exponent = 2): Clip[] {
   if (at?.kind !== 'in') return [];
   const band = bands[at.index]!;
   const out: Clip[] = [];
   const up = bands[at.index + 1];
   const upRate = up && bandRate(up, currency, market, true);
-  if (upRate) out.push({ dir: 'up', at: whole(band.toFiatCents, currency), rate: formatMinor(upRate.centsPerXmr, currency) });
+  if (upRate) out.push({ dir: 'up', at: whole(band.toFiatCents, currency, exponent), rate: money(upRate.centsPerXmr, currency, exponent) });
   const down = bands[at.index - 1];
   const downRate = down && bandRate(down, currency, market, true);
-  if (downRate) out.push({ dir: 'down', at: whole(band.fromFiatCents, currency), rate: formatMinor(downRate.centsPerXmr, currency) });
+  if (downRate) out.push({ dir: 'down', at: whole(band.fromFiatCents, currency, exponent), rate: money(downRate.centsPerXmr, currency, exponent) });
   return out;
 }

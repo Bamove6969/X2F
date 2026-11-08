@@ -513,6 +513,9 @@ describe('a 0-decimal currency', () => {
     expect(text).toContain('1.250000 XMR');
     expect(text).toContain('¥41,250 JPY');
     expect(text).not.toMatch(/¥[\d,]+\.\d/);
+    // The bands card reads the same exponent: whole yen, never ¥50 for ¥5,000.
+    expect(text).toContain('¥5,000 – ¥150,000 JPY');
+    expect(text).toContain('¥33,000 / XMR¥5,000');
     // The dollar figures stay in cents: ¥33,000 / XMR is $220.00 / XMR.
     expect(text).toContain('$220.00 / XMR');
     expect(text).toContain('About $275.00 USD');
@@ -665,6 +668,14 @@ describe("This offer's bands (BuyQuote board, canvas v142; owner 2026-11-08)", (
       expect(current(host), typed).toHaveLength(inside ? 1 : 0);
     }
     expect(bands(host).textContent).not.toContain('Your amount');
+  });
+
+  it("BuyQuote keeps Max (owner #5): it fills the offer's largest trade and the ring follows", async () => {
+    const { host } = await open(`${BUY}&amount=49`);
+    expect(current(host)).toHaveLength(0);
+    fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Max')!, new MouseEvent('click', { bubbles: true }));
+    expect(host.querySelector<HTMLInputElement>('#quote-amount')?.value).toBe('1500.00');
+    expect(current(host)).toHaveLength(1);
   });
 
   it('an XMR amount (SellQuote enters XMR first) is placed by its fiat total', async () => {

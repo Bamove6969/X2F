@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { atomicForFiat, formatXmr, offerRate } from '@x2f/trade';
 import { formatMinor } from '../src/screens/browse/api.js';
-import { bandAt, bandRate, bandXmr, clipLines, marginText, markupText, offerBands, offerRange, rangeText, type Band } from '../src/screens/browse/bands.js';
+import { bandAt, bandRate, bandXmr, clipLines, marginText, markupText, money, offerBands, offerRange, rangeText, type Band } from '../src/screens/browse/bands.js';
 
 const buyerLikes = (bps: number) => bps < 0;
 
@@ -63,6 +63,13 @@ describe('the words the offers card and the quote share', () => {
     expect(rangeText(50_001n, 150_000n, 'USD')).toBe('$500.01 – $1,500');
     expect(rangeText(5_000n, 150_000n, 'CAD')).toBe('CA$50 – CA$1,500');
     expect(offerRange({ minFiatCents: 5_000n, maxFiatCents: 150_000n }, 'USD')).toBe('$50 – $1,500');
+  });
+
+  it("the quote passes the price route's exponent: whole yen, 3-place dinars", () => {
+    expect(rangeText(5_000n, 150_000n, 'JPY', 0)).toBe('¥5,000 – ¥150,000');
+    expect(rangeText(50_000n, 150_001n, 'KWD', 3).replace(/\u00a0/g, ' ')).toBe('KWD 50 – KWD 150.001');
+    expect(money(33_000n, 'JPY', 0)).toBe('¥33,000');
+    expect(money(330_005n, 'KWD', 3).replace(/\u00a0/g, ' ')).toBe('KWD 330.005');
   });
 
   it("the price is the card's margin line", () => {
@@ -140,6 +147,14 @@ describe('clipLines: where the rate changes around your band', () => {
     expect(clipLines(THREE, null, 'USD', MARKET)).toEqual([]);
     expect(clipLines(THREE, { kind: 'below' }, 'USD', MARKET)).toEqual([]);
     expect(clipLines(THREE, { kind: 'above' }, 'USD', MARKET)).toEqual([]);
+  });
+
+  it('a 0-decimal currency: the edge and the rate in whole yen', () => {
+    const yen: Band[] = [
+      { fromFiatCents: 5_000n, toFiatCents: 50_000n, pricing: { mode: 'fixed', centsPerXmr: 33_000n }, minTrades: 0 },
+      { fromFiatCents: 50_001n, toFiatCents: 150_000n, pricing: { mode: 'fixed', centsPerXmr: 33_188n }, minTrades: 0 },
+    ];
+    expect(clipLines(yen, { kind: 'in', index: 0 }, 'JPY', null, 0)).toEqual([{ dir: 'up', at: '¥50,000', rate: '¥33,188' }]);
   });
 
   it('no market price: no rate to name, no line', () => {

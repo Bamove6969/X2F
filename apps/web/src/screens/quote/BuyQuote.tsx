@@ -3,12 +3,14 @@ import { QuoteScreen, type QuoteCopy } from './Quote.js';
 
 // BuyQuote (board BuyQuote.dc.html): a buyer taking a sell ad. Two board rows are changed by owner
 // decisions: the network fee row uses the OD-4 copy (it comes off the buyer's payout, spec 11.1),
-// and the Deposit row is gone (no buyer deposits, spec 2.5).
+// and the Deposit row is gone (no buyer deposits, spec 2.5). Max is on, as on the 8 Nov board (owner
+// #5, "I do really like the max button"): it fills the offer's largest trade, and the bands card
+// moves its ring to the top band.
 
 export const BUY_QUOTE_COPY: QuoteCopy = {
   adSide: 'sell',
   defaultUnit: 'fiat',
-  showMax: false,
+  showMax: true,
   back: (method) => `Back to ${method} sellers`,
   title: (poster) => <>Buying from {poster}</>,
   amountLabel: 'You pay',

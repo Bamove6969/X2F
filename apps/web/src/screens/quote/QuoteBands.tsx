@@ -1,9 +1,8 @@
 import { useId, useState } from 'react';
 import { Icon } from '../../ui/icons.js';
-import { formatMinor } from '../browse/api.js';
-import { bandAt, bandRate, bandXmr, clipLines, markupText, offerBands, rangeText, type BandAt } from '../browse/bands.js';
+import { bandAt, bandRate, bandXmr, clipLines, markupText, money, offerBands, rangeText, type BandAt } from '../browse/bands.js';
 import { RadioChips } from '../browse/RadioChips.js';
-import type { MarketNow, Quote, QuoteOffer } from './quoteModel.js';
+import { quoteExponent, type MarketNow, type Quote, type QuoteOffer } from './quoteModel.js';
 
 // "This offer's bands" (BuyQuote board, canvas v142; owner 2026-11-08 #4, #11 and "Offer amounts in
 // XMR or fiat"): right under "You receive", so the buyer never goes back a screen to see where the
@@ -41,7 +40,9 @@ export function QuoteBands({ offer, quote, market }: { offer: QuoteOffer; quote:
   const marketCents = market?.centsPerXmr ?? null;
   const bands = offerBands(offer);
   const at = quoteBandAt(quote, bands);
-  const clips = clipLines(bands, at, offer.currency, marketCents);
+  // Whole yen, 3-place dinars: the same exponent as the rest of the quote.
+  const exponent = quoteExponent(offer, market);
+  const clips = clipLines(bands, at, offer.currency, marketCents, exponent);
   const updated = withMarkup ? null : utcTime(market?.at);
   return (
     <section data-part="offer-bands" aria-labelledby={`${id}-title`} className="x2f-quote__card x2f-quote__bands">
@@ -72,7 +73,7 @@ export function QuoteBands({ offer, quote, market }: { offer: QuoteOffer; quote:
                 {rate ? (
                   <span className="x2f-quote__band-rate">
                     <span data-part="band-rate" className="x2f-quote__mono">
-                      {formatMinor(rate.centsPerXmr, offer.currency)}
+                      {money(rate.centsPerXmr, offer.currency, exponent)}
                     </span>{' '}
                     / XMR
                   </span>
@@ -81,7 +82,7 @@ export function QuoteBands({ offer, quote, market }: { offer: QuoteOffer; quote:
               <span className="x2f-quote__band-line">
                 <span className="x2f-quote__band-range">
                   <span data-part="band-range" className="x2f-quote__mono">
-                    {rangeText(b.fromFiatCents, b.toFiatCents, offer.currency)}
+                    {rangeText(b.fromFiatCents, b.toFiatCents, offer.currency, exponent)}
                   </span>{' '}
                   <span className="x2f-quote__band-unit">{offer.currency}</span>
                 </span>
