@@ -36,7 +36,7 @@ export {
   type Pricing,
   type Side,
 } from './money.js';
-export { SETTLE_KINDS, payoutsFor, type PayoutFacts, type RulingKind, type SettleKind } from './payouts.js';
+export { SETTLE_KINDS, payoutsFor, sweepMinimums, type PayoutFacts, type RulingKind, type SettleKind } from './payouts.js';
 export { moneroUri } from './moneroUri.js';
 export { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
 export {
@@ -57,7 +57,9 @@ export {
 } from './machine.js';
 export { TIMER_LOOP_MS, timerEvents, type TimerEvent, type TimerPass } from './timerLoop.js';
 export {
+  SPEND_UNSHOWN_MS,
   WATCH_CLOSED_DAYS,
+  WATCH_RESTART_GRACE_MS,
   WATCH_INTERVAL_MS,
   newWatchState,
   settleKindFor,
@@ -97,3 +99,13 @@ export {
   type RangeBoth,
   type RangeCheck,
 } from './offerRange.js';
+export {
+  SIGNAL_MAX_ADDRESS,
+  SIGNAL_SENDERS,
+  SIGNAL_TYPES,
+  isSignalType,
+  parseSignalDeal,
+  signalAddressKey,
+  signalPayloadOk,
+  type SignalType,
+} from './signals.js';
