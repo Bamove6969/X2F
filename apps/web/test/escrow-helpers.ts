@@ -156,6 +156,13 @@ export class Parties {
         if (closed !== undefined) return Promise.reject(new TransportClosedError(closed));
         return new Promise((resolve, reject) => this.pending.push({ role: args.role, o, resolve, reject }));
       },
+      // The runtime never calls these: the escrow party sends its post-release info to the mod itself (Task 9 I/O).
+      spendInfo: async () => {
+        throw new Error('not used by the runtime');
+      },
+      importSpendInfo: async () => {
+        throw new Error('not used by the runtime');
+      },
       funds: async () => {
         const n = (this.reads[args.role] = (this.reads[args.role] ?? 0) + 1);
         const f = structuredClone(this.fundsFor[args.role] ?? this.funds);

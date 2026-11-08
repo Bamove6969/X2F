@@ -85,6 +85,7 @@ function sellerView(over: View = {}): View {
     finalAlertAt: null,
     finalAlertSeenAt: null,
     settleBy: null,
+    releaseClaimedAt: null,
     pausedAt: null,
     closedAt: null,
     cancelConfirmedAt: null,
