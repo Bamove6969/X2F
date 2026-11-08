@@ -14,16 +14,16 @@ export interface BadgeDef {
   name: string;
   tone: BadgeTone;
   /** A stroke glyph, or for milestones the number drawn in mono. */
-  glyph: KitGlyphName | { num: string };
+  glyph: KitGlyphName | { num: string; num40?: string };
   meaning: string;
 }
 
-const milestone = (n: number, num = String(n)): BadgeDef => {
+const milestone = (n: number, num = String(n), num40?: string): BadgeDef => {
   const count = n.toLocaleString('en-US');
-  return { key: `m${n}`, name: `${count} trades`, tone: 'ink', glyph: { num }, meaning: `Completed ${count} trades.` };
+  return { key: `m${n}`, name: `${count} trades`, tone: 'ink', glyph: num40 ? { num, num40 } : { num }, meaning: `Completed ${count} trades.` };
 };
 
-/** The kit's badge set (3.1). Families: reputation escrow, speed caution, security and milestones ink, newcomer muted. */
+/** The kit's badge set (3.1). Families: reputation escrow, speed caution, security and milestones ink; New is its own grey (neutral) family (design ruling 8 Nov). */
 export const BADGE_SET = {
   trusted: { key: 'trusted', name: 'Trusted', tone: 'escrow', glyph: 'trusted', meaning: '200+ trades and 98%+ positive.' },
   clean: { key: 'clean', name: 'Clean record', tone: 'escrow', glyph: 'clean', meaning: 'No lost disputes in 100 trades.' },
@@ -35,8 +35,8 @@ export const BADGE_SET = {
   m50: milestone(50),
   m100: milestone(100),
   m500: milestone(500),
-  // 1,000 has four digits; the 22 px seal holds three, so the seal says "1k" (lead choice, not on a board).
-  m1000: milestone(1000, '1k'),
+  // Design ruling 8 Nov: "1k" in the 22 and 28 px seals, "1,000" at 40.
+  m1000: milestone(1000, '1k', '1,000'),
   new: { key: 'new', name: 'New', tone: 'ink-muted', glyph: 'sprout', meaning: 'Joined in the last 30 days.' },
 } as const satisfies Record<string, BadgeDef>;
 
@@ -57,7 +57,7 @@ const GLYPH: Record<SealSize, number> = { 22: 13, 28: 16, 40: 20 };
 export function BadgeSeal({ badge, size = 40 }: { badge: BadgeDef; size?: SealSize }) {
   return (
     <span className="x2f-seal" data-size={size} data-tone={badge.tone} aria-hidden="true">
-      {typeof badge.glyph === 'string' ? <KitGlyph name={badge.glyph} size={GLYPH[size]} /> : <span className="x2f-seal__num">{badge.glyph.num}</span>}
+      {typeof badge.glyph === 'string' ? <KitGlyph name={badge.glyph} size={GLYPH[size]} /> : <span className="x2f-seal__num">{size === 40 ? (badge.glyph.num40 ?? badge.glyph.num) : badge.glyph.num}</span>}
     </span>
   );
 }
