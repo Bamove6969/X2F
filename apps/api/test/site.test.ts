@@ -12,6 +12,7 @@ import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { MODERATION_STUB, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedStaff, seedTap } from './helpers/staffApp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
+import { makeVendor } from './helpers/accounts.js';
 
 const T0 = new Date('2026-11-02T12:00:00Z');
 const MIN = 60_000;
@@ -83,6 +84,8 @@ describe('emergency stop', () => {
   it('needs a tap for emergency-stop; while stopped, take and post refuse trading-paused and existing trades go on; resume needs its own tap', async () => {
     setNow(T0);
     const seller = await person();
+    // Only a vendor posts offers (account types, owner 2 Nov).
+    await makeVendor(deps, seller.id);
     const buyer = await person();
     const posted = await seller.browser.post('/v1/offers', OFFER);
     expect(posted.statusCode, posted.body).toBe(201);
