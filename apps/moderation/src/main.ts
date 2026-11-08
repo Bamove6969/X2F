@@ -349,9 +349,14 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   let running: Promise<unknown> = Promise.resolve();
   const loop = (): void => {
     if (stopped) return;
-    running = tick().then(chatTick).finally(() => {
-      if (!stopped) timer = setTimeout(loop, intervalMs);
-    });
+    // A throw that escapes a pass is logged and the loop goes on (review M3): an unhandled rejection
+    // would end the process, and the chain watcher with it.
+    running = tick()
+      .then(chatTick)
+      .catch(() => log({ reason: 'work-pass-failed' }))
+      .finally(() => {
+        if (!stopped) timer = setTimeout(loop, intervalMs);
+      });
   };
   if (intervalMs > 0) loop();
 

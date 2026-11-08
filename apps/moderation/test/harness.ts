@@ -131,8 +131,16 @@ export interface FakeParty {
   prove: (txHash: string, txKey: string, minimums: Payout[]) => boolean;
   proveCalls: { txHash: string; txKey: string; minimums: Payout[] }[];
   resolveReady: (a: string) => void;
+  /**
+   * Committed to the first outcome (review R4-M2): like the real party once `rel.committed` is set
+   * (packages/escrow party.ts), every later settle() with another outcome is recorded and refused.
+   */
+  committed: boolean;
   handle: PartyHandle;
 }
+
+/** An outcome as text for comparing: its amounts are bigints, which plain JSON.stringify refuses. */
+export const outcomeJson = (o: unknown): string => JSON.stringify(o, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
 
 function fakeParty(): FakeParty {
   let resolveReady: (a: string) => void = () => {};
@@ -143,12 +151,17 @@ function fakeParty(): FakeParty {
     prove: () => false,
     proveCalls: [],
     resolveReady,
+    committed: false,
     handle: {
       ready: () => ready,
       // The real party co-signs only a tx set equal to this outcome (Plan 1, packages/escrow); here
       // it is only recorded, and stays pending like a co-signer waiting for the builder.
       settle: (o: Outcome) => {
+        const first = p.settles[0];
         p.settles.push(structuredClone(o));
+        if (p.committed && first !== undefined && outcomeJson(first) !== outcomeJson(o)) {
+          return Promise.reject(new Error('bad-outcome: committed to an earlier outcome'));
+        }
         return new Promise<string | null>(() => {});
       },
       funds: async () => ({ ...p.funds, incoming: p.funds.incoming.map((i) => ({ ...i })) }),

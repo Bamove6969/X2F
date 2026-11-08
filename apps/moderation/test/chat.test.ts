@@ -120,3 +120,40 @@ describe('the chat mod identity', () => {
     await mod.stop();
   });
 });
+
+describe('the work loop (review M3)', () => {
+  it('logs a pass that throws and keeps running, so the process and the chain watcher live on', async () => {
+    const reasons: string[] = [];
+    const failing: Fetch = async () => {
+      throw new Error('api down');
+    };
+    let unhandled = 0;
+    const onUnhandled = () => void unhandled++;
+    process.on('unhandledRejection', onUnhandled);
+    const mod = await startModeration(
+      { apiInternalUrl: API, relayAdminUrl: 'http://relay.test', daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95), relayUrl: 'ws://relay.test', network: 'regtest' },
+      {
+        fetch: failing,
+        now: () => NOW,
+        intervalMs: 5,
+        watchIntervalMs: 0,
+        runParty: () => {},
+        // a throw that escapes tick(): the log itself fails on the pass's own reason
+        log: (e) => {
+          reasons.push(e.reason);
+          if (e.reason === 'work-unavailable') throw new Error('log sink down');
+        },
+      },
+    );
+    const failed = () => reasons.filter((r) => r === 'work-pass-failed').length;
+    try {
+      const deadline = Date.now() + 5_000;
+      while (failed() < 2 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 5));
+      expect(failed()).toBeGreaterThanOrEqual(2);
+      expect(unhandled).toBe(0);
+    } finally {
+      await mod.stop();
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+});

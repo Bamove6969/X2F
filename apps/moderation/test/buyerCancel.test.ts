@@ -25,6 +25,7 @@ import {
   moderation,
   newTrade,
   OTHER_TERMS,
+  outcomeJson,
   secured,
   signal,
   TERMS,
@@ -413,6 +414,44 @@ describe('review round 3 R3-N1: an armed buyer cancel the buyer never builds doe
       await m.handle.stop();
     });
   }
+
+  it('the party already committed to the buyer-built cancel: the re-arm is refused, the cancel is not handed again, it lands and the desk stops (review R4-M2)', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    const alertAt = await strandedCancel(l, 'signal-only');
+    // The buyer's tx set reached the mod before the auto-refund fell due: the party committed to it.
+    l.party.committed = true;
+    net.seen.set(l.code, alertAt);
+    ctx.clock.now = at(alertAt, END + 1);
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([cancelOutcome(FUNDS), REFUND]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(m.logs).toContain('auto-refund-settle-failed');
+    // The record stays the auto-refund (never re-armed back to the cancel, never escalated) ...
+    await m.handle.watch();
+    const rec = await record(l.code);
+    expect(rec.armed?.kind).toBe('auto-refund');
+    expect(rec.escalated).toBeNull();
+    // ... and the earlier (buyer-built) outcome is never handed to the party again: only refused re-asks.
+    expect(l.party.settles.slice(1).every((o) => outcomeJson(o) === outcomeJson(REFUND))).toBe(true);
+    // The mod signs and submits the committed cancel itself: its own tx empties the escrow.
+    const tx = '9'.repeat(64);
+    // Other trades in this file share the database and the log: count from here, so the growth is this trade's.
+    const overBefore = m.logs.filter((x) => x === 'desk-trade-over').length;
+    l.party.funds = { ...l.party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: tx, height: 90, spentAtomic: FUNDS }], ownTxs: [tx] };
+    later(ctx, MIN);
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: tx }]);
+    // The desk sees the trade over (logged once per desk, logOnce) and hands nothing more to the party.
+    expect(m.logs.filter((x) => x === 'desk-trade-over').length).toBeGreaterThan(overBefore);
+    const asked = l.party.settles.length;
+    later(ctx, MIN);
+    await m.handle.watch();
+    expect(l.party.settles).toHaveLength(asked);
+    expect(net.reports.filter((r) => r.trade === l.code && ['alert-unseen', 'alert-late', 'refund-unverified'].includes(String(r.kind)))).toEqual([]);
+    await m.handle.stop();
+  });
 });
 
 describe('the shadow vetoes a refund sweep kind its own facts do not back (review round 2, R2-M1 defence in depth)', () => {
