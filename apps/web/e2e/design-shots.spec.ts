@@ -699,16 +699,21 @@ const PAID_SELLER = {
   fee: { atomic: '12500000000' },
 } as TradeView;
 
-test('42-43 SellerConfirm: the release warning, then the box ticked', async ({ page }) => {
+test('42-43 SellerConfirm: the box ticked, then the release warning on "Payment received" (the hold)', async ({ page }) => {
   await openRoom(page, PAID_SELLER, { warned: false });
   const warn = page.getByRole('alertdialog');
-  await expect(warn).toContainText('Before you release');
-  await shot(page, '42-trade-release-warning');
-  await page.getByRole('button', { name: "It's in my account" }).click();
   await expect(warn).toHaveCount(0);
   await page.getByRole('checkbox').check();
   await expect(page.locator('[data-screen="seller-confirm"]')).toBeVisible();
   await shot(page, '43-trade-seller-confirm');
+  const hold = page.locator('[data-screen="seller-confirm"] button[data-primary]');
+  const b = (await hold.boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(1700);
+  await page.mouse.up();
+  await expect(warn).toContainText('Before you release');
+  await shot(page, '42-trade-release-warning');
 });
 
 const CANCELLED = {
