@@ -114,6 +114,9 @@ offers cannot be taken (409 `price-unavailable`).
   start) on that Tailscale address, ports 4443 (the app) and 4444 (the node proxy), so your own devices on your tailnet can open it.
   The gateway refuses any address outside Tailscale's 100.64.0.0/10. Nothing ever binds 0.0.0.0
   and no public tunnel is opened.
+- **The node proxy needs its own origin.** monero-ts drops any path in a daemon URI, so
+  `VITE_NODE_PROXY_URL` (here and in production) must be a bare origin such as
+  `https://node.example.org`, never `https://example.org/node`.
 - **Never in a product build.** Nothing in `apps/*` or `packages/*` may import `tools/demo` or
   `@x2f/demo`, or depend on it: `npm run separation-check` fails if anything does
   (`tools/test/separation.test.ts`). The demo's web build goes to `apps/web/dist-demo/`
