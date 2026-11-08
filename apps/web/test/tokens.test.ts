@@ -57,7 +57,7 @@ describe('tokens.css', () => {
   it('kit 1.5 token fixes: monero #ff6600, mod, radius 10, hero-number, result-headline, no title or monero-hold', () => {
     const colour = Object.fromEntries(json.color.tokens.map((t) => [t.name, t.value]));
     expect(colour['monero']).toEqual({ night: '#ff6600', day: '#ff6600' });
-    expect(colour['monero-ink']).toEqual({ night: '#ff6600', day: '#b84a00' });
+    expect(colour['monero-ink']).toEqual({ night: '#ff6600', day: '#b34800' });
     expect(colour['mod']).toEqual({ night: '#b69cff', day: '#6741d9' });
     expect(colour['moderator']).toBeUndefined();
     expect(colour['monero-hold']).toBeUndefined();
