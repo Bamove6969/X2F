@@ -225,7 +225,7 @@ describe('rulingAllowsCosign: a moderator-built transaction is co-signed only th
 describe('ModeratorTag: the violet badge only inside a disputed trade', () => {
   it('draws the badge for a moderator message in a dispute with a recorded moderator', () => {
     const { host } = render(<ModeratorTag from="mod" inDispute moderator="sarah.v" />);
-    expect(host.querySelector('.x2f-moderator-badge')?.textContent).toBe('X2F Moderator');
+    expect(host.querySelector('.x2f-tag[data-role="mod"]')?.textContent).toBe('X2F Moderator');
   });
 
   it('draws nothing for a trader, outside a dispute, or with no moderator on record', () => {
@@ -235,7 +235,7 @@ describe('ModeratorTag: the violet badge only inside a disputed trade', () => {
       { from: 'mod' as const, inDispute: true, moderator: null },
     ]) {
       const { host } = render(<ModeratorTag {...p} />);
-      expect(host.querySelector('.x2f-moderator-badge')).toBeNull();
+      expect(host.querySelector('.x2f-tag[data-role="mod"]')).toBeNull();
     }
   });
 });
@@ -422,7 +422,7 @@ describe('DisputeRuling appeal form', () => {
   it('shows the ruling card with the moderator badge, and no appeal button once final', () => {
     const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled({ round: 2, appealUntil: null })} serverClock={at(500)} onAppeal={async () => undefined} />));
-    expect(host.querySelector('[aria-label="Ruling"] .x2f-moderator-badge')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Ruling"] .x2f-tag[data-role="mod"]')).not.toBeNull();
     expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Appeal this ruling')).toBe(false);
   });
 });

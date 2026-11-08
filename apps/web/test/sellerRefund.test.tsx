@@ -381,7 +381,7 @@ describe('SellerRefund after the request (seller, refund_requested)', () => {
     const { host } = mount(sellerRequestedView(), { clock: clockAt(SERVER_NOW, 1) });
     expect(host.textContent).toContain('Final alert sent');
     expect(host.textContent).toContain('mira.k gets a final alert and 15 minutes to say they already paid.');
-    expect(host.querySelector('[role="timer"]')?.textContent).toBe('14:00');
+    expect(host.querySelector('[role="timer"]')?.textContent).toBe('14 min 0 s');
     expect(host.querySelectorAll('[data-primary]')).toHaveLength(0);
     expect([...host.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Cancel and get refund');
   });

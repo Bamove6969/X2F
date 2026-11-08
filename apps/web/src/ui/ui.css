@@ -138,18 +138,6 @@
   text-transform: uppercase;
 }
 
-/* The X2F Moderator badge (DisputeRoom board). */
-.x2f-moderator-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--x2f-space-1);
-  padding: 2px 8px;
-  border: 1px solid var(--x2f-mod);
-  border-radius: var(--x2f-radius-pill);
-  color: var(--x2f-mod);
-  font-weight: 600;
-}
-
 /* The 2-of-3 dots (TradeFund board). */
 .x2f-dots {
   display: inline-flex;
@@ -1442,22 +1430,7 @@
   font-size: 15px;
 }
 
-/* A small tag beside a name ("This device", "Team member"). */
-.x2f-tag {
-  align-self: flex-start;
-  padding: 1px 8px;
-  border: 1px solid var(--x2f-line);
-  border-radius: var(--x2f-radius-pill);
-  color: var(--x2f-ink-muted);
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 600;
-}
-
-.x2f-tag[data-tone='team'] {
-  border-color: var(--x2f-team);
-  color: var(--x2f-team);
-}
+/* The small tags beside a name ("This device", "Team member") are the kit's RoleTag (kit.css). */
 
 /* Devices board: "Log out all team members", outlined in the team colour (disabled keeps the shared look). */
 .x2f-button--secondary[data-tone='team']:not(:disabled) {
@@ -1465,22 +1438,7 @@
   color: var(--x2f-team);
 }
 
-/* Initials avatar for a team member. */
-.x2f-avatar {
-  display: flex;
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--x2f-radius-pill);
-  background: var(--x2f-team);
-  color: var(--x2f-ground);
-  font-size: 14px;
-  line-height: 16px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
+/* A team member's initials avatar is the kit's Avatar kind="team" (kit.css). */
 
 /* A setting row: label and hint on the left, the control on the right. */
 .x2f-setting {

@@ -19,7 +19,6 @@ import { DesktopShell } from '../src/ui/DesktopShell.js';
 import { EscrowDots } from '../src/ui/EscrowDots.js';
 import { ExternalLink } from '../src/ui/ExternalLink.js';
 import { MethodExplainer } from '../src/ui/MethodExplainer.js';
-import { ModeratorBadge } from '../src/ui/ModeratorBadge.js';
 import { Sheet } from '../src/ui/Sheet.js';
 import { StatusChip } from '../src/ui/StatusChip.js';
 import { TradeHeader } from '../src/ui/TradeHeader.js';
@@ -333,16 +332,6 @@ describe('EscrowDots', () => {
     expect([...dots].map((d) => (d as HTMLElement).dataset.dot)).toEqual(['filled', 'filled', 'empty']);
     expect((host.firstElementChild as HTMLElement).dataset.tone).toBe('escrow');
     expect(host.firstElementChild!.getAttribute('aria-hidden')).toBe('true');
-  });
-});
-
-describe('ModeratorBadge', () => {
-  it('shows the violet shield and "X2F Moderator"', () => {
-    const { host } = render(<ModeratorBadge />);
-    const badge = host.firstElementChild as HTMLElement;
-    expect(badge.textContent).toBe('X2F Moderator');
-    expect(badge.className).toContain('x2f-moderator-badge');
-    expect(badge.querySelector('svg')).not.toBeNull();
   });
 });
 

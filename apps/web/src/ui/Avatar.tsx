@@ -97,7 +97,7 @@ const MOD_TILE: Record<AvatarSize, number> = { 48: 22, 40: 20, 32: 16 };
  */
 export function ModTile({ size = 40, pending = false }: { size?: AvatarSize; pending?: boolean }) {
   return (
-    <span className="x2f-modtile-k" data-size={size} data-pending={pending ? 'true' : undefined} aria-hidden="true">
+    <span className="x2f-modtile" data-size={size} data-pending={pending ? 'true' : undefined} aria-hidden="true">
       <KitGlyph name="shield-outline" size={MOD_TILE[size]} />
     </span>
   );
