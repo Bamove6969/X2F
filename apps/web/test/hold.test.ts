@@ -21,7 +21,7 @@ describe('the 24-hour hold', () => {
   it('hold v3: a staged change is a draft; the review says the 24-hour wait and how a strong login throws it away', () => {
     expect(HOLD_COPY.staged).toBe('Saved as a draft. Nothing changes until you submit it.');
     expect(HOLD_COPY.waitBody).toContain('these changes apply 24 hours after you submit them');
-    expect(HOLD_COPY.throwAway).toContain('these changes are thrown away');
+    expect(HOLD_COPY.throwAway).toContain('approve them at once, cancel them or change them');
     expect(HOLD_COPY.submitted(UNTIL)).toBe(`Submitted. Your changes take effect on ${localTime(new Date(UNTIL))}.`);
   });
 });

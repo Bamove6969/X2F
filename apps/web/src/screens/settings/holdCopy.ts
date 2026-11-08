@@ -95,7 +95,8 @@ export const HOLD_COPY = {
   waitBody:
     'You logged in with just your username and password, so these changes apply 24 hours after you submit them. Your account keeps working as normal in the meantime, and anyone logged in to your account can cancel them.',
   telling: 'We tell you straight away on every device you use, with a list of these changes.',
-  throwAway: 'If you then log in with a passkey, a security key or a PGP key you had before submitting, these changes are thrown away.',
+  // Owner G58 (7 Nov): a strong login no longer throws them away; it sees them and approves, cancels or changes them.
+  throwAway: 'If you log in with a passkey, a security key or a PGP key before then, you can approve them at once, cancel them or change them.',
   // The encouragement to add a stronger login (owner G29).
   stronger: 'Add a passkey, a security key or a PGP key, and next time changes like these go through at once.',
   strongerLink: 'Add one',
