@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { remainingParts } from '../src/ui/Countdown.js';
 import { BUYER_STEPS, Hero, HeroNumber, KeyMark, KeyTile, ResultHeadline, ringDash, SegmentProgress, SELLER_STEPS, TimerRing, TradeStepper } from '../src/ui/Hero.js';
+import { StatusChip } from '../src/ui/StatusChip.js';
 import { render } from './render.js';
 
 const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/ui/hero.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -44,6 +45,37 @@ describe('Hero (kit 4.1-4.2)', () => {
   it('every tone has a token, never orange', () => {
     for (const t of ['caution', 'escrow', 'danger', 'mod', 'neutral', 'team']) expect(css).toContain(`.x2f-hero[data-tone='${t}']`);
     expect(css).not.toMatch(/monero/);
+  });
+});
+
+describe('StatusChip (kit 4.2)', () => {
+  const ui = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/ui/ui.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const uiRule = (sel: string) => {
+    const m = ui.match(new RegExp(`(?:^|\\n)${sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([^}]*)\\}`));
+    if (m === null) throw new Error(`no rule "${sel}"`);
+    return m[1]!.replace(/\s+/g, ' ');
+  };
+
+  it('28 h, caps 13/16, 14% tint (16% neutral or mod); neutral text is ink; never orange', () => {
+    const base = uiRule('.x2f-chip');
+    for (const d of ['min-height: 28px;', 'padding: 0 10px;', 'gap: 6px;', 'text-transform: uppercase;', 'font-size: var(--x2f-label-size);', '14%, transparent);']) expect(base).toContain(d);
+    expect(uiRule(".x2f-chip[data-tone='neutral']")).toBe(' background: color-mix(in srgb, var(--x2f-ink-muted) 16%, transparent); color: var(--x2f-ink); ');
+    expect(uiRule(".x2f-chip[data-tone='mod']")).toContain('16%, transparent);');
+    for (const t of ['caution', 'escrow', 'danger', 'team']) expect(uiRule(`.x2f-chip[data-tone='${t}']`)).toBe(` --x2f-chip-tone: var(--x2f-${t}); `);
+    expect(ui.match(/\.x2f-chip[^{]*\{[^}]*monero/)).toBeNull();
+  });
+
+  it('renders the word with a 16 px icon in each of the six tones', () => {
+    const { host } = render(
+      <>
+        {(['caution', 'escrow', 'danger', 'neutral', 'mod', 'team'] as const).map((t) => (
+          <StatusChip key={t} tone={t} icon="check" label={t} />
+        ))}
+      </>,
+    );
+    const chips = [...host.querySelectorAll('.x2f-chip')];
+    expect(chips.map((c) => c.getAttribute('data-tone'))).toEqual(['caution', 'escrow', 'danger', 'neutral', 'mod', 'team']);
+    expect(chips.every((c) => c.querySelector('svg')!.getAttribute('width') === '16')).toBe(true);
   });
 });
 

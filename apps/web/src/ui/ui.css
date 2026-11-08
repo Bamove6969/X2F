@@ -93,14 +93,19 @@
   }
 }
 
-/* Status chips (TradeFund, Desktop boards). */
+/* Status chips (design kit handoff 4.2): 28 px pill, 14% of the tone (16% for neutral and mod,
+   whose text is ink and mod), caps 13/16 600 .04em, 16 px icon. Never orange. */
 .x2f-chip {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: var(--x2f-space-2);
-  padding: 6px 12px;
+  gap: 6px;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
   border-radius: var(--x2f-radius-pill);
-  background: var(--x2f-surface-raised);
+  background: color-mix(in srgb, var(--x2f-chip-tone, var(--x2f-ink-muted)) 14%, transparent);
+  color: var(--x2f-chip-tone, var(--x2f-ink));
   font-size: var(--x2f-label-size);
   line-height: var(--x2f-label-line);
   font-weight: var(--x2f-label-weight);
@@ -108,20 +113,40 @@
   text-transform: uppercase;
 }
 
-.x2f-chip[data-tone='caution'],
+.x2f-chip[data-tone='caution'] {
+  --x2f-chip-tone: var(--x2f-caution);
+}
+
+.x2f-chip[data-tone='escrow'] {
+  --x2f-chip-tone: var(--x2f-escrow);
+}
+
+.x2f-chip[data-tone='danger'] {
+  --x2f-chip-tone: var(--x2f-danger);
+}
+
+.x2f-chip[data-tone='team'] {
+  --x2f-chip-tone: var(--x2f-team);
+}
+
+.x2f-chip[data-tone='mod'] {
+  background: color-mix(in srgb, var(--x2f-mod) 16%, transparent);
+  color: var(--x2f-mod);
+}
+
+.x2f-chip[data-tone='neutral'] {
+  background: color-mix(in srgb, var(--x2f-ink-muted) 16%, transparent);
+  color: var(--x2f-ink);
+}
+
 .x2f-badge[data-tone='caution'],
 .x2f-dots[data-tone='caution'] {
   color: var(--x2f-caution);
 }
 
-.x2f-chip[data-tone='escrow'],
 .x2f-badge[data-tone='escrow'],
 .x2f-dots[data-tone='escrow'] {
   color: var(--x2f-escrow);
-}
-
-.x2f-chip[data-tone='danger'] {
-  color: var(--x2f-danger);
 }
 
 /* Badge pills (SellOffers board). */
@@ -1163,25 +1188,7 @@
   background: var(--x2f-surface-raised);
 }
 
-/* A status chip with a tinted wash (visual system v2, section 7): 28 px pill, 14% of the tone. */
-.x2f-chip[data-look='tint'] {
-  gap: 6px;
-  height: 28px;
-  box-sizing: border-box;
-  padding: 0 10px;
-}
-
-.x2f-chip[data-look='tint'][data-tone='caution'] {
-  background: color-mix(in srgb, var(--x2f-caution) 14%, transparent);
-}
-
-.x2f-chip[data-look='tint'][data-tone='escrow'] {
-  background: color-mix(in srgb, var(--x2f-escrow) 14%, transparent);
-}
-
-.x2f-chip[data-look='tint'][data-tone='danger'] {
-  background: color-mix(in srgb, var(--x2f-danger) 14%, transparent);
-}
+/* Every status chip is the tinted wash now (kit 4.2); `data-look="tint"` is kept on old callers. */
 
 .x2f-big-number {
   font-family: var(--x2f-font-mono);
