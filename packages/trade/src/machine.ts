@@ -534,6 +534,7 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
       // have passed AND the seller has nudged at least once since the escrow was secured.
       if (!past(now, t.payBy)) return fail('too-early');
       // The 15-minute final alert below stays (lead, 7 Nov) until the owner rules on it (page 6).
+      // The 90 minutes count from secured (payBy = securedAt + 90 min): the buyer cannot pay before (Q12); lead default.
       if (t.sellerNudgedAt === null || t.securedAt === null || t.sellerNudgedAt.getTime() < t.securedAt.getTime()) return fail('too-early');
       return { ...t, state: 'refund_requested', finalAlertAt: now };
 

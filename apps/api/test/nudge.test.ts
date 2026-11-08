@@ -415,23 +415,8 @@ describe('POST /v1/nudges: silent drops look exactly like a delivered nudge (P3-
     expect(published.map(([id]) => id)).toEqual([q.to.id]);
   });
 
-  it('inside an open trade the 3-per-hour recipient cap does not apply (owner, 7 Nov: no cap)', async () => {
-    const p = await pair();
-    sharedTrades.add(ctxKey(p.from.id, p.to.id, p.context));
-    for (let i = 0; i < 3; i++) {
-      const other = await trader();
-      shared.add(ctxKey(other.id, p.to.id, p.context));
-      expect((await nudge(other, p.to.name, p.context)).statusCode).toBe(202);
-    }
-    await settle();
-    published.length = 0;
-    for (let i = 0; i < 3; i++) {
-      expect((await nudge(p.from, p.to.name, p.context)).statusCode).toBe(202);
-      setNow(at(NUDGE_GAP_MS));
-    }
-    await settle();
-    expect(published.filter(([id]) => id === p.to.id)).toHaveLength(3);
-  });
+  // Where the cap is lifted (a real trade that is secured, refund_requested or paid) is checked
+  // with real trades below: "review finding 4".
 
   it('a disabled recipient is dropped silently too', async () => {
     const ref = await delivered();
@@ -867,6 +852,80 @@ describe('the seller\'s nudge unlocks the refund (owner G2, g66; migration 119)'
       expect((await nudge(seller, buyer.name, s.code)).statusCode).toBe(202);
     });
     expect((await view()).sellerNudgedAt).toBe(now.toISOString());
+  });
+
+  it('end to end (review finding 3): request-refund is too-early, a real seller nudge, then request-refund is accepted', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const s = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    const funds = s.trade.sellerFundsAtomic;
+    await driveTo(deps, s.trade, 'securing');
+    const refund = () => seller.b.post(`/v1/trades/${s.code}/events`, { type: 'request-refund' });
+    await withRealWiring(async () => {
+      // A nudge while the escrow still secures does not count.
+      expect((await nudge(seller, buyer.name, s.code)).statusCode).toBe(202);
+      const secured = await applyEvent(deps, s.code, { type: 'chain', receivedAtomic: funds, unlockedAtomic: funds, confirmations: 10 }, 'system');
+      setNow(new Date(secured.payBy!.getTime() + MIN));
+      const early = await refund();
+      expect(early.statusCode).toBe(409);
+      expect(early.json()).toEqual({ error: 'too-early' });
+      expect((await nudge(seller, buyer.name, s.code)).statusCode).toBe(202);
+      const ok = await refund();
+      expect(ok.statusCode, ok.body).toBe(200);
+    });
+    expect((await deps.db.query<{ state: string }>('select state from trades where code = $1', [s.code])).rows[0]!.state).toBe('refund_requested');
+  });
+
+  it('review finding 2: the nudge locks the trade row before the accounts, the same order as trade events (no deadlock)', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const s = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    await driveTo(deps, s.trade, 'secured');
+    // An events transaction: the trade row first, then the actor's account (store.applyEvent, hold.lockAccount).
+    const ev = await rawDb.connect();
+    try {
+      await ev.query('begin');
+      await ev.query('select 1 from trades where code = $1 for update', [s.code]);
+      const pending = withRealWiring(() => nudge(seller, buyer.name, s.code));
+      // Wait until the nudge is blocked (on the trade row, with no account locked).
+      for (let i = 0; i < 100; i++) {
+        const { rows } = await ev.query<{ n: number }>(
+          `select count(*)::int as n from pg_stat_activity where wait_event_type = 'Lock' and pid <> pg_backend_pid() and datname = current_database()`,
+        );
+        if (rows[0]!.n > 0) break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      // Had the nudge locked the accounts first, this would deadlock (40P01).
+      await ev.query('select id from accounts where id = $1 for no key update', [buyer.id]);
+      await ev.query('commit');
+      expect((await pending).statusCode).toBe(202);
+    } finally {
+      ev.release();
+    }
+    expect((await deps.db.query<{ t: Date | null }>('select seller_nudged_at as t from trades where code = $1', [s.code])).rows[0]!.t).toEqual(now);
+  });
+
+  it('review finding 4: the 3-per-hour cap is lifted only while the trade is secured, refund_requested or paid; kept in disputed and lapsed', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const s = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    await driveTo(deps, s.trade, 'secured');
+    const filler = await trader();
+    const cases: [string, boolean][] = [['secured', true], ['refund_requested', true], ['paid', true], ['disputed', false], ['lapsed', false], ['securing', false]];
+    await withRealWiring(async () => {
+      for (const [state, delivered] of cases) {
+        setNow(at(NUDGE_GAP_MS));
+        await deps.db.query('update trades set state = $2, closed_at = null where code = $1', [s.code, state]);
+        // The buyer already got 3 delivered nudges this hour from someone else.
+        for (let i = 0; i < RECIPIENT_LIMIT_PER_HOUR; i++) {
+          await deps.db.query('insert into nudges (from_id, to_id, sent_at, delivered) values ($1, $2, $3, true)', [filler.id, buyer.id, at(-i * MIN)]);
+        }
+        published.length = 0;
+        expect((await nudge(seller, buyer.name, s.code)).statusCode, state).toBe(202);
+        await settle();
+        expect(published.filter(([id]) => id === buyer.id).length, state).toBe(delivered ? 1 : 0);
+      }
+    });
   });
 });
 

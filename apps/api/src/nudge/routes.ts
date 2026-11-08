@@ -16,8 +16,9 @@ import { canonicalTimeZone, formatClock, inQuietHours, parseClock } from './quie
 export const NUDGE_GAP_MS = 15 * 60_000;
 /**
  * At most 3 nudges received per hour from everyone combined: past it, nudges are dropped silently
- * (`recipient-busy`). Not for a nudge inside an open trade: there the owner's rule is one per 15
- * minutes with no cap on the number (7 Nov), so only the sender's gap limits them.
+ * (`recipient-busy`). Not for a nudge about a trade that is secured, refund_requested or paid:
+ * there the owner's rule is one per 15 minutes with no cap on the number (7 Nov; lead default for
+ * the states), so only the sender's gap limits them.
  */
 export const RECIPIENT_LIMIT_PER_HOUR = 3;
 const HOUR_MS = 3_600_000;
@@ -103,23 +104,46 @@ function deliver(app: FastifyInstance, toId: string, ev: NudgeEvent): void {
   });
 }
 
+/** Trade states in which the 3-per-hour recipient cap is lifted for a trade nudge (lead default, review finding 4). */
+const UNCAPPED_STATES: readonly string[] = ['secured', 'refund_requested', 'paid'];
+
 /**
+ * The open trade a trade nudge is about (the trade, or the trade a chat is linked to), between
+ * these two accounts either way round, LOCKED (`for no key update`). This runs first in the
+ * nudge's transaction, before the accounts are locked, so the lock order is the trade events'
+ * (trade row, then account; review finding 2) and the two cannot deadlock.
+ *
  * Owner G2 / g66: the seller's refund unlocks only after at least one nudge since the escrow was
- * secured. An accepted nudge from the trade's seller to its buyer, naming the trade or its linked
- * chat, sets `trades.seller_nudged_at` while the trade is `secured` (the only state the refund is
- * asked in, so the time is never before `secured_at`). Set whether or not the nudge was delivered:
- * the seller did nudge, and the answer is the same 202 either way. A later nudge leaves it as is.
+ * secured. An accepted nudge from the trade's seller to its buyer sets `trades.seller_nudged_at`
+ * while the trade is `secured` (the only state the refund is asked in, so the time is never
+ * before `secured_at`). It is written in the same transaction, so a 429 or any later error rolls
+ * it back. Set whether or not the nudge is delivered: the seller did nudge, and the answer is the
+ * same 202 either way. A later nudge leaves it as is.
  */
-async function recordSellerNudge(client: pg.PoolClient, sellerId: string, buyerId: string, context: string, now: Date): Promise<void> {
+async function lockTradeAndRecordNudge(
+  client: pg.PoolClient,
+  fromId: string,
+  toId: string,
+  context: string,
+  now: Date,
+): Promise<{ state: string } | null> {
   const code = normalizeTradeCode(context);
-  if (code === null) return;
-  await client.query(
-    `update trades t set seller_nudged_at = $3
-      where t.seller_account_id = $1 and t.buyer_account_id = $2 and t.state = 'secured'
-        and (t.seller_nudged_at is null or t.seller_nudged_at < t.secured_at)
-        and t.code in ($4, (select c.trade_code from chats c where c.code = $4))`,
-    [sellerId, buyerId, now, code],
+  if (code === null) return null;
+  const { rows } = await client.query<{ code: string; state: string; seller: boolean; counts: boolean }>(
+    `select t.code, t.state, t.seller_account_id = $1 as seller,
+            (t.seller_nudged_at is null or t.seller_nudged_at < t.secured_at) as counts
+       from trades t
+      where t.code in ($3, (select c.trade_code from chats c where c.code = $3)) and t.closed_at is null
+        and ((t.seller_account_id = $1 and t.buyer_account_id = $2) or (t.seller_account_id = $2 and t.buyer_account_id = $1))
+      for no key update of t`,
+    [fromId, toId, code],
   );
+  const t = rows[0];
+  if (!t) return null;
+  if (t.seller && t.state === 'secured' && t.counts) {
+    await client.query('update trades set seller_nudged_at = $2 where code = $1', [t.code, now]);
+  }
+  return { state: t.state };
 }
 
 /**
@@ -141,8 +165,6 @@ async function nudgeHandler(req: FastifyRequest, reply: FastifyReply) {
   if (recipient === null || shared === false) throw new ApiError(403, 'no-shared-context');
   // Review N1: inside an open trade a block does not drop the nudge (the trade finishes normally).
   const blockApplies = shared !== 'open-trade';
-  // Owner 7 Nov: inside an open trade nudges are one per 15 minutes with no cap on the number.
-  const capApplies = shared !== 'open-trade';
 
   const now = deps.clock();
   let deliverIt = false;
@@ -151,6 +173,11 @@ async function nudgeHandler(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
+      // The trade row first (review finding 2: the trade events' order), then the accounts.
+      const trade = shared === 'open-trade' ? await lockTradeAndRecordNudge(client, fromId, recipient.id, context, now) : null;
+      // Owner 7 Nov: one per 15 minutes with no cap on the number, while the trade is in an active
+      // pre-close state (lead default, review finding 4); disputed or lapsed keep the 3-per-hour cap.
+      const capApplies = trade === null || !UNCAPPED_STATES.includes(trade.state);
       // Both accounts, in a fixed order: parallel nudges by one sender, or to one recipient, queue here.
       await client.query('select id from accounts where id = any($1::uuid[]) order by id for no key update', [[fromId, recipient.id]]);
       const last = await client.query<{ last: Date | null }>(
@@ -180,7 +207,6 @@ async function nudgeHandler(req: FastifyRequest, reply: FastifyReply) {
       await client.query('insert into nudges (from_id, to_id, sent_at, delivered) values ($1, $2, $3, $4)', [
         fromId, recipient.id, now, deliverIt,
       ]);
-      if (shared === 'open-trade') await recordSellerNudge(client, fromId, recipient.id, context, now);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
