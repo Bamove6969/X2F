@@ -16,6 +16,7 @@
  * (Plan 4 Task 15, Revision 2026-10-29c: the poster pays the 1% fee).
  */
 import type { Payout } from '@x2f/escrow';
+import type { AttestedTerms } from './attestation.js';
 import { escrowPlan } from './money.js';
 
 export type SettleKind = 'release' | 'mutual-cancel' | 'buyer-cancel' | 'auto-refund' | 'lapse-refund';
@@ -90,6 +91,52 @@ export function payoutsFor(f: PayoutFacts): Payout[] {
         { address: f.feeWallet, amountAtomic: f.feeAtomic },
       ]);
     }
+    default:
+      throw new RangeError('unknown settle kind');
+  }
+}
+
+/**
+ * Review I1 (2026-10-29): the least a sweep must provably pay (by its tx key) before the moderator's
+ * watcher counts a sweep that its wallet shows only through a party's imported multisig info, i.e. a
+ * seller–buyer settlement it did not co-sign. A trade party could otherwise forge partial key images
+ * so that the mod's wallet attributes some unrelated tx to the escrow. With this check such a "fake"
+ * sweep is harmless: the tx really paid the right parties at least what they are owed.
+ *
+ * From the moderator's OWN signed terms only (addresses and the take-time deal), never an API read,
+ * plus the sweep's spent amount as the mod's wallet records it:
+ * - `release`: the buyer's signed payout gets at least the take-time buyer amount (amount on a
+ *   seller's ad, amount − fee on a buyer's ad) and the fee wallet at least the take-time fee. A grown
+ *   trade (payoutsFor) only pays more, so an honest release always passes; the seller's surplus is
+ *   not checked (only the seller could lose it, and only by forging against itself).
+ * - `lapse-refund`, `mutual-cancel` (the seller–buyer refunds): the seller's signed refund address gets
+ *   everything the sweep spent.
+ * - `auto-refund`, `buyer-cancel`: the moderator co-signs these, so its own wallet shows them; null
+ *   (an import never shows one).
+ * Payout 0 bears the network fee: the check allows it to be short by exactly the tx's fee.
+ */
+export function sweepMinimums(a: { kind: SettleKind; terms: AttestedTerms; feeWallet: string; sweptAtomic: bigint }): Payout[] | null {
+  const { terms, feeWallet } = a;
+  const addresses = [terms.buyerPayout, terms.sellerRefund, feeWallet];
+  for (const x of addresses) if (typeof x !== 'string' || x === '') throw new RangeError('missing address');
+  if (new Set(addresses).size !== addresses.length) throw new RangeError('duplicate address');
+  switch (a.kind) {
+    case 'release': {
+      const take = BigInt(terms.deal.takeAmountAtomic);
+      const plan = escrowPlan({ amountAtomic: take, poster: terms.deal.poster });
+      const toBuyer = terms.deal.poster === 'seller' ? take : take - plan.feeAtomic;
+      return out([
+        { address: terms.buyerPayout, amountAtomic: toBuyer },
+        { address: feeWallet, amountAtomic: plan.feeAtomic },
+      ]);
+    }
+    case 'lapse-refund':
+    case 'mutual-cancel':
+      if (typeof a.sweptAtomic !== 'bigint' || a.sweptAtomic <= 0n) throw new RangeError('nothing-to-pay');
+      return [{ address: terms.sellerRefund, amountAtomic: a.sweptAtomic }];
+    case 'auto-refund':
+    case 'buyer-cancel':
+      return null;
     default:
       throw new RangeError('unknown settle kind');
   }
