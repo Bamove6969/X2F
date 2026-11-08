@@ -7,7 +7,7 @@
       "title": "Artboard 1",
       "w": 800,
       "x": 1675,
-      "y": 12506
+      "y": 13007
     },
     "BadgeSettings.dc.html": {
       "h": 1805,
@@ -16,37 +16,37 @@
       "title": "2 \u00b7 Your badges (settings)",
       "w": 390,
       "x": 470,
-      "y": 9955
+      "y": 10456
     },
     "BuyMain.dc.html": {
-      "h": 6423,
+      "h": 5852,
       "is_interactive": true,
       "page": "all",
       "title": "1 \u00b7 Buy: pick how you pay",
       "w": 390,
       "x": 0,
-      "y": 20420
+      "y": 21998
     },
     "BuyOffers.dc.html": {
-      "h": 1341,
+      "h": 1987,
       "is_interactive": true,
       "page": "all",
       "title": "2 \u00b7 Buy: sellers taking Zelle",
       "w": 390,
       "x": 470,
-      "y": 20420
+      "y": 21998
     },
     "BuyQuote.dc.html": {
-      "h": 1427,
+      "h": 1861,
       "is_interactive": true,
       "page": "all",
       "title": "3 \u00b7 Buy: amount, wallet, what you get",
       "w": 390,
       "x": 940,
-      "y": 20420
+      "y": 21998
     },
     "BuyerPay.dc.html": {
-      "h": 1668,
+      "h": 2563,
       "is_interactive": true,
       "page": "all",
       "title": "2 \u00b7 Buyer pays and uploads proof",
@@ -60,7 +60,7 @@
       "title": "Desktop \u00b7 buyer paying",
       "w": 1280,
       "x": 0,
-      "y": 15846
+      "y": 17424
     },
     "DisputeOpen.dc.html": {
       "h": 1950,
@@ -69,7 +69,7 @@
       "title": "1 \u00b7 Open a dispute",
       "w": 390,
       "x": 0,
-      "y": 27443
+      "y": 29021
     },
     "DisputeRoom.dc.html": {
       "h": 1318,
@@ -78,7 +78,7 @@
       "title": "2 \u00b7 Moderator joined the trade room",
       "w": 390,
       "x": 470,
-      "y": 27443
+      "y": 29021
     },
     "DisputeRuling.dc.html": {
       "h": 1717,
@@ -87,10 +87,10 @@
       "title": "3 \u00b7 Ruling and appeal",
       "w": 390,
       "x": 940,
-      "y": 27443
+      "y": 29021
     },
     "Main.dc.html": {
-      "h": 6473,
+      "h": 5902,
       "is_interactive": true,
       "page": "all",
       "title": "1 \u00b7 Sell: pick how you get paid",
@@ -106,7 +106,7 @@
       "title": "2 \u00b7 Case view and ruling tools",
       "w": 1280,
       "x": 1360,
-      "y": 29993
+      "y": 31571
     },
     "ModQueue.dc.html": {
       "expand": "fill",
@@ -116,7 +116,7 @@
       "title": "1 \u00b7 Dispute queue",
       "w": 1280,
       "x": 0,
-      "y": 29993
+      "y": 31571
     },
     "OwnerSetup.dc.html": {
       "expand": "fill",
@@ -126,10 +126,10 @@
       "title": "1 \u00b7 First-run: create the owner account",
       "w": 1280,
       "x": 0,
-      "y": 17870
+      "y": 19448
     },
     "PostOffer.dc.html": {
-      "h": 2411,
+      "h": 3498,
       "is_interactive": true,
       "page": "all",
       "title": "3 \u00b7 Post an offer",
@@ -144,7 +144,7 @@
       "title": "1 \u00b7 Trader profile",
       "w": 390,
       "x": 0,
-      "y": 9955
+      "y": 10456
     },
     "Review.dc.html": {
       "h": 2219,
@@ -156,7 +156,7 @@
       "y": 7073
     },
     "SellOffers.dc.html": {
-      "h": 1293,
+      "h": 1939,
       "is_interactive": true,
       "page": "all",
       "title": "2 \u00b7 Sell: buyers paying via Zelle",
@@ -165,7 +165,7 @@
       "y": 0
     },
     "SellerConfirm.dc.html": {
-      "h": 2282,
+      "h": 2783,
       "is_interactive": true,
       "page": "all",
       "title": "3 \u00b7 Seller checks bank and releases",
@@ -174,7 +174,7 @@
       "y": 7073
     },
     "SellerRefund.dc.html": {
-      "h": 1696,
+      "h": 2195,
       "page": "all",
       "title": "Alt \u00b7 buyer missed the deadline",
       "w": 390,
@@ -188,7 +188,7 @@
       "title": "4 \u00b7 Backup way to log in (optional)",
       "w": 390,
       "x": 2350,
-      "y": 14011
+      "y": 14512
     },
     "SetupLogin.dc.html": {
       "h": 1193,
@@ -197,7 +197,7 @@
       "title": "2 \u00b7 How do you want to log in?",
       "w": 390,
       "x": 970,
-      "y": 14011
+      "y": 14512
     },
     "SetupPassword.dc.html": {
       "h": 909,
@@ -206,7 +206,7 @@
       "title": "Alt 3 \u00b7 Choose a password",
       "w": 390,
       "x": 3760,
-      "y": 14011
+      "y": 14512
     },
     "SetupPgpChallenge.dc.html": {
       "h": 880,
@@ -215,7 +215,7 @@
       "title": "3 \u00b7 PGP: decrypt your first login code",
       "w": 390,
       "x": 1880,
-      "y": 14011
+      "y": 14512
     },
     "SetupPgpKey.dc.html": {
       "h": 1088,
@@ -224,16 +224,16 @@
       "title": "3 \u00b7 PGP: add your public key",
       "w": 390,
       "x": 1410,
-      "y": 14011
+      "y": 14512
     },
     "SetupTerms.dc.html": {
-      "h": 1235,
+      "h": 2312,
       "is_interactive": true,
       "page": "all",
       "title": "0 \u00b7 Terms of Service (accept)",
       "w": 390,
       "x": 0,
-      "y": 14011
+      "y": 14512
     },
     "SetupUsername.dc.html": {
       "h": 844,
@@ -242,7 +242,7 @@
       "title": "1 \u00b7 Pick a username",
       "w": 390,
       "x": 470,
-      "y": 14011
+      "y": 14512
     },
     "SetupWallet.dc.html": {
       "h": 897,
@@ -251,7 +251,7 @@
       "title": "5 \u00b7 Where should we send your XMR?",
       "w": 390,
       "x": 2820,
-      "y": 14011
+      "y": 14512
     },
     "SetupWelcome.dc.html": {
       "h": 852,
@@ -260,7 +260,7 @@
       "title": "6 \u00b7 Welcome, start trading",
       "w": 390,
       "x": 3290,
-      "y": 14011
+      "y": 14512
     },
     "StaffList.dc.html": {
       "expand": "fill",
@@ -270,7 +270,7 @@
       "title": "2 \u00b7 Staff: add, set login hours, switch off",
       "w": 1280,
       "x": 1360,
-      "y": 17870
+      "y": 19448
     },
     "StaffLog.dc.html": {
       "expand": "fill",
@@ -280,7 +280,7 @@
       "title": "4 \u00b7 Activity log",
       "w": 1280,
       "x": 4080,
-      "y": 17870
+      "y": 19448
     },
     "StaffOverview.dc.html": {
       "expand": "fill",
@@ -290,7 +290,7 @@
       "title": "5 \u00b7 Overview: emergency stop, earnings, banner",
       "w": 1280,
       "x": 5440,
-      "y": 17870
+      "y": 19448
     },
     "StaffPerformance.dc.html": {
       "expand": "fill",
@@ -300,7 +300,7 @@
       "title": "6 \u00b7 Moderator performance, with charts",
       "w": 1280,
       "x": 6800,
-      "y": 17870
+      "y": 19448
     },
     "StaffSettings.dc.html": {
       "expand": "fill",
@@ -310,10 +310,10 @@
       "title": "3 \u00b7 Settings: limits and pay",
       "w": 1280,
       "x": 2720,
-      "y": 17870
+      "y": 19448
     },
     "TradeFund.dc.html": {
-      "h": 1514,
+      "h": 2296,
       "is_interactive": true,
       "page": "all",
       "title": "1 \u00b7 Seller funds escrow",
@@ -328,11 +328,11 @@
       "title": "3 \u00b7 Your wallets",
       "w": 390,
       "x": 940,
-      "y": 9955
+      "y": 10456
     },
     "CantDoThat.dc.html": {
       "x": 5730,
-      "y": 32749,
+      "y": 36449,
       "w": 390,
       "h": 1195,
       "page": "all",
@@ -341,7 +341,7 @@
     },
     "CantDoThat-Wide.dc.html": {
       "x": 6200,
-      "y": 32749,
+      "y": 36449,
       "w": 1280,
       "h": 1051,
       "page": "all",
@@ -350,7 +350,7 @@
     },
     "Feedback.dc.html": {
       "x": 0,
-      "y": 39096,
+      "y": 43758,
       "w": 390,
       "h": 1087,
       "page": "all",
@@ -359,7 +359,7 @@
     },
     "Feedback-Wide.dc.html": {
       "x": 470,
-      "y": 39096,
+      "y": 43758,
       "w": 1280,
       "h": 1015,
       "page": "all",
@@ -368,7 +368,7 @@
     },
     "Warn-IvePaid.dc.html": {
       "x": 1910,
-      "y": 39096,
+      "y": 43758,
       "w": 390,
       "h": 1367,
       "page": "all",
@@ -377,7 +377,7 @@
     },
     "Warn-IvePaid-Wide.dc.html": {
       "x": 2380,
-      "y": 39096,
+      "y": 43758,
       "w": 1280,
       "h": 1097,
       "page": "all",
@@ -386,25 +386,25 @@
     },
     "Warn-Release.dc.html": {
       "x": 3820,
-      "y": 39096,
+      "y": 43758,
       "w": 390,
-      "h": 935,
+      "h": 1501,
       "page": "all",
       "title": "A7 \u00b7 Warning before release",
       "is_interactive": true
     },
     "Warn-Release-Wide.dc.html": {
       "x": 4290,
-      "y": 39096,
+      "y": 43758,
       "w": 1280,
-      "h": 800,
+      "h": 1143,
       "page": "all",
       "title": "A7 \u00b7 Warning before release (wide)",
       "is_interactive": true
     },
     "Refunded.dc.html": {
       "x": 5730,
-      "y": 39096,
+      "y": 43758,
       "w": 390,
       "h": 1343,
       "page": "all",
@@ -413,7 +413,7 @@
     },
     "Refunded-Wide.dc.html": {
       "x": 6200,
-      "y": 39096,
+      "y": 43758,
       "w": 1280,
       "h": 1065,
       "page": "all",
@@ -422,7 +422,7 @@
     },
     "Appeal-Notice.dc.html": {
       "x": 0,
-      "y": 42096,
+      "y": 46758,
       "w": 390,
       "h": 1345,
       "page": "all",
@@ -431,7 +431,7 @@
     },
     "Appeal-Notice-Wide.dc.html": {
       "x": 470,
-      "y": 42096,
+      "y": 46758,
       "w": 1280,
       "h": 1180,
       "page": "all",
@@ -440,7 +440,7 @@
     },
     "Lien-Notice.dc.html": {
       "x": 1910,
-      "y": 42096,
+      "y": 46758,
       "w": 390,
       "h": 1778,
       "page": "all",
@@ -449,7 +449,7 @@
     },
     "Lien-Notice-Wide.dc.html": {
       "x": 2380,
-      "y": 42096,
+      "y": 46758,
       "w": 1280,
       "h": 1132,
       "page": "all",
@@ -458,7 +458,7 @@
     },
     "Alerts.dc.html": {
       "x": 5730,
-      "y": 45096,
+      "y": 49758,
       "w": 390,
       "h": 2373,
       "page": "all",
@@ -467,7 +467,7 @@
     },
     "Alerts-Wide.dc.html": {
       "x": 6200,
-      "y": 45096,
+      "y": 49758,
       "w": 1280,
       "h": 1046,
       "page": "all",
@@ -476,7 +476,7 @@
     },
     "DeleteAccount.dc.html": {
       "x": 0,
-      "y": 48096,
+      "y": 52758,
       "w": 390,
       "h": 922,
       "page": "all",
@@ -485,7 +485,7 @@
     },
     "DeleteAccount-Wide.dc.html": {
       "x": 470,
-      "y": 48096,
+      "y": 52758,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -494,7 +494,7 @@
     },
     "Support.dc.html": {
       "x": 1910,
-      "y": 48096,
+      "y": 52758,
       "w": 390,
       "h": 1732,
       "page": "all",
@@ -503,7 +503,7 @@
     },
     "Support-Wide.dc.html": {
       "x": 2380,
-      "y": 48096,
+      "y": 52758,
       "w": 1280,
       "h": 1259,
       "page": "all",
@@ -512,7 +512,7 @@
     },
     "SelfDestruct.dc.html": {
       "x": 3820,
-      "y": 48096,
+      "y": 52758,
       "w": 390,
       "h": 1068,
       "page": "all",
@@ -521,7 +521,7 @@
     },
     "SelfDestruct-Wide.dc.html": {
       "x": 4290,
-      "y": 48096,
+      "y": 52758,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -530,25 +530,25 @@
     },
     "Login.dc.html": {
       "x": 5730,
-      "y": 48096,
+      "y": 52758,
       "w": 390,
-      "h": 1121,
+      "h": 1450,
       "page": "all",
       "title": "B \u00b7 Log in",
       "is_interactive": true
     },
     "Login-Wide.dc.html": {
       "x": 6200,
-      "y": 48096,
+      "y": 52758,
       "w": 1280,
-      "h": 1140,
+      "h": 1158,
       "page": "all",
       "title": "B \u00b7 Log in (wide)",
       "is_interactive": true
     },
     "Login-Backup.dc.html": {
       "x": 0,
-      "y": 51096,
+      "y": 55758,
       "w": 390,
       "h": 1124,
       "page": "all",
@@ -557,7 +557,7 @@
     },
     "Login-Backup-Wide.dc.html": {
       "x": 470,
-      "y": 51096,
+      "y": 55758,
       "w": 1280,
       "h": 1159,
       "page": "all",
@@ -566,43 +566,43 @@
     },
     "FlexOffer-Post.dc.html": {
       "x": 0,
-      "y": 32749,
+      "y": 36449,
       "w": 390,
-      "h": 6047,
+      "h": 7009,
       "page": "all",
       "title": "A1 \u00b7 Flexible offer: posting",
       "is_interactive": true
     },
     "FlexOffer-Post-Wide.dc.html": {
       "x": 470,
-      "y": 32749,
+      "y": 36449,
       "w": 1280,
-      "h": 4355,
+      "h": 4835,
       "page": "all",
       "title": "A1 \u00b7 Flexible offer: posting (wide)",
       "is_interactive": true
     },
     "FlexOffer-Quote.dc.html": {
       "x": 1910,
-      "y": 32749,
+      "y": 36449,
       "w": 390,
-      "h": 2469,
+      "h": 3336,
       "page": "all",
       "title": "A2 \u00b7 Flexible offer: lists and quote",
       "is_interactive": true
     },
     "FlexOffer-Quote-Wide.dc.html": {
       "x": 2380,
-      "y": 32749,
+      "y": 36449,
       "w": 1280,
-      "h": 1481,
+      "h": 1901,
       "page": "all",
       "title": "A2 \u00b7 Flexible offer: lists and quote (wide)",
       "is_interactive": true
     },
     "MyOffers.dc.html": {
       "x": 3820,
-      "y": 32749,
+      "y": 36449,
       "w": 390,
       "h": 2451,
       "page": "all",
@@ -611,7 +611,7 @@
     },
     "MyOffers-Wide.dc.html": {
       "x": 4290,
-      "y": 32749,
+      "y": 36449,
       "w": 1280,
       "h": 1638,
       "page": "all",
@@ -620,7 +620,7 @@
     },
     "Ban-Notice.dc.html": {
       "x": 3820,
-      "y": 42096,
+      "y": 46758,
       "w": 390,
       "h": 1791,
       "page": "all",
@@ -629,7 +629,7 @@
     },
     "Ban-Notice-Wide.dc.html": {
       "x": 4290,
-      "y": 42096,
+      "y": 46758,
       "w": 1280,
       "h": 1227,
       "page": "all",
@@ -638,7 +638,7 @@
     },
     "Maintenance.dc.html": {
       "x": 5730,
-      "y": 42096,
+      "y": 46758,
       "w": 390,
       "h": 1075,
       "page": "all",
@@ -647,7 +647,7 @@
     },
     "Maintenance-Wide.dc.html": {
       "x": 6200,
-      "y": 42096,
+      "y": 46758,
       "w": 1280,
       "h": 943,
       "page": "all",
@@ -656,7 +656,7 @@
     },
     "News.dc.html": {
       "x": 0,
-      "y": 45096,
+      "y": 49758,
       "w": 390,
       "h": 1060,
       "page": "all",
@@ -665,7 +665,7 @@
     },
     "News-Wide.dc.html": {
       "x": 470,
-      "y": 45096,
+      "y": 49758,
       "w": 1280,
       "h": 943,
       "page": "all",
@@ -674,7 +674,7 @@
     },
     "Block.dc.html": {
       "x": 1910,
-      "y": 45096,
+      "y": 49758,
       "w": 390,
       "h": 939,
       "page": "all",
@@ -683,7 +683,7 @@
     },
     "Block-Wide.dc.html": {
       "x": 2380,
-      "y": 45096,
+      "y": 49758,
       "w": 1280,
       "h": 895,
       "page": "all",
@@ -692,7 +692,7 @@
     },
     "Reviews.dc.html": {
       "x": 3820,
-      "y": 45096,
+      "y": 49758,
       "w": 390,
       "h": 1714,
       "page": "all",
@@ -701,7 +701,7 @@
     },
     "Reviews-Wide.dc.html": {
       "x": 4290,
-      "y": 45096,
+      "y": 49758,
       "w": 1280,
       "h": 1291,
       "page": "all",
@@ -710,16 +710,16 @@
     },
     "Fold-Notes.dc.html": {
       "x": 0,
-      "y": 52855,
+      "y": 57517,
       "w": 840,
-      "h": 2046,
+      "h": 2216,
       "page": "all",
       "title": "F0 \u00b7 Foldables: rules",
       "is_interactive": true
     },
     "Fold-Offers.dc.html": {
       "x": 1040,
-      "y": 52855,
+      "y": 57517,
       "w": 840,
       "h": 1012,
       "page": "all",
@@ -728,7 +728,7 @@
     },
     "Fold-Trade.dc.html": {
       "x": 2080,
-      "y": 52855,
+      "y": 57517,
       "w": 840,
       "h": 1011,
       "page": "all",
@@ -737,7 +737,7 @@
     },
     "Fold-Tabletop.dc.html": {
       "x": 3120,
-      "y": 52855,
+      "y": 57517,
       "w": 1000,
       "h": 840,
       "page": "all",
@@ -746,7 +746,7 @@
     },
     "Fold-Cover.dc.html": {
       "x": 4320,
-      "y": 52855,
+      "y": 57517,
       "w": 360,
       "h": 392,
       "page": "all",
@@ -755,7 +755,7 @@
     },
     "Fold-TriFold.dc.html": {
       "x": 4880,
-      "y": 52855,
+      "y": 57517,
       "w": 1280,
       "h": 1020,
       "page": "all",
@@ -764,7 +764,7 @@
     },
     "LoginApprove.dc.html": {
       "x": 0,
-      "y": 56096,
+      "y": 60758,
       "w": 390,
       "h": 844,
       "page": "all",
@@ -773,7 +773,7 @@
     },
     "LoginApprove-Wide.dc.html": {
       "x": 470,
-      "y": 56096,
+      "y": 60758,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -782,7 +782,7 @@
     },
     "Devices.dc.html": {
       "x": 1950,
-      "y": 56096,
+      "y": 60758,
       "w": 390,
       "h": 3743,
       "page": "all",
@@ -791,7 +791,7 @@
     },
     "Devices-Wide.dc.html": {
       "x": 2420,
-      "y": 56096,
+      "y": 60758,
       "w": 1280,
       "h": 2283,
       "page": "all",
@@ -800,7 +800,7 @@
     },
     "Team.dc.html": {
       "x": 3900,
-      "y": 56096,
+      "y": 60758,
       "w": 390,
       "h": 3093,
       "page": "all",
@@ -809,7 +809,7 @@
     },
     "Team-Wide.dc.html": {
       "x": 4370,
-      "y": 56096,
+      "y": 60758,
       "w": 1280,
       "h": 1705,
       "page": "all",
@@ -818,7 +818,7 @@
     },
     "SignupSecurity.dc.html": {
       "x": 0,
-      "y": 60439,
+      "y": 65101,
       "w": 390,
       "h": 2514,
       "page": "all",
@@ -827,7 +827,7 @@
     },
     "RecoveryCode.dc.html": {
       "x": 510,
-      "y": 60439,
+      "y": 65101,
       "w": 390,
       "h": 1642,
       "page": "all",
@@ -836,7 +836,7 @@
     },
     "RecoveryHold.dc.html": {
       "x": 1020,
-      "y": 60439,
+      "y": 65101,
       "w": 390,
       "h": 2149,
       "page": "all",
@@ -845,7 +845,7 @@
     },
     "BlockQueued.dc.html": {
       "x": 1530,
-      "y": 60439,
+      "y": 65101,
       "w": 390,
       "h": 1344,
       "page": "all",
@@ -854,7 +854,7 @@
     },
     "Compromised.dc.html": {
       "x": 2040,
-      "y": 60439,
+      "y": 65101,
       "w": 390,
       "h": 1842,
       "page": "all",
@@ -863,7 +863,7 @@
     },
     "TeamRefusal.dc.html": {
       "x": 2550,
-      "y": 60439,
+      "y": 65101,
       "w": 390,
       "h": 934,
       "page": "all",
@@ -872,25 +872,25 @@
     },
     "CancelRequest.dc.html": {
       "x": 0,
-      "y": 63939,
+      "y": 68601,
       "w": 390,
-      "h": 1909,
+      "h": 2310,
       "page": "all",
       "title": "I1 \u00b7 Ask to cancel (both must agree)",
       "is_interactive": true
     },
     "BuyerPaidWaiting.dc.html": {
       "x": 510,
-      "y": 63939,
+      "y": 68601,
       "w": 390,
-      "h": 2129,
+      "h": 2688,
       "page": "all",
       "title": "I2 \u00b7 Buyer after I've paid",
       "is_interactive": true
     },
     "InviteInvalid.dc.html": {
       "x": 1020,
-      "y": 63939,
+      "y": 68601,
       "w": 390,
       "h": 844,
       "page": "all",
@@ -899,7 +899,7 @@
     },
     "Fold-MyOffers.dc.html": {
       "x": 1530,
-      "y": 63939,
+      "y": 68601,
       "w": 840,
       "h": 1609,
       "page": "all",
@@ -908,7 +908,7 @@
     },
     "HoldChange.dc.html": {
       "x": 0,
-      "y": 69028,
+      "y": 74580,
       "w": 390,
       "h": 4408,
       "page": "all",
@@ -917,7 +917,7 @@
     },
     "TradeTechIssue.dc.html": {
       "x": 510,
-      "y": 69028,
+      "y": 74580,
       "w": 390,
       "h": 1982,
       "page": "all",
@@ -926,7 +926,7 @@
     },
     "MemberApproval.dc.html": {
       "x": 1020,
-      "y": 69028,
+      "y": 74580,
       "w": 390,
       "h": 844,
       "page": "all",
@@ -935,7 +935,7 @@
     },
     "SignupSecurity-Wide.dc.html": {
       "x": 0,
-      "y": 74036,
+      "y": 79588,
       "w": 1280,
       "h": 2325,
       "page": "all",
@@ -944,7 +944,7 @@
     },
     "RecoveryCode-Wide.dc.html": {
       "x": 1430,
-      "y": 74036,
+      "y": 79588,
       "w": 1280,
       "h": 1609,
       "page": "all",
@@ -953,7 +953,7 @@
     },
     "RecoveryHold-Wide.dc.html": {
       "x": 2860,
-      "y": 74036,
+      "y": 79588,
       "w": 1280,
       "h": 1207,
       "page": "all",
@@ -962,7 +962,7 @@
     },
     "HoldChange-Wide.dc.html": {
       "x": 4290,
-      "y": 74036,
+      "y": 79588,
       "w": 1280,
       "h": 2883,
       "page": "all",
@@ -971,7 +971,7 @@
     },
     "Compromised-Wide.dc.html": {
       "x": 5720,
-      "y": 74036,
+      "y": 79588,
       "w": 1280,
       "h": 1644,
       "page": "all",
@@ -980,7 +980,7 @@
     },
     "TradeTechIssue-Wide.dc.html": {
       "x": 0,
-      "y": 77396,
+      "y": 82948,
       "w": 1280,
       "h": 1357,
       "page": "all",
@@ -989,7 +989,7 @@
     },
     "MemberApproval-Wide.dc.html": {
       "x": 1430,
-      "y": 77396,
+      "y": 82948,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -998,25 +998,25 @@
     },
     "CancelRequest-Wide.dc.html": {
       "x": 2860,
-      "y": 77396,
+      "y": 82948,
       "w": 1280,
-      "h": 1565,
+      "h": 1799,
       "page": "all",
       "title": "I1 \u00b7 Ask to cancel (both must agree) (wide)",
       "is_interactive": true
     },
     "BuyerPaidWaiting-Wide.dc.html": {
       "x": 4290,
-      "y": 77396,
+      "y": 82948,
       "w": 1280,
-      "h": 1592,
+      "h": 1928,
       "page": "all",
       "title": "I2 \u00b7 Buyer after I've paid (wide)",
       "is_interactive": true
     },
     "InviteInvalid-Wide.dc.html": {
       "x": 5720,
-      "y": 77396,
+      "y": 82948,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -1025,7 +1025,7 @@
     },
     "SessionLength.dc.html": {
       "x": 5800,
-      "y": 56096,
+      "y": 60758,
       "w": 390,
       "h": 1649,
       "page": "all",
@@ -1034,7 +1034,7 @@
     },
     "SessionLength-Wide.dc.html": {
       "x": 6340,
-      "y": 56096,
+      "y": 60758,
       "w": 1280,
       "h": 1449,
       "page": "all",
@@ -1043,7 +1043,7 @@
     },
     "BecomeVendor.dc.html": {
       "x": 7770,
-      "y": 56096,
+      "y": 60758,
       "w": 390,
       "h": 2269,
       "page": "all",
@@ -1052,7 +1052,7 @@
     },
     "BecomeVendor-Wide.dc.html": {
       "x": 8310,
-      "y": 56096,
+      "y": 60758,
       "w": 1280,
       "h": 1642,
       "page": "all",
@@ -1061,7 +1061,7 @@
     },
     "TeamChat.dc.html": {
       "x": 9740,
-      "y": 56096,
+      "y": 60758,
       "w": 390,
       "h": 912,
       "page": "all",
@@ -1070,7 +1070,7 @@
     },
     "TeamChat-Wide.dc.html": {
       "x": 10280,
-      "y": 56096,
+      "y": 60758,
       "w": 1280,
       "h": 1144,
       "page": "all",
@@ -1079,7 +1079,7 @@
     },
     "MemberPermissions.dc.html": {
       "x": 11710,
-      "y": 56096,
+      "y": 60758,
       "w": 390,
       "h": 2841,
       "page": "all",
@@ -1088,7 +1088,7 @@
     },
     "MemberPermissions-Wide.dc.html": {
       "x": 12250,
-      "y": 56096,
+      "y": 60758,
       "w": 1280,
       "h": 2101,
       "page": "all",
@@ -1097,7 +1097,7 @@
     },
     "SessionExtend.dc.html": {
       "x": 13680,
-      "y": 56096,
+      "y": 60758,
       "w": 390,
       "h": 1459,
       "page": "all",
@@ -1106,7 +1106,7 @@
     },
     "SessionExtend-Wide.dc.html": {
       "x": 14220,
-      "y": 56096,
+      "y": 60758,
       "w": 1280,
       "h": 1331,
       "page": "all",
@@ -1115,7 +1115,7 @@
     },
     "ProofBlur.dc.html": {
       "x": 2520,
-      "y": 63939,
+      "y": 68601,
       "w": 390,
       "h": 3161,
       "page": "all",
@@ -1124,7 +1124,7 @@
     },
     "ProofBlur-Wide.dc.html": {
       "x": 3060,
-      "y": 63939,
+      "y": 68601,
       "w": 1280,
       "h": 1873,
       "page": "all",
@@ -1133,25 +1133,25 @@
     },
     "OfferAd.dc.html": {
       "x": 4490,
-      "y": 63939,
+      "y": 68601,
       "w": 390,
-      "h": 4489,
+      "h": 5379,
       "page": "all",
       "title": "I6 \u00b7 Offer page (ad): selling / buying",
       "is_interactive": true
     },
     "OfferAd-Wide.dc.html": {
       "x": 5030,
-      "y": 63939,
+      "y": 68601,
       "w": 1280,
-      "h": 2231,
+      "h": 2761,
       "page": "all",
       "title": "I6 \u00b7 Offer page (ad), wide",
       "is_interactive": true
     },
     "ProfileVisibility.dc.html": {
       "x": 15650,
-      "y": 56096,
+      "y": 60758,
       "w": 390,
       "h": 2035,
       "page": "all",
@@ -1160,7 +1160,7 @@
     },
     "Settings.dc.html": {
       "x": 0,
-      "y": 79588,
+      "y": 85476,
       "w": 390,
       "h": 3110,
       "page": "all",
@@ -1169,7 +1169,7 @@
     },
     "Settings-Wide.dc.html": {
       "x": 470,
-      "y": 79588,
+      "y": 85476,
       "w": 1280,
       "h": 1683,
       "page": "all",
@@ -1178,7 +1178,7 @@
     },
     "FAQ.dc.html": {
       "x": 1830,
-      "y": 79588,
+      "y": 85476,
       "w": 390,
       "h": 2597,
       "page": "all",
@@ -1187,7 +1187,7 @@
     },
     "FAQ-Wide.dc.html": {
       "x": 2300,
-      "y": 79588,
+      "y": 85476,
       "w": 1280,
       "h": 2359,
       "page": "all",
@@ -1196,7 +1196,7 @@
     },
     "Badges.dc.html": {
       "x": 0,
-      "y": 83298,
+      "y": 89186,
       "w": 1280,
       "h": 2287,
       "page": "all",
@@ -1214,7 +1214,7 @@
     },
     "JabberSetup.dc.html": {
       "x": 7640,
-      "y": 45096,
+      "y": 49758,
       "w": 390,
       "h": 1841,
       "page": "all",
@@ -1223,7 +1223,7 @@
     },
     "JabberSetup-Wide.dc.html": {
       "x": 8110,
-      "y": 45096,
+      "y": 49758,
       "w": 1280,
       "h": 1371,
       "page": "all",
@@ -1232,7 +1232,7 @@
     },
     "FlowMap.dc.html": {
       "x": 6360,
-      "y": 52855,
+      "y": 57517,
       "w": 1280,
       "h": 2941,
       "page": "all",
@@ -1241,7 +1241,7 @@
     },
     "HoldMember.dc.html": {
       "x": 1530,
-      "y": 69028,
+      "y": 74580,
       "w": 390,
       "h": 1931,
       "page": "all",
@@ -1250,11 +1250,38 @@
     },
     "HoldMember-Wide.dc.html": {
       "x": 7150,
-      "y": 74036,
+      "y": 79588,
       "w": 1280,
       "h": 1407,
       "page": "all",
       "title": "J1 \u00b7 Team member during the lead\u2019s hold (wide)",
+      "is_interactive": true
+    },
+    "LogoDirections.dc.html": {
+      "x": 1430,
+      "y": 89186,
+      "w": 1280,
+      "h": 10232,
+      "page": "all",
+      "title": "Logo directions \u00b7 design proposal, 8 Nov",
+      "is_interactive": true
+    },
+    "MyTrades.dc.html": {
+      "x": 7640,
+      "y": 34027,
+      "w": 390,
+      "h": 1822,
+      "page": "all",
+      "title": "A3b \u00b7 My trades",
+      "is_interactive": true
+    },
+    "MyTrades-Wide.dc.html": {
+      "x": 8110,
+      "y": 34027,
+      "w": 1280,
+      "h": 1207,
+      "page": "all",
+      "title": "A3b \u00b7 My trades (wide)",
       "is_interactive": true
     }
   },
@@ -1282,7 +1309,7 @@
       "text": "Profile & your wallets \u00b7 phone",
       "w": 240,
       "x": 0,
-      "y": 9655
+      "y": 10156
     },
     "browse": {
       "kind": "title1",
@@ -1300,7 +1327,7 @@
       "text": "Buy side \u00b7 phone",
       "w": 240,
       "x": 0,
-      "y": 20120
+      "y": 21698
     },
     "desktop": {
       "kind": "title1",
@@ -1309,7 +1336,7 @@
       "text": "Desktop \u00b7 buyer paying",
       "w": 240,
       "x": 0,
-      "y": 15546
+      "y": 17124
     },
     "disputes": {
       "kind": "title1",
@@ -1318,7 +1345,7 @@
       "text": "Disputes \u00b7 phone (trader view)",
       "w": 240,
       "x": 0,
-      "y": 27143
+      "y": 28721
     },
     "modtools": {
       "kind": "title1",
@@ -1327,7 +1354,7 @@
       "text": "Moderator tools \u00b7 desktop",
       "w": 240,
       "x": 0,
-      "y": 29693
+      "y": 31271
     },
     "setup": {
       "kind": "title1",
@@ -1336,7 +1363,7 @@
       "text": "Getting started \u00b7 phone",
       "w": 240,
       "x": 0,
-      "y": 13711
+      "y": 14212
     },
     "staff": {
       "kind": "title1",
@@ -1345,7 +1372,7 @@
       "text": "Owner & staff tools \u00b7 desktop",
       "w": 240,
       "x": 0,
-      "y": 17570
+      "y": 19148
     },
     "tradeph": {
       "kind": "title1",
@@ -1358,7 +1385,7 @@
     },
     "brief1029": {
       "x": 0,
-      "y": 32449,
+      "y": 36149,
       "text": "Brief 29 Oct \u00b7 new screens (phone + wide; night/day via the theme tweak)",
       "kind": "title1",
       "maxW": 7480,
@@ -1366,7 +1393,7 @@
     },
     "fold1029": {
       "x": 0,
-      "y": 52555,
+      "y": 57217,
       "text": "Foldables \u00b7 Pixel / Galaxy / iPhone Fold, tri-fold, Flip cover (night/day via the theme tweak)",
       "kind": "title1",
       "maxW": 7480,
@@ -1374,7 +1401,7 @@
     },
     "dev1029": {
       "x": 0,
-      "y": 55846,
+      "y": 60508,
       "text": "Devices and team members \u00b7 phone + wide",
       "kind": "title1",
       "maxW": 7480,
@@ -1382,7 +1409,7 @@
     },
     "sec1101": {
       "x": 0,
-      "y": 60139,
+      "y": 64801,
       "text": "Login strength, recovery and compromised account \u00b7 1 Nov (draft copy)",
       "kind": "title1",
       "maxW": 7480,
@@ -1390,7 +1417,7 @@
     },
     "gaps1101": {
       "x": 0,
-      "y": 63639,
+      "y": 68301,
       "text": "Gaps from the 1 Nov screenshot review",
       "kind": "title1",
       "maxW": 7480,
@@ -1398,7 +1425,7 @@
     },
     "hold1102": {
       "x": 0,
-      "y": 68728,
+      "y": 74280,
       "text": "Owner's hold model \u00b7 2 Nov (draft copy)",
       "kind": "title1",
       "maxW": 7480,
@@ -1406,7 +1433,7 @@
     },
     "wide1102": {
       "x": 0,
-      "y": 73736,
+      "y": 79288,
       "text": "Desktop versions of the 1\u20132 Nov screens",
       "kind": "title1",
       "maxW": 7480,
@@ -1414,14 +1441,14 @@
     },
     "settings1105": {
       "x": 0,
-      "y": 79288,
+      "y": 85176,
       "text": "Settings and FAQ \u00b7 5 Nov (draft copy)",
       "kind": "title1",
       "maxW": 1840
     },
     "badges-row": {
       "x": 0,
-      "y": 82998,
+      "y": 88886,
       "text": "Badges and the trader card \u00b7 7 Nov (design proposal)",
       "kind": "title1",
       "maxW": 1280
@@ -1499,6 +1526,8 @@
     "FlexOffer-Quote-Wide.dc.html",
     "MyOffers.dc.html",
     "MyOffers-Wide.dc.html",
+    "MyTrades.dc.html",
+    "MyTrades-Wide.dc.html",
     "Ban-Notice.dc.html",
     "Ban-Notice-Wide.dc.html",
     "Maintenance.dc.html",
@@ -1566,7 +1595,8 @@
     "Settings-Wide.dc.html",
     "FAQ.dc.html",
     "FAQ-Wide.dc.html",
-    "Badges.dc.html"
+    "Badges.dc.html",
+    "LogoDirections.dc.html"
   ],
   "pages": [
     {

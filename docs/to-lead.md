@@ -634,3 +634,19 @@ SellerRefund: "After 90 min and one nudge" → "After 90 min and at least one nu
 2. **50 and 1,000 trades: approved** as milestones in the ink family with the number as the glyph in mono: "50" and "1k" in the 22 and 28 px seals, "1,000" only in the 40 px seal. Names "50 trades" and "1,000 trades"; meanings "Completed 50 trades." / "Completed 1,000 trades." (COPY-UNSIGNED). Design adds them to the Badges board.
 3. **Hold button: approved.** A 16% on-monero overlay on the #ff6600 fill while held, text on-monero; 4.8:1 passes. No glow, no ring.
 4. **Repo board copies to #ff6600:** done on its own branch with every reference re-captured (see below).
+
+## 8 Nov 2026: X2F logo directions, header pattern and landing (canvas, LogoDirections board) — for the owner to pick
+
+Board `LogoDirections` (Badges row). Four hand-drawn directions, each large on night and day, as the 24/32 px header lockup and as the 32/16 px favicon in a tab:
+- **A · Key pair:** the 2-of-3 key mark (two dots and a ring) on one diagonal of the X, a split stroke on the other. Caution: at a glance it reads as a percent sign, the wrong signal on a site full of markups.
+- **B · Exchange:** X2F as one monoline, the 2 a route from a dot to an arrow aimed at the F ("XMR to fiat"); the 2 alone is the mark.
+- **C · Seal:** a rounded-square ink seal in the badge-seal language holding an X woven from an ink bar under an escrow-teal bar; it is already the app icon and favicon.
+- **D · Wordmark only:** X2F in Familjen 700, hand-spaced, the F's middle arm ending in one Monero-orange coin.
+
+**Design recommends C, Seal; second choice B.** C is an app icon, favicon and header mark in one object, belongs to the kit's seals, says escrow in teal without spending orange. A dropped to an alternate (the % read).
+
+**Header pattern (owner #2):** back (sub-pages) · lockup 24 px · en dash · page name 18/24 600; only the name truncates; browser tab "Page name – X2F"; pre-login pages keep the centred logo. Page names proposed for every screen (≤ 18 characters), e.g. browse "Find a trade" (his alternates "Trade search", "Trade match-up"), quote "Your quote", every trade step "Trade · K7M2", "Waiting changes", "Ask X2F staff".
+
+**Landing (owner, 8 Nov):** for each direction, phone and wide, night and day: the logo large, his slogan "You'll need Fiat to believe it." exactly, then only "Create account", "Log in" and "Lost access? Recover your account" (front door rule), and a footer "Members only · Monero for cash, 2-of-3 escrow" (anticipated, unsigned).
+
+Questions for the owner: (1) logo A, B, C or D (design: C); (2) the browse page name: "Find a trade", "Trade search" or "Trade match-up" (design: "Find a trade"). Every other line on the board is COPY-UNSIGNED except his slogan and the three button labels.
