@@ -313,7 +313,7 @@
       "y": 20381
     },
     "TradeFund.dc.html": {
-      "h": 2296,
+      "h": 2672,
       "is_interactive": true,
       "page": "all",
       "title": "1 \u00b7 Seller funds escrow",
@@ -397,7 +397,7 @@
       "x": 4290,
       "y": 44691,
       "w": 1280,
-      "h": 1415,
+      "h": 1383,
       "page": "all",
       "title": "A7 \u00b7 Warning before release (wide)",
       "is_interactive": true
@@ -908,7 +908,7 @@
     },
     "HoldChange.dc.html": {
       "x": 0,
-      "y": 77894,
+      "y": 77914,
       "w": 390,
       "h": 4408,
       "page": "all",
@@ -917,7 +917,7 @@
     },
     "TradeTechIssue.dc.html": {
       "x": 510,
-      "y": 77894,
+      "y": 77914,
       "w": 390,
       "h": 1982,
       "page": "all",
@@ -926,7 +926,7 @@
     },
     "MemberApproval.dc.html": {
       "x": 1020,
-      "y": 77894,
+      "y": 77914,
       "w": 390,
       "h": 1423,
       "page": "all",
@@ -935,7 +935,7 @@
     },
     "SignupSecurity-Wide.dc.html": {
       "x": 0,
-      "y": 82902,
+      "y": 82922,
       "w": 1280,
       "h": 2325,
       "page": "all",
@@ -944,7 +944,7 @@
     },
     "RecoveryCode-Wide.dc.html": {
       "x": 1430,
-      "y": 82902,
+      "y": 82922,
       "w": 1280,
       "h": 1609,
       "page": "all",
@@ -953,7 +953,7 @@
     },
     "RecoveryHold-Wide.dc.html": {
       "x": 2860,
-      "y": 82902,
+      "y": 82922,
       "w": 1280,
       "h": 1207,
       "page": "all",
@@ -962,7 +962,7 @@
     },
     "HoldChange-Wide.dc.html": {
       "x": 4290,
-      "y": 82902,
+      "y": 82922,
       "w": 1280,
       "h": 2883,
       "page": "all",
@@ -971,7 +971,7 @@
     },
     "Compromised-Wide.dc.html": {
       "x": 5720,
-      "y": 82902,
+      "y": 82922,
       "w": 1280,
       "h": 1644,
       "page": "all",
@@ -980,7 +980,7 @@
     },
     "TradeTechIssue-Wide.dc.html": {
       "x": 0,
-      "y": 86262,
+      "y": 86282,
       "w": 1280,
       "h": 1357,
       "page": "all",
@@ -989,7 +989,7 @@
     },
     "MemberApproval-Wide.dc.html": {
       "x": 1430,
-      "y": 86262,
+      "y": 86282,
       "w": 1280,
       "h": 1145,
       "page": "all",
@@ -998,7 +998,7 @@
     },
     "CancelRequest-Wide.dc.html": {
       "x": 2860,
-      "y": 86262,
+      "y": 86282,
       "w": 1280,
       "h": 2091,
       "page": "all",
@@ -1007,7 +1007,7 @@
     },
     "BuyerPaidWaiting-Wide.dc.html": {
       "x": 4290,
-      "y": 86262,
+      "y": 86282,
       "w": 1280,
       "h": 2084,
       "page": "all",
@@ -1016,7 +1016,7 @@
     },
     "InviteInvalid-Wide.dc.html": {
       "x": 5720,
-      "y": 86262,
+      "y": 86282,
       "w": 1280,
       "h": 1197,
       "page": "all",
@@ -1135,7 +1135,7 @@
       "x": 4490,
       "y": 71915,
       "w": 390,
-      "h": 5379,
+      "h": 5399,
       "page": "all",
       "title": "I6 \u00b7 Offer page (ad): selling / buying",
       "is_interactive": true
@@ -1144,7 +1144,7 @@
       "x": 5030,
       "y": 71915,
       "w": 1280,
-      "h": 2761,
+      "h": 2801,
       "page": "all",
       "title": "I6 \u00b7 Offer page (ad), wide",
       "is_interactive": true
@@ -1160,7 +1160,7 @@
     },
     "Settings.dc.html": {
       "x": 0,
-      "y": 88953,
+      "y": 88973,
       "w": 390,
       "h": 3110,
       "page": "all",
@@ -1169,7 +1169,7 @@
     },
     "Settings-Wide.dc.html": {
       "x": 470,
-      "y": 88953,
+      "y": 88973,
       "w": 1280,
       "h": 1683,
       "page": "all",
@@ -1178,7 +1178,7 @@
     },
     "FAQ.dc.html": {
       "x": 1830,
-      "y": 88953,
+      "y": 88973,
       "w": 390,
       "h": 2597,
       "page": "all",
@@ -1187,7 +1187,7 @@
     },
     "FAQ-Wide.dc.html": {
       "x": 2300,
-      "y": 88953,
+      "y": 88973,
       "w": 1280,
       "h": 2359,
       "page": "all",
@@ -1196,7 +1196,7 @@
     },
     "Badges.dc.html": {
       "x": 0,
-      "y": 92663,
+      "y": 92683,
       "w": 1280,
       "h": 2353,
       "page": "all",
@@ -1241,7 +1241,7 @@
     },
     "HoldMember.dc.html": {
       "x": 1530,
-      "y": 77894,
+      "y": 77914,
       "w": 390,
       "h": 2231,
       "page": "all",
@@ -1250,7 +1250,7 @@
     },
     "HoldMember-Wide.dc.html": {
       "x": 7150,
-      "y": 82902,
+      "y": 82922,
       "w": 1280,
       "h": 1565,
       "page": "all",
@@ -1259,7 +1259,7 @@
     },
     "LogoDirections.dc.html": {
       "x": 1430,
-      "y": 92663,
+      "y": 92683,
       "w": 1280,
       "h": 10202,
       "page": "all",
@@ -1304,7 +1304,7 @@
     },
     "BrandKit.dc.html": {
       "x": 2860,
-      "y": 92663,
+      "y": 92683,
       "w": 1280,
       "h": 6633,
       "page": "all",
@@ -1488,7 +1488,7 @@
     },
     "hold1102": {
       "x": 0,
-      "y": 77594,
+      "y": 77614,
       "text": "Owner's hold model \u00b7 2 Nov (draft copy)",
       "kind": "title1",
       "maxW": 7480,
@@ -1496,7 +1496,7 @@
     },
     "wide1102": {
       "x": 0,
-      "y": 82602,
+      "y": 82622,
       "text": "Desktop versions of the 1\u20132 Nov screens",
       "kind": "title1",
       "maxW": 7480,
@@ -1504,14 +1504,14 @@
     },
     "settings1105": {
       "x": 0,
-      "y": 88653,
+      "y": 88673,
       "text": "Settings and FAQ \u00b7 5 Nov (draft copy)",
       "kind": "title1",
       "maxW": 1840
     },
     "badges-row": {
       "x": 0,
-      "y": 92363,
+      "y": 92383,
       "text": "Badges and the trader card \u00b7 7 Nov (design proposal)",
       "kind": "title1",
       "maxW": 1280
