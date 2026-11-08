@@ -80,10 +80,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><strong>8 Nov, owner #11 (ad amounts).</strong> Each card: the price row (offer price, time), then markup bottom-left ("+0.4%" mono over "Vendor markup"; "0%" / "At market" when none) and two rows right-aligned in mono: the range in XMR and the range in USD. The poster sets the range in one unit; that row is exact and the other is converted and starts with "≈". The second card shows an XMR-set range. Above the list, "Display amounts including vendor markup" (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">withMarkup</span> tweak, showing: {{wm.state}}; default off) recalculates the converted rows: off at the market rate (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$329.90</span>), on at each offer's own price. Selected box: ink fill, the ink ring family.</p>
     <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><span style="display: inline-flex; align-items: center; height: 20px; padding: 0 6px; margin-right: 6px; border-radius: 6px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px;">Anticipated · design, 8 Nov</span>Follows owner #3: the market price strip carries "Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC" (no provider named, Q34). The method stays in the title: this board has no method card, so the owner #1 drop-down lives on Main / BuyMain.</p>
     <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;">COPY-UNSIGNED, 8 Nov: "Display amounts including vendor markup" (owner's words), "Converted at the market rate, before markup.", "Converted at each offer's price, markup included.", "Vendor markup", "At market" (kept), "≈", "Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC".</p>
+  <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>8 Nov follow-up: one set of facts for satoshi_ghost's offer.</strong> Bands <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50 – $500</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$330.00</span> and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$500.01 – $1,500</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$331.88</span> (BuyQuote's), market <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$329.90</span>, so his markup is <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+0.03%</span> (was <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+0.1%</span>). His card now reads "<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+0.03%</span>"; markups under <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.1%</span> show two decimals.</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"withMarkup":{"editor":"enum","options":["off","on"],"default":"off"},"$preview":{"width":390,"height":1987}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"withMarkup":{"editor":"enum","options":["off","on"],"default":"off"},"$preview":{"width":390,"height":2089}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -95,7 +96,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 1987px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 2089px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const sort = this.state.sort;
     const sorts = [['price', 'Best price'], ['online', 'Online now'], ['trades', 'Most trades']].map(([id, label]) => ({
       label,
@@ -117,7 +118,7 @@ class Component extends DCLogic {
       const xmr = unit === 'xmr' ? lo.toFixed(6) + ' – ' + hi.toFixed(6) : '≈ ' + (lo / rate).toFixed(6) + ' – ' + (hi / rate).toFixed(6);
       const fiat = unit === 'xmr' ? '≈ ' + amtUsd(lo * rate, true) + ' – ' + amtUsd(hi * rate, true) : amtUsd(lo, lo % 1 !== 0) + ' – ' + amtUsd(hi, hi % 1 !== 0);
       return { price: amtUsd(price, true), xmr, fiat,
-        mark: pct === 0 ? '0%' : (pct > 0 ? '+' : '−') + Math.abs(pct).toFixed(1) + '%',
+        mark: pct === 0 ? '0%' : (pct > 0 ? '+' : '−') + Math.abs(pct).toFixed(Math.abs(pct) < 0.1 ? 2 : 1) + '%',
         markLabel: pct === 0 ? 'At market' : 'Vendor markup',
         markStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; color: " + (pct === 0 ? 'var(--ink-muted);' : 'var(--escrow);') };
     };
@@ -127,7 +128,7 @@ class Component extends DCLogic {
       hint: withMarkup ? "Converted at each offer's price, markup included." : 'Converted at the market rate, before markup.',
       toggle: () => this.setState({ wm: !withMarkup })
     };
-    const ADS = [[330.0, 0.1, 'fiat', 50, 1500], [331.5, 0.5, 'xmr', 0.3, 9], [333.0, 0.9, 'fiat', 20, 400]];
+    const ADS = [[330.0, 0.03, 'fiat', 50, 1500], [331.5, 0.5, 'xmr', 0.3, 9], [333.0, 0.9, 'fiat', 20, 400]];
     const ads = { a0: adAmt(ADS[0]), a1: adAmt(ADS[1]), a2: adAmt(ADS[2]) };
     return { rootStyle, ads, wm,
       sorts

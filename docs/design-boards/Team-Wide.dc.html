@@ -81,7 +81,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
                 <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></span>
                     <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column;">
                       <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Edit what they can do</span>
-                      <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{m.allowed}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.total}}</span> allowed · {{m.presetLabel}}</span>
+                      <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{m.allowed}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.total}}</span> allowed · in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.typesOn}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">5</span> types</span>
+                  <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Trades <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{m.band}}</span> XMR · {{m.hoursPre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.hoursNum}}</span>{{m.hoursPost}}</span>
                     </span>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg>
                   </a>
@@ -104,7 +105,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <p style="margin: 0; font-size: 15px; line-height: 22px;">Switching a member off logs them out at once. Up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> members per account.</p>
           <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; font-size: 14px; line-height: 20px;">
         <li style="display: flex; align-items: center; gap: 14px;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span><span>Adding a member or changing what they can do needs a passkey, security key or PGP key.</span></li>
-        <li style="display: flex; align-items: center; gap: 14px;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></span><span>You approve each new member&#39;s first login.</span></li>
+        <li style="display: flex; align-items: center; gap: 14px;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></span><span>You approve each member&#39;s first login, once. Later logins and new devices don&#39;t need you.</span></li>
+        <li style="display: flex; align-items: center; gap: 14px;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg></span><span>Members can use any login, even a stronger one than yours. If you log in with just a username and password, team changes still wait <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h, even when a member with a strong login makes them.</span></li>
         <li style="display: flex; align-items: center; gap: 14px;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M11 18h2"/></svg></span><span>Members&#39; logins don&#39;t count toward your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> devices.</span></li>
         <li style="display: flex; align-items: center; gap: 14px;"><span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span>During a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold, all team changes wait until the hold ends.</span></li>
       </ul>
@@ -122,7 +124,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <section aria-labelledby="tm-can" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
           <div style="display: flex; flex-direction: column; gap: 4px;">
             <h2 id="tm-can" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What members can do</h2>
-            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You choose for each member, switch by switch. Start from a preset, then fine-tune.</p>
+            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Each member is in one or more types (Chat, Offers, Trades, Records, Holds), with boxes you tick in each. Start from one of these, then untick anything.</p>
           </div>
           <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
             <sc-for list="{{presetRows}}" as="p" hint-placeholder-count="4">
@@ -131,7 +133,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </ul>
           <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
             <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
-            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Sensitive permissions, like releasing XMR, warn you before they turn on.</p>
+            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Confirming payment received and releasing XMR stay with you. Members can&#39;t be given them.</p>
           </div>
           <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg><p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Trades are never accepted automatically.</p></div>
         </section>
@@ -160,6 +162,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <span style="font-weight: 600;">Removing a member waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h like every other change.</span>
         <span>The Remove sheet no longer says "They are logged out now"; it reads "Like every other change, this waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h; they keep working until then." and the confirmation note "… will be removed after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h." During the hold the lead can log back in with a passkey, security key or PGP key and untick it (HoldChange). Switching a member off still needs a strong login, so it applies at once.</span>
       </aside>
+    <aside aria-label="Decided by the owner: no release or confirm-received for members" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 8 Nov (p10-2)</span><span style="font-weight: 600;">Releasing stays with the team lead until feedback asks otherwise.</span><span>The "Sensitive permissions … warn you" line becomes "Confirming payment received and releasing XMR stay with you. Members can&#39;t be given them.", and "Only you can" gains "Confirm payment received and release XMR". Totals are now <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">33</span>.</span></aside>
+    <aside aria-label="Decided by the owner: types with Manager and starting set" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 8 Nov (p7-5, p7-12)</span><span style="font-weight: 600;">The four old presets (Chat only, Offers manager, Trade handler, Everything allowed) are gone.</span><span>"What members can do" explains the types and lists two starting points: Starting set <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">33</span> (set A) and Manager <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">27</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">33</span>. The Add sheet offers the same two; neither turns on anything sensitive, so its warning is removed. Member rows read "10 of 33 allowed · in 4 of 5 types".</span></aside>
+    <aside aria-label="Decided by the owner: band and hours on each row" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 8 Nov (p7-4, p7-11)</span><span style="font-weight: 600;">Each member row shows their trade-size band and working hours.</span><span>"Trades 0.1–2 XMR · Any time" (desk_ana); "Trades 0.1–5 XMR · Mon–Fri, 09:00–17:00 UTC" (desk_sam). Short form here; MemberPermissions shows the full band with 6 decimals.</span></aside>
+    <aside aria-label="Decided by the owner: first login only; any login method" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 8 Nov (p7-10, p7-9)</span><span style="font-weight: 600;">You approve a member&#39;s first login only; members may log in any way.</span><span>"You approve each member&#39;s first login, once. Later logins and new devices don&#39;t need you." replaces "You approve each new member&#39;s first login."; the Add sheet&#39;s "They work as soon as you approve the first login" warning is gone with the presets. New line: a username-and-password lead still puts team changes on the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h hold, even when a strong member makes them.</span></aside>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">COPY-UNSIGNED, 8 Nov: "in 4 of 5 types"; "Trades 0.1–2 XMR · Any time"; "You approve each member&#39;s first login, once. Later logins and new devices don&#39;t need you."; "Members can use any login, even a stronger one than yours. If you log in with just a username and password, team changes still wait 24 h, even when a member with a strong login makes them."; "Each member is in one or more types (Chat, Offers, Trades, Records, Holds), with boxes you tick in each. Start from one of these, then untick anything."; "Starting set"; "Manager"; "Talk and look: chats, offers, disputes and history. Nothing that moves money."; "Runs the desk. Not deleting offers, exports, payout amounts or holds."; "Confirming payment received and releasing XMR stay with you. Members can&#39;t be given them."; "Confirm payment received and release XMR"; "You approve their first login, once. They start with the starting set (10 of 33)."</p>
     </section>
   </main>
 
@@ -185,9 +192,6 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             </sc-for>
             </div>
           </div>
-          <sc-if value="{{hasSens}}" hint-placeholder-val="{{false}}">
-            <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--caution);"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg><span style="font-size: 14px; line-height: 20px;">{{sensText}}</span></div>
-          </sc-if>
           <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">You can fine-tune every permission after they join. This needs your passkey, security key or PGP key. During a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold it waits until the hold ends.</p>
           <div style="display: flex; justify-content: flex-end; align-items: center; gap: 12px;">
             <button type="button" onClick="{{closeSheet}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Cancel</button>
@@ -214,7 +218,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-muted);"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>It works once and expires in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours, at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2 Nov 2026, 14:05 UTC</span>.</span></li>
             <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-muted);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Send it privately, for example in an encrypted chat. Anyone who has the link can use it.</span></li>
             <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-muted);"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg><span>When they open it, they set up their own login with a passkey, security key or PGP key.</span></li>
-            <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--team);"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg><span>You approve their first login. They start as {{draftPreset}}.</span></li>
+            <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--team);"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg><span>You approve their first login, once. They start with {{draftPreset}}.</span></li>
           </ul>
           <button type="button" onClick="{{finish}}" style="display: flex; align-items: center; justify-content: center; align-self: flex-end; min-width: 160px; height: 48px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Done</button>
         </sc-if>
@@ -231,14 +235,14 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1705}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":2314}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
     this.state = {
       list: [
-        { id: 'sam', name: 'desk_sam', kind: 'member', on: true, online: true, seen: 'Active 4 min ago', since: '2 Sep 2026', allowed: 12, preset: null },
-        { id: 'ana', name: 'desk_ana', kind: 'member', on: true, online: false, seen: 'Last active yesterday', since: '19 Sep 2026', allowed: 9, preset: 'trades' }
+        { id: 'sam', name: 'desk_sam', kind: 'member', on: true, online: true, seen: 'Active 4 min ago', since: '2 Sep 2026', allowed: 12, typesOn: 3, band: '0.1–5', hours: ['Mon–Fri, ', '09:00–17:00', ' UTC'], preset: null },
+        { id: 'ana', name: 'desk_ana', kind: 'member', on: true, online: false, seen: 'Last active yesterday', since: '19 Sep 2026', allowed: 10, typesOn: 4, band: '0.1–2', hours: ['Any time', '', ''], preset: 'start' }
       ],
       sheet: null, draft: '', target: null, copied: false, note: '', pick: null, verify: null
     };
@@ -251,13 +255,11 @@ class Component extends DCLogic {
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const s = this.state;
     const MAX = 3;
-    // Owner, 2 Nov: per-member permissions (MemberPermissions) replace the two fixed roles. Same four presets and counts.
-    const TOTAL = 34;
+        // Owner p7-5 / p7-12 (8 Nov): two starting points over the types-and-boxes model; p10-2: no release or confirm-received box. 33 boxes in all.
+    const TOTAL = 33;
     const PRESETS = [
-      { id: 'chat-only', label: 'Chat only', n: 2, desc: 'See trades and reply in trade chat.', sens: [] },
-      { id: 'offers', label: 'Offers manager', n: 5, desc: 'Post, edit and pause offers, plus trade chat.', sens: ['posting offers', 'editing offers'] },
-      { id: 'trades', label: 'Trade handler', n: 9, desc: 'Accept trades, confirm payment, cancel, disputes and chat.', sens: ['accepting trades', 'confirming payments'] },
-      { id: 'everything', label: 'Everything allowed', n: 34, desc: 'Every permission.', sens: ['posting, editing and deleting offers', 'accepting trades', 'confirming payments', 'releasing XMR'] }
+      { id: 'start', label: 'Starting set', n: 10, desc: 'Talk and look: chats, offers, disputes and history. Nothing that moves money.', sens: [] },
+      { id: 'manager', label: 'Manager', n: 27, desc: 'Runs the desk. Not deleting offers, exports, payout amounts or holds.', sens: [] }
     ];
     const presetOf = (id) => PRESETS.find((p) => p.id === id);
     const initials = (n) => { const p = n.split(/[_.\-\s]+/).filter(Boolean); return ((p.length > 1 ? p[0].charAt(0) + p[1].charAt(0) : n.slice(0, 2)) || '?').toUpperCase(); };
@@ -286,7 +288,8 @@ class Component extends DCLogic {
         pillStyle: 'display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; ' + (live ? 'background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);' : 'background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted);'),
         rowStyle: 'display: flex; flex-direction: column; gap: 12px; padding: 16px 0 12px;' + (i > 0 ? ' border-top: 1px solid color-mix(in srgb, var(--team) 25%, transparent);' : ''),
         sub: member ? 'Member since' : 'Expires', when: m.since,
-        allowed: String(m.allowed), total: String(TOTAL), presetLabel: p ? p.label : 'Custom',
+        allowed: String(m.allowed), total: String(TOTAL), presetLabel: p ? p.label : 'Custom', typesOn: String(m.typesOn || 4),
+        band: m.band || '0.1–2', hoursPre: (m.hours || ['Any time'])[0], hoursNum: (m.hours || ['', ''])[1] || '', hoursPost: (m.hours || ['', '', ''])[2] || '',
         editLabel: 'Edit what ' + m.name + ' can do',
         swLabel: m.name + ' is switched on',
         sw: sw(m.on, () => this.setState({ sheet: 'verify', verify: { kind: m.on ? 'off' : 'on', id: m.id } })),
@@ -314,7 +317,7 @@ class Component extends DCLogic {
       };
     });
     const presetRows = PRESETS.map((p, i) => ({ label: p.label, n: String(p.n), total: String(TOTAL), style: 'display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; margin: 0 14px;' + (i > 0 ? ' border-top: 1px solid var(--surface);' : '') }));
-    const ONLY = ['Change payout wallets', 'Add or remove members and change what they can do', 'Change login methods and security settings', 'Manage sessions and devices', 'Change the account type', 'Delete the account'];
+    const ONLY = ['Confirm payment received and release XMR', 'Change payout wallets', 'Add or remove members and change what they can do', 'Change login methods and security settings', 'Manage sessions and devices', 'Change the account type', 'Delete the account'];
     const noMake = draft === '' || !picked;
     const primary = (off) => 'display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (off ? 'border: 0; background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;' : 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer;');
 
@@ -332,9 +335,9 @@ class Component extends DCLogic {
     };
     const methods = ['Use my passkey', 'Use my security key'].map((label) => ({ label, use: verified }));
 
-    // Board height = measured content height (night, fonts loaded). The right column sets it (1510) up to 2 rows.
-    // With 3 rows (the most allowed) the member column is taller: 1526 for 3 invites, +14 per member row, +70 for the status note.
-    const H = count >= MAX ? 1721 + 14 * s.list.filter((m) => m.kind === 'member').length + (s.note ? 70 : 0) : 1705;
+    // 8 Nov: the right column sets it (2314) until the member column is taller: 1802 + each row (member 229, invite 189) + 70 for the status note.
+    const left = 1802 + s.list.reduce((t, m) => t + (m.kind === 'member' ? 229 : 189), 0) + (s.note ? 70 : 0);
+    const H = Math.max(2314, left);
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     return {
       rootStyle, members, presetRows, presetOpts,
@@ -345,14 +348,12 @@ class Component extends DCLogic {
       isFull: full, addStyle: primary(full),
       openAdd: () => { if (!full) this.setState({ sheet: 'name', draft: '', copied: false, pick: null, verify: null }); },
       sheetOpen: s.sheet !== null, isName: s.sheet === 'name', isVerify: s.sheet === 'verify', isLink: s.sheet === 'link', isRemove: s.sheet === 'remove',
-      hasSens: !!picked && picked.sens.length > 0,
-      sensText: picked && picked.sens.length ? '“' + picked.label + '” turns on sensitive permissions: ' + picked.sens.join(', ') + '. They work as soon as you approve the first login.' : '',
       draft: s.draft, setDraft: (e) => this.setState({ draft: e.target.value }),
       noMake, makeStyle: primary(noMake),
       makeLink: () => { if (!noMake) this.setState({ sheet: 'verify', verify: { kind: 'add' } }); },
       verifyText, methods,
       verifyCancel: () => this.setState({ sheet: v && v.kind === 'add' ? 'name' : null, verify: null }),
-      draftName: draft, draftPreset: picked ? picked.label : '',
+      draftName: draft, draftPreset: picked ? (picked.id === 'manager' ? 'the Manager set (' + picked.n + ' of ' + TOTAL + ')' : 'the starting set (' + picked.n + ' of ' + TOTAL + ')') : '',
       copyLabel: s.copied ? 'Copied' : 'Copy link',
       copy: () => this.setState({ copied: true }),
       finish: () => this.setState({ sheet: null, draft: '', list: s.list.concat([{ id: 'inv' + count + draft, name: draft, kind: 'invite', on: false, online: false, seen: '', since: '2 Nov 2026, 14:05 UTC', allowed: picked ? picked.n : 0, preset: s.pick }]), note: 'Invite link made for ' + draft + '. It expires in 24 hours.' }),

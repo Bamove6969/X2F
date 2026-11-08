@@ -40,6 +40,7 @@ h1,h2,h3{text-wrap:balance}
           <div style="display: flex; flex-direction: column; gap: 8px;">
             <h2 id="hm-hold" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">A hold is on</h2>
             <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">satoshi_ghost&#39;s team is on a <span class="mono">24</span>-hour hold. Some changes are waiting; they apply when it ends.</p>
+            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">satoshi_ghost logs in with just a username and password, so team changes wait <span class="mono">24</span> h, even when a member with a stronger login makes them.</p>
           </div>
           <div style="display: flex; flex-direction: column; gap: 6px;">
             <span class="lbl" style="color: var(--caution);">Ends in</span>
@@ -64,7 +65,7 @@ h1,h2,h3{text-wrap:balance}
               <span style="font-size: 16px; line-height: 22px; font-weight: 600;">desk_ana</span>
               <span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>Team member</span>
             </span>
-            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">In <span class="mono" style="color: var(--ink);">2</span> of <span class="mono">5</span> types · <span class="mono" style="color: var(--ink);">9</span> of <span class="mono">34</span> allowed</span>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">In <span class="mono" style="color: var(--ink);">4</span> of <span class="mono">5</span> types · <span class="mono" style="color: var(--ink);">10</span> of <span class="mono">33</span> allowed</span>
           </span>
         </div>
         <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
@@ -174,17 +175,23 @@ h1,h2,h3{text-wrap:balance}
         <li><span class="mono">cancel</span> ("Untick or cancel waiting changes"): the ticks come back and Cancel all changes (danger tertiary) with HoldChange&#39;s cancel confirm. No primary: approving is the lead&#39;s.</li>
         <li><span class="mono">end</span> ("End a hold"): as cancel plus the primary End the hold (<span class="mono">56</span> px monero). It needs a strong login, so it opens the Confirm it&#39;s you sheet; every ticked change then applies at once.</li>
         <li>The list is copied from HoldChange (markup, data and effect lines). One swap: the removed member is desk_sam, not desk_ana, because desk_ana is the member signed in here.</li>
-        <li>The member&#39;s row uses the team kit: <span class="mono">--team</span> avatar with initials in <span class="mono">--ground</span>, the Team member tag, "In <span class="mono">2</span> of <span class="mono">5</span> types · <span class="mono">9</span> of <span class="mono">34</span> allowed". The hero is v2 §6 in caution; the result states (hold ended, changes cancelled) use the shared done_state.</li>
+        <li>The member&#39;s row uses the team kit: <span class="mono">--team</span> avatar with initials in <span class="mono">--ground</span>, the Team member tag, "In <span class="mono">4</span> of <span class="mono">5</span> types · <span class="mono">10</span> of <span class="mono">33</span> allowed". The hero is v2 §6 in caution; the result states (hold ended, changes cancelled) use the shared done_state.</li>
       </ul>
+    </aside>
+    <aside aria-label="Decided by the owner: members may use any login; a weak lead still holds" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 8 Nov (p7-9, p7-12, p10-2)</span>
+      <span style="font-weight: 600;">Members may log in any way, but a username-and-password lead still puts team changes on the 24 h hold, even when a strong member makes them.</span>
+      <span>The hero adds "satoshi_ghost logs in with just a username and password, so team changes wait 24 h, even when a member with a stronger login makes them." Counts: desk_ana "In 4 of 5 types · 10 of 33 allowed" (starting set, p7-12); desk_sam "In 3 of 5 types · 12 of 33 allowed" replaces "Custom · 12 of 34" (33 after p7-8 and p10-2).</span>
+      <span style="color: var(--ink-muted);">COPY-UNSIGNED, 8 Nov: the hero line above; "In 4 of 5 types · 10 of 33 allowed"; "In 3 of 5 types · 12 of 33 allowed".</span>
     </aside>
     <aside aria-label="Copy not yet signed off" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">COPY-UNSIGNED</span>
-      <span>Every sentence on this screen is new draft copy: "A hold is on" · "satoshi_ghost&#39;s team is on a <span class="mono">24</span>-hour hold. Some changes are waiting; they apply when it ends." · "Ends in <span class="mono">23</span> h <span class="mono">12</span> min" · "You can keep trading as usual." · "In <span class="mono">2</span> of <span class="mono">5</span> types · <span class="mono">9</span> of <span class="mono">34</span> allowed" · "What you can see: that a hold is on. Ask satoshi_ghost if you need to know more." · "You can see these changes but not change them." · "You can untick a change so it won&#39;t apply, or cancel all of them." · "Waiting changes" · "Submitted by satoshi_ghost · username and password" · "Needs your passkey, security key or PGP key. Ending the hold applies every ticked change now." · "End the hold" · "Confirm it&#39;s you" · "Ending the hold needs a passkey, security key or PGP key. <span class="mono">4</span> changes will apply now." · "Hold ended" · "Every ticked change applied just now. The team is back to normal." · "Changes cancelled" · "None of the <span class="mono">4</span> changes will apply. Nothing is waiting any more." The list rows, the ticks, "Ticked to apply", "Apply on their own", Cancel all changes and the cancel confirm are HoldChange&#39;s wording, unchanged.</span>
+      <span>Every sentence on this screen is new draft copy: "A hold is on" · "satoshi_ghost&#39;s team is on a <span class="mono">24</span>-hour hold. Some changes are waiting; they apply when it ends." · "Ends in <span class="mono">23</span> h <span class="mono">12</span> min" · "You can keep trading as usual." · "In <span class="mono">4</span> of <span class="mono">5</span> types · <span class="mono">10</span> of <span class="mono">33</span> allowed" · "What you can see: that a hold is on. Ask satoshi_ghost if you need to know more." · "You can see these changes but not change them." · "You can untick a change so it won&#39;t apply, or cancel all of them." · "Waiting changes" · "Submitted by satoshi_ghost · username and password" · "Needs your passkey, security key or PGP key. Ending the hold applies every ticked change now." · "End the hold" · "Confirm it&#39;s you" · "Ending the hold needs a passkey, security key or PGP key. <span class="mono">4</span> changes will apply now." · "Hold ended" · "Every ticked change applied just now. The team is back to normal." · "Changes cancelled" · "None of the <span class="mono">4</span> changes will apply. Nothing is waiting any more." The list rows, the ticks, "Ticked to apply", "Apply on their own", Cancel all changes and the cancel confirm are HoldChange&#39;s wording, unchanged.</span>
     </aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"rights":{"editor":"enum","options":["none","see","cancel","end"],"default":"none"},"$preview":{"width":390,"height":1931}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"rights":{"editor":"enum","options":["none","see","cancel","end"],"default":"none"},"$preview":{"width":390,"height":2231}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { off: {}, cancelOpen: false, verifyOpen: false, result: null }; }
   componentDidUpdate(prev) { if (prev.rights !== this.props.rights) this.setState({ off: {}, cancelOpen: false, verifyOpen: false, result: null }); }
@@ -231,7 +238,7 @@ class Component extends DCLogic {
       ch('walletRemove', 'Wallet removed', blk('Cake Wallet', '…k3Fz'), blk('Removed'), 'remove'),
       ch('walletAdd', 'Wallet added', blk('None', '', '', '', true), blk('Feather', '…9QpL'), 'usable')
     ];
-    const gTeam = [ch('member', 'Team member removed', blk('desk_sam', '', 'Custom · ', '12 of 34 allowed'), blk('Removed'), 'member')];
+    const gTeam = [ch('member', 'Team member removed', blk('desk_sam', '', 'In 3 of 5 types · ', '12 of 33 allowed'), blk('Removed'), 'member')];
     [gLogin, gWallet, gTeam].forEach((g, k) => g.forEach((c) => { c.isLogin = k === 0; c.isWallet = k === 1; c.isTeam = k === 2; }));
     const groups = [
       { title: 'Login methods', items: gLogin },

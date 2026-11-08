@@ -32,6 +32,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </header>
 
   <main style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 8px 16px 20px;">
+    <div role="group" aria-label="Incident ID" data-m="incident-id" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 0 14px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px;"><span style="display: inline-flex; align-items: center; gap: 8px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></svg>Incident ID</span><span style="display: flex; align-items: center; gap: 10px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500; color: var(--ink); white-space: nowrap;">#K7M2Q9XA</span><button type="button" aria-label="Copy the incident ID, K7M2Q9XA" style="display: inline-flex; flex-shrink: 0; align-items: center; height: 44px; margin: -6px -6px -6px 0; padding: 0 6px; border: 0; background: transparent; color: var(--ink); font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; box-sizing: border-box; border-radius: 6px; border: 1px solid var(--line); background: var(--surface);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 00-1-1H5a1 1 0 00-1 1v10a1 1 0 001 1h3"/></svg></span></button></span></div>
     <section aria-label="Dispute status" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--danger) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);">
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
         <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
@@ -127,10 +128,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design call · follows Q38</span>
       <span>The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">48</span> h hard deadline is hidden per owner Q38, so the old "ruling due by" line is gone. The owner revisits it only if the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h runs out. Preview with the moderator tweak: "waiting" shows the hourglass as the one hero number with the amount in an inner block, and no moderator card. "joined" replaces the hourglass with the "Replied in" line.</span>
     </aside>
+  <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>G37 (owner, 7 Nov): incident ID at the top of the trade.</strong> First thing under the header, for both people (buyer and seller see the same row in the same place) and for the moderator: an inner-block row, a hash icon, "Incident ID", the ID in mono (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">#K7M2Q9XA</span>, 8 characters, the dispute's own format; 8 to 9 allowed) and the icon Copy button from BuyerPay (32 px outline square, 44 px hit area, "Copy the incident ID, K7M2Q9XA" for screen readers). It is not the trade code (K7M2-9QXA-4FTR-8WPN in the header). COPY-UNSIGNED: "Incident ID", "Copy the incident ID, K7M2Q9XA" (label).</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"moderator":{"editor":"enum","options":["waiting","joined"],"default":"waiting"},"$preview":{"width":390,"height":1318}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"moderator":{"editor":"enum","options":["waiting","joined"],"default":"waiting"},"$preview":{"width":390,"height":1574}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -145,8 +147,8 @@ class Component extends DCLogic {
     const joined = this.props.moderator === 'joined';
     const sent = joined && this.state.sent;
     // Owner Q38, 6 Nov: before a moderator joins, the hero counts down from 24 h. No 48 h deadline is shown.
-    const APP = { waiting: 979, joined: 1465, sent: 1633 };
-    const NOTES = 339;
+    const APP = { waiting: 1043, joined: 1529, sent: 1697 };
+    const NOTES = 531;
     const appH = !joined ? APP.waiting : (sent ? APP.sent : APP.joined);
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + appH + 'px; display: flex; flex-direction: column; overflow: hidden;';
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (appH + NOTES) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";

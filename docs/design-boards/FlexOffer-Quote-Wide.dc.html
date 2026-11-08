@@ -152,10 +152,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><strong>8 Nov, owner #11 (ad amounts).</strong> Each row: markup bottom-left of the price (the total for your band and method: "+0.6%" mono over "Vendor markup", or "incl. Zelle +0.3%" when the method adds to it) and the band that fits your amount on two rows in mono, figures right-aligned: the range in XMR and the range in USD. The vendor set these bands in USD, so the XMR row is converted ("≈"). "Display amounts including vendor markup" sits above the list (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">withMarkup</span> tweak, showing: {{wm.state}}; default off): off converts at the market rate, on at each offer's price for your band. Caption over the rows: "Your band" (tiered), "Limits" (one band), "Trades only" (no band for your amount, whole range shown).</p>
     <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><span style="display: inline-flex; align-items: center; height: 20px; padding: 0 6px; margin-right: 6px; border-radius: 6px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; vertical-align: 1px;">Anticipated · design, 8 Nov</span>Follows owner #3: "Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC" under the title, where the market price shows (no provider named, Q34).</p>
     <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;">COPY-UNSIGNED, 8 Nov: "Display amounts including vendor markup" (owner's words), "Converted at the market rate, before markup.", "Converted at each offer's price, markup included.", "Vendor markup", "incl. Zelle +0.3%" (was "… above market · incl. Zelle +0.3%"), "Your band", "Limits", "Trades only", "Market rate · updated <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:05</span> UTC".</p>
+  <p style="margin: 0; max-width: 720px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><strong>8 Nov follow-up: one set of facts for satoshi_ghost's offer.</strong> Bands <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50 – $500</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$330.00</span> and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$500.01 – $1,500</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$331.88</span> (BuyQuote's), market <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$329.90</span>, so his markup is <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+0.03%</span> (was <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+0.1%</span>). His first band was <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$20 – $500</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+1.0%</span>; it is now <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50 – $500</span> at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+0.03%</span>; band 2 stays <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">+0.6%</span> (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$331.88</span>). Markups under <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.1%</span> show two decimals.</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["greyed","hidden"],"default":"greyed"},"withMarkup":{"editor":"enum","options":["off","on"],"default":"off"},"$preview":{"width":1280,"height":1901}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["greyed","hidden"],"default":"greyed"},"withMarkup":{"editor":"enum","options":["off","on"],"default":"off"},"$preview":{"width":1280,"height":1967}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -174,7 +175,7 @@ class Component extends DCLogic {
     const MARKET = 329.90, MINE = 3;
     const OFFERS = [
       { id: 'sg', name: 'satoshi_ghost', init: 'SG', feat: ['trusted', 'fast'], more: 3, online: true, stats: '1,284 trades · 99.4% positive', rel: 8,
-        tiers: [{ from: 20, to: 500, m: 1.0, min: 0 }, { from: 500.01, to: 1500, m: 0.6, min: 0 }],
+        tiers: [{ from: 50, to: 500, m: 0.03, min: 0 }, { from: 500.01, to: 1500, m: 0.6, min: 0 }],
         methods: [
           { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle to the phone number in the trade room. Put the trade code in the memo.' },
           { id: 'paypal', name: 'PayPal', adj: 2, max: 500, instr: 'Send from a PayPal account in your own name. Put the trade code in the note.' },
@@ -239,8 +240,8 @@ class Component extends DCLogic {
     const valid = !isNaN(amt) && amt > 0;
     const money = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
     const usd2 = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const pct = (m) => (m > 0 ? '+' : (m < 0 ? '−' : '')) + Math.abs(m).toFixed(1) + '%';
-    const vsMarket = (m) => Math.abs(m) < 0.001 ? 'At market' : Math.abs(m).toFixed(1) + '% ' + (m > 0 ? 'above' : 'below') + ' market';
+    const pct = (m) => (m > 0 ? '+' : (m < 0 ? '−' : '')) + Math.abs(m).toFixed(Math.abs(m) < 0.1 ? 2 : 1) + '%';
+    const vsMarket = (m) => Math.abs(m) < 0.001 ? 'At market' : Math.abs(m).toFixed(Math.abs(m) < 0.1 ? 2 : 1) + '% ' + (m > 0 ? 'above' : 'below') + ' market';
     const methodTag = (x) => x.name + (x.adj ? ' ' + pct(x.adj) : '');
     const inRange = (x) => !x.max || !valid || amt <= x.max;
     const rangeText = (x) => x.name + ': up to ' + money(x.max);
@@ -265,7 +266,7 @@ class Component extends DCLogic {
       const xmr = unit === 'xmr' ? lo.toFixed(6) + ' – ' + hi.toFixed(6) : '≈ ' + (lo / rate).toFixed(6) + ' – ' + (hi / rate).toFixed(6);
       const fiat = unit === 'xmr' ? '≈ ' + amtUsd(lo * rate, true) + ' – ' + amtUsd(hi * rate, true) : amtUsd(lo, lo % 1 !== 0) + ' – ' + amtUsd(hi, hi % 1 !== 0);
       return { price: amtUsd(price, true), xmr, fiat,
-        mark: pct === 0 ? '0%' : (pct > 0 ? '+' : '−') + Math.abs(pct).toFixed(1) + '%',
+        mark: pct === 0 ? '0%' : (pct > 0 ? '+' : '−') + Math.abs(pct).toFixed(Math.abs(pct) < 0.1 ? 2 : 1) + '%',
         markLabel: pct === 0 ? 'At market' : 'Vendor markup',
         markStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; color: " + (pct === 0 ? 'var(--ink-muted);' : 'var(--escrow);') };
     };
