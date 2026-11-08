@@ -196,6 +196,16 @@ describe('MemberInvite (join)', () => {
     expect(byPart(host, 'invite-who')?.textContent).toBe('Calcium invited you as Aurora, for Trades.');
   });
 
+  it('a used or expired invite says so without naming the vendor (front door, design board InviteInvalid)', async () => {
+    window.history.replaceState(null, '', `/team/join#${CODE.replace(/.$/, (c) => (c === 'A' ? 'B' : 'A'))}`);
+    const { host } = render(<MemoryRouter><MemberInvite /></MemoryRouter>);
+    await settle();
+    expect(calls.some((c) => c.url === '/v1/team/invite')).toBe(true);
+    expect(byPart(host, 'invite-gone')).not.toBeNull();
+    expect(byPart(host, 'invite-who')).toBeNull();
+    expect(host.textContent).not.toContain('Calcium');
+  });
+
   it('a link without a usable code says so and calls nothing', async () => {
     window.history.replaceState(null, '', '/team/join#nope');
     const { host } = render(<MemoryRouter><MemberInvite /></MemoryRouter>);

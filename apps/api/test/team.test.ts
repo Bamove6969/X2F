@@ -211,8 +211,12 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect(needs).toEqual(['security-key', 'passkey', 'pgp']);
     // No session after one factor.
     expect((await b.get('/v1/account/me')).statusCode).toBe(401);
-    // The code is used up.
-    expect((await new Browser(app).post('/v1/team/invite', { invite: created.invite })).statusCode).toBe(404);
+    // The code is used up, and a used invite never names the vendor to whoever holds the link
+    // (front door, owner 8 Nov 2026; design board InviteInvalid).
+    const used = await new Browser(app).post('/v1/team/invite', { invite: created.invite });
+    expect(used.statusCode).toBe(404);
+    expect(used.body).toBe('{"error":"not-found"}');
+    expect(used.body).not.toContain(owner.displayName);
 
     // The same key again is not a second factor.
     const same = await b.post('/v1/team/join/second/pgp/start', { setupId, publicKey: k1.publicKey });
