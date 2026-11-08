@@ -74,6 +74,14 @@
   color: var(--x2f-ink-muted);
 }
 
+/* The dispute-after-refund warning, the card's one paragraph (owner G2 dropped the steps). */
+.x2f-refund__late {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+
 .x2f-refund__check {
   display: flex;
   align-items: flex-start;
@@ -105,8 +113,16 @@
   border-top: 1px solid var(--x2f-surface-raised);
 }
 
-.x2f-refund__footer > .x2f-button--primary {
+.x2f-refund__footer > .x2f-button--primary,
+.x2f-refund__footer > .x2f-button--secondary {
   width: 100%;
+}
+
+/* The lock note under the footer's buttons (board SellerRefund, owner G2). */
+.x2f-refund__footer > [data-refund-lock-note] {
+  font-size: 13px;
+  line-height: 18px;
+  text-align: center;
 }
 
 .x2f-refund__row {

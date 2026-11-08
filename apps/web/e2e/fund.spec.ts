@@ -88,6 +88,7 @@ function sellerView(over: View = {}): View {
     closedAt: null,
     cancelConfirmedAt: null,
     cancelConfirmableAt: null,
+    sellerNudgedAt: null,
     nextDeadline: FUND_BY,
     serverNow: new Date(SERVER_NOW).toISOString(),
     ...over,

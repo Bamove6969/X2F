@@ -45,7 +45,36 @@ export const MAX_DIFF_PIXEL_RATIO = 0.03;
  * to be brought up to date with the phone screens). Desktop-only parts with no phone counterpart
  * (the progress steps, the counterparty card, the chat) are not exceptions.
  */
+/**
+ * The shared trader card (design gap list Job 2, "the kit": 48 px avatar, online line, three stat
+ * tiles, badge chips + "+N") is drawn on the refreshed trade boards but not built yet; no trade
+ * screen has it. Each text below is that card's, nothing else.
+ */
+const TRADER_CARD = 'Trader card from the shared kit (design gap list Job 2), not built yet: this text is the card\'s own.';
+/**
+ * CancelRequest's sheet sits over the secured pay step, which the board draws in the v2 hero (40/44
+ * mono timer "61 min of 90 min · ends …") and v2 "Send exactly" card ("$412.50 USD for 1.250000
+ * XMR"). Those are gap list Job 4 (trade screens to the boards), not the cancel sheet; the sheet's
+ * own copy is checked in full.
+ */
+const PAY_STEP_V2 = 'The secured pay step under the sheet in its v2 layout (design gap list Job 4, trade screens to the boards); not part of the cancel sheet (owner G56), whose copy is checked in full.';
+
 export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: string }[]>> = {
+  BuyerPay: ['SG', 'Vendor', 'Online · replies in about 4 min', 'Online', '4', '1,284', 'trades', '99.4%', 'positive', '275.4', 'XMR traded', 'Trusted', 'Fast', '+3'].map(
+    (text) => ({ text, why: TRADER_CARD }),
+  ),
+  SellerRefund: ['MK', 'Last seen 1 h ago', '1', '212', 'trades', '99%', 'positive', '41.7', 'XMR traded', 'Trusted', 'PGP verified', '+3'].map(
+    (text) => ({ text, why: TRADER_CARD }),
+  ),
+  CancelRequest: [
+    ...['61', 'min', 'of 90 min · ends 1 Nov 2026, 15:21 UTC', '90', '1 Nov 2026, 15:21 UTC', '$412.50', 'for 1.250000 XMR', '1.250000', 'XMR'].map(
+      (text) => ({ text, why: PAY_STEP_V2 }),
+    ),
+    {
+      text: '•••-•••-4471',
+      why: 'The board\'s masked "Zelle to" value is an example; what the row shows is still open for the owner (board note "Open · owner to choose"), and the page shows the seller\'s details the fixture serves.',
+    },
+  ],
   TradeFund: [
     {
       text: 'Rate (locked when you fund)',
@@ -228,7 +257,8 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
  * to say "example" is kept):
  *   - a trailing " · Example" (or "· examples/sample/samples") after a header line;
  *   - a sentence of the form "<subject> are examples." / "… are samples." (e.g. "Figures are
- *     examples."), and the one-off "This is an example key." note.
+ *     examples."), and the one-off "This is an example key." note;
+ *   - the "Draft copy" badge the boards put on unsigned copy.
  */
 export function withoutBoardMarkers(text: string): string {
   const unmarked = text.replace(/\s*·\s*(?:examples?|samples?)\s*$/i, '');
@@ -238,6 +268,8 @@ export function withoutBoardMarkers(text: string): string {
       const s = sentence.trim();
       if (/\bare (?:examples?|samples?)\.?$/i.test(s)) return false;
       if (/^This is an example key\.?$/i.test(s)) return false;
+      // The boards' unsigned-copy badge (design marks copy the owner has not signed yet).
+      if (/^Draft copy\.?$/i.test(s)) return false;
       return true;
     })
     .join(' ')
@@ -269,6 +301,9 @@ export async function boardTexts(page: Page, board: string, o: { within?: string
       const doc = new DOMParser().parseFromString(html, 'text/html');
       const root = doc.querySelector('x-dc') ?? doc.body;
       for (const el of Array.from(root.querySelectorAll('script, style, helmet, title, template, noscript, svg'))) el.remove();
+      // The board's own design notes (a "Design notes" section beside the app frame) annotate the
+      // board for the team; they are not app copy.
+      for (const el of Array.from(root.querySelectorAll('[aria-label="Design notes"]'))) el.remove();
       for (const el of Array.from(root.querySelectorAll('sc-if'))) {
         if (el.getAttribute('hint-placeholder-val') === '{{false}}') el.remove();
       }

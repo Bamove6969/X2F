@@ -104,6 +104,17 @@ describe('POST /v1/trades/:code/events', () => {
     expect(await eventCount(t.code)).toBe(n);
   });
 
+  it("refuses mark-paid with 409 too-early until the escrow is secured, 10 of 10 (owner Q12), and records nothing", async () => {
+    const { buyer, t } = await tradeIn('securing');
+    const before = await loadTrade(deps.db, t.code);
+    const n = await eventCount(t.code);
+    const res = await buyer.browser.post(events(t.code), { type: 'mark-paid', fiatCents: FIAT.toString() });
+    expect(res.statusCode).toBe(409);
+    expect(errorOf(res)).toBe('too-early');
+    expect(await loadTrade(deps.db, t.code)).toEqual(before);
+    expect(await eventCount(t.code)).toBe(n);
+  });
+
   it('maps every rule refusal to 409 with its code', async () => {
     const { seller, t } = await tradeIn('secured');
     const early = await seller.browser.post(events(t.code), { type: 'extend' });
