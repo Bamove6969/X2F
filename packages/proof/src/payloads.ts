@@ -10,7 +10,10 @@
  * `sealProofEnvelope`, which takes no `to` and refuses one, so an unblurred key can never be
  * sealed to a trader by a wrong call site.
  *
- * Neither carries a file name, original type or anything else about the source file.
+ * Neither carries a file name, original type or anything else about the source file, except
+ * `proof.attached`'s `takenAt`: the time the picture was made, read from its own metadata on the
+ * poster's device before cleaning (owner G16), as a UTC instant to the second, or null. The
+ * metadata block itself never leaves the device.
  * `parseProofPayload` checks an opened envelope's `{type, payload}` exactly.
  */
 import sodium from 'libsodium-wrappers';
@@ -42,6 +45,8 @@ export interface ProofAttachedPayload {
   mime: ProofMime;
   /** What was blurred, each kind at most once. */
   hidden: HiddenKind[];
+  /** When the picture was made, from its own Exif/XMP date (owner G16): `YYYY-MM-DDTHH:MM:SSZ`, or null. */
+  takenAt: string | null;
 }
 
 export interface ProofUnblurredPayload {
@@ -57,7 +62,7 @@ export type ProofEnvelope =
   | { type: 'proof.attached'; payload: ProofAttachedPayload }
   | { type: 'proof.unblurred'; payload: ProofUnblurredPayload };
 
-const ATTACHED_KEYS = ['proofId', 'kind', 'key', 'sha256', 'width', 'height', 'mime', 'hidden'] as const;
+const ATTACHED_KEYS = ['proofId', 'kind', 'key', 'sha256', 'width', 'height', 'mime', 'hidden', 'takenAt'] as const;
 const UNBLURRED_KEYS = ['proofId', 'key', 'sha256', 'width', 'height', 'mime'] as const;
 /** 32 bytes in padded standard base64: 42 data characters, a last one with 2 zero bits, '='. */
 const KEY_B64 = /^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$/;
@@ -76,6 +81,29 @@ function common(p: Record<string, unknown>): ProofUnblurredPayload {
   return { proofId, key, sha256, width, height, mime: mime as ProofMime };
 }
 
+const UTC_SECOND = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/;
+
+/** `YYYY-MM-DDTHH:MM:SSZ` naming a real instant in 1990..2200, as `toUtcSecond` writes it. */
+export function isUtcSecond(s: unknown): s is string {
+  if (typeof s !== 'string') return false;
+  const m = UTC_SECOND.exec(s);
+  if (!m) return false;
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6]));
+  const y = Number(m[1]);
+  return y >= 1990 && y <= 2200 && toUtcSecond(new Date(t)) === s;
+}
+
+/** A time as `proof.attached` carries it: UTC, to the second (`2026-10-16T12:32:05Z`). */
+export function toUtcSecond(d: Date): string {
+  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function takenAtOf(v: unknown): string | null {
+  if (v === null) return null;
+  if (!isUtcSecond(v)) throw fail();
+  return v;
+}
+
 function hiddenList(h: unknown): HiddenKind[] {
   if (!Array.isArray(h) || Object.getPrototypeOf(h) !== Array.prototype || h.length > HIDDEN_KINDS.length) throw fail();
   const seen = new Set<string>();
@@ -90,7 +118,8 @@ function hiddenList(h: unknown): HiddenKind[] {
  * Validate an opened envelope's type and payload. Returns a fresh copy; throws
  * ProofError('bad-payload') for an unknown type, a missing or extra field, a key that is not
  * exactly 32 bytes of canonical base64, a malformed proof id or sha256, a side outside
- * 1..PROOF_MAX_SIDE, a mime other than PNG or JPEG, or `hidden` that is not a set of HiddenKind.
+ * 1..PROOF_MAX_SIDE, a mime other than PNG or JPEG, `hidden` that is not a set of HiddenKind, or a
+ * `takenAt` that is neither null nor `isUtcSecond`.
  */
 export function parseProofPayload(type: string, payload: unknown): ProofEnvelope {
   if (!isPlainObject(payload)) throw fail();
@@ -99,7 +128,7 @@ export function parseProofPayload(type: string, payload: unknown): ProofEnvelope
     const kind = payload['kind'];
     if (kind !== 'proof' && kind !== 'evidence') throw fail();
     const c = common(payload);
-    return { type, payload: { proofId: c.proofId, kind, key: c.key, sha256: c.sha256, width: c.width, height: c.height, mime: c.mime, hidden: hiddenList(payload['hidden']) } };
+    return { type, payload: { proofId: c.proofId, kind, key: c.key, sha256: c.sha256, width: c.width, height: c.height, mime: c.mime, hidden: hiddenList(payload['hidden']), takenAt: takenAtOf(payload['takenAt']) } };
   }
   if (type === 'proof.unblurred') {
     if (!hasExactKeys(payload, UNBLURRED_KEYS)) throw fail();
