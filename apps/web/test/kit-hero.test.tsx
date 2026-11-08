@@ -92,7 +92,7 @@ describe('HeroNumber, ResultHeadline (kit 4.3)', () => {
 
   it('an amount and its unit; the meaning line has mono digits', () => {
     const { host } = render(<HeroNumber label="You receive" value="1.250000" unit="XMR" meaning="About $412.50 at 10:14" />);
-    expect(host.querySelector('.x2f-hero-number')!.textContent).toBe('1.250000XMR');
+    expect(host.querySelector('.x2f-hero-number')!.textContent).toBe('1.250000 XMR'); // review 6: a space between number and unit, not only a CSS gap
     expect([...host.querySelectorAll('.x2f-hero__line .x2f-digits')].map((d) => d.textContent)).toEqual(['412.50', '10:14']);
   });
 

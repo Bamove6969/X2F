@@ -182,9 +182,8 @@ export function RecipientRow({ person, xmr, fiat }: { person: TraderIdentity; xm
       <IdentityRow person={person} size={48} />
       <span className="x2f-recipient__amount">
         <span className="x2f-recipient__xmr">
-          <span className="x2f-digits">{xmr}</span>
-          <span className="x2f-recipient__unit">XMR</span>
-        </span>
+          <span className="x2f-digits">{xmr}</span> <span className="x2f-recipient__unit">XMR</span>
+        </span>{' '}
         <span className="x2f-recipient__fiat">
           about <span className="x2f-digits">{fiat}</span>
         </span>

@@ -73,7 +73,12 @@ export function HeroNumber({
   ) : (
     <span className="x2f-hero-number">
       <span className="x2f-countdown__n">{value}</span>
-      {unit ? <span className="x2f-countdown__u">{unit}</span> : null}
+      {unit ? (
+        <>
+          {' '}
+          <span className="x2f-countdown__u">{unit}</span>
+        </>
+      ) : null}
     </span>
   );
   return (

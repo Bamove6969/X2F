@@ -171,7 +171,7 @@ describe('IdentityRow, StatTiles, TraderCard (kit 2.4-2.6)', () => {
     expect(rule('.x2f-recipient__amount')).toContain('padding-left: 60px;');
     expect(rule('.x2f-recipient')).toContain('border-top: 1px solid var(--x2f-surface-raised); border-bottom: 1px solid var(--x2f-surface-raised);');
     const { host } = render(<RecipientRow person={MIRA} xmr="1.250000" fiat="$412.50" />);
-    expect(host.querySelector('.x2f-recipient__amount')!.textContent).toBe('1.250000XMRabout $412.50');
+    expect(host.querySelector('.x2f-recipient__amount')!.textContent).toBe('1.250000 XMR about $412.50'); // review 6
     expect(host.querySelector('.x2f-stats')).toBeNull();
   });
 
@@ -209,6 +209,22 @@ describe('Badges (kit 3, rulings 1, 4, 5)', () => {
     expect(num!.textContent).toBe('100');
     expect(icon!.querySelector('svg')!.getAttribute('width')).toBe('13');
     expect(icon!.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('design ruling 8 Nov: 50 and 1,000 are ink milestones; 1,000 reads "1k" at 22/28 and "1,000" at 40; New is its own grey family', () => {
+    expect(BADGE_SET.m50).toMatchObject({ name: '50 trades', tone: 'ink' });
+    expect(BADGE_SET.m1000).toMatchObject({ name: '1,000 trades', tone: 'ink' });
+    const { host } = render(
+      <>
+        <BadgeSeal badge={BADGE_SET.m50} size={22} />
+        <BadgeSeal badge={BADGE_SET.m1000} size={22} />
+        <BadgeSeal badge={BADGE_SET.m1000} size={28} />
+        <BadgeSeal badge={BADGE_SET.m1000} size={40} />
+      </>,
+    );
+    expect([...host.querySelectorAll('.x2f-seal')].map((s) => s.textContent)).toEqual(['50', '1k', '1k', '1,000']);
+    expect(BADGE_SET.new.tone).toBe('ink-muted');
+    expect(Object.values(BADGE_SET).filter((b) => b.tone === 'ink-muted').map((b) => b.key)).toEqual(['new']);
   });
 
   it('chip: 30 h inside a 44 h button, border 32% then 60% on hover or focus', () => {
