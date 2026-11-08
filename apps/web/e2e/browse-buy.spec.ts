@@ -108,7 +108,7 @@ test.describe('/buy/:methodId (BuyOffers board)', () => {
     await stub(page);
     await page.goto('/buy/ZELLE');
     const satoshi = page.locator('article', { has: page.locator('[data-username]', { hasText: 'satoshi_ghost' }) });
-    await expect(satoshi).toContainText('$0.10 above market');
+    await expect(satoshi.locator('[data-part="markup"]')).toHaveText('+$0.10Vendor markup');
   });
 
   test('starter limits on the buy side: greyed "Opens at …" cards, New from the API stage', async ({ page }) => {

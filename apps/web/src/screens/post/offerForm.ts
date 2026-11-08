@@ -190,6 +190,9 @@ export function afterPostPath(side: Side, methodId: string, currency: string): s
   return `/${side === 'sell' ? 'buy' : 'sell'}/${encodeURIComponent(methodId)}?currency=${encodeURIComponent(currency)}`;
 }
 
+/** COPY-UNSIGNED (boards v142): the line under the range boxes. */
+export const UNIT_HELP = 'One unit for the whole offer. Traders see both, converted at your price.';
+
 /** COPY-UNSIGNED: the range boxes' error in XMR. */
 export const XMR_AMOUNT_ERROR = 'Enter an amount in XMR, like 0.5 or 2.';
 

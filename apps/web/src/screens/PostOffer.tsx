@@ -24,6 +24,7 @@ import {
   MIN_TRADES_OPTIONS,
   POST_CURRENCIES,
   PRICE_UNAVAILABLE,
+  UNIT_HELP,
   afterPostPath,
   clearDraft,
   fixedPriceCheck,
@@ -423,6 +424,7 @@ export function PostOffer() {
               </>,
               'max',
             )}
+            <span className="post-muted post-unit-help">{UNIT_HELP}</span>
           </section>
 
           {field(
@@ -471,12 +473,12 @@ export function PostOffer() {
                   <>
                     {rangeRows.xmr !== null ? (
                       <span className="post-muted" data-part="preview-xmr">
-                        {rangeRows.xmr}
+                        {`${rangeRows.xmr} XMR`}
                       </span>
                     ) : null}
                     {rangeRows.fiat !== null ? (
                       <span className="post-muted" data-part="preview-fiat">
-                        {rangeRows.fiat}
+                        {`${rangeRows.fiat} ${form.currency}`}
                       </span>
                     ) : null}
                   </>

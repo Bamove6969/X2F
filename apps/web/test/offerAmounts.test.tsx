@@ -68,40 +68,52 @@ describe('parsing both units', () => {
 });
 
 describe('the card rows', () => {
-  it('formats XMR with the minimum rounded up and the maximum down, at most 4 places', () => {
-    expect(xmrBound(1_478_196_600_147n, 'up')).toBe('1.4782');
-    expect(xmrBound(8_869_179_600_886n, 'down')).toBe('8.8691');
-    expect(xmrBound(XMR, 'up')).toBe('1');
-    expect(xmrBound(1_000_000_000_001n, 'up')).toBe('1.0001');
-    expect(xmrRangeText(XMR, 5n * XMR)).toBe('1 – 5 XMR');
+  it('formats XMR with six places, the minimum rounded up and the maximum down', () => {
+    expect(xmrBound(1_478_196_600_147n, 'up')).toBe('1.478197');
+    expect(xmrBound(8_869_179_600_886n, 'down')).toBe('8.869179');
+    expect(xmrBound(XMR, 'up')).toBe('1.000000');
+    expect(xmrBound(XMR, 'down')).toBe('1.000000');
+    // One atomic unit over a whole XMR rounds the minimum up a full place, the maximum down to 1.
+    expect(xmrBound(1_000_000_000_001n, 'up')).toBe('1.000001');
+    expect(xmrBound(1_000_000_000_001n, 'down')).toBe('1.000000');
+    expect(xmrBound(1n, 'up')).toBe('0.000001');
+    expect(xmrBound(1n, 'down')).toBe('0.000000');
+    expect(xmrBound(1_234_567n * XMR, 'down')).toBe('1,234,567.000000');
+    expect(xmrBound(1_478_196_600_147n, 'up', 0)).toBe('2');
+    expect(xmrRangeText(XMR, 5n * XMR)).toBe('1.000000 – 5.000000');
   });
 
   it('an XMR-set range: XMR exact; fiat at the market without the markup, at the offer price with it', () => {
     const o = offer(XMR_SET);
-    expect(cardRows(o, 'USD', 33_000n, false)).toEqual({ xmr: '1 – 5 XMR', fiat: '≈ $330 – $1,650' });
-    expect(cardRows(o, 'USD', 33_000n, true)).toEqual({ xmr: '1 – 5 XMR', fiat: '≈ $338.25 – $1,691.25' });
+    expect(cardRows(o, 'USD', 33_000n, false)).toEqual({ xmr: '1.000000 – 5.000000', fiat: '≈ $330 – $1,650' });
+    expect(cardRows(o, 'USD', 33_000n, true)).toEqual({ xmr: '1.000000 – 5.000000', fiat: '≈ $338.25 – $1,691.25' });
   });
 
   it('a fiat-set range: fiat exact; XMR at the market without the markup, at the offer price with it', () => {
     const o = offer(FIAT_SET);
-    expect(cardRows(o, 'USD', 33_000n, false)).toEqual({ xmr: '≈ 1.5152 – 9.0909 XMR', fiat: '$500 – $3,000' });
-    expect(cardRows(o, 'USD', 33_000n, true)).toEqual({ xmr: '≈ 1.4782 – 8.8691 XMR', fiat: '$500 – $3,000' });
+    expect(cardRows(o, 'USD', 33_000n, false)).toEqual({ xmr: '≈ 1.515152 – 9.090909', fiat: '$500 – $3,000' });
+    expect(cardRows(o, 'USD', 33_000n, true)).toEqual({ xmr: '≈ 1.478197 – 8.869179', fiat: '$500 – $3,000' });
   });
 
   it('with no rate only the poster\'s own row shows', () => {
-    expect(cardRows(offer({ ...XMR_SET, rate: null }), 'USD', null, true)).toEqual({ xmr: '1 – 5 XMR', fiat: null });
+    expect(cardRows(offer({ ...XMR_SET, rate: null }), 'USD', null, true)).toEqual({ xmr: '1.000000 – 5.000000', fiat: null });
     expect(cardRows(offer(FIAT_SET), 'USD', null, false)).toEqual({ xmr: null, fiat: '$500 – $3,000' });
   });
 
-  it('the card draws both rows, and the markup line stays', () => {
+  it('the card draws both rows with their units, the markup bottom-left', () => {
     const { host } = render(
       <MemoryRouter>
         <OfferCard offer={offer(XMR_SET)} currency="USD" copy={SELL_COPY} primary now={NOW} market={33_000n} withMarkup={false} />
       </MemoryRouter>,
     );
-    expect(host.querySelector('[data-part="range-xmr"]')?.textContent).toBe('1 – 5 XMR');
-    expect(host.querySelector('[data-part="range-fiat"]')?.textContent).toBe('≈ $330 – $1,650');
-    expect(host.querySelector('.x2f-offer__margin')?.textContent).toBe('2.5% above market');
+    expect(host.querySelector('[data-part="range-xmr"]')?.textContent).toBe('1.000000 – 5.000000 XMR');
+    expect(host.querySelector('[data-part="range-xmr"] [data-unit="xmr"]')?.textContent).toBe('XMR');
+    expect(host.querySelector('[data-part="range-fiat"]')?.textContent).toBe('≈ $330 – $1,650 USD');
+    expect(host.querySelector('[data-part="markup"]')?.textContent).toBe('+2.5%Vendor markup');
+    // The markup and the rows share the bottom row; the price row sits above it.
+    const bottom = host.querySelector('.x2f-offer__amounts')!;
+    expect(bottom.firstElementChild?.getAttribute('data-part')).toBe('markup');
+    expect(bottom.querySelector('[data-part="range-fiat"]')).not.toBeNull();
   });
 });
 

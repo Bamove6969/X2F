@@ -106,8 +106,10 @@ describe('OfferCard', () => {
     const texts = [...host.querySelectorAll('span')].map((s) => s.textContent);
     expect(texts).toContain('Online · 212 trades · 99% positive');
     expect(texts).toContain('$331.20');
-    expect(texts).toContain('0.4% above market');
-    expect(texts).toContain('$50 – $2,000Pays in ~6 min');
+    expect(texts).toContain('+0.4%');
+    expect(texts).toContain('Vendor markup');
+    expect(texts).toContain('$50 – $2,000 USD');
+    expect(texts).toContain('Pays in ~6 min');
   });
 
   it("an offer with opensAt 'building' is greyed with \"Opens at Building\" and cannot be taken", () => {

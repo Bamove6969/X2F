@@ -79,20 +79,34 @@ function importedLine(l: { site: string; overUsd: number }): string {
   return `$${l.overUsd.toLocaleString('en-US')}+ on ${l.site}, verified`;
 }
 
-function marginLine(offer: Offer, currency: string, copy: BrowseCopy, market: bigint | null): { text: string; favourable: boolean } | null {
+/**
+ * The markup at the card's bottom left (owner #11, 8 Nov; boards v142): the figure in mono over its
+ * label, "+0.4%" over "Vendor markup", "0%" over "At market" when there is none. A fixed price's
+ * markup is its difference from the market price now ("+$0.10"); with no market price it reads only
+ * "Fixed price". Null while a market offer has no price. COPY-UNSIGNED: "Vendor markup".
+ */
+export interface Markup {
+  mark: string | null;
+  label: string;
+  favourable: boolean;
+}
+
+export const VENDOR_MARKUP = 'Vendor markup';
+const MINUS = '\u2212';
+
+export function markupOf(offer: Pick<Offer, 'rate' | 'pricing'>, currency: string, copy: Pick<BrowseCopy, 'favourable'>, market: bigint | null): Markup | null {
   if (offer.rate === null) return null;
   if (offer.pricing.mode === 'fixed') {
-    // A fixed price reads its difference from the market price now, when there is one.
-    if (market === null) return { text: 'Fixed price', favourable: false };
+    if (market === null) return { mark: null, label: 'Fixed price', favourable: false };
     const diff = offer.pricing.centsPerXmr - market;
-    if (diff === 0n) return { text: 'At market', favourable: false };
+    if (diff === 0n) return { mark: '0%', label: 'At market', favourable: false };
     const abs = diff < 0n ? -diff : diff;
-    return { text: `${formatMinor(abs, currency)} ${diff > 0n ? 'above' : 'below'} market`, favourable: copy.favourable(diff > 0n ? 1 : -1) };
+    return { mark: `${diff > 0n ? '+' : MINUS}${formatMinor(abs, currency)}`, label: VENDOR_MARKUP, favourable: copy.favourable(diff > 0n ? 1 : -1) };
   }
   const bps = offer.pricing.marginBps;
-  if (bps === 0) return { text: 'At market', favourable: false };
+  if (bps === 0) return { mark: '0%', label: 'At market', favourable: false };
   const pct = (Math.abs(bps) / 100).toFixed(2).replace(/\.?0+$/, '');
-  return { text: `${pct}% ${bps > 0 ? 'above' : 'below'} market`, favourable: copy.favourable(bps) };
+  return { mark: `${bps > 0 ? '+' : MINUS}${pct}%`, label: VENDOR_MARKUP, favourable: copy.favourable(bps) };
 }
 
 function Badges({ offer }: { offer: Offer }) {
@@ -170,18 +184,21 @@ export interface OfferCardProps {
   pick?: { pressed: boolean; onPick: (offer: Offer) => void };
 }
 
-/** The range in XMR and in fiat, one row each (owner, 8 Nov); a row with no rate now is left out. */
-function RangeRowsView({ rows }: { rows: RangeRows }) {
+/**
+ * The range in XMR and in fiat, one row each, right-aligned (owner, 8 Nov; boards v142): the figures in
+ * mono, then the unit, "XMR" in Monero ink and the currency code muted. A row with no rate now is left out.
+ */
+export function RangeRowsView({ rows, currency, className = 'x2f-offer__range' }: { rows: RangeRows; currency: string; className?: string }) {
   return (
     <>
       {rows.xmr !== null ? (
-        <span className="x2f-offer__range" data-part="range-xmr">
-          {rows.xmr}
+        <span className={className} data-part="range-xmr">
+          <span className="x2f-offer__figures">{rows.xmr}</span> <span className="x2f-offer__unit" data-unit="xmr">XMR</span>
         </span>
       ) : null}
       {rows.fiat !== null ? (
-        <span className="x2f-offer__range" data-part="range-fiat">
-          {rows.fiat}
+        <span className={className} data-part="range-fiat">
+          <span className="x2f-offer__figures">{rows.fiat}</span> <span className="x2f-offer__unit">{currency}</span>
         </span>
       ) : null}
     </>
@@ -191,7 +208,7 @@ function RangeRowsView({ rows }: { rows: RangeRows }) {
 export function OfferCard({ offer, currency, copy, primary, now, market = null, withMarkup = false, onTrade, onMessage, onNudge, pick }: OfferCardProps) {
   const name = offer.poster.displayName;
   const closed = offer.opensAt !== undefined;
-  const margin = marginLine(offer, currency, copy, market);
+  const markup = markupOf(offer, currency, copy, market);
   const rows = cardRows(offer, currency, market, withMarkup);
   const time = offer.poster.typicalMinutes === null ? null : copy.typicalTime(offer.poster.typicalMinutes);
 
@@ -210,7 +227,7 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
         <span className="x2f-offer__pick-line">
           <span className="x2f-offer__sub">{posterLine(offer, now)}</span>
           <span className="x2f-offer__limits">
-            <RangeRowsView rows={rows} />
+            <RangeRowsView rows={rows} currency={currency} />
           </span>
         </span>
         {closed ? <span className="x2f-offer__opens">Opens at {STAGE_NAME[offer.opensAt!]}</span> : null}
@@ -264,16 +281,25 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
           <span className="x2f-offer__rate" data-part="rate">
             {offer.rate === null ? 'Price unavailable right now' : formatMinor(offer.rate, currency)}
           </span>
-          {margin ? (
-            <span className="x2f-offer__margin" data-tone={margin.favourable ? 'escrow' : undefined}>
-              {margin.text}
-            </span>
-          ) : null}
+          {time === null ? null : <span className="x2f-offer__time">{time}</span>}
         </div>
-        <span className="x2f-offer__limits">
-          <RangeRowsView rows={rows} />
-          {time === null ? null : <span>{time}</span>}
-        </span>
+        <div className="x2f-offer__amounts">
+          {markup ? (
+            <span className="x2f-offer__markup" data-part="markup">
+              {markup.mark !== null ? (
+                <span className="x2f-offer__margin" data-tone={markup.favourable ? 'escrow' : undefined}>
+                  {markup.mark}
+                </span>
+              ) : null}
+              <span className="x2f-offer__markup-label">{markup.label}</span>
+            </span>
+          ) : (
+            <span />
+          )}
+          <span className="x2f-offer__limits">
+            <RangeRowsView rows={rows} currency={currency} />
+          </span>
+        </div>
       </div>
       {action}
     </article>

@@ -78,9 +78,9 @@ export function offerPrice(o: MyOffer): string {
   return offerPriceParts(o).join(' · ');
 }
 
-/** The limits in mono, in the unit the poster set them in: "$50 – $2,000", "1 – 5 XMR" (the line adds " per trade"). */
+/** The limits in mono, in the unit the poster set them in: "$50 – $2,000", "1.000000 – 5.000000 XMR" (the line adds " per trade"). */
 export function offerLimitsRange(o: MyOffer): string {
-  if (o.amountUnit === 'xmr') return xmrRangeText(o.minAtomic!, o.maxAtomic!);
+  if (o.amountUnit === 'xmr') return `${xmrRangeText(o.minAtomic!, o.maxAtomic!)} XMR`;
   return `${formatAmount(o.minFiatCents!, o.currency)} – ${formatAmount(o.maxFiatCents!, o.currency)}`;
 }
 

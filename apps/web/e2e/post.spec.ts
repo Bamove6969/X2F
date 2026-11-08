@@ -436,8 +436,9 @@ test('trade size in XMR by default: one switch per box, both boxes switch togeth
   await f(page).min.fill('0.5');
   await f(page).max.fill('25');
   const preview = page.getByRole('region', { name: 'Preview' });
-  await expect(preview.locator('[data-part="preview-xmr"]')).toHaveText('0.5 – 25 XMR');
-  await expect(preview.locator('[data-part="preview-fiat"]')).toHaveText(/^≈ CA\$[\d,.]+ – CA\$[\d,.]+$/);
+  await expect(page.getByText('One unit for the whole offer. Traders see both, converted at your price.', { exact: true })).toBeVisible();
+  await expect(preview.locator('[data-part="preview-xmr"]')).toHaveText('0.500000 – 25.000000 XMR');
+  await expect(preview.locator('[data-part="preview-fiat"]')).toHaveText(/^≈ CA\$[\d,.]+ – CA\$[\d,.]+ CAD$/);
   await expect(page.locator('[data-part="other-unit"]').first()).toHaveText(/^≈ CA\$[\d,.]+ at your price \(\+0\.5%\)$/);
 
   // Tapping the currency on the Largest box moves both boxes.

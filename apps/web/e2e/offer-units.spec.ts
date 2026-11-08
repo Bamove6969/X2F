@@ -27,20 +27,21 @@ test('each card shows the range in XMR and in fiat; the markup box recalculates 
   await expect(box).not.toBeChecked();
   await expect(page.getByText('Converted at the market rate, before markup.')).toBeVisible();
   const kettle = card(page, 'kettle.moss');
-  await expect(kettle.locator('[data-part="range-xmr"]')).toHaveText('1 – 5 XMR');
-  await expect(kettle.locator('[data-part="range-fiat"]')).toHaveText('≈ $330 – $1,650');
+  await expect(kettle.locator('[data-part="range-xmr"]')).toHaveText('1.000000 – 5.000000 XMR');
+  await expect(kettle.locator('[data-part="range-fiat"]')).toHaveText('≈ $330 – $1,650 USD');
   // The markup stays bottom-left.
-  await expect(kettle.locator('.x2f-offer__margin')).toHaveText('2.5% above market');
+  await expect(kettle.locator('[data-part="markup"] .x2f-offer__margin')).toHaveText('+2.5%');
+  await expect(kettle.locator('[data-part="markup"]')).toContainText('Vendor markup');
   const satoshi = card(page, 'satoshi_ghost');
-  await expect(satoshi.locator('[data-part="range-fiat"]')).toHaveText('$50 – $1,500');
-  await expect(satoshi.locator('[data-part="range-xmr"]')).toHaveText(/^≈ [\d.]+ – [\d.]+ XMR$/);
+  await expect(satoshi.locator('[data-part="range-fiat"]')).toHaveText('$50 – $1,500 USD');
+  await expect(satoshi.locator('[data-part="range-xmr"]')).toHaveText(/^≈ \d+\.\d{6} – \d+\.\d{6} XMR$/);
 
   await box.check();
-  await expect(kettle.locator('[data-part="range-fiat"]')).toHaveText('≈ $338.25 – $1,691.25');
-  await expect(kettle.locator('[data-part="range-xmr"]')).toHaveText('1 – 5 XMR');
+  await expect(kettle.locator('[data-part="range-fiat"]')).toHaveText('≈ $338.25 – $1,691.25 USD');
+  await expect(kettle.locator('[data-part="range-xmr"]')).toHaveText('1.000000 – 5.000000 XMR');
   await expect(page.getByText("Converted at each offer's price, markup included.")).toBeVisible();
 
   await page.reload();
   await expect(page.getByRole('checkbox', { name: 'Display amounts including vendor markup' })).toBeChecked();
-  await expect(card(page, 'kettle.moss').locator('[data-part="range-fiat"]')).toHaveText('≈ $338.25 – $1,691.25');
+  await expect(card(page, 'kettle.moss').locator('[data-part="range-fiat"]')).toHaveText('≈ $338.25 – $1,691.25 USD');
 });

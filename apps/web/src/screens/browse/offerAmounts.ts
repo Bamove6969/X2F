@@ -16,26 +16,25 @@ export function offerRange(o: Pick<Offer, 'amountUnit' | 'minAtomic' | 'maxAtomi
   return { unit: 'fiat', min: o.minFiatCents!, max: o.maxFiatCents! };
 }
 
-/** XMR shown on a card: at most this many decimals, trailing zeros dropped ("1", "1.4782"). */
-export const CARD_XMR_DECIMALS = 4;
+/** XMR shown on a card: six decimals, the kit's XMR figure (boards v142: "0.300000 – 9.000000"). */
+export const CARD_XMR_DECIMALS = 6;
 
 /**
- * `atomic` as XMR with at most `decimals` places, rounded `up` or `down` at the last place, trailing
- * zeros dropped. A range's minimum rounds up and its maximum down, so the range shown is never wider
- * than the one the offer takes.
+ * `atomic` as XMR with `decimals` places, rounded `up` or `down` at the last place. A range's minimum
+ * rounds up and its maximum down, so the range shown is never wider than the one the offer takes.
  */
 export function xmrBound(atomic: bigint, dir: 'up' | 'down', decimals = CARD_XMR_DECIMALS): string {
   const step = 10n ** BigInt(12 - decimals);
   const units = dir === 'up' ? (atomic + step - 1n) / step : atomic / step;
   const scale = 10n ** BigInt(decimals);
   const whole = units / scale;
-  const frac = (units % scale).toString().padStart(decimals, '0').replace(/0+$/, '');
-  return `${whole.toLocaleString('en-US')}${frac === '' ? '' : `.${frac}`}`;
+  const frac = (units % scale).toString().padStart(decimals, '0');
+  return decimals === 0 ? whole.toLocaleString('en-US') : `${whole.toLocaleString('en-US')}.${frac}`;
 }
 
-/** "1 – 5 XMR", "1.4782 – 8.8691 XMR". */
+/** "1.000000 – 5.000000", "1.478197 – 8.869179": the figures only; the view adds the "XMR" unit. */
 export function xmrRangeText(minAtomic: bigint, maxAtomic: bigint): string {
-  return `${xmrBound(minAtomic, 'up')} – ${xmrBound(maxAtomic, 'down')} XMR`;
+  return `${xmrBound(minAtomic, 'up')} – ${xmrBound(maxAtomic, 'down')}`;
 }
 
 /** "$50 – $1,500" (whole amounts drop their cents), "$338.25 – $1,691.25". */
@@ -44,7 +43,7 @@ export function fiatRangeText(minFiat: bigint, maxFiat: bigint, currency: string
 }
 
 export interface RangeRows {
-  /** The range in XMR; null when it is converted and there is no rate now. */
+  /** The range in XMR, figures only (the view adds the unit); null when it is converted and there is no rate now. */
   xmr: string | null;
   /** The range in the offer's currency; null when it is converted and there is no rate now. */
   fiat: string | null;

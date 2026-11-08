@@ -458,9 +458,25 @@ a.x2f-method:last-of-type {
 }
 
 .x2f-offer__range {
-  font-family: var(--x2f-font-mono);
   font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
   color: var(--x2f-ink);
+}
+
+.x2f-offer__figures {
+  font-family: var(--x2f-font-mono);
+}
+
+/* The unit after the figures: "XMR" in Monero ink (kit standard 7), the currency code muted. */
+.x2f-offer__unit {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-offer__unit[data-unit='xmr'] {
+  color: var(--x2f-monero-ink);
 }
 
 .x2f-offer[data-opens-at] .x2f-offer__range {
@@ -574,15 +590,50 @@ a.x2f-method:last-of-type {
 
 .x2f-offer__terms {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  gap: var(--x2f-space-3);
+}
+
+/* The price row: the offer's price, the time on the right (boards v142). */
+.x2f-offer__price {
+  display: flex;
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--x2f-space-2);
 }
 
-.x2f-offer__price {
+.x2f-offer__time {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+  text-align: right;
+}
+
+/* Markup bottom-left, the two range rows right (owner #11, 8 Nov). */
+.x2f-offer__amounts {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--x2f-space-3);
+  padding-top: var(--x2f-space-3);
+  border-top: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-offer__markup {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex-shrink: 0;
+}
+
+.x2f-offer__markup-label {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-offer__amounts .x2f-offer__limits {
+  min-width: 0;
 }
 
 .x2f-offer__rate {
@@ -594,8 +645,10 @@ a.x2f-method:last-of-type {
 }
 
 .x2f-offer__margin {
-  font-size: 13px;
-  line-height: 18px;
+  font-family: var(--x2f-font-mono);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 500;
   color: var(--x2f-ink-muted);
 }
 
