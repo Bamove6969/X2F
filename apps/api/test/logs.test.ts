@@ -57,8 +57,8 @@ describe('log hygiene over a whole trade (P3-I15)', () => {
     await driveTo(deps, second.trade, 'secured');
     const durl = `/v1/trades/${second.trade.code}`;
     expect((await third.browser.post(`${durl}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(404);
-    expect((await buyer.browser.post(`${durl}/dispute`, { reason: 'paid', note: 'a\u0000b' })).statusCode).toBe(400);
-    expect((await buyer.browser.post(`${durl}/dispute`, { reason: 'paid', note: 'private to the moderator' })).statusCode).toBe(200);
+    expect((await seller.browser.post(`${durl}/dispute`, { reason: 'paid', note: 'a\u0000b' })).statusCode).toBe(400);
+    expect((await seller.browser.post(`${durl}/dispute`, { reason: 'paid', note: 'private to the moderator' })).statusCode).toBe(200);
     for (const who of [seller, buyer, third]) await who.browser.get(`${durl}/dispute`);
     // A moderator's round-1 ruling, through the dispute machine (Plan 4 Task 12 is not built yet).
     await publishRuling(deps, second.trade.code, { outcome: 'release-to-buyer' });
