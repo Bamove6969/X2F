@@ -647,15 +647,12 @@ test('36 BuyerPay while the escrow secures', async ({ page }) => {
   await shot(page, '36-trade-buyer-pay-securing');
 });
 
-test("37-39 Task 38-39: the pay warning, the two-step I've paid, marked as paid", async ({ page }) => {
-  await openRoom(page, PAY_SECURING, { warned: false });
-  const warn = page.getByRole('alertdialog');
-  await expect(warn).toContainText('Before you pay');
-  await shot(page, '37-trade-pay-warning');
-  await page.getByRole('button', { name: "I'll wait" }).click();
-  // The second step: I've paid, the warning again (still confirming), then the confirm sheet.
+// Shot 37 (Task 38's pay warning) is gone: board Warn-IvePaid is superseded by owner Q12, since
+// I've paid only opens once the escrow is secured.
+test("38-39 Task 39: the two-step I've paid, marked as paid", async ({ page }) => {
+  await openRoom(page, PAY_SECURED, { warned: false });
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await page.locator('[data-primary]').first().click();
-  if (await warn.count()) await page.getByRole('button', { name: "I've already paid" }).click();
   const sheet = page.getByRole('dialog');
   await expect(sheet).toContainText('Mark this trade as paid?');
   await sheet.getByRole('checkbox').check();
