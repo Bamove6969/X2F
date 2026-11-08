@@ -117,3 +117,30 @@ Explanations asked for: Q3 ranges, Q19 watcher (done), Q26, Q29 and Q33 (My offe
 - Front door (owner, 8 Nov): "No one gets to make it past the front door and see behind the curtains without signing an agreement, creating an account and logging in. There are no free tours for outsiders." Logged-out visitors see only login, create account (Terms + signature), recovery; the API refuses marketplace and user data without a live, fully set-up session.
 - Offer amounts in XMR or fiat (owner, 8 Nov, Post an offer "Smallest trade"): each range box has an XMR / <currency> switch on its right; default XMR (the left one), selected unit bold bright orange, the other smaller and muted. A fiat-set range (e.g. $500-$3000) still sells XMR; the system converts and shows both XMR and fiat to traders, with the poster's markup (e.g. +2.5%) applied. Ad card: markup bottom-left, two rows across: the range in XMR and in fiat. Search: a box "Display amounts including vendor markup" recalculates both rows with the markup. Trade/quote screen carries the markup, the ranges, and the with/without-markup view. Lead default: min and max switch together (one unit per offer); owner may override.
 - Minimum completed trades on an offer (owner, 8 Nov): choices 5, 10, 25, 50. Lead default: "No minimum" also offered, and is the default; owner may make 5 the floor.
+
+## 8 Nov, pages 6, 7, 9 (owner's full words: ~/x2f-comms/owner-answers-raw/page6-9/)
+Trade rules (p6-1, p9-2, p9-4, p9-6, p9-7):
+- REVERSAL: nudges are OPTIONAL, never required. A nudge is a tool to get attention, at most once per 15 minutes (it's annoying). The seller's cancel after the time to pay does NOT need a nudge. (Replaces the 7 Nov "at least one nudge" line and Job 1's nudge gate.)
+- REVERSAL: no 15-minute final warning to the other party. When the time to pay has passed and the buyer hasn't tapped "I've paid", the escrower may cancel; the refund starts at once with no warning; the trade is complete once the refund has 10 confirmations. Login strength has nothing to do with cancelling.
+- The time to pay is not a hard end: after it, the trade stays open until the escrower chooses to cancel; the late buyer can message and still pay. If the buyer paid late and the escrower cancels, the buyer can dispute at once.
+- Once "I've paid" is tapped, the other side can no longer cancel.
+- The time to pay and the dispute wait depend on the payment method. Research each method's real transfer time; show it up front where the method is picked (e.g. "this payment method can take up to 12 hours"), and the other side waits that long after "I've paid" before a dispute.
+- No release time limit: the seller checks, marks complete, the XMR releases and the 1% fee is subtracted.
+- No penalty for a taker who never funds (people open several trades and keep the first who answers). Add a trade rule note asking them to close the other trades out of respect; design words it.
+- Moderators: chats are end-to-end encrypted and readable by the moderator only once a dispute opens; then the moderator sees everything: full chat with timestamps, proofs, and can question both parties, who must cooperate or risk a ruling against them. Owner suggests the Signal protocol; the lead decides the method.
+- Blur check: for the first month, ask BOTH parties every time whether the blur removed private info and kept what matters. Lead writes the wording.
+- Own-name accounts: a recommendation only, never enforced; reassure that X2F protects their identity.
+- Fee (p9-1): the 1% is subtracted at completion when the XMR leaves escrow, and sent to the system wallet. Owner asked how this works when roles differ; follow-up question pending.
+Teams (p7):
+- Releases are logged with member name and amount (p7-1 agreed; rest of p7-1 needs explaining).
+- Confirmations (p7-2): the trader's key taps ("I've paid", "Payment received"/release) get a second "Are you sure…?" pop-up with a "Do not show me this warning again" tick, per user.
+- Payment details (p7-3): per payment method, the sender's side of the trade chat shows that method's required fields (e.g. Interac: full name, and email OR phone); they fill and tap Send and it arrives packaged. Research each method's required fields.
+- Per-member trade-size band (p7-4): a member who can create or complete trades only does so within the band the lead sets; it applies to every related permission.
+- Manager preset (p7-5): a "Manager" checkbox ticks a recommended set of boxes, which the lead can still untick individually.
+- Blocking (p7-6): design A. A Blocked users list with date/time and an optional note per block; block/unblock with one click.
+- Disputes (p7-7): design A; members with dispute access see everything and can answer the moderator.
+- Notes (p7-8): two boxes: "can view notes on traders" and "can add notes on traders"; added notes record who and when; members can't delete.
+- REVERSAL (p7-9): members may use any login method, stronger than the lead's included (replaces p4-8 "no stronger than the lead"). If the team lead uses only username+password, team changes still get the 24-hour hold even when a member with a strong login makes them.
+- Member logins (p7-10): approve only the first login (design B); the granular boxes are the protection.
+- Working hours (p7-11): simple "any time" or a detailed schedule (days, hours).
+- Starting set (p7-12): design A (the 10 boxes); keep thinking of every possible permission and leave the rest to feedback.
