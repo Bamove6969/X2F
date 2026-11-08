@@ -737,3 +737,8 @@ The owner asked design to treat his 12 comments as a brief for the whole app and
 - **BuyerPay, no-proof confirm (owner rule):** "Mark paid without proof? / You haven't added a payment screenshot. If this trade ever goes to a dispute, proof is often what decides it. It's your choice." · Add proof / Mark paid without proof; always shows when proof is missing; then the p7-2 sheet unless silenced. Tweak `confirm: noproof`.
 - **Also:** own-name callout softened to the owner's recommendation on BuyerPay and Fold-Trade; Refunded's final-alert line removed; BuyQuote's "What applies to you" regenerated; doc's old buyer payment-details line removed (p7-3).
 - All COPY-UNSIGNED lines are listed in each board's notes. Remaining "privacy tool" sweep: ProofBlur-Wide and any other user-facing "blur" wording, next.
+
+## 8 Nov 2026 (night): "privacy tool" naming, no-proof confirm — READY
+- ProofBlur (phone): the auto-hide feature is now called "our privacy tool" everywhere a trader reads it. The uploader's own buttons keep "Add blur" / "Remove blur" because those are their boxes, not the tool's. ProofBlur-Wide and the FAQ/terms/mod boards still say "auto-blur"; that sweep was stopped and is not done.
+- BuyerPay `confirm: noproof`: "If this trade ever goes to a dispute, proof is usually what decides which side wins. It's your choice." (owner's line, reworded).
+- Canvas v156.
