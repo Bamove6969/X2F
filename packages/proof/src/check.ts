@@ -85,7 +85,7 @@ export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: Hi
   // A whole amount with no marker that Task 7 keeps clear (`Total 250000`, owner Q17) is the amount
   // too, read by Task 7's own rule (review RV4-M4).
   const keep = { tradeCode: expected.tradeCode, fiatCents: expected.fiatCents, exponent: expected.exponent };
-  if (!amounts.includes(expected.fiatCents) && texts.some((t) => showsWholeAmount(t, keep))) amounts.push(expected.fiatCents);
+  if (!amounts.includes(expected.fiatCents) && texts.some((t, i) => showsWholeAmount(t, keep, texts[i - 1]))) amounts.push(expected.fiatCents);
   const amount: ProofCheck['amount'] = amounts.includes(expected.fiatCents)
     ? { status: 'match', seen: expected.fiatCents }
     : amounts.length > 0
