@@ -3,6 +3,7 @@
 // off with the board. Refusals (owner-only, a role a member lacks, the member limit, escrow
 // signing) are CantDoThat's, worded in ui/cantDoCodes.ts (teamCantDoText).
 import type { TeamRole } from '@x2f/auth-client';
+import { utcDateTime } from '../../ui/dates.js';
 
 export const TEAM_PATH = '/settings/team';
 export const JOIN_PATH = '/team/join';
@@ -14,8 +15,7 @@ export function rolesText(roles: readonly TeamRole[]): string {
   return (['offers', 'trades'] as const).filter((r) => roles.includes(r)).map((r) => ROLE_WORDS[r]).join(' and ');
 }
 
-const when = (iso: string): string =>
-  new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC';
+const when = (iso: string): string => utcDateTime(new Date(iso));
 
 /** What each audit action reads as (an unknown one is shown by its code). */
 const AUDIT_WORDS: Record<string, string> = {
