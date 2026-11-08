@@ -342,3 +342,10 @@
 .x2f-trade-status {
   padding: var(--x2f-space-6) var(--x2f-space-4);
 }
+
+/* The buyer's Cancel trade while waiting for funding (design proto review P1). */
+.x2f-trade-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--x2f-space-2);
+}

@@ -29,7 +29,6 @@ import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
 import { MethodExplainer } from '../../ui/MethodExplainer.js';
-import { Sheet } from '../../ui/Sheet.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { CancelFinalSheet } from './CancelFinalSheet.js';
@@ -42,7 +41,8 @@ import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTra
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
 import { utcDate, utcDateTime } from '../../ui/dates.js';
-import { focusChatPane, registerTradeScreen, useChatPane, type MemberScreenProps, type TradeSlot } from './TradeRoom.js';
+import { registerTradeScreen, type MemberScreenProps, type TradeSlot } from './TradeRoom.js';
+import { ChatButton, ChatSlot } from './TradeChatButton.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
 import './pay.css';
 
@@ -385,46 +385,6 @@ function ProofSlot({ wide }: { wide: boolean }) {
         <input id="proof" type="file" accept="image/*" disabled className="x2f-visually-hidden" />
       </label>
     </section>
-  );
-}
-
-/** The chat for the trade (Task 20's ChatPanel through the seam), or nothing until it is installed. */
-function ChatSlot({ view }: { view: TradeView }) {
-  const Chat = useTradeChat();
-  return Chat ? <Chat code={view.code} name={publicName(view.counterparty)} /> : null;
-}
-
-function ChatButton({ view, primary }: { view: TradeView; primary?: boolean }) {
-  const [open, setOpen] = useState(false);
-  // With the room's chat pane showing (Task 40), the chat is already beside the screen: the sheet
-  // closes on unfold (one draft, one composer), and the primary Chat moves the focus there.
-  const paned = useChatPane(view);
-  useEffect(() => {
-    if (!paned || !open) return;
-    setOpen(false);
-    // The sheet already closed (`open && !paned`) and handed the focus back to the header Chat,
-    // hidden now under [data-chat-link]: give it to the pane's composer, which holds the same
-    // draft, once the pane is laid out (round-2 review m4).
-    requestAnimationFrame(() => focusChatPane());
-  }, [paned, open]);
-  const onChat = () => (paned ? focusChatPane() : setOpen(true));
-  return (
-    <>
-      {primary ? (
-        <Button variant="primary" onClick={onChat}>
-          Chat
-        </Button>
-      ) : (
-        <button type="button" className="x2f-room__chat" onClick={onChat} data-chat-link="">
-          Chat
-        </button>
-      )}
-      <Sheet open={open && !paned} title={`Chat with ${publicName(view.counterparty)}`} onClose={() => setOpen(false)}>
-        <div className="x2f-sheet__body">
-          <ChatSlot view={view} />
-        </div>
-      </Sheet>
-    </>
   );
 }
 

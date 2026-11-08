@@ -30,6 +30,8 @@ import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { exactXmr, fundedForGood, hasFundMark, isFunded, isPhoneDevice, setFundMark, walletName } from './fund.js';
 import { FundFallback, type SendNow } from './FundFallback.js';
+import { CancelFinalSheet } from './CancelFinalSheet.js';
+import { ChatButton } from './TradeChatButton.js';
 import { IntegrityFailed, Name, EscrowCheck, SetupStatus } from './SetupStatus.js';
 import { amountToSend, verifiedFunding, type TradeEscrow } from './seams.js';
 import { registerTradeScreen, setIntegrityScreen, type TradeScreenProps } from './TradeRoom.js';
@@ -372,13 +374,75 @@ export function TradeFund({ view, escrow, serverClock, refresh }: TradeScreenPro
   );
 }
 
-/** The buyer before funding: setup progress, then "Waiting for <seller> to fund". No address, QR code or wallet link. */
+/** Re-renders every `ms`, so a deadline written into the text takes effect on screen (Countdown keeps its own). */
+function useTick(ms: number): void {
+  const [, setN] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setN((n) => n + 1), ms);
+    return () => clearInterval(id);
+  }, [ms]);
+}
+
+/** The time to fund is over and the server has not cancelled the trade yet (it does on its next tick). */
+function fundTimeOver(view: TradeView, nowMs: number): boolean {
+  if (view.state !== 'funding' || view.fundBy === null || view.pausedAt !== null) return false;
+  const by = Date.parse(view.fundBy);
+  return Number.isFinite(by) && nowMs >= by;
+}
+
+/**
+ * The buyer before funding: setup progress, then "Waiting for <seller> to fund". No address, QR
+ * code or wallet link. Design proto review P1 (8 Nov): Chat is there, the buyer can cancel at once
+ * (the flow map: before the escrow is funded either side may cancel; "Cancelling is final" asks
+ * once), the screen says what happens if the time runs out, and once it has, that X2F is
+ * cancelling (the server's tick lapses the trade; BuyerFundEnded then says it is cancelled).
+ */
 export function BuyerWaitFund({ view, escrow, serverClock, refresh }: TradeScreenProps) {
+  useTick(5_000);
+  const [cancelSheet, setCancelSheet] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   // A stopped escrow is said to the buyer too (review 2026-10-27, I3), whatever the trade state.
   const settingUp = view.state === 'setup' || escrow.error !== null;
+  const over = fundTimeOver(view, serverClock().getTime());
+  const onCancel = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      try {
+        await postTradeEvent(view.code, { type: 'buyer-cancel' });
+      } catch {
+        setError("Couldn't cancel the trade. Try again.");
+        return;
+      }
+      // With coins already in the escrow the cancel is a refund to the seller, which this device
+      // builds (BuyerCancelling takes over, with Try again). With none, the trade just closes.
+      if (view.receivedAtomic !== '0') {
+        try {
+          await escrow.buyerCancel();
+        } catch {
+          setError("Couldn't start the refund. Try again.");
+        }
+      }
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="x2f-trade" data-buyer-wait="">
-      <Header view={view} selling={false} />
+      <TradeHeader
+        title={
+          <>
+            Buying from <Name view={view} />
+          </>
+        }
+        code={view.code}
+        method={{ name: methodOf(view).name, whatItIs: methodOf(view).whatItIs }}
+        backTo="/sell"
+        action={<ChatButton view={view} />}
+      />
       <div className="x2f-trade-body">
         {settingUp ? (
           <SetupStatus view={view} escrow={escrow} refresh={refresh} />
@@ -393,6 +457,17 @@ export function BuyerWaitFund({ view, escrow, serverClock, refresh }: TradeScree
             Waiting for <Name view={view} /> to fund
           </h1>
           <p className="x2f-trade-lead">You don't send anything yet. Pay only once the escrow is funded and secured.</p>
+          {over ? (
+            <p className="x2f-notice" role="status" data-fund-over="">
+              {/* COPY-UNSIGNED (TradeFund draws only the seller's view) */}
+              The time to fund ran out. <Name view={view} /> didn't fund the escrow in time, so X2F is cancelling this trade. Don't send any money.
+            </p>
+          ) : view.state === 'funding' ? (
+            <p className="x2f-trade-lead">
+              {/* COPY-UNSIGNED: the seller's board line ("If it runs out, the trade is cancelled") for the buyer. */}
+              If <Name view={view} /> doesn't fund it in time, the trade is cancelled. You can cancel at any time before then.
+            </p>
+          ) : null}
         </section>
         <Grown view={view} />
         <GiftCard view={view} />
@@ -406,6 +481,60 @@ export function BuyerWaitFund({ view, escrow, serverClock, refresh }: TradeScree
           </div>
         </section>
         {!settingUp && escrow.checkWords ? <EscrowCheck view={view} words={escrow.checkWords} /> : null}
+        {error !== null ? (
+          <p className="x2f-notice" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {over ? null : (
+          <div className="x2f-trade-actions">
+            <Button variant="quiet" disabled={busy} onClick={() => setCancelSheet(true)}>
+              Cancel trade
+            </Button>
+          </div>
+        )}
+      </div>
+      <CancelFinalSheet
+        open={cancelSheet && !over}
+        view={view}
+        busy={busy}
+        onKeep={() => setCancelSheet(false)}
+        onCancel={() => {
+          setCancelSheet(false);
+          void onCancel();
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * The buyer's trade that ended before the escrow was funded (design proto review P1): `lapsed`
+ * (the seller didn't fund in time and the server cancelled it) or `cancelled` (nothing was ever
+ * funded: the buyer's or the seller's cancel, or setup ran out). Board Refunded's neutral
+ * "Cancelled" chip; no actions. COPY-UNSIGNED (no board draws it).
+ */
+export function BuyerFundEnded({ view }: TradeScreenProps) {
+  const lapsed = view.state === 'lapsed';
+  const coins = view.receivedAtomic !== '0';
+  return (
+    <div className="x2f-trade" data-buyer-ended="">
+      <Header view={view} selling={false} />
+      <div className="x2f-trade-body">
+        <div className="x2f-trade-chip-row">
+          <StatusChip tone="neutral" icon="check" label="Cancelled" />
+        </div>
+        <section className="x2f-trade-intro">
+          <h1 className="x2f-trade-title">{lapsed ? 'The time to fund ran out' : 'This trade is cancelled'}</h1>
+          {lapsed ? (
+            <p className="x2f-trade-lead">
+              <Name view={view} /> didn't fund the escrow in time, so X2F cancelled this trade.
+              {coins ? <> The XMR already sent goes back to <Name view={view} />.</> : null} You don't need to do anything.
+            </p>
+          ) : (
+            <p className="x2f-trade-lead">Nothing was funded, so nothing needs to go back. You don't need to do anything.</p>
+          )}
+        </section>
       </div>
     </div>
   );
@@ -413,4 +542,5 @@ export function BuyerWaitFund({ view, escrow, serverClock, refresh }: TradeScree
 
 registerTradeScreen({ owner: 'Task 22', role: 'seller', states: ['setup', 'funding', 'securing'], screen: TradeFund });
 registerTradeScreen({ owner: 'Task 22', role: 'buyer', states: ['setup', 'funding'], screen: BuyerWaitFund });
+registerTradeScreen({ owner: 'Task 22', role: 'buyer', states: ['cancelled', 'lapsed'], screen: BuyerFundEnded });
 setIntegrityScreen(IntegrityFailed);
