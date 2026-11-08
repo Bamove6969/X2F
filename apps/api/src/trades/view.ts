@@ -83,6 +83,11 @@ export interface TradeView {
   cancelConfirmedAt: string | null;
   /** When the seller's Confirm cancel became available; the trade closes by itself 48 h later (owner 2026-10-29). */
   cancelConfirmableAt: string | null;
+  /**
+   * When the seller first nudged the buyer after the escrow was secured (owner G2, g66; migration
+   * 119); null = not yet. The seller's refund stays locked until it is set and the 90 minutes are over.
+   */
+  sellerNudgedAt: string | null;
   nextDeadline: string | null;
   serverNow: string;
 }
@@ -156,6 +161,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     closedAt: iso(t.closedAt),
     cancelConfirmedAt: iso(t.cancelConfirmedAt),
     cancelConfirmableAt: iso(t.cancelConfirmableAt),
+    sellerNudgedAt: iso(t.sellerNudgedAt),
     nextDeadline: iso(nextDeadline(t)),
     serverNow: serverNow.toISOString(),
   };

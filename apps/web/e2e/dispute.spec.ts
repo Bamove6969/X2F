@@ -56,6 +56,7 @@ function tradeView(o: Partial<Record<string, unknown>> & { role?: 'buyer' | 'sel
     closedAt: null,
     cancelConfirmedAt: null,
     cancelConfirmableAt: null,
+    sellerNudgedAt: null,
     nextDeadline: null,
     serverNow: T('10:14'),
     ...o,

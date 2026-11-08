@@ -284,6 +284,47 @@
   color: var(--x2f-ink-muted);
 }
 
+/* Owner Q12: the locked "Payment details" card while the escrow secures (board BuyerPay, escrow=securing). */
+.x2f-pay-card__locked {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.x2f-pay-card__lock {
+  display: flex;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+}
+
+.x2f-pay-card__locked-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.x2f-pay__primary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.x2f-pay__caption {
+  margin: 0;
+  padding: 4px 8px 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+  text-align: center;
+}
+
 .x2f-giftcard {
   margin: 0;
   font-size: 16px;

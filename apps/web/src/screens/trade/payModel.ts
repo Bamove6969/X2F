@@ -72,14 +72,6 @@ export function buyerCancelMode(v: Pick<TradeView, 'state' | 'paidAt'>): 'one-ta
   return 'none';
 }
 
-/**
- * The escrow is still confirming (Revision 2026-10-29b: the pay warning shows when the pay screen
- * opens then): funding seen but not secured, or secured with coins that are not all unlocked.
- */
-export function escrowConfirming(v: Pick<TradeView, 'state' | 'releasable'>): boolean {
-  return v.state === 'securing' || (v.state === 'secured' && !v.releasable);
-}
-
 /** The seller never cancels alone after funding (spec 2.3): only propose a mutual cancel, or withdraw one. */
 export function sellerCancelMode(v: Pick<TradeView, 'state' | 'cancelProposedBy'>): 'propose' | 'proposed' | 'none' {
   if (!CANCEL_STATES.includes(v.state)) return 'none';
@@ -137,7 +129,8 @@ export function counterpartyLine(v: Pick<TradeView, 'role' | 'counterparty'>): s
 }
 
 /**
- * Why "I've paid" is not offered right now, or null when it is (review 2026-10-27, I1). The sum to
+ * Why "I've paid" is not offered right now, or null when it is (review 2026-10-27, I1). Never
+ * before the escrow is secured (`not-secured`, owner Q12). The sum to
  * pay is only ever this device's own figure (`escrow.fiatCents`, Task 12): none while the escrow
  * is stopped or not ready, none while the escrow refuses the trade as the API shows it (any
  * refusal but `amount-out-of-range`, which is `no-amount`: a `view-mismatch` can leave the totals
@@ -148,9 +141,24 @@ export function counterpartyLine(v: Pick<TradeView, 'role' | 'counterparty'>): s
  * `total-wrong`: both work it out at the locked rate, so it will not clear by waiting (round 2,
  * Minor 2); on another amount it is `amount-differs` (the device may still catch up).
  */
-export type PayBlock = 'escrow-stopped' | 'escrow-refused' | 'escrow-not-ready' | 'no-amount' | 'amount-differs' | 'total-wrong';
+export type PayBlock = 'escrow-stopped' | 'escrow-refused' | 'not-secured' | 'escrow-not-ready' | 'no-amount' | 'amount-differs' | 'total-wrong';
 
 type PayView = Pick<TradeView, 'fiatCents' | 'amountAtomic'>;
+
+/**
+ * Owner Q12 (2026-11-06): the seller's payment details and "I've paid" only once the escrow is
+ * secured, 10 of 10 confirmations with the coins unlocked, as the server says (the machine refuses
+ * `mark-paid` with `too-early` before `secured`). `refund_requested` comes after `secured`; in
+ * `paid` the details the buyer paid to stay on screen (review 2026-11-07, 1; the fold glance shows
+ * them too), and the button there is "Marked as paid", never this gate.
+ *
+ * Lead default (2026-11-07): "secured" means the trade's own funds are 10 of 10 and unlocked (the
+ * machine's `secured` state). Later top-ups, dust included, never re-lock paying: a trade stays
+ * `secured` while new coins confirm, so a seller can't hold the buyer off while `payBy` runs.
+ */
+export function paySecured(v: Pick<TradeView, 'state'>): boolean {
+  return v.state === 'secured' || v.state === 'refund_requested' || v.state === 'paid';
+}
 type PayEscrow = Pick<TradeEscrow, 'phase' | 'error' | 'refusal' | 'fiatCents' | 'amountAtomic'>;
 
 function totalBlock(view: PayView, e: PayEscrow): PayBlock | null {
@@ -159,9 +167,10 @@ function totalBlock(view: PayView, e: PayEscrow): PayBlock | null {
   return e.amountAtomic !== null && e.amountAtomic === BigInt(view.amountAtomic) ? 'total-wrong' : 'amount-differs';
 }
 
-export function payBlock(view: PayView, e: PayEscrow): PayBlock | null {
+export function payBlock(view: PayView & Pick<TradeView, 'state'>, e: PayEscrow): PayBlock | null {
   if (e.error !== null) return 'escrow-stopped';
   if (e.refusal !== null && e.refusal !== 'amount-out-of-range') return 'escrow-refused';
+  if (!paySecured(view)) return 'not-secured';
   if (e.phase !== 'ready') return 'escrow-not-ready';
   return totalBlock(view, e);
 }

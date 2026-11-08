@@ -1,12 +1,12 @@
 /**
- * The warnings before paying and before releasing (Plan 3 Task 38) show until the user goes past
+ * The warning before releasing (Plan 3 Task 38; the one before paying went with owner Q12) shows until the user goes past
  * them once for a trade, on this device, across reloads (lead default 2026-10-29: "once per
  * trade"). Kept in localStorage under the trade code only; a store that throws (private mode)
  * falls back to memory for this page. Key by the room's `code` (the route's), never `view.code`.
  */
 const memory = new Set<string>();
 const keyFor = (kind: WarnKind, code: string) => `x2f.warned.${kind}.${code}`;
-export type WarnKind = 'pay' | 'release';
+export type WarnKind = 'release';
 
 /** The user went past this warning for this trade on this device (localStorage; memory when the store throws). */
 export function warned(kind: WarnKind, code: string): boolean {

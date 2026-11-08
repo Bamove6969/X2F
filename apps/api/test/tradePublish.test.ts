@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { Deps } from '../src/app.js';
 import type { PushCall, PushTransport } from '../src/push/send.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
-import { driveTo, seedTrade } from './helpers/trades.js';
+import { driveTo, markSellerNudged, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
 let app: FastifyInstance;
@@ -50,6 +50,7 @@ async function refundable() {
   const buyer = await trader();
   const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
   const t = await driveTo(deps, trade, 'secured');
+  await markSellerNudged(deps, t.code);
   setNow(new Date(t.payBy!.getTime() + 60_000));
   return { seller, buyer, t };
 }

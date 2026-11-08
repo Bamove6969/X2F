@@ -94,6 +94,12 @@ const SHAPES = {
     </>
   ),
   bolt: <path d="M13 3L5 13h6l-1 8 8-10h-6z" />,
+  lock: (
+    <>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V8a4 4 0 018 0v3" />
+    </>
+  ),
   star: <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" />,
   'security-key': (
     <>

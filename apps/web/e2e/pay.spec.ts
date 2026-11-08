@@ -40,7 +40,9 @@ function apply(s: Server, e: Record<string, unknown>): { status: number; json: u
   switch (e.type) {
     case 'mark-paid':
       if (v.role !== 'buyer') return refuse('wrong-party');
-      if (v.state !== 'securing' && v.state !== 'secured') return refuse('wrong-state');
+      // Owner Q12: only once the escrow is secured (10 of 10); before that the machine says too-early.
+      if (v.state === 'securing') return refuse('too-early');
+      if (v.state !== 'secured') return refuse('wrong-state');
       if (e.fiatCents !== v.fiatCents) return refuse('total-changed');
       s.view = { ...v, state: 'paid', paidAt: PAY_NOW, confirmBy: at(120), disputeOpensAt: at(90), disputeWaitMin: 90, cancelProposedBy: v.cancelProposedBy === 'seller' ? null : v.cancelProposedBy };
       break;
@@ -90,21 +92,11 @@ const sheet = (page: Page) => page.getByRole('dialog');
 /** The device's own figures for the board trade: 1.25 XMR at $330.00, $412.50 (and its deal). */
 const DEVICE = { phase: 'ready' as const, amountAtomic: PAY_SECURED.amountAtomic, fiatCents: PAY_SECURED.fiatCents, deal: { poster: 'seller' as const, takeAmountAtomic: PAY_SECURED.amountAtomic } };
 
-/** `warned: false` leaves Task 38's pay warning to show; by default the buyer went past it already. */
-async function open(page: Page, view: TradeView, before?: Server['before'], o: { warned?: boolean } = {}): Promise<Server> {
+async function open(page: Page, view: TradeView, before?: Server['before']): Promise<Server> {
   const s = await serve(page, view, before);
   await page.addInitScript((e) => {
     window.__x2fFixtureEscrow = e;
   }, DEVICE);
-  if (o.warned !== false) {
-    await page.addInitScript((code) => {
-      try {
-        window.localStorage.setItem(`x2f.warned.pay.${code}`, '1');
-      } catch {
-        // No store: the warning shows, and the test fails loudly.
-      }
-    }, view.code);
-  }
   await page.goto(ROOM);
   await expect(room(page)).toHaveAttribute('data-trade-state', view.state);
   return s;
@@ -115,6 +107,13 @@ test.describe('parity', () => {
     await open(page, PAY_SECURING);
     await expect(page.getByText('3 of 10', { exact: true })).toBeVisible();
     await expectParity(page, 'BuyerPay');
+  });
+
+  test('CancelRequest board at 390x844: "Cancelling is final" over the secured pay step (owner G56)', async ({ page }) => {
+    await open(page, PAY_SECURED);
+    await page.getByRole('button', { name: 'Cancel trade' }).click();
+    await expect(page.getByRole('dialog', { name: 'Cancelling is final' })).toBeVisible();
+    await expectParity(page, 'CancelRequest');
   });
 
   test('Desktop board at 1280x800: escrow secured, the timeline, the counterparty and the chat', async ({ page }) => {
@@ -210,9 +209,22 @@ test.describe("I've paid", () => {
 });
 
 test.describe('cancel', () => {
-  test("before I've paid, one tap cancels: buyer-cancel, then the escrow's refund with trade.cancel", async ({ page }) => {
+  test("before I've paid, Cancel trade asks once (Cancelling is final), then buyer-cancel and the escrow's refund with trade.cancel", async ({ page }) => {
     const s = await open(page, PAY_SECURED);
     await page.getByRole('button', { name: 'Cancel trade' }).click();
+    // Owner G56 / g67: the one warning, before anything is sent.
+    const final = page.getByRole('dialog', { name: 'Cancelling is final' });
+    await expect(final).toBeVisible();
+    await expect(final).toContainText(
+      "The 1.250000 XMR goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap I've paid instead.",
+    );
+    await expect(final.getByRole('button', { name: 'Keep trading' })).toBeFocused();
+    expect(s.posts).toEqual([]);
+    await final.getByRole('button', { name: 'Keep trading' }).click();
+    await expect(final).toHaveCount(0);
+    expect(s.posts).toEqual([]);
+    await page.getByRole('button', { name: 'Cancel trade' }).click();
+    await final.getByRole('button', { name: 'Cancel trade' }).click();
     await expect(room(page)).toHaveAttribute('data-trade-state', 'settling');
     await expect(sheet(page)).toHaveCount(0);
     expect(s.posts).toEqual([{ type: 'buyer-cancel' }]);
@@ -247,45 +259,49 @@ test.describe('cancel', () => {
   });
 });
 
-test.describe('the pay warning (Task 38, board Warn-IvePaid)', () => {
-  const WARN = (page: Page) => page.getByRole('alertdialog');
-  test("opens with the pay screen while the escrow confirms, in the owner's words, with the bar; I'll wait closes it", async ({ page }) => {
-    const s = await open(page, PAY_SECURING, undefined, { warned: false });
-    await expect(WARN(page)).toBeVisible();
-    await expect(WARN(page)).toContainText('Before you pay');
-    await expect(WARN(page)).toContainText('Wait until the XMR is fully in escrow');
-    await expect(WARN(page)).toContainText(
-      "We strongly recommend that you do not send payment until all confirmations are complete and you've received confirmation that the XMR is fully in escrow.",
-    );
-    await expect(WARN(page)).toContainText(
-      "The way our system is designed, we can help you get back the XMR you were trading for if anyone tries to scam you, but recovering a payment you've sent is much harder and sometimes impossible.",
-    );
-    await expect(WARN(page).getByRole('progressbar', { name: 'Escrow confirmations' })).toHaveAttribute('aria-valuenow', '3');
-    await page.getByRole('button', { name: "I'll wait" }).click();
-    await expect(WARN(page)).toHaveCount(0);
+test.describe("owner Q12: no payment details and no I've paid before the escrow is secured", () => {
+  test("securing: the details are a locked card, I've paid is closed and says why, nothing is posted; Task 38's pay warning never opens", async ({ page }) => {
+    const s = await open(page, PAY_SECURING);
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
+    await expect(page.getByText('[SELLER ZELLE ID]')).toHaveCount(0);
+    await expect(page.getByText('Send exactly', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Payment details', { exact: true })).toBeVisible();
+    await expect(page.getByText('They appear when the escrow is secured, in about 14 min.', { exact: true })).toBeVisible();
+    await expect(primary(page)).toHaveText("I've paid");
+    await expect(primary(page)).toBeDisabled();
+    await expect(page.locator('[data-pay-block="not-secured"]')).toHaveText('Opens once the escrow is secured.');
+    await expect(primary(page)).toHaveAttribute('aria-describedby', (await page.locator('[data-pay-block="not-secured"]').getAttribute('id'))!);
+    await primary(page).click({ force: true });
+    await expect(sheet(page)).toHaveCount(0);
     expect(s.posts).toEqual([]);
-    // Not past it yet: a reload while still confirming shows it again.
-    await page.reload();
-    await expect(WARN(page)).toBeVisible();
+    expect(await escrowCalls(page)).toEqual([]);
   });
 
-  test("I've paid shows it before the confirm sheet; I've already paid goes on, and it never shows again for the trade", async ({ page }) => {
-    const s = await open(page, PAY_SECURED, undefined, { warned: false });
-    await expect(WARN(page)).toHaveCount(0);
+  test("secured: the details show and I've paid goes straight to the confirm sheet", async ({ page }) => {
+    await open(page, PAY_SECURED);
+    await expect(page.getByText('[SELLER ZELLE ID]')).toBeVisible();
     await primary(page).click();
-    await expect(WARN(page)).toBeVisible();
-    await expect(sheet(page)).toHaveCount(0);
-    await page.getByRole('button', { name: "I've already paid" }).click();
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
     await expect(sheet(page)).toContainText('Mark this trade as paid?');
-    await expect(page.getByRole('button', { name: 'Yes, mark as paid' })).toBeDisabled();
-    await page.getByRole('button', { name: 'Not yet' }).click();
-    s.view = PAY_SECURING;
-    await page.reload();
-    await expect(room(page)).toHaveAttribute('data-trade-state', 'securing');
-    await expect(WARN(page)).toHaveCount(0);
+  });
+
+  test('a stale secured screen whose mark-paid the server refuses as too-early is re-read: the sheet closes, still securing, nothing signalled', async ({ page }) => {
+    const s = await open(page, PAY_SECURED, (e, srv) => {
+      // The server never saw the escrow secured (another node's view, a reorg): the machine says too-early.
+      if (e.type === 'mark-paid') {
+        srv.view = PAY_SECURING;
+        return { status: 409, json: { error: 'too-early' } };
+      }
+      return undefined;
+    });
     await primary(page).click();
-    await expect(sheet(page)).toBeVisible();
-    await expect(WARN(page)).toHaveCount(0);
+    await page.getByText(SENTENCE('$412.50')).click();
+    await page.getByRole('button', { name: 'Yes, mark as paid' }).click();
+    await expect(room(page)).toHaveAttribute('data-trade-state', 'securing');
+    await expect(sheet(page)).toHaveCount(0);
+    await expect(primary(page)).toBeDisabled();
+    expect(s.posts).toEqual([{ type: 'mark-paid', fiatCents: '41250' }]);
+    expect(await escrowCalls(page)).toEqual([]);
   });
 });
 
@@ -293,6 +309,8 @@ test('"Releasable in N min" at 10 confirmations before unlock (P3-I4)', async ({
   await open(page, { ...PAY_SECURING, confirmations: 10, releasableEtaMin: 2 });
   await expect(page.getByText('Releasable in 2 min', { exact: true })).toBeVisible();
   await expect(page.getByText('Securing escrow', { exact: true })).toHaveCount(0);
+  await expect(primary(page)).toBeDisabled();
+  await expect(page.getByText('[SELLER ZELLE ID]')).toHaveCount(0);
 });
 
 // Mobile ready at launch (spec, owner 2026-10-25): every screen is tested at phone sizes, the
@@ -351,6 +369,7 @@ test.describe('phone sizes', () => {
       await expectFitsPhone(page);
       await primary(page).scrollIntoViewIfNeeded();
       await expect(primary(page)).toBeInViewport({ ratio: 1 });
+      await expect(primary(page)).toBeDisabled();
       s.view = PAY_SECURED;
       await page.reload();
       await expect(room(page)).toHaveAttribute('data-trade-state', 'secured');
@@ -369,12 +388,17 @@ test.describe('phone sizes', () => {
       await expectFitsPhone(page);
     });
 
-    test(`the pay warning and the seller's room at ${vp.width}x${vp.height} fit`, async ({ page }) => {
+    test(`the locked pay screen and the seller's room at ${vp.width}x${vp.height} fit`, async ({ page }) => {
       await page.setViewportSize(vp);
-      const s = await open(page, PAY_SECURING, undefined, { warned: false });
-      await expect(page.getByRole('alertdialog')).toBeVisible();
+      const s = await open(page, PAY_SECURING);
+      await expect(page.locator('[data-pay-block="not-secured"]')).toBeVisible();
       await expectFitsPhone(page);
-      await page.getByRole('button', { name: "I'll wait" }).tap();
+      await page.getByRole('button', { name: 'Cancel trade' }).tap();
+      const final = page.getByRole('dialog', { name: 'Cancelling is final' });
+      await expect(final).toBeVisible();
+      await expectFitsPhone(page);
+      await expect(final.getByRole('button', { name: 'Cancel trade' })).toBeInViewport({ ratio: 1 });
+      await final.getByRole('button', { name: 'Keep trading' }).tap();
       s.view = { ...PAY_SECURED, role: 'seller', counterparty: { ...PAY_SECURED.counterparty, displayName: 'mira.k' } };
       await page.reload();
       await expect(page.getByText('Waiting for mira.k to pay')).toBeVisible();
