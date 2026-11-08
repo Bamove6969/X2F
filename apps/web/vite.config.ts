@@ -4,6 +4,7 @@ import { defineConfig, loadEnv } from 'vite';
 import { moneroGlue } from './vite-monero-glue.js';
 
 const empty = fileURLToPath(new URL('./src/empty.ts', import.meta.url));
+const assertShim = fileURLToPath(new URL('./src/assertShim.ts', import.meta.url));
 
 /** The only build mode that may carry fixture mode (Playwright's board fixtures); see `fixturesOn`. */
 export const FIXTURES_BUILD_MODE = 'fixtures';
@@ -28,7 +29,11 @@ export default defineConfig(({ command, mode }) => {
     worker: { plugins: () => [moneroGlue()] },
     resolve: {
       // monero-ts pulls in Node's net and tls; the browser build gets an empty module (research §3, P3-M8).
-      alias: [{ find: /^(node:)?(net|tls)$/, replacement: empty }],
+      // and Node's `assert`, which monero-ts calls for its own checks: a working stand-in (src/assertShim.ts).
+      alias: [
+        { find: /^(node:)?(net|tls)$/, replacement: empty },
+        { find: /^(node:)?assert$/, replacement: assertShim },
+      ],
     },
     define: { __X2F_FIXTURES__: JSON.stringify(fixtures) },
     build: {
