@@ -594,3 +594,8 @@ Head-designer decision: the brand tile (initials, neutral) is the kit piece for 
 ## 8 Nov 2026: nudges uncapped (canvas v133)
 
 SellerRefund: "After 90 min and one nudge" → "After 90 min and at least one nudge"; the available state adds "You can nudge again every 15 min, as often as you need." (COPY-UNSIGNED). BuyerPaidWaiting (+Wide) already said "once every 15 minutes" and "Nudge sent. You can send another in …"; no board said one nudge was the maximum. Design-note labels aligned.
+
+## 8 Nov 2026: Jabber alerts (p5-7) and the team permissions review (canvas v134)
+
+- **JabberSetup / JabberSetup-Wide** (new) and a "Secure Jabber (XMPP)" section on Alerts (+Wide): address → test code → done, with the exact message previewed as a chat bubble from "X2F alerts": "An account change was made on your X2F account." Alerts shows "Not set up" or the masked address with a switch and "Last message …". Every sentence is COPY-UNSIGNED (listed on the boards and in copy-unsigned-by-screen.md when that lands).
+- **docs/team-permissions-review.md**: the 34 permissions grouped, each with what it allows and the risk; the six never-available items; recommended defaults (10 of 34 on for a new member; all hold rights off); 17 open questions with design's recommendation first. Contradictions it found: Team/TeamRefusal/MemberApproval still show the old four presets ("Trade handler 9 of 34") against Q16's types model; G31 (members never see waiting changes) vs p4-8 (a grantable right); HoldChange's aside still states G31 as absolute.

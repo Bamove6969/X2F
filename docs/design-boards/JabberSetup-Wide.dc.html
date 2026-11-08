@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>JabberSetup (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+p,li{text-wrap:pretty}
+h1,h2,h3{text-wrap:balance}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <div style="{{frameStyle}}">
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; padding: 0 12px 20px;">X2F</span>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+    <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>Settings</a>
+    <a href="Support-Wide.dc.html" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 015 0c0 1.7-2.5 2-2.5 3.5"/><path d="M12 17h.01"/></svg>Help</a>
+  </nav>
+  <main style="flex-grow: 1; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; align-items: flex-start; gap: 8px; margin-left: -12px;">
+      <a href="Alerts-Wide.dc.html" aria-label="Back to alerts" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <div style="display: flex; flex-direction: column; gap: 4px; padding-top: 2px;">
+        <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Settings</span>
+        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Secure Jabber alerts</h1>
+        <sc-if value="{{showLead}}" hint-placeholder-val="{{true}}">
+        <p style="margin: 4px 0 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">One short message to your Jabber address every time your account changes.</p>
+        </sc-if>
+      </div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start;">
+      <div style="display: flex; flex-direction: column; gap: 24px;">
+        <sc-if value="{{isAddress}}" hint-placeholder-val="{{true}}">
+        <section aria-labelledby="js-addr-l" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <label id="js-addr-l" for="js-jid" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Your Jabber address</label>
+        <input id="js-jid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="email" placeholder="name@xmpp.example.org" value="{{jid}}" onChange="{{setJid}}" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px;">
+        <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Any XMPP server works. We never send details, only that a change happened.</p>
+      </div>
+        </section>
+        </sc-if>
+        <sc-if value="{{isVerify}}" hint-placeholder-val="{{false}}">
+        <section aria-labelledby="js-code-l" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <label id="js-code-l" for="js-code" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Enter the code from the test message</label>
+        <input id="js-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" value="{{code}}" onChange="{{setCode}}" style="height: 56px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 24px; font-weight: 500; letter-spacing: 0.3em; text-align: center;">
+        <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Sent to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{jidMasked}}</span>. It can take a minute to arrive.</p>
+      </div>
+          <button type="button" onClick="{{resend}}" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; align-self: flex-start;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4L3 11l6 2 2 6 3-4 5 4z"/></svg>{{resendLabel}}</button>
+        </section>
+        </sc-if>
+        <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
+        <section aria-labelledby="js-done-t" style="display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 24px; text-align: center; border-radius: 16px; background: var(--surface);">
+      <span style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg></span>
+      <h2 id="js-done-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Jabber alerts are on</h2>
+      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Every account change now sends one short message to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">{{jidMasked}}</span>.</p>
+        </section>
+        </sc-if>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 24px;">
+        <sc-if value="{{showLead}}" hint-placeholder-val="{{true}}">
+        <section aria-label="X2F's Jabber address" style="display: flex; gap: 12px; align-items: flex-start; padding: 20px; border-radius: 16px; background: var(--surface); font-size: 15px; line-height: 22px; color: var(--ink);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><circle cx="9" cy="8" r="4"/><path d="M3 20c0-4 3-6 6-6s6 2 6 6"/><path d="M19 8v6"/><path d="M16 11h6"/></svg><span>X2F&#39;s address is <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; white-space: nowrap;">x2f-alerts@xmpp.x2f.example</span> &mdash; add it to your contacts so the message isn&#39;t filtered.</span></section>
+        </sc-if>
+        <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
+        <section aria-labelledby="js-prev-t" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <h2 id="js-prev-t" style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">What you&#39;ll receive</h2>
+      <div style="display: flex; gap: 8px; align-items: flex-end; max-width: 90%; align-self: flex-start;">
+        <span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: -0.01em;">X2F</span>
+        <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: flex-start;">
+          <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="color: var(--ink); font-weight: 600;">X2F alerts</span> · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">7 Nov 2026, 15:00 UTC</span></span>
+          <p style="margin: 0; padding: 10px 14px; font-size: 15px; line-height: 22px; border-radius: 12px 12px 12px 4px; background: var(--surface-raised);">An account change was made on your X2F account.</p>
+        </div>
+      </div>
+        </section>
+        </sc-if>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 16px; padding-top: 24px; border-top: 1px solid var(--surface-raised);">
+      <sc-if value="{{isAddress}}" hint-placeholder-val="{{true}}">
+      <button type="button" onClick="{{sendTest}}" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Send a test message</button>
+      </sc-if>
+      <sc-if value="{{isVerify}}" hint-placeholder-val="{{false}}">
+      <button type="button" onClick="{{turnOn}}" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Turn on</button>
+      </sc-if>
+      <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
+      <a href="Alerts-Wide.dc.html" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Done</a>
+      <button type="button" onClick="{{turnOff}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 20px; border: 0; border-radius: 12px; background: transparent; color: var(--danger); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Turn off</button>
+      </sc-if>
+    </div>
+  </main>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 168px 48px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink);">Showing: {{stepName}}</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Opens from the Secure Jabber (XMPP) section on Alerts. Three steps with the step tweak: address, verify, done. Compact header as on Alerts; the field card and the callout are one card; the done step is the Results kit done_state over a Chat kit preview of the exact message. Turn off is a danger tertiary, never a primary.</p>
+    <aside aria-label="Decided by the owner: optional secure Jabber alerts" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (p5-7)</span><span style="font-weight: 600;">An optional secure Jabber (XMPP) notification for account changes</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Optional. Off until the user adds a Jabber address and proves it with a test message.</li><li>Every change. Login methods, team, wallets or cash-out, settings and holds each send one message.</li><li>Discreet. One short message per change: &quot;An account change was made on your X2F account.&quot;</li><li>No details. Nothing in the message says what changed, and there is no link to it.</li></ul></aside>
+    <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 18px;">
+      <span style="font-weight: 600; color: var(--ink);">Why no details</span>
+      <p style="margin: 0; color: var(--ink-muted);">A Jabber account can be read by others: the server that hosts it, anyone with the device, or anyone who gets the password. So the message never names the change, the wallet or the person. It only tells you to go and look; the change itself stays in X2F, behind your login. OMEMO is recommended, not required, because the message gives nothing away even in the clear.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 18px;">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">COPY-UNSIGNED</span>
+      <p style="margin: 0; color: var(--ink-muted);">Every visible sentence on this board and the Alerts section is design&#39;s draft, not signed off. Alerts: &quot;Secure Jabber (XMPP)&quot; · &quot;Account change alerts&quot; · &quot;Get one short message for every change to your account, with no details in it. Needs a Jabber account; OMEMO encryption recommended.&quot; · &quot;Address&quot; · &quot;Not set up&quot; · &quot;Last message 7 Nov 2026, 15:00 UTC&quot;. Here: &quot;Secure Jabber alerts&quot; · &quot;One short message to your Jabber address every time your account changes.&quot; · &quot;Your Jabber address&quot; · &quot;name@xmpp.example.org&quot; · &quot;Any XMPP server works. We never send details, only that a change happened.&quot; · &quot;X2F&#39;s address is x2f-alerts@xmpp.x2f.example &mdash; add it to your contacts so the message isn&#39;t filtered.&quot; · &quot;Send a test message&quot; · &quot;Enter the code from the test message&quot; · &quot;Sent to mira…@xmpp.example.org. It can take a minute to arrive.&quot; · &quot;Resend&quot; · &quot;Sent again&quot; · &quot;Turn on&quot; · &quot;Jabber alerts are on&quot; · &quot;Every account change now sends one short message to mira…@xmpp.example.org.&quot; · &quot;What you&#39;ll receive&quot; · &quot;X2F alerts&quot; · &quot;An account change was made on your X2F account.&quot; · &quot;Done&quot; · &quot;Turn off&quot;. The addresses and the time are examples.</p>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "step": {"editor": "enum", "options": ["address", "verify", "done"], "default": "address"}, "$preview": {"width": 1280, "height": 1371}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { base: null, step: null, jid: '', code: '', resent: false }; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const STEPS = ['address', 'verify', 'done'];
+    const propStep = STEPS.indexOf(this.props.step) >= 0 ? this.props.step : 'address';
+    const s = this.state;
+    const step = s.base === propStep && s.step ? s.step : propStep;
+    const go = (next) => this.setState({ base: propStep, step: next, resent: false });
+    // Wide screen height per step (measured, night) + the design-notes block under it (Compromised pattern).
+    const HEIGHTS = { address: 800, verify: 800, done: 800 };
+    const NOTES_H = 571;
+    const frameH = HEIGHTS[step];
+    const frameStyle = 'position: relative; flex-shrink: 0; min-height: 800px; height: ' + frameH + 'px; display: flex; overflow: hidden;';
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + (frameH + NOTES_H) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    // The address is shown masked everywhere after the user types it: the first four characters, then the server.
+    const jid = s.jid.trim();
+    const at = jid.indexOf('@');
+    const jidMasked = at > 0 ? jid.slice(0, Math.min(4, at)) + '…' + jid.slice(at) : 'mira…@xmpp.example.org';
+    return {
+      rootStyle, frameStyle,
+      stepName: { address: 'your address', verify: 'enter the code', done: 'alerts are on' }[step],
+      isAddress: step === 'address',
+      isVerify: step === 'verify',
+      isDone: step === 'done',
+      showLead: step !== 'done',
+      jid: s.jid,
+      setJid: (e) => this.setState({ jid: e.target.value }),
+      code: s.code,
+      setCode: (e) => this.setState({ code: e.target.value.replace(/\D/g, '').slice(0, 6) }),
+      jidMasked,
+      sendTest: () => go('verify'),
+      resend: () => this.setState({ resent: true }),
+      resendLabel: s.resent ? 'Sent again' : 'Resend',
+      turnOn: () => go('done'),
+      turnOff: () => go('address')
+    };
+  }
+}
+</script>
+</body>
+</html>

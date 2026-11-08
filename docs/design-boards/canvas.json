@@ -460,7 +460,7 @@
       "x": 5730,
       "y": 45022,
       "w": 390,
-      "h": 2141,
+      "h": 2373,
       "page": "all",
       "title": "A16 \u00b7 Alerts settings",
       "is_interactive": true
@@ -469,7 +469,7 @@
       "x": 6200,
       "y": 45022,
       "w": 1280,
-      "h": 1034,
+      "h": 1046,
       "page": "all",
       "title": "A16 \u00b7 Alerts settings (wide)",
       "is_interactive": true
@@ -496,7 +496,7 @@
       "x": 1910,
       "y": 48022,
       "w": 390,
-      "h": 1600,
+      "h": 1732,
       "page": "all",
       "title": "A18 \u00b7 Support tickets",
       "is_interactive": true
@@ -505,7 +505,7 @@
       "x": 2380,
       "y": 48022,
       "w": 1280,
-      "h": 1219,
+      "h": 1259,
       "page": "all",
       "title": "A18 \u00b7 Support tickets (wide)",
       "is_interactive": true
@@ -802,7 +802,7 @@
       "x": 3900,
       "y": 55127,
       "w": 390,
-      "h": 2804,
+      "h": 3093,
       "page": "all",
       "title": "G3 \u00b7 Team members",
       "is_interactive": true
@@ -811,7 +811,7 @@
       "x": 4370,
       "y": 55127,
       "w": 1280,
-      "h": 1506,
+      "h": 1705,
       "page": "all",
       "title": "G3 \u00b7 Team members (wide)",
       "is_interactive": true
@@ -910,7 +910,7 @@
       "x": 0,
       "y": 68059,
       "w": 390,
-      "h": 4162,
+      "h": 4408,
       "page": "all",
       "title": "J1 \u00b7 Password-only change \u2192 review \u2192 hold",
       "is_interactive": true
@@ -935,7 +935,7 @@
     },
     "SignupSecurity-Wide.dc.html": {
       "x": 0,
-      "y": 72821,
+      "y": 73067,
       "w": 1280,
       "h": 2325,
       "page": "all",
@@ -944,7 +944,7 @@
     },
     "RecoveryCode-Wide.dc.html": {
       "x": 1430,
-      "y": 72821,
+      "y": 73067,
       "w": 1280,
       "h": 1609,
       "page": "all",
@@ -953,7 +953,7 @@
     },
     "RecoveryHold-Wide.dc.html": {
       "x": 2860,
-      "y": 72821,
+      "y": 73067,
       "w": 1280,
       "h": 1207,
       "page": "all",
@@ -962,16 +962,16 @@
     },
     "HoldChange-Wide.dc.html": {
       "x": 4290,
-      "y": 72821,
+      "y": 73067,
       "w": 1280,
-      "h": 2707,
+      "h": 2883,
       "page": "all",
       "title": "J1 \u00b7 Password-only change \u2192 review \u2192 hold (wide)",
       "is_interactive": true
     },
     "Compromised-Wide.dc.html": {
       "x": 5720,
-      "y": 72821,
+      "y": 73067,
       "w": 1280,
       "h": 1644,
       "page": "all",
@@ -980,7 +980,7 @@
     },
     "TradeTechIssue-Wide.dc.html": {
       "x": 0,
-      "y": 76181,
+      "y": 76427,
       "w": 1280,
       "h": 1357,
       "page": "all",
@@ -989,7 +989,7 @@
     },
     "MemberApproval-Wide.dc.html": {
       "x": 1430,
-      "y": 76181,
+      "y": 76427,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -998,7 +998,7 @@
     },
     "CancelRequest-Wide.dc.html": {
       "x": 2860,
-      "y": 76181,
+      "y": 76427,
       "w": 1280,
       "h": 1565,
       "page": "all",
@@ -1007,7 +1007,7 @@
     },
     "BuyerPaidWaiting-Wide.dc.html": {
       "x": 4290,
-      "y": 76181,
+      "y": 76427,
       "w": 1280,
       "h": 1592,
       "page": "all",
@@ -1016,7 +1016,7 @@
     },
     "InviteInvalid-Wide.dc.html": {
       "x": 5720,
-      "y": 76181,
+      "y": 76427,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -1160,7 +1160,7 @@
     },
     "Settings.dc.html": {
       "x": 0,
-      "y": 78373,
+      "y": 78619,
       "w": 390,
       "h": 3110,
       "page": "all",
@@ -1169,7 +1169,7 @@
     },
     "Settings-Wide.dc.html": {
       "x": 470,
-      "y": 78373,
+      "y": 78619,
       "w": 1280,
       "h": 1683,
       "page": "all",
@@ -1178,25 +1178,25 @@
     },
     "FAQ.dc.html": {
       "x": 1830,
-      "y": 78373,
+      "y": 78619,
       "w": 390,
-      "h": 2519,
+      "h": 2597,
       "page": "all",
       "title": "FAQ",
       "is_interactive": true
     },
     "FAQ-Wide.dc.html": {
       "x": 2300,
-      "y": 78373,
+      "y": 78619,
       "w": 1280,
-      "h": 2317,
+      "h": 2359,
       "page": "all",
       "title": "FAQ-Wide",
       "is_interactive": true
     },
     "Badges.dc.html": {
       "x": 0,
-      "y": 82083,
+      "y": 82329,
       "w": 1280,
       "h": 2287,
       "page": "all",
@@ -1204,13 +1204,31 @@
       "is_interactive": true
     },
     "GiftCardBrand.dc.html": {
-      "h": 3525,
+      "h": 3422,
       "is_interactive": true,
       "page": "all",
       "title": "3a \u00b7 Gift card brand",
       "w": 390,
       "x": 1410,
       "y": 0
+    },
+    "JabberSetup.dc.html": {
+      "x": 7640,
+      "y": 45022,
+      "w": 390,
+      "h": 1841,
+      "page": "all",
+      "title": "A16 \u00b7 Secure Jabber setup",
+      "is_interactive": true
+    },
+    "JabberSetup-Wide.dc.html": {
+      "x": 8110,
+      "y": 45022,
+      "w": 1280,
+      "h": 1371,
+      "page": "all",
+      "title": "A16 \u00b7 Secure Jabber setup (wide)",
+      "is_interactive": true
     }
   },
   "createdOnFiles": {
@@ -1361,7 +1379,7 @@
     },
     "wide1102": {
       "x": 0,
-      "y": 72521,
+      "y": 72767,
       "text": "Desktop versions of the 1\u20132 Nov screens",
       "kind": "title1",
       "maxW": 7480,
@@ -1369,14 +1387,14 @@
     },
     "settings1105": {
       "x": 0,
-      "y": 78073,
+      "y": 78319,
       "text": "Settings and FAQ \u00b7 5 Nov (draft copy)",
       "kind": "title1",
       "maxW": 1840
     },
     "badges-row": {
       "x": 0,
-      "y": 81783,
+      "y": 82029,
       "text": "Badges and the trader card \u00b7 7 Nov (design proposal)",
       "kind": "title1",
       "maxW": 1280
@@ -1436,6 +1454,8 @@
     "Lien-Notice-Wide.dc.html",
     "Alerts.dc.html",
     "Alerts-Wide.dc.html",
+    "JabberSetup.dc.html",
+    "JabberSetup-Wide.dc.html",
     "DeleteAccount.dc.html",
     "DeleteAccount-Wide.dc.html",
     "Support.dc.html",
