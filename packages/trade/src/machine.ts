@@ -95,6 +95,14 @@ export interface Trade {
    * cancelled by itself SELLER_CONFIRM_CANCEL_TIMEOUT_H after it (owner 2026-10-29).
    */
   cancelConfirmableAt: Date | null;
+  /**
+   * When the seller first nudged the buyer in this trade after the escrow was secured (owner G2,
+   * 7 Nov; g66). Written by the nudge route (apps/api nudge/routes.ts), never by an event: the
+   * seller's `request-refund` is refused until it is set, so the refund unlocks only after the
+   * 90 minutes from full funding AND at least one nudge. Later nudges (one per 15 min, as many as
+   * the seller likes) leave it as it is.
+   */
+  sellerNudgedAt: Date | null;
 }
 
 export type TradeEvent =
@@ -253,6 +261,7 @@ export function newTrade(
     closedAt: null,
     cancelConfirmedAt: null,
     cancelConfirmableAt: null,
+    sellerNudgedAt: null,
   };
 }
 
@@ -518,7 +527,10 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
     case 'request-refund':
       if (by !== 'seller') return fail('wrong-party');
       if (s !== 'secured' || t.paidAt !== null) return fail('wrong-state');
+      // Owner G2 / g66: locked until the buyer's 90 minutes (from full funding, plus any extension)
+      // have passed AND the seller has nudged at least once since the escrow was secured.
       if (!past(now, t.payBy)) return fail('too-early');
+      if (t.sellerNudgedAt === null || t.securedAt === null || t.sellerNudgedAt.getTime() < t.securedAt.getTime()) return fail('too-early');
       return { ...t, state: 'refund_requested', finalAlertAt: now };
 
     case 'buyer-cancel':
