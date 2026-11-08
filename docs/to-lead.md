@@ -748,3 +748,4 @@ The owner asked design to treat his 12 comments as a brief for the whole app and
 - Staff (ModCase, Full chat header): "Unlocked on your device at 11:40 UTC · logged" (C2 re-wrap to the staff member's device).
 - No Matrix states (no device verification, no "unable to decrypt"). Chat stays single-device.
 - Canvas v157.
+- Correction (owner rule, origin/comms): lock note now reads "…It's erased for good 30 days after the trade ends, or 90 days after a dispute closes." Heights unchanged. Canvas v158.
