@@ -457,6 +457,9 @@ describe('SellerConfirm', () => {
     expect(s.text()).toContain('Waiting for this device to confirm the trade amount.');
     expect(s.text()).not.toContain('Press and hold');
     expect(s.text()).not.toContain('$412.50');
+    // No doubled article without an amount (demo walk, 8 Nov).
+    expect(s.text()).toContain('I checked my bank account myself and the payment from Zelle is there.');
+    expect(s.text()).not.toContain('the the');
   });
 
   it('keeps the hold locked and says why under a Task 12 refusal (I3)', () => {
