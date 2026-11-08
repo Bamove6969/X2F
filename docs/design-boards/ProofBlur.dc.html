@@ -108,12 +108,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <div style="display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
           <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
           <div style="display: flex; flex-direction: column; gap: 0;">
-            <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Automatic blurring can miss things.</span>
+            <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Our privacy tool can miss things.</span>
             <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Check names, account numbers and addresses before sending.</p>
           </div>
         </div>
 
-        <ul aria-label="How your proof is protected" style="margin: 0; padding: 0 14px; list-style: none; display: flex; flex-direction: column; border-radius: 16px; background: var(--surface);"><li style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 0;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 10px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.1A10 10 0 0112 6c5 0 9 6 9 6a17 17 0 01-2.6 3.2M6.6 6.6C4.3 8.1 3 12 3 12s4 6 9 6c1.6 0 3-.4 4.3-1.1"/><path d="M9.9 10a3 3 0 004.1 4.1"/></svg></span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">We blur your private details automatically, and you check the result before it&#39;s sent. Hidden photo data (EXIF), like location and device, is removed too.</span></li><li style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--surface-raised);"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 10px; background: var(--surface-raised); color: var(--ink);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">We keep an encrypted unblurred copy that only a moderator can open, and only if there&#39;s a dispute. It&#39;s deleted automatically when the trade is over.</span></li></ul>
+        <ul aria-label="How your proof is protected" style="margin: 0; padding: 0 14px; list-style: none; display: flex; flex-direction: column; border-radius: 16px; background: var(--surface);"><li style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 0;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 10px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.1A10 10 0 0112 6c5 0 9 6 9 6a17 17 0 01-2.6 3.2M6.6 6.6C4.3 8.1 3 12 3 12s4 6 9 6c1.6 0 3-.4 4.3-1.1"/><path d="M9.9 10a3 3 0 004.1 4.1"/></svg></span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Our privacy tool hides your private details, and you check the result before it&#39;s sent. Your app also rebuilds it as a plain image before sending, so hidden photo data (EXIF), like location and device, and anything embedded are removed. satoshi_ghost sees it inside X2F as a picture, never as a file, so there&#39;s no file for a virus to hide in.</span></li><li style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--surface-raised);"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 10px; background: var(--surface-raised); color: var(--ink);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">We keep an encrypted original copy that only a moderator can open, and only if there&#39;s a dispute. It&#39;s deleted automatically when the trade is over.</span></li></ul>
       </main>
 
       <div role="toolbar" aria-label="Blur tools" style="display: grid; grid-template-columns: 78px 94px 64px 1fr; gap: 6px; padding: 6px 16px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
@@ -145,8 +145,23 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </div>
         </div>
         </sc-if>
-                <button type="button" onClick="{{send}}" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Send to satoshi_ghost</button>
+        <sc-if value="{{checkOn}}" hint-placeholder-val="{{true}}">
+          <div role="group" aria-labelledby="pb-check-title" aria-describedby="pb-check-text" style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <h2 id="pb-check-title" style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Did our privacy tool get it right?</h2>
+              <p id="pb-check-text" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Our privacy tool hid your personal details and kept what satoshi_ghost needs to see: the amount, the date and time, the payment method and the trade code.</p>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <button type="button" onClick="{{send}}" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Yes, send it</button>
+              <button type="button" onClick="{{fixIt}}" style="display: flex; align-items: center; justify-content: center; height: 48px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">No, let me fix it</button>
+            </div>
+          </div>
+          <a href="BuyerPay.dc.html" style="display: flex; align-items: center; justify-content: center; height: 44px; color: var(--ink-muted); font-size: 15px; font-weight: 600; text-decoration: none;">Cancel</a>
+        </sc-if>
+        <sc-if value="{{checkOff}}" hint-placeholder-val="{{false}}">
+        <button type="button" onClick="{{send}}" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Send to satoshi_ghost</button>
         <a href="BuyerPay.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Cancel</a>
+        </sc-if>
       </footer>
 
       <sc-if value="{{sheetOpen}}" hint-placeholder-val="{{false}}">
@@ -160,10 +175,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
               <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">{{sheetLabel}}</dt><dd style="margin: 0; font-size: 15px; font-weight: 500;">{{sheetValue}}</dd></div>
               <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
-              <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Blurred by</dt><dd style="margin: 0; display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500;"><span style="{{tagInline}}">Auto</span>X2F</dd></div>
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Hidden by</dt><dd style="margin: 0; display: inline-flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500;"><span style="{{tagInline}}">Auto</span>Our privacy tool</dd></div>
             </dl>
             <div style="display: flex; flex-direction: column; gap: 4px;">
-              <button type="button" onClick="{{keepBlur}}" style="height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Keep it blurred</button>
+              <button type="button" onClick="{{keepBlur}}" style="height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Keep it hidden</button>
               <button type="button" onClick="{{showIt}}" style="height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Show it</button>
             </div>
           </section>
@@ -198,7 +213,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <main style="flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 0 16px 24px;">
         <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
           <svg style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>
-          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Proof sent. satoshi_ghost sees the blurred version.</p>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Proof sent. satoshi_ghost sees it with your private details hidden.</p>
         </div>
 
         <section aria-labelledby="pb-send-title" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
@@ -219,7 +234,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </span>
           <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
             <span style="font-size: 16px; line-height: 22px; font-weight: 600;">Payment proof sent</span>
-            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{blurCount}}</span> details blurred · photo data removed</span>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{blurCount}}</span> details hidden · photo data removed</span>
           </span>
           <a href="#" style="display: inline-flex; align-items: center; height: 44px; padding: 0 8px; color: var(--ink-muted); font-size: 15px; font-weight: 600; text-decoration: none;">View</a>
         </div>
@@ -239,6 +254,19 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
     <p style="margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink);">Showing: {{stepName}}</p>
     <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Craft pass, 7 Nov: the two privacy promises are one surface block with 32 icon tiles (eye-off in escrow, lock in ink) and an inset divider, instead of two loose lines on the ground. Wording unchanged.</p>
+
+    <aside aria-label="Decided by the owner: privacy tool; both parties asked in the first month" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 8 Nov (privacy tool; both parties asked in the first month)</span>
+      <span style="font-weight: 600;">The blurring feature is called &quot;our privacy tool&quot;. In the first month the uploader is asked before every send, as the seller is on SellerConfirm (p9-8).</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>The footer asks &quot;Did our privacy tool get it right?&quot; with the body naming what it kept for satoshi_ghost (amount, date and time, payment method, trade code). &quot;Yes, send it&quot; is the orange action and sends; &quot;No, let me fix it&quot; turns on Add blur and leaves Preview. Cancel becomes a quiet text link.</li>
+        <li>After the first month the plain &quot;Send to satoshi_ghost&quot; footer returns (owner Q47: then every <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span>th to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">20</span>th proof).</li>
+        <li>Renamed in trader-facing text: the caution title, the protection line, the encrypted-copy line (&quot;original copy&quot;), the Show this? sheet (&quot;Hidden by: Our privacy tool&quot;, &quot;Keep it hidden&quot;), the add-only notice, the sent banner and the proof row (&quot;details hidden&quot;).</li>
+        <li>Design call, lead to confirm: &quot;Add blur&quot;, &quot;Remove blur&quot; and the hints about blurs you added keep the word blur, because they are the uploader&#39;s own boxes, not the privacy tool&#39;s.</li>
+        <li>ProofBlur-Wide is not changed in this pass (another designer has it).</li>
+      </ul>
+      <span style="color: var(--ink-muted);">Preview with the privacyCheck tweak. Showing: {{privacyCheckName}}</span>
+    </aside>
 
     <aside aria-label="Decided by the owner: payment proof privacy" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
@@ -328,7 +356,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["review","drawing","removing","preview","sent"],"default":"review"},"removeAuto":{"editor":"enum","options":["add-only","confirm-to-show"],"default":"add-only"},"protect":{"editor":"enum","options":["warn","no-warning"],"default":"warn"},"date":{"editor":"enum","options":["found","missing"],"default":"found"},"$preview":{"width":390,"height":3161}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["review","drawing","removing","preview","sent"],"default":"review"},"removeAuto":{"editor":"enum","options":["add-only","confirm-to-show"],"default":"add-only"},"protect":{"editor":"enum","options":["warn","no-warning"],"default":"warn"},"date":{"editor":"enum","options":["found","missing"],"default":"found"},"privacyCheck":{"editor":"enum","options":["first-month","later"],"default":"first-month"},"$preview":{"width":390,"height":3933}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -359,10 +387,13 @@ class Component extends DCLogic {
     const push = (boxes, extra) => set(Object.assign({ boxes: boxes, hist: c.hist.concat([c.boxes]) }, extra || {}));
 
     // Board = 844 px phone screen + the design-notes block under it (measured, night, fonts loaded).
-    const NOTES_H = 2205;
+    const NOTES_H = 2747;
     const dateMissing = this.props.date === 'missing';
     // The date callout sits in the footer, so the phone screen grows by its height.
-    const APP_H = 956 + (dateMissing && !c.sent ? 112 : 0);
+    // privacyCheck (owner, 8 Nov): in the first month the uploader is asked every time, in the footer, before sending.
+    const checkOn = this.props.privacyCheck !== 'later';
+    const CHECK_H = 150; // title + body + Yes/No, Cancel as a 44 px link instead of a 48 px button
+    const APP_H = (c.sent ? 956 : 1036) + (dateMissing && !c.sent ? 112 : 0) + (checkOn && !c.sent ? CHECK_H : 0);
     const H = APP_H + NOTES_H;
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + APP_H + 'px; display: flex; flex-direction: column; overflow: hidden;';
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
@@ -398,7 +429,7 @@ class Component extends DCLogic {
         wrapStyle: 'position: relative; display: inline-block;' + (addMode && !on ? ' cursor: crosshair;' : ''),
         boxStyle: 'position: absolute; top: -3px; bottom: -3px; left: -4px; right: -4px; margin: 0; padding: 0; border-radius: 4px; font: inherit; color: inherit; background: color-mix(in srgb, var(--surface-raised) 55%, transparent); ' +
           (c.preview ? 'border: 0; cursor: default;' : removable ? 'border: 1.5px dashed var(--escrow); cursor: pointer;' : 'border: 1px dashed var(--escrow); cursor: default;'),
-        aria: (auto ? 'Automatic blur over ' : 'Your blur over ') + NAMES[id] + (removeMode ? '. Tap to remove.' : ''),
+        aria: (auto ? 'Hidden by our privacy tool: ' : 'Your blur over ') + NAMES[id] + (removeMode ? '. Tap to remove.' : ''),
         tap: (e) => {
           if (e && e.stopPropagation) e.stopPropagation();
           if (!removeMode) return;
@@ -430,7 +461,7 @@ class Component extends DCLogic {
     // Alerts float over the bottom of the image so the screen doesn't jump.
     let alertKind = '';
     let alertText = '';
-    if (c.toast) { alertKind = 'info'; alertText = 'Automatic blurs stay on. You can add more, or remove blurs you added.'; }
+    if (c.toast) { alertKind = 'info'; alertText = 'What our privacy tool hid stays hidden. You can add blurs, or remove blurs you added.'; }
     else if (warnOn && (has('amount') || has('memo'))) { alertKind = 'caution'; alertText = 'The amount or memo is hidden, so satoshi_ghost may not be able to check your payment.'; }
 
     const toolBtn = (sel, off) => 'display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 52px; padding: 0 4px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; ' +
@@ -446,6 +477,10 @@ class Component extends DCLogic {
     return {
       rootStyle, appStyle, steps, b, tagStyle, tagInline, drawStyle, handleTL, handleBR, touchStyle, canvasStyle, hint,
       isEditor: !c.sent,
+      checkOn,
+      checkOff: !checkOn,
+      privacyCheckName: checkOn ? 'first-month (asked before every send)' : 'later (plain Send)',
+      fixIt: () => set({ preview: false, tool: 'add', drawing: false, toast: false, sheet: null }),
       dateMissing: dateMissing && !c.sent,
       dateFound: !dateMissing,
       dateName: dateMissing ? 'missing' : 'found',

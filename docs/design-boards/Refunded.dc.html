@@ -111,7 +111,7 @@ class Component extends DCLogic {
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const v = ['buyer-cancelled', 'time-ran-out', 'moderator'].indexOf(this.props.variant) >= 0 ? this.props.variant : 'buyer-cancelled';
-    const H = { 'buyer-cancelled': 1343, 'time-ran-out': 1619, 'moderator': 1633 }[v];
+    const H = { 'buyer-cancelled': 1343, 'time-ran-out': 1559, 'moderator': 1633 }[v];
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const C = {
       'buyer-cancelled': {
@@ -127,12 +127,11 @@ class Component extends DCLogic {
       'time-ran-out': {
         chip: 'Payment time ran out',
         headline: 'Payment time ran out',
-        lead: "You didn't tap I've paid within the 90 minutes, so satoshi_ghost cancelled. Everything in escrow, 1.250000 XMR (about $412.50), went back to satoshi_ghost.",
+        lead: 'The time to pay ended and satoshi_ghost cancelled. Everything in escrow, 1.250000 XMR (about $412.50), went back to satoshi_ghost.', // p6-1 / p9-2: no final alert; the refund starts as soon as the seller cancels
         rows: [
           { k: 'Time to pay ended', v: '11:58 UTC' },
           { k: 'satoshi_ghost cancelled', v: '12:03 UTC' },
-          { k: 'Your final alert ended', v: '12:18 UTC' },
-          { k: 'Refund sent to satoshi_ghost', v: '12:18 UTC' }
+          { k: 'Refund sent to satoshi_ghost', v: '12:03 UTC' }
         ]
       },
       'moderator': {

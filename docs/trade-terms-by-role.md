@@ -12,6 +12,7 @@ How to read it:
 - A line still waiting for the lead's wording says "[lead writes the wording]".
 - Nothing here is invented. A point with no owner decision is left out and listed under "Not decided yet" at the end.
 - Drawn as the "What applies to you" card on BuyQuote and OfferAd (+Wide), tweak `role`.
+- p7-3 (8 Nov): the person receiving the fiat posts the payment details (the "Send your payment details from the card…" line on the seller lists). The buyer's old "Post the payment details in the trade chat" (F2) line is removed.
 
 ## (a) Seller taking a buy ad
 
@@ -44,7 +45,7 @@ How to read it:
 - Opened trades with several people to see who answers first? Close the others once you've picked one, so they aren't left waiting. <!-- p9-7 (8 Nov: no penalty for a taker who never funds; design words the courtesy note) -->
 - Nudge the buyer if they go quiet: it often helps. It's optional, at most once every 15 minutes. <!-- F10, p6-1 -->
 - Before you fund: cancel at once. <!-- G2 -->
-- After the time to pay, with no "I've paid": cancel at once, no nudge needed. The refund starts right away; the trade is done at 10 confirmations. <!-- G2, g66, p6-1, p9-2 -->
+- If the time to pay expires with no "I've paid", the trade is still open. You can cancel for a full refund (it starts right away and is done at 10 confirmations), wait for them to reply, or nudge them every 15 min. <!-- G2, g66, p6-1, p9-2, owner 8 Nov -->
 
 ## (b) Buyer taking a sell ad
 
@@ -54,7 +55,7 @@ How to read it:
 - Pick the currency, then the payment type, on the ad. <!-- F6, F7, Q5 -->
 - Follow the payment instructions for the type you picked. <!-- Q23, F2 -->
 - Tap "I've paid" once the money is sent. <!-- g67 -->
-- We recommend paying from an account in your own name: it lowers the chance of frozen funds. It's never required, and X2F keeps your identity private. <!-- 8 Nov own-name answer (recommendation only) -->
+- We recommend paying from an account in your own name: it lowers the chance of the payment being frozen. We protect your identity either way. <!-- p9-9 (owner's wording, 8 Nov; recommendation only) -->
 - Post proof with the trade code, amount and time visible. <!-- Q50, F14 -->
 - Gift card: bought in the last 30 days, full written value, and a video of you logging into it before you send. <!-- G50, G51, G52 -->
 
@@ -81,7 +82,6 @@ How to read it:
 - Cancel until you tap "I've paid"; you're warned first that it's likely final. <!-- g67, G56 -->
 - After "I've paid", only a dispute, after the payment method's transfer time (Zelle: 90 min, shown where you pick the method). <!-- g67, F9, Q10, p9-4 -->
 - Post proof even if the amount isn't detected; X2F logs it to improve. <!-- Q43 -->
-- Post the payment details in the trade chat. <!-- F2 -->
 
 ## (c) Ad poster selling (a trade on your sell ad)
 
@@ -115,7 +115,7 @@ How to read it:
 
 - Nudge the buyer if they go quiet: it often helps. It's optional, at most once every 15 minutes. <!-- F10, p6-1 -->
 - Before you fund: cancel at once. <!-- G2 -->
-- After the time to pay, with no "I've paid": cancel at once, no nudge needed. The refund starts right away; the trade is done at 10 confirmations. <!-- G2, g66, p6-1, p9-2 -->
+- If the time to pay expires with no "I've paid", the trade is still open. You can cancel for a full refund (it starts right away and is done at 10 confirmations), wait for them to reply, or nudge them every 15 min. <!-- G2, g66, p6-1, p9-2, owner 8 Nov -->
 
 ## (d) Ad poster buying (a trade on your buy ad)
 
@@ -124,7 +124,7 @@ How to read it:
 - Answer a trade request within 60 minutes, or it closes. <!-- Q11 -->
 - Pay only when "Pay now" shows; it never shows before the escrow is secured. <!-- Q12 -->
 - Tap "I've paid" once the money is sent. <!-- g67 -->
-- We recommend paying from an account in your own name: it lowers the chance of frozen funds. It's never required, and X2F keeps your identity private. <!-- 8 Nov own-name answer (recommendation only) -->
+- We recommend paying from an account in your own name: it lowers the chance of the payment being frozen. We protect your identity either way. <!-- p9-9 (owner's wording, 8 Nov; recommendation only) -->
 - Post proof with the trade code, amount and time visible. <!-- Q50, F14 -->
 - Gift card: bought in the last 30 days, full written value, and a video of you logging into it before you send. <!-- G50, G51, G52 -->
 
@@ -162,7 +162,7 @@ Left out of the lists above because no owner decision covers them. Each needs an
 5. **The buyer's time to pay** once "Pay now" shows. Q11's "90 minutes to say the transfer is sent" doesn't say which side it binds when the poster is the seller, and the timing table goes to the owner first (Q11).
 6. **Q36: "that doesn't affect the poster's time"** during maintenance. It's unclear which poster clock keeps running; g62 says trade timers stop.
 7. ~~"Was this blurred correctly?" (Q47).~~ Decided 8 Nov (p9-8): both of you, on every proof, for the first month. The line is on the lists with "[lead writes the wording]".
-8. ~~Paying from an account in your own name.~~ Decided 8 Nov: a recommendation only, never enforced. Now on the buyer lists. The boards' caution callout ("Use at your own risk") still needs the same softer wording.
+8. ~~Paying from an account in your own name.~~ Decided 8 Nov (p9-9): a recommendation only, never enforced. Now on the buyer lists in the owner's wording, and BuyerPay and Fold-Trade show it as an info callout ("Use at your own risk" is gone).
 9. **The nudge sound** (F10): an original sound in the ICQ style unless one can be licensed. This isn't a line for traders, but the sound isn't final.
 10. **The 10-confirmation detail.** For the seller's own cancel the owner confirmed it on 8 Nov (p9-2: "the trade is complete once the refund has 10 confirmations"), so it is on the seller lists. A buyer's cancel (G2) still waits for the lead to check it against the machine.
 11. **Release time limit.** The owner said on 8 Nov there is none (the seller checks, marks complete, the XMR releases). Not added as a line yet: the boards still show "Time to confirm"; lead to confirm before both change.

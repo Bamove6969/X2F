@@ -20,7 +20,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 <div style="{{rootStyle}}">
   <div style="{{frameStyle}}">
   <header style="position: relative; display: flex; align-items: center; justify-content: center; padding: 56px 32px 0;">
-    <span role="img" aria-label="X2F" style="font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true" style="color: var(--ink);">X2F</span></span>
+    <span style="display: flex; align-items: center; height: 36px;"><svg width="78" height="32" viewBox="0 0 78 32" role="img" aria-label="X2F" style="display:block;flex-shrink:0;overflow:visible"><path fill="var(--ink)" d="M0 32L0 31.75L9.44 15.02L1.35 0.25L1.35 0L8.7 0L14.48 10.71L15.47 10.71L21.09 0L28.14 0L28.14 0.25L20.1 15.02L29.46 31.75L29.46 32L21.83 32L15.1 19.32L14.11 19.32L7.3 32ZM31 32L31 26.68Q34.34 24.14 36.83 22.11Q39.32 20.07 41.09 18.38Q43.75 15.88 45.09 13.86Q46.44 11.85 46.44 9.63Q46.44 7.62 45.29 6.35Q44.15 5.08 41.98 5.08Q39.52 5.08 38.28 6.67Q37.03 8.26 37.03 10.88L31 10.88Q31 7.62 32.25 5.16Q33.49 2.7 35.97 1.35Q38.44 0 42.1 0Q47.28 0 50.12 2.64Q52.95 5.28 52.95 9.59Q52.95 12.7 51.35 15.29Q49.74 17.89 46.56 20.76Q45.19 22.01 43.53 23.31Q41.86 24.62 40.21 25.71L40.21 26.68L54 26.68L54 32ZM57 0H78V5H64V13H68V18H64V32H57Z"/><circle fill="var(--monero)" cx="73" cy="15.5" r="4"/></svg></span>
     <span style="position: absolute; top: 24px; right: 32px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
   </header>
 
@@ -193,7 +193,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <li>A (spec, shown by default): at least 10 characters with upper and lower case letters, a number and a symbol. Same sentence as SetupPassword.</li>
         <li>B: length only, 14+</li>
         <li>C: zxcvbn-style score ≥ 3</li>
-      </ul>
+      <li>Header: logo D (owner, 8 Nov, page 8), alone and centred before login, 32 px on wide (comment #2).</li></ul>
       <span style="color: var(--ink-muted);">Preview with the pwRule tweak. Showing: {{pwRuleName}}</span>
     </aside>
     <aside aria-label="Open for the owner: Armored vault without a password" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
@@ -212,7 +212,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":1280,"height":2325}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":1280,"height":2345}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props); }
   preset(p) {
