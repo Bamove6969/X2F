@@ -125,3 +125,5 @@ const logins = [
   ...CAST.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName}`),
 ];
 writeFileSync(join(DEMO_DIR, 'logins.txt'), `${logins.join('\n')}\n`);
+// monero-ts keeps a worker alive: exit once the seed is written.
+process.exit(0);
