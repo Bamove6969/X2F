@@ -122,7 +122,7 @@ test('the board copy and the default market price', async ({ page }) => {
   const preview = page.getByRole('region', { name: 'Preview' });
   await expect(preview.getByText('Selling XMR via Zelle · USD · you', { exact: true })).toBeVisible();
   await expect(preview.getByText('$331.55 / XMR', { exact: true })).toBeVisible();
-  await expect(preview.getByText('$50 – $2,000', { exact: true })).toBeVisible();
+  await expect(preview.getByText('$50 – $2,000 USD', { exact: true })).toBeVisible();
   await expect(page.getByText('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.', { exact: true })).toBeVisible();
   await expect(page.locator('[data-primary]')).toHaveCount(1);
   await expect(page.locator('[data-primary]')).toHaveText('Post offer');
