@@ -108,17 +108,20 @@ test('lists my offers with tick boxes and switches, at both phone sizes', async 
     const nav = (await page.getByRole('navigation', { name: 'Main' }).boundingBox())!;
     expect(Math.round(b.y + b.height)).toBe(Math.round(nav.y));
   }
-  // A ticked card is ringed in ink, never orange (conventions 2 Nov 2026).
-  const [ring, ink] = await row(page, A).evaluate((el) => {
+  // A ticked card is ringed in ink, never orange (conventions 2 Nov 2026): a 2 px ink border, not a
+  // shadow (design kit handoff 1.5).
+  const [ring, width, shadow, ink] = await row(page, A).evaluate((el) => {
     const probe = document.createElement('span');
     probe.style.color = 'var(--x2f-ink)';
     el.append(probe);
     const c = getComputedStyle(probe).color;
     probe.remove();
-    return [getComputedStyle(el).boxShadow, c];
+    const s = getComputedStyle(el);
+    return [s.borderTopColor, s.borderTopWidth, s.boxShadow, c];
   });
-  expect(ring).toContain(ink);
-  expect(ring).toContain('inset');
+  expect(ring).toBe(ink);
+  expect(width).toBe('2px');
+  expect(shadow).toBe('none');
   await expect(tick(page, A)).toHaveCSS('accent-color', ink);
 });
 
