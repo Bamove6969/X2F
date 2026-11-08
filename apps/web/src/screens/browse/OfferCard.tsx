@@ -4,6 +4,7 @@ import { Button } from '../../ui/Button.js';
 import { Icon, type IconName } from '../../ui/icons.js';
 import { PickButton } from '../../ui/PickButton.js';
 import { formatMinor, type Offer, type OpensAt } from './api.js';
+import { marginText, offerRange } from './bands.js';
 import type { BrowseCopy } from './SellCopy.js';
 import './browse.css';
 
@@ -79,19 +80,8 @@ function importedLine(l: { site: string; overUsd: number }): string {
 }
 
 function marginLine(offer: Offer, currency: string, copy: BrowseCopy, market: bigint | null): { text: string; favourable: boolean } | null {
-  if (offer.rate === null) return null;
-  if (offer.pricing.mode === 'fixed') {
-    // A fixed price reads its difference from the market price now, when there is one.
-    if (market === null) return { text: 'Fixed price', favourable: false };
-    const diff = offer.pricing.centsPerXmr - market;
-    if (diff === 0n) return { text: 'At market', favourable: false };
-    const abs = diff < 0n ? -diff : diff;
-    return { text: `${formatMinor(abs, currency)} ${diff > 0n ? 'above' : 'below'} market`, favourable: copy.favourable(diff > 0n ? 1 : -1) };
-  }
-  const bps = offer.pricing.marginBps;
-  if (bps === 0) return { text: 'At market', favourable: false };
-  const pct = (Math.abs(bps) / 100).toFixed(2).replace(/\.?0+$/, '');
-  return { text: `${pct}% ${bps > 0 ? 'above' : 'below'} market`, favourable: copy.favourable(bps) };
+  // The words come from bands.ts, which the quote reads too (owner 2026-11-08: the quote shows the bands).
+  return offer.rate === null ? null : marginText(offer.pricing, currency, market, copy.favourable);
 }
 
 function Badges({ offer }: { offer: Offer }) {
@@ -168,7 +158,7 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
   const name = offer.poster.displayName;
   const closed = offer.opensAt !== undefined;
   const margin = marginLine(offer, currency, copy, market);
-  const range = `${formatMinor(offer.minFiatCents, currency, { whole: true })} – ${formatMinor(offer.maxFiatCents, currency, { whole: true })}`;
+  const range = offerRange(offer, currency);
   const time = offer.poster.typicalMinutes === null ? null : copy.typicalTime(offer.poster.typicalMinutes);
 
   if (pick && (closed || offer.poster.online)) {

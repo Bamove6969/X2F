@@ -13,6 +13,7 @@ import { quotePath } from '../src/screens/quote/quoteModel.js';
 import { forgetQuotes } from '../src/screens/quote/quoteKept.js';
 import { OffersRoute } from '../src/screens/browse/OffersRoute.js';
 import { BUY_COPY } from '../src/screens/browse/BuyCopy.js';
+import { SELL_COPY } from '../src/screens/browse/SellCopy.js';
 import { fire, render } from './render.js';
 
 const session = vi.hoisted(() => ({ status: 'signed-in' as 'signed-in' | 'signed-out' | 'loading' }));
@@ -583,6 +584,85 @@ describe('SellQuote', () => {
 // Review 2026-11-01 M1-M3: a fold or unfold moves the quote between the phone screen and the pane
 // beside the offers, which mounts a new QuoteScreen. What the person typed and picked, and the
 // take's state (in flight, refused, "You're back", the blocked poster), stay with the offer.
+describe("the offer's bands on the quote (owner 2026-11-08)", () => {
+  const bands = (host: HTMLElement) => host.querySelector<HTMLElement>('section[aria-label="Price bands"]')!;
+  const rows = (host: HTMLElement) => [...bands(host).querySelectorAll<HTMLElement>('[data-part="band"]')];
+  const current = (host: HTMLElement) => rows(host).filter((r) => r.getAttribute('aria-current') === 'true');
+  const clip = (host: HTMLElement) => bands(host).querySelector('[data-part="band-clip"]')?.textContent;
+
+  it('a small card right under "What you get" lists each band with its range and price, as the offers card words them', async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    const card = host.querySelector('section[aria-label="What you get"]')!;
+    expect(card.nextElementSibling).toBe(bands(host));
+    expect(rows(host)).toHaveLength(1);
+    expect(rows(host)[0]!.querySelector('[data-part="band-range"]')?.textContent).toBe('$50 – $1,500');
+    expect(rows(host)[0]!.querySelector('[data-part="band-price"]')?.textContent).toBe('At market');
+  });
+
+  it("marks the band the amount falls in and says where its price clips, live as the amount changes, at each edge", async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(current(host)).toHaveLength(1);
+    expect(current(host)[0]!.textContent).toContain('Your amount');
+    expect(clip(host)).toBe('Up to $1,500 at this price, the largest trade.');
+
+    type(host, '49.99');
+    expect(current(host)).toHaveLength(0);
+    expect(clip(host)).toBe('Your amount is below $50, the smallest trade.');
+    type(host, '50');
+    expect(current(host)).toHaveLength(1);
+    type(host, '1500');
+    expect(current(host)).toHaveLength(1);
+    expect(clip(host)).toBe('Up to $1,500 at this price, the largest trade.');
+    type(host, '1500.01');
+    expect(current(host)).toHaveLength(0);
+    expect(clip(host)).toBe('Your amount is above $1,500, the largest trade.');
+    type(host, '');
+    expect(current(host)).toHaveLength(0);
+    expect(clip(host)).toBe('$50 – $1,500 per trade.');
+  });
+
+  it('the same words as the offer card on the offers screen, margin and fewest trades included', async () => {
+    const CAD = { ...MIRA, pricing: { mode: 'market', marginBps: 20 }, rate: '45290', minTrades: 10 };
+    stub.offers = [CAD];
+    const { host } = await open(`${quotePath('buy', 'ZELLE', 'offer-mira', 'CAD')}&amount=600&unit=fiat`);
+    const row = rows(host)[0]!;
+    expect(row.querySelector('[data-part="band-range"]')?.textContent).toBe('CA$50 – CA$1,500');
+    expect(row.querySelector('[data-part="band-price"]')?.textContent).toBe('0.2% above market');
+    // A buyer paying above market is good for the seller looking at it: the escrow tone, as on the card.
+    expect(row.querySelector('[data-part="band-price"]')?.getAttribute('data-tone')).toBe('escrow');
+    expect(row.textContent).toContain('10+ completed trades');
+    expect(row.getAttribute('aria-current')).toBe('true');
+
+    const list = render(
+      <MemoryRouter initialEntries={['/sell/ZELLE?currency=CAD']}>
+        <Routes>
+          <Route path="/sell/:methodId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(list.host.querySelector('.x2f-offer__range')?.textContent).toBe(row.querySelector('[data-part="band-range"]')?.textContent);
+    expect(list.host.querySelector('.x2f-offer__margin')?.textContent).toBe(row.querySelector('[data-part="band-price"]')?.textContent);
+  });
+
+  it('an XMR amount (SellQuote enters XMR first) is placed by its fiat total', async () => {
+    const { host } = await open(quotePath('buy', 'ZELLE', 'offer-mira', 'USD'));
+    expect(host.querySelector('.x2f-quote__unit')?.textContent).toBe('XMR');
+    type(host, '1');
+    expect(current(host)).toHaveLength(1);
+    type(host, '5');
+    expect(clip(host)).toBe('Your amount is above $1,500, the largest trade.');
+  });
+
+  it('with the price feed down the bands still show, and no band is marked', async () => {
+    stub.price = 'down';
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(rows(host)).toHaveLength(1);
+    expect(current(host)).toHaveLength(0);
+    expect(clip(host)).toBe('$50 – $1,500 per trade.');
+  });
+});
+
 describe('the quote across a fold (review M1, M2, M3)', () => {
   let panes = false;
   beforeEach(() => {

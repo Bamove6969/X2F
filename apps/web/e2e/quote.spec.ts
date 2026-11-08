@@ -288,6 +288,56 @@ test.describe('SellQuote', () => {
   });
 });
 
+// The offer's bands carried over from the offers screen (owner 2026-11-08: "a reminder of what the
+// buyers bands (Ranges) are ... where it clips").
+const bands = (page: Page) => page.locator('section[aria-label="Price bands"]');
+const marked = (page: Page) => bands(page).locator('[data-part="band"][aria-current="true"]');
+const clip = (page: Page) => bands(page).locator('[data-part="band-clip"]');
+
+test.describe("the offer's bands on the quote", () => {
+  test('from the offers screen to the quote: the same range and price, the band marked, and where it clips as the amount changes', async ({ page }) => {
+    await stubApi(page, base);
+    await page.goto(`/buy/${B.method.id}?currency=${B.currency}`);
+    const offerCard = page.locator('article.x2f-offer').first();
+    const range = (await offerCard.locator('.x2f-offer__range').innerText()).trim();
+    const price = (await offerCard.locator('.x2f-offer__margin').innerText()).trim();
+    await offerCard.getByRole('button', { name: `Trade with ${B.offer.poster.displayName}` }).click();
+    await expect(page).toHaveURL(new RegExp(`/buy/${B.method.id}/${B.offer.id}`));
+
+    // A small card right under "What you get".
+    await expect(bands(page)).toBeVisible();
+    expect(await card(page).evaluate((el) => el.nextElementSibling?.getAttribute('aria-label'))).toBe('Price bands');
+    await expect(bands(page).locator('[data-part="band-range"]')).toHaveText([range]);
+    await expect(bands(page).locator('[data-part="band-price"]')).toHaveText([price]);
+    await expect(marked(page)).toHaveCount(0);
+    await expect(clip(page)).toHaveText('$50 – $1,500 per trade.');
+
+    const amount = page.locator('#quote-amount');
+    await amount.fill('412.50');
+    await expect(marked(page)).toHaveCount(1);
+    await expect(marked(page)).toContainText('Your amount');
+    await expect(clip(page)).toHaveText('Up to $1,500 at this price, the largest trade.');
+    await amount.fill('49.99');
+    await expect(marked(page)).toHaveCount(0);
+    await expect(clip(page)).toHaveText('Your amount is below $50, the smallest trade.');
+    await amount.fill('50');
+    await expect(marked(page)).toHaveCount(1);
+    await amount.fill('1500');
+    await expect(marked(page)).toHaveCount(1);
+    await amount.fill('1500.01');
+    await expect(marked(page)).toHaveCount(0);
+    await expect(clip(page)).toHaveText('Your amount is above $1,500, the largest trade.');
+  });
+
+  test('SellQuote: Max sits in the top band, at its clip', async ({ page }) => {
+    await stubApi(page, { ...base, offers: [MIRA_BUYS] });
+    await page.goto(SELL);
+    await page.getByRole('button', { name: 'Max' }).click();
+    await expect(marked(page)).toHaveCount(1);
+    await expect(clip(page)).toHaveText('Up to $1,500 at this price, the largest trade.');
+  });
+});
+
 // Mobile ready at launch (spec, owner 2026-10-25): every screen is tested at phone sizes. The rule's
 // two sizes (PHONE_VIEWPORTS: the boards' 390x844 and a small Android phone, 360x800) run the shared
 // layout check and BuyQuote parity; a few more widths, from an iPhone SE (320) to a large phone (430),
@@ -385,6 +435,8 @@ test.describe('phone sizes: fit and a take by tapping', () => {
       await page.getByRole('radio', { name: /Cake Wallet/ }).check();
       await expect(card(page)).toContainText('1.250000 XMR');
       await expect(card(page)).toContainText('$412.50 USD');
+      // The bands card fits the phone too (expectFitsPhone checks every element), its band marked.
+      await expect(marked(page)).toHaveCount(1);
       await expect(page.locator('#quote-amount')).toBeInViewport();
       await expectFitsPhone(page);
       await trade(page).tap();

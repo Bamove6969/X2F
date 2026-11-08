@@ -316,6 +316,72 @@
   color: var(--x2f-monero-ink);
 }
 
+/*
+ * The offer's bands under "What you get" (owner 2026-11-08; no board yet): one small card, the
+ * bands as surface-raised rows in the rows' own type, the one the amount falls in ringed in 2 px
+ * ink (the kit's selected mark), and the clip line under them.
+ */
+.x2f-quote__bands {
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+}
+
+.x2f-quote__band-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-quote__band {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.x2f-quote__band[aria-current='true'] {
+  box-shadow: inset 0 0 0 2px var(--x2f-ink);
+}
+
+.x2f-quote__band-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0 var(--x2f-space-2);
+}
+
+.x2f-quote__band-price {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__band-price[data-tone='escrow'] {
+  color: var(--x2f-escrow);
+}
+
+.x2f-quote__band-here {
+  margin-left: auto;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+@media (forced-colors: active) {
+  .x2f-quote__band[aria-current='true'] {
+    outline: 2px solid CanvasText;
+    outline-offset: -2px;
+  }
+}
+
 /* The rows: one 12 px surface-raised block, 48 px rows, a 1 px inset rule between rows. */
 .x2f-quote__rows {
   display: flex;

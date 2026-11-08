@@ -12,6 +12,7 @@ import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet
 import type { ConfirmedTrade } from './confirmed.js';
 import { STAGE_NAMES, amountText, currencySign, fiatWhole, formatMinor, quote, quoteExponent, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
 import { claimTake, rememberTake } from './pendingTake.js';
+import { QuoteBands } from './QuoteBands.js';
 import { TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
 import { useQuoteKept } from './quoteKept.js';
 import { useTake } from './useTake.js';
@@ -369,6 +370,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             ) : null}
           </div>
         </section>
+        <QuoteBands offer={o} adSide={copy.adSide} quote={q} market={marketNow?.centsPerXmr ?? null} />
         <Notice tone="info">
           {copy.footnote(poster)}
         </Notice>
