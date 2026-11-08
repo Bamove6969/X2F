@@ -56,6 +56,17 @@ export function payTimer(v: Pick<TradeView, 'payBy' | 'extensions' | 'releasable
 }
 
 /**
+ * The time to pay is over and the buyer has not tapped "I've paid" (owner 8 Nov, p6-1): not a hard
+ * end. The trade stays open, "I've paid" and the details stay, and the seller may cancel at any
+ * moment. Never while maintenance has the clock paused (the machine moves `payBy` on resume).
+ */
+export function payTimeOver(v: Pick<TradeView, 'state' | 'payBy' | 'pausedAt'>, nowMs: number): boolean {
+  if (v.state !== 'secured' || v.payBy === null || v.pausedAt !== null) return false;
+  const by = Date.parse(v.payBy);
+  return Number.isFinite(by) && nowMs >= by;
+}
+
+/**
  * States in which a mutual cancel can be proposed or accepted (@x2f/trade CANCEL_STATES): never
  * `paid`, no cancel of any kind after "I've paid" (owner, Revision 2026-10-29b).
  */

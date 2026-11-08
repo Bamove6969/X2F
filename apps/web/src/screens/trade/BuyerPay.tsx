@@ -36,7 +36,7 @@ import { CancelProposalCard, SellerCancelControls } from './CancelSheet.js';
 import { setFinalAlertPaidSheet } from './FinalAlert.js';
 import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
-import { buyerCancelMode, escrowChip, finishBlock, payBlock, paySecured, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { buyerCancelMode, escrowChip, finishBlock, payBlock, paySecured, payTimeOver, payTimer, showProposal, type EscrowChip } from './payModel.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
@@ -225,7 +225,9 @@ const RING_C = 2 * Math.PI * RING_R;
 /** "Time to pay": 90 min not started while securing (with when it starts), then the countdown. */
 function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () => Date }) {
   const tip = useTip();
+  useTick(15_000);
   const t = payTimer(view, serverClock().getTime());
+  const over = payTimeOver(view, serverClock().getTime());
   const ring = t.started ? (
     <svg width="56" height="56" viewBox="0 0 56 56" role="img" aria-label={`${t.leftMin} of ${t.totalMin} minutes left`} className="x2f-pay-timer__ring">
       <circle cx="28" cy="28" r={RING_R} fill="none" className="x2f-pay-timer__ring-track" strokeWidth="6" />
@@ -249,10 +251,11 @@ function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () 
     <section aria-label="Payment timer" className="x2f-card x2f-pay-timer" data-fold-glance="timer">
       <button type="button" className="x2f-pay-timer__text" aria-describedby="tip-pay" {...tip.trigger}>
         <span className="x2f-pay-timer__label">
-          Time to pay
+          {/* COPY-UNSIGNED: "is over" (owner 8 Nov p6-1: the time to pay is not a hard end). */}
+          {over ? 'Time to pay is over' : 'Time to pay'}
           <InfoIcon />
         </span>
-        {t.started ? (
+        {over ? null : t.started ? (
           <span className="x2f-pay-timer__value">
             <Countdown deadline={t.payBy} serverClock={serverClock} format="minutes" />
           </span>
@@ -487,6 +490,21 @@ export function DisputeLocked({ until, serverClock }: { until: string; serverClo
   );
 }
 
+/**
+ * After the time to pay (owner 8 Nov, p6-1): not a hard end. "I've paid" and the details stay
+ * until the seller cancels, and the buyer is told the seller may now cancel at any moment (design
+ * proto review P1). It appears by itself when payBy passes on screen. COPY-UNSIGNED (no board yet).
+ */
+function PayOverNote({ view, serverClock }: { view: TradeView; serverClock: () => Date }) {
+  useTick(15_000);
+  if (!payTimeOver(view, serverClock().getTime())) return null;
+  return (
+    <p className="x2f-room__error" role="status" data-pay-over="">
+      The time to pay is over. <Name view={view} /> may now cancel this trade at any moment. If you've sent the money, tap I've paid now.
+    </p>
+  );
+}
+
 // ---- BuyerPay ----
 
 /**
@@ -609,6 +627,7 @@ export function BuyerPay(p: TradeScreenProps) {
           you now pay
         </GrownNote>
       ) : null}
+      {!paid ? <PayOverNote view={view} serverClock={serverClock} /> : null}
       {showProposal(view) ? (
         <CancelProposalCard view={view} busy={action.busy} onAccept={() => void action.run({ type: 'accept-cancel' }, () => escrow.proposeCancelSign())} />
       ) : null}

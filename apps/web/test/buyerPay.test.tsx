@@ -778,6 +778,49 @@ describe("no dispute for the buyer before I've paid (design proto review P1, 8 N
   });
 });
 
+describe('after the time to pay (design proto review P1; owner 8 Nov p6-1: not a hard end)', () => {
+  const over = { ...SECURED, securedAt: at(-91), payBy: at(-1) };
+
+  it("keeps I've paid and the payment details, and says the seller may now cancel at any moment", () => {
+    for (const wide of [false, true]) {
+      const r = mount(props({ view: tradeView(over), wide }));
+      const paid = byText("I've paid", 'button') as HTMLButtonElement;
+      expect(paid.disabled).toBe(false);
+      expect(text()).toContain('Send exactly');
+      expect(text()).toContain('[SELLER ZELLE ID]');
+      const note = document.querySelector<HTMLElement>('[data-pay-over]');
+      expect(note?.textContent).toBe("The time to pay is over. satoshi_ghost may now cancel this trade at any moment. If you've sent the money, tap I've paid now.");
+      expect(note?.getAttribute('role')).toBe('status');
+      if (!wide) expect(document.querySelector('[aria-label="Payment timer"]')?.textContent).toContain('Time to pay is over');
+      r.unmount();
+    }
+  });
+
+  it('says nothing of it before payBy, or while maintenance has the clock paused', () => {
+    const r = mount(props({ view: tradeView(SECURED) }));
+    expect(document.querySelector('[data-pay-over]')).toBeNull();
+    r.unmount();
+    mount(props({ view: tradeView({ ...over, pausedAt: at(-2) }) }));
+    expect(document.querySelector('[data-pay-over]')).toBeNull();
+  });
+
+  it('appears by itself when payBy passes on screen', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      let now = T0;
+      mount(props({ view: tradeView({ ...SECURED, payBy: at(0.25) }), serverClock: () => new Date(now) }));
+      expect(document.querySelector('[data-pay-over]')).toBeNull();
+      now = T0 + 30_000;
+      await act(async () => {
+        vi.advanceTimersByTime(16_000);
+      });
+      expect(document.querySelector('[data-pay-over]')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('review minors 1, 5 and 7', () => {
   const grown = { ...SECURED, amountAtomic: '1312500000000', fiatCents: '43313', grown: { at: at(-1), fromAtomic: '1250000000000', fromFiatCents: '41250' } };
   const grownEscrow = () => fakeEscrow({ amountAtomic: 1_312_500_000_000n, fiatCents: 43_313n });
