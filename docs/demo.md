@@ -24,7 +24,8 @@ What runs, all bound to 127.0.0.1:
 
 | Piece | Where |
 | --- | --- |
-| Gateway: the web app, the API, `/relay` and `/node` on one origin | **http://localhost:4400** |
+| Gateway: the web app, the API and `/relay` on one origin | **http://localhost:4400** |
+| Gateway: the node proxy's origin (the wallets in the browser sync through it) | http://localhost:4401 |
 | API (public) / internal listener / staff API | 18080 / 18081 / 18082 |
 | Relay / relay admin | 18787 / 18788 |
 | Node proxy (to monerod's restricted RPC) | 18789 |
@@ -110,7 +111,7 @@ offers cannot be taken (409 `price-unavailable`).
   service. The guard is covered by `tools/test/demo-guard.test.ts`.
 - **This machine only.** Everything binds to 127.0.0.1. The one exception: when
   `tailscale ip -4` succeeds, the gateway also serves HTTPS (a self-signed certificate made per
-  start) on that Tailscale address, port 4443, so your own devices on your tailnet can open it.
+  start) on that Tailscale address, ports 4443 (the app) and 4444 (the node proxy), so your own devices on your tailnet can open it.
   The gateway refuses any address outside Tailscale's 100.64.0.0/10. Nothing ever binds 0.0.0.0
   and no public tunnel is opened.
 - **Never in a product build.** Nothing in `apps/*` or `packages/*` may import `tools/demo` or

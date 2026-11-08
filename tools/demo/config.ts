@@ -16,6 +16,9 @@ export const HOST = '127.0.0.1';
 export const PORTS = {
   gateway: 4400,
   gatewayTls: 4443,
+  /** The node proxy's own origin (monero-ts drops any path in a daemon URI). */
+  gatewayNode: 4401,
+  gatewayNodeTls: 4444,
   api: 18080,
   apiInternal: 18081,
   staff: 18082,

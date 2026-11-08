@@ -51,9 +51,11 @@ async function main(): Promise<void> {
   if (ts.status === 0) tsIp = (ts.stdout.split('\n')[0] ?? '').trim();
   const LOCAL_ORIGIN = `http://localhost:${PORTS.gateway}`;
   const TS_ORIGIN = tsIp ? `https://${tsIp}:${PORTS.gatewayTls}` : '';
-  // The web build talks to the relay and node proxy through one origin, baked in at build time.
+  // The web build talks to the relay through its own origin and to the node proxy through the
+  // gateway's node port, both baked in at build time.
   const PRIMARY = TS_ORIGIN || LOCAL_ORIGIN;
   const primaryWs = PRIMARY.replace(/^http/, 'ws');
+  const NODE_ORIGIN = tsIp ? `https://${tsIp}:${PORTS.gatewayNodeTls}` : `http://localhost:${PORTS.gatewayNode}`;
 
   step('making throwaway secrets in .demo/secrets');
   const s = await makeSecrets();
@@ -121,7 +123,7 @@ async function main(): Promise<void> {
       VITE_MOD_SIGNING_PUBLIC: s.modSigningPublic,
       VITE_FEE_WALLET: s.feeWallet,
       VITE_RELAY_URL: `${primaryWs}/relay`,
-      VITE_NODE_PROXY_URL: `${PRIMARY}/node`,
+      VITE_NODE_PROXY_URL: NODE_ORIGIN,
     },
   });
 
@@ -159,7 +161,7 @@ async function main(): Promise<void> {
     X2F_PORT: String(PORTS.api),
     X2F_WEB_ROOT: WEB_DIST,
     X2F_RELAY_ORIGIN: primaryWs,
-    X2F_NODE_PROXY_ORIGIN: PRIMARY,
+    X2F_NODE_PROXY_ORIGIN: NODE_ORIGIN,
     X2F_MOD_SIGNING_PUBLIC: s.modSigningPublic,
     X2F_INTERNAL_HOST: HOST,
     X2F_INTERNAL_PORT: String(PORTS.apiInternal),
@@ -190,11 +192,12 @@ async function main(): Promise<void> {
   startTs('gateway', 'tools/demo/gateway.ts', {
     ...demo,
     DEMO_API_PORT: String(PORTS.api), DEMO_RELAY_PORT: String(PORTS.relay), DEMO_NODE_PROXY_PORT: String(PORTS.nodeProxy),
-    DEMO_GATEWAY_PORT: String(PORTS.gateway), DEMO_GATEWAY_TLS_PORT: String(PORTS.gatewayTls), DEMO_PRIMARY_ORIGIN: PRIMARY, DEMO_ORIGINS: origins.join(','),
+    DEMO_GATEWAY_PORT: String(PORTS.gateway), DEMO_GATEWAY_TLS_PORT: String(PORTS.gatewayTls), DEMO_GATEWAY_NODE_PORT: String(PORTS.gatewayNode), DEMO_GATEWAY_NODE_TLS_PORT: String(PORTS.gatewayNodeTls), DEMO_PRIMARY_ORIGIN: PRIMARY, DEMO_ORIGINS: origins.join(','),
     ...(tsIp ? { DEMO_TAILSCALE_IP: tsIp, DEMO_TLS_KEY: tlsKey, DEMO_TLS_CERT: tlsCert } : {}),
   });
   await waitFor('the gateway', httpUp(`${LOCAL_ORIGIN}/`));
   await waitFor('the node proxy', httpUp(`http://${HOST}:${PORTS.nodeProxy}/get_info`));
+  await waitFor('the gateway node port', httpUp(`http://${HOST}:${PORTS.gatewayNode}/get_info`));
 
   step('seeding demo traders and offers');
   execFileSync(process.execPath, ['--import', 'tsx', join(ROOT, 'tools/demo/seed.ts')], {

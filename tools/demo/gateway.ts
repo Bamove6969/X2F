@@ -1,7 +1,7 @@
 /**
- * DEMO ONLY: the demo's single web entry point. One origin serves the app and the API (the API
- * process), the relay under /relay and the node proxy under /node, so a browser needs only this
- * port. It listens on 127.0.0.1 and, only when DEMO_TAILSCALE_IP is set (a Tailscale 100.x
+ * DEMO ONLY: the demo's web entry point. One origin serves the app and the API (the API process)
+ * and the relay under /relay; a second port is the node proxy at its root (monero-ts drops any
+ * path in a daemon URI, so the node cannot live under /node). It listens on 127.0.0.1 and, only when DEMO_TAILSCALE_IP is set (a Tailscale 100.x
  * address found by `tailscale ip -4`), also over HTTPS on that private tailnet address. It never
  * binds 0.0.0.0 and opens no public tunnel.
  */
@@ -23,6 +23,8 @@ const RELAY = Number(env('DEMO_RELAY_PORT'));
 const NODE = Number(env('DEMO_NODE_PROXY_PORT'));
 const PORT = Number(env('DEMO_GATEWAY_PORT'));
 const TLS_PORT = Number(env('DEMO_GATEWAY_TLS_PORT'));
+const NODE_PORT = Number(env('DEMO_GATEWAY_NODE_PORT'));
+const NODE_TLS_PORT = Number(env('DEMO_GATEWAY_NODE_TLS_PORT'));
 /** The one origin the node proxy accepts (the web build's origin). */
 const PRIMARY = env('DEMO_PRIMARY_ORIGIN');
 const TS_IP = process.env.DEMO_TAILSCALE_IP ?? '';
@@ -35,14 +37,19 @@ function isTailscaleIp(ip: string): boolean {
   return m !== null && Number(m[1]) >= 64 && Number(m[1]) <= 127 && Number(m[2]) <= 255 && Number(m[3]) <= 255;
 }
 
-function target(url: string): { port: number; path: string; node: boolean } {
-  if (url === '/relay' || url.startsWith('/relay/')) return { port: RELAY, path: url.slice('/relay'.length) || '/', node: false };
-  if (url === '/node' || url.startsWith('/node/')) return { port: NODE, path: url.slice('/node'.length) || '/', node: true };
-  return { port: API, path: url, node: false };
-}
+type Target = { port: number; path: string; node: boolean };
+type Route = (url: string) => Target;
 
-function handle(req: IncomingMessage, res: ServerResponse): void {
-  const t = target(req.url ?? '/');
+/** The web origin: the API, and the relay under /relay. */
+const web: Route = (url) => {
+  if (url === '/relay' || url.startsWith('/relay/') || url.startsWith('/relay?')) return { port: RELAY, path: url.slice('/relay'.length) || '/', node: false };
+  return { port: API, path: url, node: false };
+};
+/** The node origin: everything to the node proxy, path unchanged. */
+const node: Route = (url) => ({ port: NODE, path: url, node: true });
+
+const handle = (route: Route) => (req: IncomingMessage, res: ServerResponse): void => {
+  const t = route(req.url ?? '/');
   const headers = { ...req.headers };
   // The node proxy accepts one exact origin (the web build's): a request from another demo origin
   // is passed on as the primary one, and its CORS answer is given back to the origin that asked.
@@ -60,10 +67,10 @@ function handle(req: IncomingMessage, res: ServerResponse): void {
     res.end('{"error":"demo-gateway-upstream"}');
   });
   req.pipe(up);
-}
+};
 
-function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
-  const t = target(req.url ?? '/');
+const upgrade = (route: Route) => (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+  const t = route(req.url ?? '/');
   const up = net.connect(t.port, '127.0.0.1', () => {
     const lines = [`${req.method} ${t.path} HTTP/1.1`];
     for (let i = 0; i < req.rawHeaders.length; i += 2) lines.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`);
@@ -78,17 +85,20 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
   };
   up.on('error', end);
   socket.on('error', end);
+};
+
+function serve(route: Route, port: number, host: string, tls: { key: Buffer; cert: Buffer } | null): void {
+  const srv = tls ? https.createServer(tls, handle(route)) : http.createServer(handle(route));
+  srv.on('upgrade', upgrade(route));
+  srv.listen(port, host);
+  console.log(JSON.stringify({ reason: 'listening', on: `${host}:${port}` }));
 }
 
-const plain = http.createServer(handle);
-plain.on('upgrade', upgrade);
-plain.listen(PORT, '127.0.0.1');
-console.log(JSON.stringify({ reason: 'listening', on: `127.0.0.1:${PORT}` }));
-
+serve(web, PORT, '127.0.0.1', null);
+serve(node, NODE_PORT, '127.0.0.1', null);
 if (TS_IP !== '') {
   if (!isTailscaleIp(TS_IP)) throw new Error('gateway: DEMO_TAILSCALE_IP is not a Tailscale 100.64.0.0/10 address');
-  const tls = https.createServer({ key: readFileSync(env('DEMO_TLS_KEY')), cert: readFileSync(env('DEMO_TLS_CERT')) }, handle);
-  tls.on('upgrade', upgrade);
-  tls.listen(TLS_PORT, TS_IP);
-  console.log(JSON.stringify({ reason: 'listening', on: `${TS_IP}:${TLS_PORT}` }));
+  const tls = { key: readFileSync(env('DEMO_TLS_KEY')), cert: readFileSync(env('DEMO_TLS_CERT')) };
+  serve(web, TLS_PORT, TS_IP, tls);
+  serve(node, NODE_TLS_PORT, TS_IP, tls);
 }
