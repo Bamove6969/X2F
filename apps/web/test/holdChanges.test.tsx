@@ -37,11 +37,11 @@ function json(status: number, body: unknown): Response {
   return new Response(status === 204 ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-const view = (o: { drafts?: unknown[]; items?: unknown[] } = {}) => ({
+const view = (o: { drafts?: unknown[]; items?: unknown[]; strong?: boolean } = {}) => ({
   accountHold: null,
   changes: { count: (o.items ?? []).length, takesEffectAt: (o.items ?? []).length > 0 ? DUE : null, items: o.items ?? [] },
   drafts: o.drafts ?? [],
-  changesWait: true,
+  changesWait: o.strong !== true,
 });
 
 beforeEach(() => {
@@ -197,13 +197,13 @@ describe('AccountChanges: the drafts in one review, then one submit', () => {
   });
 });
 
-describe('AccountChanges: the waiting changes, with their date and Cancel', () => {
+describe('AccountChanges: the waiting changes (g65), with their date, a countdown, untick and Cancel all', () => {
   const items = [
     { id: W1, kind: 'wallets', wallets: 1, addressEnds: ['k3Fzab'], createdAt: DUE, submittedAt: DUE, by: 'Chrome on Windows', mine: false },
     { id: W2, kind: 'logout-timer', idleHours: 2, createdAt: DUE, submittedAt: DUE, by: 'Browser on Linux', mine: true },
   ];
 
-  it('shows each with "Applies <date> UTC" and where it came from, and cancels one by id', async () => {
+  it('shows each with "Applies <date> UTC", a countdown and where it came from; an unticked change is cancelled by id', async () => {
     hold = { status: 200, body: view({ items }) };
     const { host } = render(
       <MemoryRouter>
@@ -217,12 +217,47 @@ describe('AccountChanges: the waiting changes, with their date and Cancel', () =
     expect(rows[0]!.textContent).toContain('From Chrome on Windows');
     expect(rows[1]!.textContent).toContain('From this device');
     expect(utcDateTime(new Date(DUE))).toBe('8 Nov 2026, 15:00 UTC');
-    click(allByPart(host, 'waiting-cancel')[0]!);
+    expect(byPart(host, 'waiting-countdown')!.querySelector('[role="timer"]')).not.toBeNull();
+    // A username-and-password session: no Approve now (G58 is for a strong login).
+    expect(byPart(host, 'waiting-approve')).toBeNull();
+    expect(byPart(host, 'waiting-strong')).toBeNull();
+    const boxes = allByPart(host, 'waiting-keep') as HTMLInputElement[];
+    expect(boxes.map((b) => b.checked)).toEqual([true, true]);
+    expect(boxes[0]!.getAttribute('aria-label')).toBe('Keep the change: Payout wallets');
+    expect(byPart(host, 'waiting-cancel-unticked')).toBeNull();
+    click(boxes[0]!);
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+    const cancel = byPart(host, 'waiting-cancel-unticked')!;
+    expect(cancel.textContent).toBe('Cancel 1 unticked change');
+    click(cancel);
     await settle();
-    expect(calls.some((c) => c.method === 'DELETE' && c.url === `/v1/account/hold/changes/${W1}`)).toBe(true);
+    expect(calls.filter((c) => c.method === 'DELETE').map((c) => c.url)).toEqual([`/v1/account/hold/changes/${W1}`]);
+    expect(byPart(host, 'changes-status')!.textContent).toBe(HOLD_COPY.cancelled);
   });
 
-  it('Cancel these changes asks first, then cancels them all', async () => {
+  it('G58: a strong login sees the same view and approves the ticked changes now; unticked ones are cancelled', async () => {
+    hold = { status: 200, body: view({ items, strong: true }) };
+    replies['POST /v1/account/hold/changes/approve'] = { status: 200, body: { status: 'applied' } };
+    const { host } = render(
+      <MemoryRouter>
+        <AccountChanges />
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(byPart(host, 'waiting-strong')!.textContent).toBe(HOLD_COPY.strongNote);
+    expect(byPart(host, 'waiting-approve')!.textContent).toBe('Approve 2 changes now');
+    expect(byPart(host, 'waiting-make-changes')!.getAttribute('href')).toBe('/settings/security#methods-h');
+    click(allByPart(host, 'waiting-keep')[1]!);
+    expect(byPart(host, 'waiting-approve')!.textContent).toBe('Approve now');
+    hold = { status: 200, body: view({ strong: true }) };
+    click(byPart(host, 'waiting-approve'));
+    await settle();
+    const writes = calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.url} ${JSON.stringify(c.body ?? null)}`);
+    expect(writes).toEqual([`DELETE /v1/account/hold/changes/${W2} null`, `POST /v1/account/hold/changes/approve {"ids":["${W1}"]}`]);
+    expect(byPart(host, 'changes-status')!.textContent).toBe(HOLD_COPY.approved);
+  });
+
+  it('Cancel all changes asks first, then cancels them all', async () => {
     hold = { status: 200, body: view({ items }) };
     const { host } = render(
       <MemoryRouter>
@@ -233,7 +268,7 @@ describe('AccountChanges: the waiting changes, with their date and Cancel', () =
     click(byPart(host, 'waiting-cancel-all'));
     await settle();
     const ask = byPart(document, 'cancel-ask')!;
-    expect(document.body.textContent).toContain('Cancel these 2 changes?');
+    expect(document.body.textContent).toContain('Cancel all 2 changes?');
     expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
     hold = { status: 200, body: view() };
     click(byPart(ask, 'cancel-yes'));

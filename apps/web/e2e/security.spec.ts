@@ -402,7 +402,7 @@ test('a staged logout-timer change is a draft: it keeps the old value, then is r
   await expect(page.locator('[data-part="changes-waiting"] [data-part="change"]')).toContainText('Applies 2 Jan 2099, 15:00 UTC');
 });
 
-test('waiting changes are listed with their date and cancelled one by one or all at once', async ({ page }) => {
+test('waiting changes (g65) are listed with their date and a countdown; untick one to cancel it, or cancel all', async ({ page }) => {
   await base(page, { me: { pendingChanges: { count: 2, takesEffectAt: DUE } } });
   const W2 = '22222222-2222-4222-8222-222222222222';
   let view = holdView({
@@ -427,7 +427,10 @@ test('waiting changes are listed with their date and cancelled one by one or all
   await expect(waiting.locator('[data-part="waiting-when"]')).toHaveText('2 changes take effect on 2 Jan 2099, 15:00 UTC');
   await expect(waiting.locator('[data-part="change"]').first()).toContainText('1 new wallet added: …k3Fzab');
   await expect(waiting.locator('[data-part="change"]').first()).toContainText('From Chrome on Windows');
-  await waiting.getByRole('button', { name: 'Cancel the change: Payout wallets' }).click();
+  await expect(waiting.locator('[data-part="waiting-countdown"] [role="timer"]')).toBeVisible();
+  await expect(waiting.locator('[data-part="waiting-approve"]')).toHaveCount(0);
+  await waiting.getByRole('checkbox', { name: 'Keep the change: Payout wallets' }).uncheck();
+  await waiting.locator('[data-part="waiting-cancel-unticked"]').click();
   await expect.poll(() => deleted).toEqual([`/v1/account/hold/changes/${D1}`]);
 
   view = holdView({ items: [{ id: W2, kind: 'password', createdAt: DUE, submittedAt: DUE, by: 'Browser on Linux', mine: true }] });
@@ -438,6 +441,26 @@ test('waiting changes are listed with their date and cancelled one by one or all
   await sheet.locator('[data-part="cancel-yes"]').click();
   await expect(page.locator('[data-part="changes-status"]')).toHaveText('Cancelled. Nothing on your account changed.');
   expect(deleted.at(-1)).toBe('/v1/account/hold/changes');
+});
+
+test('G58: a strong login during the wait sees the changes and can approve them now', async ({ page }) => {
+  await base(page, { me: { pendingChanges: { count: 1, takesEffectAt: DUE }, changesWait: false } });
+  let view = { ...holdView({ items: [{ id: D1, kind: 'password', createdAt: DUE, submittedAt: DUE, by: 'Browser on Linux', mine: false }] }), changesWait: false };
+  await page.route('**/v1/account/hold', (r) => json(view)(r));
+  let approved: unknown = null;
+  await page.route('**/v1/account/hold/changes/approve', async (r) => {
+    approved = JSON.parse(r.request().postData() ?? '{}');
+    view = { ...holdView(), changesWait: false };
+    return json({ status: 'applied' })(r);
+  });
+  await page.goto('/settings/changes');
+  const waiting = page.locator('[data-part="changes-waiting"]');
+  await expect(waiting.locator('[data-part="waiting-strong"]')).toContainText('you can approve these changes now');
+  await expect(waiting.locator('[data-part="change"]')).toContainText('After A new password');
+  await expect(waiting.locator('[data-part="waiting-make-changes"]')).toHaveText('Make changes');
+  await waiting.locator('[data-part="waiting-approve"]').click();
+  await expect(page.locator('[data-part="changes-status"]')).toHaveText('Approved. Your changes have been applied.');
+  expect(approved).toEqual({ ids: [D1] });
 });
 
 test('the banner shows waiting changes on other screens; a team member sees none of it', async ({ page }) => {

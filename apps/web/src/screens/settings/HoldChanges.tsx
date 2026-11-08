@@ -7,8 +7,11 @@
  *   and tells this panel to load again (`notifyHoldChanged`).
  * - `AccountChanges` (on Settings → Security and its own screen, `CHANGES_PATH`): the drafts in one
  *   review, each before → after, with the 24-hour wait said before the one final submit and the
- *   push to add a stronger login (G29); then the waiting changes with their date, each with Cancel,
- *   and Cancel these changes (a short confirm).
+ *   push to add a stronger login (G29); then the waiting changes (g65: one view of every change and
+ *   its effect, the date and a countdown, each ticked: untick to cancel it, or Cancel all changes
+ *   with a short confirm; a cancelled change never applies). A login with a passkey, security key or
+ *   PGP key (`changesWait` false) sees the same view with Approve now (G58: `POST
+ *   /v1/account/hold/changes/approve { ids }`, the API route is being added) and Make changes.
  * - `ChangesBanner` (the app shell): "N changes take effect on <date>" with Review changes while
  *   changes wait, from `me().pendingChanges`. A team member's overview has none (G31), and the
  *   panel's API answers a member 403, so a member never sees or cancels them.
@@ -22,6 +25,8 @@ import { ApiCallError } from '../../api/client.js';
 import { memberOf } from '../../session/member.js';
 import { refreshSession, useSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
+import { Checkbox } from '../../ui/Checkbox.js';
+import { Countdown } from '../../ui/Countdown.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, TOO_MANY_CHANGES_CODE, holdChangesCantDoText } from '../../ui/cantDoCodes.js';
 import { Notice } from '../../ui/Notice.js';
@@ -32,6 +37,8 @@ import { OwnerOnly } from './OwnerOnly.js';
 import '../screens.css';
 
 const CHANGED = 'x2f:hold-changed';
+/** The hold view sends no server time; the date beside the countdown is in UTC either way. */
+const deviceClock = () => new Date();
 const CAPPED = 'x2f:changes-cap';
 
 /** A change was staged, submitted or cancelled: every mounted `AccountChanges` and banner loads again. */
@@ -126,12 +133,15 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const [ask, setAsk] = useState(false);
+  // Owner g65: the waiting changes the person unticked (to cancel).
+  const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set());
   const askId = useId();
 
   const load = useCallback(async () => {
     try {
       const v = await authApi.holdView();
       setView(v);
+      setUnticked((u) => new Set([...u].filter((id) => v.changes.items.some((c) => c.id === id))));
       setFailed(false);
       // A role change names its member (G29's before → after); the team list has their names.
       if ([...v.drafts, ...v.changes.items].some((c) => c.memberId !== undefined)) {
@@ -181,6 +191,37 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
       }
     });
 
+  /** Cancels each unticked waiting change, one by one; a cancelled change never applies (g65). */
+  const cancelIds = async (ids: readonly string[]): Promise<boolean> => {
+    for (const id of ids) await authApi.cancelHoldChange(id);
+    setUnticked(new Set());
+    return true;
+  };
+
+  const cancelUnticked = () =>
+    after(async () => {
+      try {
+        await cancelIds([...unticked]);
+        return { kind: 'done', text: C.cancelled };
+      } catch {
+        return { kind: 'error', text: C.cancelFailed };
+      }
+    });
+
+  // Owner G58: a strong login approves the ticked changes now (they apply at once); unticked ones are cancelled first.
+  const approve = () =>
+    after(async () => {
+      try {
+        const keep = waiting.filter((c) => !unticked.has(c.id)).map((c) => c.id);
+        await cancelIds([...unticked]);
+        if (keep.length > 0) await authApi.approveHoldChanges({ ids: keep });
+        return { kind: 'done', text: C.approved };
+      } catch (e) {
+        if (e instanceof AuthApiError && e.code === 'changes-changed') return { kind: 'error', text: C.changed };
+        return { kind: 'error', text: C.approveFailed };
+      }
+    });
+
   const cancelAll = () => {
     setAsk(false);
     void after(async () => {
@@ -196,6 +237,8 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
   const drafts = view?.drafts ?? [];
   const waiting = view?.changes.items ?? [];
   const due = view?.changes.takesEffectAt ?? null;
+  // This session's own changes apply at once (a passkey, security key or PGP key login): G58's Approve now.
+  const strong = view !== null && !view.changesWait;
 
   const statusLine =
     status === null ? null : status.kind === 'error' ? (
@@ -279,31 +322,70 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
             {C.waitingTitle}
           </h2>
           {due !== null ? (
-            <p className="x2f-note" data-part="waiting-when">
-              {C.banner(waiting.length, due)}
-            </p>
+            <>
+              <p className="x2f-note" data-part="waiting-when">
+                {C.banner(waiting.length, due)}
+              </p>
+              {/* g65: a countdown while the changes are held. */}
+              <p className="x2f-change__countdown" data-part="waiting-countdown">
+                <span className="x2f-change__k">{C.countdownLead}</span> <Countdown deadline={due} serverClock={deviceClock} format="minutes" />
+              </p>
+            </>
           ) : null}
+          {strong ? (
+            <Notice tone="info" data-part="waiting-strong">
+              <p>{C.strongNote}</p>
+            </Notice>
+          ) : null}
+          <p className="x2f-note">{C.untickHelp}</p>
           <ul className="x2f-list" data-part="waiting-list">
             {waiting.map((c) => {
               const w = changeWords(c, names);
               const meta = [...(due !== null ? [C.applies(due)] : []), c.mine ? C.fromHere : c.by !== null ? C.from(c.by) : null].filter((m): m is string => m !== null);
+              const kept = !unticked.has(c.id);
               return (
                 <ChangeRow
                   key={c.id}
                   {...w}
                   meta={meta}
                   action={
-                    <Button variant="secondary" disabled={busy} onClick={() => void cancelOne(c.id)} aria-label={C.cancelLabel(w.title)} data-part="waiting-cancel">
-                      {C.cancel}
-                    </Button>
+                    <Checkbox
+                      checked={kept}
+                      disabled={busy}
+                      aria-label={C.keepLabel(w.title)}
+                      data-part="waiting-keep"
+                      onChange={(on) =>
+                        setUnticked((u) => {
+                          const next = new Set(u);
+                          if (on) next.delete(c.id);
+                          else next.add(c.id);
+                          return next;
+                        })
+                      }
+                    />
                   }
                 />
               );
             })}
           </ul>
+          {strong ? (
+            <Button variant="primary" disabled={busy || unticked.size === waiting.length} onClick={() => void approve()} data-part="waiting-approve">
+              {C.approve(waiting.length - unticked.size)}
+            </Button>
+          ) : null}
+          {unticked.size > 0 ? (
+            <Button variant="secondary" disabled={busy} onClick={() => void cancelUnticked()} data-part="waiting-cancel-unticked">
+              {C.cancelUnticked(unticked.size)}
+            </Button>
+          ) : null}
           <Button variant="danger-outline" disabled={busy} onClick={() => setAsk(true)} data-part="waiting-cancel-all">
             {C.cancelAll}
           </Button>
+          {strong ? (
+            <Link className="x2f-button x2f-button--tertiary" to="/settings/security#methods-h" data-part="waiting-make-changes">
+              {C.makeChanges}
+            </Link>
+          ) : null}
         </section>
       ) : null}
       {statusLine}

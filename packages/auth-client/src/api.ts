@@ -410,6 +410,11 @@ export interface AuthApi {
   holdView(): Promise<HoldView>;
   /** Hold model v3: `POST /v1/account/hold/changes/submit`, exactly the drafts reviewed (409 `changes-changed` otherwise). */
   submitHoldChanges(b: { ids: string[] }): Promise<{ status: 'queued'; count: number; takesEffectAt: string }>;
+  /**
+   * Owner G58: `POST /v1/account/hold/changes/approve { ids }`: a strong login approves waiting
+   * changes now, so they apply at once. (The API route is being added on this branch.)
+   */
+  approveHoldChanges(b: { ids: string[] }): Promise<unknown>;
   /** Hold model v3: `DELETE /v1/account/hold/changes`: cancels every waiting change (and this session's drafts). */
   cancelHoldChanges(): Promise<void>;
   /** Hold model v3: `DELETE /v1/account/hold/changes/:id`: one waiting change or one of this session's drafts. */
@@ -593,6 +598,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     revealRecoveryCode: () => post('/v1/account/recovery-code/reveal'),
     holdView: () => get('/v1/account/hold'),
     submitHoldChanges: (b) => post('/v1/account/hold/changes/submit', b),
+    approveHoldChanges: (b) => post('/v1/account/hold/changes/approve', b),
     cancelHoldChanges: () => done(call('DELETE', '/v1/account/hold/changes')),
     cancelHoldChange: (id) => done(call('DELETE', `/v1/account/hold/changes/${seg(id)}`)),
     listMethods: () => get('/v1/account/methods'),

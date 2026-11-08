@@ -296,3 +296,9 @@
 .x2f-changes-banner .x2f-link {
   padding-block: 12px;
 }
+
+.x2f-change__countdown {
+  margin: 0;
+  font-family: var(--x2f-font-mono);
+  font-size: 18px;
+}
