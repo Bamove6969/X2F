@@ -2,7 +2,8 @@ import type { Outcome, PartyHandle, Payout, Transport } from '@x2f/escrow';
 import { ReplayGuard, type Envelope, type ReplayGuardJSON } from '@x2f/protocol';
 import { channelFor, payoutsFor, settleKindFor, type ChainFacts, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
 import type pg from 'pg';
-import { autoRefundStep } from './autoRefund.js';
+import { FINAL_ALERT_MS } from '@x2f/escrow';
+import { AUTO_REFUND_MARGIN_MS, autoRefundStep } from './autoRefund.js';
 import { apiAllows, buyerCancelStep } from './buyerCancel.js';
 import type { Link } from './link.js';
 import { applyShadow, fromJson, newShadow, toJson } from './shadow.js';
@@ -53,8 +54,11 @@ export interface DeskRecord {
   buyerPayout: string | null;
   /** Seller events the shadow refused `too-early` (signal before the shadow's own deadline), retried each pass; at most one of each (review M5). */
   pending: Array<'extend' | 'request-refund'>;
-  /** The refund this service decided to co-sign alone; kept for good. */
-  armed: { kind: 'auto-refund' | 'buyer-cancel'; at: Date } | null;
+  /**
+   * The refund this service decided to co-sign alone; kept for good. `blocked` (an armed auto-refund
+   * only, security review 7 Nov finding 1 c): why it is not handed to the party this pass, or absent.
+   */
+  armed: { kind: 'auto-refund' | 'buyer-cancel'; at: Date; blocked?: string | null } | null;
   /** The escalation report the API accepted (then nothing more is decided here). */
   escalated: string | null;
   /** When this service first saw the API show `refund_requested`; restarts while the API trade is paused (review M7). */
@@ -77,6 +81,43 @@ export interface DeskStep {
   settledTx?: string | null;
   /** The escrow as this pass read it from the party. */
   funds: { balance: bigint; unlocked: bigint };
+  /**
+   * When `api` was read from the API (security review 7 Nov, finding 1): every API-dependent
+   * condition is judged at this time, not at the step's. Absent: the step's own time.
+   */
+  apiAt?: Date;
+  /** Reads the trade from the API again; null when the API could not be read (or no longer lists it). */
+  refresh?: () => Promise<{ item: DeskStep['api']; at: Date } | null>;
+}
+
+/**
+ * The oldest watch item the desk arms or escalates on (security review 7 Nov, finding 1): an older
+ * one is read again first (`refresh`), and nothing is armed or escalated when that fails.
+ */
+export const WATCH_FRESH_MS = 10_000;
+
+/** Blocks an armed auto-refund for good: the buyer paid, at the API or by a signal this service opened. */
+const FINAL_BLOCKS: readonly string[] = ['auto-refund-buyer-paid', 'auto-refund-api-paid', 'auto-refund-api-disputed'];
+
+/**
+ * The per-pass recheck of an armed auto-refund (security review 7 Nov, finding 1 c), like the armed
+ * buyer cancel's (review round 2 N2): why it must not be handed to the party now, or null. A
+ * `trade.paid` opened here, or the API showing the trade paid or disputed, blocks it for good; a
+ * pause, another API state or an API mark-paid window still open (its pause-shifted `finalAlertAt` +
+ * 15 min + margin, judged at `at`) blocks it while they hold. R3-M1 still applies: an outcome
+ * already handed to the party in this process is not withdrawn, but a restart then stops it.
+ */
+export function armedRefundBlock(r: Pick<DeskRecord, 'paidSeen' | 'armed' | 'shadow'>, api: DeskStep['api'], at: Date): string | null {
+  if (r.paidSeen) return 'auto-refund-buyer-paid';
+  const was = r.armed?.blocked ?? null;
+  if (was !== null && FINAL_BLOCKS.includes(was)) return was;
+  if (api.state === 'paid') return 'auto-refund-api-paid';
+  if (api.state === 'disputed') return 'auto-refund-api-disputed';
+  if (api.paused === true || (r.shadow !== null && r.shadow.pausedAt !== null)) return 'auto-refund-paused';
+  if (!(api.state === 'refund_requested' || (api.state === 'settling' && api.settleKind === 'auto-refund'))) return 'auto-refund-api-state';
+  const alert = api.finalAlertAt ?? null;
+  if (alert !== null && at.getTime() < alert.getTime() + FINAL_ALERT_MS + AUTO_REFUND_MARGIN_MS) return 'auto-refund-api-window-open';
+  return null;
 }
 
 export interface Desk {
@@ -321,23 +362,49 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
   };
 
   /**
+   * The API facts to arm, escalate or hand a refund on (security review 7 Nov, finding 1): the
+   * step's item while it is at most WATCH_FRESH_MS old, else the trade read again; null when that
+   * read failed (then nothing is armed, escalated or handed this pass). `at` is when they were read.
+   */
+  const current = async (s: DeskStep): Promise<{ api: DeskStep['api']; at: Date } | null> => {
+    const at = s.apiAt ?? o.now();
+    if (o.now().getTime() - at.getTime() <= WATCH_FRESH_MS) return { api: s.api, at };
+    const f = s.refresh ? await s.refresh().catch(() => null) : null;
+    if (f === null) {
+      logOnce('stale', 'watch-list-stale');
+      return null;
+    }
+    return { api: f.item, at: f.at };
+  };
+  /** The earlier of the step's time and the read: an API fact is never taken as newer than its read. */
+  const judgedAt = (now: Date, at: Date): Date => new Date(Math.min(now.getTime(), at.getTime()));
+
+  /**
    * The auto-refund guard for one pass (autoRefund.ts), once nothing was escalated here: on `sign` it
    * arms the auto-refund (saved before the party is asked) and hands the seller-built refund to the
    * party ('signed'); on `escalate` it reports. Returns the record to save otherwise.
    */
   const autoRefundPass = async (r: DeskRecord, s: DeskStep, now: Date): Promise<DeskRecord | 'signed'> => {
     if (r.escalated !== null) return r;
-    const ar = autoRefundStep({
-      now,
-      shadow: r.shadow,
-      api: s.api,
-      apiRefundSince: r.apiRefundSince,
-      paidSeen: r.paidSeen,
-      paidSeenAt: r.paidSeenAt,
-      recordedRefundAddress: r.sellerRefund,
-      funds: s.funds,
-      refundFor: refundFor(r, 'auto-refund'),
-    });
+    const judge = (api: DeskStep['api'], at: Date) =>
+      autoRefundStep({
+        now: judgedAt(now, at),
+        shadow: r.shadow,
+        api,
+        apiRefundSince: r.apiRefundSince,
+        paidSeen: r.paidSeen,
+        paidSeenAt: r.paidSeenAt,
+        recordedRefundAddress: r.sellerRefund,
+        funds: s.funds,
+        refundFor: refundFor(r, 'auto-refund'),
+      });
+    let ar = judge(s.api, s.apiAt ?? now);
+    if (ar.action === 'sign' || ar.action === 'escalate') {
+      // Armed or escalated only on facts at most WATCH_FRESH_MS old (finding 1 a, b).
+      const c = await current(s);
+      if (c === null) return r;
+      ar = judge(c.api, c.at);
+    }
     if (ar.action === 'sign') {
       const next: DeskRecord = { ...r, armed: { kind: 'auto-refund', at: now } };
       await save(next);
@@ -440,11 +507,21 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
       // build it and it pays the seller, so the buyer can only hurt themselves (e.g. an old client
       // after the API reverted the cancel and the buyer then paid). A restart or a payout change does
       // stop it. A withdraw (or a no-op re-settle) is left to a later task (coordination.md).
-      const blocked =
-        kind !== 'buyer-cancel' ? null
+      let blocked: string | null =
+        kind !== 'buyer-cancel' ? armedRefundBlock(r, s.api, judgedAt(now, s.apiAt ?? now))
         : r.paidSeen ? 'buyer-cancel-buyer-paid'
         : !apiAllows({ state: s.api.state, settleKind: s.api.settleKind ?? null }) ? 'buyer-cancel-api-state'
         : null;
+      if (kind === 'auto-refund' && blocked === null) {
+        // Handed again only on facts at most WATCH_FRESH_MS old (finding 1).
+        const c = await current(s);
+        blocked = c === null ? 'watch-list-stale' : armedRefundBlock(r, c.api, judgedAt(now, c.at));
+      }
+      if (kind === 'auto-refund' && r.armed !== null) {
+        // The record says why (finding 1 c); a stale read is no reason to keep.
+        const keep = blocked === 'watch-list-stale' ? (r.armed.blocked ?? null) : blocked;
+        if ((r.armed.blocked ?? null) !== keep) r = { ...r, armed: { kind: r.armed.kind, at: r.armed.at, ...(keep !== null ? { blocked: keep } : {}) } };
+      }
       if (blocked !== null) {
         logOnce('armed', blocked);
       } else if (balance > 0n && balance === unlocked) {
@@ -463,7 +540,10 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
         funds: s.funds,
         refundFor: refundFor(r, 'buyer-cancel'),
       });
-      if (bc.action === 'sign') {
+      // Armed only on facts at most WATCH_FRESH_MS old (finding 1): the API state is one of its brakes.
+      const bcFresh = bc.action === 'sign' ? await current(s) : null;
+      const bcApi = bcFresh === null ? null : { state: bcFresh.api.state, settleKind: bcFresh.api.settleKind ?? null };
+      if (bc.action === 'sign' && bcApi !== null && apiAllows(bcApi)) {
         r = { ...r, armed: { kind: 'buyer-cancel', at: now } };
         await save(r); // armed before the party is asked
         settle(s.handle, 'buyer-cancel', bc.proposed);

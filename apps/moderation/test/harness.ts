@@ -136,6 +136,8 @@ export interface FakeParty {
    * (packages/escrow party.ts), every later settle() with another outcome is recorded and refused.
    */
   committed: boolean;
+  /** Runs inside every funds() call, after the watch list was read (review 7 Nov, finding 1: the pass is slow). */
+  onFunds: (() => void) | null;
   handle: PartyHandle;
 }
 
@@ -152,6 +154,7 @@ function fakeParty(): FakeParty {
     proveCalls: [],
     resolveReady,
     committed: false,
+    onFunds: null,
     handle: {
       ready: () => ready,
       // The real party co-signs only a tx set equal to this outcome (Plan 1, packages/escrow); here
@@ -164,7 +167,10 @@ function fakeParty(): FakeParty {
         }
         return new Promise<string | null>(() => {});
       },
-      funds: async () => ({ ...p.funds, incoming: p.funds.incoming.map((i) => ({ ...i })) }),
+      funds: async () => {
+        p.onFunds?.();
+        return { ...p.funds, incoming: p.funds.incoming.map((i) => ({ ...i })) };
+      },
       spendInfo: async () => {
         throw new Error('not used');
       },

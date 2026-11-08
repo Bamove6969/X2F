@@ -39,7 +39,11 @@ import type { Trade } from '@x2f/trade';
  *    reason only (and the 2. fallback escalates later).
  */
 export const REFUND_UNVERIFIED_MS = 60 * 60_000;
-/** One watch pass plus clock skew between the API and this service (review I1, M1). */
+/**
+ * Clock skew between the API and this service plus the age of the API facts (review I1, M1): the desk
+ * judges at the watch list's read time and reads it again when older than WATCH_FRESH_MS (10 s;
+ * security review 7 Nov, finding 1).
+ */
 export const AUTO_REFUND_MARGIN_MS = 60_000;
 /** A seen-receipt later than this after the alert escalates instead (lead decision I2 (b)). */
 export const ALERT_LATE_MS = 2 * 60_000;

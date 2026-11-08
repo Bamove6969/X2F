@@ -387,6 +387,145 @@ describe('the auto-refund', () => {
   });
 });
 
+describe('the watch list is judged when it was read (security review 7 Nov, finding 1)', () => {
+  // The pass reads the list once, then syncs each wallet in turn: by the time the desk decides, the
+  // API may have paused the trade or taken the buyer's "I've paid". funds() is where the time goes.
+  const slowPass = (l: Live, alertAt: Date, change: () => void): void => {
+    l.party.onFunds = () => {
+      l.party.onFunds = null;
+      change();
+      ctx.clock.now = at(alertAt, END + 2 * MIN); // the window looks passed on the clock, not at the pull
+    };
+  };
+
+  it('maintenance starts after the list was read: nothing is armed or handed in that pass, nor while paused', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    const alertAt = await refundRequested(l);
+    net.seen.set(l.code, alertAt);
+    ctx.clock.now = at(alertAt, FINAL_ALERT_MS - 30_000); // 14.5 min: the buyer can still mark paid
+    slowPass(l, alertAt, () => net.paused.add(l.code));
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([]);
+    expect((await record(l.code)).armed).toBeNull();
+    expect(net.reports.filter((r) => r.trade === l.code && ['alert-unseen', 'alert-late', 'refund-unverified'].includes(String(r.kind)))).toEqual([]);
+    later(ctx, 10 * MIN);
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([]);
+    expect((await record(l.code)).armed).toBeNull();
+    await m.handle.stop();
+  });
+
+  it('the API takes the buyer\'s "I\'ve paid" after the list was read (no trade.paid signal): nothing is armed or handed', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    const alertAt = await refundRequested(l);
+    net.seen.set(l.code, alertAt);
+    ctx.clock.now = at(alertAt, FINAL_ALERT_MS - 30_000);
+    slowPass(l, alertAt, () => net.states.set(l.code, 'paid'));
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([]);
+    expect((await record(l.code)).armed).toBeNull();
+    await m.handle.stop();
+  });
+
+  it('an old list the API cannot refresh: nothing is armed or escalated in that pass', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    const alertAt = await refundRequested(l);
+    // no receipt: an up-to-date list would escalate alert-unseen
+    ctx.clock.now = at(alertAt, FINAL_ALERT_MS - 30_000);
+    let down = false;
+    const flaky: typeof fetch = async (url, init) => (down && url.includes('/internal/v1/watch') ? { status: 503, json: async () => ({}) } : fetch(url, init));
+    await m.handle.stop();
+    const m2 = await moderation(ctx, flaky);
+    await m2.handle.watch();
+    const p = m2.parties.get(l.code)!;
+    p.funds = { ...l.party.funds };
+    p.resolveReady('ignored');
+    p.onFunds = () => {
+      p.onFunds = null;
+      down = true;
+      ctx.clock.now = at(alertAt, END + 2 * MIN);
+    };
+    await m2.handle.watch();
+    expect(p.settles).toEqual([]);
+    expect(net.reports.filter((r) => r.trade === l.code && r.kind === 'alert-unseen')).toEqual([]);
+    expect(m2.logs).toContain('watch-list-stale');
+    // the API answers again: the next pass escalates on a fresh list
+    down = false;
+    await m2.handle.watch();
+    expect(net.reports.filter((r) => r.trade === l.code && r.kind === 'alert-unseen')).toHaveLength(1);
+    await m2.handle.stop();
+  });
+});
+
+describe('an armed auto-refund is rechecked every pass, like the armed buyer cancel (security review 7 Nov, finding 1 c)', () => {
+  const cases: Array<{ name: string; reason: string; change: (l: Live) => Promise<void> }> = [
+    { name: 'the API shows the trade paid', reason: 'auto-refund-api-paid', change: async (l) => void l.net.states.set(l.code, 'paid') },
+    { name: 'the API shows the trade disputed', reason: 'auto-refund-api-disputed', change: async (l) => void l.net.states.set(l.code, 'disputed') },
+    { name: 'the API shows the trade paused', reason: 'auto-refund-paused', change: async (l) => void l.net.paused.add(l.code) },
+    { name: 'the buyer\'s trade.paid was opened', reason: 'auto-refund-buyer-paid', change: async (l) => void (await acked(l, l.buyer, 'trade.paid', PAID)) },
+  ];
+  for (const c of cases) {
+    it(`${c.name}: after a restart the armed refund is not handed to the party again, and the record says why`, async () => {
+      const { net, fetch } = fakeNetwork(ctx);
+      const m = await moderation(ctx, fetch);
+      const l = await inFunding(ctx, m, net);
+      const alertAt = await refundRequested(l);
+      net.seen.set(l.code, alertAt);
+      ctx.clock.now = at(alertAt, END + 1);
+      await m.handle.watch();
+      expect(l.party.settles).toEqual([REFUND]);
+      await c.change(l);
+      await m.handle.watch();
+      expect((await record(l.code)).armed).toMatchObject({ kind: 'auto-refund', blocked: c.reason });
+      await m.handle.stop();
+      const again = await moderation(ctx, fetch);
+      await again.handle.watch();
+      const p = again.parties.get(l.code)!;
+      p.funds = { ...l.party.funds };
+      p.resolveReady('ignored');
+      await again.handle.watch();
+      later(ctx, MIN);
+      await again.handle.watch();
+      expect(p.settles).toEqual([]);
+      expect((await record(l.code)).armed).toMatchObject({ kind: 'auto-refund', blocked: c.reason });
+      expect(again.logs).toContain(c.reason);
+      await again.handle.stop();
+    });
+  }
+
+  it('a block that no longer holds (a pause that ended, the API window still passed) lets the armed refund be handed again', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    const alertAt = await refundRequested(l);
+    net.seen.set(l.code, alertAt);
+    ctx.clock.now = at(alertAt, END + 1);
+    await m.handle.watch();
+    net.paused.add(l.code);
+    await m.handle.watch();
+    await m.handle.stop();
+    const again = await moderation(ctx, fetch);
+    await again.handle.watch();
+    const p = again.parties.get(l.code)!;
+    p.funds = { ...l.party.funds };
+    p.resolveReady('ignored');
+    await again.handle.watch();
+    expect(p.settles).toEqual([]);
+    net.paused.delete(l.code);
+    later(ctx, MIN);
+    await again.handle.watch();
+    expect(p.settles).toEqual([REFUND]);
+    expect((await record(l.code)).armed?.blocked ?? null).toBeNull();
+    await again.handle.stop();
+  });
+});
+
 describe('the desk loses no facts (review M2)', () => {
   it('a desk that failed to open is opened on a later pass, and its shadow catches up from the watcher’s latest facts', async () => {
     const { net, fetch } = fakeNetwork(ctx);

@@ -15,7 +15,7 @@ import {
   type WatchState,
 } from '@x2f/trade';
 import type pg from 'pg';
-import { NO_DESK_FACTS, sweepKindAgrees, type Desk } from './desk.js';
+import { NO_DESK_FACTS, sweepKindAgrees, WATCH_FRESH_MS, type Desk } from './desk.js';
 import type { Link, WatchItem } from './link.js';
 
 /**
@@ -280,6 +280,27 @@ export function createWatcher(o: WatcherOptions): Watcher {
   /** settle-kind-unknown back-off per trade (in memory: a restart retries at once, then backs off again). */
   const backoff = new Map<string, { until: number; delayMs: number }>();
   let stopped = false;
+  /** The pass's watch list and when it was read (security review 7 Nov, finding 1). */
+  let snapshot: { items: Map<string, WatchItem>; at: Date } = { items: new Map(), at: new Date(0) };
+
+  /**
+   * The trade's watch item as the API shows it now (finding 1): the pass's list while it is at most
+   * WATCH_FRESH_MS old, else the list read again (once, for every trade after it in this pass).
+   * `unlisted` stands in for a trade the API no longer lists (closed here, review M6). Null when the
+   * API cannot be read: then nothing is decided for the trade this pass.
+   */
+  const freshItem = async (code: string, unlisted: WatchItem | null): Promise<{ item: WatchItem; at: Date } | null> => {
+    if (o.now().getTime() - snapshot.at.getTime() > WATCH_FRESH_MS) {
+      const at = o.now();
+      try {
+        snapshot = { items: await o.link.pullWatch(), at };
+      } catch {
+        return null;
+      }
+    }
+    const item = snapshot.items.get(code) ?? unlisted;
+    return item === null ? null : { item, at: snapshot.at };
+  };
 
   /** Opens the trade's desk (Task 10) if it is not open; a failure is retried on the next pass (review M2). */
   const ensureDesk = async (a: ModPartyArgs): Promise<void> => {
@@ -352,7 +373,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
     return true;
   };
 
-  const watchOne = async (row: Row, item: WatchItem, handle: PartyHandle): Promise<boolean> => {
+  const watchOne = async (row: Row, pulled: WatchItem, unlisted: WatchItem | null, handle: PartyHandle): Promise<boolean> => {
     const b = backoff.get(row.trade);
     if (b && o.now().getTime() < b.until) return true;
     const args = argsOf.get(row.trade);
@@ -371,10 +392,10 @@ export function createWatcher(o: WatcherOptions): Watcher {
     await ensureDesk(args);
     const deskNow = desks.get(row.trade);
     const settleKind =
-      deskNow ? deskNow.sweepKind(item.settleKind)
-      : o.openDesk ? (sweepKindAgrees(NO_DESK_FACTS, item.settleKind) ? item.settleKind : null)
-      : item.settleKind;
-    if (settleKind !== item.settleKind && (f.outgoing ?? []).some((x) => !state.sweepTxs.includes(x.txHash))) o.log({ reason: 'sweep-kind-vetoed' });
+      deskNow ? deskNow.sweepKind(pulled.settleKind)
+      : o.openDesk ? (sweepKindAgrees(NO_DESK_FACTS, pulled.settleKind) ? pulled.settleKind : null)
+      : pulled.settleKind;
+    if (settleKind !== pulled.settleKind && (f.outgoing ?? []).some((x) => !state.sweepTxs.includes(x.txHash))) o.log({ reason: 'sweep-kind-vetoed' });
     const spend = await spendEvidence(f, state, {
       settleKind,
       terms: args.terms,
@@ -383,6 +404,14 @@ export function createWatcher(o: WatcherOptions): Watcher {
       claim: (txHash) => claimSweep(o.db, row.trade, txHash),
       log: o.log,
     });
+    // The wallet sync and the proof above can take long (finding 1): the trade's state, pause and
+    // alerts that decide the reports and the desk are read again when the list is no longer fresh.
+    const fresh = await freshItem(row.trade, unlisted);
+    if (fresh === null) {
+      o.log({ reason: 'watch-list-stale' });
+      return true;
+    }
+    const item = fresh.item;
     const step = watchStep({
       trade: { state: item.state as TradeState, paused: item.paused },
       funds: facts.funds,
@@ -406,6 +435,8 @@ export function createWatcher(o: WatcherOptions): Watcher {
           chain: step.state.closedAt === null ? step.state.lastChain : null,
           settledTx: step.state.settledTx,
           funds: { balance: facts.funds.balance, unlocked: facts.funds.unlocked },
+          apiAt: fresh.at,
+          refresh: () => freshItem(row.trade, unlisted),
         })
         .catch(() => o.log({ reason: 'desk-step-failed' }));
     }
@@ -435,12 +466,14 @@ export function createWatcher(o: WatcherOptions): Watcher {
 
     async tick() {
       let api: Map<string, WatchItem>;
+      const pulledAt = o.now(); // before the read: the list is never taken as newer than it is
       try {
         api = await o.link.pullWatch();
       } catch {
         o.log({ reason: 'watch-unavailable' });
         return;
       }
+      snapshot = { items: api, at: pulledAt };
       // Every trade whose attestation was posted has a watch row, even if the process stopped
       // between posting it and registering the party (the trade is no longer work after that).
       await o.db.query(
@@ -451,6 +484,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
       for (const row of rows) {
         if (stopped) return;
         let item = api.get(row.trade);
+        let unlisted: WatchItem | null = null;
         if (item === undefined) {
           // Not listed. Not yet (a race with a fresh attestation): nothing to decide. Any more (review
           // M6): the API lists every open attested trade, so an unlisted one this watcher saw close is
@@ -464,6 +498,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
           }
           if (!closedHere) continue;
           item = { state: 'cancelled', settleKind: null, paused: false, finalAlertSeenAt: null, finalAlertAt: null };
+          unlisted = item;
         }
         const apiState = item.state as TradeState;
         try {
@@ -507,7 +542,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
             if (apiState === 'setup') continue;
             await o.db.query('update mod_watch set setup_done_at = now(), updated_at = now() where trade = $1', [row.trade]);
           }
-          watching = await watchOne(row, item, handle);
+          watching = await watchOne(row, item, unlisted, handle);
           if (!watching) {
             await stopParty(row.trade);
             o.log({ reason: 'watch-ended' });
