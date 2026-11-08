@@ -7,6 +7,7 @@ import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
 import { resetWarned } from '../src/screens/trade/warned.js';
+import { resetConfirmSkips, setConfirmUser } from '../src/screens/trade/confirmSkip.js';
 import { FinalAlert } from '../src/screens/trade/FinalAlert.js';
 import { buyerAlertView, SERVER_NOW } from '../e2e/refundViews.js';
 
@@ -270,6 +271,64 @@ describe('BuyerPay (BuyerPay board), phone', () => {
   it('a gift-card method shows the one bold warning', () => {
     mount(props({ view: tradeView({ ...SECURED, profile: { ...ZELLE, name: 'Amazon gift card', giftCard: true } }) }));
     expect([...document.querySelectorAll('strong')].map((s) => s.textContent)).toContain(GIFT_CARD_WARNING);
+  });
+});
+
+describe('"Do not show me this warning again" on I\'ve paid (owner 8 Nov p7-2; per user, on this device)', () => {
+  afterEach(() => resetConfirmSkips());
+  const dontShow = 'Do not show me this warning again';
+
+  it('the confirm offers the tick, unticked; ticked with Yes, the next I\'ve paid for this user marks paid at once', async () => {
+    setConfirmUser('mira.k');
+    answer = () => ({ status: 200, json: tradeView({ ...SECURED, state: 'paid', paidAt: at(0) }) });
+    const r = mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    const box = byText(dontShow, 'label').querySelector('input')!;
+    expect(box.checked).toBe(false);
+    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${CODE}.`, 'label'));
+    await click(byText(dontShow, 'label'));
+    await click(byText('Yes, mark as paid', 'button'));
+    await flush();
+    expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'escrow:markPaid(41250)', 'refresh']);
+    r.unmount();
+    expect(window.localStorage.getItem('x2f.noconfirm.paid.mira.k')).toBe('1');
+
+    calls = [];
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    await flush();
+    expect(dialog()).toBeNull();
+    expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'escrow:markPaid(41250)', 'refresh']);
+  });
+
+  it('another user on the same device, or no known user, still gets the confirm; Yes without the tick remembers nothing', async () => {
+    window.localStorage.setItem('x2f.noconfirm.paid.mira.k', '1');
+    for (const who of ['kettle.moss', null]) {
+      setConfirmUser(who);
+      const r = mount(props({ view: tradeView(SECURED) }));
+      await click(byText("I've paid", 'button'));
+      expect(dialog()!.textContent).toContain('Mark this trade as paid?');
+      expect(calls).toEqual([]);
+      r.unmount();
+    }
+    setConfirmUser('kettle.moss');
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${CODE}.`, 'label'));
+    await click(byText('Yes, mark as paid', 'button'));
+    await flush();
+    expect(window.localStorage.getItem('x2f.noconfirm.paid.kettle.moss')).toBeNull();
+  });
+
+  it('skipped, a trade that grew meanwhile (409 total-changed) still asks, with the new total', async () => {
+    setConfirmUser('mira.k');
+    window.localStorage.setItem('x2f.noconfirm.paid.mira.k', '1');
+    answer = () => ({ status: 409, json: { error: 'total-changed' } });
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    await flush();
+    expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'refresh']);
+    expect(dialog()!.textContent).toContain('Mark this trade as paid?');
   });
 });
 

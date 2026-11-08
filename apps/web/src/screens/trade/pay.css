@@ -407,6 +407,19 @@
   margin: 0;
 }
 
+/* Owner p7-2's "Do not show me this warning again": an aside, quieter than the required tick. */
+.x2f-paid__check--quiet {
+  align-items: center;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-paid__check--quiet input {
+  width: 20px;
+  height: 20px;
+}
+
 .x2f-paid__grew {
   margin: 0;
   font-size: 16px;

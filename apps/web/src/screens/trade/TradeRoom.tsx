@@ -91,7 +91,8 @@ import { normalizeTradeCode } from '@x2f/core';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
 import { memberOf } from '../../session/member.js';
-import { useSession } from '../../session/useSession.js';
+import { displayNameOf, useSession } from '../../session/useSession.js';
+import { setConfirmUser } from './confirmSkip.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
 import { tradeFromView } from '../dispute/api.js';
 import { DisputeEntry } from '../dispute/DisputeEntry.js';
@@ -233,6 +234,9 @@ export function TradeRoom() {
   const { code = '' } = useParams();
   const location = useLocation();
   const { load, refresh } = useTradeView(code);
+  // Owner p7-2: "Do not show me this warning again" belongs to the signed-in user (confirmSkip.ts).
+  const confirmUser = session.status === 'signed-in' ? displayNameOf(session.me) : null;
+  useEffect(() => setConfirmUser(confirmUser), [confirmUser]);
 
   if (load.kind === 'loading') return <main data-screen="trade" aria-busy="true" />;
   if (load.kind === 'missing') {
