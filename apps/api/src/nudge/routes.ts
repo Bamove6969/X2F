@@ -9,8 +9,9 @@ import { findByPublicName, PUBLIC_NAME } from './names.js';
 import { canonicalTimeZone, formatClock, inQuietHours, parseClock } from './quiet.js';
 
 /**
- * One nudge per sender every 15 minutes (owner, 7 Nov: "once every 15 minutes", as many as
- * needed): the sender's own limit, refused with `too-soon`. There is no cap on how many.
+ * One nudge every 15 minutes per sender and recipient (owner, 7 Nov: "once every 15 minutes", as
+ * many as needed; lead 7 Nov: per counterpart, so a vendor with several silent buyers can nudge
+ * each of them): the sender's own limit, refused with `too-soon`. There is no cap on how many.
  */
 export const NUDGE_GAP_MS = 15 * 60_000;
 /**
@@ -153,8 +154,8 @@ async function nudgeHandler(req: FastifyRequest, reply: FastifyReply) {
       // Both accounts, in a fixed order: parallel nudges by one sender, or to one recipient, queue here.
       await client.query('select id from accounts where id = any($1::uuid[]) order by id for no key update', [[fromId, recipient.id]]);
       const last = await client.query<{ last: Date | null }>(
-        'select max(sent_at) as last from nudges where from_id = $1 and sent_at > $2',
-        [fromId, new Date(now.getTime() - NUDGE_GAP_MS)],
+        'select max(sent_at) as last from nudges where from_id = $1 and to_id = $2 and sent_at > $3',
+        [fromId, recipient.id, new Date(now.getTime() - NUDGE_GAP_MS)],
       );
       const lastAt = last.rows[0]?.last ?? null;
       if (lastAt !== null) {

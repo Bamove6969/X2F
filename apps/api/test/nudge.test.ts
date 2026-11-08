@@ -279,12 +279,18 @@ describe('POST /v1/nudges: the sender\'s own refusals', () => {
     }
   });
 
-  it('one nudge per sender per 15 minutes, whoever it is to', async () => {
+  it('the 15 minutes are per sender and recipient: a vendor can nudge each silent buyer at once (lead, 7 Nov)', async () => {
     const p = await pair();
     const third = await trader();
     shared.add(ctxKey(p.from.id, third.id, 'ZZZZ-YYYY'));
     expect((await nudge(p.from, p.to.name, p.context)).statusCode).toBe(202);
+    expect((await nudge(p.from, third.name, 'ZZZZ-YYYY')).statusCode).toBe(202);
+    // Each counterpart has their own 15 minutes.
+    expect((await nudge(p.from, p.to.name, p.context)).statusCode).toBe(429);
     expect((await nudge(p.from, third.name, 'ZZZZ-YYYY')).statusCode).toBe(429);
+    // The recipient's own nudge back is a different pair.
+    shared.add(ctxKey(p.to.id, p.from.id, p.context));
+    expect((await nudge(p.to, p.from.name, p.context)).statusCode).toBe(202);
   });
 
   it('a silently dropped nudge still counts for too-soon (else too-soon would reveal the drop)', async () => {
