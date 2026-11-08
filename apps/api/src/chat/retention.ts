@@ -74,12 +74,22 @@ export async function purgeChats(db: pg.Pool, now: Date, due: ChatPurgeRule = ch
  * is taken before the switch to the purge role (x2f_purge may delete chats but not update them,
  * and FOR UPDATE needs update rights); the facts are read again after it, in a new statement, so
  * they include whatever the lock waited for.
+ *
+ * The chats' trades are locked first (review M2), `for share` and in code order, the order the take
+ * and open-chat paths use: opening a dispute holds the trade's lock but never touches `chats`, so
+ * without this a dispute not yet committed is invisible to the re-read and the delete does not wait
+ * for it. This lock too comes before the role switch, so x2f_purge needs no rights on `trades` beyond
+ * what it has.
  */
 async function deleteChats(db: pg.Pool, codes: string[], now: Date, due: ChatPurgeRule): Promise<number> {
   const client = await db.connect();
   try {
     await client.query('begin');
     try {
+      await client.query(
+        'select 1 from trades where code in (select trade_code from chats where code = any($1)) order by code for share',
+        [codes],
+      );
       await client.query('select 1 from chats where code = any($1) order by code for update', [codes]);
       const fresh = await client.query<FactRow>(`${FACTS} where c.code = any($1)`, [codes]);
       const still = fresh.rows.filter((r) => due(factsOf(r), now)).map((r) => r.code);
@@ -89,7 +99,7 @@ async function deleteChats(db: pg.Pool, codes: string[], now: Date, due: ChatPur
       }
       await client.query(`set local role ${PURGE_ROLE}`);
       // Checked again under the purge role: a chat whose trade went into dispute since it was read stays,
-      // and so does one with any dispute not yet closed (120 grants the role just these two columns).
+      // and so does one with any dispute not yet closed (122 grants the role just these two columns).
       const { rowCount } = await client.query(
         `delete from chats c where c.code = any($1)
            and not exists (select 1 from trades t where t.code = c.trade_code and t.state = 'disputed')
