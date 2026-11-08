@@ -742,3 +742,9 @@ The owner asked design to treat his 12 comments as a brief for the whole app and
 - ProofBlur (phone): the auto-hide feature is now called "our privacy tool" everywhere a trader reads it. The uploader's own buttons keep "Add blur" / "Remove blur" because those are their boxes, not the tool's. ProofBlur-Wide and the FAQ/terms/mod boards still say "auto-blur"; that sweep was stopped and is not done.
 - BuyerPay `confirm: noproof`: "If this trade ever goes to a dispute, proof is usually what decides which side wins. It's your choice." (owner's line, reworded).
 - Canvas v156.
+
+## 8 Nov 2026 (night): chat lines for C1/C2, no Matrix — READY (COPY-UNSIGNED)
+- Traders (Desktop, Fold-Trade lock note): "Encrypted. If a dispute is opened, a moderator can read this conversation. It's erased for good 90 days after the trade ends." (90 days = `chatPurgeDue`; never while disputed.) Fold-Trade height 1011 → 1031.
+- Staff (ModCase, Full chat header): "Unlocked on your device at 11:40 UTC · logged" (C2 re-wrap to the staff member's device).
+- No Matrix states (no device verification, no "unable to decrypt"). Chat stays single-device.
+- Canvas v157.
