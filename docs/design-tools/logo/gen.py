@@ -104,9 +104,9 @@ def dir_card(d):
     rat, pros, cons = RAT[d]
     li = lambda xs: ''.join(f'<li>{md(x)}</li>' for x in xs)
     rec = ''
-    if d == 'C':
+    if d == 'D':
         rec = ('<span style="display:inline-flex;align-items:center;height:24px;padding:0 10px;border-radius:999px;font-size:13px;line-height:16px;font-weight:600;'
-               'background:color-mix(in srgb,var(--escrow) 16%,transparent);color:var(--escrow)">Design recommends</span>')
+               'background:color-mix(in srgb,var(--escrow) 16%,transparent);color:var(--escrow)">Owner\'s pick · 8 Nov</span>')
     return f'''<article aria-labelledby="dir-{d}" style="display:flex;flex-direction:column;gap:20px;padding:24px;border-radius:16px;background:var(--surface)">
 <div style="display:flex;align-items:center;gap:12px"><span aria-hidden="true" style="display:flex;width:40px;height:40px;align-items:center;justify-content:center;border-radius:12px;background:var(--surface-raised);font-family:'Familjen Grotesk',sans-serif;font-size:20px;font-weight:700">{d}</span>
 <h3 id="dir-{d}" style="{H3}">{d} · {NAMES[d]}</h3>{rec}</div>
@@ -118,17 +118,15 @@ def dir_card(d):
 </div></article>'''
 
 
-OPEN_ASIDE = f'''<aside aria-label="Open for the owner: logo direction" style="display:flex;flex-direction:column;gap:8px;padding:14px 16px;border-radius:6px;border:1px dashed var(--caution);font-size:14px;line-height:20px;color:var(--ink)">
-<span style="{LBL};color:var(--caution)">OPEN · owner to choose (not decided)</span>
-<span style="font-size:16px;line-height:24px;font-weight:600">Owner to choose: A, B, C or D</span>
-<span><b>Design recommends C, Seal.</b> Second choice B, Exchange.</span>
+OPEN_ASIDE = f'''<aside aria-label="Decided: logo direction" style="display:flex;flex-direction:column;gap:8px;padding:14px 16px;border-radius:6px;border:1px solid var(--line);font-size:14px;line-height:20px;color:var(--ink)">
+<span style="{LBL}">DECIDED · owner, 8 Nov (page 8)</span>
+<span style="font-size:16px;line-height:24px;font-weight:600">The X2F logo is D, Wordmark.</span>
+<span>X2F in Familjen Grotesk 700, hand-spaced, the F's middle arm ending in one Monero-orange coin. Browse page name: "Find a trade".</span>
 <ul style="margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px">
-<li>It is already an app icon and a favicon: the same object on a home screen, a browser tab and the top left of every page.</li>
-<li>It belongs to the kit (the security seals' shape, ring and corner), which keeps the brand and the app one thing (owner: cohesiveness is extremely important).</li>
-<li>The woven X says two parties and escrow in teal, without spending orange: orange stays for the one primary action.</li>
-<li>Head designer's note: A reads as a percent sign at a glance (two dots and a slash). On a trading site full of markups that is the wrong first impression, so A drops to an alternate.</li>
+<li>Next, design draws the final geometry: the lockup at {m('24')} and {m('32')} px, the favicon (the coin F alone at {m('16')} px), the app icon, a one-colour version, and the landing hero.</li>
+<li>The coin is the logo's only orange; every other orange stays the one primary action.</li>
+<li>A, B and C stay on this board for the record.</li>
 </ul>
-<span style="color:var(--ink-muted)">Once a direction is picked, design draws the final geometry, the one-colour and app-icon versions, and swaps the plain wordmark on every board.</span>
 </aside>'''
 
 

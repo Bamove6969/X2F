@@ -695,3 +695,9 @@ The owner asked design to treat his 12 comments as a brief for the whole app and
 - **FlowMap and docs/design-flow-map-2026-11-08.md:** Landing is the entry node; MyTrades is on the Trade hub; the arrow that let a logged-out invitee reach a trade is gone; `/trades` is MyTrades.
 - Maintenance stays a logged-in screen (it sits over the app); a logged-out visitor during maintenance sees the Landing. Noted on the flow map.
 - COPY-UNSIGNED: "Can't be used", the invite body line above, "Go to Trade", "If it was you, you're already on the team. If not, ask for a link of your own."
+
+## 8 Nov 2026: owner pages 8 and 10 received; logo decided (canvas v145)
+
+- **Logo: D, Wordmark** (owner's pick over design's C). LogoDirections now carries the DECIDED aside; A–C stay for the record. Browse page name: "Find a trade".
+- **Queued for when helpers return (Nov 11, 15:00 UTC), in this order:** (1) the three interrupted jobs (trade rules p6-1/p9-2/p9-4/p7-2/p7-3 with PaymentDetails; teams p7-4…p7-12; SellQuote, per-method times, My trades link, band facts, incident ID); (2) roll D through: final geometry, 24/32 px header lockup "logo – page name" on every board, favicon (coin F alone), app icon, one-colour version, the landing hero with the slogan; (3) fee p10-1, case 2: the selling poster escrows the trade plus 1%; the taker gets the full amount and never sees a fee; the selling poster's deal summary shows the 1% (and the ruling fee row follows); (4) team release p10-2: remove "Release XMR" and "Confirm payment received" from member permissions (totals and the Manager preset follow; MemberPermissions notes cite p10-2, "until lots of feedback asks for it").
+- Nothing above is half-published: the canvas and this branch show only finished work.
