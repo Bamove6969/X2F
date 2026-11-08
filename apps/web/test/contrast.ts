@@ -1,7 +1,12 @@
 // WCAG 2.x contrast for the token tests: relative luminance of sRGB colours, and `color-mix(in srgb,
 // T p%, transparent)` composited over a background (what the browser paints).
 import { readFileSync } from 'node:fs';
-import { TOKENS_JSON, type Tokens } from '../../../tools/tokens-to-css.js';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { Tokens } from '../../../tools/tokens-to-css.js';
+
+// A path string, not `new URL(...)`: under happy-dom the global URL is not Node's (HoldButton test).
+const TOKENS_JSON = join(dirname(fileURLToPath(import.meta.url)), '../../../design/design-system/tokens.json');
 
 export type Rgb = readonly [number, number, number];
 export type Theme = 'night' | 'day';

@@ -58,7 +58,7 @@ describe('tokens.css', () => {
     const colour = Object.fromEntries(json.color.tokens.map((t) => [t.name, t.value]));
     expect(colour['monero']).toEqual({ night: '#ff6600', day: '#ff6600' });
     expect(colour['monero-ink']).toEqual({ night: '#ff6600', day: '#b34800' });
-    expect(colour['mod']).toEqual({ night: '#b69cff', day: '#6741d9' });
+    expect(colour['mod']).toEqual({ night: '#b69cff', day: '#623ece' });
     expect(colour['moderator']).toBeUndefined();
     expect(colour['monero-hold']).toBeUndefined();
     const css = tokensToCss(json);
