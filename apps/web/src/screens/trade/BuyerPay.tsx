@@ -16,8 +16,9 @@
  *   "Cancelling is final" sheet (CancelFinalSheet.tsx), whose Cancel trade posts `buyer-cancel`,
  *   then `escrow.buyerCancel()`, which sends `trade.cancel`. After "I've paid" there is no cancel
  *   at all (owner, Revision 2026-10-29b; Task 39): the link is gone and the API refuses it.
- * - The seller never cancels alone: Propose cancel / Withdraw (mutual cancel); the buyer gets an
- *   accept/decline card, and Accept is `accept-cancel` then `escrow.proposeCancelSign()`.
+ * - The seller's waiting room offers no cancel (design proto review P2, 8 Nov: no Propose cancel);
+ *   a proposal that already stands can be withdrawn, and the buyer gets an accept/decline card for
+ *   it, where Accept is `accept-cancel` then `escrow.proposeCancelSign()`.
  */
 import { useEffect, useId, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
@@ -841,7 +842,12 @@ export function BuyerCancelling(p: TradeScreenProps) {
 
 // ---- The seller's room while the buyer pays ----
 
-/** The seller in `secured` (before payBy; SellerRefund takes over after it, Task 25): wait, chat, or propose a mutual cancel. */
+/**
+ * The seller in `secured` (before payBy; SellerRefund takes over after it, Task 25): wait and chat.
+ * No Propose cancel (design proto review P2, 8 Nov): a proposal the buyer's "I've paid" silently
+ * withdrew left the seller not knowing what happened; the seller's cancel comes after the time to
+ * pay (SellerRefund). Withdraw stays for a proposal that already stands.
+ */
 export function SellerWaiting(p: TradeScreenProps) {
   const { view, escrow, serverClock, wide } = p;
   const method = payMethodOf(view);
@@ -850,12 +856,7 @@ export function SellerWaiting(p: TradeScreenProps) {
   const total = deviceTotal(view, escrow);
   const chatInstalled = useTradeChat() !== null;
   const cancel = (
-    <SellerCancelControls
-      view={view}
-      busy={action.busy}
-      onPropose={() => void action.run({ type: 'propose-cancel' })}
-      onWithdraw={() => void action.run({ type: 'withdraw-cancel' })}
-    />
+    <SellerCancelControls view={view} busy={action.busy} onWithdraw={() => void action.run({ type: 'withdraw-cancel' })} />
   );
   const waiting = (
     <section aria-label="Waiting for payment" className="x2f-card x2f-wait">
@@ -939,15 +940,14 @@ export function SellerWaiting(p: TradeScreenProps) {
 
 /**
  * SellerWaiting on a team member's device (Plan 2 Task 18 review round 2, n3): no escrow there, so
- * no device total, escrow status or chat; the waiting card, the owner's-device notice, and Propose
- * cancel / Withdraw (a mutual cancel only records a choice; if the buyer accepts, the account
- * owner's device co-signs the refund). Kit parts only (NEEDS_DESIGN_TEAM).
+ * no device total, escrow status or chat; the waiting card, the owner's-device notice, and Withdraw
+ * for a standing proposal (no Propose cancel, design proto review P2). Kit parts only (NEEDS_DESIGN_TEAM).
  */
 export function SellerWaitingMember({ code, view, refresh, serverClock }: MemberScreenProps) {
   const method = payMethodOf(view);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const run = async (type: 'propose-cancel' | 'withdraw-cancel') => {
+  const run = async (type: 'withdraw-cancel') => {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -994,7 +994,7 @@ export function SellerWaitingMember({ code, view, refresh, serverClock }: Member
       </div>
       <footer className="x2f-pay__footer">
         <div className="x2f-pay__footer-row">
-          <SellerCancelControls view={view} busy={busy} onPropose={() => void run('propose-cancel')} onWithdraw={() => void run('withdraw-cancel')} />
+          <SellerCancelControls view={view} busy={busy} onWithdraw={() => void run('withdraw-cancel')} />
         </div>
       </footer>
     </div>

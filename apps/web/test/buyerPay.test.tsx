@@ -581,28 +581,23 @@ describe("the seller's funded room (SellerWaiting)", () => {
   const seller = (over: Partial<TradeView> = {}) =>
     tradeView({ ...SECURED, role: 'seller', counterparty: { ...tradeView().counterparty, displayName: 'mira.k' }, ...over });
 
-  it("offers no cancel-alone control in any funded state, only Propose cancel, and nothing after I've paid", async () => {
-    for (const state of ['secured', 'securing', 'paid'] as const) {
-      const r = mount(props({ view: seller({ state }) }), SellerWaiting);
-      expect(maybe('Cancel trade')).toBeUndefined();
-      expect(maybe('Cancel & get refund')).toBeUndefined();
-      if (state === 'paid') expect(maybe('Propose cancel')).toBeUndefined();
-      else expect(maybe('Propose cancel')).toBeDefined();
-      expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
-      r.unmount();
+  it("offers no cancel of any kind while waiting: no cancel-alone control and no Propose cancel (design proto review P2, 8 Nov)", async () => {
+    for (const wide of [false, true]) {
+      for (const state of ['secured', 'securing', 'paid'] as const) {
+        const r = mount(props({ view: seller({ state }), wide }), SellerWaiting);
+        expect(text()).toContain('Waiting for mira.k to pay');
+        expect(maybe('Cancel trade')).toBeUndefined();
+        expect(maybe('Cancel & get refund')).toBeUndefined();
+        expect(maybe('Propose cancel')).toBeUndefined();
+        expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
+        r.unmount();
+      }
     }
   });
 
-  it('Propose cancel posts propose-cancel and never touches the escrow; Withdraw takes it back', async () => {
-    const p = props({ view: seller() });
-    const r = mount(p, SellerWaiting);
-    expect(text()).toContain('Waiting for mira.k to pay');
-    await click(byText('Propose cancel', 'button'));
-    await flush();
-    expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"propose-cancel"}`, 'refresh']);
-    r.rerender({ ...p, view: seller({ cancelProposedBy: 'seller' }) });
+  it('a proposal that already stands (made before this change) can still be withdrawn', async () => {
+    mount(props({ view: seller({ cancelProposedBy: 'seller' }) }), SellerWaiting);
     expect(text()).toContain('You proposed cancelling. Waiting for mira.k.');
-    calls = [];
     await click(byText('Withdraw', 'button'));
     await flush();
     expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"withdraw-cancel"}`, 'refresh']);

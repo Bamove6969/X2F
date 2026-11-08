@@ -277,8 +277,8 @@ export function TradeRoom() {
  *
  * What a Trades member may still do on the trades the owner's device set up (owner question 13(d),
  * team/perms.ts; review round 2, n3), as far as it needs no escrow here:
- * - the slot's `forMembers` screen, if it has one: the seller's Propose cancel and Withdraw while
- *   the buyer pays (Task 23's SellerWaiting; a mutual cancel only records a choice, and the signing
+ * - the slot's `forMembers` screen, if it has one: the seller's Withdraw of a standing proposal while
+ *   the buyer pays (no Propose cancel, design proto review P2) (Task 23's SellerWaiting; a mutual cancel only records a choice, and the signing
  *   it leads to is the owner's device's), and the seller's Confirm cancel after a buyer's cancel
  *   (Task 39's SellerCancelConfirm, which never touches the escrow);
  * - otherwise the trade's state and a notice that the account owner's device does the rest;
