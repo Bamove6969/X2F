@@ -6,8 +6,9 @@
 // GET /v1/trades/:code/dispute, again whenever the room hands it a fresh view. A Plan 4 mod-built
 // co-sign runs through the room's `escrow` handle and rulingAllowsCosign (NEEDS_PLAN_4_MOD_COSIGN).
 import { useEffect, useState } from 'react';
-import { TIMERS } from '@x2f/trade';
+import { TIMERS, formatFiat, formatXmr } from '@x2f/trade';
 import { methodOf } from '../../api/trade.js';
+import { publicName } from '../trade/payTypes.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { registerTradeScreen, type TradeScreenProps } from '../trade/TradeRoom.js';
@@ -94,6 +95,8 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
   const cancelling = view.settling === 'buyer-cancel' && trade.dispute === null && view.cancelConfirmedAt === null && view.paidAt === null;
   // A cancel's refund that landed after "I've paid" is not "You cancelled": the buyer paid and keeps the dispute (review I1).
   const paidThenRefunded = trade.dispute === null && view.paidAt !== null && (view.settling === 'buyer-cancel' || view.settling === 'mutual-cancel');
+  // The buyer's own cancel, done (the seller confirmed, or it closed by itself): "You cancelled this trade", a neutral chip.
+  const ownCancel = !cancelling && trade.dispute === null && view.paidAt === null && view.settling === 'buyer-cancel';
   const reason = paidThenRefunded
     ? {
         title: 'The XMR went back to the seller after you paid',
@@ -106,6 +109,14 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
         // COPY-UNSIGNED
         text: 'You cancelled, so all the XMR is going back to the seller. The trade is cancelled once the seller confirms it has arrived.',
       }
+    : ownCancel
+    ? {
+        // Board Refunded variant=buyer-cancelled. The trade amount, as on every other screen (not
+        // the escrow with a seller-poster's 1% fee in it); "in escrow" left out for that reason.
+        // COPY-UNSIGNED (the board's words; the owner's P4 wording page has not signed it off).
+        title: 'You cancelled this trade',
+        text: `All ${formatXmr(BigInt(view.amountAtomic))} XMR (about ${formatFiat(BigInt(view.fiatCents), view.lockedRate.currency)}) went back to ${publicName(view.counterparty)}. X2F took nothing from you.`,
+      }
     : refundReason(view.settling, trade.dispute);
   const entry = disputeEntry(trade, now);
   return (
@@ -113,7 +124,13 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
       <TradeHeader title={<TradeTitle trade={trade} />} code={trade.code} method={{ name: method.name, whatItIs: trade.whatItIs }} backTo="/buy" />
       <div className="dispute-main">
         <section className="dispute-stack-4" aria-label="Trade status">
-          {cancelling ? <StatusChip tone="caution" icon="clock" label="Cancelling" /> : <StatusChip tone="escrow" icon="check" label="Refunded" />}
+          {cancelling ? (
+            <StatusChip tone="caution" icon="clock" label="Cancelling" />
+          ) : ownCancel ? (
+            <StatusChip tone="neutral" icon="check" label="Cancelled" />
+          ) : (
+            <StatusChip tone="escrow" icon="check" label="Refunded" />
+          )}
           <h1 className="dispute-title">{reason.title}</h1>
           <p className="dispute-lead">{reason.text}</p>
           {entry.kind === 'open' ? (

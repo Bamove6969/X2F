@@ -124,6 +124,11 @@
   color: var(--x2f-danger);
 }
 
+/* Board Refunded: a finished ending with nothing to do (a cancel) is neutral ink, not a state colour. */
+.x2f-chip[data-tone='neutral'] {
+  color: var(--x2f-ink);
+}
+
 /* Badge pills (SellOffers board). */
 .x2f-badge {
   display: inline-flex;
