@@ -32,7 +32,7 @@
   padding: var(--x2f-space-2) var(--x2f-space-4);
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface-raised);
-  color: var(--x2f-moderator);
+  color: var(--x2f-mod);
 }
 
 .x2f-chat__statusbox {
@@ -80,7 +80,7 @@
 }
 
 .x2f-chat__line[data-from='mod'] {
-  border: 1px solid var(--x2f-moderator);
+  border: 1px solid var(--x2f-mod);
 }
 
 .x2f-chat__who {

@@ -208,7 +208,7 @@ test.describe('TradeFund (seller, phone)', () => {
     await page.clock.setFixedTime(SERVER_NOW + 10 * 60_000);
     await stub(page, () => sellerView());
     await room(page);
-    await expect(page.locator('[role="timer"]')).toHaveText('28:42');
+    await expect(page.locator('[role="timer"]')).toHaveText('28 min 42 s');
   });
 
   test('the hold opens the wallet on the release, once; a second hold, and a reload, do nothing more', async ({ page }) => {

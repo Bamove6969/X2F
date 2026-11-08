@@ -14,7 +14,7 @@ import { Notice } from '../src/ui/Notice.js';
 import { SelectAll } from '../src/ui/SelectAll.js';
 import { SelectCard } from '../src/ui/SelectCard.js';
 import { Switch } from '../src/ui/Switch.js';
-import { Countdown, formatRemaining } from '../src/ui/Countdown.js';
+import { Countdown, formatRemaining, remainingParts, remainingWords } from '../src/ui/Countdown.js';
 import { DesktopShell } from '../src/ui/DesktopShell.js';
 import { EscrowDots } from '../src/ui/EscrowDots.js';
 import { ExternalLink } from '../src/ui/ExternalLink.js';
@@ -98,9 +98,12 @@ describe('Countdown', () => {
     const { host } = render(<Countdown deadline={deadline} serverClock={serverClock} />);
     const el = host.querySelector('[data-mask="clock"]')!;
     expect(el).not.toBeNull();
-    expect(el.textContent).toBe('28:42');
+    expect(el.textContent).toBe('28 min 42 s');
+    // Kit handoff 1.5: mono digits, body units, the time in words for screen readers.
+    expect([...el.querySelectorAll('.x2f-countdown__n')].map((n) => n.textContent)).toEqual(['28', '42']);
+    expect(el.getAttribute('aria-label')).toBe('28 minutes 42 seconds');
     advance(1000, vi);
-    expect(el.textContent).toBe('28:41');
+    expect(el.textContent).toBe('28 min 41 s');
   });
 
   it('renders nothing for a deadline it cannot read', () => {
@@ -123,7 +126,7 @@ describe('Countdown', () => {
     expect(vi.getTimerCount()).toBe(1);
     // The first tick still lands on its original 1 s schedule (600 ms later), not 1 s after the re-render.
     advance(600, vi);
-    expect(host.textContent).toBe('0:59');
+    expect(host.textContent).toBe('59 s');
   });
 
   it('reads the latest clock function on each tick', () => {
@@ -131,20 +134,26 @@ describe('Countdown', () => {
     const { host, rerender } = render(<Countdown deadline={deadline} serverClock={() => new Date()} />);
     rerender(<Countdown deadline={deadline} serverClock={() => new Date(Date.now() + 30_000)} />);
     advance(1000, vi);
-    expect(host.textContent).toBe('0:29');
+    expect(host.textContent).toBe('29 s');
   });
 
   it('stops at zero', () => {
     const now = () => new Date();
     const { host } = render(<Countdown deadline={new Date(Date.now() + 2000)} serverClock={now} />);
     advance(5000, vi);
-    expect(host.textContent).toBe('0:00');
+    expect(host.textContent).toBe('0 s');
   });
 
   it('formats', () => {
-    expect(formatRemaining(0, 'clock')).toBe('0:00');
-    expect(formatRemaining(1722_000, 'clock')).toBe('28:42');
-    expect(formatRemaining(3909_000, 'clock')).toBe('1:05:09');
+    expect(formatRemaining(0, 'clock')).toBe('0 s');
+    expect(formatRemaining(1722_000, 'clock')).toBe('28 min 42 s');
+    expect(formatRemaining(299_000, 'clock')).toBe('4 min 59 s');
+    expect(formatRemaining(3909_000, 'clock')).toBe('1 h 5 min');
+    expect(formatRemaining(3600_000, 'clock')).toBe('1 h');
+    expect(formatRemaining(3599_000, 'clock')).toBe('59 min 59 s');
+    expect(formatRemaining(600_000, 'clock')).toBe('10 min 0 s');
+    expect(formatRemaining(1, 'clock')).toBe('1 s'); // rounded up: never 0 while time is left
+    expect(formatRemaining(Number.NaN, 'clock')).toBe('0 s');
     expect(formatRemaining(90 * 60_000, 'minutes')).toBe('1 h 30 min');
     expect(formatRemaining(62 * 60_000, 'minutes')).toBe('1 h 2 min');
     expect(formatRemaining((60 + 52) * 60_000, 'minutes')).toBe('1 h 52 min');
@@ -152,6 +161,20 @@ describe('Countdown', () => {
     expect(formatRemaining(13 * 60_000 + 1, 'minutes')).toBe('14 min');
     expect(formatRemaining(60 * 60_000, 'minutes')).toBe('1 h');
     expect(formatRemaining(-5, 'minutes')).toBe('0 min');
+  });
+
+  it('kit 1.5: never mm:ss, never zero-padded; parts and words', () => {
+    for (let ms = 0; ms < 3 * 3600_000; ms += 7_919) {
+      for (const f of ['clock', 'minutes'] as const) {
+        const t = formatRemaining(ms, f);
+        expect(t).not.toMatch(/:|\b0\d/);
+        expect(t).toMatch(/^(\d+ (h|min|s))( \d+ (min|s))?$/);
+      }
+    }
+    expect(remainingParts(1722_000, 'clock')).toEqual([{ n: '28', u: 'min' }, { n: '42', u: 's' }]);
+    expect(remainingParts((60 + 52) * 60_000, 'minutes')).toEqual([{ n: '1', u: 'h' }, { n: '52', u: 'min' }]);
+    expect(remainingWords(remainingParts(61_000, 'clock'))).toBe('1 minute 1 second');
+    expect(remainingWords(remainingParts(2 * 3600_000 + 60_000, 'minutes'))).toBe('2 hours 1 minute');
   });
 });
 

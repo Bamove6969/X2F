@@ -318,7 +318,8 @@ describe('HoldButton', () => {
     expect(body).toContain('background: var(--x2f-escrow);');
     expect(body).toContain('color: var(--x2f-ground);');
     expect(body).toContain('cursor: default;');
-    expect(body).toContain('box-shadow: none;');
-    expect(body).toContain('transform: none;');
+    // Kit 1.5: no state of the hold button has a lift or a glow, so done needs no reset.
+    const all = [...css.matchAll(/([^{}]*\.x2f-hold[^{}]*)\{([^}]*)\}/g)].map((m) => m[2]!).join(' ');
+    expect(all).not.toMatch(/box-shadow|translateY/);
   });
 });
