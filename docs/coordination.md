@@ -223,6 +223,13 @@ From the lead's answers of 2026-10-24 and the Task 12 fix round. Each line names
 - **Plan 4 (M1, defence in depth):** the allowlists are applied only when a key is registered; a stored `attested=true` owner or staff key keeps working after a refresh drops its AAGUID (a new `*_COMPROMISE`/`REVOKED` status) or after the list rules change, and `ownerReady` keeps counting it. At owner and staff login (`verifyWebAuthnAssertion` / the staff app's login finish, and `ownerReady` / `pairAllowed`), also require the stored `aaguid` to be on the current list for the account kind (`deps.attestation.isAllowed(aaguid, 'packed', kind)`), so a refresh takes effect without a data migration. No owner exists yet (first-run owner setup is Plan 4).
 - Plan 4 / APK note: a trader client that ignores `none` conveyance and sends `packed` with an AAGUID outside the snapshot gets 401 `webauthn-failed` (strict `MetadataService` is process-wide); for traders, treat it as unattested instead.
 
+## Watcher revival (2026-11-07, lead helper, `wip/lead-watcher-revive`): Task 9 I/O + view + Task 10 on main 6ccb3e2d
+
+- Owner chose **B** (watcher always on, every 15 s) and lifted the hold. The held landing (a55abfc7 reverted 5193e11 = the lead's 36e728a3) is reverted back, then `wip/second-p3-task9-view` @99ba09fc and `wip/second-p3-task10` @305124b7 are merged. A plain merge of those branches into main would NOT have restored Task 9 I/O (main already holds 7346fc00 and its revert).
+- Migrations: API `113_release_claim.sql` keeps its number (free on main, between 112 and 115; the runner applies unapplied names, not only higher ones). Moderation `003_watch`, `004_signals`, `005_sweeps` (main has 001, 002_chat). No 311/312/313 used.
+- Semantic clashes fixed at the merge: `log/actions.ts` lists `trade.release-claimed` (Plan 4 Task 3's activity log maps every trade event; empty detail); Task 20's `chat.test.ts` passes `relayUrl`/`network` and `watchIntervalMs: 0`; the member room's `StatusCard` takes `serverClock`.
+- **Owner rule g62** (maintenance stops trade timers, the 24 h account holds keep counting): the API timer loop pauses every open trade at `maintenance_since` and shifts its deadlines on resume; the watcher's 6 h fallback, the desk's refund-unverified hour and the auto-refund all stop while the watch item is `paused`. New here: `/internal/v1/watch` shows an open trade `paused` as soon as `site_flags.maintenance_since` is set, not only after the timer loop's next pass writes `paused_at`. Account holds (`auth/hold.ts`) never read maintenance; nothing here touches them.
+
 ## Plan 3 Task 9 I/O (2026-10-28, second, `wip/second-p3-task9-io`): what landed, interfaces changed, open items
 
 Landed (not reviewed yet):

@@ -75,8 +75,8 @@ function fakeApi(chatWork: () => ChatWorkItem[]) {
 
 function moderation(fetch: Fetch) {
   return startModeration(
-    { apiInternalUrl: API, relayAdminUrl: 'http://relay.test', daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95) },
-    { fetch, now: () => NOW, intervalMs: 0 },
+    { apiInternalUrl: API, relayAdminUrl: 'http://relay.test', daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95), relayUrl: 'ws://relay.test', network: 'regtest' },
+    { fetch, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, runParty: () => {} },
   );
 }
 

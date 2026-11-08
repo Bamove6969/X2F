@@ -298,7 +298,7 @@ function MemberRoom({ code, view, refresh }: { code: string; view: TradeView; re
         <Screen code={code} view={view} refresh={refresh} serverClock={clock} wide={false} />
       ) : (
         <>
-          <StatusCard view={view} />
+          <StatusCard view={view} serverClock={clock} />
           <section className="x2f-card x2f-stack" data-part="member-waiting">
             <p role="status">{MEMBER_TRADE_COPY.roomWaiting}</p>
           </section>

@@ -116,6 +116,24 @@ describe('GET /internal/v1/watch', () => {
     expect(trades).toContainEqual({ trade: lapsed.code, state: 'lapsed', settleKind: 'lapse-refund', paused: false, finalAlertSeenAt: null, finalAlertAt: null });
   });
 
+  it('an open trade shows paused as soon as site maintenance is on, before the timer loop pauses it (owner rule g62)', async () => {
+    const open = await trade();
+    const closed = await trade();
+    await deps.db.query(`update trades set state = 'cancelled', closed_at = $2 where code = $1`, [closed.code, new Date(NOW.getTime() - 86_400_000)]);
+    const item = async (code: string) =>
+      ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<Record<string, unknown>> }).trades.find((x) => x.trade === code);
+    expect((await item(open.code))?.paused).toBe(false);
+    await deps.db.query('update site_flags set maintenance_since = $1', [NOW]);
+    try {
+      expect((await item(open.code))?.paused).toBe(true);
+      // a closed trade has no timer to stop (and the timer loop never pauses it)
+      expect((await item(closed.code))?.paused).toBe(false);
+    } finally {
+      await deps.db.query('update site_flags set maintenance_since = null');
+    }
+    expect((await item(open.code))?.paused).toBe(false);
+  });
+
   it('refuses an unsigned request', async () => {
     const res = await internal.inject({ method: 'GET', url: '/internal/v1/watch' });
     expect(res.statusCode).toBe(401);

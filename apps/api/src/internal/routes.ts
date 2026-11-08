@@ -293,11 +293,14 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   // a sweep it saw only through an import against it, review I1) and `paused` (maintenance: the
   // watcher's 6 h fallback does not run, review M3). Also `finalAlertAt` (Task 10 review I1): the
   // API's own, shifted by every maintenance pause it applied; the moderator's auto-refund waits
-  // for the later of it and its shadow's.
+  // for the later of it and its shadow's. Owner rule g62 (trade timers stop during maintenance):
+  // an open trade also counts as paused as soon as `site_flags.maintenance_since` is set, before the
+  // timer loop's next pass writes its `paused_at`, so the moderator decides nothing in that gap.
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; state: TradeState; settling: SettleKind | null; paused_at: Date | null; final_alert_at: Date | null; seen: Date | null }>(
+    const { rows } = await o.db.query<{ code: string; state: TradeState; settling: SettleKind | null; paused_at: Date | null; final_alert_at: Date | null; seen: Date | null; site_paused: boolean }>(
       `select t.code, t.state, t.settling, t.paused_at, t.final_alert_at,
-              case when t.final_alert_delivered is true then t.final_alert_seen_at end as seen
+              case when t.final_alert_delivered is true then t.final_alert_seen_at end as seen,
+              (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused
          from trades t
          join trade_attestations a on a.code = t.code
         where t.closed_at is null or t.closed_at > $1
@@ -309,7 +312,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         trade: r.code,
         state: r.state,
         settleKind: settleKindFor({ state: r.state, settling: r.settling }),
-        paused: r.paused_at !== null,
+        paused: r.paused_at !== null || r.site_paused,
         finalAlertSeenAt: r.seen ? r.seen.toISOString() : null,
         finalAlertAt: r.final_alert_at ? r.final_alert_at.toISOString() : null,
       })),
