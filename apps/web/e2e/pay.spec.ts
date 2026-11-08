@@ -109,6 +109,13 @@ test.describe('parity', () => {
     await expectParity(page, 'BuyerPay');
   });
 
+  test('CancelRequest board at 390x844: "Cancelling is final" over the secured pay step (owner G56)', async ({ page }) => {
+    await open(page, PAY_SECURED);
+    await page.getByRole('button', { name: 'Cancel trade' }).click();
+    await expect(page.getByRole('dialog', { name: 'Cancelling is final' })).toBeVisible();
+    await expectParity(page, 'CancelRequest');
+  });
+
   test('Desktop board at 1280x800: escrow secured, the timeline, the counterparty and the chat', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await open(page, PAY_SECURED);

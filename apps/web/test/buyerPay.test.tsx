@@ -204,6 +204,8 @@ describe('BuyerPay (BuyerPay board), phone', () => {
     expect(t).toContain('They appear when the escrow is secured, in about 14 min.');
     // The board's padlock tile beside the title.
     expect(document.querySelector('[data-locked] [data-lock-tile] svg')).not.toBeNull();
+    // The board's locked card keeps the own-name warning (not a payment detail).
+    expect(document.querySelector('[data-locked]')!.textContent).toContain('Pay from an account in your own name.');
     expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
     const paid = byText("I've paid", 'button') as HTMLButtonElement;
     expect(paid.hasAttribute('data-primary')).toBe(true);

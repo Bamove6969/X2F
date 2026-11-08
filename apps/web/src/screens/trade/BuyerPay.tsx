@@ -257,9 +257,21 @@ function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () 
           </span>
         ) : (
           <>
-            <span className="x2f-pay-timer__value">{t.totalMin} min</span>
+            {/* The board's v2 number: mono digits, the unit in the body face. */}
+            <span className="x2f-pay-timer__value">
+              <span className="x2f-num">{t.totalMin}</span> <span>min</span>
+            </span>
             <span className="x2f-pay-timer__hint">
-              {t.startsInMin === null ? 'Clock starts when escrow settles' : `Clock starts when escrow settles, in ${t.startsInMin} min`}
+              {t.startsInMin === null ? (
+                'Clock starts when escrow settles'
+              ) : (
+                <>
+                  Clock starts when escrow settles,{' '}
+                  <span>
+                    in <span className="x2f-num">{t.startsInMin}</span> min
+                  </span>
+                </>
+              )}
             </span>
           </>
         )}
@@ -301,6 +313,8 @@ function PaymentCard(p: { view: TradeView; method: MethodInfo; total: DeviceTota
           </span>
         </span>
       </div>
+      {/* The board's locked card keeps the own-name warning: it is not a payment detail (Q12). */}
+      <p className="x2f-pay-card__note">Pay from an account in your own name. Payments from someone else's account may be rejected or frozen. Use at your own risk.</p>
     </section>
   );
 }
