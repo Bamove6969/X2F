@@ -23,7 +23,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <span aria-hidden="true" style="{{avStyle}} margin-right: 6px;">{{avInit}}<span style="position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 999px; background: var(--escrow); border: 2.5px solid var(--ground);"></span></span>
     <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
       <h1 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">{{title}}</h1>
-      <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$165.00</span></span>
+      <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Zelle · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$165.00</span></span>
     </div>
     <span style="flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
   </header>
@@ -71,7 +71,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":390,"height":920}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":390,"height":912}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { draft: '', sent: [] }; }
   componentDidUpdate(prev) { if (prev.viewer !== this.props.viewer) this.setState({ draft: '', sent: [] }); }
@@ -83,7 +83,7 @@ class Component extends DCLogic {
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const s = this.state;
     // Measured heights: the lead's view has an extra line under the team notice.
-    const H = (this.props.viewer === 'lead' ? 874 : 920) + s.sent.length * 75;
+    const H = (this.props.viewer === 'lead' ? 866 : 912) + s.sent.length * 75;
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     // Owner, 2 Nov: a team member's replies get their own colour (--team) so it's very obvious a team member is replying.

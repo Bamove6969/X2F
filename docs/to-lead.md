@@ -564,3 +564,10 @@ Canvas https://claude.ai/artifact/NRhrWVvBrSwJ1Dt8oxp4eH is v128: every board ca
 **Build follow-ups (1)–(3)**: pushed as `wip/design-build-followups` @88a6eb63 (READY), branched from wip/third-design-build since main didn't carry it yet; it rebases cleanly once that lands. Web tests 86 files / 1226 pass, tsc clean.
 
 **Needed from the owner**: G56 wording sign-off; the gift card brand list; the four questions above (login-method removal 24 h wait; cancel during the wait restores removed items; seller's 90 min from escrow secured; buyer cancel window); the COPY-UNSIGNED list here; G46 Devices wording items.
+
+## 7 Nov 2026 (late): jobs 3a and 3b on the canvas (v130)
+
+- **3a, SetupTerms (p4-5, p4-6):** the key-points list ends with one new line, "An account idle for 60 days is closed, to keep X2F safe for active traders." Drawn like the six rows above it. No warning anywhere else; DECIDED aside notes that an open trade or dispute pauses the clock. The phone frame was already full, so the terms scroll box is shorter (about 2.5 lines before scrolling); it fits exactly. COPY-UNSIGNED: that one sentence.
+- **3b, ruling fees (g63):** a shared "fee row" (one more row in the ruling's inner block: percent glyph, "Fee:" in 600, digits mono) on DisputeRuling, Appeal-Notice (+Wide) and Lien-Notice (+Wide), with the line chosen by state. DisputeRuling gained a refund variant so both fee lines can be seen. COPY-UNSIGNED, one per state: "Fee: 1% paid by satoshi_ghost, as the offer poster." / "Fee: none. Everything went back, so X2F charges nothing." / "Fee: waits until the appeal is decided." / "Fee: 1% paid by you, as the offer poster." (Lien) / "It appears on your profile as a lost dispute." (DisputeRuling refund).
+- Sweep fix from the owner's request for my own eye on every board: TeamChat's header meta no longer wraps into the "Draft copy" tag (v129).
+- Head-designer decision: the fee row is now a shared component (results kit).
