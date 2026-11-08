@@ -9,7 +9,7 @@
  * stand-ins; `extend`, `request-refund` and `mark-paid` never read them (test/refundRules.test.ts
  * checks the answers against the machine on real trades). Only these three events are asked.
  */
-import { apply, nextDeadline, TradeRuleError, type Party, type Trade, type TradeRuleCode } from '@x2f/trade';
+import { apply, TradeRuleError, type Party, type Trade, type TradeRuleCode } from '@x2f/trade';
 import type { RefundView } from './refundSlot.js';
 
 /** The events these screens post. */
@@ -68,7 +68,6 @@ export function tradeFromView(v: RefundView): Trade {
     extensions: v.extensions,
     paidAt: date(v.paidAt, 'paidAt'),
     confirmBy: date(v.confirmBy, 'confirmBy'),
-    finalAlertAt: date(v.finalAlertAt, 'finalAlertAt'),
     cancelProposedBy: v.cancelProposedBy,
     settling: v.settling,
     settleFrom: null,
@@ -108,23 +107,12 @@ function allowed(v: RefundView, e: RefundEvent, by: Party, now: Date): boolean {
   }
 }
 
-/** The seller may tap "Cancel and get refund" now (server clock): the 90 minutes are over and they have nudged (owner G2). */
+/**
+ * The seller may tap "Cancel and get refund" now (server clock): the time to pay is over and the
+ * buyer has not tapped "I've paid". No nudge is needed (owner 8 Nov, p6-1).
+ */
 export function canRequestRefund(v: RefundView, now: Date): boolean {
   return v.role === 'seller' && allowed(v, { type: 'request-refund' }, 'seller', now);
-}
-
-/**
- * The view as if the seller nudged right now: what the machine would say once they nudge. `now`
- * is the server clock, never before `securedAt` in `secured`, so the nudge counts.
- */
-const asNudged = (v: RefundView, now: Date): RefundView => ({ ...v, sellerNudgedAt: now.toISOString() });
-
-/**
- * Owner G2 / g66: the window is over but Cancel is still locked only because the seller has not
- * nudged the buyer since the escrow was secured. The screen then makes Nudge the primary.
- */
-export function refundNeedsNudge(v: RefundView, now: Date): boolean {
-  return v.role === 'seller' && !canRequestRefund(v, now) && allowed(asNudged(v, now), { type: 'request-refund' }, 'seller', now);
 }
 
 /** The seller may tap "Give 30 more min" now: the window has ended and fewer than two extensions were used. */
@@ -134,32 +122,20 @@ export function canExtend(v: RefundView, now: Date): boolean {
 
 /**
  * The trade-room slot guard for SellerRefund (`when`): the seller, in `secured`, once the buyer's
- * payment window has passed by the server clock. That is exactly when the machine accepts
- * `request-refund` from a seller who has nudged, so the final alert can only start after the
- * window (Global Constraints). It opens before the first nudge too: Cancel shows locked there and
- * Nudge is the primary (owner G2, `refundNeedsNudge`).
+ * payment window has passed by the server clock with no "I've paid". That is exactly when the
+ * machine accepts `request-refund` (owner 8 Nov: no nudge needed, no final warning), so the refund
+ * can only start after the window (Global Constraints).
  */
 export function sellerRefundOpen(v: RefundView, nowMs: number): boolean {
-  const now = new Date(nowMs);
-  return v.state === 'secured' && (canRequestRefund(v, now) || refundNeedsNudge(v, now));
+  return v.state === 'secured' && canRequestRefund(v, new Date(nowMs));
 }
 
-/** FinalAlert is the buyer's screen while the seller's refund request is open. */
-export function showFinalAlert(v: Pick<RefundView, 'role' | 'state'>): boolean {
-  return v.role === 'buyer' && v.state === 'refund_requested';
+/** The seller's cancel after the time to pay, settling or refunded (owner 8 Nov): the trade's `auto-refund`. */
+export function isSellerCancel(v: Pick<RefundView, 'state' | 'settling'>): boolean {
+  return (v.state === 'settling' || v.state === 'refunded') && v.settling === 'auto-refund';
 }
 
-/** When the final alert ends (the machine's `nextDeadline`: finalAlertAt + 15 min), or null while paused or unreadable. */
-export function finalAlertEnds(v: RefundView): Date | null {
-  try {
-    return v.state === 'refund_requested' ? nextDeadline(tradeFromView(v)) : null;
-  } catch (err) {
-    if (err instanceof RangeError) return null;
-    throw err;
-  }
-}
-
-/** The buyer may still tap I've paid (the machine refuses `too-late` once the alert has ended). */
+/** The buyer may still tap I've paid: until the seller cancels, also after the time to pay (owner 8 Nov, p9-2). */
 export function canMarkPaid(v: RefundView, now: Date): boolean {
   let fiatCents: bigint;
   try {

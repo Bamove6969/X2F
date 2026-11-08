@@ -125,6 +125,17 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
     expect(disputeEntry(s, new Date(T0 + 15 * MIN)).kind).toBe('none');
     expect(disputeEntry(s, new Date(T0 + 15 * MIN + 1)).kind).toBe('open');
   });
+
+  it("the seller's cancel settling (auto-refund): the buyer at once (owner 8 Nov, p9-2), the seller only after the window", () => {
+    const b = trade({ state: 'settling', settling: 'auto-refund', settleBy: iso(15), role: 'buyer' });
+    expect(disputeEntry(b, new Date(T0)).kind).toBe('open');
+    const s = trade({ state: 'settling', settling: 'auto-refund', settleBy: iso(15), role: 'seller' });
+    expect(disputeEntry(s, new Date(T0)).kind).toBe('none');
+    expect(disputeEntry(s, new Date(T0 + 15 * MIN + 1)).kind).toBe('open');
+    for (const settling of ['release', 'buyer-cancel', 'mutual-cancel'] as const) {
+      expect(disputeEntry(trade({ state: 'settling', settling, settleBy: iso(15), role: 'buyer' }), new Date(T0)).kind).toBe('none');
+    }
+  });
 });
 
 describe('copy helpers', () => {

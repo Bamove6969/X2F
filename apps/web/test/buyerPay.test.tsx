@@ -7,8 +7,6 @@ import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
 import { resetWarned } from '../src/screens/trade/warned.js';
-import { FinalAlert } from '../src/screens/trade/FinalAlert.js';
-import { buyerAlertView, SERVER_NOW } from '../e2e/refundViews.js';
 
 const T0 = Date.parse('2026-10-25T12:00:00.000Z');
 const at = (min: number) => new Date(T0 + min * 60_000).toISOString();
@@ -54,8 +52,6 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     payBy: null,
     paidAt: null,
     confirmBy: null,
-    finalAlertAt: null,
-    finalAlertSeenAt: null,
     settleBy: null,
     releaseClaimedAt: null,
     pausedAt: null,
@@ -635,26 +631,6 @@ describe('slots for the trade room (Task 22)', () => {
   });
 });
 
-describe("Task 25's FinalAlert: I've paid opens Task 23's paid step", () => {
-  it('Yes posts mark-paid with the device total, then sends trade.paid', async () => {
-    answer = (b) => (String(b.type) === 'mark-paid' ? { status: 200, json: tradeView({ ...SECURED, state: 'paid' }) } : { status: 204, json: {} });
-    const view = buyerAlertView();
-    render(
-      <MemoryRouter>
-        <FinalAlert code={view.code} view={view} escrow={fakeEscrow()} refresh={async () => void calls.push('refresh')} serverClock={() => new Date(SERVER_NOW)} wide={false} />
-      </MemoryRouter>,
-    );
-    await flush();
-    calls = calls.filter((c) => !c.includes('final-alert-seen'));
-    await click(byText("I've paid", 'button'));
-    expect(dialog()!.textContent).toContain(`I sent exactly $412.50 by Zelle with the memo ${view.code}.`);
-    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${view.code}.`, 'label'));
-    await click(byText("Yes, mark as paid", 'button'));
-    await flush();
-    expect(calls).toEqual([`POST /v1/trades/${encodeURIComponent(view.code)}/events {"type":"mark-paid","fiatCents":"41250"}`, 'escrow:markPaid(41250)', 'refresh']);
-  });
-});
-
 describe('after the cancel: the buyer builds the refund (review I4)', () => {
   const settling = (kind: 'buyer-cancel' | 'mutual-cancel') => tradeView({ ...SECURED, state: 'settling', settling: kind });
 
@@ -825,21 +801,6 @@ describe('review round 2 (2026-10-28): fix round 3', () => {
     expect(paidButton().disabled).toBe(true);
     expect(text()).toContain('$412.50');
     expect(count(MISMATCH)).toBe(1);
-  });
-
-  it('I1: the paid step itself (FinalAlert opens it) refuses on a refusal: no Yes, the reason instead', async () => {
-    const view = buyerAlertView();
-    render(
-      <MemoryRouter>
-        <FinalAlert code={view.code} view={view} escrow={fakeEscrow({ refusal: 'view-mismatch' })} refresh={async () => void calls.push('refresh')} serverClock={() => new Date(SERVER_NOW)} wide={false} />
-      </MemoryRouter>,
-    );
-    await flush();
-    calls = calls.filter((c) => !c.includes('final-alert-seen'));
-    await click(byText("I've paid", 'button'));
-    expect(dialog()!.textContent).toContain(MISMATCH);
-    expect(maybe("Yes, mark as paid")).toBeUndefined();
-    expect(calls).toEqual([]);
   });
 
   it('I1: Finish is offered but refused while the view does not match, and says not to pay again', async () => {

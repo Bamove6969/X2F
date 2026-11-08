@@ -930,8 +930,8 @@ describe('settling', () => {
     // No cancel proposed and not settling a mutual cancel: the tap has nothing to sign.
     await expect(t.buyer.runtime.act(CODE, { type: 'propose-cancel-sign' })).rejects.toThrow();
     expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'release', auto: true });
-    // The seller's release tap outside secured/paid (here: refund_requested) is refused too.
-    t.state.view = tradeView({ state: 'refund_requested' });
+    // The seller's release tap outside secured/paid (here: the seller's own cancel settling) is refused too.
+    t.state.view = tradeView({ state: 'settling', settling: 'auto-refund' });
     await expect(t.seller.runtime.act(CODE, { type: 'release' })).rejects.toThrow();
   });
 

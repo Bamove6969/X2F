@@ -1,4 +1,4 @@
-// Small pieces shared by SellerRefund and FinalAlert.
+// Small pieces shared by SellerRefund and SellerCancelled.
 import { formatXmr } from '@x2f/trade';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client.js';
