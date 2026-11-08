@@ -200,3 +200,66 @@ Documented as a delay-only limit in coordination.md. Accepted.
 - An own tx whose recorded armed kind differs from the API's (R2).
 - Losing the lock connection in a real Postgres failover (R3).
 - Real monero-ts tick timing.
+
+## Re-verify 82edab96 (8 Nov 2026)
+
+Fixes checked: 20cf50e1 (R1), 41913d33 (R2), be65c668 (R3, and R4 recorded in coordination.md). Checks run: `npm test -- --project @x2f/moderation --project @x2f/api` passed (85 files, 1964 tests). The run printed no `MaxListenersExceededWarning`.
+
+### Verdict
+
+**APPROVED for the branch as it stands.** R1 to R4 are closed and I found no new stuck-funds path or early-refund path. **Landing blocker:** merging main 687ae821 (Job 1) has two textual conflicts and one semantic break, L1 below. That break must be resolved, and it needs a decision, before this lands.
+
+### R1. Closed
+
+- `paidConflict` (`desk.ts:404-424`) escalates `refund-unverified` once. Conditions: the armed auto-refund is blocked `auto-refund-buyer-paid`, the fresh API item (10 s rule) shows `refund_requested` unpaused, the shadow is unpaused, and `PAID_CONFLICT_MS` has passed since the signal, judged at the read time. It is recorded in `escalated`, so it happens at most once. Tested with my probe: arm, `trade.paid`, restart, 5 h of passes, exactly one escalation, and none while paused.
+- It can only escalate; it never signs. There is no early-refund path.
+- I checked the fixer's list of permanent blocks and their exits against the machine (coordination.md, re-verify R1). Each is true:
+  - `buyer-paid` while the API shows `refund_requested`: escalation after 2 min.
+  - `buyer-paid` while the API shows `paid` or `settling`: the seller can dispute from `paid`, and `settling` reverts at `settleBy`. A claim cannot pin the trade forever, because the dispute after `settleBy` and the 6 h fallback (no sweep shown) both apply.
+  - `api-paid`: `paid` has no edge back to `refund_requested`, and the seller can dispute from it.
+  - `api-disputed` and `escalated`: a person handles them (Plan 4 rulings, R4).
+  - `buyer-cancel-buyer-paid`: the R3-N1 path runs the paid conflict in `refund_requested`. In `secured`, the seller can dispute (`onDispute` allows `secured`) or request the refund.
+  - The temporary blocks clear by themselves.
+- Residual, Minor, accepted: the escalation can fire while an auto-refund already handed to the party in the same process lands (R3-M1). The trade is then `disputed` with the escrow paid to the seller-signed address, the `settled` report backs off `settle-kind-unknown`, and a person sees both. No coin goes to the wrong place.
+
+### R2. Closed
+
+- `committedBuilder()` (`packages/escrow/src/party.ts`) reads the committed release from the saved state, so it survives a restart. A `buyer` builder maps to `buyer-cancel` and a `seller` builder to `auto-refund`. Those are the only two outcomes the desk hands to the party; Plan 3 never makes the mod a builder, and for the mod as builder the call returns `mod`, which maps to null and falls back to the armed kind. On the R4-M2 path the report now says `buyer-cancel` (tested).
+- A `superseded` attempt belongs to the same committed outcome, so the mapping holds.
+- `settle-kind-changed` backs off like `settle-kind-unknown` (1 min, doubling to 1 h). The sweep is proven again after the back-off. Tested.
+- Plan 4 rulings must revisit this mapping (noted in coordination.md).
+
+### R3. Closed
+
+- `instanceLockHeld` runs every watch pass and asks `pg_locks` whether the lock is still granted to this backend. For the single-bigint key 0x78326d69, `classid` 0, `objid` = key, `objsubid` 1 is correct. No answer within 5 s counts as lost, which catches a half-open connection.
+- On loss, or on an `error` from the lock connection: the service stops, `lockLost` resolves, the entry exits 1, and the lock connection is destroyed rather than returned to the pool.
+- `keepAlive: true` is set on the pool, and `stop()` removes its listener.
+- Note: the check runs only in the watch loop. The attest and chat loop stops with it, because `stop()` ends both. A database that is slow for more than 5 s causes a restart, which is safe.
+
+### L1. Merge with main 687ae821: the landing blocker
+
+`git merge-tree` shows two textual conflicts: `apps/api/test/schema.test.ts` (migration lists: main adds `119_seller_nudged_at.sql` and `312_traded_xmr.sql`, keep both with `113_release_claim.sql`) and `apps/web/e2e/refund.spec.ts`. Everything else, including `machine.ts`, `store.ts` and `view.ts`, merges cleanly.
+
+The real risk is semantic and does not show up as a conflict. Main's `request-refund` now also needs `sellerNudgedAt` set since `securedAt` (owner G2 / g66, `machine.ts:538` on main). That field is written only by the API's nudge route, never by an event. The moderator's shadow replays the seller's `trade.refund-request` through `apply` and has no way to set it. So after the merge:
+
+- every shadow `request-refund` is refused `too-early` and stays in `pending` for good;
+- the shadow never reaches `refund_requested`, so no auto-refund is ever signed;
+- every no-show refund escalates `refund-unverified` after 1 h.
+
+This fails safe (no coin moves), but it turns the auto-refund feature off. The moderation tests on the merged tree will fail (`refundRequested()` expects the shadow `refund_requested`), so CI will catch it, but the resolution is a decision.
+
+Options:
+- **(a)** The desk sets the shadow's `sellerNudgedAt` when it opens the seller's refund request. The API still enforces the nudge, because `autoRefundStep` signs only while the API shows `refund_requested`, which needed a real nudge there.
+- **(b)** A signed nudge signal reaches the mod.
+
+Option (a) relies on the API alone for a rule that protects the buyer, so it is a call for the lead or owner. Also run tsc on the merged tree: main's `Trade` literals gain `sellerNudgedAt`, and this branch's literals gain `releaseClaimedAt`.
+
+Job 1's other machine changes do not affect the desk:
+- `mark-paid` in `securing` is now `too-early`. The shadow refuses it, but `paidSeen` is set from the signal anyway, so the auto-refund is still blocked.
+- The cancel rules leave `BUYER_CANCEL_SETTLE` unchanged.
+
+### Still not tested
+
+- The merged tree (L1).
+- A real Postgres failover of the lock connection; the test kills its backend, which is close.
+- Real monero-ts tick timing.
