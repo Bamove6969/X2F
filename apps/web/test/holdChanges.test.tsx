@@ -295,6 +295,23 @@ describe('AccountChanges: the waiting changes (g65), with their date, a countdow
     expect(other.host.textContent).toBe('');
   });
 
+  it('after a strong login (G58) its Continue goes on to returnTo, only within the app', async () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/settings/changes?returnTo=%2Fwallets']}>
+        <AccountChangesScreen />
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(byPart(host, 'changes-continue')!.getAttribute('href')).toBe('/wallets');
+    const evil = render(
+      <MemoryRouter initialEntries={['/settings/changes?returnTo=%2F%2Fevil.example']}>
+        <AccountChangesScreen />
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(byPart(evil.host, 'changes-continue')!.getAttribute('href')).not.toContain('evil');
+  });
+
   it('its own screen says when nothing waits, and a team member gets the owner-only refusal instead (G31)', async () => {
     const { host } = render(
       <MemoryRouter>

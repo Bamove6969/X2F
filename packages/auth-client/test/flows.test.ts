@@ -127,9 +127,9 @@ async function registerPgp(j: Jar): Promise<{ username: string; key: Pair }> {
   return { username, key };
 }
 
-/** PGP login needs no name: the whole public key (`_username` is unused). */
-async function loginPgp(api: AuthApi, _username: string, key: Pair) {
-  const start = await api.loginPgpStart({ key: key.publicKey });
+/** PGP login: the login name with the whole public key (owner G6). */
+async function loginPgp(api: AuthApi, username: string, key: Pair) {
+  const start = await api.loginPgpStart({ loginName: username, key: key.publicKey });
   return api.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL });
 }
 
@@ -348,7 +348,7 @@ describe('a flood of bad passwords against a two-factor username (Review Focus 2
     }
     const browser: AuthApi = jar().api;
     expect(apiError(await failure(loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft))))).toMatchObject({ status: 401, code: 'webauthn-failed' });
-    const start = await browser.loginPgpStart({ key: key.publicKey });
+    const start = await browser.loginPgpStart({ loginName: username, key: key.publicKey });
     expect(apiError(await failure(browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL }))))
       .toMatchObject({ status: 401, code: 'code-invalid' });
     await expect(browser.listMethods()).rejects.toMatchObject({ status: 401 });
@@ -359,7 +359,7 @@ describe('a flood of bad passwords against a two-factor username (Review Focus 2
     const browser: AuthApi = jar().api;
     expect(apiError(await failure(browser.loginPassword({ loginName: username, password: WRONG, deviceLabel: LABEL }))).code).toBe('credentials-invalid');
     expect(apiError(await failure(loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft))))).toMatchObject({ status: 401, code: 'webauthn-failed' });
-    const start = await browser.loginPgpStart({ key: key.publicKey });
+    const start = await browser.loginPgpStart({ loginName: username, key: key.publicKey });
     expect(apiError(await failure(browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL }))))
       .toMatchObject({ status: 401, code: 'code-invalid' });
     await expect(browser.listMethods()).rejects.toMatchObject({ status: 401 });

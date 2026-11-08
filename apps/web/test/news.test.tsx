@@ -217,6 +217,18 @@ describe('after login', () => {
     expect(go).toEqual(['/wallets', '/buy']);
   });
 
+  it('owner G58: a strong login while changes wait lands on Account changes first; a weak one or a member does not', async () => {
+    markSeen(3);
+    const go: string[] = [];
+    me = { status: 200, body: { termsCurrent: true, pendingChanges: { count: 1, takesEffectAt: '2099-01-02T15:00:00.000Z' }, changesWait: false, member: null } };
+    await afterLogin((to) => go.push(to), '/wallets');
+    me = { status: 200, body: { termsCurrent: true, pendingChanges: { count: 1, takesEffectAt: '2099-01-02T15:00:00.000Z' }, changesWait: true, member: null } };
+    await afterLogin((to) => go.push(to), '/wallets');
+    me = { status: 200, body: { termsCurrent: true, pendingChanges: null, changesWait: false, member: { name: 'Aurora', roles: [] } } };
+    await afterLogin((to) => go.push(to), '/wallets');
+    expect(go).toEqual(['/settings/changes?returnTo=%2Fwallets', '/wallets', '/wallets']);
+  });
+
   it('Terms first when they changed, then News, then returnTo', async () => {
     me = { status: 200, body: { termsCurrent: false } };
     const go: string[] = [];

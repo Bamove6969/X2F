@@ -363,7 +363,8 @@ export interface AuthApi {
    * goes to that key too). A fingerprint, or anything else, is 400 `key-unreadable`, the same for
    * every key. `pendingId`: the second step of a staff or owner login.
    */
-  loginPgpStart(b: { key: string; pendingId?: string }): Promise<PgpChallenge>;
+  /** Owner G6 (7 Nov 2026): the trader login takes the private `loginName` with the key (400 without; a wrong name answers like an unknown key). */
+  loginPgpStart(b: { loginName: string; key: string; pendingId?: string }): Promise<PgpChallenge>;
   loginPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; pendingId?: string }): Promise<LoginResult>;
   registerWebAuthnStart(b: { displayName: string; loginName: string; kind: WebAuthnKind }): Promise<RegistrationChallenge>;
   registerWebAuthnFinish(b: {

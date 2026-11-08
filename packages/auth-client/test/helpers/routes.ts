@@ -18,7 +18,7 @@ export const SAMPLE_CALLS: { [K in keyof AuthApi]: Parameters<AuthApi[K]> } = {
   loginBackup: [{ loginName: 'sample.login', kind: 'recovery-code', code: 'x', deviceLabel: 'B' }],
   registerPgpStart: [{ displayName: 'Sample01', loginName: 'sample.login', publicKey: 'x' }],
   registerPgpFinish: [{ challengeId: UUID, code: 'x', deviceLabel: 'B', acceptedTerms: 'v' }],
-  loginPgpStart: [{ key: 'x' }],
+  loginPgpStart: [{ loginName: 'sample.login', key: 'x' }],
   loginPgpFinish: [{ challengeId: UUID, code: 'x', deviceLabel: 'B' }],
   registerWebAuthnStart: [{ displayName: 'Sample01', loginName: 'sample.login', kind: 'passkey' }],
   registerWebAuthnFinish: [{ challengeId: UUID, response: RESPONSE, deviceLabel: 'B', acceptedTerms: 'v' }],

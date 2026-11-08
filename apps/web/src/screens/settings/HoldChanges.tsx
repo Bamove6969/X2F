@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useId, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { AuthApiError, type HoldView } from '@x2f/auth-client';
-import { ApiCallError } from '../../api/client.js';
+import { ApiCallError, returnToFrom } from '../../api/client.js';
 import { memberOf } from '../../session/member.js';
 import { refreshSession, useSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
@@ -406,11 +406,19 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
 
 /** `CHANGES_PATH`: the account owner's own screen for the drafts and the waiting changes (the banner's Review changes). */
 export function AccountChangesScreen() {
+  const { search } = useLocation();
+  // After a strong login (G58) the screen comes first and Continue goes on where the person was going.
+  const onward = new URLSearchParams(search).has('returnTo') ? returnToFrom(search) : null;
   return (
     <OwnerOnly screen="account-changes">
       <main className="x2f-screen" data-screen="account-changes">
         <h1 className="x2f-screen__title">{C.screenTitle}</h1>
         <AccountChanges standalone />
+        {onward !== null ? (
+          <Link className="x2f-button x2f-button--tertiary" to={onward} data-part="changes-continue">
+            {C.continue}
+          </Link>
+        ) : null}
       </main>
     </OwnerOnly>
   );

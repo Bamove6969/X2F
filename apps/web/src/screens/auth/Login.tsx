@@ -122,6 +122,8 @@ interface Go {
 interface Pending {
   pendingId: string;
   needs: MethodType[];
+  /** The login name the first step was given, when it took one (owner G6: a PGP step sends it with the key). */
+  loginName?: string;
 }
 
 const NEEDS_WORDS: Partial<Record<MethodType, string>> = { pgp: 'PGP key', 'security-key': 'security key', passkey: 'passkey' };
@@ -141,7 +143,9 @@ function SecondStep({ pending, onLoggedIn, onWait, onCantDo }: { pending: Pendin
       ) : (
         <p className="x2f-note">This account also needs its {words}.</p>
       )}
-      {offered.includes('pgp') ? <PgpLogin onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} pendingId={pending.pendingId} /> : null}
+      {offered.includes('pgp') ? (
+        <PgpLogin onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} pendingId={pending.pendingId} {...(pending.loginName !== undefined ? { knownName: pending.loginName } : {})} />
+      ) : null}
       {/* One orange action: PGP's when it is offered, else the first key's. */}
       {offered.includes('security-key') ? (
         <SecondStepKey kind="security-key" primary={!offered.includes('pgp')} pendingId={pending.pendingId} onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} />
@@ -186,8 +190,13 @@ function SecondStepKey({ kind, primary, pendingId, onLoggedIn, onWait, onCantDo 
   );
 }
 
-/** PGP login, or (with `pendingId`) the PGP second step of a two-factor login. */
-function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first }: Go & { pendingId?: string }) {
+/**
+ * PGP login, or (with `pendingId`) the PGP second step of a two-factor login. Owner G6 (7 Nov):
+ * the login name goes with the key (the same field as the password login); a second step reuses
+ * the name its first step was given (`knownName`) and asks for it only when there was none.
+ */
+function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first, knownName }: Go & { pendingId?: string; knownName?: string }) {
+  const [loginName, setLoginName] = useState(knownName ?? '');
   const [publicKey, setPublicKey] = useState('');
   const [challenge, setChallenge] = useState<PgpChallenge | null>(null);
   const [code, setCode] = useState('');
@@ -200,7 +209,7 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first }: Go & { pen
     setBusy(true);
     setError(null);
     try {
-      setChallenge(await pgpLoginStart(publicKey.trim(), first !== undefined ? { pendingId: first } : {}));
+      setChallenge(await pgpLoginStart(loginName.trim(), publicKey.trim(), first !== undefined ? { pendingId: first } : {}));
       setCode('');
       setCopied(false);
     } catch (e) {
@@ -218,7 +227,7 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first }: Go & { pen
       const result: LoginResult = await pgpLoginFinish(challenge!.challengeId, code.trim());
       if (result.status === 'ok') onLoggedIn();
       else if (result.status === 'approve-on-device') onWait(result);
-      else setPending({ pendingId: result.pendingId, needs: result.needs });
+      else setPending({ pendingId: result.pendingId, needs: result.needs, loginName: loginName.trim() });
     } catch (e) {
       if (onCantDo(e)) return;
       setError(
@@ -245,6 +254,14 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first }: Go & { pen
       <ErrorLine error={error} />
       {challenge === null ? (
         <div className="x2f-field">
+          {knownName === undefined ? (
+            <>
+              <label className="x2f-label" htmlFor="pgp-login-name">
+                Login name
+              </label>
+              <input className="x2f-input" id="pgp-login-name" autoComplete="username" value={loginName} onChange={(e) => setLoginName(e.target.value)} />
+            </>
+          ) : null}
           <label className="x2f-label" htmlFor="pgp-key">
             Your PGP public key
           </label>
@@ -258,7 +275,7 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first }: Go & { pen
             onChange={(e) => setPublicKey(e.target.value)}
           />
           <p className="x2f-note">If your key contains an email address, X2F never shows or uses it.</p>
-          <Button variant="primary" disabled={busy || publicKey.trim() === ''} onClick={() => void start()}>
+          <Button variant="primary" disabled={busy || publicKey.trim() === '' || loginName.trim() === ''} onClick={() => void start()}>
             Send me a login message
           </Button>
         </div>
@@ -343,7 +360,7 @@ function SecurityKeyLogin({ onLoggedIn, onWait, onCantDo }: Go) {
       if (result.status === 'ok') onLoggedIn();
       else if (result.status === 'approve-on-device') onWait(result);
       // Staff and the owner: the second step is whatever the server needs (often PGP), never the same key again.
-      else setPending({ pendingId: result.pendingId, needs: result.needs });
+      else setPending({ pendingId: result.pendingId, needs: result.needs, loginName: loginName.trim() });
     } catch (e) {
       if (!onCantDo(e)) setError(refusalText(e, 'That security key did not work. Try again, or use another way in.'));
     } finally {

@@ -127,6 +127,7 @@ export const HOLD_COPY = {
   approved: 'Approved. Your changes have been applied.',
   approveFailed: 'Could not approve these changes. Try again.',
   makeChanges: 'Make changes',
+  continue: 'Continue',
   loadFailed: 'Could not load your account changes.',
   none: 'No changes are waiting.',
   review: 'Review changes',

@@ -358,6 +358,7 @@ test("a member logs in with PGP first, then a security key; a member's passkey a
   webauthnStarts = [];
   await page.goto(`${LOCAL}/login?returnTo=%2Fprofile%2Foffers`);
   await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-login-name', 'desk_ana');
   await page.fill('#pgp-key', FAKE_KEY);
   await page.click('text=Send me a login message');
   await page.fill('[aria-label="Login code"]', '12345678');

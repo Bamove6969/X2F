@@ -10,6 +10,7 @@
 import { createAuthApi, defaultDeviceLabel, type LoginResult, type PasswordLoginResult, type PgpChallenge } from '@x2f/auth-client';
 import { goLogin } from '../../api/client.js';
 import { hasUnseenNews } from '../news-model.js';
+import { CHANGES_PATH } from '../settings/holdCopy.js';
 
 /** Reads the error code of a 401 without consuming the body the client still has to read. */
 async function sessionGone(res: Response): Promise<boolean> {
@@ -38,14 +39,15 @@ export function deviceLabel(): string {
 }
 
 /*
- * FU-A shapes (owner, 2026-10-23; on the main line since 2026-10-27). PGP login takes the pasted
- * key alone (`{ key }`, never a login name), and password login takes the private `loginName`; the
+ * FU-A shapes (owner, 2026-10-23; on the main line since 2026-10-27). PGP login takes the private
+ * `loginName` with the pasted key (owner G6, 7 Nov 2026; a wrong name answers like an unknown key),
+ * and password login takes the private `loginName`; the
  * server answers every password miss with 401 `credentials-invalid` and this browser's `misses`
  * count (`AuthApiError.misses`). These went through the raw client until FU-A's typed client
  * landed; `task30-tripwires.test.ts` fired on that merge and was retired.
  */
-export function pgpLoginStart(key: string, o: { pendingId?: string } = {}): Promise<PgpChallenge> {
-  return authApi.loginPgpStart({ key, ...o });
+export function pgpLoginStart(loginName: string, key: string, o: { pendingId?: string } = {}): Promise<PgpChallenge> {
+  return authApi.loginPgpStart({ loginName, key, ...o });
 }
 
 export function pgpLoginFinish(challengeId: string, code: string): Promise<LoginResult> {
@@ -60,16 +62,24 @@ export function passwordLogin(loginName: string, password: string): Promise<Pass
  * Where a fresh login lands: `me().termsCurrent === false` means the Terms changed, so the Terms
  * screen comes first and carries `returnTo` on (Plan 2 R10). Then, when this device has not shown
  * the newest News message yet (Plan 4 Task 28, owner 2026-10-29), the News page opens and its
- * Continue goes on to `returnTo`; otherwise go straight to `returnTo`.
+ * Continue goes on to `returnTo`; otherwise go straight to `returnTo`. A strong login while changes
+ * wait lands on Account changes first (owner G58).
  */
 export async function afterLogin(navigate: (to: string) => void, returnTo: string): Promise<void> {
   let termsCurrent = true;
+  let land = returnTo;
   try {
-    termsCurrent = (await authApi.me()).termsCurrent;
+    const me = await authApi.me();
+    termsCurrent = me.termsCurrent;
+    // Owner G58 (7 Nov): a lead who logs in strongly while changes wait sees them first (before and
+    // after, the countdown, Approve now, Cancel all, Make changes); its Continue goes on to `returnTo`.
+    if ((me.pendingChanges ?? null) !== null && me.changesWait === false && (me.member ?? null) === null) {
+      land = `${CHANGES_PATH}?returnTo=${encodeURIComponent(returnTo)}`;
+    }
   } catch {
     // The login itself succeeded; carry on. Any call that needs the new Terms still answers
     // `terms-required`, which the API client routes to the Terms screen.
   }
-  const next = (await hasUnseenNews()) ? `/news?returnTo=${encodeURIComponent(returnTo)}` : returnTo;
+  const next = (await hasUnseenNews()) ? `/news?returnTo=${encodeURIComponent(land)}` : land;
   navigate(termsCurrent ? next : `/terms?returnTo=${encodeURIComponent(next)}`);
 }
