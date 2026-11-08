@@ -4,6 +4,7 @@
 // so there is no expectParity here: the phone layout rule and the one-primary rule still apply.
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
+import { signedIn } from './session.js';
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
@@ -87,6 +88,7 @@ test('after login, unseen news opens first and Continue goes on', async ({ page 
 for (const viewport of PHONE_VIEWPORTS) {
   test(`phone layout at ${viewport}`, async ({ page }) => {
     await stubNews(page, [item(4, '2026-10-30T09:00:00.000Z', 'A longer title that has to wrap on a small phone screen', 'x '.repeat(300)), ...ITEMS]);
+    await signedIn(page);
     await page.goto('/news');
     await setPhone(page, viewport);
     await expect(page.locator('[data-part="news-item"]')).toHaveCount(4);

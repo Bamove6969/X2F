@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, setMaintenanceListener } from './client.js';
 
 /**
- * Plan 4 Task 8: `GET /v1/site` (no session), the banner, the emergency stop and maintenance as
- * every visitor sees them. Only well-formed parts are kept; anything else reads as "off".
+ * Plan 4 Task 8: `GET /v1/site`, the banner, the emergency stop and maintenance. It answers anyone,
+ * but outside the front door (owner, 8 Nov 2026) only whether the site is in maintenance and its
+ * kind: the banner and the trading pause come with a signed-in, set-up session (App.tsx reads it
+ * again on login and logout). Only well-formed parts are kept; anything else reads as "off".
  */
 export interface SiteBannerInfo {
   text: string;

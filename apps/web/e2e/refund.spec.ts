@@ -33,6 +33,10 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await server?.close();
 });
+// The room is behind the front door (owner, 8 Nov 2026): a signed-in, set-up trader (a later route wins).
+test.beforeEach(async ({ page }) => {
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: INSIDE }));
+});
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 const later = (iso: string, min: number) => new Date(Date.parse(iso) + min * MIN).toISOString();

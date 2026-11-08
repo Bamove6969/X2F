@@ -43,7 +43,11 @@ async function openRoom(page: Page, view: TradeView = PAY_SECURED): Promise<void
   await expect(page.locator('main[data-screen="trade"]')).toHaveAttribute('data-trade-state', view.state);
 }
 
-const fold = (page: Page) => page.locator('html').getAttribute('data-fold');
+// The shell sets data-fold once the screen renders, which waits for the session behind the front door.
+const fold = async (page: Page) => {
+  await page.locator('html[data-fold]').waitFor({ state: 'attached' });
+  return page.locator('html').getAttribute('data-fold');
+};
 const box = async (page: Page, selector: string) => {
   const b = await page.locator(selector).first().boundingBox();
   if (!b) throw new Error(`${selector} has no box`);
@@ -250,7 +254,10 @@ test.describe('a book fold open: two segments (Chrome on Android)', () => {
   test('a screen without panes stays in the first pane, its bottom nav too', async ({ page }) => {
     await page.setViewportSize({ width: 840, height: 900 });
     await hinge(page, { width: 840, height: 900 }, 'vertical', HINGE.offset);
-    await page.route('**/v1/**', (r) => r.fulfill({ status: 401, json: { error: 'not-authenticated' } }));
+    // Behind the front door: a signed-in trader (a 401 from any call would end the session in the
+    // tab), and nothing else answers; a later route wins.
+    await page.route('**/v1/**', (r) => r.fulfill({ status: 404, json: { error: 'not-found' } }));
+    await page.route('**/v1/account/me', (r) => r.fulfill({ json: INSIDE }));
     await page.goto(`${ORIGIN}/sell`);
     await needSegments(page, '(horizontal-viewport-segments: 2)');
     await expect(page.locator('nav[aria-label="Main"]')).toBeVisible();

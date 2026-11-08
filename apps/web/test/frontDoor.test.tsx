@@ -160,6 +160,8 @@ describe('the verdict', () => {
   it('waits while loading, and anything short of a full set-up trader session is outside', () => {
     expect(doorVerdict({ status: 'loading' }, '/sell', '')).toEqual({ kind: 'wait' });
     expect(doorVerdict({ status: 'error', code: 'network' }, '/sell', '')).toEqual({ kind: 'go', to: login('/sell') });
+    // The session probe refused with terms-required goes the way the API client sends it: the Terms.
+    expect(doorVerdict({ status: 'error', code: 'terms-required' }, '/sell', '?currency=EUR')).toEqual({ kind: 'go', to: `/terms?returnTo=${encodeURIComponent('/sell?currency=EUR')}` });
     const as = (m: Record<string, unknown>): Session => ({ status: 'signed-in', me: m as never });
     expect(isInside(as(FULL))).toBe(true);
     for (const partial of [{ kind: 'trader' }, { ...FULL, termsCurrent: undefined }, { ...FULL, level: undefined }, { ...FULL, kind: 'staff' }]) {
