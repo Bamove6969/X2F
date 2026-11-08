@@ -3,7 +3,8 @@
  * and the relay under /relay; a second port is the node proxy at its root (monero-ts drops any
  * path in a daemon URI, so the node cannot live under /node). It listens on 127.0.0.1 and, only when DEMO_TAILSCALE_IP is set (a Tailscale 100.x
  * address found by `tailscale ip -4`), also over HTTPS on that private tailnet address. It never
- * binds 0.0.0.0 and opens no public tunnel.
+ * binds 0.0.0.0; an optional public tunnel (DEMO_TUNNEL=cloudflared, docs/demo.md) connects out
+ * and reaches it on 127.0.0.1 like any local client.
  */
 import { readFileSync } from 'node:fs';
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';

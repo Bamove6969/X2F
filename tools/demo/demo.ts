@@ -8,13 +8,14 @@
  * the owner's tailnet). Secrets are generated fresh into .demo/secrets (gitignored) on every start.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync, chmodSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import pg from 'pg';
 import { migrate } from '../../apps/api/src/db/migrate.js';
 import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.js';
 import { DEMO_DIR, HOST, LOG_DIR, MONEROD_RESTRICTED, MONEROD_RPC, PG_CONTAINER, PG_IMAGE, PORTS, ROOT, SECRETS_DIR, STATE_DIR, WEB_DIST } from './config.js';
 import { assertDemoFlag, assertRegtestDaemon } from './guard.js';
+import { demoOrigins, quickTunnelUrl } from './origins.js';
 import { readPids, startDetached, startTs, stopAll } from './procs.js';
 import { makeSecrets } from './secrets.js';
 
@@ -49,13 +50,31 @@ async function main(): Promise<void> {
   let tsIp = '';
   const ts = spawnSync('tailscale', ['ip', '-4'], { encoding: 'utf8' });
   if (ts.status === 0) tsIp = (ts.stdout.split('\n')[0] ?? '').trim();
-  const LOCAL_ORIGIN = `http://localhost:${PORTS.gateway}`;
   const TS_ORIGIN = tsIp ? `https://${tsIp}:${PORTS.gatewayTls}` : '';
+
+  // ── A public tunnel (optional, DEMO_TUNNEL=cloudflared): two Cloudflare quick tunnels ─────────
+  // Anyone with the URL can open the demo (fake money only). The tunnels connect out to Cloudflare;
+  // nothing here listens beyond 127.0.0.1.
+  const originEnv: Record<string, string | undefined> = { ...process.env };
+  if (process.env.DEMO_TUNNEL === 'cloudflared') {
+    const bin = process.env.DEMO_CLOUDFLARED || 'cloudflared';
+    for (const [name, port] of [['tunnel-web', PORTS.gateway], ['tunnel-node', PORTS.gatewayNode]] as const) {
+      startDetached(name, bin, ['tunnel', '--no-autoupdate', '--url', `http://${HOST}:${port}`], {});
+    }
+    const urlOf = (name: string) => quickTunnelUrl(existsSync(join(LOG_DIR, `${name}.log`)) ? readFileSync(join(LOG_DIR, `${name}.log`), 'utf8') : '');
+    await waitFor('the cloudflared quick tunnels', async () => urlOf('tunnel-web') !== null && urlOf('tunnel-node') !== null, 60_000);
+    originEnv.DEMO_PUBLIC_ORIGIN = urlOf('tunnel-web')!;
+    originEnv.DEMO_PUBLIC_NODE_ORIGIN = urlOf('tunnel-node')!;
+    step(`public tunnels up: ${originEnv.DEMO_PUBLIC_ORIGIN} (node ${originEnv.DEMO_PUBLIC_NODE_ORIGIN})`);
+  }
+  const o = demoOrigins(originEnv, tsIp);
+  const LOCAL_ORIGIN = o.local;
   // The web build talks to the relay through its own origin and to the node proxy through the
-  // gateway's node port, both baked in at build time.
-  const PRIMARY = TS_ORIGIN || LOCAL_ORIGIN;
-  const primaryWs = PRIMARY.replace(/^http/, 'ws');
-  const NODE_ORIGIN = tsIp ? `https://${tsIp}:${PORTS.gatewayNodeTls}` : `http://localhost:${PORTS.gatewayNode}`;
+  // gateway's node port (or their public tunnels), both baked in at build time.
+  const PRIMARY = o.primary;
+  const primaryWs = o.primaryWs;
+  const NODE_ORIGIN = o.node;
+  const PUBLIC_ORIGIN = o.public;
 
   step('making throwaway secrets in .demo/secrets');
   const s = await makeSecrets();
@@ -128,7 +147,7 @@ async function main(): Promise<void> {
   });
 
   // ── services ────────────────────────────────────────────────────────────────
-  const origins = [LOCAL_ORIGIN, `http://127.0.0.1:${PORTS.gateway}`, ...(TS_ORIGIN ? [TS_ORIGIN] : [])];
+  const origins = o.allowed;
   const demo = { X2F_DEMO: '1' };
 
   startTs('relay', 'apps/relay/src/main.ts', {
@@ -141,7 +160,7 @@ async function main(): Promise<void> {
   const apiEnv: Record<string, string> = {
     X2F_SITE_NAME: 'X2F demo',
     X2F_ORIGINS: origins.join(','),
-    X2F_RP_ID: 'localhost',
+    X2F_RP_ID: o.rpId,
     DATABASE_URL: pgUrl('x2f'),
     X2F_LEAKED_LIST_PATH: s.leakedListPath,
     X2F_SERVER_KEY: s.serverKey,
@@ -208,12 +227,14 @@ async function main(): Promise<void> {
 
   const info = {
     web: LOCAL_ORIGIN,
+    ...(PUBLIC_ORIGIN ? { public: PUBLIC_ORIGIN } : {}),
     ...(TS_ORIGIN ? { tailnet: TS_ORIGIN } : {}),
     logs: LOG_DIR,
   };
   writeFileSync(join(DEMO_DIR, 'urls.json'), JSON.stringify(info, null, 2));
   console.log('\nX2F demo is running (regtest, fake money). Stop it with: npm run demo:stop');
   console.log(`  Open:     ${LOCAL_ORIGIN}`);
+  if (PUBLIC_ORIGIN) console.log(`  Public:   ${PUBLIC_ORIGIN}  (anyone with this URL can open it; fake money only)`);
   if (TS_ORIGIN) console.log(`  Tailnet:  ${TS_ORIGIN}  (self-signed certificate; your tailnet only)`);
   else console.log('  Tailnet:  not available (tailscale is not installed on this machine)');
   console.log('  Logins:   see docs/demo.md (or .demo/logins.txt)');

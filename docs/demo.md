@@ -113,8 +113,18 @@ offers cannot be taken (409 `price-unavailable`).
 - **This machine only.** Everything binds to 127.0.0.1. The one exception: when
   `tailscale ip -4` succeeds, the gateway also serves HTTPS (a self-signed certificate made per
   start) on that Tailscale address, ports 4443 (the app) and 4444 (the node proxy), so your own devices on your tailnet can open it.
-  The gateway refuses any address outside Tailscale's 100.64.0.0/10. Nothing ever binds 0.0.0.0
-  and no public tunnel is opened.
+  The gateway refuses any address outside Tailscale's 100.64.0.0/10. Nothing ever binds 0.0.0.0,
+  and no public tunnel is opened unless you ask for one (below).
+- **A public link, only when asked.** `DEMO_TUNNEL=cloudflared npm run demo` starts two Cloudflare
+  quick tunnels (no account; `cloudflared` on the PATH, or its path in `DEMO_CLOUDFLARED`) to
+  127.0.0.1:4400 and 127.0.0.1:4401, and builds the app for their `https://….trycloudflare.com`
+  URLs (printed at the end and in `.demo/urls.json`). Or bring your own two HTTPS tunnel origins:
+  `DEMO_PUBLIC_ORIGIN=https://app… DEMO_PUBLIC_NODE_ORIGIN=https://node… npm run demo`. The web
+  build, the relay's wss URL, the node proxy URL, the allowed origins and the CSP then use them
+  (`tools/demo/origins.ts`, `tools/test/demo-origins.test.ts`); localhost keeps working. **A quick
+  tunnel is public: anyone who has the URL can open the demo and sign up.** It is fake money only
+  (regtest), and the tunnels end with `npm run demo:stop`. Passkeys are made for the tunnel's host
+  name; password logins work everywhere.
 - **The node proxy needs its own origin.** monero-ts drops any path in a daemon URI, so
   `VITE_NODE_PROXY_URL` (here and in production) must be a bare origin such as
   `https://node.example.org`, never `https://example.org/node`.
