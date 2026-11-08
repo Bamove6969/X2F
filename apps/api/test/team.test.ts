@@ -664,9 +664,11 @@ describe('the audit log covers every member action (review M3)', () => {
     expect(err(await m.browser.post(`/v1/offers/${offer.id}/take`, takeBody(owner.wallet)))).toEqual({ status: 403, error: 'member-cannot-sign' });
     expect(await auditRows(owner.id)).toEqual([]);
 
-    // A dispute on a secured trade (the owner is the buyer), then an appeal of its ruling.
+    // A dispute on a paid trade once the seller's confirm window is over (the owner is the buyer;
+    // never before "I've paid", design proto review P1), then an appeal of its ruling.
     const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
-    await driveTo(deps, d.trade, 'secured');
+    const dp = await driveTo(deps, d.trade, 'paid');
+    setNow(dp.confirmBy!);
     const opened = await m.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'a private note' });
     expect(opened.statusCode, opened.body).toBe(200);
     // A moderator's round-1 ruling, through the dispute machine (Plan 4 Task 12 is not built yet).
