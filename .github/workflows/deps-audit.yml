@@ -1,0 +1,77 @@
+name: Dependency audit
+
+# Daily npm audit and OSV-Scanner over package-lock.json. A critical or high finding fails the
+# job; GitHub then sends its workflow-failure notification (to whoever last changed the
+# schedule, plus anyone watching Actions on the repo).
+# No secrets are needed: both tools read the public npm and OSV advisory databases.
+
+on:
+  workflow_dispatch: {}
+  schedule:
+  # off-peak minute, avoids the 00:00 load spike
+  - cron: 17 6 * * *
+
+permissions: {}
+
+jobs:
+  npm-audit:
+    name: npm audit (production, high and up)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    # --audit-level=high exits non-zero for high or critical, and for nothing lower.
+    - run: npm audit --omit=dev --audit-level=high
+
+  osv-scanner:
+    name: OSV-Scanner (critical and high)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    # The scanner exits 1 on any finding, including low ones, so its own exit code is ignored
+    # and the JSON result is judged by the next step.
+    - name: Scan package-lock.json
+      id: scan
+      continue-on-error: true
+      uses: google/osv-scanner-action/osv-scanner-action@6ad84ce1ef2d4124ba333b221894c133c4a970ea # v2.7.0
+      with:
+        scan-args: |-
+          scan
+          --lockfile=package-lock.json
+          --format=json
+          --output-file=osv-results.json
+    - name: Fail on critical or high
+      run: |
+        node --input-type=module -e '
+          import { readFileSync, existsSync } from "node:fs";
+          if (!existsSync("osv-results.json")) {
+            console.error("osv-results.json missing: the scan did not run (scan outcome: ${{ steps.scan.outcome }}).");
+            process.exit(2);
+          }
+          const r = JSON.parse(readFileSync("osv-results.json", "utf8"));
+          const bad = [], other = [];
+          for (const res of r.results ?? []) for (const p of res.packages ?? []) {
+            const byId = new Map((p.vulnerabilities ?? []).map(v => [v.id, v]));
+            for (const g of p.groups ?? []) {
+              const score = Number.parseFloat(g.max_severity);
+              const label = `${p.package.name}@${p.package.version} ${g.ids.join(",")} (CVSS ${g.max_severity || "unscored"})`;
+              // CVSS 7.0 and up is high, 9.0 and up critical. Unscored: fall back to the
+              // advisory text label, and if there is none treat it as high (fail closed).
+              const text = g.ids.map(i => String(byId.get(i)?.database_specific?.severity ?? "")).join(" ").toUpperCase();
+              const high = Number.isFinite(score) ? score >= 7 : (/CRITICAL|HIGH/.test(text) || text === "");
+              (high ? bad : other).push(label);
+            }
+          }
+          console.log(`${other.length} finding(s) below high:\n` + other.join("\n"));
+          if (bad.length) { console.error(`${bad.length} critical or high finding(s):\n` + bad.join("\n")); process.exit(1); }
+          console.log("No critical or high findings.");
+        '
