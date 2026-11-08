@@ -226,6 +226,9 @@ export const CANT_DO_TITLE = {
   chat: "This chat can't open",
   team: "This can't be done on the team",
   accountType: "You can't switch to a vendor account",
+  // Design build review 7 Nov: a title that says why (CantDoThat titles). COPY-UNSIGNED
+  teamOwnerOnly: 'Only the owner can do this',
+  teamWeak: 'Needs a Strong login',
   // COPY-UNSIGNED: the design review's title for shot 19 (too-many-members, now a server fallback).
   teamFull: 'Your team is full',
 } as const;
@@ -453,6 +456,14 @@ export const TOO_MANY_MEMBERS_CODE = 'too-many-members' satisfies CantDoCode;
  * member was refused on. `max` is the member limit the API sent with `too-many-members`.
  * COPY-UNSIGNED
  */
+/** The team refusal's title: who may do it, or why this device can't (design build review 7 Nov). */
+export function teamCantDoTitle(code: CantDoCode | string): string {
+  if (code === 'owner-only' || code === 'forbidden') return CANT_DO_TITLE.teamOwnerOnly;
+  if (code === 'weak-session') return CANT_DO_TITLE.teamWeak;
+  if (code === TOO_MANY_MEMBERS_CODE) return CANT_DO_TITLE.teamFull;
+  return CANT_DO_TITLE.team;
+}
+
 export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): string {
   switch (code) {
     case 'owner-only':

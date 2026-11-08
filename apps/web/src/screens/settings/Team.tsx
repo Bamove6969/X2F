@@ -23,7 +23,7 @@ import {
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat, isCantDoCode, type CantDoCode } from '../../ui/CantDoThat.js';
-import { CANT_DO_TITLE, HOLD_CODE, TOO_MANY_MEMBERS_CODE, teamCantDoText } from '../../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, HOLD_CODE, TOO_MANY_MEMBERS_CODE, teamCantDoText, teamCantDoTitle } from '../../ui/cantDoCodes.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { holdSentence } from '../auth/refusals.js';
@@ -359,7 +359,7 @@ export function Team() {
 
         {cantDo !== null ? (
           <CantDoThat
-            title={cantDo.code === TOO_MANY_MEMBERS_CODE ? CANT_DO_TITLE.teamFull : CANT_DO_TITLE.team}
+            title={teamCantDoTitle(cantDo.code)}
             body={
               // Owner 2026-10-30: every team change waits out the account's 24-hour hold (the hold's own sentence).
               cantDo.code === HOLD_CODE

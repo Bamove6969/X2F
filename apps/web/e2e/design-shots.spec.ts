@@ -927,9 +927,8 @@ test('61-63 CantDoThat on PostOffer, the feedback form, the thank-you', async ({
   await expect(popup).toBeVisible();
   await shot(page, '61-cantdothat-post-offer');
   await popup.getByRole('link', { name: 'feedback' }).click();
-  await expect(page.getByRole('heading', { name: 'Feedback' })).toBeVisible();
-  await page.getByRole('radio', { name: 'Complaint' }).check();
-  await page.getByLabel('Your comment').fill('A hold should say how long it lasts.');
+  await expect(page.getByRole('heading', { name: 'Tell us what you think' })).toBeVisible();
+  await page.getByLabel('Your message').fill('A hold should say how long it lasts.');
   await shot(page, '62-feedback-form');
   await page.getByRole('button', { name: 'Send' }).click();
   await expect(page.locator('[data-part="feedback-thanks"]')).toBeVisible();
