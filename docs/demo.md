@@ -91,10 +91,11 @@ Every account has a password, an authenticator (throwaway secret) and one throwa
   are random per start, in `.demo/secrets/` (chmod 600), and die with the demo. So are the demo
   accounts' authenticator secrets.
 - **The leaked-password list** has a single entry ("password").
-- **Pieces production does not have wired yet**, played by the demo moderator
-  (`tools/demo/moderator.ts`): the moderator's escrow party, the chain watcher that applies
-  `setup-done`, `chain` and `settled`, and the trade timer loop. Everything else is the real code:
-  the real API, moderation service, relay, node proxy, web build, escrow runtime and 2-of-3
+- **The miner and the faucet** are the only demo pieces in `tools/demo/moderator.ts`. It runs the
+  real moderation service (attestation, the moderator's escrow party, the chain watcher that
+  reports `setup-done`, `chain` and `settled`, the moderator desks), only with a 4-second watcher
+  period instead of 15 seconds. The API runs its own trade timer loop. Everything else is the real
+  code: the real API, moderation service, relay, node proxy, web build, escrow runtime and 2-of-3
   multisig.
 
 What is **real**: the XMR prices. The API asks the public price sources (spec 11.6) over the
