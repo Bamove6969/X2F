@@ -1,6 +1,8 @@
 import { assertLoginNamesTagged } from './accounts.js';
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
 import { buildInternalListener } from './internal/routes.js';
+import { tradeEventPublisher } from './events/tradePublisher.js';
+import { siteMaintenanceSince, startTimers } from './trades/timers.js';
 import { addOwnerAlert } from './alerts.js';
 import { fileAttestationPolicy } from './auth/attestation.js';
 import { openLeakedList } from './auth/leaked.js';
@@ -23,6 +25,7 @@ import { productionNudgeWiring } from './nudge/wiring.js';
 import { daemonConfirmations, monerodUrlFromEnv } from './trades/chain.js';
 import { ownerAlertSink } from './push/ownerAlert.js';
 import { staffListenFromEnv, startStaffApi } from './staff/main.js';
+import { assertOneSiteFlagsRow } from './site/flags.js';
 
 function port(raw: string | undefined): number {
   if (raw === undefined || raw === '') return 8080;
@@ -47,6 +50,8 @@ await attestation.init();
 const db = createPool(config.databaseUrl);
 // FU-D: no start while a login name is still stored in plaintext (migration 012 without its tool).
 await assertLoginNamesTagged(db);
+// Review M1: exactly one site_flags row, so a missing row never means maintenance to one reader and none to another.
+await assertOneSiteFlagsRow(db);
 // Plan 3 Task 3 (spec 11.6): XMR/USD = median of the PRICE_SOURCES, polled every minute; USD→X
 // from the FX_SOURCES in trust order, polled every 5 minutes, with the owner's settings read from
 // owner_settings before each poll. Price health alerts go to the owner's in-app alerts and, for
@@ -99,7 +104,14 @@ await app.listen({ ...LISTEN_OPTIONS, host: process.env.X2F_HOST || '127.0.0.1',
 // to a private interface only (default 127.0.0.1) and holds no secret beyond MOD_SIGNING_PUBLIC.
 const modSigningPublic = process.env.X2F_MOD_SIGNING_PUBLIC;
 const internal = modSigningPublic
-  ? await buildInternalListener({ db, modSigningPublic, now: () => deps.clock().getTime() })
+  ? await buildInternalListener({
+      db,
+      modSigningPublic,
+      now: () => deps.clock().getTime(),
+      clock: deps.clock,
+      // Task 9: a watcher report's committed event reaches both traders like any other trade event.
+      publish: tradeEventPublisher({ events: app.events, push: app.push }),
+    })
   : null;
 if (internal) {
   await internal.listen({
@@ -113,10 +125,21 @@ if (internal) {
 const staffListen = staffListenFromEnv(process.env);
 const staff = staffListen ? await startStaffApi(deps, staffListen) : null;
 
+// Plan 3 Task 9: the timer loop (deadline ticks, lapse escalation, and maintenance pause/resume
+// from `site_flags.maintenance_since`).
+const timers = startTimers({
+  db,
+  clock: deps.clock,
+  maintenanceSince: () => siteMaintenanceSince(db),
+  publish: tradeEventPublisher({ events: app.events, push: app.push }),
+  log: (e) => app.log.info({ reason: e.reason }, 'trade timers'),
+});
+
 const shutdown = async () => {
   if (staff) await staff.close();
   await stopHolds();
   await stopDisputeTimers();
+  await timers.stop(); // lets a pass in flight finish before the pool closes
   await stopRetention(); // lets a purge in flight finish before the pool closes
   await prices.stop();
   if (internal) await internal.close();

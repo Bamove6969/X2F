@@ -230,4 +230,18 @@ describe('the rebuilt trade carries the view faithfully', () => {
     expect(canExtend(v, at(200))).toBe(false);
     expect(canRequestRefund(v, at(200))).toBe(false);
   });
+
+  it('a view without releaseClaimedAt (an older API) still answers: the claim is never read here', () => {
+    // Nudged (owner G2, merge with main 687ae821): without a nudge the refund stays locked whatever the claim.
+    const t = nudged(secured());
+    const full = viewOf(t, 'seller', at(200));
+    const v: Partial<typeof full> = { ...full };
+    delete v.releaseClaimedAt;
+    const old = v as typeof full;
+    expect(() => refusalFor(old, { type: 'extend' }, 'seller', at(200))).not.toThrow();
+    expect(sellerRefundOpen(old, at(200).getTime())).toBe(sellerRefundOpen(full, at(200).getTime()));
+    expect(canExtend(old, at(200))).toBe(canExtend(full, at(200)));
+    expect(canRequestRefund(old, at(200))).toBe(canRequestRefund(full, at(200)));
+    expect(canRequestRefund(old, at(200))).toBe(true);
+  });
 });
