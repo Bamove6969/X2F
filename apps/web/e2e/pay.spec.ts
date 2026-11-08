@@ -188,7 +188,7 @@ test.describe("I've paid", () => {
     await page.evaluate(() => window.__x2fSetFixtureEscrow!({ amountAtomic: '1312500000000', fiatCents: '43313' }));
     await expect(sheet(page)).toContainText('Trade grew to 1.312500 XMR, you now pay $433.13');
     await expect(sheet(page)).toContainText(SENTENCE('$433.13'));
-    await expect(sheet(page).getByRole('checkbox')).not.toBeChecked();
+    await expect(sheet(page).getByRole('checkbox', { name: /^I sent exactly/ })).not.toBeChecked();
     expect(s.posts).toEqual([{ type: 'mark-paid', fiatCents: '41250' }]);
     expect(await escrowCalls(page)).toEqual([]);
     await expect(room(page)).toHaveAttribute('data-trade-state', 'secured');
