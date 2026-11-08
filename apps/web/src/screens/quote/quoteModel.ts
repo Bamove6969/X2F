@@ -166,6 +166,7 @@ export function formatMinor(minor: bigint, currency: string, exponent: number): 
 /** Money with no fraction shown when it is zero: the board's "$50 to $1,500". */
 export function fiatWhole(minor: bigint, currency: string, exponent = 2): string {
   const s = formatMinor(minor, currency, exponent);
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- exponent is a number (currency minor-unit digits), not text
   return exponent > 0 && minor % 10n ** BigInt(exponent) === 0n ? s.replace(new RegExp(`\\.0{${exponent}}(?=\\D*$)`), '') : s;
 }
 
