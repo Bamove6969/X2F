@@ -348,6 +348,20 @@ describe('a username + password session: changes are staged, reviewed, submitted
     expect((await deps.db.query('select 1 from hold_changes where account_id = $1', [t.id])).rowCount).toBe(0);
   });
 
+  it('owner g62: the 24 hours keep counting during maintenance; due changes apply then', async () => {
+    const t = await passwordTrader();
+    const id = ((await changePassword(t.b, t.id)).json() as { changeId: string }).changeId;
+    expect((await submit(t.b, [id])).statusCode).toBe(200);
+    await deps.db.query('update site_flags set maintenance_since = $1', [now]);
+    try {
+      later(HOLD_MS);
+      expect(await settleDueChanges(deps.config, app.events).run(deps.db, now)).toBe(1);
+    } finally {
+      await deps.db.query('update site_flags set maintenance_since = null');
+    }
+    expect((await passwordLogin(new Browser(app), t.name, NEW_PASSWORD)).statusCode).not.toBe(401);
+  });
+
   it('one waiting change can be cancelled by id', async () => {
     const t = await passwordTrader();
     const a = ((await changePassword(t.b, t.id)).json() as { changeId: string }).changeId;
