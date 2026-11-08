@@ -80,6 +80,11 @@ export interface TradeRow {
   cancel_confirmed_at: Date | null;
   /** Migration 116: when the seller's Confirm cancel became available (the refund fully confirmed). */
   cancel_confirmable_at: Date | null;
+  /**
+   * Migration 119 (owner G2, g66): when the seller first nudged the buyer after the escrow was
+   * secured. Written only by the nudge route, never by `stateColumns` (no event changes it).
+   */
+  seller_nudged_at: Date | null;
   buyer_payout: string | null;
   seller_refund: string | null;
   seller_wallet_app: string | null;
@@ -145,6 +150,7 @@ export function rowToTrade(r: TradeRow): Trade {
     closedAt: r.closed_at,
     cancelConfirmedAt: r.cancel_confirmed_at,
     cancelConfirmableAt: r.cancel_confirmable_at,
+    sellerNudgedAt: r.seller_nudged_at ?? null,
   };
 }
 

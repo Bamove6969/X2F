@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TRADED_MIN_USD, tradedBucketLabel, tradedBucketUsd } from '../src/index.js';
+import { TRADED_MIN_USD, TRADED_MIN_XMR, tradedBucketLabel, tradedBucketUsd, tradedBucketXmr, tradedBucketXmrLabel } from '../src/index.js';
 
 // The owner's opt-in "$X+ in trades to date" line (2026-11-01/02/03, via the lead):
 // rounded DOWN to $10,000 steps up to "$90,000+", then "$100,000+", then $50,000 steps.
@@ -45,5 +45,28 @@ describe('tradedBucketUsd', () => {
   });
   it('refuses a negative total', () => {
     expect(() => tradedBucketUsd(-1n)).toThrow(RangeError);
+  });
+});
+
+// Owner Q63 (6 Nov): the card's line is the XMR traded to date, on the same "more than" rule.
+describe('tradedBucketXmr', () => {
+  const xmr = (n: number): bigint => BigInt(n) * 1_000_000_000_000n;
+  const label = (atomic: bigint): string | null => {
+    const b = tradedBucketXmr(atomic);
+    return b === null ? null : tradedBucketXmrLabel(b);
+  };
+  it('a plus needs MORE than the step', () => {
+    const rows: [bigint, string | null][] = [
+      [xmr(10), null], [xmr(10) + 1n, '10+ XMR'], [xmr(20), '10+ XMR'], [xmr(20) + 1n, '20+ XMR'],
+      [xmr(90) + 1n, '90+ XMR'], [xmr(100), '90+ XMR'], [xmr(100) + 1n, '100+ XMR'],
+      [xmr(150), '100+ XMR'], [xmr(150) + 1n, '150+ XMR'], [xmr(1_234), '1,200+ XMR'],
+    ];
+    for (const [a, want] of rows) expect(label(a), String(a)).toBe(want);
+  });
+  it('up to and including exactly 10 XMR nothing shows; never negative', () => {
+    expect(TRADED_MIN_XMR).toBe(10);
+    expect(label(0n)).toBeNull();
+    expect(label(xmr(9) + 999_999_999_999n)).toBeNull();
+    expect(() => tradedBucketXmr(-1n)).toThrow(RangeError);
   });
 });
