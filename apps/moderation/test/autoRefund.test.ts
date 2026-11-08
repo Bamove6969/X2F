@@ -7,7 +7,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { FINAL_ALERT_MS } from '@x2f/escrow';
 import { fiatCents, newTrade as machineTrade, apply, type Trade } from '@x2f/trade';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ALERT_LATE_MS, AUTO_REFUND_MARGIN_MS, autoRefundStep, PAID_CONFLICT_MS, REFUND_UNVERIFIED_MS, type AutoRefundInputs } from '../src/autoRefund.js';
 import { fromJson } from '../src/shadow.js';
 import type { DeskRecord } from '../src/desk.js';
@@ -33,12 +33,14 @@ import {
   TERMS,
   type Ctx,
   type Live,
+  stopAll,
 } from './harness.js';
 
 let ctx: Ctx;
 beforeAll(async () => {
   ctx = await makeCtx();
 });
+afterEach(stopAll);
 afterAll(async () => {
   await ctx.db.end();
 });

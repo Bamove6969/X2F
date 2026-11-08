@@ -4,15 +4,16 @@
 // pass alongside another.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { fromJson } from '../src/shadow.js';
 import type { DeskRecord } from '../src/desk.js';
-import { fakeNetwork, inFunding, makeCtx, moderation, secured, type Ctx } from './harness.js';
+import { fakeNetwork, inFunding, makeCtx, moderation, secured, type Ctx, stopAll } from './harness.js';
 
 let ctx: Ctx;
 beforeAll(async () => {
   ctx = await makeCtx();
 });
+afterEach(stopAll);
 afterAll(async () => {
   await ctx.db.end();
 });

@@ -7,6 +7,7 @@ import {
   INTERNAL_SIG_HEADER,
   internalSignedBytes,
   isAttestedTerms,
+  SETTLE_KINDS,
   settleKindFor,
   TradeRuleError,
   type Attestation,
@@ -228,6 +229,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
     if (code === null) throw new Refused(400, 'bad-body');
     let event: TradeEvent | null = null;
+    /** `settled`: the kind the watcher counted the sweep for (security review 7 Nov, finding 3). */
+    let claimedKind: SettleKind | null = null;
     switch (body.kind) {
       case 'setup-done':
         if (!keysAre(body, ['kind', 'trade', 'escrowAddress']) || typeof body.escrowAddress !== 'string' || !/^[0-9A-Za-z]{1,128}$/.test(body.escrowAddress)) break;
@@ -242,7 +245,9 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         break;
       }
       case 'settled':
-        if (!keysAre(body, ['kind', 'trade', 'txHash']) || typeof body.txHash !== 'string' || !TX_HASH.test(body.txHash)) break;
+        if (!keysAre(body, ['kind', 'trade', 'txHash', 'settleKind']) || typeof body.txHash !== 'string' || !TX_HASH.test(body.txHash)) break;
+        if (body.settleKind !== null && !SETTLE_KINDS.includes(body.settleKind as SettleKind)) break;
+        claimedKind = body.settleKind as SettleKind | null;
         event = { type: 'settled', kind: 'release', txHash: body.txHash }; // kind set below from the trade
         break;
       case 'late-funds':
@@ -267,14 +272,24 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       const known = await o.db.query('select 1 from trades where code = $1', [code]);
       throw known.rows.length === 0 ? new Refused(404, 'not-found') : new Refused(409, 'not-attested');
     }
+    // Finding 3: `settled` applies only with the kind the watcher counted the sweep for, and only
+    // while the trade still names that kind, checked again under the trade's row lock (`within`):
+    // a signing window that reverted and a new settlement started in between is refused, never
+    // recorded as the other kind.
+    let within: Parameters<typeof applyEvent>[4];
     if (event.type === 'settled') {
       const t = await loadTrade(o.db, code);
       const kind = t ? settleKindFor(t) : null;
-      if (kind === null) throw new Refused(409, 'settle-kind-unknown');
-      event = { ...event, kind };
+      if (kind === null || claimedKind === null) throw new Refused(409, 'settle-kind-unknown');
+      if (kind !== claimedKind) throw new Refused(409, 'settle-kind-changed');
+      event = { ...event, kind: claimedKind };
+      const claimed = claimedKind;
+      within = async (_c, prev) => {
+        if (settleKindFor(prev) !== claimed) throw new Refused(409, 'settle-kind-changed');
+      };
     }
     try {
-      await applyEvent({ db: o.db, clock: o.clock ?? (() => new Date(now())), ...(o.publish ? { publish: o.publish } : {}) }, code, event, 'system');
+      await applyEvent({ db: o.db, clock: o.clock ?? (() => new Date(now())), ...(o.publish ? { publish: o.publish } : {}) }, code, event, 'system', within);
     } catch (e) {
       if (e instanceof TradeRuleError) throw new Refused(409, e.code);
       if (e instanceof ApiError && e.status === 404) throw new Refused(404, 'not-found');

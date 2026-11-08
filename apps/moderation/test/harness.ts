@@ -280,7 +280,14 @@ export async function moderation(ctx: Ctx, fetch: Fetch, opts: { deskFails?: { o
       },
     },
   );
+  running.push(handle);
   return { handle, parties, transports, started, logs };
+}
+
+/** Every service `moderation()` started; stopAll() after each test, so a failed test leaves no instance lock held (finding 2). */
+const running: ModerationHandle[] = [];
+export async function stopAll(): Promise<void> {
+  await Promise.all(running.splice(0).map((h) => h.stop()));
 }
 
 /** A trade with fresh buyer and seller identities, as the API's work list serves it. */

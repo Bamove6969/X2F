@@ -182,7 +182,10 @@ describe('POST /internal/v1/reports: watcher reports', () => {
       { kind: 'chain', trade: t.code, receivedAtomic: '5', unlockedAtomic: '6', confirmations: 1 },
       { kind: 'chain', trade: t.code, receivedAtomic: '5', unlockedAtomic: '0', confirmations: -1 },
       { kind: 'chain', trade: t.code, receivedAtomic: '5', unlockedAtomic: '0', confirmations: 1, extra: 1 },
-      { kind: 'settled', trade: t.code, txHash: 'nothex' },
+      { kind: 'settled', trade: t.code, txHash: 'nothex', settleKind: 'release' },
+      // Security review 7 Nov, finding 3: the watcher names the kind it counted the sweep for.
+      { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64) },
+      { kind: 'settled', trade: t.code, txHash: 'a'.repeat(64), settleKind: 'nope' },
       { kind: 'setup-done', trade: t.code, escrowAddress: '' },
       { kind: 'late-funds', trade: t.code, kindOf: 'x' },
       { kind: 'spend-unshown', trade: t.code, txHash: 'a'.repeat(64) },
@@ -200,15 +203,54 @@ describe('POST /internal/v1/reports: watcher reports', () => {
     const t = await trade();
     await driveTo(deps, t, 'settling');
     const txHash = randomBytes(32).toString('hex');
-    const res = await report({ kind: 'settled', trade: t.code, txHash });
+    const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'release' });
     expect(res.statusCode).toBe(201);
     expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'released', txHash });
+  });
+
+  it('settled naming another kind than the trade\'s is refused 409 settle-kind-changed (security review 7 Nov, finding 3)', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    const res = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: 'buyer-cancel' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'settle-kind-changed' });
+    expect((await loadTrade(deps.db, t.code))!.state).toBe('settling');
+  });
+
+  it('a kind that changes while the report waits for the trade\'s lock is refused inside the transaction (finding 3)', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      await c.query('select 1 from trades where code = $1 for update', [t.code]);
+      const pending = report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: 'release' });
+      // The report passed the check before the lock and now waits for the row.
+      await expect.poll(async () => (await deps.db.query(`select count(*)::int as n from pg_locks where not granted and locktype in ('transactionid', 'tuple')`)).rows[0].n).toBeGreaterThan(0);
+      // Meanwhile the signing window reverted and the buyer cancelled: the trade now settles as buyer-cancel.
+      await c.query(`update trades set settling = 'buyer-cancel' where code = $1`, [t.code]);
+      await c.query('commit');
+      const res = await pending;
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toEqual({ error: 'settle-kind-changed' });
+    } finally {
+      c.release();
+    }
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'settling', settling: 'buyer-cancel', txHash: null });
+  });
+
+  it('settled with no kind named (null) is refused 409 settle-kind-unknown (the watcher retries)', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    const res = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: null });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'settle-kind-unknown' });
   });
 
   it('settled where the trade alone does not name the kind is refused 409 settle-kind-unknown (the watcher retries)', async () => {
     const t = await trade();
     await driveTo(deps, t, 'secured');
-    const res = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex') });
+    const res = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: 'release' });
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({ error: 'settle-kind-unknown' });
     expect((await loadTrade(deps.db, t.code))!.state).toBe('secured');

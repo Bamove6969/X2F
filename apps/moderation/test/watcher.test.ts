@@ -17,7 +17,7 @@ import {
 } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import pg from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, it } from 'vitest';
 import { relayRegisterMessage, startModeration, type Fetch, type ModerationHandle, type WorkItem } from '../src/main.js';
 import { MOD_TEMPLATE_DB } from './setup/postgres.js';
 
@@ -231,8 +231,14 @@ async function moderation(fetch: Fetch, logs: string[] = []) {
       },
     },
   );
+  running.push(handle);
   return { handle, started, parties, logs };
 }
+/** Stopped after each test, so a failed test leaves no instance lock held (security review 7 Nov, finding 2). */
+const running: ModerationHandle[] = [];
+afterEach(async () => {
+  await Promise.all(running.splice(0).map((h) => h.stop()));
+});
 
 /** A trade attested by `m`, its party started, ready() resolved with ESCROW and setup-done reported. */
 async function inFunding(m: Awaited<ReturnType<typeof moderation>>, net: ReturnType<typeof fakeNetwork>['net']): Promise<string> {
@@ -380,7 +386,7 @@ describe('the chain watcher', () => {
     // In a block.
     p.funds = { ...p.funds, outgoing: [{ txHash: hash('b'), height: 90, spentAtomic: XMR }] };
     await m.handle.watch();
-    expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b') }]);
+    expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: null }]);
     expect(net.closed.sort()).toEqual([await channelFor(code, 'escrow'), await channelFor(code, 'signals')].sort());
     net.states.set(code, 'released');
     await m.handle.watch();
@@ -546,7 +552,7 @@ describe('the chain watcher', () => {
     clock = new Date(clock.getTime() + 60 * 60_000);
     p.funds = { ...p.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: hash('b'), height: 90, spentAtomic: XMR }], ownTxs: [hash('b')] };
     await m.handle.watch();
-    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === code)).toEqual([{ kind: 'settled', trade: code, txHash: hash('b') }]);
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === code)).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: null }]);
     net.states.set(code, 'released');
     clock = new Date(clock.getTime() + 7 * 60 * 60_000);
     await m.handle.watch();
@@ -637,7 +643,29 @@ describe('the chain watcher', () => {
           { address: FEE_WALLET, amountAtomic: feeFor(250_000_000_000n) },
         ],
       }]);
-      expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b') }]);
+      expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: 'release' }]);
+      expect(net.closed).toHaveLength(2);
+      await m.handle.stop();
+    });
+
+    it('settled names the kind the sweep was proven for; a 409 settle-kind-changed is not counted, and the next pass proves it again (security review 7 Nov, finding 3)', async () => {
+      const { net, fetch } = fakeNetwork();
+      const logs: string[] = [];
+      const m = await moderation(fetch, logs);
+      const { code, p } = await settlingRelease(net, m);
+      p.funds = { ...p.funds, spendProofs: [{ from: 'buyer', txHash: hash('b'), txKey: KEY }, { from: 'seller', txHash: hash('b'), txKey: '' }] };
+      p.prove = () => true;
+      net.answer = (r) => (r.kind === 'settled' ? { status: 409, error: 'settle-kind-changed' } : { status: 201 });
+      await m.handle.watch();
+      expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: 'release' }]);
+      expect(logs).toContain('watch-report-refused-409');
+      expect(net.closed).toEqual([]);
+      // The trade now settles as a mutual cancel: proven again against its minimums, then accepted.
+      net.kinds.set(code, 'mutual-cancel');
+      net.answer = () => ({ status: 201 });
+      await m.handle.watch();
+      expect(p.proveCalls.at(-1)!.minimums).toEqual([{ address: TERMS.sellerRefund, amountAtomic: XMR }]);
+      expect(net.reports.filter((r) => r.kind === 'settled').at(-1)).toEqual({ kind: 'settled', trade: code, txHash: hash('b'), settleKind: 'mutual-cancel' });
       expect(net.closed).toHaveLength(2);
       await m.handle.stop();
     });
@@ -665,7 +693,7 @@ describe('the chain watcher', () => {
       t3.p.funds = { ...t3.p.funds, spendProofs: [{ from: 'buyer', txHash: hash('b'), txKey: KEY }, { from: 'seller', txHash: hash('b'), txKey: '' }] };
       t3.p.prove = () => true;
       await m.handle.watch();
-      expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: t3.code, txHash: hash('b') }]);
+      expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: t3.code, txHash: hash('b'), settleKind: 'release' }]);
       // Trade 2's mod wallet is made to attribute the same tx to escrow 2, with the key that proves it.
       t2.p.funds = { ...t2.p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: KEY }, { from: 'buyer', txHash: hash('b'), txKey: '' }] };
       t2.p.prove = () => true;
@@ -707,7 +735,7 @@ describe('the chain watcher', () => {
       // the buyer's statement names the same tx (no key of its own): now counted, then the close
       p.funds = { ...p.funds, spendProofs: [...p.funds.spendProofs!, { from: 'buyer', txHash: hash('b'), txKey: '' }] };
       await m.handle.watch();
-      expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b') }]);
+      expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: 'release' }]);
       expect(net.closed).toHaveLength(2);
       await m.handle.stop();
     });
@@ -732,7 +760,7 @@ describe('the chain watcher', () => {
       b.p.funds = { ...b.p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: KEY }, { from: 'buyer', txHash: hash('b'), txKey: KEY }] };
       b.p.prove = () => true;
       await m.handle.watch();
-      expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: b.code, txHash: hash('b') }]);
+      expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: b.code, txHash: hash('b'), settleKind: 'release' }]);
       expect(net.closed.sort()).toEqual([await channelFor(b.code, 'escrow'), await channelFor(b.code, 'signals')].sort());
       // ...and A escalates through its 6 h fallback instead
       clock = new Date(clock.getTime() + 6 * 60 * 60_000);

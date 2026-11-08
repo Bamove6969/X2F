@@ -3,7 +3,7 @@
 import { generateIdentity } from '@x2f/protocol';
 import { FINAL_ALERT_MS } from '@x2f/escrow';
 import { fiatCents } from '@x2f/trade';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { AUTO_REFUND_MARGIN_MS } from '../src/autoRefund.js';
 import { buyerCancelStep } from '../src/buyerCancel.js';
 import { verifyRuling } from '../src/rulings.js';
@@ -31,12 +31,14 @@ import {
   TERMS,
   type Ctx,
   type Live,
+  stopAll,
 } from './harness.js';
 
 let ctx: Ctx;
 beforeAll(async () => {
   ctx = await makeCtx();
 });
+afterEach(stopAll);
 afterAll(async () => {
   await ctx.db.end();
 });
@@ -442,7 +444,7 @@ describe('review round 3 R3-N1: an armed buyer cancel the buyer never builds doe
     l.party.funds = { ...l.party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: tx, height: 90, spentAtomic: FUNDS }], ownTxs: [tx] };
     later(ctx, MIN);
     await m.handle.watch();
-    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: tx }]);
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: tx, settleKind: 'auto-refund' }]);
     // The desk sees the trade over (logged once per desk, logOnce) and hands nothing more to the party.
     expect(m.logs.filter((x) => x === 'desk-trade-over').length).toBeGreaterThan(overBefore);
     const asked = l.party.settles.length;
@@ -497,7 +499,7 @@ describe('the shadow vetoes a refund sweep kind its own facts do not back (revie
     expect(settled(net, l.code)).toEqual([]);
     expect((await record(l.code)).shadow!.lapsedAt).not.toBeNull();
     await m.handle.watch();
-    expect(settled(net, l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: hash('d') }]);
+    expect(settled(net, l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: hash('d'), settleKind: 'lapse-refund' }]);
     expect(l.party.proveCalls.at(-1)!.minimums).toEqual([{ address: TERMS.sellerRefund, amountAtomic: half }]);
     await m.handle.stop();
   });
@@ -550,7 +552,7 @@ describe('the shadow vetoes a refund sweep kind its own facts do not back (revie
     net.states.set(t.code, 'settling');
     net.settleKinds.set(t.code, 'mutual-cancel');
     await m.handle.watch();
-    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === t.code)).toEqual([{ kind: 'settled', trade: t.code, txHash: hash('f') }]);
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === t.code)).toEqual([{ kind: 'settled', trade: t.code, txHash: hash('f'), settleKind: 'mutual-cancel' }]);
     await m.handle.stop();
   });
 });

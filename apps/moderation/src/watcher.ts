@@ -259,11 +259,12 @@ async function proven(o: Outgoing, f: Funds, ctx: SweepContext): Promise<boolean
   return false;
 }
 
-const reportBody = (trade: string, r: WatchReport): Record<string, unknown> => {
+/** `settledKind`: the kind a `settled` report counted the sweep for (security review 7 Nov, finding 3). */
+const reportBody = (trade: string, r: WatchReport, settledKind: SettleKind | null): Record<string, unknown> => {
   if (r.kind === 'chain') {
     return { kind: 'chain', trade, receivedAtomic: r.receivedAtomic.toString(), unlockedAtomic: r.unlockedAtomic.toString(), confirmations: r.confirmations };
   }
-  if (r.kind === 'settled') return { kind: 'settled', trade, txHash: r.txHash };
+  if (r.kind === 'settled') return { kind: 'settled', trade, txHash: r.txHash, settleKind: settledKind };
   if (r.kind === 'spend-unshown') return { kind: 'spend-unshown', trade };
   if (r.kind === 'release-claimed') return { kind: 'release-claimed', trade };
   return { kind: 'late-funds', trade };
@@ -356,9 +357,9 @@ export function createWatcher(o: WatcherOptions): Watcher {
   };
 
   /** Posts the reports in order; true only when every one was accepted. */
-  const post = async (code: string, reports: WatchReport[]): Promise<boolean> => {
+  const post = async (code: string, reports: WatchReport[], settledKind: SettleKind | null): Promise<boolean> => {
     for (const r of reports) {
-      const res = await o.link.report(reportBody(code, r));
+      const res = await o.link.report(reportBody(code, r, settledKind));
       if (accepted(res)) continue;
       if (res.error === 'settle-kind-unknown') {
         // The trade alone does not name the settlement's kind (a timed-out signing window); the
@@ -423,7 +424,12 @@ export function createWatcher(o: WatcherOptions): Watcher {
       claimed: facts.claimed,
       upSince,
     });
-    if (!(await post(row.trade, step.reports))) return true;
+    // Finding 3: `settled` names the kind this pass counted the sweep for: the kind it was proven
+    // against, or for the mod's own tx this desk's armed refund (else the API's kind as just read).
+    // The API refuses it (409 settle-kind-changed) when the trade no longer names that kind.
+    const own = spend !== null && (f.ownTxs ?? []).includes(spend.txHash);
+    const settledKind = own ? (deskNow?.record().armed?.kind ?? item.settleKind) : settleKind;
+    if (!(await post(row.trade, step.reports, settledKind))) return true;
     // Task 10: the desk sees the same accepted facts, then decides the refunds the moderator signs alone.
     await ensureDesk(args);
     const desk = desks.get(row.trade);
