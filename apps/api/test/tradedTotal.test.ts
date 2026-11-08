@@ -11,12 +11,15 @@ import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, seedReviews, seedTrade } from './helpers/trades.js';
 
-// C12b (owner 2026-11-01/02, via the lead): the opt-in "$X+ in trades to date" line (shown only
-// for MORE than $X, owner 2026-11-03).
-// Completed trades only (released, or refunded to settle a dispute), valued at the take-time USD
-// value (trades.usd_cents), kept in a per-account running total that survives the trade purge,
-// shown only as a rounded-down bucket and only when the trader opted in. Also a buyer-cancel count
-// for moderators (Plan 4 seam), never in a trader-facing answer. Real Postgres.
+// The opt-in traded line (C12b, owner 2026-11-01/02/03; owner Q63 and Q64, 6 Nov 2026):
+// - the card shows the XMR traded to date ("X+ XMR"), not dollars: completed trades only (released,
+//   or refunded to settle a dispute), each trade's final amount, a per-account running total that
+//   survives the trade purge, shown only as a rounded-down bucket ("more than" the step) and only
+//   when the trader opted in;
+// - imported volume is one line per site in US dollars (owner p4-1), from the dollar figure a
+//   moderator verified on an APPROVED past-reputation claim, rounded down (`tradedBucketUsd`);
+// - the dollar running total stays for moderators, and a buyer-cancel count (Plan 4 seam); neither
+//   is in a trader-facing answer. Real Postgres.
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -27,6 +30,11 @@ type Who = Awaited<ReturnType<typeof trader>>;
 const START = new Date('2026-10-17T12:00:00Z');
 const tx = () => randomBytes(32).toString('hex');
 const dollars = (d: number): bigint => BigInt(d) * 100n;
+const xmr = (n: number): bigint => BigInt(n) * 1_000_000_000_000n;
+/** Offer limits wide enough for any amount these tests trade (the line is about XMR, not the offer). */
+/** 0.001 XMR: a small trade that still has a fiat value. */
+const MILLI = 1_000_000_000n;
+const WIDE = { minFiatCents: 1n, maxFiatCents: 10n ** 15n };
 
 beforeAll(async () => {
   ({ app, deps, trader, setNow } = await tradeApp({}, { db: await testDb() }));
@@ -37,16 +45,22 @@ afterAll(async () => {
   await deps.db.end();
 });
 
-/** A trade between `seller` and `buyer` taken at `usdCents`, driven to `state`, reviews seeded so nothing gates. */
-async function trade(seller: Who, buyer: Who, usdCents: bigint | undefined, state: 'released' | 'secured' = 'released') {
-  const { trade: t } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', methodId: 'ZELLE', ...(usdCents === undefined ? {} : { usdCents }) });
+/** A trade of `amountAtomic` between `seller` and `buyer`, driven to `state`, reviews seeded so nothing gates. */
+async function trade(seller: Who, buyer: Who, amountAtomic: bigint, o: { state?: 'released' | 'secured'; usdCents?: bigint | null } = {}) {
+  const usd = o.usdCents === undefined ? dollars(100) : o.usdCents;
+  const { trade: t } = await seedTrade(deps, {
+    sellerId: seller.id, buyerId: buyer.id, poster: 'seller', methodId: 'ZELLE', amountAtomic, ...WIDE, ...(usd === null ? {} : { usdCents: usd }),
+  });
+  const state = o.state ?? 'released';
   await driveTo(deps, t, state);
   if (state === 'released') await seedReviews(deps, t.code);
   return t.code;
 }
 
 const totals = async (id: string) =>
-  (await deps.db.query<{ own_usd_cents: string; buyer_cancels: number }>('select own_usd_cents, buyer_cancels from account_traded_totals where account_id = $1', [id])).rows[0] ?? null;
+  (await deps.db.query<{ own_usd_cents: string; own_xmr_atomic: string; buyer_cancels: number }>(
+    'select own_usd_cents, own_xmr_atomic, buyer_cancels from account_traded_totals where account_id = $1', [id],
+  )).rows[0] ?? null;
 const setting = (who: Who) => who.browser.get('/v1/account/profile/traded-total');
 const optIn = (who: Who, show: unknown) => who.browser.put('/v1/account/profile/traded-total', { show });
 /** The counterparty summary on the trade view: a TraderSummary, as on offer cards. */
@@ -56,13 +70,14 @@ const summaryOf = async (viewer: Who, code: string) => {
   return { body: res.body, summary: (res.json() as { counterparty: Record<string, unknown> }).counterparty };
 };
 
-describe('the running total', () => {
-  it('a released trade adds its take-time USD value to both sides once', async () => {
+describe('the running totals', () => {
+  it('a released trade adds its XMR and its take-time USD value to both sides once', async () => {
     const seller = await trader();
     const buyer = await trader();
-    const code = await trade(seller, buyer, 1_234_567n);
-    expect(await totals(seller.id)).toEqual({ own_usd_cents: '1234567', buyer_cancels: 0 });
-    expect(await totals(buyer.id)).toEqual({ own_usd_cents: '1234567', buyer_cancels: 0 });
+    const code = await trade(seller, buyer, xmr(3) + 5n, { usdCents: 1_234_567n });
+    const want = { own_usd_cents: '1234567', own_xmr_atomic: (xmr(3) + 5n).toString(), buyer_cancels: 0 };
+    expect(await totals(seller.id)).toEqual(want);
+    expect(await totals(buyer.id)).toEqual(want);
     // Idempotent per trade: counting it again changes nothing.
     const c = await deps.db.connect();
     try {
@@ -71,52 +86,52 @@ describe('the running total', () => {
     } finally {
       c.release();
     }
-    expect(await totals(seller.id)).toEqual({ own_usd_cents: '1234567', buyer_cancels: 0 });
-    await trade(seller, buyer, 100n);
-    expect((await totals(seller.id))!.own_usd_cents).toBe('1234667');
+    expect(await totals(seller.id)).toEqual(want);
+    await trade(seller, buyer, xmr(1), { usdCents: 100n });
+    expect(await totals(seller.id)).toMatchObject({ own_usd_cents: '1234667', own_xmr_atomic: (xmr(4) + 5n).toString() });
   });
 
-  it('a trade with no stored USD value counts nothing; an open trade counts nothing', async () => {
+  it('a trade with no stored USD value still counts its XMR; an open trade counts nothing', async () => {
     const seller = await trader();
     const buyer = await trader();
-    await trade(seller, buyer, undefined);
-    await trade(seller, buyer, dollars(50_000), 'secured');
-    expect((await totals(seller.id))?.own_usd_cents ?? '0').toBe('0');
+    await trade(seller, buyer, xmr(2), { usdCents: null });
+    await trade(seller, buyer, xmr(50), { state: 'secured' });
+    expect(await totals(seller.id)).toMatchObject({ own_usd_cents: '0', own_xmr_atomic: xmr(2).toString() });
   });
 
   it('a refund with no dispute is not completed; a refund that settles a dispute is (whoever won)', async () => {
     const seller = await trader();
     const buyer = await trader();
-    const plain = await trade(seller, buyer, dollars(20_000), 'secured');
+    const plain = await trade(seller, buyer, xmr(20), { state: 'secured' });
     await applyEvent(deps, plain, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
-    expect((await totals(seller.id))?.own_usd_cents ?? '0').toBe('0');
-    const disputed = await trade(seller, buyer, dollars(30_000), 'secured');
+    expect(await totals(seller.id)).toBeNull();
+    const disputed = await trade(seller, buyer, xmr(30), { state: 'secured' });
     expect((await buyer.browser.post(`/v1/trades/${disputed}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
     await applyEvent(deps, disputed, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
-    expect((await totals(seller.id))!.own_usd_cents).toBe(dollars(30_000).toString());
-    expect((await totals(buyer.id))!.own_usd_cents).toBe(dollars(30_000).toString());
+    expect((await totals(seller.id))!.own_xmr_atomic).toBe(xmr(30).toString());
+    expect((await totals(buyer.id))!.own_xmr_atomic).toBe(xmr(30).toString());
   });
 
   it('a skipped review changes nothing: the trade still counts as completed and in the total (owner 2026-11-02)', async () => {
     const seller = await trader();
     const buyer = await trader();
-    const { trade: t } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', methodId: 'ZELLE', usdCents: dollars(15_000) });
+    const { trade: t } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', methodId: 'ZELLE', amountAtomic: xmr(15), usdCents: dollars(1), ...WIDE });
     await driveTo(deps, t, 'released');
     expect((await buyer.browser.post(`/v1/trades/${t.code}/review/skip`, {})).statusCode).toBe(204);
     expect((await seller.browser.post(`/v1/trades/${t.code}/review/skip`, {})).statusCode).toBe(204);
-    expect((await totals(buyer.id))!.own_usd_cents).toBe(dollars(15_000).toString());
+    expect((await totals(buyer.id))!.own_xmr_atomic).toBe(xmr(15).toString());
     expect((await optIn(seller, true)).statusCode).toBe(200);
     const { summary } = await summaryOf(buyer, t.code);
-    expect(summary).toMatchObject({ completedTrades: 1, tradedOverUsd: 10_000 });
+    expect(summary).toMatchObject({ completedTrades: 1, tradedOverXmr: 10, imported: [] });
   });
 
   it('survives the trade purge: the total and the line stay when the trade rows are gone', async () => {
     const seller = await trader();
     const buyer = await trader();
-    const code = await trade(seller, buyer, dollars(25_000));
-    const other = await trade(seller, buyer, dollars(1));
+    const code = await trade(seller, buyer, xmr(25));
+    const other = await trade(seller, buyer, MILLI);
     expect((await optIn(seller, true)).statusCode).toBe(200);
-    expect((await summaryOf(buyer, other)).summary.tradedOverUsd).toBe(20_000);
+    expect((await summaryOf(buyer, other)).summary.tradedOverXmr).toBe(20);
     // Plan 7's whole-trade purge is not on this tree: remove the trade and everything hanging off
     // it directly (triggers and foreign keys off for this transaction only), then read the total.
     const c = await deps.db.connect();
@@ -129,59 +144,46 @@ describe('the running total', () => {
       c.release();
     }
     expect((await deps.db.query('select 1 from trades where code = $1', [code])).rowCount).toBe(0);
-    expect((await totals(seller.id))!.own_usd_cents).toBe(dollars(25_001).toString());
-    expect((await summaryOf(buyer, other)).summary.tradedOverUsd).toBe(20_000);
+    expect((await totals(seller.id))!.own_xmr_atomic).toBe((xmr(25) + MILLI).toString());
+    expect((await summaryOf(buyer, other)).summary.tradedOverXmr).toBe(20);
   });
 });
 
-describe('the opt-in line (off by default)', () => {
-  it('off by default: the summary carries tradedOverUsd null; the trader turns it on and off', async () => {
+describe('the opt-in XMR line (owner Q63; off by default)', () => {
+  it('off by default: the summary carries tradedOverXmr null; the trader turns it on and off', async () => {
     const seller = await trader();
     const buyer = await trader();
-    const code = await trade(seller, buyer, 1_234_567n);
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
+    const code = await trade(seller, buyer, xmr(12) + 345n);
+    expect((await summaryOf(buyer, code)).summary.tradedOverXmr).toBeNull();
     const own = await setting(seller);
     expect(own.statusCode).toBe(200);
     // The trader sees their own bucket (never the exact total) to decide.
-    expect(own.json()).toEqual({ show: false, tradedOverUsd: 10_000 });
+    expect(own.json()).toEqual({ show: false, tradedOverXmr: 10, imported: [] });
     const on = await optIn(seller, true);
     expect(on.statusCode).toBe(200);
-    expect(on.json()).toEqual({ show: true, tradedOverUsd: 10_000 });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBe(10_000);
-    expect((await optIn(seller, false)).json()).toEqual({ show: false, tradedOverUsd: 10_000 });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
+    expect(on.json()).toEqual({ show: true, tradedOverXmr: 10, imported: [] });
+    expect((await summaryOf(buyer, code)).summary.tradedOverXmr).toBe(10);
+    expect((await optIn(seller, false)).json()).toEqual({ show: false, tradedOverXmr: 10, imported: [] });
+    expect((await summaryOf(buyer, code)).summary.tradedOverXmr).toBeNull();
   });
 
-  it('opted in below $10,000: nothing shows', async () => {
-    const seller = await trader();
-    const buyer = await trader();
-    const code = await trade(seller, buyer, dollars(10_000) - 1n);
-    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
+  it('a plus needs MORE than the step: exactly 10 XMR shows nothing, one atomic unit more shows 10+', async () => {
+    const a = { seller: await trader(), buyer: await trader() };
+    const exact = await trade(a.seller, a.buyer, xmr(10));
+    expect((await optIn(a.seller, true)).json()).toEqual({ show: true, tradedOverXmr: null, imported: [] });
+    expect((await summaryOf(a.buyer, exact)).summary.tradedOverXmr).toBeNull();
+    const b = { seller: await trader(), buyer: await trader() };
+    const more = await trade(b.seller, b.buyer, xmr(10) + 1n);
+    expect((await optIn(b.seller, true)).json()).toEqual({ show: true, tradedOverXmr: 10, imported: [] });
+    expect((await summaryOf(b.buyer, more)).summary.tradedOverXmr).toBe(10);
   });
 
-  it('opted in at exactly $10,000: nothing shows (owner 2026-11-03: a plus needs MORE than the step)', async () => {
+  it('the dollar value no longer drives the line (owner Q63: not dollars)', async () => {
     const seller = await trader();
     const buyer = await trader();
-    const code = await trade(seller, buyer, dollars(10_000));
-    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
-  });
-
-  it('opted in at $10,000.01: the $10,000+ line shows (owner 2026-11-03: more than the step)', async () => {
-    const seller = await trader();
-    const buyer = await trader();
-    const code = await trade(seller, buyer, dollars(10_000) + 1n);
-    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBe(10_000);
-  });
-
-  it('opted in at $10,001: the $10,000+ line shows (owner 2026-11-03)', async () => {
-    const seller = await trader();
-    const buyer = await trader();
-    const code = await trade(seller, buyer, dollars(10_001));
-    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBe(10_000);
+    const code = await trade(seller, buyer, xmr(1), { usdCents: dollars(500_000) });
+    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverXmr: null, imported: [] });
+    expect((await summaryOf(buyer, code)).summary).not.toHaveProperty('tradedOverUsd');
   });
 
   it('refuses a body that is not { show: boolean }, and a request with no session', async () => {
@@ -191,19 +193,19 @@ describe('the opt-in line (off by default)', () => {
     expect((await app.inject({ method: 'GET', url: '/v1/account/profile/traded-total' })).statusCode).toBe(401);
   });
 
-  it('the exact total and the buyer-cancel count never appear in any answer', async () => {
+  it('the exact totals and the buyer-cancel count never appear in any answer', async () => {
     const seller = await trader();
     const buyer = await trader();
-    const code = await trade(seller, buyer, 1_234_567n);
+    const code = await trade(seller, buyer, 12_345_678_901_234n, { usdCents: 1_234_567n });
     expect((await optIn(seller, true)).statusCode).toBe(200);
+    // The trade view shows that trade's own amount, rightly: only its counterparty summary is checked.
     const bodies = [
-      (await summaryOf(buyer, code)).body,
+      JSON.stringify((await summaryOf(buyer, code)).summary),
       (await setting(seller)).body,
-      (await seller.browser.get(`/v1/trades/${code}`)).body,
       (await seller.browser.get('/v1/account/me')).body,
     ];
     for (const b of bodies) {
-      expect(b).not.toMatch(/1234567|12345\.67|12,345|own_usd|usd_?cents|buyer_?cancels/i);
+      expect(b).not.toMatch(/1234567|12345\.67|12,345|12345678901234|12\.345678|own_usd|own_xmr|usd_?cents|buyer_?cancels/i);
     }
   });
 });
@@ -212,9 +214,9 @@ describe('buyer cancels (moderators only, a Plan 4 seam)', () => {
   it('a buyer cancel is counted once for the buyer, never for the seller, and never in a trader-facing answer', async () => {
     const seller = await trader();
     const buyer = await trader();
-    const code = await trade(seller, buyer, dollars(40_000), 'secured');
+    const code = await trade(seller, buyer, xmr(40), { state: 'secured' });
     await applyEvent(deps, code, { type: 'settled', kind: 'buyer-cancel', txHash: tx() }, 'system');
-    expect(await totals(buyer.id)).toEqual({ own_usd_cents: '0', buyer_cancels: 1 });
+    expect(await totals(buyer.id)).toEqual({ own_usd_cents: '0', own_xmr_atomic: '0', buyer_cancels: 1 });
     expect((await totals(seller.id))?.buyer_cancels ?? 0).toBe(0);
     const c = await deps.db.connect();
     try {
@@ -225,131 +227,115 @@ describe('buyer cancels (moderators only, a Plan 4 seam)', () => {
     expect((await totals(buyer.id))!.buyer_cancels).toBe(1);
     const { summary } = await summaryOf(seller, code);
     expect(Object.keys(summary).sort()).toEqual(
-      ['badges', 'completedTrades', 'displayName', 'lastSeenAt', 'online', 'positivePct', 'stage', 'tradedOverUsd', 'typicalMinutes'],
+      ['badges', 'completedTrades', 'displayName', 'imported', 'lastSeenAt', 'online', 'positivePct', 'stage', 'tradedOverXmr', 'typicalMinutes'],
     );
     // A mutual cancel is not a buyer cancel.
-    const mutual = await trade(seller, buyer, dollars(1), 'secured');
+    const mutual = await trade(seller, buyer, xmr(1), { state: 'secured' });
     await applyEvent(deps, mutual, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
     expect((await totals(buyer.id))!.buyer_cancels).toBe(1);
   });
 });
 
-// Owner 2026-11-02 (lead 01:48 and 07:48): the line INCLUDES volume proven on other sites, ONLY
-// through the dollar figure a moderator verified on an APPROVED past-reputation claim (migration 310);
-// an unverified (null), not-yet-approved or dead claim adds nothing. The figure, like the own total, never leaves the
-// server: only the rounded-down bucket does.
-describe('moderator-verified imported volume (past reputation)', () => {
+// Owner Q64 (6 Nov 2026), p4-1 (7 Nov): imported volume is a separate line per site with proof: the
+// dollar figure a moderator verified on an APPROVED claim (migration 310), shown in US dollars and
+// rounded down ("$X+ on <site>, verified"; no XMR conversion, no live price). An unverified, not-yet-approved or dead claim shows nothing; the figures never leave the
+// server, only the buckets. The XMR line never includes them.
+describe('verified imported volume, one line per site (owner Q64)', () => {
   let staffN = 0;
   let staffId: string | undefined;
   const staff = async () =>
     (staffId ??= await seedAccount(deps, { loginName: `ttstaff${++staffN}${randomBytes(3).toString('hex')}`, kind: 'staff' }));
   let site = 0;
   /** A claim (approved unless said; key and signature bytes do not matter here). */
-  async function claim(accountId: string, status = 'approved'): Promise<string> {
+  async function claim(accountId: string, status = 'approved', name?: string): Promise<{ id: string; site: string }> {
     site += 1;
+    const s = name ?? `Site${String(site).padStart(3, '0')}`;
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into past_reputation (account_id, site, evidence_url, claimed_trades, fingerprint, key_enc, challenge_text, signature_enc, status, created_at)
        values ($1, $2, 'https://web.archive.org/web/2023/x', 10, $3, $4, 'text', $4, $5, $6) returning id`,
-      [accountId, `Site${site}`, randomBytes(20).toString('hex'), randomBytes(40), status, START],
+      [accountId, s, randomBytes(20).toString('hex'), randomBytes(40), status, START],
     );
-    return rows[0]!.id;
+    return { id: rows[0]!.id, site: s };
   }
+  /** A site's line in whole US dollars (owner p4-1): the step it is MORE than; none at $10,000 or less. */
+  const lineOf = (site: string, overUsd: number | null) => (overUsd === null ? [] : [{ site, overUsd }]);
   const verify = async (claimId: string, usdCents: bigint | null) =>
     expect(await setVerifiedPastRepUsd(deps.db, claimId, usdCents === null ? null : Number(usdCents), { accountId: await staff(), role: 'senior' }, START)).toEqual({ ok: true });
 
-  it('a verified figure lifts a trader over a step, and never appears in an answer', async () => {
+  it('each verified, approved site is its own line; the XMR line is not lifted; figures never appear', async () => {
     const seller = await trader();
     const buyer = await trader();
-    const code = await trade(seller, buyer, dollars(9_000));
-    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
-    await verify(await claim(seller.id), 234_567n); // $2,345.67: own $9,000 + $2,345.67 = $11,345.67
-    expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
+    const code = await trade(seller, buyer, xmr(5));
+    const a = await claim(seller.id, 'approved', 'LocalMonero');
+    const b = await claim(seller.id, 'approved', 'Paxful');
+    await verify(a.id, dollars(23_456) + 78n);
+    await verify(b.id, dollars(99_000));
+    expect((await optIn(seller, true)).json()).toEqual({
+      show: true, tradedOverXmr: null, imported: [...lineOf('LocalMonero', 20_000), ...lineOf('Paxful', 90_000)],
+    });
     const viewed = await summaryOf(buyer, code);
-    expect(viewed.summary.tradedOverUsd).toBe(10_000);
-    // The buyer's own total is not lifted by the seller's claim.
-    expect((await setting(buyer)).json()).toEqual({ show: false, tradedOverUsd: null });
-    const bodies = [viewed.body, (await setting(seller)).body, (await seller.browser.get(`/v1/trades/${code}`)).body, (await seller.browser.get('/v1/account/me')).body];
-    for (const b of bodies) expect(b).not.toMatch(/234567|2345\.67|2,345|1134567|11,345|verified_?usd|usd_?cents/i);
+    expect(viewed.summary).toMatchObject({ tradedOverXmr: null, imported: [...lineOf('LocalMonero', 20_000), ...lineOf('Paxful', 90_000)] });
+    expect((await setting(buyer)).json()).toEqual({ show: false, tradedOverXmr: null, imported: [] });
+    for (const body of [viewed.body, (await setting(seller)).body]) expect(body).not.toMatch(/2345678|23,456|9900000|99,000|verified_?usd|usd_?cents/i);
   });
 
-  it('two verified claims add together; off by default even with a verified figure', async () => {
+  it('off by default: no line for others even with a verified figure; the trader sees their own', async () => {
     const seller = await trader();
     const buyer = await trader();
-    const code = await trade(seller, buyer, dollars(1_000));
-    await verify(await claim(seller.id), dollars(30_000));
-    await verify(await claim(seller.id), dollars(20_000));
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
-    expect((await setting(seller)).json()).toEqual({ show: false, tradedOverUsd: 50_000 });
+    const code = await trade(seller, buyer, xmr(1));
+    const c = await claim(seller.id);
+    await verify(c.id, dollars(30_000) + 1n);
+    expect((await summaryOf(buyer, code)).summary).toMatchObject({ tradedOverXmr: null, imported: [] });
+    expect((await setting(seller)).json()).toEqual({ show: false, tradedOverXmr: null, imported: lineOf(c.site, 30_000) });
   });
 
-  it('an unverified claim (null figure) adds nothing', async () => {
+  it('a site at $10,000 or less, unverified, cleared, signed or dead shows no line', async () => {
     const seller = await trader();
     const buyer = await trader();
-    const code = await trade(seller, buyer, dollars(9_000));
-    await claim(seller.id);
-    await claim(seller.id, 'signed');
-    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
-    // A figure the moderator cleared adds nothing either.
+    const code = await trade(seller, buyer, xmr(1));
+    expect((await optIn(seller, true)).statusCode).toBe(200);
+    await verify((await claim(seller.id)).id, dollars(1));
+    await verify((await claim(seller.id)).id, dollars(10_000)); // exactly $10,000: a plus needs MORE
+    await claim(seller.id); // never verified
+    const signed = await claim(seller.id, 'signed');
+    await verify(signed.id, dollars(50_000) + 1n); // entered before approval: counts only once approved
     const cleared = await claim(seller.id);
-    await verify(cleared, dollars(5_000));
-    expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
-    await verify(cleared, null);
-    expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: null });
-  });
-
-  it('a verified figure must bring the total to MORE than a step (owner 2026-11-03)', async () => {
-    const seller = await trader();
-    const buyer = await trader();
-    const code = await trade(seller, buyer, dollars(9_000));
-    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
-    const exact = await claim(seller.id);
-    await verify(exact, dollars(1_000)); // exactly $10,000.00: not more than the step
-    expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: null });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
-    await verify(exact, dollars(1_000) + 1n); // $10,000.01
-    expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBe(10_000);
-  });
-
-  it('owner 2026-11-02: a signed (not yet approved) claim with a figure counts nothing; once approved it counts', async () => {
-    const seller = await trader();
-    const buyer = await trader();
-    const code = await trade(seller, buyer, dollars(9_000));
-    const id = await claim(seller.id, 'signed');
-    await verify(id, dollars(5_000)); // a moderator may enter the figure before approving
-    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
-    await deps.db.query(`update past_reputation set status = 'approved' where id = $1`, [id]);
-    expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBe(10_000);
-  });
-
-  it('a revoked, removed or rejected claim adds nothing, at once', async () => {
+    await verify(cleared.id, dollars(50_000));
+    await verify(cleared.id, null);
+    expect((await summaryOf(buyer, code)).summary.imported).toEqual([]);
+    await deps.db.query(`update past_reputation set status = 'approved' where id = $1`, [signed.id]);
+    expect((await summaryOf(buyer, code)).summary.imported).toEqual(lineOf(signed.site, 50_000));
     for (const dead of ['revoked', 'removed', 'rejected']) {
-      const seller = await trader();
-      const buyer = await trader();
-      const code = await trade(seller, buyer, dollars(9_000));
-      const id = await claim(seller.id);
-      await verify(id, dollars(5_000));
-      expect((await optIn(seller, true)).json(), dead).toEqual({ show: true, tradedOverUsd: 10_000 });
-      await deps.db.query('update past_reputation set status = $2 where id = $1', [id, dead]);
-      expect((await setting(seller)).json(), dead).toEqual({ show: true, tradedOverUsd: null });
-      expect((await summaryOf(buyer, code)).summary.tradedOverUsd, dead).toBeNull();
+      await deps.db.query('update past_reputation set status = $2 where id = $1', [signed.id, dead]);
+      expect((await summaryOf(buyer, code)).summary.imported, dead).toEqual([]);
     }
   });
 
-  // OWNER-Q: verified imported volume with no X2F trades of its own. Built: it counts (the owner said
-  // the line includes proven imported volume; nothing says it needs an X2F trade first).
-  it('verified imported volume alone, with no trades here, counts (OWNER-Q)', async () => {
+  // OWNER-Q (kept from C12b): imported volume with no X2F trades of its own still shows its lines.
+  it('verified imported volume alone, with no trades here, shows its line (OWNER-Q)', async () => {
     const solo = await trader();
     const viewer = await trader();
-    await verify(await claim(solo.id), dollars(25_000));
+    const c = await claim(solo.id);
+    await verify(c.id, dollars(25_000));
     expect(await totals(solo.id)).toBeNull();
-    expect((await setting(solo)).json()).toEqual({ show: false, tradedOverUsd: 20_000 });
-    expect((await traderSummaries(deps.db, [solo.id], START, viewer.id)).get(solo.id)!.tradedOverUsd).toBeNull();
-    expect((await optIn(solo, true)).json()).toEqual({ show: true, tradedOverUsd: 20_000 });
-    expect((await traderSummaries(deps.db, [solo.id], START, viewer.id)).get(solo.id)).toMatchObject({ completedTrades: 0, tradedOverUsd: 20_000 });
+    expect((await traderSummaries(deps.db, [solo.id], START, viewer.id)).get(solo.id)).toMatchObject({ tradedOverXmr: null, imported: [] });
+    expect((await optIn(solo, true)).json()).toEqual({ show: true, tradedOverXmr: null, imported: lineOf(c.site, 20_000) });
+    expect((await traderSummaries(deps.db, [solo.id], START, viewer.id)).get(solo.id)).toMatchObject({ completedTrades: 0, imported: lineOf(c.site, 20_000) });
+  });
+
+  // Owner p4-1: the lines are in dollars, so they no longer depend on the live price.
+  it('shows the lines while the USD price is paused', async () => {
+    const solo = await trader();
+    const viewer = await trader();
+    const c = await claim(solo.id);
+    await verify(c.id, dollars(60_000) + 1n);
+    const real = deps.prices;
+    deps.prices = { ...real, quote: () => null } as unknown as Deps['prices'];
+    try {
+      expect((await optIn(solo, true)).json()).toEqual({ show: true, tradedOverXmr: null, imported: lineOf(c.site, 60_000) });
+      expect((await traderSummaries(deps.db, [solo.id], START, viewer.id)).get(solo.id)).toMatchObject({ imported: lineOf(c.site, 60_000) });
+    } finally {
+      deps.prices = real;
+    }
   });
 });

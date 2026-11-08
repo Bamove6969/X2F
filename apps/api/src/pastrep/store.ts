@@ -11,14 +11,14 @@
  *   or `approved`), checked inside the one UPDATE, so a claim revoked meanwhile is never given a
  *   figure. `null` clears the figure. The table's trigger refuses a figure from any account that is
  *   not enabled staff or the owner as well (roles are not in the database on this branch).
- * - `verifiedPastRepUsdCents` is what the traded total ("$X+ in trades to date") may add: the sum of the
- *   account's APPROVED claims with a figure (owner 2026-11-02: a moderator may enter the figure on a
- *   `signed` claim before approving it, but it counts nothing until the claim is approved). An
- *   unverified (null), not-yet-approved or dead claim adds nothing; read at query time, so a claim
- *   revoked or a figure cleared stops counting at once.
- *   `verifiedPastRepUsdSql` is the same sum as an SQL fragment, so the traded total
- *   (`traders/tradedTotal.ts` `tradedTotalSql`) adds it for many accounts in one query; the column
- *   name stays in this file only.
+ * - `verifiedPastRepUsdCents` is the sum of the account's APPROVED claims with a figure (owner
+ *   2026-11-02: a moderator may enter the figure on a `signed` claim before approving it, but it
+ *   counts nothing until the claim is approved). An unverified (null), not-yet-approved or dead claim
+ *   adds nothing; read at query time, so a claim revoked or a figure cleared stops counting at once.
+ *   `verifiedPastRepUsdSql` is the same sum as an SQL fragment; the column name stays in this file
+ *   only. No dollar figure is public (owner Q63, 6 Nov): the public traded line is in XMR and never
+ *   includes imported volume, which shows per site (`verifiedPastRepBySite`, owner Q64; in US dollars,
+ *   owner p4-1: `traders/tradedTotal.ts` `importedLines`).
  */
 import type { StaffRole } from '@x2f/staff';
 import type { Queryable } from '../db/pool.js';
@@ -80,4 +80,32 @@ export const verifiedPastRepUsdSql = (account: string): string =>
 export async function verifiedPastRepUsdCents(q: Queryable, accountId: string): Promise<number> {
   const { rows } = await q.query<{ total: string }>(`select ${verifiedPastRepUsdSql('$1::uuid')}::text as total`, [accountId]);
   return Number(rows[0]!.total);
+}
+
+/** One site's verified imported volume: the site and its moderator-verified figure in US cents. */
+export interface VerifiedSiteVolume {
+  site: string;
+  usdCents: bigint;
+}
+
+/**
+ * Owner Q64 (6 Nov 2026): imported volume shows as a separate line per site with proof. The
+ * APPROVED claims of `accountIds` that carry a verified figure, per account, ordered by site. Read
+ * live: a claim revoked, removed or rejected, or a figure cleared, drops out at once.
+ */
+export async function verifiedPastRepBySite(q: Queryable, accountIds: readonly string[]): Promise<Map<string, VerifiedSiteVolume[]>> {
+  const out = new Map<string, VerifiedSiteVolume[]>();
+  if (accountIds.length === 0) return out;
+  const { rows } = await q.query<{ account_id: string; site: string; cents: string }>(
+    `select pr.account_id, pr.site, pr.verified_usd_cents::text as cents from past_reputation pr
+      where pr.account_id = any($1::uuid[]) and pr.status = '${COUNTS}' and pr.verified_usd_cents is not null
+      order by pr.account_id, pr.site`,
+    [[...new Set(accountIds)]],
+  );
+  for (const r of rows) {
+    const list = out.get(r.account_id) ?? [];
+    list.push({ site: r.site, usdCents: BigInt(r.cents) });
+    out.set(r.account_id, list);
+  }
+  return out;
 }

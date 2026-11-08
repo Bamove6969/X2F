@@ -19,6 +19,7 @@ import { DisputeRuling } from './DisputeRuling.js';
 import { disputeScreenFor } from './DisputeScreen.js';
 import { disputeEntry, refundReason } from './rules.js';
 import './dispute.css';
+import { utcDateTime } from '../../ui/dates.js';
 
 /** Where a slot's back link goes: the trader's own list (the room is the trade's page). */
 const listFor = (role: 'buyer' | 'seller'): string => (role === 'buyer' ? '/buy' : '/sell');
@@ -78,11 +79,11 @@ export function DisputeSlot({ code, view, refresh, serverClock }: TradeScreenPro
  * refund offers no dispute; this replaces the Refunded board's "Did you pay before you cancelled?
  * Open a dispute." (Revision 2026-10-29b). COPY-UNSIGNED (until the Refunded board is merged).
  */
-/** The end of the 48-hour dispute window after a refund, in the viewer's own time zone and locale. */
+/** The end of the 48-hour dispute window after a refund, as "6 Nov 2026, 15:00 UTC" (design X5). */
 function disputeUntil(closedAt: string | null): string {
   const closed = closedAt === null ? NaN : Date.parse(closedAt);
   if (!Number.isFinite(closed)) return 'the end of the window';
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(closed + TIMERS.disputeAfterRefundHours * 3_600_000));
+  return utcDateTime(new Date(closed + TIMERS.disputeAfterRefundHours * 3_600_000));
 }
 
 export function RefundedSlot({ view, serverClock }: TradeScreenProps) {

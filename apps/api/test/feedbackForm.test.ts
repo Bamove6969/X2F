@@ -227,7 +227,8 @@ describe('POST /v1/feedback/form', () => {
     const over = await b.post('/v1/feedback/form', { kind: 'feedback', text: 'one more', anonymous: true });
     expect(over.statusCode).toBe(429);
     // 15:30 UTC → midnight is 8.5 hours away.
-    expect(over.json()).toEqual({ error: 'slow-down', retryAfterSeconds: 8.5 * 3600 });
+    // `limit: 'daily'`: the form says why (owner Q67: to stop spam).
+    expect(over.json()).toEqual({ error: 'slow-down', retryAfterSeconds: 8.5 * 3600, limit: 'daily' });
     expect(over.headers['retry-after']).toBe(String(8.5 * 3600));
     expect((await other.post('/v1/feedback/form', { kind: 'feedback', text: 'other', anonymous: true })).statusCode).toBe(202);
     expect(await rows()).toHaveLength(FEEDBACK_FORM_DAILY + 1);
@@ -236,6 +237,39 @@ describe('POST /v1/feedback/form', () => {
     // again: the daily count is per account, not per session.
     expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
     expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'next day', anonymous: true })).statusCode).toBe(202);
+  });
+
+  it('owner Q67/Q69: 10 a day, and each team member has their own 10 (not the team\'s)', async () => {
+    expect(FEEDBACK_FORM_DAILY).toBe(10);
+    setNow(new Date('2026-12-03T10:00:00Z'));
+    const { b: owner, id: teamId } = await login('teamfb1');
+    const member = async (i: number) => {
+      const loginId = await seedAccount(deps, { loginName: `fbmember${i}x`, displayName: `fb-m-${i}`, kind: 'member' });
+      const name = `FbMember${i}`;
+      await deps.db.query(
+        `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+         values ($1, $2, $3, $4, $5, $6, $5, $5)`,
+        [teamId, name, name.toLowerCase(), ['offers'], deps.clock(), loginId],
+      );
+      const b = new Browser(app);
+      expect((await b.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
+      return b;
+    };
+    const m1 = await member(1);
+    const m2 = await member(2);
+    const sendAll = async (b: Browser) => {
+      for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) {
+        setNow(new Date(Date.parse('2026-12-03T10:00:00Z') + i * FEEDBACK_FORM_MIN_GAP_S * 1000));
+        expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: `t${i}`, anonymous: true })).statusCode).toBe(202);
+      }
+      setNow(new Date(Date.parse('2026-12-03T10:00:00Z') + FEEDBACK_FORM_DAILY * FEEDBACK_FORM_MIN_GAP_S * 1000));
+      const over = await b.post('/v1/feedback/form', { kind: 'feedback', text: 'eleventh', anonymous: true });
+      expect([over.statusCode, over.json().limit]).toEqual([429, 'daily']);
+    };
+    await sendAll(m1);
+    // The other member and the team account itself still have all of theirs.
+    await sendAll(m2);
+    await sendAll(owner);
   });
 
   it(`one send per ${FEEDBACK_FORM_MIN_GAP_S} s per person (owner 2026-11-02; no shared budget): 429 slow-down in between, others unaffected`, async () => {
