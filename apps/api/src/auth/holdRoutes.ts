@@ -17,8 +17,8 @@
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { ApiError } from '../errors.js';
-import { holdInTx, holdRefusal, lockAccount, requireLiveSessionInTx, requireNotHeld, settleOf, withTx } from './hold.js';
-import { HOLD_CHANGE_ACTIONS_PER_DAY, cancelChanges, changesWait, holdActionsKey, listChanges, settleChangesInTx, submitChanges } from './holdChanges.js';
+import { holdInTx, holdRefusal, lockAccount, requireLiveSessionInTx, requireNotHeld, settleOf, weakOf, weakRefusal, withTx } from './hold.js';
+import { HOLD_CHANGE_ACTIONS_PER_DAY, approveChanges, cancelChanges, changesWait, holdActionsKey, listChanges, settleChangesInTx, submitChanges } from './holdChanges.js';
 import { dailyCap } from './throttle.js';
 import { requireSession } from './sessions.js';
 
@@ -65,6 +65,23 @@ export function holdRoutes(app: FastifyInstance): void {
     // The owner hears at once on every device (Jabber later).
     void req.server.push.send(req.auth.accountId, 'alert').catch(() => undefined);
     return { status: 'queued' as const, ...out };
+  });
+
+  // Owner G58 (7 Nov): a strong session approves waiting changes now (a weak one 403 weak-session).
+  app.post('/v1/account/hold/changes/approve', { preHandler: [requireSession({ kinds: ['trader'] }), requireNotHeld] }, async (req) => {
+    const ids = idsOf(req);
+    const deps = req.server.deps;
+    const now = deps.clock();
+    await dailyCap(deps, holdActionsKey(req.auth.accountId), HOLD_CHANGE_ACTIONS_PER_DAY);
+    const n = await withTx(deps.db, async (db) => {
+      const live = await requireLiveSessionInTx(db, req.auth, now);
+      if (weakOf(live, now)) throw weakRefusal();
+      const hold = await holdInTx(db, settleOf(req), req.auth.accountId, now);
+      if (hold !== null) throw holdRefusal(hold.holdUntil);
+      return approveChanges(db, settleOf(req), req.auth.accountId, ids, now);
+    });
+    if (n > 0) void req.server.push.send(req.auth.accountId, 'alert').catch(() => undefined);
+    return { status: 'applied' as const, count: n };
   });
 
   const cancel = async (req: FastifyRequest, id: string | null): Promise<void> => {

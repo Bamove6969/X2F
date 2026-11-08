@@ -46,7 +46,6 @@ import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, isTrusted } from './devic
 import {
   endHoldIfOwner, holdInTx, holdRefusal, lockAccount, ownerProof, requireLiveSessionInTx, settleOf, weakOf, weakRefusal, type ProvenMethod,
 } from './hold.js';
-import { discardChangesIfOwner } from './holdChanges.js';
 import { syncHeldTrades } from '../trades/held.js';
 import { loginStrength, waits, type LoginFactorKind, type LoginStrength } from './strength.js';
 import { assertNotDisabled, cleanLabel, openSession, presentedTokenHash, requireSession } from './sessions.js';
@@ -234,7 +233,6 @@ export async function traderLogin(
   // discarding a thief's waiting changes) is committed before the error is thrown (lead hold v3
   // review item 6: a thief's approval flood must not undo the discard).
   type Outcome = { kind: 'session'; after: () => void } | { kind: 'wait'; wait: ApprovalWait } | { kind: 'refused'; error: ApiError };
-  let discarded = false;
   /** The owner's proof ended an account hold: its held trades resume after the commit. */
   let heldEnded = false;
   const out = await withTx(deps, async (db): Promise<Outcome> => {
@@ -266,9 +264,8 @@ export async function traderLogin(
     const acct = await db.query<{ kind: string; one_device: boolean }>('select kind, one_device from accounts where id = $1', [a.accountId]);
     const row = acct.rows[0];
     if (!row || row.kind !== 'trader') return session();
-    // Hold model v3: the owner's pre-existing passkey, security key or PGP key discards the changes
-    // waiting from a username-and-password session, whatever happens to this login next.
-    discarded = await discardChangesIfOwner(db, a.accountId, a.proven, now);
+    // Owner G58 (7 Nov) replaces the discard: a strong login during a wait sees the waiting changes
+    // (before and after, with the countdown) and chooses Approve now, Cancel all or Make changes.
     // A hold whose time is up is settled here (its pending change applies) before anything is counted.
     const hold = await holdInTx(db, settle, a.accountId, now);
     // This browser already holds a live full session of the account: it is a logged-in device (a
@@ -352,8 +349,6 @@ export async function traderLogin(
     return { kind: 'wait', wait: { status: 'approve-on-device', approvalId, number, expiresAt: expiresAt.toISOString() } };
   });
 
-  // The owner hears that the waiting changes were discarded on every device.
-  if (discarded) void req.server.push.send(a.accountId, 'alert').catch(() => undefined);
   if (heldEnded) await syncHeldTrades({ db: deps.db, clock: deps.clock, publish: req.server.tradePublish }, a.accountId);
   if (out.kind === 'refused') throw out.error;
   if (out.kind === 'session') {

@@ -358,7 +358,7 @@ describe('a username + password session: changes are staged, reviewed, submitted
     expect((await t.b.delete(`/v1/account/hold/changes/${a}`)).statusCode).toBe(404);
   });
 
-  it('lead review item 6: a thief flooding approvals cannot keep its changes: the refused strong login still discards them', async () => {
+  it('lead review item 6 under G58: a thief flooding approvals blocks a strong login (429) but its waiting change stays cancellable', async () => {
     const t = await ownerWithPasskey();
     // The owner's strong session on another device (it answers approvals).
     const phone = new Browser(app);
@@ -370,11 +370,12 @@ describe('a username + password session: changes are staged, reviewed, submitted
     for (let i = 0; i < APPROVALS_PER_HOUR; i++) await passwordLogin(new Browser(app), t.name);
     const res = await passkeyLogin(new Browser(app), t.auth);
     expect([res.statusCode, errorOf(res)]).toEqual([429, 'slow-down']);
+    // The owner's phone (strong) cancels it.
+    expect((await phone.delete(`/v1/account/hold/changes/${id}`)).statusCode).toBe(204);
     expect((await deps.db.query('select 1 from hold_changes where id = $1', [id])).rowCount).toBe(0);
-    expect(await alertsOf(t.id, 'hold-changes-discarded')).toEqual([{ count: 1, changes: [{ kind: 'password' }], reason: 'owner-login' }]);
   });
 
-  it("the owner's passkey held before the submission ends the wait early and discards the changes", async () => {
+  it("owner G58: the owner's strong login sees the waiting changes and chooses: Cancel all, or Approve now", async () => {
     const t = await ownerWithPasskey();
     const thief = new Browser(app);
     // Copied device cookie: the thief logs in with the password on a trusted device (no approval).
@@ -384,11 +385,19 @@ describe('a username + password session: changes are staged, reviewed, submitted
     expect((await submit(thief, [id])).statusCode).toBe(200);
     const owner = new Browser(app);
     expect((await passkeyLogin(owner, t.auth)).json()).toEqual({ status: 'ok' });
+    expect((await holdView(owner)).changes.count).toBe(1);
+    // A weak session can't approve; the strong one cancels all.
+    expect(errorOf(await thief.post('/v1/account/hold/changes/approve', { ids: [id] }))).toBe('weak-session');
+    expect((await owner.delete('/v1/account/hold/changes')).statusCode).toBe(204);
     expect((await holdView(owner)).changes.count).toBe(0);
-    expect(await alertsOf(t.id, 'hold-changes-discarded')).toEqual([{ count: 1, changes: [{ kind: 'password' }], reason: 'owner-login' }]);
+    // Approve now: a new waiting change applies at once from a strong session.
+    const id2 = ((await changePassword(thief, t.id)).json() as { changeId: string }).changeId;
+    expect((await submit(thief, [id2])).statusCode).toBe(200);
+    expect(errorOf(await owner.post('/v1/account/hold/changes/approve', { ids: ['00000000-0000-4000-8000-000000000000'] }))).toBe('changes-changed');
+    expect((await owner.post('/v1/account/hold/changes/approve', { ids: [id2] })).json()).toEqual({ status: 'applied', count: 1 });
+    expect((await passwordLogin(new Browser(app), t.name, NEW_PASSWORD)).statusCode).not.toBe(401);
     later(HOLD_MS);
     await settleDueChanges(deps.config, app.events).run(deps.db, now);
-    expect((await passwordLogin(new Browser(app), t.name, NEW_PASSWORD)).statusCode).toBe(401);
   });
 
   it('a password with an authenticator code does not end the wait (TOTP is not enough for that)', async () => {

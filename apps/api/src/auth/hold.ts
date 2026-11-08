@@ -541,6 +541,7 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   // Hold model v3: submitting and cancelling the changes waiting their 24 h (holdRoutes.ts), and
   // showing the recovery code that replaced a used one (recovery.ts).
   'POST /v1/account/hold/changes/submit',
+  'POST /v1/account/hold/changes/approve',
   'DELETE /v1/account/hold/changes',
   'DELETE /v1/account/hold/changes/:id',
   'POST /v1/account/recovery-code/reveal',

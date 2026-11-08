@@ -504,9 +504,12 @@ describe('C1: a weak session cannot add a method and use it to skip the approval
     // The thief's passkey logs in nowhere: no skipped approval.
     expect((await passkeyLogin(new Browser(real.app), thiefKey)).statusCode).toBe(401);
 
-    // The owner's own earlier passkey: straight in on a new device (only weak sessions are open), the waiting passkey is discarded.
-    expect((await passkeyLogin(new Browser(real.app), ownerKey)).json()).toEqual({ status: 'ok' });
-    expect(await alertsOf(real.deps, owner.id, 'hold-changes-discarded')).toEqual([{ count: 1, changes: [{ kind: 'webauthn', method: 'passkey' }], reason: 'owner-login' }]);
+    // The owner's own earlier passkey: straight in on a new device (only weak sessions are open); the
+    // waiting passkey stays for the owner's choice (G58) and the owner cancels it.
+    const ownerB = new Browser(real.app);
+    expect((await passkeyLogin(ownerB, ownerKey)).json()).toEqual({ status: 'ok' });
+    expect((await real.deps.db.query('select 1 from hold_changes where account_id = $1', [owner.id])).rows).toHaveLength(1);
+    expect((await ownerB.delete('/v1/account/hold/changes')).statusCode).toBe(204);
     expect((await real.deps.db.query('select 1 from hold_changes where account_id = $1', [owner.id])).rows).toEqual([]);
     const after = await real.deps.db.query('select 1 from webauthn_credentials where account_id = $1', [owner.id]);
     expect(after.rows).toHaveLength(1);
@@ -558,10 +561,13 @@ describe("C2: a weak session's changes touch nothing before their date", () => {
     expect((await methodsOf(b)).map((m) => m.type).sort()).toEqual(['passkey', 'password']);
     expect((await submit(b, ids)).json()).toMatchObject({ status: 'queued', count: 4 });
 
-    // The owner logs in with the passkey held before the submission: in, every waiting change discarded.
-    expect((await passkeyLogin(new Browser(app), ownerKey)).json()).toEqual({ status: 'ok' });
+    // The owner logs in with the passkey held before the submission: in; the waiting changes stay for
+    // the owner's choice (G58), and Cancel all takes them.
+    const ownerB = new Browser(app);
+    expect((await passkeyLogin(ownerB, ownerKey)).json()).toEqual({ status: 'ok' });
+    expect(await changesOf(id)).toHaveLength(4);
+    expect((await ownerB.delete('/v1/account/hold/changes')).statusCode).toBe(204);
     expect(await changesOf(id)).toEqual([]);
-    expect(await alertsOf(deps, id, 'hold-changes-discarded')).toMatchObject([{ count: 4, reason: 'owner-login' }]);
     setNow(new Date(now.getTime() + HOLD_MS + HOUR));
     await settleDueChanges(deps.config, app.events).run(deps.db, now);
     const { rows } = await deps.db.query('select 1 from webauthn_credentials where id = $1', [passkeyId]);
@@ -1523,6 +1529,13 @@ describe('review round 2', () => {
         'POST /v1/account/hold/changes/submit': async () => {
           const t = await weakStaged();
           return { b: t.b, accountId: t.id, fire: () => submit(t.b, [t.changeId]) };
+        },
+        // Owner G58: a strong session approves waiting changes now (here the weak session made strong in the database).
+        'POST /v1/account/hold/changes/approve': async () => {
+          const t = await weakStaged();
+          expect((await submit(t.b, [t.changeId])).statusCode).toBe(200);
+          await deps.db.query("update sessions set strength = 'strong' where account_id = $1 and revoked_at is null", [t.id]);
+          return { b: t.b, accountId: t.id, fire: () => t.b.post('/v1/account/hold/changes/approve', { ids: [t.changeId] }) };
         },
         'DELETE /v1/account/hold/changes': async () => {
           const t = await weakStaged();

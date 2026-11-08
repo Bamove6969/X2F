@@ -14,11 +14,10 @@
  *   takesEffectAt }` (the list of changes) and a push to every device (Jabber later).
  * - **Cancelling:** any logged-in session of the account owner, a username-and-password one included
  *   (`DELETE /v1/account/hold/changes`, or one by id; alert `hold-changes-cancelled`).
- * - **Discarding early:** a login with a passkey, security key or PGP key the account held when the
- *   changes were submitted (`methods_before`) discards them in the login's transaction (alert
- *   `hold-changes-discarded` `{ reason: 'owner-login' }`); a password with an authenticator code
- *   does not (owner 2 Nov: TOTP is not enough for ending a hold early). A recovery-code login
- *   discards them too (`reason: 'recovery-code'`).
+ * - **Approving early** (owner G58, 7 Nov; replaces the earlier discard on a strong login): a
+ *   session with a strong login sees the waiting changes in the before-and-after view with the
+ *   countdown and may approve them now (`POST /v1/account/hold/changes/approve { ids }`), cancel them
+ *   all, or untick single ones (g65). A recovery-code login keeps them (owner G32).
  * - **Applying:** at the date, every minute (`settleDueChanges`) or at the next read of the account's
  *   changes, each through the same write its route uses, in order, each on its own: one that can no
  *   longer apply is dropped and the rest stand (alert `hold-changes-applied` `{ applied, dropped }`).
@@ -33,7 +32,7 @@ import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
-import { applyChange, concurrencyFailure, lockAccount, methodIds, provenIds, withTx, HOLD_MS, type PendingChange, type ProvenMethod, type SettleDeps } from './hold.js';
+import { applyChange, concurrencyFailure, lockAccount, methodIds, withTx, HOLD_MS, type PendingChange, type SettleDeps } from './hold.js';
 import { addressEnd } from '@x2f/accounts';
 
 /** At most this many changes (drafts and waiting ones) per account, so a session cannot flood the list or the alerts. */
@@ -192,24 +191,21 @@ export async function cancelChanges(db: Queryable, accountId: string, sessionId:
   return rows.length;
 }
 
+
 /**
- * Inside a login's transaction (account locked): when the login proved a passkey, security key or
- * PGP key (never a password with an authenticator code), every waiting change submitted while that
- * method was held is discarded (alert `hold-changes-discarded` `{ count, changes, reason:
- * 'owner-login' }`). True when any was.
+ * Owner G58 (7 Nov): inside a transaction with the account locked, a strong session approves
+ * exactly `ids`, which must all be waiting (submitted) changes of the account (else 409
+ * `changes-changed`): they are due now, and `settleChangesInTx` applies them in order. Returns how
+ * many settled.
  */
-export async function discardChangesIfOwner(db: Queryable, accountId: string, proven: ProvenMethod | undefined, now: Date): Promise<boolean> {
-  if (proven === undefined || proven.kind === 'password-totp') return false;
-  const ids = provenIds(proven);
-  if (ids.length === 0) return false;
-  const { rows } = await db.query<ChangeRow>(
-    `delete from hold_changes where account_id = $1 and submitted_at is not null and methods_before @> $2::text[] returning *`,
+export async function approveChanges(db: Queryable, s: SettleDeps, accountId: string, ids: string[], now: Date): Promise<number> {
+  const { rows } = await db.query<{ id: string }>(
+    'select id from hold_changes where account_id = $1 and submitted_at is not null and id = any($2::uuid[])',
     [accountId, ids],
   );
-  if (rows.length === 0) return false;
-  rows.sort((a, b) => Number(a.seq) - Number(b.seq));
-  await addAlert(db, accountId, 'hold-changes-discarded', { count: rows.length, changes: rows.map((r) => describeChange(r.change)), reason: 'owner-login' }, now);
-  return true;
+  if (rows.length !== new Set(ids).size) throw new ApiError(409, 'changes-changed');
+  await db.query('update hold_changes set due_at = $2 where id = any($1::uuid[])', [ids, now]);
+  return settleChangesInTx(db, s, accountId, now);
 }
 
 /** `GET /v1/account/hold`'s list: the waiting changes (any session's) and the calling session's drafts. */
