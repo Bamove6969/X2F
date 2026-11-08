@@ -15,7 +15,7 @@
  * - `{ kind: 'typed', name }`: the name typed by someone who cannot draw (accessibility).
  *
  * `checkTermsSignature` refuses with 400: missing → `signature-required`; not one of the two shapes
- * (extra keys, a bad path, coordinates outside the box, an empty or control-character name) →
+ * (extra keys, a bad path, coordinates outside the box, an empty, control-character, invisible-character or lone-surrogate name) →
  * `signature-invalid`; more than `SIGNATURE_MAX_BYTES` as JSON → `signature-too-large` (checked
  * first, so a huge value is never parsed).
  */
@@ -78,8 +78,10 @@ export function validPath(path: string, width: number, height: number): boolean 
   return true;
 }
 
-/** Any C0/C1 control character, DEL, or a bidi control: refused in a typed name. */
-const BAD_NAME_CHARS = /[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/u;
+/** Control, bidi and invisible characters (ALM, ZWSP, LRM/RLM, word joiner and invisible operators, BOM, tag characters), refused in a typed name. ZWNJ and ZWJ stay allowed: some scripts and emoji need them. */
+const BAD_NAME_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\u{e0000}-\u{e007f}]/u;
+/** Nothing visible once ZWNJ, ZWJ and whitespace are gone. */
+const NO_VISIBLE = /^[\u200c\u200d\s]*$/u;
 
 /** The checked signature (see the module comment for the refusals). */
 export function checkTermsSignature(value: unknown): TermsSignature {
@@ -96,8 +98,10 @@ export function checkTermsSignature(value: unknown): TermsSignature {
   if (o.kind === 'typed') {
     if (!exactKeys(o, ['kind', 'name'])) throw invalid();
     if (typeof o.name !== 'string') throw invalid();
-    const name = o.name.normalize('NFC').trim().replace(/\s+/gu, ' ');
-    if (name.length === 0 || [...name].length > MAX_TYPED_NAME || BAD_NAME_CHARS.test(name)) throw invalid();
+    const raw = o.name.normalize('NFC');
+    const name = raw.trim().replace(/\s+/gu, ' ');
+    if (!o.name.isWellFormed()) throw invalid(); // a lone surrogate would reach Postgres and fail there with a 500
+    if (NO_VISIBLE.test(name) || [...name].length > MAX_TYPED_NAME || BAD_NAME_CHARS.test(raw)) throw invalid();
     return { kind: 'typed', name };
   }
   throw invalid();

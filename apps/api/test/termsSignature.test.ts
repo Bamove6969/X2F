@@ -57,10 +57,20 @@ describe('checkTermsSignature (owner, 8 Nov 2026)', () => {
       { kind: 'typed', name: 7 },
       { kind: 'typed', name: 'a\u0000b' },
       { kind: 'typed', name: 'a‮b' },
+      { kind: 'typed', name: 'a\ud800b' },
+      { kind: 'typed', name: 'ab\udc00' },
+      ...['\u061c', '\u200b', '\u200e', '\u200f', '\u2060', '\u2062', '\u2064', '\ufeff', '\u{e0001}', '\u{e0041}', '\u{e007f}'].map((c) => ({ kind: 'typed', name: `Mi${c}ra` })),
+      { kind: 'typed', name: '\u200c' },
+      { kind: 'typed', name: ' \u200d\u200c ' },
       { kind: 'typed', name: 'x'.repeat(MAX_TYPED_NAME + 1) },
       { kind: 'typed', name: 'Mira', userAgent: 'x' },
     ];
     for (const b of bad) expect(code(() => checkTermsSignature(b)), JSON.stringify(b)).toBe('signature-invalid');
+  });
+
+  it('allows ZWNJ and ZWJ inside a name with visible characters', () => {
+    expect(checkTermsSignature({ kind: 'typed', name: 'می\u200cخواهم' })).toEqual({ kind: 'typed', name: 'می\u200cخواهم' });
+    expect(checkTermsSignature({ kind: 'typed', name: '👩\u200d💻' }).kind).toBe('typed');
   });
 
   it('refuses more than 64 KB with signature-too-large, before reading the path', () => {
@@ -77,7 +87,8 @@ describe('checkTermsSignature (owner, 8 Nov 2026)', () => {
   it('validPath is linear: a long malformed path is refused quickly', () => {
     const started = performance.now();
     expect(validPath(`${'M1 1L2 2'.repeat(8000)}Q`, 10, 10)).toBe(false);
-    expect(performance.now() - started).toBeLessThan(200);
+    // A generous bound: it only catches a quadratic or worse regression, not a slow machine.
+    expect(performance.now() - started).toBeLessThan(2000);
   });
 
   it('routes that take a signature have room for it in their body limit', () => {

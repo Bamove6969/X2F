@@ -142,6 +142,8 @@ describe('the Terms signature on sign-up (owner, 8 Nov 2026)', () => {
       ['M0 0L1 1', 'signature-invalid'],
       [{ kind: 'png', data: 'iVBORw0KGgo=' }, 'signature-invalid'],
       [{ kind: 'drawn', width: 320, height: 120, path: '<path d="M0 0"/>' }, 'signature-invalid'],
+      [{ kind: 'typed', name: 'Mira\ud800' }, 'signature-invalid'],
+      [{ kind: 'typed', name: 'Mi\u200bra' }, 'signature-invalid'],
       [big, 'signature-too-large'],
     ];
     for (const [termsSignature, error] of cases) {

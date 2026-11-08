@@ -293,7 +293,7 @@ export function accountRoutes(app: FastifyInstance): void {
       const body = req.body as { version?: unknown; signature?: unknown } | null | undefined;
       const given = body !== null && typeof body === 'object' ? body.version : undefined;
       if (given !== version) throw new ApiError(400, 'terms-not-accepted', { version });
-      const signature = checkTermsSignature(body!.signature);
+      const signature = checkTermsSignature(body !== null && typeof body === 'object' ? body.signature : undefined);
       const now = d.clock();
       await withTx(d.db, async (db) => {
         // Review round 4: the accepting session must still be live where it writes.

@@ -62,13 +62,16 @@ export function drawnSignature(strokes: readonly Stroke[], width: number, height
   return path === '' ? null : { kind: 'drawn', width: box.width, height: box.height, path };
 }
 
-/** Control and bidi characters, which the API refuses in a typed name. */
-const BAD_NAME_CHARS = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
+/** Control, bidi and invisible characters (ALM, ZWSP, LRM/RLM, word joiner and invisible operators, BOM, tag characters), refused in a typed name. ZWNJ and ZWJ stay allowed: some scripts and emoji need them. */
+const BAD_NAME_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\u{e0000}-\u{e007f}]/u;
+/** Nothing visible once ZWNJ, ZWJ and whitespace are gone. */
+const NO_VISIBLE = /^[\u200c\u200d\s]*$/u;
 
 /** The typed signature, trimmed with runs of spaces folded, or `null` when nothing usable is typed. */
 export function typedSignature(name: string): TermsSignature | null {
-  const clean = name.normalize('NFC').trim().replace(/\s+/gu, ' ');
-  if (clean === '' || [...clean].length > MAX_TYPED_NAME || BAD_NAME_CHARS.test(clean)) return null;
+  const raw = name.normalize('NFC');
+  const clean = raw.trim().replace(/\s+/gu, ' ');
+  if (!name.isWellFormed() || NO_VISIBLE.test(clean) || [...clean].length > MAX_TYPED_NAME || BAD_NAME_CHARS.test(raw)) return null;
   return { kind: 'typed', name: clean };
 }
 

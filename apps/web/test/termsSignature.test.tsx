@@ -88,6 +88,11 @@ describe('signature model', () => {
     expect(typedSignature('   ')).toBeNull();
     expect(typedSignature('x'.repeat(MAX_TYPED_NAME + 1))).toBeNull();
     expect(typedSignature('a‮b')).toBeNull();
+    expect(typedSignature('a\ud800b')).toBeNull();
+    for (const c of ['\u061c', '\u200b', '\u200e', '\u200f', '\u2060', '\u2064', '\ufeff', '\u{e0001}', '\u{e007f}']) expect(typedSignature(`Mi${c}ra`), c).toBeNull();
+    expect(typedSignature('\u200c')).toBeNull();
+    expect(typedSignature(' \u200d\u200c ')).toBeNull();
+    expect(typedSignature('می\u200cخواهم')).toEqual({ kind: 'typed', name: 'می\u200cخواهم' });
   });
 
   it('scales strokes when the pad changes size', () => {
