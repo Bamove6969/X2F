@@ -235,7 +235,7 @@ describe('secured and releasable', () => {
 });
 
 describe('mark-paid', () => {
-  for (const make of [securing, secured, () => run([[{ type: 'request-refund' }, 'seller', 121]], secured())]) {
+  for (const make of [secured, () => run([[{ type: 'request-refund' }, 'seller', 121]], secured())]) {
     test(`buyer in ${make().state}`, () => {
       const t = apply(make(), { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(122));
       expect(t.state).toBe('paid');
@@ -244,6 +244,19 @@ describe('mark-paid', () => {
       expect(t.finalAlertAt).toBeNull();
     });
   }
+
+  test('refused with too-early while the escrow is still securing, even at 9 of 10 or 10 confirmations not yet unlocked (owner Q12)', () => {
+    expect(rule(() => apply(securing(), { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(10)))).toBe('too-early');
+    const nine = apply(securing(), chain(FUNDS, 0n, 9), 'system', at(20));
+    expect(nine.state).toBe('securing');
+    expect(rule(() => apply(nine, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(21)))).toBe('too-early');
+    const tenLocked = apply(securing(), chain(FUNDS, 0n, 10), 'system', at(25));
+    expect(tenLocked.state).toBe('securing');
+    expect(rule(() => apply(tenLocked, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(26)))).toBe('too-early');
+    // Once all 10 are in and the coins unlock, the trade is secured and the tap goes through.
+    const done = apply(tenLocked, chain(FUNDS, FUNDS, 10), 'system', at(30));
+    expect(apply(done, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(31)).state).toBe('paid');
+  });
 
   test('refused in refund_requested once the auto-refund window has opened (finalAlertAt + 15 min)', () => {
     const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured()); // finalAlertAt 121
