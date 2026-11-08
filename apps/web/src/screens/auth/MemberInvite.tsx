@@ -14,6 +14,7 @@ import { startRegistration } from '@simplewebauthn/browser';
 import { AuthApiError, type PgpChallenge, type TeamInviteView } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { JOIN_COPY as C } from '../settings/teamCopy.js';
+import { refreshSession } from '../../session/useSession.js';
 import { authApi, deviceLabel } from './authApi.js';
 import { isExpired, refusalText } from './refusals.js';
 import '../screens.css';
@@ -162,7 +163,12 @@ export function MemberInvite() {
     };
   }, [code]);
 
-  const done = () => navigate('/');
+  // Signed in as the member now: drop the signed-out session answer read while the invite was open,
+  // or the screens behind the front door (session/frontDoor.tsx) would send them to the login.
+  const done = () => {
+    refreshSession();
+    void navigate('/');
+  };
 
   const webauthn = async (kind: 'security-key' | 'passkey') => {
     if (setup === null) return;

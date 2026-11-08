@@ -392,7 +392,9 @@ test('a TOTP backup login says when changes can be made, then carries on', async
   await expect(page.locator('[data-part="hold-note"]')).toContainText('Your account is on a 24-hour hold');
   await expect(page).toHaveURL(/\/login\/backup/);
   await page.click('[data-part="hold-continue"]');
-  await expect(page).toHaveURL(/\/buy$/);
+  // A recovery session never reaches the marketplace (front door, 8 Nov 2026): it lands on Security,
+  // where a new login method can be added.
+  await expect(page).toHaveURL(/\/settings\/security$/);
 });
 
 test('the TOTP backup daily cap says when to try again', async ({ page }) => {

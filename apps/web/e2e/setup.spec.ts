@@ -367,11 +367,12 @@ test('a step opened without the earlier ones goes back to the Terms', async ({ p
   await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
 });
 
-// Plan 3 Revision 2026-10-28 (no guest buying): a visitor's Trade tap must stay a short trip. From
-// the quote, the shortest route (Terms, names, a login method, the first wallet) comes back to the
-// same quote with the amount kept, through no more screens than the Setup boards, each one reached
-// by a single tap of its own button (no dead end). Any step added later must keep this green.
-test('a visitor who taps Trade comes back to the same quote, amount kept, through no more than the Setup boards', async ({ page }) => {
+// Plan 3 Revision 2026-10-28 (no guest buying), with the front door (owner, 8 Nov 2026): a visitor
+// sent a quote link sees the login, not the quote. From there, Create an account and the shortest
+// route (Terms, names, a login method, the first wallet) come back to the same quote with the amount
+// kept, through no more screens than the Setup boards, each one reached by a single tap of its own
+// button (no dead end). Any step added later must keep this green.
+test('a visitor with a quote link comes back to the same quote, amount kept, through the login and no more than the Setup boards', async ({ page }) => {
   const s = await stubApi(page);
   const takes: unknown[] = [];
   await page.route('**/v1/methods?*', json({ live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] }));
@@ -385,8 +386,11 @@ test('a visitor who taps Trade comes back to the same quote, amount kept, throug
 
   const quote = `/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`;
   await page.goto(quote);
-  await expect(page.locator('#quote-amount')).toHaveValue(B.amount);
-  await page.locator('[data-primary]').click();
+  // Outside the door: the login, keeping the quote (and its amount) to come back to.
+  await expect(page.locator('[data-screen="login"]')).toBeVisible();
+  expect(new URL(page.url()).searchParams.get('returnTo')).toBe(quote);
+  await expect(page.locator('#quote-amount')).toHaveCount(0);
+  await page.click('[data-part="create-account"]');
 
   // Every screen on the way, in order: one tap of its primary action moves on.
   const seen: string[] = [];
@@ -416,12 +420,11 @@ test('a visitor who taps Trade comes back to the same quote, amount kept, throug
   await at('setup-welcome');
   await page.click('[data-part="start-trading"]');
 
-  // Back on the same quote in this tab, the amount kept, asking for a fresh tap; nothing taken yet.
+  // Back on the same quote in this tab, the amount kept; nothing taken yet.
   await expect(page.locator('[data-screen="quote"]')).toBeVisible();
   const back = new URL(page.url());
   expect(back.pathname).toBe(`/buy/${B.method.id}/${B.offer.id}`);
   await expect(page.locator('#quote-amount')).toHaveValue(B.amount);
-  await expect(page.getByRole('status')).toHaveText("You're back. Check the total, then tap Trade.");
   expect(takes).toEqual([]);
 
   // No more screens than the Setup boards (SetupPassword is the other branch of the login step).
