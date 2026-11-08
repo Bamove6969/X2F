@@ -41,6 +41,7 @@ export {
   markSeen,
   needsSecond,
   newDispute,
+  rulingFee,
   shiftDeadlines,
   traderStatus,
   type Actor,
@@ -51,6 +52,7 @@ export {
   type DisputeStatus,
   type Round1,
   type RulingDraft,
+  type RulingFee,
   type TraderDisputeStatus,
 } from './dispute.js';
 export { appealReviewers, involvedIn, type InvolvementEntry } from './appealReviewers.js';

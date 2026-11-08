@@ -82,6 +82,41 @@ async function rule(code: string, o: { outcome: RulingOutcome; round?: 1 | 2; ru
   }
 }
 
+describe("owner g63: the 1% fee on a ruling, in the poster's dispute view only", () => {
+  async function disputed() {
+    const x = await tradeIn('paid');
+    // The seller's confirm window (owner p9-4: 120 minutes) has ended.
+    setNow(at(120 * MIN));
+    await relogin(x.buyer, x.seller);
+    expect((await x.buyer.browser.post(dispute(x.t.code), { reason: 'paid', note: '' })).statusCode).toBe(200);
+    return x;
+  }
+  const view = async (who: { browser: { get(url: string): Promise<{ json(): unknown }> } }, code: string) =>
+    (await who.browser.get(dispute(code))).json() as Record<string, unknown>;
+
+  it('a ruling that moves the trade forward: the poster pays; during the appeal it waits; the taker never sees a fee', async () => {
+    const { seller, buyer, t } = await disputed();
+    expect(await view(seller, t.code)).toMatchObject({ fee: null });
+    await publishRuling(deps, t.code, { outcome: 'release-to-buyer' });
+    expect(await view(seller, t.code)).toMatchObject({ fee: 'poster-pays' });
+    expect(await view(buyer, t.code)).not.toHaveProperty('fee');
+    await appealDirect(deps, t.code, 'seller');
+    expect(await view(seller, t.code)).toMatchObject({ fee: 'waits' });
+    // The appeal upholds completion: the poster pays.
+    await publishRuling(deps, t.code, { outcome: 'release-to-buyer' });
+    expect(await view(seller, t.code)).toMatchObject({ fee: 'poster-pays' });
+  });
+
+  it('a full reversal: no fee; an appeal that overturns it puts a lien, and the poster pays', async () => {
+    const { seller, t } = await disputed();
+    await publishRuling(deps, t.code, { outcome: 'refund-to-seller' });
+    expect(await view(seller, t.code)).toMatchObject({ fee: 'none' });
+    await appealDirect(deps, t.code, 'buyer');
+    await publishRuling(deps, t.code, { outcome: 'release-to-buyer' });
+    expect(await view(seller, t.code)).toMatchObject({ fee: 'poster-pays' });
+  });
+});
+
 describe('POST /v1/trades/:code/dispute', () => {
   it('refuses the buyer before the seller\'s confirm window ends, and writes nothing', async () => {
     const { buyer, t } = await tradeIn('paid');

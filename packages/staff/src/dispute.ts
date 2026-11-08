@@ -287,6 +287,46 @@ function outcomeInForce(d: Dispute): RulingOutcome | null {
   return d.round1?.outcome ?? null;
 }
 
+/**
+ * Owner g63 (7 Nov): who pays X2F's 1% after a moderator's ruling.
+ * - `poster-pays`: the trade completes: a ruling that moves it forward (`release-to-buyer`), an
+ *   appeal that upholds completion, or a lien (`seller-sends-xmr`, or an appeal that overturns a
+ *   ruling whose coins already moved, since the coins move at the ruling: owner Q37).
+ * - `none`: a full reversal, all funds back to the original parties (`refund-to-seller`,
+ *   `seller-returns-fiat`, `no-action` after a refund). The site pays the moderator itself.
+ * - `waits`: an appeal is pending; the fee follows its outcome.
+ * - null: no ruling has been published yet.
+ * `seller-returns-fiat` also puts a lien on the seller, but everything goes back where it came from:
+ * read as a reversal here (no fee); the owner is asked to confirm.
+ * Round 1's coins move with its own set (@x2f/trade `payoutsFor`: `dispute-buyer` pays the fee,
+ * `dispute-seller` none); a fee this rule charges that no escrow output carried is owed by the
+ * poster (fees_owed, not built yet).
+ */
+export type RulingFee = 'poster-pays' | 'none' | 'waits';
+
+const OUTCOME_FEE: Record<RulingOutcome, Exclude<RulingFee, 'waits'>> = {
+  'release-to-buyer': 'poster-pays',
+  'refund-to-seller': 'none',
+  'seller-sends-xmr': 'poster-pays',
+  'seller-returns-fiat': 'none',
+  'no-action': 'none',
+};
+
+export function rulingFee(d: Pick<Dispute, 'status' | 'round' | 'ruling' | 'round1'>): RulingFee | null {
+  if (d.round === 2) {
+    if (d.status === 'appealed' || d.status === 'awaiting-approval') return 'waits';
+    const first = d.round1?.outcome;
+    const final = d.ruling?.outcome;
+    if (first === undefined || final === undefined) return null;
+    // Escrow coins moved under round 1 and the appeal changed where they belong: a lien.
+    const moved = (ESCROW_OUTCOMES as readonly string[]).includes(first);
+    if (moved && final !== first) return 'poster-pays';
+    return OUTCOME_FEE[final];
+  }
+  if (d.status === 'open' || d.status === 'awaiting-approval' || d.ruling === null) return null;
+  return OUTCOME_FEE[d.ruling.outcome];
+}
+
 /** Round 1 published: it acts now; the appeal window runs from now. */
 function publishRound1(d: Dispute, now: Date, s: DisputeSettings): Dispute {
   return {

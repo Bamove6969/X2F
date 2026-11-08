@@ -1,5 +1,5 @@
 import { addressEnd } from '@x2f/accounts';
-import { DisputeRuleError, RULING_DEADLINE_H, RULING_GOAL_H, applyDispute, involvedIn, traderStatus, type InvolvementEntry, type TraderDisputeStatus } from '@x2f/staff';
+import { DisputeRuleError, RULING_DEADLINE_H, RULING_GOAL_H, applyDispute, involvedIn, rulingFee, traderStatus, type InvolvementEntry, type RulingFee, type TraderDisputeStatus } from '@x2f/staff';
 import { TradeRuleError, type Party, type Trade } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
@@ -85,6 +85,13 @@ export interface DisputeView {
   proofRequest: { username: string; at: string } | null;
   /** The appeal window's length in hours, from the owner's settings. */
   appealWindowH: number;
+  /**
+   * Owner g63 (7 Nov): the 1% fee after the ruling, `rulingFee` of @x2f/staff: `poster-pays` (the
+   * trade completes: a ruling that moves it forward, an appeal upholding completion, a lien),
+   * `none` (a full reversal), `waits` (an appeal is pending), null before a ruling. Only in the
+   * poster's view: the taker never sees a fee (Global Constraints). The words are design's (TODO).
+   */
+  fee?: RulingFee | null;
   serverNow: string;
 }
 
@@ -205,6 +212,7 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
         : null,
     // Lead review 7 Nov: the appeal window's length as the owner set it (settings), for the ruling page.
     appealWindowH: (await disputeSettings(q)).appealWindowH,
+    ...(side === row.poster ? { fee: rulingFee(d) } : {}),
     serverNow: now.toISOString(),
   };
 }

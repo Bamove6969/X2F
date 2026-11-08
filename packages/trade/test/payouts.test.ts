@@ -168,8 +168,9 @@ describe('payoutsFor: inconsistent inputs fail closed', () => {
   });
 });
 
-// Plan 4 Task 15, Revision 2026-10-29c "Fees on settled disputes": a settled dispute pays the 1%,
-// the poster pays. The moderator builds these sets; each trader's app co-signs only its own exactly.
+// Plan 4 Task 15, owner g63 (7 Nov, over Revision 2026-10-29c): a ruling that completes the trade
+// pays the 1% (the poster pays); a full reversal pays none. The moderator builds these sets; each
+// trader's app co-signs only its own exactly.
 describe('payoutsFor: dispute rulings (moderator-built)', () => {
   test('dispute-buyer is the release: the buyer first, then the exact fee, any surplus to the seller', () => {
     for (const poster of ['seller', 'buyer'] as const) {
@@ -178,24 +179,20 @@ describe('payoutsFor: dispute rulings (moderator-built)', () => {
     }
   });
 
-  test('dispute-seller, poster seller: the seller gets the balance less the fee, and the fee wallet exactly the fee', () => {
-    expect(payoutsFor(args('dispute-seller', 'seller', AMOUNT + FEE_AMOUNT))).toEqual([
-      { address: SELLER, amountAtomic: AMOUNT },
-      { address: FEE, amountAtomic: FEE_AMOUNT },
-    ]);
-    // A surplus stays with the seller; the fee is never more than feeFor(amount).
-    expect(payoutsFor(args('dispute-seller', 'seller', AMOUNT + FEE_AMOUNT + 5n))).toEqual([
-      { address: SELLER, amountAtomic: AMOUNT + 5n },
-      { address: FEE, amountAtomic: FEE_AMOUNT },
-    ]);
+  // Owner g63 (7 Nov): a full reversal (all funds back to the original parties) charges no 1% fee;
+  // the site pays the moderator itself. The ruling's refund is the whole escrow to the seller.
+  test('dispute-seller is a full reversal: the whole balance to the seller, no fee, whoever posted', () => {
+    for (const poster of ['seller', 'buyer'] as const) {
+      const funds = escrowPlan({ amountAtomic: AMOUNT, poster }).sellerFundsAtomic;
+      expect(payoutsFor(args('dispute-seller', poster, funds))).toEqual([{ address: SELLER, amountAtomic: funds }]);
+      expect(payoutsFor(args('dispute-seller', poster, funds + 5n))).toEqual([{ address: SELLER, amountAtomic: funds + 5n }]);
+      // The same set a refund pays: nothing ever goes to the fee wallet.
+      expect(payoutsFor(args('dispute-seller', poster, funds))).toEqual(payoutsFor(args('mutual-cancel', poster, funds)));
+    }
   });
 
-  test('dispute-seller, poster buyer: no fee in the escrow, the whole balance to the seller (the poster owes the fee, Task 12)', () => {
-    expect(payoutsFor(args('dispute-seller', 'buyer', AMOUNT))).toEqual([{ address: SELLER, amountAtomic: AMOUNT }]);
-  });
-
-  test('dispute-seller, poster seller, with no more than the fee in the escrow: refused', () => {
-    expect(() => payoutsFor(args('dispute-seller', 'seller', FEE_AMOUNT))).toThrow(RangeError);
+  test('dispute-seller with an empty escrow: refused (nothing to pay)', () => {
+    expect(() => payoutsFor(args('dispute-seller', 'seller', 0n))).toThrow(RangeError);
   });
 });
 
