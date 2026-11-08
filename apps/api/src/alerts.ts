@@ -32,7 +32,7 @@ export type AlertKind =
   | 'market-prices-paused'
   | 'market-prices-resumed'
   // Owner only: the vendor auto-close hit its per-run cap (lead vendor review item 4).
-  | 'vendor-auto-close-capped';
+  | 'auto-close-capped';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,
