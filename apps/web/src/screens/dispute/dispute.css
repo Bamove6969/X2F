@@ -188,8 +188,9 @@
   line-height: 20px;
 }
 .dispute-reason[data-on='true'] {
-  border-color: var(--x2f-monero);
-  background: var(--x2f-surface);
+  /* Design build review 7 Nov (X1): selection is ink, never orange. */
+  border-color: var(--x2f-ink);
+  background: var(--x2f-surface-raised);
 }
 /* The board's 20 px radio, drawn inside a 32 px tap box (Task 15's MIN_TAP); the -6 px margin keeps the board's spacing. */
 .dispute-reason input {
@@ -203,10 +204,10 @@
   background: radial-gradient(circle closest-side, transparent 8px, var(--x2f-ink-muted) 8px 10px, transparent 10px);
 }
 .dispute-reason input:checked {
-  background: radial-gradient(circle closest-side, var(--x2f-monero) 0 5px, transparent 5px 8px, var(--x2f-monero) 8px 10px, transparent 10px);
+  background: radial-gradient(circle closest-side, var(--x2f-ink) 0 5px, transparent 5px 8px, var(--x2f-ink) 8px 10px, transparent 10px);
 }
 .dispute-reason input:focus-visible {
-  outline: 2px solid var(--x2f-monero);
+  outline: 2px solid var(--x2f-ink);
   outline-offset: -4px;
 }
 @media (forced-colors: active) {
