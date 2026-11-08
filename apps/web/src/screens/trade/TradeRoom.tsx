@@ -218,12 +218,12 @@ function useTradeView(code: string): { load: Load; refresh: () => Promise<void> 
 }
 
 /** Shown for a state whose screen has not landed yet; while settling, also what the trade waits for. */
-export function StatusCard({ view, serverClock }: { view: TradeView; serverClock: () => Date }) {
+export function StatusCard({ view, serverClock, member = false }: { view: TradeView; serverClock: () => Date; member?: boolean }) {
   return (
     <section className="x2f-trade-status" data-trade-state={view.state}>
       <p>Trade {view.code}</p>
       <p>State: {view.state.replace('_', ' ')}</p>
-      <SettleWait view={view} serverClock={serverClock} />
+      <SettleWait view={view} serverClock={serverClock} member={member} />
     </section>
   );
 }
@@ -298,7 +298,7 @@ function MemberRoom({ code, view, refresh }: { code: string; view: TradeView; re
         <Screen code={code} view={view} refresh={refresh} serverClock={clock} wide={false} />
       ) : (
         <>
-          <StatusCard view={view} serverClock={clock} />
+          <StatusCard view={view} serverClock={clock} member />
           <section className="x2f-card x2f-stack" data-part="member-waiting">
             <p role="status">{MEMBER_TRADE_COPY.roomWaiting}</p>
           </section>

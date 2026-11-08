@@ -12,7 +12,8 @@
  * card, and so `SettleWait`, is left with the seller in `buyer-cancel`/`mutual-cancel` and both
  * sides in `auto-refund`/`lapse-refund`. The release branch is kept for a future embed but is not
  * reachable in the room. The time line names signing only for a trader who builds or co-signs this
- * kind (escrow/policy.ts ROUTE); everyone else gets a neutral line. Past `settleBy` (before the
+ * kind (escrow/policy.ts ROUTE); everyone else gets a neutral line, and so does a team member
+ * (`member`: their device never signs, whatever the trader's role; review M4). Past `settleBy` (before the
  * server's tick reverts the trade) or with an unreadable `settleBy`, no time line is shown.
  */
 import type { TradeView } from '../../api/trade.js';
@@ -31,9 +32,12 @@ export function settleWaitOf(v: Pick<TradeView, 'state' | 'settleBy' | 'releaseC
 export function SettleWait({
   view,
   serverClock,
+  member = false,
 }: {
   view: Pick<TradeView, 'state' | 'settling' | 'settleBy' | 'releaseClaimedAt' | 'role'>;
   serverClock: () => Date;
+  /** A team member's room (MemberRoom): never told to sign. */
+  member?: boolean;
 }) {
   const kind = settleWaitOf(view);
   if (kind === 'claimed') {
@@ -48,9 +52,10 @@ export function SettleWait({
     const ends = Date.parse(view.settleBy);
     // Unreadable, or already past on the server clock: no "0 min" line.
     if (!Number.isFinite(ends) || ends <= serverClock().getTime()) return null;
-    const signer = view.settling !== null && signsIn(view.settling, view.role);
+    // A team member's device holds no key share, so it never signs (review M4).
+    const signer = !member && view.settling !== null && signsIn(view.settling, view.role);
     const timer = <Countdown deadline={view.settleBy} serverClock={serverClock} format="minutes" />;
-    // COPY-UNSIGNED: no copy board covers the settling wait lines yet.
+    // COPY-UNSIGNED: no copy board covers the settling wait lines yet (the member's neutral line too).
     return (
       <p className="x2f-settle-wait" data-settle-wait="window">
         {signer ? <>{timer} left to sign</> : <>Being signed, {timer} left</>}

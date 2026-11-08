@@ -65,6 +65,17 @@ describe('SettleWait', () => {
     expect(line({ role: 'seller', settling: 'buyer-cancel' })).toBe('Being signed, 10 min left');
   });
 
+  it('a team member is never told to sign, whatever the role and kind (review M4)', () => {
+    for (const role of ['seller', 'buyer'] as const) {
+      for (const kind of ['release', 'mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'] as const) {
+        const { host } = render(<SettleWait view={settling({ role, settling: kind })} serverClock={clock} member />);
+        expect(host.textContent).toBe('Being signed, 10 min left');
+      }
+    }
+    const card = render(<StatusCard view={settling({ role: 'seller', settling: 'release' })} serverClock={clock} member />).host;
+    expect(card.querySelector('[data-settle-wait="window"]')?.textContent).toBe('Being signed, 10 min left');
+  });
+
   it('no time line once settleBy has passed (before the tick reverts) or when it is unreadable', () => {
     for (const settleBy of [at(-1), NOW, 'not a date']) {
       const { host } = render(<SettleWait view={settling({ settleBy })} serverClock={clock} />);
