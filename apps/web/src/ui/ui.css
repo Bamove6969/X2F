@@ -1562,6 +1562,11 @@
   border: 2px solid var(--x2f-ink);
 }
 
+/* Ticked and switched off: the ink selection keeps the dashed "off" look (kit review 7). */
+.x2f-select-card[data-on='false'][data-selected='true'] {
+  border-style: dashed;
+}
+
 /* In two panes the card's text is a PickButton (MyOffers' RowText), drawn bare inside the card so
    a ticked card and the shown one never look the same: the shown one gets the tab bar's "current"
    treatment, a 2 px ink inset line (here at its start), never a second ring. */
