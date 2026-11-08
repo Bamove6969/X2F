@@ -11,6 +11,9 @@ import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
 import { openDesk } from './desk.js';
 import { createWatcher } from './watcher.js';
 
+/** The instance lock's advisory key ("x2mi"; the migrator's is "x2mo"): one moderation process per database. */
+export const MOD_INSTANCE_LOCK = 0x7832_6d69;
+
 export { AttestRefused, attestChat, attestTrade, BadTerms, checkChatWork, checkWork, signAttestation, type Attested } from './attest.js';
 export { loadChatIdentity, saveChatIdentity, type ChatModIdentity } from './keystore.js';
 export { loadParty, migrateModeration, modSubkey, open, saveParty, seal, WALLET_PASSWORD_BYTES, walletPassword } from './keystore.js';
@@ -130,6 +133,27 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   const log = deps.log ?? (() => {});
   if (typeof o.relayUrl !== 'string' || !/^wss?:\/\//.test(o.relayUrl)) throw new TypeError('moderation: relayUrl must be a ws:// or wss:// URL');
   if (!['regtest', 'stagenet', 'mainnet'].includes(o.network)) throw new TypeError('moderation: network must be regtest, stagenet or mainnet');
+  // Security review 7 Nov 2026, finding 2: one moderation process per database. The lock is held on
+  // its own connection for the life of the process; a second process refuses to start.
+  const lock = await o.db.connect();
+  let locked = false;
+  try {
+    locked = (await lock.query<{ ok: boolean }>('select pg_try_advisory_lock($1) as ok', [MOD_INSTANCE_LOCK])).rows[0]?.ok === true;
+  } catch (e) {
+    lock.release();
+    throw e;
+  }
+  if (!locked) {
+    lock.release();
+    log({ reason: 'moderation-instance-locked' });
+    throw new Error('moderation: another moderation process holds the instance lock on this database');
+  }
+  // A lost lock connection releases the lock: stop working rather than run beside a new process.
+  let lockLost: (() => void) | null = null;
+  lock.on('error', () => {
+    log({ reason: 'moderation-instance-lock-lost' });
+    lockLost?.();
+  });
   const link: Link = createLink({
     apiInternalUrl: o.apiInternalUrl,
     relayAdminUrl: o.relayAdminUrl,
@@ -374,18 +398,26 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   };
   if (watchIntervalMs > 0) watchLoop();
 
-  return {
-    tick,
-    chatTick,
-    watch: () => watcher.tick(),
-    async stop() {
+  let stopping: Promise<void> | null = null;
+  const stop = (): Promise<void> =>
+    (stopping ??= (async () => {
       stopped = true;
       if (timer) clearTimeout(timer);
       if (watchTimer) clearTimeout(watchTimer);
       await running.catch(() => undefined);
       await watching.catch(() => undefined);
       await watcher.stop();
-    },
+      await lock.query('select pg_advisory_unlock($1)', [MOD_INSTANCE_LOCK]).catch(() => undefined);
+      lock.release();
+    })());
+  lockLost = () => void stop();
+
+  return {
+    tick,
+    chatTick,
+    // Through the watcher's own queue: never a pass alongside the loop's (finding 2).
+    watch: () => watcher.tick(),
+    stop,
   };
 }
 
@@ -437,10 +469,12 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   const env = process.env;
   const { default: pgMod } = await import('pg');
   const { migrateModeration } = await import('./keystore.js');
-  const db = new pgMod.Pool({ connectionString: envString(env, 'MOD_DATABASE_URL'), max: 4 });
+  const db = new pgMod.Pool({ connectionString: envString(env, 'MOD_DATABASE_URL'), max: 5 });
   db.on('error', () => process.stderr.write('{"level":50,"msg":"moderation database idle client error"}\n'));
   await migrateModeration(db);
-  const handle = await startModeration(
+  let handle: ModerationHandle;
+  try {
+    handle = await startModeration(
     {
       apiInternalUrl: envString(env, 'X2F_API_INTERNAL_URL'),
       relayAdminUrl: envString(env, 'RELAY_ADMIN_URL'),
@@ -453,7 +487,13 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
       network: envNetwork(env),
     },
     { log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) },
-  );
+    );
+  } catch (e) {
+    // A refused start (another process holds the instance lock, finding 2) or bad settings: exit non-zero.
+    process.stderr.write(`${JSON.stringify({ level: 50, msg: e instanceof Error ? e.message : 'moderation: start failed' })}\n`);
+    await db.end().catch(() => undefined);
+    process.exit(1);
+  }
   const shutdown = async () => {
     await handle.stop();
     await db.end();

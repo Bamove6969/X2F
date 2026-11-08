@@ -68,6 +68,8 @@ interface Row {
   setup_done_at: Date | null;
   state: unknown;
   watching: boolean;
+  /** Bumped by every state save; a save over another version is dropped (security review 7 Nov, finding 2). */
+  version: string;
 }
 
 /** WatchState as JSON: bigints as decimal strings, closedAt as an ISO string. */
@@ -450,11 +452,108 @@ export function createWatcher(o: WatcherOptions): Watcher {
       }
     }
     if (b) backoff.delete(row.trade);
-    await o.db.query('update mod_watch set state = $2, watching = $3, updated_at = now() where trade = $1', [
-      row.trade, JSON.stringify(dumpWatchState(step.state)), step.watching,
+    // Only over the version this pass read (security review 7 Nov, finding 2): a stale process drops
+    // its state instead of rolling back a newer process's (every report above is safe to repeat).
+    const saved = await o.db.query('update mod_watch set state = $2, watching = $3, version = version + 1, updated_at = now() where trade = $1 and version = $4', [
+      row.trade, JSON.stringify(dumpWatchState(step.state)), step.watching, row.version,
     ]);
+    if (saved.rowCount === 0) {
+      o.log({ reason: 'watch-state-stale' });
+      return true;
+    }
     return step.watching;
   };
+
+  /** One watcher pass (run one at a time through `tick`). */
+  const pass = async (): Promise<void> => {
+    let api: Map<string, WatchItem>;
+    const pulledAt = o.now(); // before the read: the list is never taken as newer than it is
+    try {
+      api = await o.link.pullWatch();
+    } catch {
+      o.log({ reason: 'watch-unavailable' });
+      return;
+    }
+    snapshot = { items: api, at: pulledAt };
+    // Every trade whose attestation was posted has a watch row, even if the process stopped
+    // between posting it and registering the party (the trade is no longer work after that).
+    await o.db.query(
+      `insert into mod_watch (trade, state) select trade, $1 from signed_terms where posted_at is not null on conflict (trade) do nothing`,
+      [JSON.stringify(dumpWatchState(newWatchState()))],
+    );
+    const { rows } = await o.db.query<Row>('select trade, escrow_address, setup_done_at, state, watching, version from mod_watch where watching order by trade');
+    for (const row of rows) {
+      if (stopped) return;
+      let item = api.get(row.trade);
+      let unlisted: WatchItem | null = null;
+      if (item === undefined) {
+        // Not listed. Not yet (a race with a fresh attestation): nothing to decide. Any more (review
+        // M6): the API lists every open attested trade, so an unlisted one this watcher saw close is
+        // closed, and its watch still runs out its own 30 days (late coins in that gap are still
+        // reported). watchStep treats every closed state alike.
+        let closedHere = false;
+        try {
+          closedHere = reviveWatchState(row.state).closedAt !== null;
+        } catch {
+          closedHere = false;
+        }
+        if (!closedHere) continue;
+        item = { state: 'cancelled', settleKind: null, paused: false, finalAlertSeenAt: null, finalAlertAt: null };
+        unlisted = item;
+      }
+      const apiState = item.state as TradeState;
+      try {
+        let watching = row.watching;
+        const plan = modPartyPlan({
+          attested: true,
+          running: running.has(row.trade),
+          escrowAddress: row.escrow_address,
+          setupDoneReported: row.setup_done_at !== null,
+          apiState,
+          watching,
+        });
+        if (plan.stop) {
+          await stopParty(row.trade);
+          await o.db.query('update mod_watch set watching = false, updated_at = now() where trade = $1', [row.trade]);
+          o.log({ reason: 'party-stopped' });
+          continue;
+        }
+        if (plan.start) {
+          const args = await o.argsFor(row.trade);
+          if (args === null) {
+            o.log({ reason: 'party-state-missing' });
+            continue;
+          }
+          await start(args);
+        }
+        if (plan.reportSetupDone !== null) {
+          const res = await o.link.report({ kind: 'setup-done', trade: row.trade, escrowAddress: plan.reportSetupDone });
+          if (accepted(res)) {
+            await o.db.query('update mod_watch set setup_done_at = now(), updated_at = now() where trade = $1', [row.trade]);
+          } else {
+            o.log({ reason: `setup-done-refused-${res.status}` });
+          }
+          continue;
+        }
+        const handle = running.get(row.trade);
+        if (!handle || row.escrow_address === null) continue;
+        if (row.setup_done_at === null) {
+          // Still in setup: setup-done has not been accepted yet. Past setup: the API took it
+          // (we may have stopped before recording that), so record it and watch.
+          if (apiState === 'setup') continue;
+          await o.db.query('update mod_watch set setup_done_at = now(), updated_at = now() where trade = $1', [row.trade]);
+        }
+        watching = await watchOne(row, item, unlisted, handle);
+        if (!watching) {
+          await stopParty(row.trade);
+          o.log({ reason: 'watch-ended' });
+        }
+      } catch {
+        o.log({ reason: 'watch-failed' });
+      }
+    }
+  };
+  let ticking: Promise<void> = Promise.resolve();
 
   return {
     async runParty(a) {
@@ -464,97 +563,16 @@ export function createWatcher(o: WatcherOptions): Watcher {
       await start(a);
     },
 
-    async tick() {
-      let api: Map<string, WatchItem>;
-      const pulledAt = o.now(); // before the read: the list is never taken as newer than it is
-      try {
-        api = await o.link.pullWatch();
-      } catch {
-        o.log({ reason: 'watch-unavailable' });
-        return;
-      }
-      snapshot = { items: api, at: pulledAt };
-      // Every trade whose attestation was posted has a watch row, even if the process stopped
-      // between posting it and registering the party (the trade is no longer work after that).
-      await o.db.query(
-        `insert into mod_watch (trade, state) select trade, $1 from signed_terms where posted_at is not null on conflict (trade) do nothing`,
-        [JSON.stringify(dumpWatchState(newWatchState()))],
-      );
-      const { rows } = await o.db.query<Row>('select trade, escrow_address, setup_done_at, state, watching from mod_watch where watching order by trade');
-      for (const row of rows) {
-        if (stopped) return;
-        let item = api.get(row.trade);
-        let unlisted: WatchItem | null = null;
-        if (item === undefined) {
-          // Not listed. Not yet (a race with a fresh attestation): nothing to decide. Any more (review
-          // M6): the API lists every open attested trade, so an unlisted one this watcher saw close is
-          // closed, and its watch still runs out its own 30 days (late coins in that gap are still
-          // reported). watchStep treats every closed state alike.
-          let closedHere = false;
-          try {
-            closedHere = reviveWatchState(row.state).closedAt !== null;
-          } catch {
-            closedHere = false;
-          }
-          if (!closedHere) continue;
-          item = { state: 'cancelled', settleKind: null, paused: false, finalAlertSeenAt: null, finalAlertAt: null };
-          unlisted = item;
-        }
-        const apiState = item.state as TradeState;
-        try {
-          let watching = row.watching;
-          const plan = modPartyPlan({
-            attested: true,
-            running: running.has(row.trade),
-            escrowAddress: row.escrow_address,
-            setupDoneReported: row.setup_done_at !== null,
-            apiState,
-            watching,
-          });
-          if (plan.stop) {
-            await stopParty(row.trade);
-            await o.db.query('update mod_watch set watching = false, updated_at = now() where trade = $1', [row.trade]);
-            o.log({ reason: 'party-stopped' });
-            continue;
-          }
-          if (plan.start) {
-            const args = await o.argsFor(row.trade);
-            if (args === null) {
-              o.log({ reason: 'party-state-missing' });
-              continue;
-            }
-            await start(args);
-          }
-          if (plan.reportSetupDone !== null) {
-            const res = await o.link.report({ kind: 'setup-done', trade: row.trade, escrowAddress: plan.reportSetupDone });
-            if (accepted(res)) {
-              await o.db.query('update mod_watch set setup_done_at = now(), updated_at = now() where trade = $1', [row.trade]);
-            } else {
-              o.log({ reason: `setup-done-refused-${res.status}` });
-            }
-            continue;
-          }
-          const handle = running.get(row.trade);
-          if (!handle || row.escrow_address === null) continue;
-          if (row.setup_done_at === null) {
-            // Still in setup: setup-done has not been accepted yet. Past setup: the API took it
-            // (we may have stopped before recording that), so record it and watch.
-            if (apiState === 'setup') continue;
-            await o.db.query('update mod_watch set setup_done_at = now(), updated_at = now() where trade = $1', [row.trade]);
-          }
-          watching = await watchOne(row, item, unlisted, handle);
-          if (!watching) {
-            await stopParty(row.trade);
-            o.log({ reason: 'watch-ended' });
-          }
-        } catch {
-          o.log({ reason: 'watch-failed' });
-        }
-      }
+    tick() {
+      // One pass at a time, whoever asks (the loop or the test-only watch(); finding 2).
+      const next = ticking.then(() => pass());
+      ticking = next.catch(() => undefined);
+      return next;
     },
 
     async stop() {
       stopped = true;
+      await ticking;
       await Promise.all([...starting.values()]);
       await Promise.all([...running.keys()].map((c) => stopParty(c)));
     },

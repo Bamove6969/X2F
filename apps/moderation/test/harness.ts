@@ -137,7 +137,7 @@ export interface FakeParty {
    */
   committed: boolean;
   /** Runs inside every funds() call, after the watch list was read (review 7 Nov, finding 1: the pass is slow). */
-  onFunds: (() => void) | null;
+  onFunds: (() => void | Promise<void>) | null;
   handle: PartyHandle;
 }
 
@@ -168,7 +168,7 @@ function fakeParty(): FakeParty {
         return new Promise<string | null>(() => {});
       },
       funds: async () => {
-        p.onFunds?.();
+        await p.onFunds?.();
         return { ...p.funds, incoming: p.funds.incoming.map((i) => ({ ...i })) };
       },
       spendInfo: async () => {
@@ -242,11 +242,12 @@ export interface Mod {
 }
 
 /** `deskFails.on`: every desk open fails while set (review M2: the watcher retries it). */
-export async function moderation(ctx: Ctx, fetch: Fetch, opts: { deskFails?: { on: boolean } } = {}): Promise<Mod> {
+/** `logs`: where the log goes (to read it when the start is refused). */
+export async function moderation(ctx: Ctx, fetch: Fetch, opts: { deskFails?: { on: boolean }; logs?: string[] } = {}): Promise<Mod> {
   const parties = new Map<string, FakeParty>();
   const transports = new Map<string, FakeTransport>();
   const started: ModPartyArgs[] = [];
-  const logs: string[] = [];
+  const logs: string[] = opts.logs ?? [];
   const handle = await startModeration(
     {
       apiInternalUrl: API,

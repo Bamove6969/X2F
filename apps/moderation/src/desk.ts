@@ -186,19 +186,27 @@ const accepted = (r: { status: number; error: string | null }): boolean => r.sta
 
 const outcomeKey = (o: Outcome): string => JSON.stringify([o.builder, o.cosigner, o.to.map((p) => [p.address, p.amountAtomic.toString()])]);
 
-async function loadRecord(db: pg.Pool, trade: string): Promise<DeskRecord | null> {
-  const { rows } = await db.query<{ record: unknown }>('select record from mod_trade_desk where trade = $1', [trade]);
+async function loadRecord(db: pg.Pool, trade: string): Promise<{ record: DeskRecord; version: string } | null> {
+  const { rows } = await db.query<{ record: unknown; version: string }>('select record, version from mod_trade_desk where trade = $1', [trade]);
   if (!rows[0]) return null;
   const r = fromJson(rows[0].record) as DeskRecord;
-  return { ...r, paidSeenAt: r.paidSeenAt ?? null };
+  return { record: { ...r, paidSeenAt: r.paidSeenAt ?? null }, version: rows[0].version };
+}
+
+/** A save refused because another process wrote the desk record since this one read it (finding 2). */
+export class StaleDeskRecord extends Error {
+  constructor() {
+    super('desk record changed by another process');
+    this.name = 'StaleDeskRecord';
+  }
 }
 
 export async function openDesk(o: DeskOptions): Promise<Desk> {
   const code = o.args.trade;
   const terms = o.args.terms;
   const channel = await channelFor(code, 'signals');
-  let rec = await loadRecord(o.db, code);
-  if (rec === null) {
+  let loaded = await loadRecord(o.db, code);
+  if (loaded === null) {
     let shadow: Trade | null = null;
     try {
       shadow = newShadow(code, terms, o.now());
@@ -209,7 +217,7 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
       'select seller_terms, buyer_terms from signed_terms where trade = $1',
       [code],
     );
-    rec = {
+    const rec: DeskRecord = {
       v: 1,
       guard: { trade: channel, seen: {} },
       seq: 0,
@@ -225,9 +233,11 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
       apiRefundSince: null,
     };
     await o.db.query('insert into mod_trade_desk (trade, record) values ($1, $2) on conflict (trade) do nothing', [code, JSON.stringify(toJson(rec))]);
-    rec = (await loadRecord(o.db, code))!;
+    loaded = (await loadRecord(o.db, code))!;
   }
-  let record: DeskRecord = rec;
+  let record: DeskRecord = loaded.record;
+  /** The row's version `record` was read at or last saved as (security review 7 Nov, finding 2). */
+  let version: string = loaded.version;
 
   let chain: Promise<void> = Promise.resolve();
   let stopped = false;
@@ -242,10 +252,25 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
     try {
       await client.query('begin');
       if (extra) await extra(client);
-      await client.query('update mod_trade_desk set record = $2, updated_at = now() where trade = $1', [code, JSON.stringify(toJson(r))]);
+      // Only over the version this desk read (finding 2): a stale process never overwrites a newer row.
+      const { rows } = await client.query<{ version: string }>(
+        'update mod_trade_desk set record = $2, version = version + 1, updated_at = now() where trade = $1 and version = $3 returning version',
+        [code, JSON.stringify(toJson(r)), version],
+      );
+      if (!rows[0]) throw new StaleDeskRecord();
       await client.query('commit');
+      version = rows[0].version;
     } catch (e) {
       await client.query('rollback').catch(() => undefined);
+      if (e instanceof StaleDeskRecord) {
+        // Another process wrote this record: drop this desk's state and take the newer row.
+        o.log({ reason: 'desk-record-stale' });
+        const fresh = await loadRecord(o.db, code).catch(() => null);
+        if (fresh !== null) {
+          record = fresh.record;
+          version = fresh.version;
+        }
+      }
       throw e;
     } finally {
       client.release();

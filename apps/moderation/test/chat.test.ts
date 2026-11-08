@@ -12,8 +12,8 @@ import {
 } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
-import { loadChatIdentity, startModeration, type ChatWorkItem, type Fetch } from '../src/main.js';
+import { afterAll, afterEach, beforeAll, describe, expect, inject, it } from 'vitest';
+import { loadChatIdentity, startModeration, type ChatWorkItem, type Fetch, type ModerationHandle } from '../src/main.js';
 import { MOD_TEMPLATE_DB } from './setup/postgres.js';
 
 const API = 'http://api-internal.test';
@@ -73,11 +73,20 @@ function fakeApi(chatWork: () => ChatWorkItem[]) {
   return { fetch, reports };
 }
 
-function moderation(fetch: Fetch) {
-  return startModeration(
+/** The running service: one at a time (instance lock, security review 7 Nov finding 2), so a new start is a restart. */
+const live: ModerationHandle[] = [];
+afterEach(async () => {
+  await Promise.all(live.splice(0).map((h) => h.stop()));
+});
+
+async function moderation(fetch: Fetch): Promise<ModerationHandle> {
+  await Promise.all(live.splice(0).map((h) => h.stop()));
+  const h = await startModeration(
     { apiInternalUrl: API, relayAdminUrl: 'http://relay.test', daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95), relayUrl: 'ws://relay.test', network: 'regtest' },
     { fetch, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, runParty: () => {} },
   );
+  live.push(h);
+  return h;
 }
 
 describe('the chat mod identity', () => {

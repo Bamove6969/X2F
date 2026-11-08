@@ -16,7 +16,7 @@ import {
 } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, inject, it } from 'vitest';
 import {
   loadParty,
   modSubkey,
@@ -123,8 +123,15 @@ function fakeNetwork(work: () => WorkItem[]) {
   return { fetch, reports, registered, refused, refusals };
 }
 
-async function moderation(fetch: Fetch, runParty: (a: ModPartyArgs) => void = () => {}): Promise<ModerationHandle> {
-  return startModeration(
+/** The running service: one at a time (instance lock, security review 7 Nov finding 2), so a new start is a restart. */
+const live: ModerationHandle[] = [];
+afterEach(async () => {
+  await Promise.all(live.splice(0).map((h) => h.stop()));
+});
+
+async function moderation(fetch: Fetch, runParty: (a: ModPartyArgs) => void = () => {}, log?: (e: { reason: string }) => void): Promise<ModerationHandle> {
+  await Promise.all(live.splice(0).map((h) => h.stop()));
+  const h = await startModeration(
     {
       apiInternalUrl: API,
       relayAdminUrl: RELAY,
@@ -136,8 +143,10 @@ async function moderation(fetch: Fetch, runParty: (a: ModPartyArgs) => void = ()
       relayUrl: 'ws://relay.test',
       network: 'regtest',
     },
-    { fetch, runParty, now: () => NOW, intervalMs: 0, watchIntervalMs: 0 },
+    { fetch, runParty, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, ...(log ? { log } : {}) },
   );
+  live.push(h);
+  return h;
 }
 
 describe('attesting a trade', () => {
@@ -206,10 +215,7 @@ describe('attesting a trade', () => {
       const seller = await trader(code, 'seller');
       const reasons: string[] = [];
       const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms } as unknown as WorkItem]);
-      const mod = await startModeration(
-        { apiInternalUrl: API, relayAdminUrl: RELAY, daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95), relayUrl: 'ws://relay.test', network: 'regtest' },
-        { fetch: net.fetch, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, runParty: () => {}, log: (e) => void reasons.push(e.reason) },
-      );
+      const mod = await moderation(net.fetch, () => {}, (e) => void reasons.push(e.reason));
       expect(await mod.tick()).toEqual([]);
       expect(net.reports).toHaveLength(0);
       expect(net.refusals).toEqual([]);
