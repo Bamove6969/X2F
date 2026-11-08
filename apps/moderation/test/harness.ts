@@ -245,7 +245,7 @@ export interface Mod {
 
 /** `deskFails.on`: every desk open fails while set (review M2: the watcher retries it). */
 /** `logs`: where the log goes (to read it when the start is refused). */
-export async function moderation(ctx: Ctx, fetch: Fetch, opts: { deskFails?: { on: boolean }; logs?: string[] } = {}): Promise<Mod> {
+export async function moderation(ctx: Ctx, fetch: Fetch, opts: { deskFails?: { on: boolean }; logs?: string[]; watchIntervalMs?: number; lockHeld?: () => Promise<boolean> } = {}): Promise<Mod> {
   const parties = new Map<string, FakeParty>();
   const transports = new Map<string, FakeTransport>();
   const started: ModPartyArgs[] = [];
@@ -266,7 +266,8 @@ export async function moderation(ctx: Ctx, fetch: Fetch, opts: { deskFails?: { o
       fetch,
       now: () => ctx.clock.now,
       intervalMs: 0,
-      watchIntervalMs: 0,
+      watchIntervalMs: opts.watchIntervalMs ?? 0,
+      ...(opts.lockHeld ? { lockHeld: opts.lockHeld } : {}),
       log: (e) => logs.push(e.reason),
       startParty: async (a) => {
         started.push(a);

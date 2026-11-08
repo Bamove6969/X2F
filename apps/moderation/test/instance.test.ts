@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { instanceLockHeld, MOD_INSTANCE_LOCK } from '../src/main.js';
 import { fromJson } from '../src/shadow.js';
 import type { DeskRecord } from '../src/desk.js';
 import { fakeNetwork, inFunding, makeCtx, moderation, secured, type Ctx, stopAll } from './harness.js';
@@ -104,5 +105,66 @@ describe('one moderation process (security review 7 Nov, finding 2)', () => {
     await Promise.all([m.handle.watch(), m.handle.watch(), m.handle.watch()]);
     expect(most).toBe(1);
     await m.handle.stop();
+  });
+
+  // Re-verify R3 (8 Nov): a lost instance lock ends the process, a half-open lock connection is
+  // caught by the per-pass check, and starts and stops leave no listener behind.
+  it('the lock connection is killed: the service logs it, stops, and its lockLost resolves (the entry then exits 1)', async () => {
+    const { fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    await ctx.db.query(`select pg_terminate_backend(pid) from pg_locks where locktype = 'advisory' and classid = 0 and objid = $1 and objsubid = 1 and database = (select oid from pg_database where datname = current_database())`, [MOD_INSTANCE_LOCK]); // pg_locks is cluster-wide: only this file's database
+    await expect(Promise.race([m.handle.lockLost.then(() => 'lost'), new Promise((r) => setTimeout(() => r('still running'), 5_000))])).resolves.toBe('lost');
+    expect(m.logs).toContain('moderation-instance-lock-lost');
+    // The lock is free again: a new process starts.
+    const next = await moderation(ctx, fetch);
+    await next.handle.stop();
+  });
+
+  it('instanceLockHeld: true on the holding connection; false on one without the lock and on a half-open one that never answers', async () => {
+    const holder = await ctx.db.connect();
+    const other = await ctx.db.connect();
+    try {
+      expect((await holder.query<{ ok: boolean }>('select pg_try_advisory_lock($1) as ok', [MOD_INSTANCE_LOCK])).rows[0]!.ok).toBe(true);
+      expect(await instanceLockHeld(holder, 1_000)).toBe(true);
+      expect(await instanceLockHeld(other, 1_000)).toBe(false);
+      await holder.query('select pg_advisory_unlock($1)', [MOD_INSTANCE_LOCK]);
+      expect(await instanceLockHeld(holder, 1_000)).toBe(false);
+    } finally {
+      holder.release();
+      other.release();
+    }
+    const halfOpen = { query: () => new Promise<never>(() => {}) };
+    expect(await instanceLockHeld(halfOpen, 50)).toBe(false);
+  });
+
+  it('the watch loop checks the lock every pass: a lock no longer held stops the service', async () => {
+    const { fetch } = fakeNetwork(ctx);
+    let held = true;
+    const logs: string[] = [];
+    const m = await moderation(ctx, fetch, { logs, watchIntervalMs: 5, lockHeld: async () => held });
+    held = false;
+    await expect(Promise.race([m.handle.lockLost.then(() => 'lost'), new Promise((r) => setTimeout(() => r('still running'), 5_000))])).resolves.toBe('lost');
+    expect(logs).toContain('moderation-instance-lock-lost');
+  });
+
+  it('twelve starts and stops leave no error listener on the pooled lock connection (no MaxListenersExceededWarning)', async () => {
+    const { fetch } = fakeNetwork(ctx);
+    const warnings: string[] = [];
+    const onWarning = (w: Error) => void warnings.push(w.name);
+    process.on('warning', onWarning);
+    try {
+      for (let i = 0; i < 12; i++) await (await moderation(ctx, fetch)).handle.stop();
+      await new Promise((r) => setTimeout(r, 50));
+      expect(warnings.filter((w) => w === 'MaxListenersExceededWarning')).toEqual([]);
+    } finally {
+      process.off('warning', onWarning);
+    }
+  });
+
+  it('the entry exits 1 once the lock is lost and keeps the database connections alive (TCP keepalive)', () => {
+    const main = readFileSync(fileURLToPath(new URL('../src/main.ts', import.meta.url)), 'utf8');
+    const entry = main.slice(main.indexOf('// `tsx apps/moderation/src/main.ts`'));
+    expect(entry).toMatch(/lockLost\.then\([\s\S]*process\.exit\(1\)/);
+    expect(entry).toMatch(/keepAlive: true/);
   });
 });

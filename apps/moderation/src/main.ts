@@ -13,6 +13,31 @@ import { createWatcher } from './watcher.js';
 
 /** The instance lock's advisory key ("x2mi"; the migrator's is "x2mo"): one moderation process per database. */
 export const MOD_INSTANCE_LOCK = 0x7832_6d69;
+/** How long the per-pass lock check waits for the lock connection (re-verify R3: a half-open one never answers). */
+export const LOCK_CHECK_TIMEOUT_MS = 5_000;
+
+/**
+ * Does this connection still hold the instance lock (re-verify R3)? Asked every watch pass: a
+ * connection the server dropped (failover, a half-open TCP session that never errors) answers
+ * false, an error, or nothing within `timeoutMs`; each counts as lost.
+ */
+export async function instanceLockHeld(client: { query: (sql: string, values: unknown[]) => Promise<{ rows: Array<{ held?: boolean }> }> }, timeoutMs = LOCK_CHECK_TIMEOUT_MS): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  const check = client
+    .query(
+      `select exists (select 1 from pg_locks where locktype = 'advisory' and classid = 0 and objid = $1 and objsubid = 1 and granted and pid = pg_backend_pid()) as held`,
+      [MOD_INSTANCE_LOCK],
+    )
+    .then((r) => r.rows[0]?.held === true, () => false);
+  try {
+    return await Promise.race([check, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export { AttestRefused, attestChat, attestTrade, BadTerms, checkChatWork, checkWork, signAttestation, type Attested } from './attest.js';
 export { loadChatIdentity, saveChatIdentity, type ChatModIdentity } from './keystore.js';
@@ -77,6 +102,8 @@ export interface ModerationDeps {
   signalsTransport?: (a: { channel: string; me: Identity }) => Transport | Promise<Transport>;
   /** Watcher period; 0 runs no watcher loop (callers drive `watch`). Default WATCH_INTERVAL_MS (15 s). */
   watchIntervalMs?: number;
+  /** The per-pass instance-lock check (tests); default `instanceLockHeld` on the lock connection (re-verify R3). */
+  lockHeld?: () => Promise<boolean>;
   newIdentity?: () => Promise<Identity>;
   now?: () => Date;
   /** Loop period; 0 runs no loop (callers drive `tick`). Default 5 s. */
@@ -94,6 +121,11 @@ export interface ModerationHandle {
   watch(): Promise<void>;
   /** Stops the loops, then every running moderator party. */
   stop(): Promise<void>;
+  /**
+   * Resolves once the instance lock was lost (re-verify R3); the service has then stopped itself.
+   * The process entry exits 1 on it, so a supervisor restarts it (and the new one waits for the lock).
+   */
+  lockLost: Promise<void>;
 }
 
 /** The moderator's party state as sealed into `mod_party_state` (never the wallet password). */
@@ -148,12 +180,23 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     log({ reason: 'moderation-instance-locked' });
     throw new Error('moderation: another moderation process holds the instance lock on this database');
   }
-  // A lost lock connection releases the lock: stop working rather than run beside a new process.
-  let lockLost: (() => void) | null = null;
-  lock.on('error', () => {
-    log({ reason: 'moderation-instance-lock-lost' });
-    lockLost?.();
+  // A lost lock connection releases the lock: stop working rather than run beside a new process
+  // (re-verify R3: the error event, and the per-pass check for a half-open connection that never errors).
+  let lost = false;
+  let onLost!: () => void;
+  const lockLost = new Promise<void>((resolve) => {
+    onLost = resolve;
   });
+  let stopForLoss: (() => Promise<void>) | null = null;
+  const loseLock = (): void => {
+    if (lost) return;
+    lost = true;
+    log({ reason: 'moderation-instance-lock-lost' });
+    void (stopForLoss?.() ?? Promise.resolve()).finally(onLost);
+  };
+  const onLockError = (): void => loseLock();
+  lock.on('error', onLockError);
+  const lockHeld = deps.lockHeld ?? (() => instanceLockHeld(lock));
   const link: Link = createLink({
     apiInternalUrl: o.apiInternalUrl,
     relayAdminUrl: o.relayAdminUrl,
@@ -389,8 +432,11 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   let watching: Promise<unknown> = Promise.resolve();
   const watchLoop = (): void => {
     if (stopped) return;
-    watching = watcher
-      .tick()
+    watching = lockHeld()
+      .then((held) => {
+        if (!held) return loseLock();
+        return watcher.tick();
+      })
       .catch(() => log({ reason: 'watch-pass-failed' }))
       .finally(() => {
         if (!stopped) watchTimer = setTimeout(watchLoop, watchIntervalMs);
@@ -407,10 +453,12 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       await running.catch(() => undefined);
       await watching.catch(() => undefined);
       await watcher.stop();
-      await lock.query('select pg_advisory_unlock($1)', [MOD_INSTANCE_LOCK]).catch(() => undefined);
-      lock.release();
+      if (!lost) await lock.query('select pg_advisory_unlock($1)', [MOD_INSTANCE_LOCK]).catch(() => undefined);
+      lock.off('error', onLockError);
+      // A lost connection is destroyed, never handed back to the pool.
+      lock.release(lost ? true : undefined);
     })());
-  lockLost = () => void stop();
+  stopForLoss = stop;
 
   return {
     tick,
@@ -418,6 +466,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     // Through the watcher's own queue: never a pass alongside the loop's (finding 2).
     watch: () => watcher.tick(),
     stop,
+    lockLost,
   };
 }
 
@@ -469,7 +518,7 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
   const env = process.env;
   const { default: pgMod } = await import('pg');
   const { migrateModeration } = await import('./keystore.js');
-  const db = new pgMod.Pool({ connectionString: envString(env, 'MOD_DATABASE_URL'), max: 5 });
+  const db = new pgMod.Pool({ connectionString: envString(env, 'MOD_DATABASE_URL'), max: 5, keepAlive: true });
   db.on('error', () => process.stderr.write('{"level":50,"msg":"moderation database idle client error"}\n'));
   await migrateModeration(db);
   let handle: ModerationHandle;
@@ -498,6 +547,12 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
     await handle.stop();
     await db.end();
   };
+  // Re-verify R3: a lost instance lock ends the process non-zero (the service already stopped), so a
+  // supervisor restarts it and the new process waits for the lock.
+  void handle.lockLost.then(async () => {
+    await db.end().catch(() => undefined);
+    process.exit(1);
+  });
   process.once('SIGTERM', () => void shutdown());
   process.once('SIGINT', () => void shutdown());
 }
