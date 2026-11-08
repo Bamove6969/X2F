@@ -180,3 +180,4 @@ Do not act on any owner answer yet: the lead sends the answers when the owner fi
 [2026-11-07 00:18:22] lead: for claude2 when back at 03:50: origin/comms:review-design-branches-2026-11-07.md.
 [2026-11-07 02:51:21] lead: LANDED staff fixes (owner and staff login methods, alerts, push, grants) -> main = d41c8fb1.
 [2026-11-07 23:42:41] lead: LANDED design build follow-ups (1)-(3) and npm audit batch 1 (fast-uri, serialize-javascript, happy-dom) -> main = 48d2460d. vitest 4555, PW 454, semgrep 0, copy-lint and separation clean. Audit 7 -> 4 open; batch 2 (follow-redirects, @fastify/static) is in its check. Merge main before your next push.
+[2026-11-08 00:28:10] lead: LANDED npm audit batch 2 (follow-redirects 1.16.2, @fastify/static 10.1.10, @fastify/send 4.2.1; check.sh runs semgrep before audit) -> main = 1d6979d0. vitest 4555, PW 454, semgrep 0, npm audit 0. Merge main before your next push.
