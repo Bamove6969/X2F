@@ -71,7 +71,7 @@ export const LOG_ACTIONS = {
   // Disputes and cases (Tasks 10–11).
   'dispute.opened': { reason: 'id', afterRefund: 'bool', seq: 'number' },
   // G37 (owner 7 Nov): taking a case is logged at once, who (the actor) and when (the entry's time).
-  'dispute.assigned': { staffId: 'uuid' },
+  'dispute.assigned': { staffId: 'uuid', tradeOpenedAt: 'iso' },
   // A switched-off or removed member's open case goes back to the queue (Task 7 x Task 10).
   'dispute.unassigned': { staffId: 'uuid' },
   'case.opened': {},

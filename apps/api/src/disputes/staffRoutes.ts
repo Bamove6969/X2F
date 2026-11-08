@@ -1,5 +1,5 @@
 import { normalizeTradeCode } from '@x2f/core';
-import { DisputeRuleError, applyDispute, markSeen, normalizeIncidentId, type Actor, type Dispute } from '@x2f/staff';
+import { APPEAL_GOAL_H, DisputeRuleError, RULING_DEADLINE_H, applyDispute, markSeen, normalizeIncidentId, type Actor, type Dispute } from '@x2f/staff';
 import { CHAT_TEXT_MAX_BYTES, ChatEnvelopeError, channelFor, checkChatEnvelope } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
@@ -201,7 +201,12 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       return await withDispute(disputeDeps(req), { code }, async (d, client, now) => {
         const s = await disputeSettings(client);
         const next = applyDispute(d, { type: 'assign', staffId: me.id, role: me.role }, me, now, s);
-        await log(client, { at: now, actor: me, tradeCode: code, action: 'dispute.assigned', detail: { staffId: me.id } });
+        // G37: who (the actor), when (the entry's time), and when the trade was opened.
+        const t = await client.query<{ taken_at: Date }>('select taken_at from trades where code = $1', [code]);
+        await log(client, {
+          at: now, actor: me, tradeCode: code, action: 'dispute.assigned',
+          detail: { staffId: me.id, ...(t.rows[0] ? { tradeOpenedAt: t.rows[0].taken_at.toISOString() } : {}) },
+        });
         return next;
       });
     } catch (err) {
@@ -533,7 +538,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     const accountId = side === 'buyer' ? t.buyer : t.seller;
     const me = actorOf(req);
     try {
-      await withDispute(disputeDeps(req), { code }, async (d, client, now) => {
+      await withDispute(disputeDeps(req), { code }, async (d, client, now, rec) => {
         if (!mayWork(d, req)) throw new ApiError(403, 'forbidden-case');
         const active = await client.query<{ id: string }>(
           'select id from trading_holds where account_id = $1 and dispute_code = $2 and lifted_at is null for update',
@@ -542,7 +547,8 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
         if (on) {
           if (d.status === 'closed') throw new ApiError(409, 'wrong-state');
           if (active.rows.length > 0) throw new ApiError(409, 'wrong-state');
-          if (!(await freezeAllowed(client, d, side, reason!, now))) throw new ApiError(409, 'freeze-not-allowed');
+          // g62: no freeze while maintenance holds the dispute's timers.
+          if (rec.pausedSince !== null || !(await freezeAllowed(client, d, side, reason!, now))) throw new ApiError(409, 'freeze-not-allowed');
           await client.query(
             `insert into trading_holds (account_id, created_at, kind, dispute_code, dispute_seq, side, reason, placed_by)
              values ($1, $2, 'freeze', $3, $4, $5, $6, $7)`,
@@ -576,7 +582,12 @@ async function freezeAllowed(q: Queryable, d: Dispute, side: Side, reason: 'no-r
   );
   const since = d.round === 2 && d.appealedAt !== null ? d.appealedAt : d.openedAt;
   const last = rows[0]?.last && rows[0].last.getTime() > since.getTime() ? rows[0].last : since;
-  return now.getTime() - last.getTime() >= FREEZE_NO_REPLY_H * H;
+  // g62 (owner): maintenance freezes the dispute's timers, so time in maintenance does not count
+  // as ignoring the dispute. The ruling deadline was shifted by every maintenance since the round
+  // began (A7, `shiftDeadlines`); that shift is added in full (never fewer than 48 hours of silence).
+  const deadlineH = d.round === 2 ? APPEAL_GOAL_H : RULING_DEADLINE_H;
+  const pausedMs = Math.max(0, d.rulingDueAt.getTime() - since.getTime() - deadlineH * H);
+  return now.getTime() - last.getTime() >= FREEZE_NO_REPLY_H * H + pausedMs;
 }
 
 async function freezesOf(q: Queryable, t: Pick<CaseTrade, 'buyer' | 'seller'>, code: string): Promise<Record<Side, boolean>> {

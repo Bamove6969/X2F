@@ -214,8 +214,11 @@ describe('the queue', () => {
     expect(res.statusCode, res.body).toBe(200);
     expect((await loadDispute(deps.db, code))!.assignee).toBe(mod.id);
     expect((await logOf(code)).filter((e) => e.action === 'dispute.assigned')).toEqual([
-      expect.objectContaining({ actor_kind: 'staff', actor_id: mod.id, detail: JSON.stringify({ staffId: mod.id }) }),
+      expect.objectContaining({ actor_kind: 'staff', actor_id: mod.id }),
     ]);
+    // G37: who, when (the entry's time) and when the trade was opened.
+    const taken = (await deps.db.query<{ taken_at: Date }>('select taken_at from trades where code = $1', [code])).rows[0]!.taken_at;
+    expect(JSON.parse((await logOf(code)).find((e) => e.action === 'dispute.assigned')!.detail)).toEqual({ staffId: mod.id, tradeOpenedAt: taken.toISOString() });
     const again = await other.b.post(url(code, '/take'), {});
     expect({ status: again.statusCode, error: errorOf(again) }).toEqual({ status: 409, error: 'wrong-state' });
     expect((await mod.b.post(url('0000-0000-0000-0000', '/take'), {})).statusCode).toBe(404);
@@ -690,6 +693,31 @@ describe('more on chat and the queue', () => {
     expect({ status: replay.statusCode, error: errorOf(replay) }).toEqual({ status: 502, error: 'moderation-unavailable' });
     const { rows } = await deps.db.query("select count(*)::int as n from chat_envelopes where chat = $1 and sender_role = 'mod'", [chat]);
     expect(rows[0]).toEqual({ n: 1 });
+  });
+});
+
+describe('g62: maintenance holds the freeze clock', () => {
+  it('no freeze during maintenance, and time spent in it does not count as ignoring the dispute', async () => {
+    const mod = await staff('mod');
+    const { code } = await disputed();
+    await mod.fresh();
+    await mod.b.post(url(code, '/take'), {});
+    // As A7 leaves a dispute after 10 hours of maintenance: deadlines shifted by 10 h.
+    await deps.db.query(`update disputes set ruling_due_at = ruling_due_at + interval '10 hours', reply_due_at = reply_due_at + interval '10 hours' where code = $1`, [code]);
+    setNow(new Date(START.getTime() + 55 * H));
+    await mod.fresh();
+    let res = await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' });
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 409, error: 'freeze-not-allowed' });
+    // While maintenance holds it, not at all.
+    setNow(new Date(START.getTime() + 59 * H));
+    await mod.fresh();
+    await deps.db.query('update disputes set paused_since = $2 where code = $1', [code, deps.clock()]);
+    res = await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' });
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 409, error: 'freeze-not-allowed' });
+    await deps.db.query('update disputes set paused_since = null where code = $1', [code]);
+    res = await mod.b.post(url(code, '/freeze'), { side: 'seller', on: true, reason: 'no-reply' });
+    expect(res.statusCode, res.body).toBe(200);
+    setNow(START);
   });
 });
 
