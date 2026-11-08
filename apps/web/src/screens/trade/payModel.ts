@@ -137,7 +137,8 @@ export function counterpartyLine(v: Pick<TradeView, 'role' | 'counterparty'>): s
 }
 
 /**
- * Why "I've paid" is not offered right now, or null when it is (review 2026-10-27, I1). The sum to
+ * Why "I've paid" is not offered right now, or null when it is (review 2026-10-27, I1). Never
+ * before the escrow is secured (`not-secured`, owner Q12). The sum to
  * pay is only ever this device's own figure (`escrow.fiatCents`, Task 12): none while the escrow
  * is stopped or not ready, none while the escrow refuses the trade as the API shows it (any
  * refusal but `amount-out-of-range`, which is `no-amount`: a `view-mismatch` can leave the totals
@@ -148,9 +149,18 @@ export function counterpartyLine(v: Pick<TradeView, 'role' | 'counterparty'>): s
  * `total-wrong`: both work it out at the locked rate, so it will not clear by waiting (round 2,
  * Minor 2); on another amount it is `amount-differs` (the device may still catch up).
  */
-export type PayBlock = 'escrow-stopped' | 'escrow-refused' | 'escrow-not-ready' | 'no-amount' | 'amount-differs' | 'total-wrong';
+export type PayBlock = 'escrow-stopped' | 'escrow-refused' | 'not-secured' | 'escrow-not-ready' | 'no-amount' | 'amount-differs' | 'total-wrong';
 
 type PayView = Pick<TradeView, 'fiatCents' | 'amountAtomic'>;
+
+/**
+ * Owner Q12 (2026-11-06): the seller's payment details and "I've paid" only once the escrow is
+ * secured, 10 of 10 confirmations with the coins unlocked, as the server says (the machine refuses
+ * `mark-paid` with `too-early` before `secured`). `refund_requested` comes after `secured`.
+ */
+export function paySecured(v: Pick<TradeView, 'state'>): boolean {
+  return v.state === 'secured' || v.state === 'refund_requested';
+}
 type PayEscrow = Pick<TradeEscrow, 'phase' | 'error' | 'refusal' | 'fiatCents' | 'amountAtomic'>;
 
 function totalBlock(view: PayView, e: PayEscrow): PayBlock | null {
@@ -159,9 +169,10 @@ function totalBlock(view: PayView, e: PayEscrow): PayBlock | null {
   return e.amountAtomic !== null && e.amountAtomic === BigInt(view.amountAtomic) ? 'total-wrong' : 'amount-differs';
 }
 
-export function payBlock(view: PayView, e: PayEscrow): PayBlock | null {
+export function payBlock(view: PayView & Pick<TradeView, 'state'>, e: PayEscrow): PayBlock | null {
   if (e.error !== null) return 'escrow-stopped';
   if (e.refusal !== null && e.refusal !== 'amount-out-of-range') return 'escrow-refused';
+  if (!paySecured(view)) return 'not-secured';
   if (e.phase !== 'ready') return 'escrow-not-ready';
   return totalBlock(view, e);
 }

@@ -7,7 +7,7 @@ import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
 import { resetWarned, setWarned } from '../src/screens/trade/warned.js';
-import { PAY_WARNING_LEAD, PAY_WARNING_WHY } from '../src/screens/trade/PayWarning.js';
+import { PAY_WARNING_LEAD } from '../src/screens/trade/PayWarning.js';
 import { FinalAlert } from '../src/screens/trade/FinalAlert.js';
 import { buyerAlertView, SERVER_NOW } from '../e2e/refundViews.js';
 
@@ -183,7 +183,12 @@ async function flush() {
 }
 
 describe('BuyerPay (BuyerPay board), phone', () => {
-  it('securing: the amber chip, "3 of 10 · about 14 min", the unstarted 90 min and the payment card', () => {
+  it('securing: the amber chip, "3 of 10 · about 14 min", the unstarted 90 min, the payment details locked and I\'ve paid closed (owner Q12)', async () => {
+    const asked = vi.fn((_code: string, on: (d: { label: string; value: string }[] | null) => void) => {
+      on([{ label: 'Zelle to', value: '[SELLER ZELLE ID]' }]);
+      return () => undefined;
+    });
+    setPaymentDetailsSource(asked);
     mount(props());
     const t = text();
     expect(t).toContain('Buying from satoshi_ghost');
@@ -192,25 +197,46 @@ describe('BuyerPay (BuyerPay board), phone', () => {
     expect(t).toContain('3 of 10 · about 14 min');
     expect(t).toContain('90 min');
     expect(t).toContain('Clock starts when escrow settles, in 14 min');
-    expect(t).toContain('$412.50 USD');
-    expect(t).toContain('[SELLER ZELLE ID]');
-    expect(t).toContain("Pay from an account in your own name. Payments from someone else's account may be rejected or frozen. Use at your own risk.");
+    // No seller details, no sum to send, until the escrow is secured: they are not even asked for.
+    expect(asked).not.toHaveBeenCalled();
+    expect(t).not.toContain('[SELLER ZELLE ID]');
+    expect(t).not.toContain('Send exactly');
+    expect(t).not.toContain('$412.50');
+    expect(t).toContain('Payment details');
+    expect(t).toContain('They appear when the escrow is secured, in about 14 min');
     expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
-    expect(byText("I've paid", 'button').hasAttribute('data-primary')).toBe(true);
+    const paid = byText("I've paid", 'button') as HTMLButtonElement;
+    expect(paid.hasAttribute('data-primary')).toBe(true);
+    expect(paid.disabled).toBe(true);
+    expect(document.querySelector('[data-pay-block="not-secured"]')?.textContent).toBe('Opens once the escrow is secured.');
+    await click(paid);
+    expect(dialog()).toBeNull();
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(document.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('3');
   });
 
-  it('shows "Releasable in N min" at 10 confirmations before the coins unlock (P3-I4)', () => {
+  it('shows "Releasable in N min" at 10 confirmations before the coins unlock (P3-I4), and still no details or I\'ve paid', () => {
     mount(props({ view: tradeView({ confirmations: 10, releasableEtaMin: 2 }) }));
     expect(text()).toContain('Releasable in 2 min');
     expect(text()).not.toContain('Securing escrow');
+    expect(text()).not.toContain('[SELLER ZELLE ID]');
+    expect(text()).toContain('They appear when the escrow is secured, in about 2 min');
+    expect((byText("I've paid", 'button') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('secured: the teal chip and the countdown to payBy from the server clock', () => {
+  it('secured: the teal chip, the countdown to payBy from the server clock, the payment details and I\'ve paid open', () => {
     mount(props({ view: tradeView(SECURED) }));
-    expect(text()).toContain('Escrow secured');
+    const t = text();
+    expect(t).toContain('Escrow secured');
     expect(document.querySelector('[role="timer"]')?.textContent).toBe('1 h 2 min');
     expect(document.querySelector('[role="progressbar"]')).toBeNull();
+    expect(t).toContain('$412.50 USD');
+    expect(t).toContain('[SELLER ZELLE ID]');
+    expect(t).toContain("Pay from an account in your own name. Payments from someone else's account may be rejected or frozen. Use at your own risk.");
+    expect(t).not.toContain('They appear when the escrow is secured');
+    expect((byText("I've paid", 'button') as HTMLButtonElement).disabled).toBe(false);
+    expect(document.querySelector('[data-pay-block]')).toBeNull();
   });
 
   it('the counterparty is shown by its public display name, in data-username', () => {
@@ -221,7 +247,7 @@ describe('BuyerPay (BuyerPay board), phone', () => {
   });
 
   it('a gift-card method shows the one bold warning', () => {
-    mount(props({ view: tradeView({ profile: { ...ZELLE, name: 'Amazon gift card', giftCard: true } }) }));
+    mount(props({ view: tradeView({ ...SECURED, profile: { ...ZELLE, name: 'Amazon gift card', giftCard: true } }) }));
     expect([...document.querySelectorAll('strong')].map((s) => s.textContent)).toContain(GIFT_CARD_WARNING);
   });
 });
@@ -421,65 +447,30 @@ describe("every sum comes from this device, never the API (review 2026-10-27, I1
   });
 });
 
-describe('the pay warning (Task 38; board Warn-IvePaid)', () => {
+describe("the pay warning is superseded by owner Q12 (board Warn-IvePaid): it never opens", () => {
   const fresh = () => {
     resetWarned();
     window.localStorage.clear();
   };
   const alert = () => document.body.querySelector<HTMLElement>('[role="alertdialog"]');
 
-  it("opens with the screen while the escrow still confirms, with the owner's words and the confirmations bar; I'll wait closes it", async () => {
+  it('not with the screen while the escrow still confirms: I\'ve paid is closed instead', () => {
     fresh();
     mount(props());
-    expect(alert()).not.toBeNull();
-    const t = alert()!.textContent ?? '';
-    expect(t).toContain('Before you pay');
-    expect(t).toContain('Wait until the XMR is fully in escrow');
-    expect(t).toContain(PAY_WARNING_LEAD);
-    expect(t).toContain(PAY_WARNING_WHY);
-    expect(PAY_WARNING_LEAD + ' ' + PAY_WARNING_WHY).toBe(
-      "We strongly recommend that you do not send payment until all confirmations are complete and you've received confirmation that the XMR is fully in escrow. The way our system is designed, we can help you get back the XMR you were trading for if anyone tries to scam you, but recovering a payment you've sent is much harder and sometimes impossible.",
-    );
-    expect(t).toContain('Escrow confirmations');
-    expect(t).toContain('3 of 10 · about 14 min');
-    // Review M5: "I'll wait" (the safe action) has focus; the owner's words describe the dialog.
-    expect(document.activeElement?.textContent).toBe("I'll wait");
-    expect(document.getElementById(alert()!.getAttribute('aria-describedby')!)?.textContent).toContain(PAY_WARNING_LEAD);
-    await click(byText("I'll wait", 'button'));
     expect(alert()).toBeNull();
-    expect(calls).toEqual([]);
+    expect(text()).not.toContain(PAY_WARNING_LEAD);
   });
 
-  it("I've paid shows it before the sheet; I've already paid goes on to the confirm sheet, and never shows it again for the trade (after a reload too)", async () => {
-    fresh();
-    const r = mount(props({ view: tradeView(SECURED) }));
-    // Secured and unlocked: nothing opens by itself.
-    expect(alert()).toBeNull();
-    await click(byText("I've paid", 'button'));
-    expect(alert()).not.toBeNull();
-    expect(dialog()).toBeNull();
-    // Secured: no bar.
-    expect(alert()!.textContent).not.toContain('Escrow confirmations');
-    await click(byText("I'll wait", 'button'));
-    await click(byText("I've paid", 'button'));
-    await click(byText("I've already paid", 'button'));
-    expect(alert()).toBeNull();
-    expect(dialog()!.textContent).toContain('Mark this trade as paid?');
-    await click(byText('Not yet', 'button'));
-    await click(byText("I've paid", 'button'));
-    expect(alert()).toBeNull();
-    expect(dialog()).not.toBeNull();
-    r.unmount();
-    // A reload: the in-memory mark is gone, the stored one stays.
-    resetWarned();
-    mount(props({ view: tradeView() }));
-    expect(alert()).toBeNull();
-  });
-
-  it('not shown once the trade is paid', () => {
-    fresh();
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), releasable: false }), escrow: fakeEscrow({ paidRecorded: true }) }));
-    expect(alert()).toBeNull();
+  it("not in front of the sheet once secured, even never warned, even with new coins still confirming: I've paid goes straight to the confirm sheet", async () => {
+    for (const releasable of [true, false]) {
+      fresh();
+      const r = mount(props({ view: tradeView({ ...SECURED, releasable }) }));
+      expect(alert()).toBeNull();
+      await click(byText("I've paid", 'button'));
+      expect(alert()).toBeNull();
+      expect(dialog()!.textContent).toContain('Mark this trade as paid?');
+      r.unmount();
+    }
   });
 
   it('Yes, mark as paid is disabled until the tick (the two steps)', async () => {

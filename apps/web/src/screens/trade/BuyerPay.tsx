@@ -6,11 +6,12 @@
  * owns the escrow handle and picks the screen; these screens only show the view and act.
  *
  * Every action records the event with the API first, then asks the escrow (Task 12's order):
- * - I've paid → (PayWarning, once per trade, Task 38) → PaidConfirmSheet → `mark-paid { fiatCents }`
- *   (the total the sheet showed), then `escrow.markPaid(fiatCents)` (the `trade.paid` signal). A
- *   `total-changed` refusal sends nothing: the trade is re-read and the sheet asks again with the
- *   new total. PayWarning also opens when the screen opens while the escrow still confirms
- *   (Revision 2026-10-29b).
+ * - I've paid → PaidConfirmSheet → `mark-paid { fiatCents }` (the total the sheet showed), then
+ *   `escrow.markPaid(fiatCents)` (the `trade.paid` signal). A `total-changed` refusal sends
+ *   nothing: the trade is re-read and the sheet asks again with the new total. Owner Q12: "I've
+ *   paid" and the seller's payment details only once the escrow is secured (10 of 10); before
+ *   that the button is closed and the details are a locked card, so Task 38's PayWarning (board
+ *   Warn-IvePaid, superseded by Q12) is never shown.
  * - Cancel trade (buyer, spec 2.3): one tap before "I've paid" (`buyer-cancel`, then
  *   `escrow.buyerCancel()`, which sends `trade.cancel`). After "I've paid" there is no cancel at
  *   all (owner, Revision 2026-10-29b; Task 39): the link is gone and the API refuses it.
@@ -33,9 +34,7 @@ import { CancelProposalCard, SellerCancelControls } from './CancelSheet.js';
 import { setFinalAlertPaidSheet } from './FinalAlert.js';
 import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
-import { buyerCancelMode, escrowChip, escrowConfirming, finishBlock, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
-import { PayWarning } from './PayWarning.js';
-import { setWarned, warned } from './warned.js';
+import { buyerCancelMode, escrowChip, finishBlock, payBlock, paySecured, payTimer, showProposal, type EscrowChip } from './payModel.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
@@ -273,8 +272,23 @@ function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () 
   );
 }
 
+/**
+ * Owner Q12: before the escrow is secured the seller's details are a locked card (board BuyerPay,
+ * escrow=securing), and they are not even asked for; from `secured` on, "Send exactly".
+ */
+function PaymentCard(p: { view: TradeView; method: MethodInfo; total: DeviceTotal | null; rate: string | null }) {
+  if (paySecured(p.view)) return <SendExactlyCard {...p} />;
+  const etaMin = escrowChip(p.view)?.bar?.etaMin ?? null;
+  return (
+    <section aria-label="Payment details" className="x2f-card x2f-pay-card" data-fold-glance="pay" data-locked="">
+      <h2 className="x2f-pay-card__title">Payment details</h2>
+      <p className="x2f-pay-card__note">{etaMin === null ? 'They appear when the escrow is secured.' : `They appear when the escrow is secured, in about ${etaMin} min`}</p>
+    </section>
+  );
+}
+
 /** "Send exactly": the total, the seller's details for the method, the memo, (desktop) the rate, and the own-name warning. */
-function PaymentCard({ view, method, total, rate }: { view: TradeView; method: MethodInfo; total: DeviceTotal | null; rate: string | null }) {
+function SendExactlyCard({ view, method, total, rate }: { view: TradeView; method: MethodInfo; total: DeviceTotal | null; rate: string | null }) {
   const details = usePaymentDetails(view.code);
   const rows: { label: string; value: string }[] = details ?? [{ label: `${method.name} to`, value: 'Ask in the chat' }];
   return (
@@ -443,20 +457,9 @@ export function BuyerPay(p: TradeScreenProps) {
   const needsFinish = paid && !escrow.paidRecorded && (escrow.refusal === 'amount-unknown' || escrow.refusal === 'view-mismatch');
   const finishBlocked = finishBlock(view, escrow);
   const finishOk = finishBlocked === null;
-  // Task 38: the warning before paying, until the buyer goes past it once for this trade (keyed
-  // by the room's code). It opens with the screen while the escrow still confirms (Revision
-  // 2026-10-29b), and in front of the "I've paid" sheet.
-  const [warnGone, setWarnGone] = useState(() => warned('pay', p.code));
-  const [warnOpen, setWarnOpen] = useState(() => !paid && !warned('pay', p.code) && escrowConfirming(view));
+  // Owner Q12: no "I've paid" before the escrow is secured (`not-secured`), so no warning in front of it.
   const onIvePaid = () => {
     if (block !== null) return;
-    if (warnGone) setPaySheet(true);
-    else setWarnOpen(true);
-  };
-  const pastWarning = () => {
-    setWarned('pay', p.code);
-    setWarnGone(true);
-    setWarnOpen(false);
     setPaySheet(true);
   };
 
@@ -564,7 +567,6 @@ export function BuyerPay(p: TradeScreenProps) {
   const sheets = (
     <>
       <PaidFlowSheet view={view} escrow={escrow} refresh={p.refresh} open={paySheet && !paid} onClose={() => setPaySheet(false)} />
-      <PayWarning open={warnOpen && !paid} bar={chip?.bar ?? null} onWait={() => setWarnOpen(false)} onPaid={pastWarning} />
     </>
   );
   const title = (

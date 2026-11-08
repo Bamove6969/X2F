@@ -135,7 +135,7 @@ describe('counterpartyLine (Desktop board "412 trades · 99% positive · release
 
 describe("payBlock: I've paid only on the device's own total (review I1)", () => {
   const e = (over: object = {}) => ({ phase: 'ready' as const, error: null, refusal: null, fiatCents: 41_250n, amountAtomic: 1_250_000_000_000n, ...over });
-  const v = (fiatCents: string, amountAtomic = '1250000000000') => ({ fiatCents, amountAtomic });
+  const v = (fiatCents: string, amountAtomic = '1250000000000', state: TradeView['state'] = 'secured') => ({ fiatCents, amountAtomic, state });
   it('open when the escrow is ready and the API shows the device total', () => {
     expect(payBlock(v('41250'), e())).toBeNull();
     // amount-out-of-range is the no-amount case (no device total), never a block of its own.
@@ -152,6 +152,14 @@ describe("payBlock: I've paid only on the device's own total (review I1)", () =>
       expect(payBlock(v('41250'), e({ refusal }))).toBe('escrow-refused');
     }
     expect(payBlock(v('43313'), e())).toBe('total-wrong');
+  });
+  it("owner Q12: closed until the escrow is secured, 10 of 10, whatever this device says", () => {
+    for (const state of ['funding', 'securing'] as const) {
+      expect(payBlock(v('41250', '1250000000000', state), e())).toBe('not-secured');
+    }
+    expect(payBlock(v('41250', '1250000000000', 'refund_requested'), e())).toBeNull();
+    // A stopped escrow still says so first: its notice has the Try again.
+    expect(payBlock(v('41250', '1250000000000', 'securing'), e({ error: 'escrow-failed', phase: 'error' }))).toBe('escrow-stopped');
   });
   it('finishBlock: amount-unknown is what Finish is for; every other refusal blocks it', () => {
     expect(finishBlock(v('41250'), e({ refusal: 'amount-unknown', phase: 'signing' }))).toBeNull();
