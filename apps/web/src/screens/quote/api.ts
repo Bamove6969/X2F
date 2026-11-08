@@ -45,11 +45,15 @@ function big(o: Obj, k: string, at: string): bigint {
 export async function fetchOffer(side: AdSide, method: string, currency: string, id: string, signal?: AbortSignal): Promise<QuoteOffer | null> {
   const q = new URLSearchParams({ side, method, currency, sort: 'best' });
   const found = parseOffers(await api(`/v1/offers?${q}`, signal ? { signal } : {})).find((o) => o.id === id);
-  return found === undefined ? null : quoteOffer(found, side, currency);
+  // The quote reads fiat limits. An offer set in XMR has none while the feed is down (owner, 8 Nov:
+  // amounts in XMR or fiat), and it cannot be quoted then; until the quote reads both units
+  // (browse/offerAmounts.ts, @x2f/trade rangeAllows), such an offer is not quoted.
+  if (found === undefined || found.minFiatCents === null || found.maxFiatCents === null) return null;
+  return quoteOffer({ ...found, minFiatCents: found.minFiatCents, maxFiatCents: found.maxFiatCents }, side, currency);
 }
 
 /** The browse card as the quote reads it: its public fields, plus the side and currency it was listed under. */
-export function quoteOffer(o: Offer, side: AdSide, currency: string): QuoteOffer {
+export function quoteOffer(o: Offer & { minFiatCents: bigint; maxFiatCents: bigint }, side: AdSide, currency: string): QuoteOffer {
   const offer: QuoteOffer = {
     id: o.id,
     side,

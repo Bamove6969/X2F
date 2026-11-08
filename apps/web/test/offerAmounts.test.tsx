@@ -1,0 +1,190 @@
+// @vitest-environment happy-dom
+// Owner, 8 Nov 2026 ("Offer amounts in XMR or fiat"): the ad card's two rows (the range in XMR and in
+// fiat, the poster's own row exact and the other converted, "≈"), the list's "Display amounts
+// including vendor markup" box (off by default, remembered on the device), the parser, and the
+// PostOffer switch and body.
+import { MemoryRouter } from 'react-router';
+import { describe, expect, it } from 'vitest';
+import { boardSellOffers } from '../src/fixtures/boards.js';
+import { ApiShapeError, parseOffers, type Offer } from '../src/screens/browse/api.js';
+import { OfferCard } from '../src/screens/browse/OfferCard.js';
+import {
+  WITH_MARKUP_KEY,
+  cardRows,
+  loadWithMarkup,
+  marketUpdated,
+  otherUnit,
+  saveWithMarkup,
+  withMarkupHint,
+  xmrBound,
+  xmrRangeText,
+} from '../src/screens/browse/offerAmounts.js';
+import { SELL_COPY } from '../src/screens/browse/SellCopy.js';
+import { wireBody } from '../src/screens/post/api.js';
+import { DEFAULT_FORM, XMR_AMOUNT_ERROR, loadDraft, parseXmrAmount, saveDraft, validate, type FormState } from '../src/screens/post/offerForm.js';
+import { UnitSwitch } from '../src/screens/post/UnitSwitch.js';
+import { fire, render } from './render.js';
+
+const NOW = new Date('2026-10-24T12:00:00Z');
+const XMR = 1_000_000_000_000n;
+const base = boardSellOffers(NOW)[0]!;
+
+/** An offer as the API sends it: +2.5% on a $330.00 market is $338.25. */
+function offer(over: Record<string, unknown>): Offer {
+  return parseOffers([{ ...base, rate: '33825', pricing: { mode: 'market', marginBps: 250 }, ...over }])[0]!;
+}
+const XMR_SET = { amountUnit: 'xmr', minAtomic: (1n * XMR).toString(), maxAtomic: (5n * XMR).toString(), minFiatCents: '33825', maxFiatCents: '169125' };
+const FIAT_SET = { amountUnit: 'fiat', minAtomic: '1478196600147', maxAtomic: '8869179600886', minFiatCents: '50000', maxFiatCents: '300000' };
+
+function memoryStorage(): Storage {
+  const m = new Map<string, string>();
+  return {
+    get length() {
+      return m.size;
+    },
+    clear: () => m.clear(),
+    getItem: (k) => m.get(k) ?? null,
+    key: (i) => [...m.keys()][i] ?? null,
+    removeItem: (k) => void m.delete(k),
+    setItem: (k, v) => void m.set(k, String(v)),
+  };
+}
+
+describe('parsing both units', () => {
+  it('reads an XMR-set and a fiat-set offer, and an older answer with no unit as fiat', () => {
+    expect(offer(XMR_SET)).toMatchObject({ amountUnit: 'xmr', minAtomic: XMR, maxAtomic: 5n * XMR, minFiatCents: 33825n });
+    expect(offer(FIAT_SET)).toMatchObject({ amountUnit: 'fiat', minFiatCents: 50000n, minAtomic: 1478196600147n });
+    expect(parseOffers([base])[0]).toMatchObject({ amountUnit: 'fiat', minAtomic: null, minFiatCents: 5000n });
+  });
+
+  it('the converted pair may be null (no rate); the own pair may not, nor be out of order', () => {
+    expect(offer({ ...XMR_SET, minFiatCents: null, maxFiatCents: null }).minFiatCents).toBeNull();
+    expect(() => offer({ ...XMR_SET, minAtomic: null })).toThrow(ApiShapeError);
+    expect(() => offer({ ...FIAT_SET, minFiatCents: '400000' })).toThrow(ApiShapeError);
+    expect(() => offer({ ...XMR_SET, amountUnit: 'btc' })).toThrow(ApiShapeError);
+    const { maxAtomic: _m, ...missing } = XMR_SET;
+    expect(() => offer(missing)).toThrow(ApiShapeError);
+  });
+});
+
+describe('the card rows', () => {
+  it('formats XMR with the minimum rounded up and the maximum down, at most 4 places', () => {
+    expect(xmrBound(1_478_196_600_147n, 'up')).toBe('1.4782');
+    expect(xmrBound(8_869_179_600_886n, 'down')).toBe('8.8691');
+    expect(xmrBound(XMR, 'up')).toBe('1');
+    expect(xmrBound(1_000_000_000_001n, 'up')).toBe('1.0001');
+    expect(xmrRangeText(XMR, 5n * XMR)).toBe('1 – 5 XMR');
+  });
+
+  it('an XMR-set range: XMR exact; fiat at the market without the markup, at the offer price with it', () => {
+    const o = offer(XMR_SET);
+    expect(cardRows(o, 'USD', 33_000n, false)).toEqual({ xmr: '1 – 5 XMR', fiat: '≈ $330 – $1,650' });
+    expect(cardRows(o, 'USD', 33_000n, true)).toEqual({ xmr: '1 – 5 XMR', fiat: '≈ $338.25 – $1,691.25' });
+  });
+
+  it('a fiat-set range: fiat exact; XMR at the market without the markup, at the offer price with it', () => {
+    const o = offer(FIAT_SET);
+    expect(cardRows(o, 'USD', 33_000n, false)).toEqual({ xmr: '≈ 1.5152 – 9.0909 XMR', fiat: '$500 – $3,000' });
+    expect(cardRows(o, 'USD', 33_000n, true)).toEqual({ xmr: '≈ 1.4782 – 8.8691 XMR', fiat: '$500 – $3,000' });
+  });
+
+  it('with no rate only the poster\'s own row shows', () => {
+    expect(cardRows(offer({ ...XMR_SET, rate: null }), 'USD', null, true)).toEqual({ xmr: '1 – 5 XMR', fiat: null });
+    expect(cardRows(offer(FIAT_SET), 'USD', null, false)).toEqual({ xmr: null, fiat: '$500 – $3,000' });
+  });
+
+  it('the card draws both rows, and the markup line stays', () => {
+    const { host } = render(
+      <MemoryRouter>
+        <OfferCard offer={offer(XMR_SET)} currency="USD" copy={SELL_COPY} primary now={NOW} market={33_000n} withMarkup={false} />
+      </MemoryRouter>,
+    );
+    expect(host.querySelector('[data-part="range-xmr"]')?.textContent).toBe('1 – 5 XMR');
+    expect(host.querySelector('[data-part="range-fiat"]')?.textContent).toBe('≈ $330 – $1,650');
+    expect(host.querySelector('.x2f-offer__margin')?.textContent).toBe('2.5% above market');
+  });
+});
+
+describe('Display amounts including vendor markup', () => {
+  it('is off by default and remembered on this device', () => {
+    const s = memoryStorage();
+    expect(loadWithMarkup(s)).toBe(false);
+    saveWithMarkup(s, true);
+    expect(s.getItem(WITH_MARKUP_KEY)).toBe('1');
+    expect(loadWithMarkup(s)).toBe(true);
+    saveWithMarkup(s, false);
+    expect(loadWithMarkup(s)).toBe(false);
+    expect(loadWithMarkup(null)).toBe(false);
+    const throwing = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); } } as unknown as Storage;
+    expect(loadWithMarkup(throwing)).toBe(false);
+    expect(() => saveWithMarkup(throwing, true)).not.toThrow();
+  });
+
+  it('says which rate the converted rows use', () => {
+    expect(withMarkupHint(false)).toBe('Converted at the market rate, before markup.');
+    expect(withMarkupHint(true)).toBe("Converted at each offer's price, markup included.");
+  });
+
+  it('the market line says when the rate is from', () => {
+    expect(marketUpdated('2026-11-08T14:05:59.000Z')).toBe('Market rate · updated 14:05 UTC');
+    expect(marketUpdated('not a time')).toBeNull();
+  });
+});
+
+describe('PostOffer in XMR or fiat', () => {
+  const form = (over: Partial<FormState> = {}): FormState => ({ ...DEFAULT_FORM, methodId: 'ZELLE', ...over });
+
+  it('defaults to XMR and posts atomic units; in fiat, minor units; the amounts sit at the top of the wire body', () => {
+    expect(DEFAULT_FORM.unit).toBe('xmr');
+    const x = validate(form({ min: '0.5', max: '25' }));
+    expect(x.body?.amounts).toEqual({ amountUnit: 'xmr', minAtomic: 500_000_000_000n, maxAtomic: 25n * XMR });
+    expect(wireBody(x.body!)).toMatchObject({ amountUnit: 'xmr', minAtomic: 500_000_000_000n, maxAtomic: 25n * XMR });
+    expect(wireBody(x.body!)).not.toHaveProperty('amounts');
+    // "Entering $500-$3000 in CAD still means the offer sells XMR."
+    const f = validate(form({ unit: 'fiat', currency: 'CAD', min: '$500', max: '$3,000' }));
+    expect(f.body).toMatchObject({ side: 'sell', currency: 'CAD', amounts: { amountUnit: 'fiat', minFiatCents: 50_000n, maxFiatCents: 300_000n } });
+  });
+
+  it('reads XMR to the atomic unit and refuses more places, fiat signs and junk', () => {
+    expect(parseXmrAmount('1.000000000001')).toBe(1_000_000_000_001n);
+    expect(parseXmrAmount('.5')).toBe(500_000_000_000n);
+    expect(parseXmrAmount('1,000 XMR')).toBe(1000n * XMR);
+    for (const bad of ['1.0000000000001', '$50', '', '1e3', '-1', '1.2.3']) expect(parseXmrAmount(bad), bad).toBeNull();
+    expect(validate(form({ min: '$50', max: '2' })).errors.min).toBe(XMR_AMOUNT_ERROR);
+    expect(validate(form({ min: '3', max: '2' })).errors.min).toBe("The smallest trade can't be more than the largest.");
+  });
+
+  it('keeps the unit in the draft; a draft from before the switch is fiat', () => {
+    const s = memoryStorage();
+    saveDraft(s, form({ unit: 'xmr', min: '1', max: '2' }));
+    expect(loadDraft(s)?.unit).toBe('xmr');
+    const { unit: _u, ...old } = form({ min: '$50', max: '$2,000' });
+    s.setItem('x2f.post-draft', JSON.stringify(old));
+    expect(loadDraft(s)?.unit).toBe('fiat');
+    s.setItem('x2f.post-draft', JSON.stringify({ ...form(), unit: 'btc' }));
+    expect(loadDraft(s)).toBeNull();
+  });
+
+  it('shows one amount in the other unit at your price', () => {
+    const at = { currency: 'USD', centsPerXmr: 33_155n };
+    expect(otherUnit(500_000_000_000n, 'xmr', 'USD', at)).toBe('≈ $165.78');
+    expect(otherUnit(50_000n, 'fiat', 'USD', at)).toBe('≈ 1.508068 XMR');
+  });
+
+  it('the switch: XMR first and chosen by default; tapping the currency swaps; the arrows move the choice', () => {
+    let unit: 'xmr' | 'fiat' = 'xmr';
+    const ui = () => <UnitSwitch box="Smallest trade" currency="CAD" unit={unit} onChange={(u) => (unit = u)} />;
+    const r = render(ui());
+    const group = r.host.querySelector('[role="radiogroup"]')!;
+    expect(group.getAttribute('aria-label')).toBe('Smallest trade unit');
+    const [xmr, cad] = [...group.querySelectorAll('[role="radio"]')] as HTMLButtonElement[];
+    expect([xmr!.textContent, cad!.textContent]).toEqual(['XMR', 'CAD']);
+    expect([xmr!.getAttribute('aria-checked'), cad!.getAttribute('aria-checked')]).toEqual(['true', 'false']);
+    fire(cad!, new MouseEvent('click', { bubbles: true }));
+    expect(unit).toBe('fiat');
+    r.rerender(ui());
+    expect(cad!.getAttribute('aria-checked')).toBe('true');
+    fire(cad!, new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    expect(unit).toBe('xmr');
+  });
+});

@@ -36,6 +36,8 @@ import {
 const form = (over: Partial<FormState> = {}): FormState => ({
   ...DEFAULT_FORM,
   methodId: 'ZELLE',
+  // These tests type fiat; offerAmounts.test.tsx covers the XMR default.
+  unit: 'fiat',
   min: '$50',
   max: '$2,000',
   ...over,
@@ -180,8 +182,7 @@ describe('validate', () => {
       methodId: 'ZELLE',
       currency: 'USD',
       pricing: { mode: 'market', marginBps: 50 },
-      minFiatCents: 5000n,
-      maxFiatCents: 200000n,
+      amounts: { amountUnit: 'fiat', minFiatCents: 5000n, maxFiatCents: 200000n },
       minTrades: 5,
       terms: 'Memo: trade number',
     });

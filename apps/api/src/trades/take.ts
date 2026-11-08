@@ -1,5 +1,5 @@
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
-import { fiatCents, newTrade, offerRate, posterRole, type Price, type Pricing, type Side } from '@x2f/trade';
+import { fiatCents, newTrade, offerRate, posterRole, rangeAllows, tradeFiatLimits, type Price, type Pricing, type Side } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
@@ -18,6 +18,7 @@ import { COMPLETED_TRADES_SQL, loadStarterSettings, tradeCap, usdCentsOf, type T
 import { usableWallets, type Wallet } from '../wallets/routes.js';
 import { insertTrade, loadTradeRow, rowToTrade, type TradeSides } from './store.js';
 import { roleOf } from './view.js';
+import { rangeOf } from '../offers/routes.js';
 
 /**
  * Plan 3 Task 5: taking an offer, and the poster's side of the new trade.
@@ -105,8 +106,11 @@ interface OfferRow {
   price_mode: 'market' | 'fixed';
   margin_bps: number | null;
   fixed_cents_per_xmr: string | null;
-  min_fiat_cents: string;
-  max_fiat_cents: string;
+  amount_unit: 'xmr' | 'fiat';
+  min_atomic: string | null;
+  max_atomic: string | null;
+  min_fiat_cents: string | null;
+  max_fiat_cents: string | null;
   /** Null: no minimum (migration 315). */
   min_trades: number | null;
   status: 'live' | 'paused' | 'removed';
@@ -115,7 +119,7 @@ interface OfferRow {
 }
 
 const OFFER_SQL = `select o.account_id, o.side, o.method_id, o.currency, o.price_mode, o.margin_bps, o.fixed_cents_per_xmr,
-    o.min_fiat_cents, o.max_fiat_cents, o.min_trades, o.status,
+    o.amount_unit, o.min_atomic, o.max_atomic, o.min_fiat_cents, o.max_fiat_cents, o.min_trades, o.status,
     (a.kind = 'trader' and a.disabled_at is null
       and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)) as poster_ok
   from offers o join accounts a on a.id = o.account_id where o.id = $1`;
@@ -285,7 +289,12 @@ export function takeRoutes(app: FastifyInstance): void {
       if (fiatCents(b.amountAtomic, { currency: r.currency, centsPerXmr: b.centsPerXmr }) !== b.fiatCents) throw bad();
       const rate = lockRate(r, b.centsPerXmr, deps.prices);
       const total = fiatCents(b.amountAtomic, rate);
-      if (total < BigInt(r.min_fiat_cents) || total > BigInt(r.max_fiat_cents)) throw new ApiError(409, 'out-of-range');
+      // The size in the poster's unit (owner, 8 Nov): an XMR range compares the amount, a fiat range
+      // its total, both at the rate that locks (the margin included).
+      const range = rangeOf(r);
+      if (rangeAllows(range, b.amountAtomic, rate) !== 'ok') throw new ApiError(409, 'out-of-range');
+      // The fiat limits the trade keeps (an XMR range's at the locked rate), for its growth cap.
+      const limits = tradeFiatLimits(range, rate);
       // The trade's USD value, counted against the caps and kept (301) to weigh its reviews (Plan 5 Task 3).
       const usd = usdCents(r.currency, b.amountAtomic, total, deps.prices);
       await checkStarterLimits(c, { takerId, posterId, usd: () => usd, now });
@@ -304,8 +313,8 @@ export function takeRoutes(app: FastifyInstance): void {
           amountAtomic: b.amountAtomic,
           lockedRate: rate,
           confirmWindowMin: profile.confirmWindowMin,
-          minFiatCents: BigInt(r.min_fiat_cents),
-          maxFiatCents: BigInt(r.max_fiat_cents),
+          minFiatCents: limits.minFiatCents,
+          maxFiatCents: limits.maxFiatCents,
         },
         now,
       );

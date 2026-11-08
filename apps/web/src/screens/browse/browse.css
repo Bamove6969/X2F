@@ -416,7 +416,39 @@ a.x2f-method:last-of-type {
   color: var(--x2f-ink-muted);
 }
 
-/* The trade range in mono ink over the time line, right-aligned (SellOffers board). */
+/* "Display amounts including vendor markup" (owner, 8 Nov): the kit's tick box and its words. */
+.x2f-browse__markup {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-1);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink);
+}
+
+.x2f-browse__markup label {
+  cursor: pointer;
+}
+
+.x2f-browse__markup-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.x2f-browse__markup-text .x2f-browse__muted {
+  font-size: 13px;
+  line-height: 16px;
+}
+
+/* "Market rate · updated 14:05 UTC" under the market price (boards v142). */
+.x2f-browse__updated {
+  padding: 0 var(--x2f-space-4);
+  font-size: 13px;
+  line-height: 16px;
+}
+
+/* The trade range in mono ink, a row in XMR and a row in fiat (owner, 8 Nov), over the time line,
+   right-aligned (SellOffers board). */
 .x2f-offer__limits {
   display: flex;
   flex-direction: column;

@@ -2,6 +2,7 @@
 // bigint minor units; the form takes only two-decimal currencies until formatFiat takes the
 // currency's exponent (Revision 2026-10-20).
 import { CANT_DO_TITLE, isCantDoCode, postCantDoText, type CantDoCode } from '../../ui/cantDoCodes.js';
+import type { AmountUnit } from '@x2f/trade';
 import { CURRENCIES } from '../browse/api.js';
 import type { PostOfferBody, PriceQuote, Side } from './api.js';
 import { isCountryCode } from './countries.js';
@@ -29,6 +30,11 @@ export interface FormState {
   marginBps: number;
   /** The fixed price per XMR as typed. */
   fixed: string;
+  /**
+   * The unit both range boxes are in (owner, 8 Nov: an XMR / currency switch at each box's right
+   * edge, XMR by default; lead default: Smallest and Largest switch together, one unit per offer).
+   */
+  unit: AmountUnit;
   min: string;
   max: string;
   terms: string;
@@ -45,6 +51,7 @@ export const DEFAULT_FORM: FormState = {
   priceMode: 'market',
   marginBps: 50,
   fixed: '',
+  unit: 'xmr',
   min: '',
   max: '',
   terms: '',
@@ -82,6 +89,22 @@ export function parseAmount(raw: string): bigint | null {
   const m = /^(\d{1,12})(?:\.(\d{1,2}))?$/.exec(s);
   if (!m) return null;
   return BigInt(m[1]!) * 100n + BigInt((m[2] ?? '').padEnd(2, '0'));
+}
+
+/**
+ * "0.5", "2", "1,000.25", "XMR 1.5" as atomic units (12 decimals at most); null for anything else.
+ * At most 9 whole digits (far above the supply).
+ */
+export function parseXmrAmount(raw: string): bigint | null {
+  const s = raw.trim().replace(/^xmr\s*/i, '').replace(/\s*xmr$/i, '').replaceAll(',', '');
+  const m = /^(\d{1,9})(?:\.(\d{1,12}))?$/.exec(s) ?? /^()\.(\d{1,12})$/.exec(s);
+  if (!m) return null;
+  return BigInt(m[1] === '' ? '0' : m[1]!) * 1_000_000_000_000n + BigInt((m[2] ?? '').padEnd(12, '0'));
+}
+
+/** A range box's text in the form's unit: atomic units for XMR, minor units for fiat. */
+export function parseRangeAmount(raw: string, unit: AmountUnit): bigint | null {
+  return unit === 'xmr' ? parseXmrAmount(raw) : parseAmount(raw);
 }
 
 export function stepMargin(bps: number, dir: 1 | -1): number {
@@ -167,6 +190,9 @@ export function afterPostPath(side: Side, methodId: string, currency: string): s
   return `/${side === 'sell' ? 'buy' : 'sell'}/${encodeURIComponent(methodId)}?currency=${encodeURIComponent(currency)}`;
 }
 
+/** COPY-UNSIGNED: the range boxes' error in XMR. */
+export const XMR_AMOUNT_ERROR = 'Enter an amount in XMR, like 0.5 or 2.';
+
 export type FieldError = 'method' | 'country' | 'min' | 'max' | 'fixed' | 'terms';
 
 /** The longest terms the API stores (apps/api/src/offers/routes.ts TERMS_MAX). */
@@ -196,9 +222,9 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
   if (f.methodId === '') errors.method = 'Choose a payment method.';
   const giftCard = ctx.giftCard === true;
   if (giftCard && !isCountryCode(f.country)) errors.country = COUNTRY_REQUIRED;
-  const min = parseAmount(f.min);
-  const max = parseAmount(f.max);
-  const amountError = 'Enter an amount, like 50 or 2,000.';
+  const min = parseRangeAmount(f.min, f.unit);
+  const max = parseRangeAmount(f.max, f.unit);
+  const amountError = f.unit === 'xmr' ? XMR_AMOUNT_ERROR : 'Enter an amount, like 50 or 2,000.';
   if (min === null || min === 0n) errors.min = amountError;
   if (max === null || max === 0n) errors.max = amountError;
   // not-a-refusal: an input check on the two amounts
@@ -223,8 +249,7 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
       methodId: f.methodId,
       currency: f.currency,
       pricing: f.priceMode === 'fixed' ? { mode: 'fixed', centsPerXmr: fixed! } : { mode: 'market', marginBps: f.marginBps },
-      minFiatCents: min!,
-      maxFiatCents: max!,
+      amounts: f.unit === 'xmr' ? { amountUnit: 'xmr', minAtomic: min!, maxAtomic: max! } : { amountUnit: 'fiat', minFiatCents: min!, maxFiatCents: max! },
       minTrades: f.minTrades,
       terms,
       ...(giftCard ? { country: f.country } : {}),
@@ -297,6 +322,7 @@ export function loadDraft(storage: Storage): FormState | null {
     Number.isInteger(d.marginBps) &&
     Math.abs(d.marginBps) <= MARGIN_LIMIT_BPS &&
     str(d.fixed, 32) &&
+    (d.unit === undefined || d.unit === 'xmr' || d.unit === 'fiat') &&
     str(d.min, 32) &&
     str(d.max, 32) &&
     str(d.terms, 4000) &&
@@ -310,6 +336,8 @@ export function loadDraft(storage: Storage): FormState | null {
     priceMode: d.priceMode as PriceMode,
     marginBps: d.marginBps as number,
     fixed: d.fixed as string,
+    // A draft from before the switch was typed in fiat.
+    unit: (d.unit ?? 'fiat') as AmountUnit,
     min: d.min as string,
     max: d.max as string,
     terms: d.terms as string,

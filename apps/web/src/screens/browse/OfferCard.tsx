@@ -4,6 +4,7 @@ import { Button } from '../../ui/Button.js';
 import { Icon, type IconName } from '../../ui/icons.js';
 import { PickButton } from '../../ui/PickButton.js';
 import { formatMinor, type Offer, type OpensAt } from './api.js';
+import { cardRows, type RangeRows } from './offerAmounts.js';
 import type { BrowseCopy } from './SellCopy.js';
 import './browse.css';
 
@@ -153,6 +154,11 @@ export interface OfferCardProps {
   now: Date;
   /** The market price now (minor units per XMR), for a fixed price's difference; null when unknown. */
   market?: bigint | null;
+  /**
+   * "Display amounts including vendor markup" (owner, 8 Nov): the range's other unit at the offer's
+   * own rate instead of the market price. Off by default.
+   */
+  withMarkup?: boolean;
   onTrade?: (offer: Offer) => void;
   onMessage?: (offer: Offer) => void;
   onNudge?: (offer: Offer) => void;
@@ -164,11 +170,29 @@ export interface OfferCardProps {
   pick?: { pressed: boolean; onPick: (offer: Offer) => void };
 }
 
-export function OfferCard({ offer, currency, copy, primary, now, market = null, onTrade, onMessage, onNudge, pick }: OfferCardProps) {
+/** The range in XMR and in fiat, one row each (owner, 8 Nov); a row with no rate now is left out. */
+function RangeRowsView({ rows }: { rows: RangeRows }) {
+  return (
+    <>
+      {rows.xmr !== null ? (
+        <span className="x2f-offer__range" data-part="range-xmr">
+          {rows.xmr}
+        </span>
+      ) : null}
+      {rows.fiat !== null ? (
+        <span className="x2f-offer__range" data-part="range-fiat">
+          {rows.fiat}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+export function OfferCard({ offer, currency, copy, primary, now, market = null, withMarkup = false, onTrade, onMessage, onNudge, pick }: OfferCardProps) {
   const name = offer.poster.displayName;
   const closed = offer.opensAt !== undefined;
   const margin = marginLine(offer, currency, copy, market);
-  const range = `${formatMinor(offer.minFiatCents, currency, { whole: true })} – ${formatMinor(offer.maxFiatCents, currency, { whole: true })}`;
+  const rows = cardRows(offer, currency, market, withMarkup);
   const time = offer.poster.typicalMinutes === null ? null : copy.typicalTime(offer.poster.typicalMinutes);
 
   if (pick && (closed || offer.poster.online)) {
@@ -185,7 +209,9 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
         </span>
         <span className="x2f-offer__pick-line">
           <span className="x2f-offer__sub">{posterLine(offer, now)}</span>
-          <span className="x2f-offer__limits">{range}</span>
+          <span className="x2f-offer__limits">
+            <RangeRowsView rows={rows} />
+          </span>
         </span>
         {closed ? <span className="x2f-offer__opens">Opens at {STAGE_NAME[offer.opensAt!]}</span> : null}
       </PickButton>
@@ -245,7 +271,7 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
           ) : null}
         </div>
         <span className="x2f-offer__limits">
-          <span className="x2f-offer__range">{range}</span>
+          <RangeRowsView rows={rows} />
           {time === null ? null : <span>{time}</span>}
         </span>
       </div>

@@ -120,6 +120,10 @@ describe('POST /v1/offers and GET /v1/offers', () => {
         },
         rate: null,
         pricing: { mode: 'market', marginBps: 50 },
+        // A fiat range; no rate now, so no XMR figures (offerUnits.test.ts covers both units).
+        amountUnit: 'fiat',
+        minAtomic: null,
+        maxAtomic: null,
         minFiatCents: '5000',
         maxFiatCents: '200000',
         minTrades: null,

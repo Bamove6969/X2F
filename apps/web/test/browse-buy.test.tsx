@@ -49,7 +49,10 @@ describe('OfferCard on the buy side', () => {
     const { host } = card(byName('satoshi_ghost'), { primary: true });
     expect(spans(host)).toContain('Online · 340 trades · 99% positive');
     expect(spans(host)).toContain('$330.00');
-    expect(spans(host)).toContain('$50 – $1,500Releases in ~8 min');
+    // The range in fiat (the poster's own unit) and in XMR (owner, 8 Nov), then the time.
+    expect(spans(host)).toContain('$50 – $1,500');
+    expect(spans(host)).toContain('Releases in ~8 min');
+    expect(host.querySelector('.x2f-offer__limits')!.textContent).toMatch(/\$50 – \$1,500Releases in ~8 min$/);
     expect(host.querySelector('[data-primary]')!.getAttribute('aria-label')).toBe('Trade with satoshi_ghost');
   });
 

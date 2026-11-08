@@ -25,6 +25,7 @@ const PRICES: Record<string, { centsPerXmr: string; usdCentsPerXmr: string }> = 
   USD: { centsPerXmr: '32990', usdCentsPerXmr: '32990' },
   EUR: { centsPerXmr: '30510', usdCentsPerXmr: '32990' },
   GBP: { centsPerXmr: '26530', usdCentsPerXmr: '32990' },
+  CAD: { centsPerXmr: '45000', usdCentsPerXmr: '32990' },
 };
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -87,8 +88,10 @@ const f = (page: Page) => ({
   post: page.getByRole('button', { name: 'Post offer' }),
 });
 
+/** The board's sizes are in the currency: tap the currency on the Smallest trade switch (XMR is the default, owner 8 Nov). */
 async function fillBoard(page: Page): Promise<void> {
   const x = f(page);
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
   await x.min.fill('$50');
   await x.max.fill('$2,000');
 }
@@ -214,6 +217,7 @@ test('Fixed shows the stale-price warning and posts pricing.mode = fixed', async
     methodId: 'ZELLE',
     currency: 'USD',
     pricing: { mode: 'fixed', centsPerXmr: '33500' },
+    amountUnit: 'fiat',
     minFiatCents: '5000',
     maxFiatCents: '200000',
     minTrades: null,
@@ -410,3 +414,40 @@ for (const viewport of PHONE_VIEWPORTS) {
     await expectPhoneLayout(page);
   });
 }
+
+test('trade size in XMR by default: one switch per box, both boxes switch together, both units in the preview (owner, 8 Nov)', async ({ page }) => {
+  const posts = await stub(page);
+  await page.goto('/post?method=ZELLE&currency=CAD');
+  const smallest = page.getByRole('radiogroup', { name: 'Smallest trade unit' });
+  const largest = page.getByRole('radiogroup', { name: 'Largest trade unit' });
+  await expect(smallest.getByRole('radio')).toHaveText(['XMR', 'CAD']);
+  await expect(smallest.getByRole('radio', { name: 'XMR' })).toBeChecked();
+  await expect(largest.getByRole('radio', { name: 'XMR' })).toBeChecked();
+  // The chosen unit is bold Monero orange, the other smaller and muted.
+  const [chosen, other] = await Promise.all(
+    [smallest.getByRole('radio', { name: 'XMR' }), smallest.getByRole('radio', { name: 'CAD' })].map((l) =>
+      l.evaluate((el) => ({ weight: getComputedStyle(el).fontWeight, size: parseFloat(getComputedStyle(el).fontSize), color: getComputedStyle(el).color })),
+    ),
+  );
+  expect(Number(chosen!.weight)).toBeGreaterThanOrEqual(600);
+  expect(chosen!.size).toBeGreaterThan(other!.size);
+  expect(chosen!.color).not.toBe(other!.color);
+
+  await f(page).min.fill('0.5');
+  await f(page).max.fill('25');
+  const preview = page.getByRole('region', { name: 'Preview' });
+  await expect(preview.locator('[data-part="preview-xmr"]')).toHaveText('0.5 – 25 XMR');
+  await expect(preview.locator('[data-part="preview-fiat"]')).toHaveText(/^≈ CA\$[\d,.]+ – CA\$[\d,.]+$/);
+  await expect(page.locator('[data-part="other-unit"]').first()).toHaveText(/^≈ CA\$[\d,.]+ at your price \(\+0\.5%\)$/);
+
+  // Tapping the currency on the Largest box moves both boxes.
+  await largest.getByRole('radio', { name: 'CAD' }).click();
+  await expect(smallest.getByRole('radio', { name: 'CAD' })).toBeChecked();
+  await smallest.getByRole('radio', { name: 'XMR' }).click();
+  await expect(largest.getByRole('radio', { name: 'XMR' })).toBeChecked();
+
+  await f(page).post.click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]!.postDataJSON()).toMatchObject({ side: 'sell', currency: 'CAD', amountUnit: 'xmr', minAtomic: '500000000000', maxAtomic: '25000000000000' });
+  expect(posts[0]!.postDataJSON()).not.toHaveProperty('minFiatCents');
+});

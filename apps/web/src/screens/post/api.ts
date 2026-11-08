@@ -27,8 +27,11 @@ export interface PostOfferBody {
   methodId: string;
   currency: string;
   pricing: { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
-  minFiatCents: bigint;
-  maxFiatCents: bigint;
+  /**
+   * The trade size in the unit the poster chose (owner, 8 Nov): XMR in atomic units, or fiat in the
+   * currency's minor units. Either way the offer sells or buys XMR.
+   */
+  amounts: { amountUnit: 'xmr'; minAtomic: bigint; maxAtomic: bigint } | { amountUnit: 'fiat'; minFiatCents: bigint; maxFiatCents: bigint };
   /** No minimum (null) or 5, 10, 25 or 50 completed trades (owner, 8 Nov). */
   minTrades: null | 5 | 10 | 25 | 50;
   terms: string;
@@ -82,6 +85,12 @@ export async function fetchMethods(side: Side, currency: string): Promise<PickMe
   return parseMethods(await api(`/v1/methods?${q.toString()}`));
 }
 
+/** The wire body: the amounts' keys sit at the top level, as the API reads them. */
+export function wireBody(body: PostOfferBody): Record<string, unknown> {
+  const { amounts, ...rest } = body;
+  return { ...rest, ...amounts };
+}
+
 export async function postOffer(body: PostOfferBody): Promise<void> {
-  await api('/v1/offers', { method: 'POST', body });
+  await api('/v1/offers', { method: 'POST', body: wireBody(body) });
 }

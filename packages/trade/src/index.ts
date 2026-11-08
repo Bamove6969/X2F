@@ -86,3 +86,14 @@ export {
   type ChatEnvelopeErrorCode,
   type ChatRetentionFacts,
 } from './chat.js';
+export {
+  AMOUNT_UNITS,
+  displayRate,
+  rangeAllows,
+  rangeInBoth,
+  tradeFiatLimits,
+  type AmountUnit,
+  type OfferRange,
+  type RangeBoth,
+  type RangeCheck,
+} from './offerRange.js';

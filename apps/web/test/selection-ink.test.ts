@@ -47,6 +47,12 @@ const ACCENT = /var\(--x2f-monero(-ink|-ink-hover)?\)/;
 // Design build review 7 Nov: the dispute reason radio is ink now; nothing is owned elsewhere.
 const OWNED_ELSEWHERE: string[] = [];
 
+/**
+ * Selected states the owner asked to be orange. Owner, 8 Nov 2026 (Post an offer, the range boxes'
+ * XMR / currency switch): "selected unit bold bright orange, the other smaller and muted".
+ */
+const OWNER_RULED: string[] = ["screens/post/PostOffer.css .post-unit button[aria-checked='true']"];
+
 /** Every orange use that is not a selected state: one primary action, links, the XMR unit, the hold. */
 const ORANGE_ALLOWED = [
   // The one primary action per screen and the press-and-hold release button.
@@ -73,7 +79,7 @@ describe('selection is ink, never orange', () => {
     const orange = rules()
       .filter((r) => SELECTED.test(r.selector) && ACCENT.test(r.body))
       .map((r) => `${r.file} ${r.selector}`);
-    expect(orange.sort()).toEqual([...OWNED_ELSEWHERE].sort());
+    expect(orange.sort()).toEqual([...OWNED_ELSEWHERE, ...OWNER_RULED].sort());
   });
 
   it('every checkbox and radio accent is ink', () => {
@@ -86,7 +92,7 @@ describe('selection is ink, never orange', () => {
 
   it('orange is only on the primary action, links, the XMR unit and the release hold', () => {
     const uses = rules()
-      .filter((r) => ACCENT.test(r.body) && !OWNED_ELSEWHERE.includes(`${r.file} ${r.selector}`))
+      .filter((r) => ACCENT.test(r.body) && !OWNED_ELSEWHERE.includes(`${r.file} ${r.selector}`) && !OWNER_RULED.includes(`${r.file} ${r.selector}`))
       .map((r) => `${r.file} ${r.selector}`);
     expect([...new Set(uses)].sort()).toEqual([...ORANGE_ALLOWED].sort());
   });
