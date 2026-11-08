@@ -155,7 +155,7 @@ test('DisputeOpen shows the board copy and sends the reason and note', async ({ 
   await open(page);
   await expect(page.getByRole('heading', { name: 'Open a dispute' })).toBeVisible();
   await expect(page.getByText("Seller's time to confirm ran out", { exact: true })).toBeVisible();
-  await expect(page.getByText('A moderator looks at what happened and decides where the 1.25 XMR goes. It stays locked in escrow until then.')).toBeVisible();
+  await expect(page.getByText('A moderator looks at what happened and decides where the 1.250000 XMR goes. It stays locked in escrow until then.')).toBeVisible();
   await expect(page.getByText("A moderator will read this trade's chat to decide", { exact: true })).toBeVisible();
   await expect(page.getByRole('radio')).toHaveCount(4);
   await page.getByRole('radio', { name: "The seller isn't replying" }).check();
@@ -226,7 +226,7 @@ test('DisputeRuling: the ruling card, the destination ending, evidence and the a
   const card = page.getByRole('region', { name: 'Ruling' });
   await expect(card.locator('.x2f-tag[data-role="mod"]')).toHaveText('X2F Moderator');
   await expect(card).toContainText('Ruling: release to the buyer');
-  await expect(card).toContainText('1.25 XMR goes to mira.k');
+  await expect(card).toContainText('1.250000 XMR goes to mira.k');
   await expect(card).not.toContainText('address ending');
   await page.getByRole('button', { name: 'Appeal this ruling' }).click();
   const send = page.getByRole('button', { name: 'Send appeal' });
