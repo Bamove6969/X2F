@@ -427,18 +427,22 @@
   cursor: default;
 }
 
+/* Hold progress (kit review 4, WCAG 1.4.11): the strongest on-monero overlay the label allows
+   (on-monero text on it reads 4.5:1), and a 2 px on-monero front edge, 6.45:1 against the unfilled
+   button, so progress shows at 3:1+. The fill grows by its right inset, not a transform, so the edge
+   stays 2 px wide. */
 .x2f-hold__fill {
   position: absolute;
-  inset: 0;
-  background: color-mix(in srgb, var(--x2f-on-monero) 16%, transparent);
-  transform: scaleX(0);
-  transform-origin: left center;
+  inset: 0 100% 0 0;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--x2f-on-monero) 20%, transparent);
   pointer-events: none;
 }
 
 .x2f-hold[data-holding='true'] .x2f-hold__fill {
-  transform: scaleX(1);
-  transition: transform var(--x2f-hold-ms) linear;
+  right: 0;
+  border-right: 2px solid var(--x2f-on-monero);
+  transition: right var(--x2f-hold-ms) linear;
 }
 
 .x2f-hold__top,

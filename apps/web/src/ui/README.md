@@ -14,7 +14,9 @@ These are lead choices. The owner may adjust any of them.
   reads "1 h 52 min" or "14 min", rounded up.
 - **Day values of the new tokens.** The day values of `mod` (was `moderator`) and `monero-ink-hover` are
   the lead's choice (`monero-hold` was dropped by the head designer's ruling 16; the hold fill is an
-  `on-monero` 16% overlay on the orange, lead choice, `on-monero` text on it reads about 4.8:1):
+  `on-monero` 20% overlay on the orange, the strongest that keeps `on-monero` text at 4.5:1, with a
+  2 px `on-monero` front edge at 6.45:1 so progress shows at 3:1+ (kit review 4; no overlay alone can
+  give 3:1 and keep the text at 4.5:1, see HoldButton.test.tsx). Noted for design:
 
   | Token              | Day value | Contrast (day)                                                             |
   | ------------------ | --------- | -------------------------------------------------------------------------- |
