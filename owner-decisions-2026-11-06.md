@@ -114,3 +114,4 @@ Explanations asked for: Q3 ranges, Q19 watcher (done), Q26, Q29 and Q33 (My offe
 - Max button on the quote: keep.
 - Trade terms: show each reader only what applies to them (no "the poster pays 1%" to the taker), line by line: responsibilities, what affects them, their options (nudge every 15 min, etc.).
 - Agreement: no agreement on every trade. Users agree once, at account opening: the Terms written carefully and comprehensively, a required tick box, AND a tall, wide white signature pad (a scribble or an X is fine). Not repeated per trade.
+- Front door (owner, 8 Nov): "No one gets to make it past the front door and see behind the curtains without signing an agreement, creating an account and logging in. There are no free tours for outsiders." Logged-out visitors see only login, create account (Terms + signature), recovery; the API refuses marketplace and user data without a live, fully set-up session.
