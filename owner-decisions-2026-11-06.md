@@ -144,3 +144,6 @@ Teams (p7):
 - Member logins (p7-10): approve only the first login (design B); the granular boxes are the protection.
 - Working hours (p7-11): simple "any time" or a detailed schedule (days, hours).
 - Starting set (p7-12): design A (the 10 boxes); keep thinking of every possible permission and leave the rest to feedback.
+- Logo (p8-1, 8 Nov): D · Wordmark (X2F in Familjen 700, one Monero-orange coin on the F). Browse page name (p8-2): "Find a trade". Header: "logo – page name" on every page.
+- Fee by role (p10-1): the poster always pays 1%. Poster buying XMR: the taker escrows the trade amount; the poster receives it less 1%. Poster selling XMR: the poster escrows the trade plus 1%; the taker receives the full amount. (As built.)
+- Team release (p10-2): a team member cannot confirm payment received / release on the vendor's sell trades (members won't have the lead's bank access). No such permission until lots of feedback asks for it.
