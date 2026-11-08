@@ -22,7 +22,7 @@ export function isStaffRoutePerm(p: unknown): p is StaffRoutePerm {
 export interface StaffContext {
   accountId: string;
   role: StaffRole;
-  username: string;
+  displayName: string;
   hours: LoginHours;
   grants: Perm[];
 }
@@ -45,7 +45,7 @@ export interface StaffRow {
   hours: LoginHours | null;
   grants: Perm[];
   switchedOff: boolean;
-  username: string;
+  displayName: string;
 }
 
 /** Reads the staff member's row on every call: role, hours and grants are never cached (round-2 N2). */
@@ -69,7 +69,7 @@ export async function loadStaff(db: Queryable, accountId: string): Promise<Staff
     hours,
     grants: r.grants.filter((g): g is Perm => (PERMS as readonly string[]).includes(g)),
     switchedOff: r.switched_off_at !== null,
-    username: r.display_name,
+    displayName: r.display_name,
   };
 }
 
@@ -105,7 +105,7 @@ export function requireStaff(perm: Perm): preHandlerAsyncHookHandler[] {
       throw new ApiError(401, 'outside-login-hours');
     }
     if (!can(s.role, perm, s.grants)) throw new ApiError(403, 'forbidden');
-    req.staff = { accountId: req.auth.accountId, role: s.role, username: s.username, hours: s.hours ?? 'any', grants: s.grants };
+    req.staff = { accountId: req.auth.accountId, role: s.role, displayName: s.displayName, hours: s.hours ?? 'any', grants: s.grants };
   };
   (guard as unknown as Record<symbol, Perm>)[STAFF_GUARD] = perm;
   // Every kind passes `requireSession` so that the guard answers a non-staff session with

@@ -95,6 +95,14 @@ export interface Trade {
    * cancelled by itself SELLER_CONFIRM_CANCEL_TIMEOUT_H after it (owner 2026-10-29).
    */
   cancelConfirmableAt: Date | null;
+  /**
+   * When the seller first nudged the buyer in this trade after the escrow was secured (owner G2,
+   * 7 Nov; g66). Written by the nudge route (apps/api nudge/routes.ts), never by an event: the
+   * seller's `request-refund` is refused until it is set, so the refund unlocks only after the
+   * 90 minutes from full funding AND at least one nudge. Later nudges (one per 15 min, as many as
+   * the seller likes) leave it as it is.
+   */
+  sellerNudgedAt: Date | null;
 }
 
 export type TradeEvent =
@@ -253,6 +261,7 @@ export function newTrade(
     closedAt: null,
     cancelConfirmedAt: null,
     cancelConfirmableAt: null,
+    sellerNudgedAt: null,
   };
 }
 
@@ -489,7 +498,10 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
 
     case 'mark-paid':
       if (by !== 'buyer') return fail('wrong-party');
-      if (s !== 'securing' && s !== 'secured' && s !== 'refund_requested') return fail('wrong-state');
+      // "I've paid" only once the escrow is secured, 10 of 10 confirmations and the coins unlocked
+      // (owner Q12, 2026-11-06): while it is still securing the buyer is told to wait, not refused as moved on.
+      if (s === 'securing') return fail('too-early');
+      if (s !== 'secured' && s !== 'refund_requested') return fail('wrong-state');
       // Once the auto-refund may run (autoRefundDecision: now >= finalAlertAt + 15 min) it is too late.
       // The window is frozen during maintenance, so a paused trade counts from the pause.
       if (s === 'refund_requested' && t.finalAlertAt !== null && base(t, now).getTime() >= addMin(t.finalAlertAt, TIMERS.finalAlertMin).getTime()) {
@@ -518,7 +530,12 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
     case 'request-refund':
       if (by !== 'seller') return fail('wrong-party');
       if (s !== 'secured' || t.paidAt !== null) return fail('wrong-state');
+      // Owner G2 / g66: locked until the buyer's 90 minutes (from full funding, plus any extension)
+      // have passed AND the seller has nudged at least once since the escrow was secured.
       if (!past(now, t.payBy)) return fail('too-early');
+      // The 15-minute final alert below stays (lead, 7 Nov) until the owner rules on it (page 6).
+      // The 90 minutes count from secured (payBy = securedAt + 90 min): the buyer cannot pay before (Q12); lead default.
+      if (t.sellerNudgedAt === null || t.securedAt === null || t.sellerNudgedAt.getTime() < t.securedAt.getTime()) return fail('too-early');
       return { ...t, state: 'refund_requested', finalAlertAt: now };
 
     case 'buyer-cancel':

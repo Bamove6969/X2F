@@ -54,7 +54,7 @@ export function News() {
   return (
     <main className="x2f-screen" data-screen="news" aria-busy={state.status === 'loading'}>
       <h1 className="x2f-screen__title">News</h1>
-      <p className="x2f-sheet__body">Messages from X2F. The newest is at the top.</p>
+      <p className="x2f-screen__lead">Messages from X2F. The newest is at the top.</p>
       {state.status === 'loading' ? <p className="x2f-note">Loading…</p> : null}
       {state.status === 'error' ? (
         <div className="x2f-stack">

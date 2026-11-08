@@ -9,6 +9,14 @@ const SHAPES = {
   'chevron-right': <path d="M9 6l6 6-6 6" />,
   'chevron-down': <path d="M6 9l6 6 6-6" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
+  // Main board: the search box; BuyQuote board: the Chat button.
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-4-4" />
+    </>
+  ),
+  chat: <path d="M4 5h16v11H9l-5 4z" />,
   clock: (
     <>
       <circle cx="12" cy="12" r="9" />
@@ -79,6 +87,12 @@ const SHAPES = {
     </>
   ),
   bolt: <path d="M13 3L5 13h6l-1 8 8-10h-6z" />,
+  lock: (
+    <>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V8a4 4 0 018 0v3" />
+    </>
+  ),
   star: <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" />,
   'security-key': (
     <>

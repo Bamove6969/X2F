@@ -47,6 +47,10 @@ export interface TraderSummary {
   badges: string[];
   /** The starter-limits stage (spec 2.3, Task 4). */
   stage: 'starter' | 'building' | 'graduated';
+  /** Owner Q63: the opt-in traded line's rounded-down whole XMR, or null (not shown in the trade room yet). */
+  tradedOverXmr?: number | null;
+  /** Owner Q64, p4-1: verified imported volume per site, in whole US dollars. */
+  imported?: { site: string; overUsd: number }[];
 }
 
 /** The counterparty's public display name; the one way screens read it (a login name is never sent or shown). */
@@ -105,6 +109,11 @@ export interface TradeView {
   cancelConfirmedAt: string | null;
   /** When the seller's Confirm cancel became available; the trade closes by itself 48 h later (owner 2026-10-29). */
   cancelConfirmableAt: string | null;
+  /**
+   * When the seller first nudged the buyer after the escrow was secured (owner G2, g66); null =
+   * not yet. The seller's "Cancel and get refund" stays locked until it is set and the 90 minutes are over.
+   */
+  sellerNudgedAt: string | null;
   nextDeadline: string | null;
   serverNow: string;
 }

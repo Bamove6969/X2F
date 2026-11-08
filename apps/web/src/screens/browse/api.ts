@@ -52,6 +52,13 @@ export interface TraderSummary {
   badges: string[];
   /** The poster's starter-limits stage, from the API (spec 2.3). New shows until 'graduated'. */
   stage: Stage;
+  /**
+   * Owner Q63 (6 Nov; was C12b's dollars): the opt-in "X+ XMR traded to date" line (only for MORE
+   * than X), X in whole XMR, already rounded down by the API; null (or missing) shows nothing.
+   */
+  tradedOverXmr: number | null;
+  /** Owner Q64, p4-1: verified imported volume, one line per site, in whole US dollars (rounded down); [] for none. */
+  imported: { site: string; overUsd: number }[];
 }
 
 export type Pricing = { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
@@ -177,6 +184,11 @@ function parsePoster(v: unknown, at: string): TraderSummary {
       return b;
     }),
     stage: oneOf(o, 'stage', at, STAGES),
+    tradedOverXmr: o.tradedOverXmr === undefined || o.tradedOverXmr === null ? null : num(o, 'tradedOverXmr', at),
+    imported: o.imported === undefined ? [] : list(o.imported, `${at}.imported`).map((v, i) => {
+      const line = obj(v, `${at}.imported[${i}]`);
+      return { site: str(line, 'site', `${at}.imported[${i}]`), overUsd: num(line, 'overUsd', `${at}.imported[${i}]`) };
+    }),
   };
 }
 

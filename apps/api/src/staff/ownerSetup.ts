@@ -162,7 +162,7 @@ async function takeTry(db: pg.Pool, now: Date): Promise<SetupRow> {
  * 404 `setup-locked` once setup has finished):
  * - `POST /staff/v1/setup/code { code }` → a 30-minute setup cookie (`__Host-x2f_setup`); 10 tries
  *   an hour, globally; a wrong code is 401 `code-invalid` and the code stays valid;
- * - `POST /staff/v1/setup/account { username, loginName }` → 201: the pending owner account
+ * - `POST /staff/v1/setup/account { displayName, loginName }` → 201: the pending owner account
  *   (`kind 'owner'`, disabled, so it cannot log in yet), replacing an earlier pending one;
  * - `POST /staff/v1/setup/key/{start,finish}` → attested security keys only (`method-not-allowed`);
  * - `POST /staff/v1/setup/pgp/{start,finish}` → the owner's PGP key (required, A9);
@@ -203,7 +203,7 @@ export function ownerSetupRoutes(app: FastifyInstance): void {
       // row lock and no owner is live, so this only ever removes an unfinished account.
       await c.query('update challenges set account_id = null where id = $1', [s.id]);
       await c.query("delete from accounts where kind = 'owner' and disabled_at is not null");
-      const names = await assertNewNames(c, b.username, b.loginName);
+      const names = await assertNewNames(c, b.displayName, b.loginName);
       const ownerId = await createAccount(c, deps.config, { ...names, kind: 'owner', termsVersion: null, now });
       await c.query('update accounts set disabled_at = $2 where id = $1', [ownerId, now]);
       await c.query('update challenges set account_id = $2 where id = $1', [s.id, ownerId]);

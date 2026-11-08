@@ -3,3 +3,4 @@
 export * from './reviews.js';
 export * from './stats.js';
 export * from './badges.js';
+export * from './traded.js';

@@ -133,7 +133,7 @@ export function settingsIntent(s: Pick<Settings, NumberField>): KeyTapIntent {
 export async function changeSettings(
   client: pg.PoolClient,
   actor: Pick<StaffContext, 'accountId' | 'role'>,
-  input: { change: Partial<Settings>; tapId: unknown },
+  input: { change: Partial<Settings>; tapId: unknown; sessionId?: string },
   now: Date,
 ): Promise<Settings> {
   const { rows } = await client.query<Row>(`${SELECT} for update`);
@@ -145,7 +145,8 @@ export async function changeSettings(
 
   let tapId: string | null = null;
   if (changed.some((f) => TAPPED.includes(f))) {
-    const tap = await consumeKeyTap(client, typeof input.tapId === 'string' ? input.tapId : '', actor.accountId, settingsIntent(next), now);
+    // RV5 m10 (lead re-review item 7): the tap is used only from the session that started it.
+    const tap = await consumeKeyTap(client, typeof input.tapId === 'string' ? input.tapId : '', actor.accountId, settingsIntent(next), now, input.sessionId !== undefined ? { sessionId: input.sessionId } : {});
     tapId = tap.id;
   }
   const sets = changed.map((f, i) => `${COLUMN[f]} = $${i + 1}`);
@@ -177,6 +178,6 @@ export function staffSettingsRoutes(app: FastifyInstance): void {
   app.put('/staff/v1/settings', opts, async (req) => {
     const input = parseSettingsChange(req.body);
     const { db, clock } = req.server.deps;
-    return withTx(db, (c) => changeSettings(c, req.staff, input, clock()));
+    return withTx(db, (c) => changeSettings(c, req.staff, { ...input, sessionId: req.auth.sessionId }, clock()));
   });
 }

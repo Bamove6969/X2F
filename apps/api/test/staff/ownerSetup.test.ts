@@ -81,11 +81,11 @@ async function addPgp(b: StaffBrowser, deps: Deps, pair: Pair): Promise<LightMyR
 }
 
 /** Code and account; returns the browser holding the setup cookie. */
-async function begin(app: FastifyInstance, deps: Deps, username = 'lumen.k', loginName = 'lumen-login'): Promise<StaffBrowser> {
+async function begin(app: FastifyInstance, deps: Deps, displayName = 'lumen.k', loginName = 'lumen-login'): Promise<StaffBrowser> {
   const code = (await ensureSetupCode(deps))!;
   const b = new StaffBrowser(app);
   expect((await enterCode(b, code)).statusCode).toBe(200);
-  const acc = await b.post('/staff/v1/setup/account', { username, loginName });
+  const acc = await b.post('/staff/v1/setup/account', { displayName, loginName });
   expect(acc.statusCode, acc.body).toBe(201);
   return b;
 }
@@ -163,12 +163,12 @@ describe('the pending owner account', () => {
     const { token } = await insertSession(deps, rows[0]!.id, 'staff');
     expect(errorOf(await new StaffBrowser(app).withSession(token).get('/staff/v1/me'))).toBe('account-disabled');
 
-    const again = await b.post('/staff/v1/setup/account', { username: 'second.lumen', loginName: 'second-login' });
+    const again = await b.post('/staff/v1/setup/account', { displayName: 'second.lumen', loginName: 'second-login' });
     expect(again.statusCode, again.body).toBe(201);
     const after = await deps.db.query<{ display_name: string }>("select display_name from accounts where kind = 'owner'");
     expect(after.rows.map((r) => r.display_name)).toEqual(['second.lumen']);
     // The same names can be picked again (the replaced account is gone).
-    expect((await b.post('/staff/v1/setup/account', { username: 'first.lumen', loginName: 'first-login' })).statusCode).toBe(201);
+    expect((await b.post('/staff/v1/setup/account', { displayName: 'first.lumen', loginName: 'first-login' })).statusCode).toBe(201);
   });
 
   it('refuses names that break the account name rules', async () => {
@@ -176,7 +176,7 @@ describe('the pending owner account', () => {
     const code = (await ensureSetupCode(deps))!;
     const b = new StaffBrowser(app);
     await enterCode(b, code);
-    expect(errorOf(await b.post('/staff/v1/setup/account', { username: 'same.name', loginName: 'same.name' }))).toBe('names-same');
+    expect(errorOf(await b.post('/staff/v1/setup/account', { displayName: 'same.name', loginName: 'same.name' }))).toBe('names-same');
     expect((await b.post('/staff/v1/setup/account', {})).statusCode).toBe(400);
     const { rows } = await deps.db.query("select 1 from accounts where kind = 'owner'");
     expect(rows).toHaveLength(0);
@@ -224,7 +224,7 @@ describe('keys and finish', () => {
 
     const me = await b.get('/staff/v1/me');
     expect(me.statusCode, me.body).toBe(200);
-    expect(me.json()).toMatchObject({ username: 'lumen.k', role: 'owner' });
+    expect(me.json()).toMatchObject({ displayName: 'lumen.k', role: 'owner' });
 
     const { rows: owner } = await deps.db.query<{ id: string; disabled_at: Date | null }>("select id, disabled_at from accounts where kind = 'owner'");
     expect(owner).toHaveLength(1);
@@ -243,7 +243,7 @@ describe('keys and finish', () => {
       }
     }
     // A second owner cannot be created by any route, and a restart prints nothing.
-    expect(errorOf(await b.post('/staff/v1/setup/account', { username: 'other.lumen', loginName: 'other-login' }))).toBe('setup-locked');
+    expect(errorOf(await b.post('/staff/v1/setup/account', { displayName: 'other.lumen', loginName: 'other-login' }))).toBe('setup-locked');
     expect(await ensureSetupCode(deps)).toBeNull();
     const lines: string[] = [];
     const s = await startStaffApi(deps, { origin: STAFF_ORIGIN, host: '127.0.0.1', port: 0 }, { stderr: (l) => void lines.push(l), logStream: captureLogs().stream });

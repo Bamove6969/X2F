@@ -1,5 +1,6 @@
 import './screens.css';
 import '../ui/ui.css';
+import { utcDateTime } from '../ui/dates.js';
 
 /**
  * One News message as the News page shows it (Plan 4 Task 28): title, a "New" mark, the posted
@@ -14,9 +15,9 @@ export interface NewsItem {
   editedAt: string | null;
 }
 
-/** "29 Oct 2026, 09:00" in the reader's own locale and time zone. */
+/** "29 Oct 2026, 09:00 UTC", the same for every reader (design X5). */
 export function postedDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  return utcDateTime(new Date(iso));
 }
 
 export function NewsMessage({ item, isNew }: { item: NewsItem; isNew: boolean }) {

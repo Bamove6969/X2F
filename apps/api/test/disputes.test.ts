@@ -1,7 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
+import type { RulingOutcome } from '@x2f/staff';
+import { loadDispute } from '../src/disputes/store.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
+import { appealDirect, publishRuling } from './helpers/disputes.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
@@ -58,15 +61,25 @@ async function eventTypes(code: string): Promise<string[]> {
   return rows.map((r) => r.t);
 }
 
-/** What Plan 4 writes when a moderator rules on the trade's current dispute (its staff routes are not built yet). */
-async function rule(code: string, o: { outcome: string; round?: 1 | 2; ruledAt: Date; appealUntil: Date | null; evidence?: unknown }) {
-  const current = `(select max(seq) from disputes where code = $1)`;
-  await deps.db.query(
-    `insert into dispute_rulings (code, seq, round, outcome, reason, evidence, moderator_name, ruled_at, appeal_until)
-     values ($1, ${current}, $2, $3, $4, $5, $6, $7, $8)`,
-    [code, o.round ?? 1, o.outcome, 'The payment is in the seller\'s activity.', JSON.stringify(o.evidence ?? ['The trade chat']), 'sarah.v', o.ruledAt, o.appealUntil],
-  );
-  await deps.db.query(`update disputes set status = $2 where code = $1 and seq = ${current}`, [code, (o.round ?? 1) === 2 ? 'final' : 'ruled']);
+/**
+ * What Plan 4 Task 12 writes when a moderator rules on the trade's current dispute (its staff
+ * routes are not built yet), through the dispute machine at `ruledAt` (the clock is put back
+ * after): round 1 is published with its 48-hour appeal window (`appealUntil` = ruledAt + 48 h).
+ * Round 2 first takes the case through round 1 and an appeal by the seller when it is not there yet.
+ */
+async function rule(code: string, o: { outcome: RulingOutcome; round?: 1 | 2; ruledAt: Date; appealUntil?: Date | null; evidence?: unknown }) {
+  const prev = deps.clock();
+  setNow(o.ruledAt);
+  try {
+    if ((o.round ?? 1) === 2) {
+      if ((await loadDispute(deps.db, code))!.status === 'open') await publishRuling(deps, code, { outcome: o.outcome });
+      if ((await loadDispute(deps.db, code))!.status === 'published') await appealDirect(deps, code, 'seller');
+    }
+    const d = await publishRuling(deps, code, { outcome: o.outcome, ...(o.evidence === undefined ? {} : { evidence: o.evidence }) });
+    if (o.appealUntil !== undefined) expect(d.round === 1 ? d.appealEndsAt : null).toEqual(o.appealUntil);
+  } finally {
+    setNow(prev);
+  }
 }
 
 describe('POST /v1/trades/:code/dispute', () => {
@@ -183,11 +196,11 @@ describe('GET /v1/trades/:code/dispute', () => {
     expect((await buyer.browser.get(dispute(t.code))).statusCode).toBe(404);
     await buyer.browser.post(dispute(t.code), { reason: 'silent', note: 'private to the moderator' });
     const before = (await seller.browser.get(dispute(t.code))).json() as Record<string, unknown>;
-    expect(before).toMatchObject({ openedBy: 'buyer', reason: 'silent', moderator: null, dueAt: null });
+    expect(before).toMatchObject({ openedBy: 'buyer', reason: 'silent', moderator: null, dueAt: at(48 * 60 * MIN).toISOString() });
     expect(JSON.stringify(before)).not.toContain('private to the moderator');
     expect(typeof before.serverNow).toBe('string');
 
-    await deps.db.query(`update disputes set moderator_name = 'sarah.v', moderator_joined_at = $2, due_at = $3 where code = $1`, [
+    await deps.db.query(`update disputes set moderator_name = 'sarah.v', moderator_joined_at = $2, ruling_due_at = $3 where code = $1`, [
       t.code, at(38 * MIN), at(DAY),
     ]);
     const after = (await buyer.browser.get(dispute(t.code))).json() as Record<string, unknown>;
@@ -247,7 +260,7 @@ describe('POST /v1/trades/:code/appeal', () => {
 
   it('accepts one appeal inside the window, and refuses it at the end of the window and after', async () => {
     const { seller, t } = await ruled();
-    await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });
+    await rule(t.code, { outcome: 'release-to-buyer', ruledAt: START, appealUntil: at(48 * 60 * MIN) });
     setNow(at(48 * 60 * MIN));
     await relogin(seller);
     const late = await seller.browser.post(appeal(t.code), { why: 'The moderator missed my bank statement.' });
@@ -257,7 +270,7 @@ describe('POST /v1/trades/:code/appeal', () => {
     expect(errorOf(await seller.browser.post(appeal(t.code), { why: 'The moderator missed my bank statement.' }))).toBe('too-late');
 
     const b = await ruled();
-    await rule(b.t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });
+    await rule(b.t.code, { outcome: 'release-to-buyer', ruledAt: START, appealUntil: at(48 * 60 * MIN) });
     setNow(at(48 * 60 * MIN - 1));
     await relogin(b.seller, b.buyer);
     const ok = await b.seller.browser.post(appeal(b.t.code), { why: 'The moderator missed my bank statement.' });
@@ -270,7 +283,7 @@ describe('POST /v1/trades/:code/appeal', () => {
 
   it('stores exactly one appeal when both sides appeal at the same moment', async () => {
     const { seller, buyer, t } = await ruled();
-    await rule(t.code, { outcome: 'refund-to-seller', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });
+    await rule(t.code, { outcome: 'refund-to-seller', ruledAt: START, appealUntil: at(48 * 60 * MIN) });
     setNow(at(2 * 60 * MIN));
     const [a, b] = await Promise.all([
       seller.browser.post(appeal(t.code), { why: 'Please look again at this.' }),
@@ -281,10 +294,10 @@ describe('POST /v1/trades/:code/appeal', () => {
     expect(rows[0]).toEqual({ n: 1 });
   });
 
-  it('refuses an appeal unless the dispute is ruled: open, appealed, final and closed all stay as they are', async () => {
-    for (const status of ['open', 'appealed', 'final', 'closed']) {
+  it('refuses an appeal unless round 1 is published: every other machine status stays as it is', async () => {
+    for (const status of ['open', 'awaiting-approval', 'appealed', 'final', 'complying', 'closed']) {
       const { seller, t } = await ruled();
-      await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });
+      await rule(t.code, { outcome: 'release-to-buyer', ruledAt: START, appealUntil: at(48 * 60 * MIN) });
       await deps.db.query(`update disputes set status = $2, closed_at = case when $2 = 'closed' then now() end where code = $1`, [t.code, status]);
       setNow(at(2 * 60 * MIN));
       const res = await seller.browser.post(appeal(t.code), { why: 'Please look again at this.' });
@@ -298,7 +311,7 @@ describe('POST /v1/trades/:code/appeal', () => {
 
   it('refuses an appeal on a final (appeal-round) ruling, a short reason, and an outsider', async () => {
     const { seller, buyer, t } = await ruled();
-    await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });
+    await rule(t.code, { outcome: 'release-to-buyer', ruledAt: START, appealUntil: at(48 * 60 * MIN) });
     setNow(at(2 * 60 * MIN));
     expect((await seller.browser.post(appeal(t.code), { why: 'too short' })).statusCode).toBe(400);
     expect((await seller.browser.post(appeal(t.code), { why: '         x' })).statusCode).toBe(400);
@@ -308,8 +321,8 @@ describe('POST /v1/trades/:code/appeal', () => {
     const other = await trader();
     expect((await other.browser.post(appeal(t.code), { why: 'Please look again at this.' })).statusCode).toBe(404);
     await rule(t.code, { outcome: 'release-to-buyer', round: 2, ruledAt: at(90 * MIN), appealUntil: null });
-    // Even with the status left at 'ruled', a round-2 ruling has no appeal.
-    await deps.db.query(`update disputes set status = 'ruled' where code = $1`, [t.code]);
+    // Even with the status put back to 'published', a round-2 ruling has no appeal (it is binding).
+    await deps.db.query(`update disputes set status = 'published' where code = $1`, [t.code]);
     expect(errorOf(await buyer.browser.post(appeal(t.code), { why: 'Please look again at this.' }))).toBe('wrong-state');
   });
 });

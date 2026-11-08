@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, setMaintenanceListener } from '../src/api/client.js';
 import { SITE_OFF, parseSite } from '../src/api/site.js';
 import { MAINTENANCE_COPY, Maintenance } from '../src/screens/Maintenance.js';
-import { BANNER_WORD, SiteBanner } from '../src/ui/SiteBanner.js';
+import { SiteBanner } from '../src/ui/SiteBanner.js';
 import { fire, render } from './render.js';
 
 afterEach(() => {
@@ -14,18 +14,17 @@ afterEach(() => {
 });
 
 describe('SiteBanner', () => {
-  it('renders the kind word and the text, with the kind on the box', () => {
+  it('renders the text and the kind\'s icon, with the kind on the box; no title (design 7 Nov)', () => {
     for (const kind of ['info', 'warning'] as const) {
       const { host, unmount } = render(<SiteBanner banner={{ text: 'Matrix is down until 14:00 UTC.', kind }} />);
       const box = host.querySelector('[data-part="site-banner"]')!;
       expect(box.getAttribute('data-kind')).toBe(kind);
-      expect(box.textContent).toContain(BANNER_WORD[kind]);
+      expect(box.textContent).not.toMatch(/^(Info|Warning)/);
       expect(box.textContent).toContain('Matrix is down until 14:00 UTC.');
       expect(box.querySelector('svg')).not.toBeNull();
       expect(box.querySelector('.x2f-outcome')!.getAttribute('data-tone')).toBe(kind === 'warning' ? 'caution' : 'plain');
       unmount();
     }
-    expect(BANNER_WORD).toEqual({ info: 'Info', warning: 'Warning' });
   });
 
   it('renders nothing without a banner', () => {
@@ -35,12 +34,12 @@ describe('SiteBanner', () => {
 });
 
 describe('Maintenance', () => {
-  it("shows the owner's message, the paused-timers line and one primary button that checks again", () => {
+  it("shows the owner's message and one primary button that checks again; it promises nothing about timers (lead review 7 Nov)", () => {
     const retry = vi.fn();
     const { host } = render(<Maintenance maintenance={{ message: 'Upgrading.\nBack by 14:00 UTC.', kind: 'planned' }} onRetry={retry} />);
     expect(host.querySelector('h1')!.textContent).toBe(MAINTENANCE_COPY.title);
     expect(host.querySelector('[data-part="maintenance-message"]')!.textContent).toBe('Upgrading.\nBack by 14:00 UTC.');
-    expect(host.textContent).toContain(MAINTENANCE_COPY.timers);
+    expect(host.textContent).not.toMatch(/timers? (are )?paused/i);
     const primary = host.querySelectorAll('[data-primary]');
     expect(primary).toHaveLength(1);
     fire(primary[0]!, new MouseEvent('click', { bubbles: true }));

@@ -1,5 +1,7 @@
 import type { Queryable } from '../db/pool.js';
 import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
+import { verifiedPastRepBySite } from '../pastrep/store.js';
+import { importedLines, tradedOverXmr, tradedXmrSql, type ImportedLine } from './tradedTotal.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, stageFor, type Stage, type StarterSettings } from './stage.js';
 
 /**
@@ -21,6 +23,14 @@ export interface TraderSummary {
   badges: string[];
   /** The starter-limits stage (spec 2.3; plan Task 4 Revision 2026-10-26): the New badge shows until 'graduated'. */
   stage: Stage;
+  /**
+   * Owner Q63 (6 Nov 2026; was C12b's dollars): the "X+ XMR traded to date" line, X in whole XMR
+   * rounded down (@x2f/reputation `tradedBucketXmr`); null unless the trader opted in and has traded
+   * MORE than 10 XMR. Never the exact total.
+   */
+  tradedOverXmr: number | null;
+  /** Owner Q64, p4-1: verified imported volume, one line per site in whole US dollars (opt-in like the XMR line; [] when off). */
+  imported: ImportedLine[];
 }
 
 /** Someone counts as online when one of their sessions was used this recently (to the 5-minute bucket: see `onlineSince`). */
@@ -68,14 +78,16 @@ export async function traderSummaries(
   if (ids.length === 0) return out;
   const s = settings ?? (await loadStarterSettings(q));
   // The name column is a constant, never input.
-  const { rows } = await q.query<{ id: string; name: string; created_at: Date; completed: string; last_seen: Date | null }>(
+  const { rows } = await q.query<{ id: string; name: string; created_at: Date; completed: string; last_seen: Date | null; show_traded: boolean; traded: string }>(
     `select a.id, a.${PUBLIC_NAME_COLUMN} as name, a.created_at,
             ${COMPLETED_TRADES_SQL} as completed,
-            ${lastSeenSql('a.id', '$2::uuid')} as last_seen
+            ${lastSeenSql('a.id', '$2::uuid')} as last_seen,
+            a.show_traded_total as show_traded, ${tradedXmrSql('a.id')}::text as traded
        from accounts a where a.id = any($1::uuid[])`,
     [ids, viewerId],
   );
   const since = onlineSince(now).getTime();
+  const sites = await verifiedPastRepBySite(q, rows.filter((r) => r.show_traded).map((r) => r.id));
   for (const r of rows) {
     const completed = Number(r.completed);
     out.set(r.id, {
@@ -88,13 +100,20 @@ export async function traderSummaries(
       positivePct: null,
       badges: [],
       stage: stageFor(s, completed, r.created_at, now),
+      tradedOverXmr: tradedOverXmr(r.show_traded, r.traded),
+      imported: r.show_traded ? importedLines(sites.get(r.id)) : [],
     });
   }
   return out;
 }
 
 /** One trader's summary as `viewerId` may see it; throws for an unknown account. */
-export async function traderSummary(q: Queryable, accountId: string, now: Date, viewerId: string | null): Promise<TraderSummary> {
+export async function traderSummary(
+  q: Queryable,
+  accountId: string,
+  now: Date,
+  viewerId: string | null,
+): Promise<TraderSummary> {
   const t = (await traderSummaries(q, [accountId], now, viewerId)).get(accountId);
   if (!t) throw new Error('trader missing');
   return t;

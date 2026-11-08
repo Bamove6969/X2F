@@ -64,16 +64,15 @@ test('a refusal opens CantDoThat; its feedback link leads to the form; an anonym
   await page.getByRole('button', { name: 'Post offer' }).click();
   await page.getByRole('dialog').getByRole('link', { name: 'feedback' }).click();
   await expect(page).toHaveURL(/\/feedback\?from=trading-hold$/);
-  await expect(page.getByRole('heading', { name: 'Feedback' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Tell us what you think' })).toBeVisible();
   await expect(page.locator('[data-primary]')).toHaveCount(1);
   await noSideScroll(page);
 
-  await page.getByRole('radio', { name: 'Complaint' }).check();
-  await page.getByLabel('Your comment').fill('A hold should say how long it lasts.');
+  await page.getByLabel('Your message').fill('A hold should say how long it lasts.');
   await page.getByLabel('Send anonymously').check();
   await page.getByRole('button', { name: 'Send' }).click();
   await expect(page.locator('[data-part="feedback-thanks"]')).toHaveText(THANKS);
-  expect(sent).toEqual([{ kind: 'complaint', text: 'A hold should say how long it lasts.', anonymous: true }]);
+  expect(sent).toEqual([{ kind: 'feedback', text: 'A hold should say how long it lasts.', anonymous: true }]);
 
   // Done goes back to where the person came from.
   await page.getByRole('button', { name: 'Done' }).click();
@@ -84,9 +83,8 @@ test('a named send carries the refusal code; the form works at desktop width too
   const sent = await stub(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/feedback?from=too-many-offers');
-  await expect(page.getByRole('radio', { name: 'Feedback' })).toBeChecked();
   await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
-  await page.getByLabel('Your comment').fill('Love it.');
+  await page.getByLabel('Your message').fill('Love it.');
   await page.getByRole('button', { name: 'Send' }).click();
   await expect(page.locator('[data-part="feedback-thanks"]')).toHaveText(THANKS);
   expect(sent).toEqual([{ kind: 'feedback', text: 'Love it.', anonymous: false, from: 'too-many-offers' }]);
@@ -103,11 +101,11 @@ test('signed out: told before typing, and the draft is kept through the log-in r
   await page.goto('/feedback?from=trading-hold');
   await expect(page.locator('[data-part="feedback-login-first"]')).toContainText('Log in to send feedback');
   await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
-  await page.getByLabel('Your comment').fill('Hold rules are unclear.');
+  await page.getByLabel('Your message').fill('Hold rules are unclear.');
   signedIn = true;
   // The person logs in elsewhere in this tab and comes back: the words are still there.
   await page.goto('/feedback?from=trading-hold');
-  await expect(page.getByLabel('Your comment')).toHaveValue('Hold rules are unclear.');
+  await expect(page.getByLabel('Your message')).toHaveValue('Hold rules are unclear.');
   await expect(page.locator('[data-part="feedback-login-first"]')).toHaveCount(0);
 });
 

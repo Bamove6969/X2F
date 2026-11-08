@@ -1,5 +1,5 @@
 import type { Outcome, Payout } from '@x2f/escrow';
-import { escrowPlan, payoutsFor, type SettleKind, type TradeState } from '@x2f/trade';
+import { escrowPlan, payoutsFor, type RulingKind, type SettleKind, type TradeState } from '@x2f/trade';
 import { describe, expect, it } from 'vitest';
 import { cosignPolicy, deviceAmount, outcomeFor, type Deal, type PolicyContext } from '../src/escrow/policy.js';
 
@@ -22,7 +22,7 @@ function ctx(role: 'buyer' | 'seller', o: { poster?: 'seller' | 'buyer'; balance
   };
 }
 
-function expected(kind: SettleKind, c: PolicyContext): Payout[] {
+function expected(kind: SettleKind | RulingKind, c: PolicyContext): Payout[] {
   const plan = escrowPlan({ amountAtomic: c.deal.amountAtomic, poster: c.deal.poster });
   return payoutsFor({
     kind,
@@ -87,11 +87,57 @@ describe('cosignPolicy: the shapes each side may settle', () => {
     expect(cosignPolicy(noShow, out(expected('auto-refund', noShow), 'seller', 'mod'))).toBe(true);
   });
 
-  it('either side co-signs a mod-built tx that pays its own side in full to its own address', () => {
-    const b = ctx('buyer', { state: 'disputed' });
-    expect(cosignPolicy(b, out(expected('release', b), 'mod', 'buyer'))).toBe(true);
+  // Plan 4 Task 15 with Revision 2026-10-29c "Fees on settled disputes" (the poster pays the 1%).
+  it.each(['seller', 'buyer'] as const)('the buyer co-signs a mod-built buyer win: its own payout first, then the exact fee (poster %s)', (poster) => {
+    const b = ctx('buyer', { state: 'disputed', poster });
+    const to = expected('dispute-buyer', b);
+    expect(to[0]!.address).toBe(BUYER);
+    expect(to[1]).toEqual({ address: FEE, amountAtomic: escrowPlan({ amountAtomic: AMOUNT, poster }).feeAtomic });
+    expect(cosignPolicy(b, out(to, 'mod', 'buyer'))).toBe(true);
+  });
+
+  it('the seller co-signs a mod-built seller win: poster seller, its refund less the exact fee; poster buyer, the whole balance', () => {
     const s = ctx('seller', { state: 'disputed' });
-    expect(cosignPolicy(s, out(expected('mutual-cancel', s), 'mod', 'seller'))).toBe(true);
+    const fee = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' }).feeAtomic;
+    expect(expected('dispute-seller', s)).toEqual([
+      { address: SELLER, amountAtomic: s.balance - fee },
+      { address: FEE, amountAtomic: fee },
+    ]);
+    expect(cosignPolicy(s, out(expected('dispute-seller', s), 'mod', 'seller'))).toBe(true);
+    // Poster seller: the full refund without the fee is no longer the ruling's set.
+    expect(cosignPolicy(s, out(expected('mutual-cancel', s), 'mod', 'seller'))).toBe(false);
+    const sb = ctx('seller', { state: 'disputed', poster: 'buyer' });
+    expect(expected('dispute-seller', sb)).toEqual([{ address: SELLER, amountAtomic: sb.balance }]);
+    expect(cosignPolicy(sb, out(expected('dispute-seller', sb), 'mod', 'seller'))).toBe(true);
+  });
+
+  it('refuses a ruling set with the fee one atomic unit off, either way, for either side', () => {
+    const b = ctx('buyer', { state: 'disputed' });
+    const s = ctx('seller', { state: 'disputed' });
+    for (const [c, kind, cosigner] of [
+      [b, 'dispute-buyer', 'buyer'],
+      [s, 'dispute-seller', 'seller'],
+    ] as const) {
+      const to = expected(kind, c);
+      for (const d of [1n, -1n]) {
+        const off = to.map((p) => (p.address === FEE ? { ...p, amountAtomic: p.amountAtomic + d } : p));
+        expect(cosignPolicy(c, out(off, 'mod', cosigner)), `${kind} ${d}`).toBe(false);
+        // Even when the difference is moved to this side's own output.
+        const moved = off.map((p, i) => (i === 0 ? { ...p, amountAtomic: p.amountAtomic - d } : p));
+        expect(cosignPolicy(c, out(moved, 'mod', cosigner)), `${kind} ${d} moved`).toBe(false);
+      }
+    }
+  });
+
+  it('refuses a ruling set paying the other side, and any ruling set outside a dispute', () => {
+    const b = ctx('buyer', { state: 'disputed' });
+    expect(cosignPolicy(b, out(expected('dispute-seller', b), 'mod', 'buyer'))).toBe(false);
+    const s = ctx('seller', { state: 'disputed' });
+    expect(cosignPolicy(s, out(expected('dispute-buyer', s), 'mod', 'seller'))).toBe(false);
+    for (const state of ['secured', 'paid', 'settling', 'released', 'refunded'] as const) {
+      expect(cosignPolicy(ctx('buyer', { state }), out(expected('dispute-buyer', ctx('buyer', { state })), 'mod', 'buyer')), state).toBe(false);
+      expect(cosignPolicy(ctx('seller', { state }), out(expected('dispute-seller', ctx('seller', { state })), 'mod', 'seller')), state).toBe(false);
+    }
   });
 
   it('a late surplus is re-derived: the outcome for the new balance is allowed, the old one is not', () => {

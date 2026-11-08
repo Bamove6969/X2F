@@ -15,6 +15,7 @@
  */
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../../api/client.js';
+import { utcDateTime } from '../../ui/dates.js';
 import {
   HOLD_CODE, TOO_MANY_APPROVALS, TOO_MANY_APPROVALS_CODE,
   WEAK_SESSION_CODE, WEAK_SESSION_TEXT, holdApproveText, holdLoginText, holdText, type CantDoCode,
@@ -34,15 +35,15 @@ function refusalOf(e: unknown): Refusal | null {
   return null;
 }
 
-/** A clock time in the person's own time zone, e.g. "Tue 3:05 PM". */
-export function localTime(at: Date): string {
-  return at.toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+/** Design X5: the time as "6 Nov 2026, 15:00 UTC", the same for every viewer (was `localTime`, "Tue 3:05 PM"). */
+export function utcTime(at: Date): string {
+  return utcDateTime(at);
 }
 
-/** "until Tue 3:05 PM" for `holdUntil` (an ISO time), or "for a day" if the server sent none. */
+/** "until 6 Nov 2026, 15:00 UTC" for `holdUntil` (an ISO time), or "for a day" if the server sent none. */
 function untilWords(holdUntil: string | null | undefined): string {
   const at = holdUntil ? new Date(holdUntil) : null;
-  return at === null || Number.isNaN(at.getTime()) ? 'for a day' : `until ${localTime(at)}`;
+  return at === null || Number.isNaN(at.getTime()) ? 'for a day' : `until ${utcTime(at)}`;
 }
 
 /**
@@ -69,7 +70,7 @@ export function holdApproveSentence(holdUntil: string | null | undefined): strin
  */
 export function heldNote(holdUntil: string): string {
   const at = new Date(holdUntil);
-  const when = Number.isNaN(at.getTime()) ? 'in a day' : `at ${localTime(at)}`;
+  const when = Number.isNaN(at.getTime()) ? 'in a day' : `at ${utcTime(at)}`;
   return `Saved. This change takes effect ${when}, because you logged in with only one way of proving it's you. Logging in with a passkey, a security key, or your password and authenticator code from before then cancels it.`;
 }
 
@@ -100,7 +101,7 @@ export function waitSentence(seconds: number | undefined, now: Date = new Date()
     const min = Math.max(1, Math.ceil(s / 60));
     return `Too many tries. Try again in ${min} ${min === 1 ? 'minute' : 'minutes'}.`;
   }
-  return `Too many tries. Try again after ${localTime(new Date(now.getTime() + s * 1000))}.`;
+  return `Too many tries. Try again after ${utcTime(new Date(now.getTime() + s * 1000))}.`;
 }
 
 export const KEY_EXPIRED = 'That key has expired. Extend it in your PGP app, then paste it again.';

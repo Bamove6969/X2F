@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { BadgePill } from '../../ui/BadgePill.js';
 import { Button } from '../../ui/Button.js';
 import { Icon, type IconName } from '../../ui/icons.js';
+import { PickButton } from '../../ui/PickButton.js';
 import { formatMinor, type Offer, type OpensAt } from './api.js';
 import type { BrowseCopy } from './SellCopy.js';
 import './browse.css';
@@ -62,6 +63,19 @@ function posterLine(offer: Offer, now: Date): string {
   const parts = [p.online ? 'Online' : seen(p.lastSeenAt, now), `${p.completedTrades} ${p.completedTrades === 1 ? 'trade' : 'trades'}`];
   if (p.positivePct !== null) parts.push(`${p.positivePct}% positive`);
   return parts.join(' · ');
+}
+
+/**
+ * Owner Q63 (6 Nov): the trader's opt-in volume line, in XMR. X is a step the trader has traded MORE
+ * than (owner 2026-11-03). Owner Q64/p4-1: one more line per site with verified imported volume, in
+ * US dollars ("$X+ on <site>, verified"). COPY-UNSIGNED, DESIGNER-REVIEW (design words "the XMR line").
+ */
+function tradedLine(xmr: number): string {
+  return `${xmr.toLocaleString('en-US')}+ XMR traded to date`;
+}
+
+function importedLine(l: { site: string; overUsd: number }): string {
+  return `$${l.overUsd.toLocaleString('en-US')}+ on ${l.site}, verified`;
 }
 
 function marginLine(offer: Offer, currency: string, copy: BrowseCopy, market: bigint | null): { text: string; favourable: boolean } | null {
@@ -142,14 +156,41 @@ export interface OfferCardProps {
   onTrade?: (offer: Offer) => void;
   onMessage?: (offer: Offer) => void;
   onNudge?: (offer: Offer) => void;
+  /**
+   * Two panes (Fold-Offers): the card is a row that picks the offer whose quote the next pane
+   * shows; the quote has the one Trade. An offline poster's card stays as on the phone (Message,
+   * Nudge): its offer is not taken from here.
+   */
+  pick?: { pressed: boolean; onPick: (offer: Offer) => void };
 }
 
-export function OfferCard({ offer, currency, copy, primary, now, market = null, onTrade, onMessage, onNudge }: OfferCardProps) {
+export function OfferCard({ offer, currency, copy, primary, now, market = null, onTrade, onMessage, onNudge, pick }: OfferCardProps) {
   const name = offer.poster.displayName;
   const closed = offer.opensAt !== undefined;
   const margin = marginLine(offer, currency, copy, market);
   const range = `${formatMinor(offer.minFiatCents, currency, { whole: true })} – ${formatMinor(offer.maxFiatCents, currency, { whole: true })}`;
   const time = offer.poster.typicalMinutes === null ? null : copy.typicalTime(offer.poster.typicalMinutes);
+
+  if (pick && (closed || offer.poster.online)) {
+    return (
+      <PickButton pressed={pick.pressed} onPick={() => pick.onPick(offer)} className="x2f-offer__pick">
+        <span className="x2f-offer__pick-line">
+          <span className="x2f-offer__name">
+            <span className="x2f-offer__dot" data-online={offer.poster.online} aria-hidden="true" />
+            <span data-username>{name}</span>
+          </span>
+          <span className="x2f-offer__rate" data-part="rate">
+            {offer.rate === null ? 'Price unavailable right now' : formatMinor(offer.rate, currency)}
+          </span>
+        </span>
+        <span className="x2f-offer__pick-line">
+          <span className="x2f-offer__sub">{posterLine(offer, now)}</span>
+          <span className="x2f-offer__limits">{range}</span>
+        </span>
+        {closed ? <span className="x2f-offer__opens">Opens at {STAGE_NAME[offer.opensAt!]}</span> : null}
+      </PickButton>
+    );
+  }
 
   let action;
   if (offer.opensAt !== undefined) {
@@ -177,6 +218,12 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
             <span data-username>{name}</span>
           </span>
           <span className="x2f-offer__sub">{posterLine(offer, now)}</span>
+          {offer.poster.tradedOverXmr !== null ? <span className="x2f-offer__sub">{tradedLine(offer.poster.tradedOverXmr)}</span> : null}
+          {offer.poster.imported.map((l) => (
+            <span key={l.site} className="x2f-offer__sub" data-part="imported-line">
+              {importedLine(l)}
+            </span>
+          ))}
           <Badges offer={offer} />
         </div>
         {!closed && !offer.poster.online ? (
@@ -198,13 +245,8 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
           ) : null}
         </div>
         <span className="x2f-offer__limits">
-          {range}
-          {time === null ? null : (
-            <>
-              <br />
-              {time}
-            </>
-          )}
+          <span className="x2f-offer__range">{range}</span>
+          {time === null ? null : <span>{time}</span>}
         </span>
       </div>
       {action}

@@ -4,6 +4,7 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import type { Deps } from '../../src/app.js';
 import { SESSION_COOKIE, STAFF_SESSION_COOKIE } from '../../src/auth/sessions.js';
 import { buildStaffApi, type ModerationClient } from '../../src/staff/app.js';
+import type { PushTransport } from '../../src/push/send.js';
 import { seedAccount } from './accounts.js';
 import { testApp } from './app.js';
 import { captureLogs } from './logs.js';
@@ -13,8 +14,11 @@ export const TRADER_ORIGIN = 'https://x2f.test';
 /** The moderation client stub (Task 11 builds the real one). */
 export const MODERATION_STUB: ModerationClient = { name: 'moderation' };
 
-/** The trader API and the staff API on one database and one clock (`overrides`: e.g. an attestation policy). */
-export async function staffApps(overrides: Partial<Deps> = {}, staff: { webRoot?: string } = {}): Promise<{
+/** The trader API and the staff API on one database and one clock; `overrides` go to `testApp`. */
+export async function staffApps(
+  overrides: Partial<Deps> = {},
+  staffOptions: { pushTransport?: PushTransport; webRoot?: string } = {},
+): Promise<{
   app: FastifyInstance;
   trader: FastifyInstance;
   deps: Deps;
@@ -24,9 +28,10 @@ export async function staffApps(overrides: Partial<Deps> = {}, staff: { webRoot?
 }> {
   const t = await testApp(overrides);
   const { stream, logs } = captureLogs();
+  const { webRoot, ...options } = staffOptions;
   const app = await buildStaffApi(
-    { ...t.deps, staffOrigin: STAFF_ORIGIN, moderation: MODERATION_STUB, ...(staff.webRoot !== undefined ? { staffWebRoot: staff.webRoot } : {}) },
-    { logStream: stream },
+    { ...t.deps, staffOrigin: STAFF_ORIGIN, moderation: MODERATION_STUB, ...(webRoot !== undefined ? { staffWebRoot: webRoot } : {}) },
+    { logStream: stream, ...options },
   );
   return {
     app, trader: t.app, deps: t.deps, setNow: t.setNow, logs,
@@ -112,10 +117,17 @@ export async function logEntries(deps: Deps, action: string): Promise<Array<{ ac
  * routes only `consumeKeyTap` it; Task 5's own tests cover starting and finishing a real one.
  */
 export async function seedTap(deps: Deps, accountId: string, intent: KeyTapIntent, startedAt = deps.clock()): Promise<string> {
+  // The answering key is registered to the account, as a real finish needs (consume re-checks it, RV5 m9).
+  const credentialId = randomBytes(16);
+  await deps.db.query(
+    `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, aaguid, label, created_at)
+     values ($1, $2, $3, 0, 'security-key', false, 'singleDevice', true, null, 'tap', $4)`,
+    [accountId, credentialId, randomBytes(77), startedAt],
+  );
   const { rows } = await deps.db.query<{ id: string }>(
     `insert into key_taps (account_id, credential_id, intent, nonce, response, started_at, finished_at)
      values ($1, $2, $3, $4, $5, $6, $6) returning id`,
-    [accountId, randomBytes(16).toString('base64url'), canonicalJson(intent), randomBytes(16), JSON.stringify({ id: 'test' }), startedAt],
+    [accountId, credentialId.toString('base64url'), canonicalJson(intent), randomBytes(16), JSON.stringify({ id: 'test' }), startedAt],
   );
   return rows[0]!.id;
 }

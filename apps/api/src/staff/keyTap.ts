@@ -6,8 +6,10 @@ import {
   ESCROW_OUTCOMES,
   canonicalJson,
   tapChallenge,
+  GRANTABLE_PERMS,
   type AccountAction,
   type KeyTapIntent,
+  type Perm,
 } from '@x2f/staff';
 import type { AuthenticationResponseJSON, PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/server';
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
@@ -35,9 +37,23 @@ export const KEY_TAP_TTL_MS = 2 * 60_000;
 const NONCE_BYTES = 16;
 /** Bound on the stored assertion JSON (a real one is well under 2 KiB). */
 const MAX_RESPONSE_CHARS = 16_384;
+/** Lead review 7 Nov M4: tap starts per account per window (in memory). */
+export const TAP_STARTS_PER_WINDOW = 20;
+export const TAP_START_WINDOW_MS = 10 * 60_000;
+/** RV5 m12: at most this many unfinished, unexpired taps per account at once. */
+export const MAX_OPEN_TAPS = 5;
+/**
+ * Lead re-review item 5: the emergency stop and the resume are never held back by the cap (a burst
+ * of other open taps, the person's own or a stolen session's, must not stop the owner stopping trading).
+ */
+const UNCAPPED: ReadonlySet<KeyTapIntent['kind']> = new Set(['emergency-stop', 'resume-trading']);
+/** RV5 m8: an unfinished or unused tap is deleted a day after it started (a lead default; keep times for used taps are RV5 Q6, for the owner). */
+export const KEY_TAP_PURGE_MS = 24 * 60 * 60_000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX64 = /^[0-9a-f]{64}$/;
+/** A v4 OpenPGP fingerprint, 40 hex characters. */
+const FINGERPRINT = /^[0-9a-fA-F]{40}$/;
 const B64URL_ID = /^[A-Za-z0-9_-]{16,1364}$/;
 const TOKEN_HASH = /^[A-Za-z0-9_-]{16,128}$/;
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/;
@@ -83,6 +99,7 @@ export async function startKeyTap(
   deps: Deps,
   accountId: string,
   intent: KeyTapIntent,
+  o: { sessionId?: string } = {},
 ): Promise<{ tapId: string; options: PublicKeyCredentialRequestOptionsJSON }> {
   const norm = normalized(intent);
   if (norm === null) throw badRequest();
@@ -99,11 +116,32 @@ export async function startKeyTap(
     only: (c) =>
       c.kind === 'security-key' && c.attested && c.aaguid !== null && deps.attestation.isAllowed(c.aaguid, 'packed', listFor(c.accountKind)),
   });
-  const { rows } = await deps.db.query<{ id: string }>(
-    'insert into key_taps (account_id, intent, nonce, started_at) values ($1, $2, $3, $4) returning id',
-    [accountId, canonical, nonce, deps.clock()],
-  );
-  return { tapId: rows[0]!.id, options };
+  // RV5 m12: one statement counts the account's open taps and inserts only under the cap, so a
+  // burst of parallel starts can pass it by at most the requests already in flight, never grow
+  // `key_taps` without bound. The per-account lock makes the count exact.
+  const now = deps.clock();
+  const client = await deps.db.connect();
+  let id: string | undefined;
+  try {
+    await client.query('begin');
+    await client.query("select pg_advisory_xact_lock(hashtextextended('key_taps/' || $1, 0))", [accountId]);
+    const { rows } = await client.query<{ id: string }>(
+      `insert into key_taps (account_id, intent, nonce, started_at, session_id)
+       select $1, $2, $3, $4, $5
+        where $8::boolean or (select count(*) from key_taps where account_id = $1 and finished_at is null and started_at > $6) < $7
+       returning id`,
+      [accountId, canonical, nonce, now, o.sessionId ?? null, new Date(now.getTime() - KEY_TAP_TTL_MS), MAX_OPEN_TAPS, UNCAPPED.has(norm.kind)],
+    );
+    await client.query('commit');
+    id = rows[0]?.id;
+  } catch (e) {
+    await client.query('rollback');
+    throw e;
+  } finally {
+    client.release();
+  }
+  if (id === undefined) throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.ceil(KEY_TAP_TTL_MS / 1000) });
+  return { tapId: id, options };
 }
 
 interface TapRow {
@@ -133,6 +171,8 @@ const storedOf = (r: TapRow): StoredTap => ({
  */
 export async function finishKeyTap(deps: Deps, accountId: string, tapId: string, response: unknown): Promise<StoredTap> {
   if (!UUID.test(tapId)) throw tapInvalid();
+  // RV5 m11: refused before the assertion is verified, so the key's counter does not move.
+  if (JSON.stringify(response ?? null).includes('\\u0000')) throw badRequest();
   const now = deps.clock();
   const cutoff = new Date(now.getTime() - KEY_TAP_TTL_MS);
   const { rows } = await deps.db.query<{ intent: string; nonce: Buffer }>(
@@ -156,10 +196,32 @@ export async function finishKeyTap(deps: Deps, accountId: string, tapId: string,
     `update key_taps set credential_id = $3, response = $4, finished_at = $5
       where id = $1 and account_id = $2 and finished_at is null and started_at > $6
       returning id, account_id, credential_id, intent, nonce, response`,
-    [tapId, accountId, verified.credentialId, JSON.stringify(response), now, cutoff],
+    [tapId, accountId, verified.credentialId, JSON.stringify(assertionFields(response)), now, cutoff],
   );
   if (!done[0]) throw tapInvalid(); // a parallel finish won, or the tap expired meanwhile
   return storedOf(done[0]);
+}
+
+/**
+ * RV5 m11 (lead re-review item 5): only the fields of a WebAuthn assertion that verification read,
+ * and that the moderation process re-verifies, are stored; anything else the client sent is dropped.
+ * Called after the assertion verified, so the fields are there and are strings.
+ */
+function assertionFields(response: unknown): AuthenticationResponseJSON {
+  const r = response as AuthenticationResponseJSON;
+  const a = r.response;
+  return {
+    id: r.id,
+    rawId: r.rawId,
+    type: 'public-key',
+    clientExtensionResults: {},
+    response: {
+      clientDataJSON: a.clientDataJSON,
+      authenticatorData: a.authenticatorData,
+      signature: a.signature,
+      ...(typeof a.userHandle === 'string' ? { userHandle: a.userHandle } : {}),
+    },
+  };
 }
 
 /**
@@ -175,6 +237,7 @@ export async function consumeKeyTap(
   accountId: string,
   expect: KeyTapIntent,
   now: Date,
+  o: { sessionId?: string } = {},
 ): Promise<StoredTap> {
   if (typeof tapId !== 'string' || !UUID.test(tapId)) throw tapInvalid();
   const norm = normalized(expect);
@@ -185,15 +248,33 @@ export async function consumeKeyTap(
   } catch {
     throw tapInvalid();
   }
+  // RV5 m9: the key that answered must still be registered to the account (one removed as lost
+  // after the finish can't authorise the action). RV5 m10: a tap started in a known session is
+  // used only from that session.
   const { rows } = await client.query<TapRow>(
-    `update key_taps set used_at = $3
-      where id = $1 and account_id = $2 and used_at is null and finished_at is not null
-        and started_at > $4 and intent = $5
-      returning id, account_id, credential_id, intent, nonce, response`,
-    [tapId, accountId, now, new Date(now.getTime() - KEY_TAP_TTL_MS), canonical],
+    `update key_taps t set used_at = $3
+      where t.id = $1 and t.account_id = $2 and t.used_at is null and t.finished_at is not null
+        and t.started_at > $4 and t.intent = $5
+        and (t.session_id is null or t.session_id = $6::uuid)
+        and exists (
+          select 1 from webauthn_credentials c
+           where c.account_id = t.account_id and c.kind = 'security-key'
+             and c.credential_id = decode(rpad(translate(t.credential_id, '-_', '+/'), ((char_length(t.credential_id) + 3) / 4) * 4, '='), 'base64'))
+      returning t.id, t.account_id, t.credential_id, t.intent, t.nonce, t.response`,
+    [tapId, accountId, now, new Date(now.getTime() - KEY_TAP_TTL_MS), canonical, o.sessionId && UUID.test(o.sessionId) ? o.sessionId : null],
   );
   if (!rows[0]) throw tapInvalid();
   return storedOf(rows[0]);
+}
+
+/**
+ * RV5 m8: deletes the taps that were never finished or never used, a day after they started
+ * (`KEY_TAP_PURGE_MS`). Used taps stay: how long they are kept is the owner's (RV5 Q6; recommended:
+ * a ruling's taps as long as the ruling record, others 90 days). Returns the number deleted.
+ */
+export async function purgeKeyTaps(db: Queryable, now: Date): Promise<number> {
+  const { rowCount } = await db.query('delete from key_taps where used_at is null and started_at < $1', [new Date(now.getTime() - KEY_TAP_PURGE_MS)]);
+  return rowCount ?? 0;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -265,6 +346,24 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
     case 'set-role':
       exactKeys(r, ['kind', 'accountId', 'role']);
       return { kind: r.kind, accountId: match(r, 'accountId', UUID).toLowerCase(), role: oneOf(r, 'role', INVITABLE) };
+    case 'add-pgp-key':
+      exactKeys(r, ['kind', 'fingerprint']);
+      return { kind: 'add-pgp-key', fingerprint: match(r, 'fingerprint', FINGERPRINT).toLowerCase() };
+    case 'remove-method':
+      exactKeys(r, ['kind', 'methodType', 'methodId']);
+      return {
+        kind: 'remove-method',
+        methodType: oneOf(r, 'methodType', ['pgp', 'security-key', 'passkey'] as const),
+        methodId: match(r, 'methodId', UUID).toLowerCase(),
+      };
+    case 'set-grants': {
+      exactKeys(r, ['kind', 'accountId', 'grants']);
+      const g = r.grants;
+      if (!Array.isArray(g) || g.some((x) => typeof x !== 'string' || !(GRANTABLE_PERMS as readonly string[]).includes(x))) throw badRequest();
+      const grants = [...new Set(g as string[])].sort();
+      if (grants.length !== g.length) throw badRequest();
+      return { kind: 'set-grants', accountId: match(r, 'accountId', UUID).toLowerCase(), grants };
+    }
     case 'add-owner-key':
       exactKeys(r, ['kind', 'credentialId', 'publicKeySha256']);
       return { kind: 'add-owner-key', credentialId: match(r, 'credentialId', B64URL_ID), publicKeySha256: match(r, 'publicKeySha256', HEX64) };
@@ -301,15 +400,57 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
 // ---------------------------------------------------------------------------------------------
 // Routes (they plug into Task 4's staff app)
 
+/**
+ * RV5 m7 (lead queue 6 Nov): what a staff member must hold to start a tap for an intent, so a
+ * signed approval never exists for someone who can't take the action. A ruling's proposal needs
+ * `disputes.handle`, its approval `rulings.approve`; the emergency stop and resume `site.control`;
+ * invites, switch-on and role changes `staff.manage`; settings `settings.write`; a new owner key
+ * the owner role itself. The action route still checks its own perm and re-derives the intent.
+ */
+export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
+  switch (i.kind) {
+    case 'ruling':
+      return i.step === 'approve' ? 'rulings.approve' : 'disputes.handle';
+    case 'emergency-stop':
+    case 'resume-trading':
+      return 'site.control';
+    case 'create-invite':
+    case 'switch-on':
+    case 'set-role':
+    case 'set-grants':
+      return 'staff.manage';
+    case 'settings':
+      return 'settings.write';
+    case 'add-owner-key':
+      return 'owner';
+    case 'add-pgp-key':
+    case 'remove-method':
+      // One's own login methods: any staff member or the owner, for their own account only (the
+      // action route binds the tap to the signed-in account).
+      return 'self';
+  }
+}
+
 export interface KeyTapRouteOptions {
   /** The staff app's `requireStaff('self')` (Task 4: an array of preHandlers, kept as is so its perm check sees it). */
   guard: preHandlerAsyncHookHandler | preHandlerAsyncHookHandler[];
   /** The signed-in staff member's account (Task 4: `req.staff.accountId`). */
   accountOf(req: FastifyRequest): string;
+  /**
+   * RV5 m10: the staff session (Task 4: `req.auth.sessionId`). When given, a tap is bound to the
+   * session that started it, and the action route must pass the same `sessionId` to `consumeKeyTap`.
+   */
+  sessionOf?(req: FastifyRequest): string;
+  /**
+   * RV5 m7: whether the signed-in member holds `tapPermOf(intent)` (Task 4: `can(req.staff.role,
+   * perm, req.staff.grants)`, and the owner role for 'owner'). False → 403 `forbidden`, nothing stored.
+   */
+  allows(req: FastifyRequest, need: Perm | 'owner'): boolean;
 }
 
 /**
- * `POST /staff/v1/taps/start` (perm `self`): the body is the intent (`parseKeyTapIntent`) →
+ * `POST /staff/v1/taps/start` (perm `self`): the body is the intent (`parseKeyTapIntent`); the
+ * member must hold the intent's own perm (`tapPermOf`, RV5 m7; else 403 `forbidden`) →
  * `{ tapId, options }`. `POST /staff/v1/taps/:id/finish` (perm `self`) `{ response }` → `{ tapId }`.
  * The action route that needs the tap takes `tapId` and calls `consumeKeyTap` with the intent it
  * derives from its own input, so the client cannot get a tap for one action accepted by another.
@@ -317,15 +458,33 @@ export interface KeyTapRouteOptions {
  */
 export function keyTapRoutes(app: FastifyInstance, o: KeyTapRouteOptions): void {
   const config = { perm: 'self' as const };
+  // Lead review 7 Nov M4: starts per account in a sliding window, in memory (one API process at
+  // launch). The emergency stop and resume are never held back (as the open-taps cap, m12).
+  const starts = new Map<string, number[]>();
+  const rateLimit = (accountId: string, now: number): void => {
+    const recent = (starts.get(accountId) ?? []).filter((t) => t > now - TAP_START_WINDOW_MS);
+    if (recent.length >= TAP_STARTS_PER_WINDOW) {
+      starts.set(accountId, recent);
+      throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.max(1, Math.ceil((recent[0]! + TAP_START_WINDOW_MS - now) / 1000)) });
+    }
+    recent.push(now);
+    starts.set(accountId, recent);
+  };
   app.post('/staff/v1/taps/start', { config, preHandler: o.guard }, async (req) => {
     const intent = parseKeyTapIntent(req.body);
-    return startKeyTap(req.server.deps, o.accountOf(req), intent);
+    if (!o.allows(req, tapPermOf(intent))) throw new ApiError(403, 'forbidden');
+    if (!UNCAPPED.has(intent.kind)) rateLimit(o.accountOf(req), req.server.deps.clock().getTime());
+    const sessionId = o.sessionOf?.(req);
+    return startKeyTap(req.server.deps, o.accountOf(req), intent, sessionId !== undefined ? { sessionId } : {});
   });
   app.post('/staff/v1/taps/:id/finish', { config, preHandler: o.guard }, async (req) => {
     const body = rec(req.body);
     exactKeys(body, ['response']);
     const response = rec(body.response);
-    if (JSON.stringify(response).length > MAX_RESPONSE_CHARS) throw badRequest();
+    const json = JSON.stringify(response);
+    if (json.length > MAX_RESPONSE_CHARS) throw badRequest();
+    // RV5 m11: Postgres jsonb refuses a NUL, which would be a 500 after the key's counter moved.
+    if (json.includes('\\u0000')) throw badRequest();
     const { id } = req.params as { id: string };
     const tap = await finishKeyTap(req.server.deps, o.accountOf(req), id, response);
     return { tapId: tap.id };

@@ -321,6 +321,14 @@
       "w": 390,
       "x": 940,
       "y": 2888
+    },
+    "CancelRequest.dc.html": {
+      "h": 844,
+      "page": "all",
+      "title": "Buyer cancels: Cancelling is final (G56)",
+      "w": 390,
+      "x": 2350,
+      "y": 1444
     }
   },
   "createdOnFiles": {
@@ -457,7 +465,8 @@
     "DisputeRoom.dc.html",
     "DisputeRuling.dc.html",
     "ModQueue.dc.html",
-    "ModCase.dc.html"
+    "ModCase.dc.html",
+    "CancelRequest.dc.html"
   ],
   "pages": [
     {

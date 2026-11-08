@@ -12,11 +12,14 @@ import { DisputeRuling } from '../src/screens/dispute/DisputeRuling.js';
 import { ModeratorTag } from '../src/screens/dispute/ModeratorTag.js';
 import {
   dayTime,
+  HOURGLASS_LINE,
+  utcDateTime,
   disputeEntry,
   inTime,
   rulingAllowsCosign,
   rulingCopy,
   rulingFinal,
+  paidOutAtomic,
   xmrInText,
   type SettleOutcome,
 } from '../src/screens/dispute/rules.js';
@@ -35,6 +38,7 @@ function trade(over: Partial<DisputeTrade> = {}): DisputeTrade {
     methodId: 'ZELLE',
     whatItIs: 'Zelle: a US bank-to-bank instant transfer built into most US banking apps.',
     amountAtomic: '1250000000000',
+    poster: 'seller',
     currency: 'USD',
     paidAt: iso(0),
     confirmBy: iso(120),
@@ -135,17 +139,27 @@ describe('copy helpers', () => {
 
   it('names the destination only for the side the ruling pays; the coins move at the ruling (A1 dropped), so there is no wait for the window', () => {
     const d = ruled();
-    const mine = rulingCopy(d, 'buyer', 'satoshi_ghost', '1250000000000', new Date(T0 + 500 * MIN));
+    const mine = rulingCopy(d, 'buyer', 'satoshi_ghost', '1250000000000', new Date(T0 + 500 * MIN), 'seller');
     expect(mine).toEqual({
       label: 'Ruling: release to the buyer',
       title: '1.25 XMR goes to you',
       destination: { app: 'Cake Wallet', end: 'k3Fz' },
       footer: "This ruling and its evidence are kept with the trade. It appears on satoshi_ghost's profile as a lost dispute.",
     });
-    const theirs = rulingCopy(d, 'seller', 'mira.k', '1250000000000', new Date(T0 + 500 * MIN));
+    const theirs = rulingCopy(d, 'seller', 'mira.k', '1250000000000', new Date(T0 + 500 * MIN), 'seller');
     expect(theirs.title).toBe('1.25 XMR goes to mira.k');
     expect(theirs.destination).toBeNull();
     expect(theirs.footer).toBe('This ruling and its evidence are kept with the trade. It appears on your profile as a lost dispute.');
+  });
+
+  it('lead review 7 Nov: on a buyer\'s ad the buyer pays the 1% fee, so the release pays the amount less the fee', () => {
+    const plan = escrowPlan({ amountAtomic: 1_250_000_000_000n, poster: 'buyer' });
+    expect(paidOutAtomic('release-to-buyer', '1250000000000', 'buyer')).toBe(1_250_000_000_000n - plan.feeAtomic);
+    expect(paidOutAtomic('release-to-buyer', '1250000000000', 'seller')).toBe(1_250_000_000_000n);
+    expect(paidOutAtomic('refund-to-seller', '1250000000000', 'buyer')).toBe(1_250_000_000_000n);
+    expect(paidOutAtomic('refund-to-seller', '1250000000000', 'seller')).toBe(1_250_000_000_000n);
+    const buyerAd = rulingCopy(ruled(), 'buyer', 'satoshi_ghost', '1250000000000', new Date(T0 + 500 * MIN), 'buyer');
+    expect(buyerAd.title).toBe(`${xmrInText(1_250_000_000_000n - plan.feeAtomic)} XMR goes to you`);
   });
 });
 
@@ -167,12 +181,20 @@ describe('rulingAllowsCosign: a moderator-built transaction is co-signed only th
   // A stand-in with the rule Task 12's cosignPolicy applies to a mod-built set (exact payouts), so
   // the gate is exercised against it until the real one lands (NEEDS_TASK_12 tripwire).
   const exactPolicy = (role: 'buyer' | 'seller') => (o: SettleOutcome) =>
-    same(o.to, payoutsFor({ ...facts, kind: role === 'buyer' ? 'release' : 'mutual-cancel' }));
+    same(o.to, payoutsFor({ ...facts, kind: role === 'buyer' ? 'dispute-buyer' : 'dispute-seller' }));
   const buyerWin: SettleOutcome = { kind: 'release', to: payoutsFor({ ...facts, kind: 'release' }), builder: 'mod', cosigner: 'buyer' };
   const final = new Date(T0 + (400 + 48 * 60) * MIN);
 
   it('co-signs the buyer-win release once the appeal window has closed with no appeal', () => {
     expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: buyerWin, cosignPolicy: exactPolicy('buyer') })).toBe(true);
+  });
+
+  it('co-signs at the ruling, inside the appeal window and during an appeal (owner Q37: a lien covers a reversal)', () => {
+    const atRuling = new Date(T0 + 401 * MIN);
+    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: atRuling, outcome: buyerWin, cosignPolicy: exactPolicy('buyer') })).toBe(true);
+    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({}, { appeal: { by: 'seller', at: iso(500) } }), now: final, outcome: buyerWin, cosignPolicy: exactPolicy('buyer') })).toBe(true);
+    // Still only the exact set: the policy decides inside the window as well.
+    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: atRuling, outcome: buyerWin, cosignPolicy: () => false })).toBe(false);
   });
 
   it('refuses a mod-built set paying the counterparty from this side\'s share', () => {
@@ -185,15 +207,15 @@ describe('rulingAllowsCosign: a moderator-built transaction is co-signed only th
     expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: fee, cosignPolicy: exactPolicy('buyer') })).toBe(false);
   });
 
-  it('refuses whatever the policy says when the ruling is not final or pays the other side', () => {
+  it('refuses whatever the policy says when there is no ruling or it pays the other side', () => {
     const yes = () => true;
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: new Date(final.getTime() - 1), outcome: buyerWin, cosignPolicy: yes })).toBe(false);
-    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({}, { appeal: { by: 'seller', at: iso(500) } }), now: final, outcome: buyerWin, cosignPolicy: yes })).toBe(false);
     expect(rulingAllowsCosign({ role: 'seller', dispute: ruled(), now: final, outcome: { ...buyerWin, cosigner: 'seller' }, cosignPolicy: yes })).toBe(false);
     expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({ outcome: 'refund-to-seller' }), now: final, outcome: buyerWin, cosignPolicy: yes })).toBe(false);
     expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: { ...buyerWin, builder: 'seller' }, cosignPolicy: yes })).toBe(false);
     expect(rulingAllowsCosign({ role: 'buyer', dispute: dispute(), now: final, outcome: buyerWin, cosignPolicy: yes })).toBe(false);
     expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled(), now: final, outcome: buyerWin, cosignPolicy: () => { throw new Error('x'); } })).toBe(false);
+    // An after-refund ruling moves nothing from the escrow.
+    expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({}, { afterRefund: true }), now: final, outcome: buyerWin, cosignPolicy: yes })).toBe(false);
     // The appeal round is final at once.
     expect(rulingAllowsCosign({ role: 'buyer', dispute: ruled({ round: 2, appealUntil: null }), now: new Date(T0), outcome: buyerWin, cosignPolicy: yes })).toBe(true);
     expect(rulingFinal(ruled({ round: 2, appealUntil: null }), new Date(T0))).toBe(true);
@@ -298,7 +320,8 @@ describe('DisputeRoom', () => {
     const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const before = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={dispute()} serverClock={at(200)} />));
     expect(before.host.querySelector('[aria-label="Moderator joined"]')).toBeNull();
-    expect(before.host.textContent).toContain('1.25 XMR locked in escrow');
+    // Board v119: the amount is the hero's inner block, six decimals.
+    expect(before.host.querySelector('[data-part="escrow-amount"]')!.textContent?.trim()).toBe('Locked in escrow1.250000 XMR');
     const after = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={dispute({ moderator: { name: 'sarah.v', joinedAt: iso(168) } })} serverClock={at(200)} />));
     expect(after.host.querySelector('[aria-label="Moderator joined"]')?.textContent).toContain('Moderator sarah.v joined this dispute');
     expect(after.host.textContent).toContain('Replied in 38 min');
@@ -401,5 +424,137 @@ describe('DisputeRuling appeal form', () => {
     const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled({ round: 2, appealUntil: null })} serverClock={at(500)} onAppeal={async () => undefined} />));
     expect(host.querySelector('[aria-label="Ruling"] .x2f-moderator-badge')).not.toBeNull();
     expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Appeal this ruling')).toBe(false);
+  });
+});
+
+// Plan 4 Task 15 on Task 10's trader view (goalAt, replyDueAt, queuePosition, complyBy) and the
+// owner's rules: the 24 h is a goal, not a deadline (owner 2026-11-03); talk to the other trader
+// first (owner Q20, 2026-11-03); one appeal only, and it is final.
+describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
+  const view = (over: Record<string, unknown> = {}) => ({
+    ...dispute(),
+    goalAt: iso(130 + 24 * 60),
+    replyDueAt: iso(130 + 4 * 60),
+    firstReplyAt: null,
+    queuePosition: 3,
+    round: 1,
+    complyBy: null,
+    ...over,
+  });
+
+  it('reads the goal, the first-reply time, the queue place, complyBy and an owed fee; absent ones read as null', () => {
+    const d = parseDispute(view({ complyBy: iso(900), feeOwedAtomic: '12500000000' }));
+    expect(d).toMatchObject({ goalAt: iso(130 + 24 * 60), replyDueAt: iso(130 + 4 * 60), queuePosition: 3, complyBy: iso(900), feeOwedAtomic: '12500000000' });
+    const old = parseDispute(dispute());
+    expect(old).toMatchObject({ goalAt: null, replyDueAt: null, queuePosition: null, complyBy: null, feeOwedAtomic: null });
+    expect(() => parseDispute(view({ goalAt: 'soon' }))).toThrow();
+    expect(() => parseDispute(view({ queuePosition: '3' }))).toThrow();
+    expect(() => parseDispute(view({ feeOwedAtomic: '-1' }))).toThrow();
+    expect(() => parseDispute(view({ feeOwedAtomic: 125 }))).toThrow();
+  });
+
+  it('before a moderator replies: the hourglass is the one deadline, with the place in the queue under it (design 7 Nov)', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const d = parseDispute(view());
+    const { host } = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={d} serverClock={at(200)} />));
+    expect(host.textContent).not.toContain('First reply due by');
+    expect(host.querySelector('[data-part="hourglass"] .dispute-hero__meta')!.textContent).toBe("You're number 3 in the queue");
+  });
+
+  it('an hourglass counts down from 24 hours, the most before a moderator steps in; traders never see the 48-hour deadline (owner Q38)', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const d = parseDispute(view({ dueAt: iso(130 + 48 * 60), queuePosition: null, moderator: null }));
+    const before = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={d} serverClock={at(200)} />));
+    const glass = before.host.querySelector('[data-part="hourglass"]')!;
+    expect(glass.getAttribute('data-state')).toBe('running');
+    expect(glass.querySelector('[role="timer"]')?.textContent).toBe('22 h 50 min');
+    expect(glass.querySelector('.dispute-hero__label')!.textContent).toBe('Until a moderator steps in');
+    expect([...glass.querySelectorAll('.dispute-hero__num')].map((n) => n.textContent)).toEqual(['22', '50']);
+    expect(glass.querySelector('.dispute-hero__line')!.textContent).toBe(HOURGLASS_LINE);
+    const text = before.host.textContent ?? '';
+    expect(text).not.toMatch(/due by|aiming|48 h|48 hours|Replied in/);
+    // Past the 24 hours: an empty hourglass, still no 48-hour deadline.
+    const after = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={d} serverClock={at(130 + 25 * 60)} />));
+    const over = after.host.querySelector('[data-part="hourglass"]')!;
+    expect(over.getAttribute('data-state')).toBe('over');
+    expect(over.textContent).toContain('Taking longer than usual');
+    expect(after.host.textContent).not.toMatch(/due by|48 h|48 hours/);
+    // Gone once there is a ruling, and absent when the view has no goal.
+    const ruledView = parseDispute(view({ status: 'ruled', ruling: ruled().ruling }));
+    expect(render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={ruledView} serverClock={at(500)} />)).host.querySelector('[data-part="hourglass"]')).toBeNull();
+    expect(render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={parseDispute(dispute())} serverClock={at(200)} />)).host.querySelector('[data-part="hourglass"]')).toBeNull();
+    // Lead review 7 Nov: once a moderator joins, "Replied in …" replaces the hourglass (board v119).
+    const joined = parseDispute(view({ dueAt: iso(130 + 48 * 60), queuePosition: null, firstReplyAt: iso(168), moderator: { name: 'sarah.v', joinedAt: iso(168) } }));
+    const withMod = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={joined} serverClock={at(200)} />));
+    expect(withMod.host.querySelector('[data-part="hourglass"]')).toBeNull();
+    expect(withMod.host.textContent).toContain('Replied in 38 min.');
+  });
+
+  it('no escrow amount block on a system escalation (lead review 7 Nov: nothing is locked after a release)', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const sys = parseDispute(view({ openedBy: 'system', moderator: null }));
+    expect(render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={sys} serverClock={at(200)} />)).host.querySelector('[data-part="escrow-amount"]')).toBeNull();
+  });
+
+  it('DisputeOpen asks the trader to talk to the other side first, with a way back to the chat (owner Q20)', () => {
+    const { host } = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(121)} onOpen={async () => undefined} />));
+    const notice = host.querySelector('[data-part="talk-first"]')!;
+    expect(notice.textContent).toContain('Talk to satoshi_ghost first');
+    expect(notice.querySelector('a')?.getAttribute('href')).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    // A nudge, never a block: the dispute can still be opened.
+    expect(host.querySelector<HTMLButtonElement>('[data-primary]')!.disabled).toBe(false);
+  });
+
+  it('says there is one appeal only and its decision is final', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled()} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(host.textContent).toContain('There is one appeal per dispute, and its decision is final.');
+  });
+
+  it('tells the party the server says owes the fee, with the amount; nobody else (Revision 2026-10-29c)', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const line = 'This also means you still owe the 1% fee for this trade, equal to 0.0125 XMR, which will be deducted automatically from your future trades.';
+    const owes = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={{ ...ruled({ outcome: 'refund-to-seller', destination: null }), feeOwedAtomic: '12500000000' }} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(owes.host.textContent).toContain(line);
+    const not = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled({ outcome: 'refund-to-seller', destination: null })} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(not.host.textContent).not.toContain('owe the 1% fee');
+  });
+
+  it('seller-sends-xmr: the seller reads the amount and the time to send it; the tx-proof form needs a 64-hex hash and key', async () => {
+    const t = trade({ role: 'seller', counterparty: 'mira.k', state: 'refunded', dispute: { by: 'buyer', at: iso(130) } });
+    const d = { ...ruled({ outcome: 'seller-sends-xmr', destination: null }, { afterRefund: true, status: 'final' as const }), complyBy: iso(2000) };
+    const plain = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(plain.host.textContent).toContain('You must send mira.k 1.25 XMR');
+    // Design X5: "D Mon YYYY, HH:MM UTC" in mono.
+    expect(plain.host.textContent).toContain(`Send it by ${utcDateTime(new Date(T0 + 2000 * MIN))}.`);
+    expect(utcDateTime(new Date('2026-11-06T15:00:00Z'))).toBe('6 Nov 2026, 15:00 UTC');
+    // No proof route yet (NEEDS_TASK_12_TX_PROOF): no form without a handler.
+    expect(plain.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
+
+    const onTxProof = vi.fn(async () => undefined);
+    const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} />));
+    const form = host.querySelector('[aria-label="Transfer proof"]')!;
+    const [hash, key] = [...form.querySelectorAll<HTMLInputElement>('input')];
+    const type = (el: HTMLInputElement, v: string) =>
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    const send = () => form.querySelector<HTMLButtonElement>('button')!;
+    type(hash!, 'a'.repeat(64));
+    type(key!, 'b'.repeat(63));
+    expect(send().disabled).toBe(true);
+    type(key!, 'g'.repeat(64));
+    expect(send().disabled).toBe(true);
+    type(key!, ` ${'B'.repeat(64)} `);
+    expect(send().disabled).toBe(false);
+    await act(async () => {
+      send().click();
+    });
+    expect(onTxProof).toHaveBeenCalledWith('a'.repeat(64), 'b'.repeat(64));
+    // The buyer only reads what the seller must do.
+    const buyer = render(inRouter(<DisputeRuling trade={{ ...t, role: 'buyer', counterparty: 'satoshi_ghost' }} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} />));
+    expect(buyer.host.textContent).toContain('satoshi_ghost must send you 1.25 XMR');
+    expect(buyer.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
   });
 });

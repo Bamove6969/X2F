@@ -12,6 +12,7 @@ import {
   canMarkPaid,
   canRequestRefund,
   finalAlertEnds,
+  refundNeedsNudge,
   refusalFor,
   sellerRefundOpen,
   showFinalAlert,
@@ -25,7 +26,7 @@ const FUNDS = 1_262_500_000_000n;
 
 const BUYER = 'acct-b';
 const SELLER = 'acct-s';
-const PEER: TraderSummary = { displayName: 'mira.k', completedTrades: 3, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], stage: 'graduated' };
+const PEER: TraderSummary = { displayName: 'mira.k', completedTrades: 3, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], stage: 'graduated', tradedOverXmr: null, imported: [] };
 
 function secured(): Trade {
   let t = newTrade(
@@ -50,6 +51,9 @@ function secured(): Trade {
   return t;
 }
 
+/** Owner G2: the seller nudged the buyer at minute 20 (after securing at 10), so the refund can unlock. */
+const nudged = (t: Trade, min = 20): Trade => ({ ...t, sellerNudgedAt: at(min) });
+
 /** The view one side gets, at server time `now`. */
 const viewOf = (t: Trade, who: 'seller' | 'buyer', now: Date) =>
   toTradeView(t, who === 'seller' ? SELLER : BUYER, now, { counterparty: PEER, profile: null, sellerWalletApp: null, finalAlertSeenAt: null });
@@ -67,7 +71,7 @@ function machine(t: Trade, e: TradeEvent, by: 'seller' | 'buyer', now: Date): st
 
 describe('the seller no-show screen follows the state machine', () => {
   it('opens only once payBy has passed by the server clock, never before', () => {
-    const t = secured();
+    const t = nudged(secured());
     const payBy = t.payBy!;
     expect(payBy.getTime()).toBe(at(10).getTime() + TIMERS.payMin * MIN);
     for (const ms of [-60_000, -1, 0]) {
@@ -80,17 +84,42 @@ describe('the seller no-show screen follows the state machine', () => {
     expect(canRequestRefund(viewOf(t, 'seller', after), after)).toBe(true);
   });
 
-  it('agrees with apply() for request-refund and extend at every minute around payBy', () => {
-    const t = secured();
-    const payBy = t.payBy!.getTime();
-    for (let m = -3; m <= 3; m += 1) {
-      for (const ms of [-1, 0, 1]) {
-        const now = new Date(payBy + m * MIN + ms);
-        const v = viewOf(t, 'seller', now);
-        expect(refusalFor(v, { type: 'request-refund' }, 'seller', now)).toBe(machine(t, { type: 'request-refund' }, 'seller', now));
-        expect(refusalFor(v, { type: 'extend' }, 'seller', now)).toBe(machine(t, { type: 'extend' }, 'seller', now));
+  it('agrees with apply() for request-refund and extend at every minute around payBy, nudged or not', () => {
+    for (const t of [secured(), nudged(secured())]) {
+      const payBy = t.payBy!.getTime();
+      for (let m = -3; m <= 3; m += 1) {
+        for (const ms of [-1, 0, 1]) {
+          const now = new Date(payBy + m * MIN + ms);
+          const v = viewOf(t, 'seller', now);
+          expect(refusalFor(v, { type: 'request-refund' }, 'seller', now)).toBe(machine(t, { type: 'request-refund' }, 'seller', now));
+          expect(refusalFor(v, { type: 'extend' }, 'seller', now)).toBe(machine(t, { type: 'extend' }, 'seller', now));
+        }
       }
     }
+  });
+
+  it('owner G2: after the 90 minutes and before any nudge the screen opens with Cancel locked; the nudge unlocks it', () => {
+    const t = secured();
+    const before = new Date(t.payBy!.getTime());
+    expect(sellerRefundOpen(viewOf(t, 'seller', before), before.getTime())).toBe(false);
+    expect(refundNeedsNudge(viewOf(t, 'seller', before), before)).toBe(false);
+    const late = new Date(t.payBy!.getTime() + 1);
+    const v = viewOf(t, 'seller', late);
+    expect(v.sellerNudgedAt).toBeNull();
+    expect(sellerRefundOpen(v, late.getTime())).toBe(true);
+    expect(canRequestRefund(v, late)).toBe(false);
+    expect(refundNeedsNudge(v, late)).toBe(true);
+    // Once nudged (the view carries sellerNudgedAt): unlocked, no longer waiting for a nudge.
+    const n = viewOf(nudged(t), 'seller', late);
+    expect(canRequestRefund(n, late)).toBe(true);
+    expect(refundNeedsNudge(n, late)).toBe(false);
+    expect(sellerRefundOpen(n, late.getTime())).toBe(true);
+    // A nudge before the escrow was secured does not count (the machine's rule).
+    const early = viewOf(nudged(t, 5), 'seller', late);
+    expect(canRequestRefund(early, late)).toBe(false);
+    expect(refundNeedsNudge(early, late)).toBe(true);
+    // The buyer never gets the lock either.
+    expect(refundNeedsNudge(viewOf(t, 'buyer', late), late)).toBe(false);
   });
 
   it('the buyer never gets the seller screen, and a paid trade never opens it', () => {
@@ -112,7 +141,7 @@ describe('the seller no-show screen follows the state machine', () => {
 
 describe('Give 30 more min: at most twice, each only once the window has ended', () => {
   it('extends twice, then never again', () => {
-    let t = secured();
+    let t = nudged(secured());
     for (let n = 0; n < TIMERS.maxExtensions; n += 1) {
       const end = new Date(t.payBy!.getTime() + 1);
       expect(canExtend(viewOf(t, 'seller', end), end)).toBe(true);
@@ -133,7 +162,7 @@ describe('Give 30 more min: at most twice, each only once the window has ended',
 
 describe('the buyer final alert follows the state machine', () => {
   it('shows only to the buyer in refund_requested, counting to finalAlertAt + 15 min', () => {
-    const t = secured();
+    const t = nudged(secured());
     const asked = new Date(t.payBy!.getTime() + 5 * MIN);
     const r = apply(t, { type: 'request-refund' }, 'seller', asked);
     expect(showFinalAlert(viewOf(r, 'buyer', asked))).toBe(true);
@@ -144,7 +173,7 @@ describe('the buyer final alert follows the state machine', () => {
   });
 
   it("I've paid stays possible until the alert ends, as apply() says, then never", () => {
-    const t = secured();
+    const t = nudged(secured());
     const asked = new Date(t.payBy!.getTime() + 5 * MIN);
     const r = apply(t, { type: 'request-refund' }, 'seller', asked);
     const end = asked.getTime() + TIMERS.finalAlertMin * MIN;
@@ -162,7 +191,7 @@ describe('the buyer final alert follows the state machine', () => {
 
 describe('no refund before the final alert (autoRefundDecision, spec 3.3)', () => {
   it('the screen asks for the refund only after payBy, so the alert starts after the window and the guard waits 15 min', () => {
-    const t = secured();
+    const t = nudged(secured());
     const payBy = t.payBy!;
     // The earliest moment the screen lets the seller ask is just after payBy (server clock).
     const asked = new Date(payBy.getTime() + 1);
