@@ -107,3 +107,10 @@ Explanations asked for: Q3 ranges, Q19 watcher (done), Q26, Q29 and Q33 (My offe
 - NEW RULE (p5-7): if the user has set up secure Jabber (XMPP) notifications, every change to their account sends a discreet notification that says an account change was made, without saying what. This is a new feature; it needs a design board and a build task.
 - Nudges (owner, 7 Nov, chat): there is no cap of one nudge. The limit is one nudge per 15 minutes, as many as needed. The seller's refund unlocks after 90 min from full funding and at least one nudge.
 - Next priority (owner, 7 Nov): once the owner has seen the working demo, the next topic is the permissions that can be set for team members.
+
+## 8 Nov, owner comments on the prototype (https://claude.ai/artifact/JEZKgFnLH1EzhuDFh5qMJG)
+- Browse: the method on the "Zelle · N buyers paying in USD" card becomes a dropdown of every payment method with live offers in the chosen currency.
+- Quote: carry the offer's buyer bands (ranges) and where the amount clips onto the quote screen.
+- Max button on the quote: keep.
+- Trade terms: show each reader only what applies to them (no "the poster pays 1%" to the taker), line by line: responsibilities, what affects them, their options (nudge every 15 min, etc.).
+- Agreement: no agreement on every trade. Users agree once, at account opening: the Terms written carefully and comprehensively, a required tick box, AND a tall, wide white signature pad (a scribble or an X is fine). Not repeated per trade.
