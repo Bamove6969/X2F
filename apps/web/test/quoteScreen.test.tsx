@@ -584,55 +584,48 @@ describe('SellQuote', () => {
 // Review 2026-11-01 M1-M3: a fold or unfold moves the quote between the phone screen and the pane
 // beside the offers, which mounts a new QuoteScreen. What the person typed and picked, and the
 // take's state (in flight, refused, "You're back", the blocked poster), stay with the offer.
-describe("the offer's bands on the quote (owner 2026-11-08)", () => {
-  const bands = (host: HTMLElement) => host.querySelector<HTMLElement>('section[aria-label="Price bands"]')!;
+describe("This offer's bands (BuyQuote board, canvas v142; owner 2026-11-08)", () => {
+  const bands = (host: HTMLElement) => host.querySelector<HTMLElement>('section[data-part="offer-bands"]')!;
   const rows = (host: HTMLElement) => [...bands(host).querySelectorAll<HTMLElement>('[data-part="band"]')];
   const current = (host: HTMLElement) => rows(host).filter((r) => r.getAttribute('aria-current') === 'true');
-  const clip = (host: HTMLElement) => bands(host).querySelector('[data-part="band-clip"]')?.textContent;
+  const part = (el: Element, p: string) => el.querySelector(`[data-part="${p}"]`)?.textContent ?? null;
+  const view = (host: HTMLElement, label: string) => [...bands(host).querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((b) => b.textContent === label)!;
+  const MARKED_UP = { ...GHOST, pricing: { mode: 'market', marginBps: 250 }, rate: '33825' };
 
-  it('a small card right under "What you get" lists each band with its range and price, as the offers card words them', async () => {
+  it('sits right under "You receive", titled and described as on the board', async () => {
     const { host } = await open(`${BUY}&amount=412.50`);
     const card = host.querySelector('section[aria-label="What you get"]')!;
     expect(card.nextElementSibling).toBe(bands(host));
-    expect(rows(host)).toHaveLength(1);
-    expect(rows(host)[0]!.querySelector('[data-part="band-range"]')?.textContent).toBe('$50 – $1,500');
-    expect(rows(host)[0]!.querySelector('[data-part="band-price"]')?.textContent).toBe('At market');
+    const titleId = bands(host).getAttribute('aria-labelledby')!;
+    expect(bands(host).querySelector('h2')?.id).toBe(titleId);
+    expect(bands(host).querySelector('h2')?.textContent).toBe("This offer's bands");
+    expect(bands(host).textContent).toContain('The price changes with the amount');
+    expect(bands(host).querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('Amounts in XMR');
+    expect(bands(host).querySelector('ul')?.getAttribute('aria-label')).toBe('Bands');
   });
 
-  it("marks the band the amount falls in and says where its price clips, live as the amount changes, at each edge", async () => {
+  it('each band: its name, its rate per XMR, its range in the offer currency and in XMR, and its markup', async () => {
+    stub.offers = [MARKED_UP];
     const { host } = await open(`${BUY}&amount=412.50`);
-    expect(current(host)).toHaveLength(1);
-    expect(current(host)[0]!.textContent).toContain('Your amount');
-    expect(clip(host)).toBe('Up to $1,500 at this price, the largest trade.');
-
-    type(host, '49.99');
-    expect(current(host)).toHaveLength(0);
-    expect(clip(host)).toBe('Your amount is below $50, the smallest trade.');
-    type(host, '50');
-    expect(current(host)).toHaveLength(1);
-    type(host, '1500');
-    expect(current(host)).toHaveLength(1);
-    expect(clip(host)).toBe('Up to $1,500 at this price, the largest trade.');
-    type(host, '1500.01');
-    expect(current(host)).toHaveLength(0);
-    expect(clip(host)).toBe('Your amount is above $1,500, the largest trade.');
-    type(host, '');
-    expect(current(host)).toHaveLength(0);
-    expect(clip(host)).toBe('$50 – $1,500 per trade.');
+    const row = rows(host)[0]!;
+    expect(rows(host)).toHaveLength(1);
+    expect(row.textContent).toContain('Band 1');
+    expect(part(row, 'band-rate')).toBe('$338.25');
+    expect(row.textContent).toContain('$338.25 / XMR');
+    expect(part(row, 'band-range')).toBe('$50 – $1,500');
+    expect(row.textContent).toContain('$50 – $1,500 USD');
+    expect(part(row, 'band-markup')).toBe('+2.50%');
+    expect(row.textContent).toContain('+2.50% markup');
+    expect(part(row, 'band-xmr')).toBe('≈ 0.147819 – 4.434589');
   });
 
-  it('the same words as the offer card on the offers screen, margin and fewest trades included', async () => {
-    const CAD = { ...MIRA, pricing: { mode: 'market', marginBps: 20 }, rate: '45290', minTrades: 10 };
-    stub.offers = [CAD];
+  it("the range is the offer card's own (the same words on the offers screen)", async () => {
+    stub.offers = [{ ...MIRA, minTrades: 10 }];
     const { host } = await open(`${quotePath('buy', 'ZELLE', 'offer-mira', 'CAD')}&amount=600&unit=fiat`);
     const row = rows(host)[0]!;
-    expect(row.querySelector('[data-part="band-range"]')?.textContent).toBe('CA$50 – CA$1,500');
-    expect(row.querySelector('[data-part="band-price"]')?.textContent).toBe('0.2% above market');
-    // A buyer paying above market is good for the seller looking at it: the escrow tone, as on the card.
-    expect(row.querySelector('[data-part="band-price"]')?.getAttribute('data-tone')).toBe('escrow');
+    expect(part(row, 'band-range')).toBe('CA$50 – CA$1,500');
+    expect(row.textContent).toContain('CA$50 – CA$1,500 CAD');
     expect(row.textContent).toContain('10+ completed trades');
-    expect(row.getAttribute('aria-current')).toBe('true');
-
     const list = render(
       <MemoryRouter initialEntries={['/sell/ZELLE?currency=CAD']}>
         <Routes>
@@ -641,8 +634,37 @@ describe("the offer's bands on the quote (owner 2026-11-08)", () => {
       </MemoryRouter>,
     );
     await settle();
-    expect(list.host.querySelector('.x2f-offer__range')?.textContent).toBe(row.querySelector('[data-part="band-range"]')?.textContent);
-    expect(list.host.querySelector('.x2f-offer__margin')?.textContent).toBe(row.querySelector('[data-part="band-price"]')?.textContent);
+    expect(list.host.querySelector('.x2f-offer__range')?.textContent).toBe(part(row, 'band-range'));
+  });
+
+  it('With markup / Without: the XMR at the band price or at the market rate, with the freshness line; the fiat range and the quote stay', async () => {
+    stub.offers = [MARKED_UP];
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(view(host, 'With markup').getAttribute('aria-checked')).toBe('true');
+    expect(bands(host).querySelector('[data-part="band-updated"]')).toBeNull();
+    fire(view(host, 'Without'), new MouseEvent('click', { bubbles: true }));
+    expect(view(host, 'Without').getAttribute('aria-checked')).toBe('true');
+    const row = rows(host)[0]!;
+    expect(part(row, 'band-xmr')).toBe('≈ 0.151515 – 4.545454');
+    expect(part(row, 'band-rate')).toBe('$330.00');
+    expect(row.textContent).toContain('market rate');
+    expect(part(row, 'band-markup')).toBeNull();
+    expect(part(bands(host), 'band-updated')).toBe('Market rate · updated 00:00 UTC');
+    expect(part(row, 'band-range')).toBe('$50 – $1,500');
+    expect(host.querySelector('section[aria-label="What you get"]')?.textContent).toContain('$412.50 USD');
+    fire(view(host, 'With markup'), new MouseEvent('click', { bubbles: true }));
+    expect(part(rows(host)[0]!, 'band-xmr')).toBe('≈ 0.147819 – 4.434589');
+  });
+
+  it('rings the band holding the amount with "Your amount", live, both edges inside; none outside the offer', async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(current(host)).toHaveLength(1);
+    expect(current(host)[0]!.textContent).toContain('Your amount');
+    for (const [typed, inside] of [['49.99', false], ['50', true], ['1500', true], ['1500.01', false], ['', false]] as const) {
+      type(host, typed);
+      expect(current(host), typed).toHaveLength(inside ? 1 : 0);
+    }
+    expect(bands(host).textContent).not.toContain('Your amount');
   });
 
   it('an XMR amount (SellQuote enters XMR first) is placed by its fiat total', async () => {
@@ -651,15 +673,22 @@ describe("the offer's bands on the quote (owner 2026-11-08)", () => {
     type(host, '1');
     expect(current(host)).toHaveLength(1);
     type(host, '5');
-    expect(clip(host)).toBe('Your amount is above $1,500, the largest trade.');
+    expect(current(host)).toHaveLength(0);
   });
 
-  it('with the price feed down the bands still show, and no band is marked', async () => {
+  it('one band: no clip line (the rate never changes with the amount)', async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(bands(host).querySelectorAll('[data-part="band-clip"]')).toHaveLength(0);
+  });
+
+  it('with the price feed down the bands still show their ranges; no rate, no XMR, no band marked', async () => {
     stub.price = 'down';
     const { host } = await open(`${BUY}&amount=412.50`);
-    expect(rows(host)).toHaveLength(1);
+    const row = rows(host)[0]!;
+    expect(part(row, 'band-range')).toBe('$50 – $1,500');
+    expect(part(row, 'band-rate')).toBeNull();
+    expect(part(row, 'band-xmr')).toBeNull();
     expect(current(host)).toHaveLength(0);
-    expect(clip(host)).toBe('$50 – $1,500 per trade.');
   });
 });
 

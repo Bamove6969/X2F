@@ -370,7 +370,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             ) : null}
           </div>
         </section>
-        <QuoteBands offer={o} adSide={copy.adSide} quote={q} market={marketNow?.centsPerXmr ?? null} />
+        <QuoteBands offer={o} quote={q} market={marketNow} />
         <Notice tone="info">
           {copy.footnote(poster)}
         </Notice>

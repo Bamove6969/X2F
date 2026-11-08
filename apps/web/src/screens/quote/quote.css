@@ -317,19 +317,57 @@
 }
 
 /*
- * The offer's bands under "What you get" (owner 2026-11-08; no board yet): one small card, the
- * bands as surface-raised rows in the rows' own type, the one the amount falls in ringed in 2 px
- * ink (the kit's selected mark), and the clip line under them.
+ * "This offer's bands" (BuyQuote board, canvas v142): a 20 px padded surface card, a 40 px icon
+ * tile beside an 18/24 title and a 13/18 sub-line; the With markup / Without chips; bands as 12 px
+ * surface-raised rows (10/12 padding), the one holding the amount ringed in 2 px ink; the clip
+ * lines at 14/20 ink; the freshness line at 13/18 muted.
  */
 .x2f-quote__bands {
-  gap: var(--x2f-space-2);
-  padding: var(--x2f-space-4);
+  gap: 12px;
+}
+
+.x2f-quote__bands-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.x2f-quote__bands-tile {
+  display: flex;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__bands-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.x2f-quote__bands-title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.x2f-quote__bands-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .x2f-quote__band-list {
   display: flex;
   flex-direction: column;
-  gap: var(--x2f-space-1);
+  gap: var(--x2f-space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -339,15 +377,15 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 10px 14px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  border: 2px solid transparent;
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface-raised);
-  font-size: 14px;
-  line-height: 20px;
 }
 
 .x2f-quote__band[aria-current='true'] {
-  box-shadow: inset 0 0 0 2px var(--x2f-ink);
+  border-color: var(--x2f-ink);
 }
 
 .x2f-quote__band-line {
@@ -358,27 +396,109 @@
   gap: 0 var(--x2f-space-2);
 }
 
-.x2f-quote__band-price {
+.x2f-quote__band-name {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-quote__band-label {
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__band-here {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--x2f-ink);
+  color: var(--x2f-ground);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.x2f-quote__band-rate {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+  white-space: nowrap;
+}
+
+.x2f-quote__band-rate .x2f-quote__mono {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__band-range {
+  font-size: 15px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.x2f-quote__band-range .x2f-quote__mono {
+  font-weight: 500;
+}
+
+.x2f-quote__band-unit {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__band-markup {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+  white-space: nowrap;
+}
+
+.x2f-quote__band-markup .x2f-quote__mono {
+  color: var(--x2f-escrow);
+}
+
+.x2f-quote__band-xmr-unit {
+  font-weight: 600;
+  color: var(--x2f-monero-ink);
+}
+
+.x2f-quote__band-clip {
+  display: flex;
+  gap: var(--x2f-space-2);
+  align-items: flex-start;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__band-clip > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__band-updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
 
-.x2f-quote__band-price[data-tone='escrow'] {
-  color: var(--x2f-escrow);
-}
-
-.x2f-quote__band-here {
-  margin-left: auto;
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 600;
-}
-
 @media (forced-colors: active) {
   .x2f-quote__band[aria-current='true'] {
-    outline: 2px solid CanvasText;
-    outline-offset: -2px;
+    border-color: CanvasText;
   }
 }
 

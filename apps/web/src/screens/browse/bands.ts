@@ -6,6 +6,7 @@
 // The API sends one range and one price per offer today (Task 4 `OfferCard`), so `offerBands` gives
 // one band: the offer's min to max at its price. When bands reach the API (FlexOffer-Post, not built),
 // `offerBands` is the one place that reads them; the rest already handles several.
+import { atomicForFiat, formatXmr, offerRate, type Price } from '@x2f/trade';
 import { formatMinor, type Offer, type Pricing } from './api.js';
 
 /** One band: amounts from `fromFiatCents` to `toFiatCents`, both included, in the currency's minor units. */
@@ -66,20 +67,66 @@ export function marginText(pricing: Pricing, currency: string, market: bigint | 
   return { text: `${pct}% ${bps > 0 ? 'above' : 'below'} market`, favourable: favourable(bps) };
 }
 
+// The quote's bands card (BuyQuote board, canvas v142, "This offer's bands"). Owner 2026-11-08,
+// "Offer amounts in XMR or fiat": the quote carries the markup, the ranges in both units, and the
+// with/without-markup view. All money maths is bigint (@x2f/trade); nothing goes through a float.
+// TODO(wip/lead-offer-units): switch bandRate, bandXmr and markupText to that branch's exported
+// conversion and markup helpers when it lands; an offer set in XMR then converts the other way.
+
 /**
- * Where the price clips for the amount typed (`at`; null with no amount yet): where this band's
- * price ends and what the next band asks, or which edge of the offer the amount is past.
- * COPY-UNSIGNED, DESIGNER-REVIEW (owner 2026-11-08 asked for the bands on the quote; no board yet).
+ * The band's rate per XMR: its own price with `withMarkup` (offerRate), else the market price;
+ * null when that price is not known (a market band with the feed down; the market without one).
  */
-export function bandClip(bands: readonly Band[], at: BandAt | null, currency: string, market: bigint | null, favourable: (sign: number) => boolean): string {
-  const first = bands[0]!;
-  const last = bands[bands.length - 1]!;
-  if (at === null) return `${rangeText(first.fromFiatCents, last.toFiatCents, currency)} per trade.`;
-  if (at.kind === 'below') return `Your amount is below ${whole(first.fromFiatCents, currency)}, the smallest trade.`;
-  if (at.kind === 'above') return `Your amount is above ${whole(last.toFiatCents, currency)}, the largest trade.`;
-  if (at.kind === 'between') return 'No band covers your amount.';
+export function bandRate(band: Band, currency: string, market: bigint | null, withMarkup: boolean): Price | null {
+  const marketPrice = market === null ? null : { currency, centsPerXmr: market };
+  return withMarkup ? offerRate(band.pricing, currency, marketPrice) : marketPrice;
+}
+
+/** The band's fiat edges in XMR at `rate`: "0.151515 – 4.545454" (atomicForFiat floors, 6 places, truncated). */
+export function bandXmr(band: Band, rate: Price): string {
+  return `${formatXmr(atomicForFiat(band.fromFiatCents, rate), 6)} – ${formatXmr(atomicForFiat(band.toFiatCents, rate), 6)}`;
+}
+
+/**
+ * The band's markup over the market, 2 places as on the board: "+0.03%", "−0.20%", "0.00%". A
+ * market band's is its margin, exact; a fixed band's needs the market price (null without one),
+ * rounded half away from zero to a basis point.
+ */
+export function markupText(pricing: Pricing, market: bigint | null): string | null {
+  let bps: bigint;
+  if (pricing.mode === 'market') bps = BigInt(pricing.marginBps);
+  else if (market === null || market <= 0n) return null;
+  else {
+    const diff = (pricing.centsPerXmr - market) * 10_000n;
+    const abs = ((diff < 0n ? -diff : diff) * 2n + market) / (2n * market);
+    bps = diff < 0n ? -abs : abs;
+  }
+  const abs = bps < 0n ? -bps : bps;
+  const sign = bps > 0n ? '+' : bps < 0n ? '−' : '';
+  return `${sign}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}%`;
+}
+
+/** A clip line: "Above $500 the rate changes to $331.88." (`dir` up) or "Below $500.01 …" (down). */
+export interface Clip {
+  dir: 'up' | 'down';
+  at: string;
+  rate: string;
+}
+
+/**
+ * Where the price clips around the band the amount is in: the next band up and the next band down,
+ * each at its own price (the markup always: these are the rates a trade would lock). None outside
+ * a band, and none for a neighbour whose rate is not known.
+ */
+export function clipLines(bands: readonly Band[], at: BandAt | null, currency: string, market: bigint | null): Clip[] {
+  if (at?.kind !== 'in') return [];
   const band = bands[at.index]!;
-  const next = bands[at.index + 1];
-  if (next === undefined) return `Up to ${whole(band.toFiatCents, currency)} at this price, the largest trade.`;
-  return `Up to ${whole(band.toFiatCents, currency)} at this price. Above it: ${marginText(next.pricing, currency, market, favourable).text}.`;
+  const out: Clip[] = [];
+  const up = bands[at.index + 1];
+  const upRate = up && bandRate(up, currency, market, true);
+  if (upRate) out.push({ dir: 'up', at: whole(band.toFiatCents, currency), rate: formatMinor(upRate.centsPerXmr, currency) });
+  const down = bands[at.index - 1];
+  const downRate = down && bandRate(down, currency, market, true);
+  if (downRate) out.push({ dir: 'down', at: whole(band.fromFiatCents, currency), rate: formatMinor(downRate.centsPerXmr, currency) });
+  return out;
 }

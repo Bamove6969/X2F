@@ -329,6 +329,21 @@ test.describe("the offer's bands on the quote", () => {
     await expect(clip(page)).toHaveText('Your amount is above $1,500, the largest trade.');
   });
 
+  test('each band in fiat and XMR; the markup switch moves the XMR between the offer price and the market price', async ({ page }) => {
+    const MARKED_UP = { ...B.offer, pricing: { mode: 'market', marginBps: 250 }, rate: '33825' };
+    await stubApi(page, { ...base, offers: [MARKED_UP] });
+    await page.goto(`${BUY}&amount=${B.amount}`);
+    const xmr = bands(page).locator('[data-part="band-xmr"]');
+    await expect(bands(page).locator('[data-part="band-price"]')).toHaveText(['2.5% above market']);
+    const sw = page.getByRole('switch', { name: 'Display amounts including vendor markup' });
+    await expect(sw).toHaveAttribute('aria-checked', 'true');
+    await expect(xmr).toHaveText(['0.147819 – 4.434589 XMR']);
+    await sw.click();
+    await expect(sw).toHaveAttribute('aria-checked', 'false');
+    await expect(xmr).toHaveText(['0.151515 – 4.545454 XMR']);
+    await expect(bands(page).locator('[data-part="band-range"]')).toHaveText(['$50 – $1,500']);
+  });
+
   test('SellQuote: Max sits in the top band, at its clip', async ({ page }) => {
     await stubApi(page, { ...base, offers: [MIRA_BUYS] });
     await page.goto(SELL);

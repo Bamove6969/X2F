@@ -1,7 +1,9 @@
 // The offer's size bands (owner 2026-11-08, quote screen): one model the offers card and the quote
 // both read, so the range and price words on the two screens never disagree.
 import { describe, expect, it } from 'vitest';
-import { bandAt, bandClip, marginText, offerBands, offerRange, rangeText, type Band } from '../src/screens/browse/bands.js';
+import { atomicForFiat, formatXmr, offerRate } from '@x2f/trade';
+import { formatMinor } from '../src/screens/browse/api.js';
+import { bandAt, bandRate, bandXmr, clipLines, marginText, markupText, offerBands, offerRange, rangeText, type Band } from '../src/screens/browse/bands.js';
 
 const buyerLikes = (bps: number) => bps < 0;
 
@@ -72,25 +74,76 @@ describe('the words the offers card and the quote share', () => {
   });
 });
 
-describe('bandClip: where the price clips, for the amount typed', () => {
-  const words = (at: Parameters<typeof bandClip>[1]) => bandClip(THREE, at, 'USD', null, buyerLikes);
+const MARKET = 33_000n;
+const usd = (rate: bigint) => ({ currency: 'USD', centsPerXmr: rate });
 
-  it('with no amount, the whole range per trade', () => {
-    expect(words(null)).toBe('$50 – $3,000 per trade.');
+describe('bandRate and bandXmr: each band in XMR, with or without the markup (owner 2026-11-08)', () => {
+  const up: Band = { fromFiatCents: 5_000n, toFiatCents: 150_000n, pricing: { mode: 'market', marginBps: 250 }, minTrades: 0 };
+
+  it("with the markup: the band's own price (offerRate), the fiat edges converted exactly (atomicForFiat, 6 places)", () => {
+    const rate = bandRate(up, 'USD', MARKET, true)!;
+    expect(rate).toEqual(offerRate(up.pricing, 'USD', usd(MARKET)));
+    expect(rate.centsPerXmr).toBe(33_825n);
+    expect(bandXmr(up, rate)).toBe(`${formatXmr(atomicForFiat(5_000n, rate), 6)} – ${formatXmr(atomicForFiat(150_000n, rate), 6)}`);
+    expect(bandXmr(up, rate)).toBe('0.147819 – 4.434589');
   });
 
-  it('inside a band with one above it, where this price ends and what comes next', () => {
-    expect(words({ kind: 'in', index: 0 })).toBe('Up to $500 at this price. Above it: 0.4% above market.');
-    expect(words({ kind: 'in', index: 1 })).toBe('Up to $1,500 at this price. Above it: 0.2% below market.');
+  it('without it: the market price', () => {
+    const rate = bandRate(up, 'USD', MARKET, false)!;
+    expect(rate.centsPerXmr).toBe(MARKET);
+    expect(bandXmr(up, rate)).toBe('0.151515 – 4.545454');
   });
 
-  it('in the top band, the largest trade', () => {
-    expect(words({ kind: 'in', index: 2 })).toBe('Up to $3,000 at this price, the largest trade.');
-  });
-
-  it('outside the offer, the edge it is past', () => {
-    expect(words({ kind: 'below' })).toBe('Your amount is below $50, the smallest trade.');
-    expect(words({ kind: 'above' })).toBe('Your amount is above $3,000, the largest trade.');
-    expect(words({ kind: 'between' })).toBe('No band covers your amount.');
+  it('no market price: a market band has no rate either way; a fixed band only with its markup', () => {
+    expect(bandRate(up, 'USD', null, true)).toBeNull();
+    expect(bandRate(up, 'USD', null, false)).toBeNull();
+    const fixed: Band = { ...up, pricing: { mode: 'fixed', centsPerXmr: 30_000n } };
+    expect(bandXmr(fixed, bandRate(fixed, 'USD', null, true)!)).toBe('0.166666 – 5.000000');
+    expect(bandRate(fixed, 'USD', null, false)).toBeNull();
   });
 });
+
+describe('markupText: the markup as the board writes it', () => {
+  it("a market band's margin, exact, 2 places", () => {
+    expect(markupText({ mode: 'market', marginBps: 250 }, null)).toBe('+2.50%');
+    expect(markupText({ mode: 'market', marginBps: 3 }, null)).toBe('+0.03%');
+    expect(markupText({ mode: 'market', marginBps: -20 }, null)).toBe('−0.20%');
+    expect(markupText({ mode: 'market', marginBps: 0 }, MARKET)).toBe('0.00%');
+  });
+
+  it("a fixed band's, from the market price, to the nearest basis point; none without a market", () => {
+    // The board's $330.00 on $329.90: 0.0303...% → +0.03%.
+    expect(markupText({ mode: 'fixed', centsPerXmr: 33_000n }, 32_990n)).toBe('+0.03%');
+    expect(markupText({ mode: 'fixed', centsPerXmr: 33_188n }, 32_990n)).toBe('+0.60%');
+    expect(markupText({ mode: 'fixed', centsPerXmr: 32_000n }, 33_000n)).toBe('−3.03%');
+    expect(markupText({ mode: 'fixed', centsPerXmr: 33_000n }, null)).toBeNull();
+  });
+});
+
+describe('clipLines: where the rate changes around your band', () => {
+  const rate = (b: Band) => formatMinor(offerRate(b.pricing, 'USD', usd(MARKET))!.centsPerXmr, 'USD');
+
+  it("the bottom band: only up, at its top edge, to the next band's rate", () => {
+    expect(clipLines(THREE, { kind: 'in', index: 0 }, 'USD', MARKET)).toEqual([{ dir: 'up', at: '$500', rate: rate(THREE[1]!) }]);
+  });
+
+  it('a middle band: up at its top, down at its bottom (cents kept: $500.01)', () => {
+    expect(clipLines(THREE, { kind: 'in', index: 1 }, 'USD', MARKET)).toEqual([
+      { dir: 'up', at: '$1,500', rate: rate(THREE[2]!) },
+      { dir: 'down', at: '$500.01', rate: rate(THREE[0]!) },
+    ]);
+  });
+
+  it('a single band, no amount, or an amount outside every band: none', () => {
+    const one = offerBands({ minFiatCents: 5_000n, maxFiatCents: 150_000n, pricing: { mode: 'market', marginBps: 0 }, minTrades: 0 });
+    expect(clipLines(one, { kind: 'in', index: 0 }, 'USD', MARKET)).toEqual([]);
+    expect(clipLines(THREE, null, 'USD', MARKET)).toEqual([]);
+    expect(clipLines(THREE, { kind: 'below' }, 'USD', MARKET)).toEqual([]);
+    expect(clipLines(THREE, { kind: 'above' }, 'USD', MARKET)).toEqual([]);
+  });
+
+  it('no market price: no rate to name, no line', () => {
+    expect(clipLines(THREE, { kind: 'in', index: 1 }, 'USD', null)).toEqual([]);
+  });
+});
+

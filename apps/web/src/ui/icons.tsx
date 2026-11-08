@@ -161,6 +161,10 @@ const SHAPES = {
       <path d="M4 21c1-4 4-6 8-6s7 2 8 6" />
     </>
   ),
+  // BuyQuote's "This offer's bands" card (canvas v142): its 40 px tile, and the clip lines' arrows.
+  bands: <path d="M4 20V14M10 20V9M16 20V12M22 20V5" />,
+  'arrow-up-right': <path d="M7 17L17 7M9 7h8v8" />,
+  'arrow-down-right': <path d="M7 7l10 10M17 9v8H9" />,
 } satisfies Record<string, ReactElement>;
 
 export type IconName = keyof typeof SHAPES;
