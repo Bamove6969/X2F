@@ -293,7 +293,7 @@ describe('funding shows only the address this device verified', () => {
     setTradeEscrowHook(() => verified({ deal: POSTER_DEAL }));
     const host = await room();
     expect(host.querySelector('[data-wallet-link]')?.getAttribute('href')).toBe(moneroUri(ADDRESS, 1_262_500_000_000n));
-    expect(host.textContent).toContain('1.262500 XMR filled in');
+    expect(host.textContent).toContain('1.2625 XMR filled in');
     const copied: string[] = [];
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: async (t: string) => void copied.push(t) } });
     await act(async () => footer()!.click());
@@ -492,7 +492,7 @@ describe('after a short payment the seller funds only the remainder (review 2026
     const host = await room();
     expect(host.textContent).toContain('Received 1.000000 of 1.250000 XMR, send the rest');
     expect(host.querySelector('[data-wallet-link]')?.getAttribute('href')).toBe(moneroUri(ADDRESS, 250_000_000_000n));
-    expect(host.textContent).toContain('0.250000 XMR filled in');
+    expect(host.textContent).toContain('0.25 XMR filled in');
     expect(host.innerHTML).not.toContain('tx_amount=1.25');
     const copied: string[] = [];
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: async (t: string) => void copied.push(t) } });

@@ -187,7 +187,7 @@ test.describe('TradeFund (seller, phone)', () => {
     await expect(page.getByText('Includes X2F fee (1%, your ad)')).toBeVisible();
     await expect(page.getByText('0.012500 XMR')).toBeVisible();
     await expect(page.locator('[data-wallet-link]')).toHaveAttribute('href', moneroUri(ADDRESS, B.amountAtomic + FEE));
-    await expect(page.getByText('Opens Cake Wallet with the escrow address and 1.262500 XMR filled in. You confirm there.')).toBeVisible();
+    await expect(page.getByText('Opens Cake Wallet with the escrow address and 1.2625 XMR filled in. You confirm there.')).toBeVisible();
   });
 
   test('the taker seller sees no X2F fee', async ({ page }) => {
@@ -458,6 +458,21 @@ for (const [width, height] of [
       await page.locator('[data-escrow-address]').scrollIntoViewIfNeeded();
       await expect(page.locator('[data-escrow-address]')).toBeInViewport();
       s = await fits();
+      expect(s.wide).toBeLessThanOrEqual(s.view);
+    });
+
+    test('a 12-place amount fits the phone, and the wallet link and hint carry all of it', async ({ page }) => {
+      const ODD = 12_610_529_733_574n;
+      const view = sellerView({
+        amountAtomic: ODD.toString(),
+        funding: { sellerFundsAtomic: ODD.toString(), escrowAddress: ADDRESS, uri: moneroUri(ADDRESS, ODD), walletApp: 'cake' },
+      });
+      await stub(page, () => view, { ...VERIFIED, deal: { poster: 'buyer', takeAmountAtomic: ODD.toString() } });
+      await room(page);
+      await expect(page.locator('.x2f-trade-quote__head .x2f-amount')).toHaveText('12.610529733574 XMR');
+      await expect(page.locator('[data-wallet-link]')).toHaveAttribute('href', moneroUri(ADDRESS, ODD));
+      await expect(page.getByText('Opens Cake Wallet with the escrow address and 12.610529733574 XMR filled in. You confirm there.')).toBeVisible();
+      const s = await page.evaluate(() => ({ wide: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
       expect(s.wide).toBeLessThanOrEqual(s.view);
     });
 

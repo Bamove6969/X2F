@@ -28,7 +28,7 @@ import { EscrowDots } from '../../ui/EscrowDots.js';
 import { HoldButton } from '../../ui/HoldButton.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
-import { fundedForGood, hasFundMark, isFunded, isPhoneDevice, setFundMark, walletName } from './fund.js';
+import { exactXmr, fundedForGood, hasFundMark, isFunded, isPhoneDevice, setFundMark, walletName } from './fund.js';
 import { FundFallback, type SendNow } from './FundFallback.js';
 import { IntegrityFailed, Name, EscrowCheck, SetupStatus } from './SetupStatus.js';
 import { amountToSend, verifiedFunding, type TradeEscrow } from './seams.js';
@@ -221,7 +221,7 @@ function WalletFooter({
       />
       {opened ? null : (
         <span className="x2f-fund-hint">
-          Opens {wallet} with the escrow address and {formatXmrExact(fundsAtomic)} XMR filled in. You confirm there.
+          Opens {wallet} with the escrow address and {exactXmr(fundsAtomic)} XMR filled in. You confirm there.
         </span>
       )}
       {opened || fallbackShown ? null : (
