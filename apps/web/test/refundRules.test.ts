@@ -232,7 +232,8 @@ describe('the rebuilt trade carries the view faithfully', () => {
   });
 
   it('a view without releaseClaimedAt (an older API) still answers: the claim is never read here', () => {
-    const t = secured();
+    // Nudged (owner G2, merge with main 687ae821): without a nudge the refund stays locked whatever the claim.
+    const t = nudged(secured());
     const full = viewOf(t, 'seller', at(200));
     const v: Partial<typeof full> = { ...full };
     delete v.releaseClaimedAt;
