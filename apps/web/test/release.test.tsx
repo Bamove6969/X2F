@@ -245,6 +245,20 @@ describe('SellerConfirm', () => {
     expect(link?.getAttribute('href')).toBe('/trade/K7M2-9QXA-4FTR-8WPN/dispute');
   });
 
+  it('opens the dispute ways by themselves when the confirm window ends on screen, without a reload (owner p9-4)', () => {
+    vi.useFakeTimers();
+    const s = sellerConfirm(trade({ confirmBy: '2026-10-25T12:02:00.000Z' }));
+    const link = (name: string) => [...s.host.querySelectorAll('a')].find((a) => a.textContent === name);
+    expect(link('Open dispute')).toBeUndefined();
+    expect(s.button('Open dispute')!.disabled).toBe(true);
+    advance(119_000, vi);
+    expect(link('Open dispute')).toBeUndefined();
+    advance(2_000, vi);
+    expect(link('Open dispute')?.getAttribute('href')).toBe('/trade/K7M2-9QXA-4FTR-8WPN/dispute');
+    expect(link('Payment not received')?.getAttribute('href')).toBe('/trade/K7M2-9QXA-4FTR-8WPN/dispute');
+    expect(s.button('Open dispute')).toBeNull();
+  });
+
   it('keeps the release locked until the box is ticked', () => {
     const s = sellerConfirm(trade());
     expect(s.hold().disabled).toBe(true);

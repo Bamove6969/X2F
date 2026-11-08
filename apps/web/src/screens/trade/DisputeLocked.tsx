@@ -24,11 +24,7 @@ function waitLeft(ms: number): string {
   return min < 120 ? `in ${min} min` : `in ${Math.floor(min / 60)} h`;
 }
 
-/**
- * "Open dispute", locked until the buyer's wait is over (board BuyerPaidWaiting window=in-window:
- * "Available from 15:35 UTC · in 88 min"). The time is UTC for every viewer (design X5); a wait that
- * ends on another day names the date. COPY-UNSIGNED beyond the board's line.
- */
+/** The time is UTC for every viewer (design X5); a wait that ends on another day names the date. COPY-UNSIGNED beyond the board's line. */
 export function DisputeLocked({ until, serverClock }: { until: string; serverClock: () => Date }) {
   useTick(15_000);
   const id = useId();

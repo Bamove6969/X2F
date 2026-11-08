@@ -25,8 +25,8 @@ export interface MethodProfile {
   checkPrompt: string;
   arrival: 'instant' | 'same-day' | 'days';
   /**
-   * The seller's confirmation window, which is also the buyer's wait from "I've paid" before a
-   * dispute (machine.ts `confirmBy`). Owner F9 (7 Nov) with the F1 research table it approved:
+   * The seller's confirmation window, which is also either side's wait from "I've paid" before a
+   * dispute (machine.ts `confirmBy`, owner p9-4). Owner F9 (7 Nov) with the F1 research table it approved:
    * instant types 90 min; same or next day 24 h; slow types 48 h to 4 days.
    */
   confirmWindowMin: number;
