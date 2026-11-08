@@ -17,7 +17,7 @@ Sources: the 134 boards in `docs/design-boards/` (each board's back/close links,
 
 | Section | Screens (phone boards) | Wide twins | Notes |
 |---|---|---|---|
-| 1 Entry and shell | 12 | 8 | incl. nav tabs and rail |
+| 1 Entry and shell | 13 | 9 | incl. Landing (drawn on LogoDirections, not a board file), MyTrades, nav tabs and rail |
 | 2 Signup | 12 | 1 | incl. OwnerSetup, BecomeVendor branches |
 | 3 Buy flow | 19 | 8 | Warn-IvePaid superseded |
 | 4 Sell flow | 11 | 5 | incl. GiftCardBrand, Block, TeamChat |
@@ -26,20 +26,23 @@ Sources: the 134 boards in `docs/design-boards/` (each board's back/close links,
 | 7 Staff app | 7 | 0 | all 1280 wide |
 | 8 Fold / desktop | 9 | 0 | same screens at other widths |
 
-Distinct boards placed: 134 of 134 (the two superseded and the Badges proposal included).
+Distinct boards placed: 134 of 134 (the two superseded and the Badges proposal included), plus MyTrades (+Wide), added 8 Nov. Landing is a page on the LogoDirections board, not a board file.
 
 ---
 
 ## 1. Entry and shell
 
+Owner rule (8 Nov, comment #9, "no free tours"): a logged-out visitor sees only Landing, Log in, Create account (SetupTerms: Terms, tick box, signature) and recovery (Login-Backup). Nothing behind login (names, teams, prices, offers) before sign-in, and no move below reaches a marketplace screen before Login and SessionLength.
+
 ### Screen order
 
-1. **Login** (`method` = `pgp`; the app opens here when nobody is logged in) → 2 (primary `{{cta}}` = "Log in" / "Use my passkey" per method). Branches: "Can't log in? Use a backup" → 1a; a new device → 3.
+0. **Landing** (the landing page on the **LogoDirections** board; the app opens here when nobody is logged in: the logo big, Create account, Log in and the recovery link, nothing from behind login) → "Log in" → 1; "Create account" → **SetupTerms** (§2, step 1); the recovery link → 1a.
+1. **Login** (`method` = `pgp`) → 2 (primary `{{cta}}` = "Log in" / "Use my passkey" per method). Branches: "Can't log in? Use a backup" → 1a; a new device → 3.
    - 1a. **Login-Backup** (`view` = `enter`) → **RecoveryHold** (`step` = `hold`, `variant` = `wait`) after "Continue with recovery code"; `view` = `held` shows the hold inside Login-Backup. RecoveryHold "End the hold early" (`variant` = `can-end-early`, `step` = `pick-method`) → `step` = `ended` → **RecoveryCode** (`step` = `show`, "Write down your new recovery code") → "Go to Security" → **Settings**. RecoveryHold "Back to log in" → 1.
    - 1b. **Compromised** (`step` = `form`) is reached from Login-Backup "What happens now" / Settings › Security "My account has been compromised" → "Freeze my account" → `step` = `confirm` → "Yes, freeze it now" → `step` = `frozen` (dead end: everyone logged out; Matrix / Telegram links).
 2. **LoginApprove** (`side` = `new`, `newView` = `waiting`; shown on the new device after step 1 when the account has "One device at a time" or 3 devices in use). On the known device the same board with `side` = `existing` ("Yes, let them in" / "Log it out and let them in" / "No, block it"). `newView` = `approved` → "Continue" → 3; `newView` = `blocked` → "Back to log in" → 1. "Change login method" → **SetupLogin**.
 3. **SessionLength** (`step` = `ask`, `menu` = `closed`; every login asks, nothing preselected: traders 2/4/8/12 h, vendors 2/6/12/24 h) → "Continue" (`step` = `done`) → 4. Link "Devices and sessions" → **Devices**.
-4. **Main** (the app shell: Sell tab of Trade). Buy/Sell segmented control → **BuyMain**. Bottom nav (phone) and wide rail from here.
+4. **Main** (the app shell: Sell tab of Trade). Buy/Sell segmented control → **BuyMain**. Bottom nav (phone) and wide rail from here. Active trades → **MyTrades** (`list` = `some`; `empty` for a new account: every open and recent trade in one place; each trade's back arrow returns here; "Find offers" → **Main**).
 5. **SessionExtend** (`step` = `ask`, `methods` = `strong`; event: 5 min before the session ends, over any screen) → "Stay logged in" (`step` = `extended`) stays on the current screen; "Log out" or timeout (`step` = `logged-out`) → "Log in" → 1.
 
 ### Phone bottom nav (BottomNav.tsx, four tabs; the Main board's bar)
@@ -62,16 +65,17 @@ Distinct boards placed: 134 of 134 (the two superseded and the Badges proposal i
 | Settings | **Settings-Wide** | `/settings` (proposed; build has `/settings/security` etc.) |
 | Help | **FAQ-Wide** | `/help` (proposed) |
 
-Note: `DesktopShell.tsx` on `main` still draws the older Buy / Sell / My trades / Wallets header. The boards' rail (Trade, Post offer, Wallets, Profile, Settings, Help) is the current standard (handoff §1.2, standard 1); `/trades` ("Back to my trades", "My trades") has no board of its own: it is the "Active trades" section at the top of **Main**.
+Note: `DesktopShell.tsx` on `main` still draws the older Buy / Sell / My trades / Wallets header. The boards' rail (Trade, Post offer, Wallets, Profile, Settings, Help) is the current standard (handoff §1.2, standard 1); `/trades` ("Back to my trades", "My trades") is the **MyTrades** board (+Wide, added 8 Nov); Main's "Active trades" heading should link to it ("See all").
 
 ### Pre-login wordmark pages (plain ink X2F wordmark, no nav)
 
-**Login**, **Login-Backup**, **LoginApprove**, **RecoveryHold**, **RecoveryCode** (`step` = `show` at signup), **Compromised**, **SessionExtend** (`step` = `logged-out`), **SessionLength**, **InviteInvalid**, **MemberApproval** (`side` = `member`), **Maintenance**, **OwnerSetup**, **SignupSecurity**.
+**Landing** (on LogoDirections), **Login**, **Login-Backup**, **LoginApprove**, **RecoveryHold**, **RecoveryCode** (`step` = `show` at signup), **Compromised**, **SessionExtend** (`step` = `logged-out`), **SessionLength**, **InviteInvalid** (`session` = `out`: no names, one message for every reason, Log in / Create account), **SetupTerms**, **MemberApproval** (`side` = `member`), **Maintenance**, **OwnerSetup**, **SignupSecurity**.
 
 ### Table
 
 | Screen | Board file | Route (build / proposed) | Primary action | State to show |
 |---|---|---|---|---|
+| Landing | `LogoDirections.dc.html` (the landing page section) | `/` proposed (logged out) | Create account / Log in | — |
 | Login | `Login.dc.html` (+Wide) | `/login` build | Log in / Use my passkey | `method=pgp` |
 | Login-Backup | `Login-Backup.dc.html` (+Wide) | `/login/backup` build | Continue with recovery code | `view=enter` |
 | RecoveryHold | `RecoveryHold.dc.html` (+Wide) | `/login/hold` proposed | End the hold early | `variant=wait`, `step=hold` |
@@ -81,6 +85,7 @@ Note: `DesktopShell.tsx` on `main` still draws the older Buy / Sell / My trades 
 | SessionLength | `SessionLength.dc.html` (+Wide) | `/login/session` proposed | Continue | `step=ask`, `accountType=non-vendor`, `menu=closed` |
 | SessionExtend | `SessionExtend.dc.html` (+Wide) | overlay, no route | Stay logged in | `step=ask`, `accountType=trader`, `methods=strong` |
 | Main | `Main.dc.html` | `/sell` build | (none: browse) | — |
+| MyTrades | `MyTrades.dc.html` (+Wide) | `/trades` proposed | Find offers | `list=some` |
 | BuyMain | `BuyMain.dc.html` | `/buy` build | (none: browse) | — |
 | Wallet | `Wallet.dc.html` | `/wallets` build | Save wallet | — |
 | Profile | `Profile.dc.html` | `/profile` proposed | Message | `volumeLine=on` |
@@ -89,6 +94,9 @@ Note: `DesktopShell.tsx` on `main` still draws the older Buy / Sell / My trades 
 
 ```mermaid
 flowchart LR
+  Landing -->|"Log in"| Login
+  Landing -->|"Create account"| SetupTerms
+  Landing -->|"recovery link"| LoginBackup
   Login -->|"Log in"| LoginApprove
   Login -->|"Can't log in? Use a backup"| LoginBackup["Login-Backup"]
   LoginBackup -->|"Continue with recovery code"| RecoveryHold
@@ -98,6 +106,7 @@ flowchart LR
   LoginApprove -->|"approved → Continue"| SessionLength
   Login -->|"known device"| SessionLength
   SessionLength -->|"Continue"| Main
+  Main -->|"Active trades"| MyTrades
   Main -->|"Buy toggle"| BuyMain
   Main -->|"tab Post offer"| PostOffer
   Main -->|"tab Wallets"| Wallet
@@ -111,12 +120,12 @@ flowchart LR
 
 ## 2. Signup
 
-Owner decisions that shape the order: a username is mandatory on every account (G6/G34); after signup the person goes back to Login, logs in and then picks a session length (G25); "of 5" step count (Q18); the 60-day inactivity rule is in the rules list at the end (p4-5).
+Owner decisions that shape the order: users agree once, at signup, before the account exists: Terms, a required tick box and a signature pad on **SetupTerms**, nothing per trade (8 Nov, comments #7 to #9), so SetupTerms comes first; a username is mandatory on every account (G6/G34); after signup the person goes back to Login, logs in and then picks a session length (G25); "of 5" step count (Q18); the 60-day inactivity rule is in the rules list at the end (p4-5).
 
 ### Screen order
 
-1. **SignupSecurity** (`variant` = `strong`, `meter` = `strong`; the first screen of "Set up your account · Takes about 2 minutes", five-bar stepper) → "Continue" → 2. Branch: `variant` = `weak` / `not-allowed` keeps the person here; **RecoveryCode** (`step` = `show`) is reached from SignupSecurity-Wide "Continue" when the chosen method needs a code.
-2. **SetupTerms** (step 0 of the stepper, "Terms of Service") → "I accept" → 3. Links: Terms of Service, Privacy Policy. Also reachable from Settings › Terms and from PostOffer / SellOffers (terms changed, must re-accept).
+1. **SetupTerms** (reached from Landing or Login "Create account"; step 0 of the stepper, "Terms of Service": the Terms, the required tick box and the signature pad) → "I accept" → 2. Back → **Login**. Links: Terms of Service, Privacy Policy. Also reachable from Settings › Terms and from PostOffer / SellOffers (terms changed, must re-accept).
+2. **SignupSecurity** (`variant` = `strong`, `meter` = `strong`; "Set up your account · Takes about 2 minutes", five-bar stepper) → "Continue" → 3. Back → 1. Branch: `variant` = `weak` / `not-allowed` keeps the person here; **RecoveryCode** (`step` = `show`) is reached from SignupSecurity "Continue" when the chosen method needs a code.
 3. **SetupUsername** ("1 · Pick a username") → "Continue" → 4. Back → 2.
 4. **SetupLogin** ("2 · How do you want to log in?") → `{{cta}}` → 5a (PGP key) or 5b (password). Back → 3. Also reached from LoginApprove / BecomeVendor / Settings › Login methods ("Add a passkey, security key or PGP key").
 5. a. **SetupPgpKey** ("3 · Paste your public key") → "Continue" → **SetupPgpChallenge** ("3 of 5 · part 2", "Prove it's your key") → "Verify" then "Continue" → 6. Back → SetupPgpKey.
@@ -134,8 +143,8 @@ Branches
 
 | Screen | Board file | Route (build / proposed) | Primary action | State to show |
 |---|---|---|---|---|
+| SetupTerms | `SetupTerms.dc.html` | `/terms` build (first signup step) | I accept | — (DRAFT: lawyer text) |
 | SignupSecurity | `SignupSecurity.dc.html` (+Wide) | `/setup` build (SetupStart) | Continue | `variant=strong`, `meter=strong`, `pwRule=A-12-mixed`, `vaultRule=yes-passwordless` |
-| SetupTerms | `SetupTerms.dc.html` | `/terms` build | I accept | — (DRAFT: lawyer text) |
 | SetupUsername | `SetupUsername.dc.html` | `/setup/name` build | Continue | — |
 | SetupLogin | `SetupLogin.dc.html` | `/setup/login` build | Continue with PGP key | — |
 | SetupPgpKey | `SetupPgpKey.dc.html` | `/setup/pgp-key` build | Continue | — |
@@ -151,9 +160,11 @@ Branches
 
 ```mermaid
 flowchart LR
-  SignupSecurity -->|"Continue"| SetupTerms
+  Landing -->|"Create account"| SetupTerms
+  Login -->|"Create an account"| SetupTerms
+  SetupTerms -->|"I accept"| SignupSecurity
+  SignupSecurity -->|"Continue"| SetupUsername
   SignupSecurity -.->|"method needs a code"| RecoveryCode
-  SetupTerms -->|"I accept"| SetupUsername
   SetupUsername -->|"Continue"| SetupLogin
   SetupLogin -->|"PGP key"| SetupPgpKey
   SetupLogin -->|"Password"| SetupPassword
@@ -326,7 +337,7 @@ Owner rules: a username-and-password login puts every important change on a 24 h
    - 3b. **BlockQueued** `SUPERSEDED` by the owner's hold model (2 Nov): everyone is logged out during a hold, so there is nothing to block. Keep for reference.
    - 3c. **LoginApprove** (`side` = `existing`) from Devices "See the approval prompt"; **Login-Backup** from "Log in another way"; **RecoveryHold** from "How the hold works".
 4. Wallets row → **Wallet** ("Your wallets", add / Save wallet; back → Settings).
-5. Team row (vendor only) → **Team** ("Add a member" → "Create invite link" → copy; member rows → **MemberPermissions**; "Remove {{name}}"; "Audit log") → **MemberPermissions** (`example` = `offers-and-chat`: member types with checkboxes, "Allow releasing XMR" confirm, "Save permissions") → **MemberApproval** (`side` = `lead`, `state` = `waiting`: "Approve" / "Refuse"; "Review what they can do" → MemberPermissions). Refusals: **TeamRefusal** (`variant` = `invite` / `edit-permissions` / `page`: "Strong login needed", "Add another way to log in" → SetupLogin); **InviteInvalid** (`reason` = `expired` / `used` / `revoked` / `full` / `incomplete`; "Go to log in" → Login). **TeamChat** (`viewer` = `lead`) is the result in a trade chat.
+5. Team row (vendor only) → **Team** ("Add a member" → "Create invite link" → copy; member rows → **MemberPermissions**; "Remove {{name}}"; "Audit log") → **MemberPermissions** (`example` = `offers-and-chat`: member types with checkboxes, "Allow releasing XMR" confirm, "Save permissions") → **MemberApproval** (`side` = `lead`, `state` = `waiting`: "Approve" / "Refuse"; "Review what they can do" → MemberPermissions). Refusals: **TeamRefusal** (`variant` = `invite` / `edit-permissions` / `page`: "Strong login needed", "Add another way to log in" → SetupLogin); **InviteInvalid** (opened by the invitee: `session` = `out`, the default, shows one general message for every reason, no names, "Log in" → Login, "Create account" → SetupTerms; `session` = `in` keeps the named detail per `reason` = `expired` / `used` / `revoked` / `full` / `incomplete`, "Go to Trade" → Main). **TeamChat** (`viewer` = `lead`) is the result in a trade chat.
 6. Alerts row → **Alerts** (`device` = `android`, `jabber` = `off`: sounds, nudges, "Send test", "Allow in Android settings") → Secure Jabber section → **JabberSetup** (`step` = `address` → `verify` → `done`; "Send a test message", "Turn on") → "Done" → Alerts (`jabber` = `on`).
 7. Privacy rows: What X2F keeps (inline), Chats deleted after 30 days, Trade volume line switch → **ProfileVisibility**. OPEN box: Security vs a separate Privacy page.
 8. About rows: Help and FAQ → **FAQ**; Terms → **SetupTerms**; News → **News**; Support → **Support**; "Log out" → **Login**; Delete account → **DeleteAccount** (`variant` = `blocked` with open trades: "See my open trades"; `allowed`: "Delete my account forever" → "Go to X2F home" → Login).
@@ -353,7 +364,7 @@ Owner rules: a username-and-password login puts every important change on a 24 h
 | MemberPermissions | `MemberPermissions.dc.html` (+Wide) | `/settings/team/:member` proposed | Save permissions | `example=offers-and-chat` (DRAFT) |
 | MemberApproval | `MemberApproval.dc.html` (+Wide) | `/team/join` build (member side) / `/settings/team/approve` proposed (lead) | Approve | `side=lead`, `state=waiting` |
 | TeamRefusal | `TeamRefusal.dc.html` | popup over `/settings/team` | Add another way to log in | `variant=invite` |
-| InviteInvalid | `InviteInvalid.dc.html` (+Wide) | `/team/join` build (error state) | Go to log in | `reason=expired` |
+| InviteInvalid | `InviteInvalid.dc.html` (+Wide) | `/team/join` build (error state) | Log in | `session=out` (logged in: `session=in`, `reason=expired`) |
 | TeamChat | `TeamChat.dc.html` (+Wide) | `/trade/K7M2` build (state) | — | `viewer=lead` |
 | BecomeVendor | `BecomeVendor.dc.html` (+Wide) | `/settings/account-type` proposed | Switch to a vendor account | `state=met` |
 
@@ -395,7 +406,7 @@ flowchart LR
 2. **Support** (`view` = `new`: pick a topic, "Send to the team"; `view` = `thread`: the ticket thread, "Send reply", "My tickets"). Headline "Ask an X2F staff member" (p5-4). Reached from FAQ, Settings › Support, every `-Wide` board's Help, Lien-Notice "Questions? Ask the team".
 3. **Feedback** (`view` = `form`, `limit` = `ok`; "Send" → `view` = `sent` → "Done" / "Write another"; `limit` = `reached` = 10 a day). Reached from Review "Send feedback", CantDoThat's "feedback" link.
 4. **News** (`variant` = `plain`; Main "Site news" link, Settings › News; `with-dont-show-again` when it pops up after login with unread items → "Continue").
-5. **Maintenance** (`variant` = `planned` / `emergency`; event: the site is in maintenance, replaces the whole app; "Check News" → News, Matrix / Telegram). Build: `Maintenance.tsx` already replaces the app.
+5. **Maintenance** (`variant` = `planned` / `emergency`; event: the site is in maintenance, replaces the whole app; "Check News" → News for a logged-in person only; a logged-out visitor gets the page without it (owner, 8 Nov, comment #9), Matrix / Telegram). Build: `Maintenance.tsx` already replaces the app.
 6. **CantDoThat** (shared popup, one component: "OK", "Show the message again"; opens wherever a permission or state forbids the action, e.g. a team member without the role, a seventh offer, a held account).
 7. **Ban-Notice** (`variant` = `trade-ban` / `site-ban`, `ends` = `date` / `permanent`, `business` = `unfinished` / `none`; event: full-screen account notice after login; "OK" / "Log out"; Matrix / Telegram moderator links). G39 wording.
 
@@ -421,7 +432,7 @@ flowchart LR
   Review -->|"Send feedback"| Feedback
   CantDoThat -->|"feedback link"| Feedback
   Main -->|"Site news"| News
-  Maintenance -->|"Check News"| News
+  Maintenance -->|"Check News (logged in only)"| News
   Login -.->|"banned account"| BanNotice["Ban-Notice"]
   BanNotice -->|"Log out"| Login
 ```

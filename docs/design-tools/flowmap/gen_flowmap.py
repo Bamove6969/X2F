@@ -98,37 +98,41 @@ def T(s, a, kids): s['edges'].append(('t', a, kids))
 def H(s, a, b): s['edges'].append(('e', a, b))
 
 # 1 Entry and shell
-s = section('1', 'Entry and shell', 'Log in, session, the Trade tab. Four phone tabs; six rail items at 1000 px and up.', 'key')
-N(s, 'Login', 0, 0, [('state', 'method=pgp'), ('build', 'build')])
-N(s, 'LoginApprove', 0, 1, [('state', 'side=new')])
-N(s, 'SessionLength', 0, 2, [('state', 'step=ask')])
-N(s, 'Main', 0, 3, [('state', 'tab Trade'), ('build', 'build')], icon='trade')
-N(s, 'BuyMain', 0, 4, [('state', 'Buy toggle'), ('build', 'build')], icon='trade')
-N(s, 'PostOffer', 0, 5, [('state', 'tab Post offer'), ('build', 'build')], icon='sell')
-N(s, 'Wallet', 0, 6, [('state', 'tab Wallets'), ('build', 'build')], icon='buy')
-N(s, 'Profile', 0, 7, [('state', 'tab Profile'), ('state', '› Settings')], icon='user')
-N(s, 'Login-Backup', 1, 1, [('state', 'view=enter'), ('build', 'build')])
-N(s, 'RecoveryHold', 1, 2, [('state', 'step=hold')])
-N(s, 'RecoveryCode', 1, 3, [('state', 'step=show')])
-N(s, 'Compromised', 1, 4, [('state', 'step=form')])
-N(s, 'SessionExtend', 1, 6, [('state', 'step=ask'), ('state', '5 min before end')])
+s = section('1', 'Entry and shell', 'Logged out: Landing, Log in, Create account, recovery, nothing else (owner, 8 Nov). Then session and the Trade tab.', 'key')
+N(s, 'Landing', 0, 0, [('state', 'in LogoDirections')])
+N(s, 'Login', 0, 1, [('state', 'method=pgp'), ('build', 'build')])
+N(s, 'LoginApprove', 0, 2, [('state', 'side=new')])
+N(s, 'SessionLength', 0, 3, [('state', 'step=ask')])
+N(s, 'Main', 0, 4, [('state', 'tab Trade'), ('build', 'build')], icon='trade')
+N(s, 'MyTrades', 0, 5, [('state', 'list=some')], icon='trade')
+N(s, 'BuyMain', 0, 6, [('state', 'Buy toggle'), ('build', 'build')], icon='trade')
+N(s, 'PostOffer', 0, 7, [('state', 'tab Post offer'), ('build', 'build')], icon='sell')
+N(s, 'Wallet', 0, 8, [('state', 'tab Wallets'), ('build', 'build')], icon='buy')
+N(s, 'Profile', 0, 9, [('state', 'tab Profile'), ('state', '› Settings')], icon='user')
+N(s, 'SetupTerms', 1, 1, [('state', 'Create account')], icon='user')
+N(s, 'Login-Backup', 1, 2, [('state', 'view=enter'), ('build', 'build')])
+N(s, 'RecoveryHold', 1, 3, [('state', 'step=hold')])
+N(s, 'RecoveryCode', 1, 4, [('state', 'step=show')])
+N(s, 'Compromised', 1, 5, [('state', 'step=form')])
+N(s, 'SessionExtend', 1, 8, [('state', 'step=ask'), ('state', '5 min before end')])
 n = s['nodes']
+V(s, n['Landing'], n['Login']); E(s, n['Landing'], n['SetupTerms'])
 V(s, n['Login'], n['LoginApprove']); V(s, n['LoginApprove'], n['SessionLength']); V(s, n['SessionLength'], n['Main'])
-T(s, n['Main'], [n['BuyMain'], n['PostOffer'], n['Wallet'], n['Profile']])
+T(s, n['Main'], [n['MyTrades'], n['BuyMain'], n['PostOffer'], n['Wallet'], n['Profile']])
 E(s, n['Login'], n['Login-Backup']); V(s, n['Login-Backup'], n['RecoveryHold']); V(s, n['RecoveryHold'], n['RecoveryCode']); V(s, n['RecoveryCode'], n['Compromised'])
 H(s, n['Wallet'], n['SessionExtend'])
 
 # 2 Signup
-s = section('2', 'Signup', 'Set up your account, about 2 minutes. Ends on Login (G25), then SessionLength.', 'user')
-names = ['SignupSecurity', 'SetupTerms', 'SetupUsername', 'SetupLogin', 'SetupPgpKey', 'SetupPgpChallenge', 'SetupBackup', 'SetupWallet', 'SetupWelcome']
-chips = {'SignupSecurity': [('state', 'variant=strong')], 'SetupTerms': [('draft', 'draft'), ('build', 'build')], 'SetupPgpChallenge': [('state', '3 of 5 · part 2')], 'SetupWelcome': [('state', 'to Login')]}
+s = section('2', 'Signup', 'Terms, tick box and signature first, once (owner, 8 Nov). Then set up the account. Ends on Login (G25).', 'user')
+names = ['Landing', 'SetupTerms', 'SignupSecurity', 'SetupUsername', 'SetupLogin', 'SetupPgpKey', 'SetupPgpChallenge', 'SetupBackup', 'SetupWallet', 'SetupWelcome']
+chips = {'Landing': [('state', 'Create account')], 'SignupSecurity': [('state', 'variant=strong')], 'SetupTerms': [('draft', 'draft'), ('build', 'build')], 'SetupPgpChallenge': [('state', '3 of 5 · part 2')], 'SetupWelcome': [('state', 'to Login')]}
 for i, nm in enumerate(names):
-    N(s, nm, 0, i, chips.get(nm, [('build', 'build')]))
-N(s, 'SetupPassword', 1, 4, [('state', 'alt 3'), ('build', 'build')])
-N(s, 'RecoveryCode', 1, 1, [('state', 'step=show')], icon='key')
-N(s, 'OwnerSetup', 1, 6, [('staff', 'first run')], icon='staff')
-N(s, 'BecomeVendor', 1, 7, [('state', 'state=met')], icon='sell')
-N(s, 'MemberApproval', 1, 8, [('state', 'side=member')], icon='user')
+    N(s, nm, 0, i, chips.get(nm, [('build', 'build')]), icon='key' if nm == 'Landing' else None)
+N(s, 'SetupPassword', 1, 5, [('state', 'alt 3'), ('build', 'build')])
+N(s, 'RecoveryCode', 1, 3, [('state', 'step=show')], icon='key')
+N(s, 'OwnerSetup', 1, 7, [('staff', 'first run')], icon='staff')
+N(s, 'BecomeVendor', 1, 8, [('state', 'state=met')], icon='sell')
+N(s, 'MemberApproval', 1, 9, [('state', 'side=member')], icon='user')
 n = s['nodes']
 for a, b in zip(names, names[1:]): V(s, n[a], n[b])
 E(s, n['SetupLogin'], n['SetupPassword']); E(s, n['SignupSecurity'], n['RecoveryCode'])
@@ -188,13 +192,13 @@ N(s, 'Team', 1, 2, [('build', 'build'), ('draft', 'draft')], icon='user')
 N(s, 'MemberPermissions', 1, 3, [('state', 'offers-and-chat')], icon='user')
 N(s, 'MemberApproval', 1, 4, [('state', 'side=lead')], icon='user')
 N(s, 'TeamRefusal', 1, 5, [('state', 'variant=invite')], icon='user')
-N(s, 'InviteInvalid', 1, 6, [('state', 'reason=expired')], icon='user')
+N(s, 'InviteInvalid', 1, 6, [('state', 'session=out')], icon='user')
 N(s, 'TeamChat', 1, 7, [('state', 'viewer=lead')], icon='user')
 N(s, 'BlockQueued', 1, 9, [('gone', 'superseded')], gone=True)
 n = s['nodes']
 T(s, n['Settings'], [n[nm] for nm, _ in kids if nm not in ('HoldChange', 'JabberSetup')])
 E(s, n['Settings'], n['Team'])
-V(s, n['Team'], n['MemberPermissions']); V(s, n['MemberPermissions'], n['MemberApproval']); V(s, n['MemberApproval'], n['TeamRefusal']); V(s, n['TeamRefusal'], n['InviteInvalid']); V(s, n['InviteInvalid'], n['TeamChat'])
+V(s, n['Team'], n['MemberPermissions']); V(s, n['MemberPermissions'], n['MemberApproval']); V(s, n['MemberApproval'], n['TeamRefusal']); V(s, n['TeamRefusal'], n['InviteInvalid'])
 
 # 6 Help and notices
 s = section('6', 'Help and notices', 'Help rail item opens FAQ. CantDoThat is one shared popup; Maintenance and Ban-Notice are events.', 'help')
@@ -329,8 +333,8 @@ h1,h2,h3{{text-wrap:balance}}
 
   <section aria-label="Design notes" style="display: flex; flex-direction: column; gap: 12px; padding-top: 24px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
-    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Every phone board with a -Wide twin is the same screen at 1000 px and up with the six-item rail (Trade, Post offer, Wallets, Profile, Settings, Help); the twins are not drawn as separate nodes. A board that belongs to two flows (Block, TeamChat, BecomeVendor, Refunded, Review, SelfDestruct, TradeFund, Main) is drawn in each. Names, amounts and times on the boards are examples: buyer mira.k, seller satoshi_ghost, trade K7M2-9QXA-4FTR-8WPN, 1.250000 XMR for $412.50 via Zelle.</p>
-    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Owner rules the arrows follow: Pay now and I've paid only after the escrow is secured (Q12); the buyer may cancel until I've paid, then only a dispute (g67); 90 minutes before a dispute on instant methods (F9); after signup the person logs in and then picks a session length (G25); held changes wait 24 hours and are listed on one view (g65); FlexOffer-Post is the offer form (Q4).</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Every phone board with a -Wide twin is the same screen at 1000 px and up with the six-item rail (Trade, Post offer, Wallets, Profile, Settings, Help); the twins are not drawn as separate nodes. A board that belongs to two flows (Block, TeamChat, BecomeVendor, Refunded, Review, SelfDestruct, TradeFund, Main) is drawn in each. Landing is the landing page drawn on the LogoDirections board, not a board file of its own. Names, amounts and times on the boards are examples: buyer mira.k, seller satoshi_ghost, trade K7M2-9QXA-4FTR-8WPN, 1.250000 XMR for $412.50 via Zelle.</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Owner rules the arrows follow: Pay now and I've paid only after the escrow is secured (Q12); the buyer may cancel until I've paid, then only a dispute (g67); 90 minutes before a dispute on instant methods (F9); logged out, a visitor reaches only Landing, Login, recovery (Login-Backup) and signup, which starts with the Terms, tick box and signature on SetupTerms; no arrow reaches the marketplace before Login and SessionLength (owner, 8 Nov, comment #9); after signup the person logs in and then picks a session length (G25); held changes wait 24 hours and are listed on one view (g65); FlexOffer-Post is the offer form (Q4).</p>
   </section>
 </div>
 </x-dc>

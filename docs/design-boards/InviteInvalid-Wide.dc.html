@@ -18,6 +18,31 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
+  <div style="{{screenStyle}}">
+  <sc-if value="{{isOut}}" hint-placeholder-val="{{true}}">
+    <header style="display: flex; align-items: center; justify-content: center; padding: 56px 32px 0;">
+      <span role="img" aria-label="X2F" style="font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true" style="color: var(--ink);">X2F</span></span>
+    </header>
+    <div style="flex-grow: 1; display: flex; justify-content: center; align-items: center; padding: 32px 32px 64px;">
+      <div style="width: 560px; display: flex; flex-direction: column; gap: 24px;">
+        <main style="display: flex; flex-direction: column;">
+          <section aria-labelledby="ii-title-out" style="{{heroStyle}}">
+            <span style="{{chipStyle}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 15l-1.5 1.5a3.5 3.5 0 01-5-5L5 9"/><path d="M15 9l1.5-1.5a3.5 3.5 0 015 5L19 15"/><path d="M4 4l16 16"/></svg>{{chip}}</span>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <h1 id="ii-title-out" style="margin: 0; text-wrap: balance; font-family: 'Familjen Grotesk', sans-serif; font-size: 40px; line-height: 44px; font-weight: 700; letter-spacing: -0.02em;">This invite link doesn't work</h1>
+              <p style="margin: 4px 0 0; font-size: 18px; line-height: 26px; color: var(--ink-muted); text-wrap: pretty;">This invite link has expired or was already used. Ask the person who sent it for a new one.</p>
+            </div>
+          </section>
+        </main>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <a href="Login-Wide.dc.html" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 16px; font-weight: 600; text-decoration: none;">Log in</a>
+          <a href="SetupTerms.dc.html" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Create account</a>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+  <sc-if value="{{isIn}}" hint-placeholder-val="{{false}}">
+
   <header style="position: relative; display: flex; align-items: center; justify-content: center; padding: 56px 32px 0;">
     <span role="img" aria-label="X2F" style="font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true" style="color: var(--ink);">X2F</span></span>
   </header>
@@ -26,7 +51,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <div style="width: 560px; display: flex; flex-direction: column; gap: 24px;">
       <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
         <span style="font-size: 16px; line-height: 22px; font-weight: 600;">Join a team</span>
-        <span style="display: flex; margin-right: -10px;"><a href="Login-Wide.dc.html" aria-label="Close and go to log in" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></a></span>
+        <span style="display: flex; margin-right: -10px;"><a href="Main.dc.html" aria-label="Close and go to Trade" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></a></span>
       </div>
       <main style="display: flex; flex-direction: column; gap: 24px;">
         <section aria-labelledby="ii-title" style="{{heroStyle}}">
@@ -71,13 +96,21 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </section>
       </main>
       <div style="display: flex; align-items: center; gap: 16px;">
-        <a href="Login-Wide.dc.html" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 16px; font-weight: 600; text-decoration: none;">Go to log in</a>
+        <a href="Main.dc.html" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 16px; font-weight: 600; text-decoration: none;">Go to Trade</a>
       </div>
     </div>
   </div>
+  </sc-if>
+  </div>
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 32px; border-top: 1px solid var(--line);">
+    <div style="width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px;"><h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <aside aria-label="Decided by the owner: no free tours" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 8 Nov (comment #9, no free tours)</span><span style="font-weight: 600;">Logged out, the invite page names nobody and shows nothing from behind login.</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>session=out (default): one message for every reason, the centred wordmark, Log in and Create account (SetupTerms). No account name, Vendor tag, member count, date or &quot;Tell &hellip; now&quot;.</li><li>The same words for expired, used, cancelled, full and unreadable links, so the page never confirms that a team or account exists.</li><li>session=in: the named detail moves here (team account, Vendor tag, 3 of 3 members, the time, &quot;Tell satoshi_ghost now&quot;). The reason tweak only changes this variant.</li></ul></aside>
+    <aside aria-label="Anticipated by design" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Anticipated · design, 8 Nov (follows comment #9)</span><span>Logged in, the close button and the main button go to Trade (Main) instead of to log in, and the &quot;used&quot; line no longer says &quot;go to log in&quot;.</span></aside>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Showing: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{showing}}</span>. Names and times are examples.</p></div>
+  </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"reason":{"editor":"enum","options":["expired","used","revoked","full","incomplete"],"default":"expired"},"$preview":{"width":1280,"height":800}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"session":{"editor":"enum","options":["out","in"],"default":"out"},"reason":{"editor":"enum","options":["expired","used","revoked","full","incomplete"],"default":"expired"},"$preview":{"width":1280,"height":1197}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = {}; }
   renderVals() {
@@ -86,8 +119,13 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    // Board height = measured content height: 800 (the minimum) for every reason except 'used', whose extra callout needs 827.
-    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + (this.props.reason === 'used' ? 863 : 800) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    // Logged out (default) names nobody: one message for every reason (owner, 8 Nov, comment #9).
+    const isIn = this.props.session === 'in';
+    // Board height = measured natural height (night, fonts loaded): screen + design notes.
+    const HEIGHTS = {"out":1197,"in-expired":1197,"in-used":1282};
+    const H = isIn ? (HEIGHTS['in-' + this.props.reason] || HEIGHTS['in-expired']) : HEIGHTS.out;
+    const screenStyle = "position: relative; min-height: 800px; flex-shrink: 0; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const REASONS = ['expired', 'used', 'revoked', 'full', 'incomplete'];
     const r = REASONS.indexOf(this.props.reason) >= 0 ? this.props.reason : 'expired';
     const ask = 'Ask satoshi_ghost for a new link';
@@ -104,7 +142,7 @@ class Component extends DCLogic {
         body: 'Each invite link works once. This one was used to join satoshi_ghost’s team.',
         whenLabel: 'Used', whenValue: '1 Nov 2026, 10:47 UTC',
         askTitle: ask,
-        askBody: 'If you already joined, go to log in. If not, ask for a link of your own.'
+        askBody: 'If it was you, you’re already on the team. If not, ask for a link of your own.'
       },
       revoked: {
         headline: 'satoshi_ghost cancelled it.',
@@ -130,11 +168,13 @@ class Component extends DCLogic {
     }[r];
     // Tone: a dead link is a neutral ending; a link someone else used is a caution (it may not have been you).
     const CHIPS = { expired: 'Link expired', used: 'Already used', revoked: 'Invite cancelled', full: 'Team full', incomplete: 'Link incomplete' };
-    const tone = r === 'used' ? 'var(--caution)' : 'var(--ink-muted)';
+    const tone = isIn && r === 'used' ? 'var(--caution)' : 'var(--ink-muted)';
     const heroStyle = 'display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, ' + tone + ' 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, ' + tone + ' 35%, transparent);';
-    const chipStyle = 'display: inline-flex; align-items: center; align-self: flex-start; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, ' + tone + (r === 'used' ? ' 14%' : ' 16%') + ', transparent); color: ' + (r === 'used' ? 'var(--caution)' : 'var(--ink)') + '; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;';
+    const chipStyle = 'display: inline-flex; align-items: center; align-self: flex-start; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, ' + tone + (isIn && r === 'used' ? ' 14%' : ' 16%') + ', transparent); color: ' + (isIn && r === 'used' ? 'var(--caution)' : 'var(--ink)') + '; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;';
     return {
-      rootStyle, heroStyle, chipStyle, chip: CHIPS[r],
+      rootStyle, screenStyle, heroStyle, chipStyle, chip: isIn ? CHIPS[r] : 'Can’t be used',
+      isIn, isOut: !isIn,
+      showing: isIn ? 'logged in · ' + r : 'logged out (every reason)',
       headline: C.headline,
       body: C.body,
       hasWhen: !!C.whenLabel,

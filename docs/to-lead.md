@@ -687,3 +687,11 @@ The owner asked design to treat his 12 comments as a brief for the whole app and
 2. A buyer who paid but never tapped "I've paid" before time ran out: can they open a dispute at once? Recommendation: yes.
 3. A seller who never funds the escrow: any consequence beyond the trade ending? Recommendation: none on the first time; it counts as a cancelled trade on their profile.
 - Also open: SessionExtend still shows a 2-minute prompt where Q73 says 5 minutes (design fixes); the G37 incident ID isn't on DisputeRoom yet (design adds it with Copy).
+
+## 8 Nov 2026: front door closed (canvas v144)
+
+- **InviteInvalid (+Wide):** tweak `session` out | in. Logged out: centred wordmark, one general message for every reason, "This invite link has expired or was already used. Ask the person who sent it for a new one.", and Log in / Create account; no names, team or counts. Logged in keeps the detail; "Go to Trade".
+- **Signup order is now agreement first:** Landing → SetupTerms (agree + sign) → SignupSecurity → SetupUsername → … → SetupWelcome, whose "Start trading" now goes to Login (G25), not into the marketplace. Back links follow the same order.
+- **FlowMap and docs/design-flow-map-2026-11-08.md:** Landing is the entry node; MyTrades is on the Trade hub; the arrow that let a logged-out invitee reach a trade is gone; `/trades` is MyTrades.
+- Maintenance stays a logged-in screen (it sits over the app); a logged-out visitor during maintenance sees the Landing. Noted on the flow map.
+- COPY-UNSIGNED: "Can't be used", the invite body line above, "Go to Trade", "If it was you, you're already on the team. If not, ask for a link of your own."
