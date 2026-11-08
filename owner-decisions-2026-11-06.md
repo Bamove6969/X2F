@@ -95,3 +95,13 @@ Explanations asked for: Q3 ranges, Q19 watcher (done), Q26, Q29 and Q33 (My offe
 - SonarQube (p4-7): the token is in the 1Password service vault, so the lead (PC only) sets it up from there. The vault token stays off cloud sessions.
 - Team logins (p4-8): team members may not use a stronger login method than the team lead uses. The lead's security is the maximum for the team. Who can see, untick or cancel waiting changes, or end a hold, is a granular team permission the lead grants. Default: only the lead acts; members without the permission just see that a hold is on.
 - Watcher (p4-9): always on, every 15 seconds, as built (option B). This lifts the owner hold on watcher Tasks 9 I/O, 9-view and 10, and on the trade timer code. Maintenance freezes trade timers, but 24-hour account holds keep counting (g62).
+
+## 7 Nov, page 5 (MGSNFwwRxkhd88PQqqg1N8); raw answers in ~/x2f-comms/owner-answers-raw/page5
+- Wording (p5-1): the owner wants every unsigned line, grouped by screen. Design produces the list; the lead builds pages with one screen per question.
+- Cancel confirmation (p5-2): "send to design for wording". Design owns that wording, and it goes into the by-screen pages for sign-off.
+- Trusted badge (p5-3): 200+ trades and 98%+ positive.
+- Support headline (p5-4): "Ask an X2F staff member".
+- Short lines (p5-5): the owner didn't follow them. They go into the by-screen pages with screen context.
+- Gift cards (p5-6): the top 30 + Home Hardware + Canadian Tire + Other (32 + Other): Amazon, Apple, Google Play, Uber, Uber Eats, DoorDash, Walmart, Best Buy, Home Depot, Steam, PlayStation, Xbox, IKEA, Sephora, Starbucks, Airbnb, Roblox, Nintendo eShop, Visa prepaid, Mastercard prepaid, Instacart, Air Canada, Petro-Canada, Esso, SkipTheDishes, Sobeys, Winners, Lululemon, Tim Hortons, Target, Home Hardware, Canadian Tire, Other. Razer Gold is dropped.
+- Removals during a hold (p5-7): low-security logins get a 24-hour hold on every important change (account, team, wallet/cash-out and the rest), removals included, so nothing applies early. During the hold, the team lead who made the changes can log back in and undo some or all of them.
+- NEW RULE (p5-7): if the user has set up secure Jabber (XMPP) notifications, every change to their account sends a discreet notification that says an account change was made, without saying what. This is a new feature; it needs a design board and a build task.
