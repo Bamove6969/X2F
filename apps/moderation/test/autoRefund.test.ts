@@ -501,6 +501,63 @@ describe('an armed auto-refund is rechecked every pass, like the armed buyer can
     });
   }
 
+  it('re-verify R1: a trade.paid after arming while the API stays refund_requested escalates refund-unverified once after PAID_CONFLICT_MS, also across a restart (5 h of passes); nothing is handed', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    const alertAt = await refundRequested(l);
+    net.seen.set(l.code, alertAt);
+    ctx.clock.now = at(alertAt, END + 1);
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([REFUND]);
+    // The buyer's sealed trade.paid (a lie, or a tap the API refused too-late); the API stays refund_requested.
+    await acked(l, l.buyer, 'trade.paid', PAID);
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.trade === l.code && r.kind === 'refund-unverified')).toEqual([]);
+    await m.handle.stop();
+    const again = await moderation(ctx, fetch);
+    await again.handle.watch();
+    const p = again.parties.get(l.code)!;
+    p.funds = { ...l.party.funds };
+    p.resolveReady('ignored');
+    for (let i = 0; i < 20; i++) {
+      later(ctx, 15 * MIN);
+      await again.handle.watch();
+    }
+    expect(p.settles).toEqual([]);
+    expect(net.reports.filter((r) => r.trade === l.code && r.kind === 'refund-unverified')).toHaveLength(1);
+    const rec = await record(l.code);
+    expect(rec.escalated).toBe('refund-unverified');
+    expect(rec.armed).toMatchObject({ kind: 'auto-refund', blocked: 'auto-refund-buyer-paid' });
+    await again.handle.stop();
+  });
+
+  it('re-verify R1: the buyer-paid block escalates only while the API shows refund_requested unpaused, and not before PAID_CONFLICT_MS', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    const alertAt = await refundRequested(l);
+    net.seen.set(l.code, alertAt);
+    ctx.clock.now = at(alertAt, END + 1);
+    await m.handle.watch();
+    await acked(l, l.buyer, 'trade.paid', PAID);
+    net.paused.add(l.code);
+    later(ctx, PAID_CONFLICT_MS - 1_000);
+    await m.handle.watch();
+    later(ctx, 10 * MIN);
+    await m.handle.watch(); // paused: nothing escalates
+    expect(net.reports.filter((r) => r.trade === l.code && r.kind === 'refund-unverified')).toEqual([]);
+    net.paused.delete(l.code);
+    later(ctx, MIN);
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.trade === l.code && r.kind === 'refund-unverified')).toHaveLength(1);
+    later(ctx, MIN);
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.trade === l.code && r.kind === 'refund-unverified')).toHaveLength(1);
+    expect(l.party.settles).toEqual([REFUND]);
+    await m.handle.stop();
+  });
+
   it('a block that no longer holds (a pause that ended, the API window still passed) lets the armed refund be handed again', async () => {
     const { net, fetch } = fakeNetwork(ctx);
     const m = await moderation(ctx, fetch);

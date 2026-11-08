@@ -3,7 +3,7 @@ import { ReplayGuard, type Envelope, type ReplayGuardJSON } from '@x2f/protocol'
 import { channelFor, payoutsFor, settleKindFor, type ChainFacts, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
 import type pg from 'pg';
 import { FINAL_ALERT_MS } from '@x2f/escrow';
-import { AUTO_REFUND_MARGIN_MS, autoRefundStep } from './autoRefund.js';
+import { AUTO_REFUND_MARGIN_MS, autoRefundStep, PAID_CONFLICT_MS } from './autoRefund.js';
 import { apiAllows, buyerCancelStep } from './buyerCancel.js';
 import type { Link } from './link.js';
 import { applyShadow, fromJson, newShadow, toJson } from './shadow.js';
@@ -401,6 +401,28 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
     }
     return { api: f.item, at: f.at };
   };
+  /**
+   * Re-verify R1 (8 Nov): an armed auto-refund blocked for good by the buyer's `trade.paid` (a lie, or
+   * a tap the API refused too late) while the API still shows `refund_requested` would leave the
+   * seller's coins with no route out (no API timer there, no dispute from it). Like the unarmed
+   * guard's paid conflict (review M7): once the API, fresh and unpaused, still shows
+   * `refund_requested` PAID_CONFLICT_MS after the signal, escalate `refund-unverified` (a person decides).
+   */
+  const paidConflict = async (r: DeskRecord, s: DeskStep, now: Date): Promise<DeskRecord> => {
+    if (r.escalated !== null) return r;
+    const c = await current(s);
+    if (c === null || c.api.state !== 'refund_requested' || c.api.paused === true || (r.shadow !== null && r.shadow.pausedAt !== null)) return r;
+    const since = r.paidSeenAt ?? r.armed?.at ?? now;
+    if (judgedAt(now, c.at).getTime() < since.getTime() + PAID_CONFLICT_MS) return r;
+    const res = await o.link.report({ kind: 'refund-unverified', trade: code });
+    if (accepted(res)) {
+      o.log({ reason: res.status === 409 ? 'escalate-wrong-state' : 'escalated-refund-unverified' });
+      return { ...r, escalated: 'refund-unverified' };
+    }
+    logOnce('escalate', `escalate-refused-${res.status}`);
+    return r;
+  };
+
   /** The earlier of the step's time and the read: an API fact is never taken as newer than its read. */
   const judgedAt = (now: Date, at: Date): Date => new Date(Math.min(now.getTime(), at.getTime()));
 
@@ -547,6 +569,7 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
         const keep = blocked === 'watch-list-stale' ? (r.armed.blocked ?? null) : blocked;
         if ((r.armed.blocked ?? null) !== keep) r = { ...r, armed: { kind: r.armed.kind, at: r.armed.at, ...(keep !== null ? { blocked: keep } : {}) } };
       }
+      if (kind === 'auto-refund' && blocked === 'auto-refund-buyer-paid') r = await paidConflict(r, s, now);
       if (blocked !== null) {
         logOnce('armed', blocked);
       } else if (balance > 0n && balance === unlocked) {
