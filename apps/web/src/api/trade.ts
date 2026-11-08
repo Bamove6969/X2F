@@ -109,6 +109,11 @@ export interface TradeView {
   cancelConfirmedAt: string | null;
   /** When the seller's Confirm cancel became available; the trade closes by itself 48 h later (owner 2026-10-29). */
   cancelConfirmableAt: string | null;
+  /**
+   * When the seller first nudged the buyer after the escrow was secured (owner G2, g66); null =
+   * not yet. The seller's "Cancel and get refund" stays locked until it is set and the 90 minutes are over.
+   */
+  sellerNudgedAt: string | null;
   nextDeadline: string | null;
   serverNow: string;
 }

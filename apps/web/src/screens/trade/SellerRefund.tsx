@@ -1,14 +1,18 @@
 /**
- * SellerRefund (board SellerRefund.dc.html, plan Task 25): the seller's screen once the buyer's
- * payment window has ended without "I've paid". The board copy, the dispute-after-refund warning
- * (spec 2.3, shown before the tap), then:
+ * SellerRefund (board SellerRefund.dc.html, plan Task 25; owner G2 and g66, 7 Nov): the seller's
+ * screen once the buyer's payment window has ended without "I've paid". The board copy, the
+ * dispute-after-refund warning (spec 2.3, shown before the tap; the old final-alert steps are
+ * gone from here, G2), then one of two footers:
  *
- * - **Cancel & get refund** (primary): `request-refund`, the `trade.refund-request` signal, then
- *   `buildRefund()` (refundFlow.ts). The buyer gets the final alert; the moderator co-signs only
- *   once its own guard allows (Task 10).
+ * - **Locked** (no nudge since the escrow was secured, `refundNeedsNudge`): **Nudge <buyer>** is
+ *   the primary, Give 30 more min, and the note that Cancel unlocks after 90 min and one nudge.
+ *   An accepted nudge re-reads the trade, whose `sellerNudgedAt` then unlocks Cancel.
+ * - **Available**: **Cancel & get refund** (primary): `request-refund`, the `trade.refund-request`
+ *   signal, then `buildRefund()` (refundFlow.ts). The buyer gets the final alert; the moderator
+ *   co-signs only once its own guard allows (Task 10). Then Give 30 more min and Nudge again (one
+ *   per 15 min, as many as needed: owner 7 Nov).
  * - **Give 30 more min**: `extend` and the `trade.extend` signal; hidden once the machine refuses
  *   it (after the second extension, spec 2.3).
- * - **Nudge <buyer>** (Task 26).
  *
  * The room shows it only once `payBy` has passed by the server clock (`sellerRefundOpen`), and
  * every button asks the @x2f/trade machine again on the server clock (refundRules.ts). After the
@@ -31,7 +35,7 @@ import { Icon } from '../../ui/icons.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { extendSteps, pendingRefundRun, refundRun, type RefundFlowDeps, type Steps } from './refundFlow.js';
-import { canExtend, canRequestRefund, finalAlertEnds } from './refundRules.js';
+import { canExtend, canRequestRefund, finalAlertEnds, refundNeedsNudge } from './refundRules.js';
 import { methodOf, publicName, type RefundScreenProps, type RefundSignal } from './refundSlot.js';
 import { postTradeEvent, TRY_AGAIN, useServerNow, xmrText } from './refundUi.js';
 import './refund.css';
@@ -69,30 +73,37 @@ function Header({ view }: Pick<RefundScreenProps, 'view'>) {
 }
 
 /**
- * The board's "If you cancel" steps (the last is the dispute-after-refund warning, spec 2.3). The
- * XMR owed after a lost dispute is the trade amount this device accepts (Task 12's status), never
- * the API's while the device has one (Task 12 review I3); the escrow balance is the view's. The
+ * The dispute-after-refund warning (spec 2.3), the one card left before the tap once G2 dropped
+ * the final-alert steps from it. The XMR owed after a lost dispute is the trade amount this device
+ * accepts (Task 12's status), never the API's while the device has one (Task 12 review I3). The
  * `?? view.amountAtomic` fallback is a deliberate departure from I3's "null = no sum yet": this is
  * a warning sentence, not a sum to pay, and it must stay on screen before the tap.
  */
-function IfYouCancel({ view, escrow, all }: Pick<RefundScreenProps, 'view' | 'escrow'> & { all: boolean }) {
+function LateDispute({ view, escrow }: Pick<RefundScreenProps, 'view' | 'escrow'>) {
   const name = publicName(view.counterparty);
-  const held = xmrText(view.receivedAtomic);
   const owed = xmrText(escrow.amountAtomic ?? view.amountAtomic);
+  return (
+    <p className="x2f-refund__late" data-late-dispute="">
+      Even after your refund, <Name name={name} /> can still open a dispute if they sent the money anyway. A moderator can pause your account
+      from trading until it's resolved, then reviews it fairly. If their payment reached you, you'll be asked to send <Name name={name} /> the{' '}
+      {owed} XMR as agreed. Refusing leads to an account suspension and a possible lifetime ban.
+    </p>
+  );
+}
+
+/**
+ * What happens after the request while the machine still runs the final alert (refund_requested):
+ * the buyer has 15 minutes to say they paid. Shown only on the requested screen.
+ */
+function FinalAlertSteps({ view }: Pick<RefundScreenProps, 'view'>) {
+  const name = publicName(view.counterparty);
   return (
     <ol className="x2f-refund__steps">
       <li>
         <Name name={name} /> gets a final alert and 15 minutes to say they already paid.
       </li>
-      <li>If they stay silent, your {held} XMR comes back to your wallet automatically. No moderator needed.</li>
+      <li>If they stay silent, your {xmrText(view.receivedAtomic)} XMR comes back to your wallet automatically. No moderator needed.</li>
       <li>If they say they paid, a moderator checks both sides before anything moves.</li>
-      {all ? (
-        <li>
-          Even after your refund, <Name name={name} /> can still open a dispute if they sent the money anyway. A moderator can pause your
-          account from trading until it's resolved, then reviews it fairly. If their payment reached you, you'll be asked to send{' '}
-          <Name name={name} /> the {owed} XMR as agreed. Refusing leads to an account suspension and a possible lifetime ban.
-        </li>
-      ) : null}
     </ol>
   );
 }
@@ -143,14 +154,25 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
         setNudge(null);
         setNudgeLimit(true);
       } else setNudge(r.result === 'sent' ? NUDGE_SENT : TRY_AGAIN);
+      // An accepted nudge sets the trade's sellerNudgedAt (owner G2): re-read it, so Cancel unlocks.
+      if (r.result === 'sent') await refresh().catch(() => undefined);
     } catch {
       setNudge(TRY_AGAIN);
     }
   };
 
+  // Owner G2: until the seller has nudged once since the escrow was secured, Cancel is locked and
+  // Nudge is the one primary.
+  const locked = refundNeedsNudge(view, now);
   const mayRefund = canRequestRefund(view, now) && busy === null;
   const offerExtend = canExtend(view, now);
   const method = methodOf(view);
+  const held = xmrText(view.receivedAtomic);
+  const extendButton = offerExtend ? (
+    <Button variant="secondary" disabled={busy !== null} onClick={() => void go('extend', extend())}>
+      Give 30 more min
+    </Button>
+  ) : null;
 
   return (
     <div className="x2f-refund" data-screen-part="seller-refund">
@@ -164,12 +186,21 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
             <Name name={name} /> didn't mark the payment in time
           </h1>
           <p className="x2f-refund__lead">
-            Your {xmrText(view.receivedAtomic)} XMR is still safe in escrow. You can take it back, or give <Name name={name} /> more time.
+            Your {held} XMR is still safe in escrow.{' '}
+            {locked ? (
+              <>
+                Nudge <Name name={name} />, or give them more time.
+              </>
+            ) : (
+              <>
+                You can take it back, or give <Name name={name} /> more time.
+              </>
+            )}
           </p>
         </section>
         <section aria-label="How the refund works" className="x2f-refund__card">
           <h2 className="x2f-refund__card-title">If you cancel</h2>
-          <IfYouCancel view={view} escrow={escrow} all />
+          <LateDispute view={view} escrow={escrow} />
         </section>
         <section className="x2f-refund__check">
           <span className="x2f-refund__check-icon">
@@ -181,26 +212,40 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
           </p>
         </section>
       </section>
-      <footer className="x2f-refund__footer">
+      <footer className="x2f-refund__footer" data-refund-cancel={locked ? 'locked' : 'available'}>
         {error ? (
           <p role="alert" className="x2f-refund__error">
             {TRY_AGAIN}
           </p>
         ) : null}
-        <Button variant="primary" disabled={!mayRefund} onClick={() => void go('refund', refundRun(view.code, deps))}>
-          Cancel &amp; get refund
-        </Button>
-        <div className="x2f-refund__row">
-          {offerExtend ? (
-            <Button variant="secondary" disabled={busy !== null} onClick={() => void go('extend', extend())}>
-              Give 30 more min
+        {locked ? (
+          <>
+            <Button variant="primary" onClick={() => void onNudge()}>
+              <Icon name="bell-ring" size={20} />
+              Nudge <Name name={name} />
             </Button>
-          ) : null}
-          <Button variant="secondary" className="x2f-refund__nudge" onClick={() => void onNudge()}>
-            <Icon name="bell-ring" size={20} />
-            Nudge <Name name={name} />
-          </Button>
-        </div>
+            {extendButton}
+            <p className="x2f-refund__note" data-refund-lock-note="">
+              No word from <Name name={name} />? After 90 min and at least one nudge, you can cancel and get your {held} XMR back.
+            </p>
+          </>
+        ) : (
+          <>
+            <Button variant="primary" disabled={!mayRefund} onClick={() => void go('refund', refundRun(view.code, deps))}>
+              Cancel &amp; get refund
+            </Button>
+            <div className="x2f-refund__row">
+              {extendButton}
+              <Button variant="secondary" className="x2f-refund__nudge" onClick={() => void onNudge()}>
+                <Icon name="bell-ring" size={20} />
+                Nudge again
+              </Button>
+            </div>
+            <p className="x2f-refund__note" data-refund-lock-note="">
+              You can nudge again every 15 min, as often as you need. You can cancel now.
+            </p>
+          </>
+        )}
         {nudge !== null ? (
           <p role="status" className="x2f-refund__note">
             {nudge}
@@ -284,7 +329,7 @@ function RefundRequested({ view, escrow, serverClock }: RefundScreenProps) {
           </section>
         ) : null}
         <section aria-label="How the refund works" className="x2f-refund__card">
-          <IfYouCancel view={view} escrow={escrow} all={false} />
+          <FinalAlertSteps view={view} />
         </section>
       </section>
       {pending === 'failed' ? (

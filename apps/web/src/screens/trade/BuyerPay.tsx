@@ -6,14 +6,14 @@
  * owns the escrow handle and picks the screen; these screens only show the view and act.
  *
  * Every action records the event with the API first, then asks the escrow (Task 12's order):
- * - I've paid → (PayWarning, once per trade, Task 38) → PaidConfirmSheet → `mark-paid { fiatCents }`
- *   (the total the sheet showed), then `escrow.markPaid(fiatCents)` (the `trade.paid` signal). A
- *   `total-changed` refusal sends nothing: the trade is re-read and the sheet asks again with the
- *   new total. PayWarning also opens when the screen opens while the escrow still confirms
- *   (Revision 2026-10-29b).
- * - Cancel trade (buyer, spec 2.3): one tap before "I've paid" (`buyer-cancel`, then
- *   `escrow.buyerCancel()`, which sends `trade.cancel`). After "I've paid" there is no cancel at
- *   all (owner, Revision 2026-10-29b; Task 39): the link is gone and the API refuses it.
+ * - I've paid → PaidConfirmSheet → `mark-paid { fiatCents }` (the total the sheet showed), then
+ *   `escrow.markPaid(fiatCents)` (the `trade.paid` signal). A `total-changed` refusal sends
+ *   nothing: the trade is re-read and the sheet asks again with the new total. The old PayWarning
+ *   (Task 38) no longer opens: the board marks Warn-IvePaid superseded by Q12.
+ * - Cancel trade (buyer, spec 2.3; owner G56 and g67): before "I've paid" it opens the
+ *   "Cancelling is final" sheet (CancelFinalSheet.tsx), whose Cancel trade posts `buyer-cancel`,
+ *   then `escrow.buyerCancel()`, which sends `trade.cancel`. After "I've paid" there is no cancel
+ *   at all (owner, Revision 2026-10-29b; Task 39): the link is gone and the API refuses it.
  * - The seller never cancels alone: Propose cancel / Withdraw (mutual cancel); the buyer gets an
  *   accept/decline card, and Accept is `accept-cancel` then `escrow.proposeCancelSign()`.
  */
@@ -29,13 +29,12 @@ import { MethodExplainer } from '../../ui/MethodExplainer.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
+import { CancelFinalSheet } from './CancelFinalSheet.js';
 import { CancelProposalCard, SellerCancelControls } from './CancelSheet.js';
 import { setFinalAlertPaidSheet } from './FinalAlert.js';
 import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
-import { buyerCancelMode, escrowChip, escrowConfirming, finishBlock, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
-import { PayWarning } from './PayWarning.js';
-import { setWarned, warned } from './warned.js';
+import { buyerCancelMode, escrowChip, finishBlock, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
@@ -443,20 +442,10 @@ export function BuyerPay(p: TradeScreenProps) {
   const needsFinish = paid && !escrow.paidRecorded && (escrow.refusal === 'amount-unknown' || escrow.refusal === 'view-mismatch');
   const finishBlocked = finishBlock(view, escrow);
   const finishOk = finishBlocked === null;
-  // Task 38: the warning before paying, until the buyer goes past it once for this trade (keyed
-  // by the room's code). It opens with the screen while the escrow still confirms (Revision
-  // 2026-10-29b), and in front of the "I've paid" sheet.
-  const [warnGone, setWarnGone] = useState(() => warned('pay', p.code));
-  const [warnOpen, setWarnOpen] = useState(() => !paid && !warned('pay', p.code) && escrowConfirming(view));
+  // Owner G56: the buyer's cancel asks once, "Cancelling is final".
+  const [cancelSheet, setCancelSheet] = useState(false);
   const onIvePaid = () => {
     if (block !== null) return;
-    if (warnGone) setPaySheet(true);
-    else setWarnOpen(true);
-  };
-  const pastWarning = () => {
-    setWarned('pay', p.code);
-    setWarnGone(true);
-    setWarnOpen(false);
     setPaySheet(true);
   };
 
@@ -474,7 +463,7 @@ export function BuyerPay(p: TradeScreenProps) {
   };
 
   const onCancel = async () => {
-    // The one-tap cancel trusts no view up to POLL_MS old: "I've paid" may have landed meanwhile
+    // The cancel (after its confirm sheet) trusts no view up to POLL_MS old: "I've paid" may have landed meanwhile
     // (another tab, or a mark-paid whose answer was lost), and then there is no cancel (review
     // Minor 4; Revision 2026-10-29b). The API refuses it in `paid` too.
     const fresh = await getTrade(view.code).catch(() => null);
@@ -498,7 +487,7 @@ export function BuyerPay(p: TradeScreenProps) {
   );
   const cancel =
     cancelMode === 'none' ? null : (
-      <Button variant="quiet" disabled={action.busy} onClick={() => void onCancel()}>
+      <Button variant="quiet" disabled={action.busy} onClick={() => setCancelSheet(true)}>
         Cancel trade
       </Button>
     );
@@ -564,7 +553,16 @@ export function BuyerPay(p: TradeScreenProps) {
   const sheets = (
     <>
       <PaidFlowSheet view={view} escrow={escrow} refresh={p.refresh} open={paySheet && !paid} onClose={() => setPaySheet(false)} />
-      <PayWarning open={warnOpen && !paid} bar={chip?.bar ?? null} onWait={() => setWarnOpen(false)} onPaid={pastWarning} />
+      <CancelFinalSheet
+        open={cancelSheet && cancelMode !== 'none'}
+        view={view}
+        busy={action.busy}
+        onKeep={() => setCancelSheet(false)}
+        onCancel={() => {
+          setCancelSheet(false);
+          void onCancel();
+        }}
+      />
     </>
   );
   const title = (

@@ -707,6 +707,7 @@ const CANCELLED = {
   txHash: 'ab'.repeat(32),
   cancelConfirmedAt: null,
   cancelConfirmableAt: null,
+  sellerNudgedAt: null,
 } as TradeView;
 
 test("44-46 Task 39: the seller confirms a buyer's cancel", async ({ page }) => {

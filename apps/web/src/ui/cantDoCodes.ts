@@ -304,7 +304,7 @@ export function extendCantDoText(code: CantDoCode): string | null {
 export const NUDGE_TOO_SOON_CODE = 'too-soon' satisfies CantDoCode;
 
 /** 429 `too-soon` on a nudge (Plan 3 Task 26). */
-export const NUDGE_TOO_SOON = 'You can nudge once every 10 minutes.';
+export const NUDGE_TOO_SOON = 'You can nudge once every 15 minutes.';
 
 /** The block's refusal code (Plan 3 Task 37). */
 export const CANNOT_BLOCK_CODE = 'cannot-block' satisfies CantDoCode;

@@ -67,10 +67,19 @@ export function sellerView(over: Partial<RefundView> = {}): RefundView {
     closedAt: null,
     cancelConfirmedAt: null,
     cancelConfirmableAt: null,
+    sellerNudgedAt: null,
     nextDeadline: iso(-5),
     serverNow: SERVER_NOW,
     ...over,
   };
+}
+
+/**
+ * The same, once the seller has nudged mira.k (owner G2, g66): 90 min passed and one nudge, so
+ * Cancel & get refund is available. `sellerView()` is the board's locked state (no nudge yet).
+ */
+export function sellerNudgedView(over: Partial<RefundView> = {}): RefundView {
+  return sellerView({ sellerNudgedAt: iso(-20), ...over });
 }
 
 /** The seller's view just after Cancel & get refund: the final alert started at server now. */
