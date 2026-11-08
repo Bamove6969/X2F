@@ -90,7 +90,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <aside aria-labelledby="tcw-chat" style="display: flex; flex-direction: column; border-radius: 16px; background: var(--surface); min-height: 0;">
         <div style="display: flex; flex-direction: column; gap: 2px; padding: 16px 20px; border-bottom: 1px solid var(--surface-raised);">
           <h2 id="tcw-chat" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{chatTitle}}</h2>
-          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Encrypted. If a dispute is opened, a moderator can read this conversation.</span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">End-to-end encrypted. If a dispute is opened, a moderator can read this conversation. It&#39;s erased for good 30 days after the trade ends, or 90 days after a dispute closes.</span>
         </div>
         <div role="log" aria-label="Trade chat" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; flex-grow: 1;">
           <sc-for list="{{msgs}}" as="m" hint-placeholder-count="8">
@@ -133,7 +133,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":1280,"height":1144}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":1280,"height":1180}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { draft: '', sent: [] }; }
   componentDidUpdate(prev) { if (prev.viewer !== this.props.viewer) this.setState({ draft: '', sent: [] }); }
@@ -146,7 +146,7 @@ class Component extends DCLogic {
     const s = this.state;
     const lead = this.props.viewer === 'lead';
     // Measured height: the chat column is the tallest thing on this screen.
-    const H = (lead ? 1096 : 1144) + s.sent.length * 76;
+    const H = (lead ? 1132 : 1180) + s.sent.length * 76;
     const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
 
     // Owner, 2 Nov: a team member's replies get their own colour (--team) so it's very obvious a team member is replying.

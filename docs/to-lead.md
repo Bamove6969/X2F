@@ -749,3 +749,8 @@ The owner asked design to treat his 12 comments as a brief for the whole app and
 - No Matrix states (no device verification, no "unable to decrypt"). Chat stays single-device.
 - Canvas v157.
 - Correction (owner rule, origin/comms): lock note now reads "…It's erased for good 30 days after the trade ends, or 90 days after a dispute closes." Heights unchanged. Canvas v158.
+
+## 8 Nov 2026 (night): "End-to-end encrypted" lock note on every chat — READY (owner request)
+- All 10 chat boards now read: "End-to-end encrypted. If a dispute is opened, a moderator can read this conversation. It's erased for good 30 days after the trade ends, or 90 days after a dispute closes." (Desktop, Fold-Trade, Fold-TriFold, PaymentDetails(+W), TeamChat(+W), DisputeRoom, Block(+W)).
+- Truth check for the build: only true if the server never holds a key that opens chats (keys only for buyer, seller, their team members' devices, and the moderation service). If team-member devices get keys, say so in the team docs.
+- Heights: DisputeRoom 1574→1606 (joined 1561, sent 1729), PaymentDetails 1974→2006, TeamChat 912→928 (lead 882), TeamChat-Wide 1144→1180 (lead 1132). Canvas v159.
