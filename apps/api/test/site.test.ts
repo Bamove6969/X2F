@@ -11,7 +11,7 @@ import { buildStaffApi } from '../src/staff/app.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { MODERATION_STUB, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedStaff, seedTap } from './helpers/staffApp.js';
 import { tradeApp } from './helpers/tradeApp.js';
-import { XMR, driveTo, fakeAddress, markSellerNudged, seedTrade } from './helpers/trades.js';
+import { XMR, driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
 
 const T0 = new Date('2026-11-02T12:00:00Z');
 const MIN = 60_000;
@@ -94,7 +94,6 @@ describe('emergency stop', () => {
     const paid = await driveTo(deps, s.trade, 'paid');
     const r = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
     const secured = await driveTo(deps, r.trade, 'secured');
-    await markSellerNudged(deps, secured.code);
     const d = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
     await driveTo(deps, d.trade, 'paid');
 

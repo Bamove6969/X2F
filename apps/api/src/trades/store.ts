@@ -63,8 +63,12 @@ export interface TradeRow {
   extensions: number;
   paid_at: Date | null;
   confirm_by: Date | null;
+  /**
+   * Retired by the owner's 8 Nov reversal (no final alert; migration 120): kept in the table for
+   * old rows, never read or written by the machine.
+   */
   final_alert_at: Date | null;
-  /** Task 19: when the buyer's first seen-receipt for the final alert landed (null = not seen). */
+  /** Retired with the final alert (Task 19's seen-receipt); kept for old rows only. */
   final_alert_seen_at: Date | null;
   cancel_proposed_by: 'buyer' | 'seller' | null;
   settling: Trade['settling'];
@@ -81,8 +85,9 @@ export interface TradeRow {
   /** Migration 116: when the seller's Confirm cancel became available (the refund fully confirmed). */
   cancel_confirmable_at: Date | null;
   /**
-   * Migration 119 (owner G2, g66): when the seller first nudged the buyer after the escrow was
-   * secured. Written only by the nudge route, never by `stateColumns` (no event changes it).
+   * Migration 119: when the seller first nudged the buyer after the escrow was secured. Written
+   * only by the nudge route, never by `stateColumns` (no event changes it). A record only since the
+   * owner made nudges optional (8 Nov, p6-1): no rule reads it.
    */
   seller_nudged_at: Date | null;
   buyer_payout: string | null;
@@ -138,7 +143,6 @@ export function rowToTrade(r: TradeRow): Trade {
     extensions: r.extensions,
     paidAt: r.paid_at,
     confirmBy: r.confirm_by,
-    finalAlertAt: r.final_alert_at,
     cancelProposedBy: r.cancel_proposed_by,
     settling: r.settling,
     settleFrom: r.settle_from,
@@ -180,7 +184,6 @@ function stateColumns(t: Trade): [string, unknown][] {
     ['extensions', t.extensions],
     ['paid_at', t.paidAt],
     ['confirm_by', t.confirmBy],
-    ['final_alert_at', t.finalAlertAt],
     ['cancel_proposed_by', t.cancelProposedBy],
     ['settling', t.settling],
     ['settle_from', t.settleFrom],
