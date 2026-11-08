@@ -63,9 +63,15 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
   BuyerPay: ['SG', 'Vendor', 'Online · replies in about 4 min', 'Online', '4', '1,284', 'trades', '99.4%', 'positive', '275.4', 'XMR traded', 'Trusted', 'Fast', '+3'].map(
     (text) => ({ text, why: TRADER_CARD }),
   ),
-  SellerRefund: ['MK', 'Last seen 1 h ago', '1', '212', 'trades', '99%', 'positive', '41.7', 'XMR traded', 'Trusted', 'PGP verified', '+3'].map(
-    (text) => ({ text, why: TRADER_CARD }),
-  ),
+  SellerRefund: [
+    ...['MK', 'Last seen 1 h ago', '1', '212', 'trades', '99%', 'positive', '41.7', 'XMR traded', 'Trusted', 'PGP verified', '+3'].map((text) => ({ text, why: TRADER_CARD })),
+    // Owner 8 Nov (p6-1): nudges are optional, so the board's locked state (Cancel waits for 90 min
+    // AND one nudge) is retired; the board predates the reversal and awaits a redraw.
+    ...['No word from mira.k? After 90 min and at least one nudge, you can cancel and get your 1.250000 XMR back.', '90'].map((text) => ({
+      text,
+      why: "The board's nudge lock, retired by the owner 8 Nov (p6-1: nudges are optional, Cancel is available as soon as the time to pay passes); board redraw owed.",
+    })),
+  ],
   CancelRequest: [
     ...['61', 'min', 'of 90 min · ends 1 Nov 2026, 15:21 UTC', '90', '1 Nov 2026, 15:21 UTC', '$412.50', 'for 1.250000 XMR', '1.250000', 'XMR'].map(
       (text) => ({ text, why: PAY_STEP_V2 }),
