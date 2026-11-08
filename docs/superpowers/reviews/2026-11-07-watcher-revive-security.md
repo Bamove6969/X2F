@@ -110,3 +110,93 @@ Recommended fix: none needed for money. Document it, or accept the buyer-built s
 - Real monero-ts timing for a tick with many trades (wallet sync per trade). There is no load or timing test of the watch loop.
 - The relay dropping or delaying `trade.paid` while the API state is out of date. Signals are tested only as delivered.
 - Playwright and e2e (`refund.spec.ts`, `fund.spec.ts`): read only, not run here.
+
+## Re-verify 2ead888c (8 Nov 2026)
+
+Fixes checked: 6c56e775 (F1), e446266b (F2), f60b2e13 (F3), e5550f9d (F4, docs). Checks run: `npm test -- --project @x2f/moderation --project @x2f/api` passed (85 files, 1957 tests). I also ran one throwaway probe test through the moderation harness for R1 below. It passed, which confirms the stuck path. I deleted it afterwards and did not commit it.
+
+### Verdict
+
+**CHANGES REQUIRED, one item (R1).** F1 closes the original scenario, but its permanent block opens a path where a seller's refund is stuck for good. The fix is small. F2 and F3 are sound. R2 to R5 are Minor and can land later.
+
+### What F1 closes (confirmed)
+
+- **The original scenario.** The watch list's read time is taken before the request. After the slow `funds()`, the watcher reads the list again if it is older than `WATCH_FRESH_MS` (10 s). `autoRefundStep` is judged at `min(now, read time)`, and arming or escalating needs facts no older than 10 s (`current()`). So the API's mark-paid window must already have closed at a time the API was seen unpaused. A pause after that read cannot reopen a window that had already closed; only clock skew is left, and the 60 s margin covers it. Tested: maintenance and API `paid` both arriving inside `funds()`.
+- **Escalations during maintenance.** `alert-unseen`, `alert-late`, `refund-unverified` and `spend-unshown` all use a refreshed, unpaused item, so they can fire at most about 10 s into maintenance (before: one whole tick).
+- **A refresh that fails.** Nothing is armed, escalated or handed that pass, and the watch state is not persisted. The next pass retries. Not stuck.
+- **A restart with an armed refund.** `armedRefundBlock` runs every pass before the outcome is handed to the party. Tested for paid, disputed, paused and `trade.paid`, each across a restart.
+- **Temporary blocks.** A pause that ends, another API state, or the API's pause-shifted mark-paid window still being open all clear by themselves. Tested.
+- **`paid` and `disputed` as permanent blocks.** API `paid` never returns to `refund_requested` (the machine has no such edge), and the seller can dispute from `paid` at any time. `disputed` is a person's job. So these two permanent blocks leave the trade with a dispute route.
+
+### R1. Important (new, introduced by F1 c). The buyer's `trade.paid` after arming blocks the auto-refund for good, and nothing escalates
+
+Where:
+- `desk.ts:100`: `auto-refund-buyer-paid` is in `FINAL_BLOCKS`.
+- `desk.ts:509-556`: the armed branch for an `auto-refund` never runs `autoRefundPass`, so the `PAID_CONFLICT_MS` and `refund-unverified` escalations that cover this case before arming are skipped.
+
+Scenario:
+1. The desk arms the auto-refund correctly, after the API's mark-paid window closed.
+2. Before the seller's build lands, the buyer sends a sealed `trade.paid`. This can be a lie, or a late tap whose API POST is refused `too-late`.
+3. The API stays `refund_requested`.
+4. The moderation service restarts. That is routine, and R3-M1 only keeps the handed outcome within one process.
+5. From then on:
+   - the refund is never handed to the party again;
+   - the desk never escalates;
+   - the API has no timer in `refund_requested`;
+   - `onDispute` refuses `refund_requested`, so the seller cannot open a dispute either.
+
+The seller's coins stay in the escrow with no automatic or manual route out. The buyer can trigger this at will.
+
+Probe: an armed refund, then `trade.paid` with the API still `refund_requested`, then a restart, then 5 h of passes. Nothing was settled and nothing was escalated; the record stays `blocked: auto-refund-buyer-paid`.
+
+Fix: when the armed auto-refund is blocked by `auto-refund-buyer-paid` while the fresh API item shows `refund_requested` (not paused) and `escalated` is null, escalate `refund-unverified` and record `escalated`. Waiting `PAID_CONFLICT_MS` first, as before arming, is fine. The machine already accepts `escalate` from `refund_requested` with coins. Add a test with the probe above.
+
+### R2. Minor. For an own tx, the `settled` kind comes from the desk's record, and the API can refuse it forever
+
+Where: `watcher.ts:430-431`. `settledKind` for an own tx is `deskNow.record().armed.kind`.
+
+Scenario: the R4-M2 path. The party had already committed to the buyer-built cancel, but the record says `armed: auto-refund`. The buyer cancels again at the API (`settling/buyer-cancel`, and the buyer's `spend.info` claim keeps the trade there). The committed cancel lands as the mod's own tx. The watcher reports `settleKind: 'auto-refund'`, the API answers `settle-kind-changed`, and this repeats every pass with no back-off. `spend-unshown` never fires because a sweep is shown. The escrow is empty and the seller has the coins, so only the trade record is stuck; a party must open a dispute by hand (allowed after `settleBy`).
+
+Fix: name an own tx's kind from the outcome the party actually signed (builder `buyer` means `buyer-cancel`, builder `seller` means `auto-refund`). Alternatively, let the API accept either of those two for an own tx, since their payouts are identical. Also back off on `settle-kind-changed`.
+
+### R3. Minor. When the instance lock is lost, the process stops but does not exit
+
+Where: `main.ts`, `lock.on('error')` calls `stop()`.
+
+The loops stop but the process stays up doing nothing, so nothing restarts it. A half-open connection (no TCP keepalive) may also never emit `error`. The server would eventually drop the session and release the lock, while the old process keeps working. The `version` checks still protect the desk and watch rows. `mod_escrow_state` has no version check, but the relay's 4409 ends the old party.
+
+Fix:
+- On lock loss, exit non-zero from the entry point.
+- Set `keepAlive` on the pool, or check the lock connection every pass (`select 1`).
+- Remove the `error` listener in `stop()`. The tests print `MaxListenersExceededWarning: 11 error listeners added to [Client]`, because the pooled lock client keeps one listener per start.
+
+### R4. Minor. Plan 3 has no ruling path once the armed refund is blocked by `paid` or `disputed`
+
+`verifyRuling` refuses every ruling in Plan 3. A disputed trade whose armed refund is blocked therefore waits for Plan 4's rulings. This is consistent with the plan; recorded so the dependency is not forgotten.
+
+### R5. F4
+
+Documented as a delay-only limit in coordination.md. Accepted.
+
+### F2 and F3 (sound)
+
+**F2:**
+- `pg_try_advisory_lock` is taken on a dedicated pool connection for the life of the process, and a second process refuses to start (exit 1).
+- The key `x2mi` differs from the migrator's `x2mo`.
+- The pool's `max` went from 4 to 5, so 4 connections are still free for the work, as before.
+- `mod_trade_desk` and `mod_watch` gain `version`, and saves happen only over the version read. On a miss the desk reloads its record and the signal is not acked (the sender resends), and the watch state is dropped (every report is safe to repeat).
+- `tick()` is serialised, so `watch()` never overlaps the loop.
+- Migration `006_versions.sql` is in the moderation schema's own folder (001 to 006). It is not part of the API's 1xx/2xx/3xx numbering. Across all 65 remote branches, `006` exists only on this branch, so there is no clash.
+
+**F3:**
+- The report carries `settleKind` (exact keys).
+- The API refuses a null kind with `settle-kind-unknown` and a different kind with `settle-kind-changed`.
+- The kind is checked again inside `applyEvent` (`within`, under the row lock, before the commit; a throw rolls back). Tested.
+- The note "Deploy the API first" is recorded in coordination.md. Until the API is deployed, an old API refuses the new key set with 400, which delays settlement but loses nothing.
+
+### Still not tested
+
+- A seller-side escalation after the buyer-paid block (R1).
+- An own tx whose recorded armed kind differs from the API's (R2).
+- Losing the lock connection in a real Postgres failover (R3).
+- Real monero-ts tick timing.
