@@ -229,6 +229,44 @@ a.x2f-method:last-of-type {
   border-bottom-right-radius: var(--x2f-radius-lg);
 }
 
+/* The live card (MethodPicker): the method picker on top, the row to its offers under it, one 16 px
+   card like the rows' (a 1 px rule between). Each row is a 44 px+ tap target. */
+.x2f-method-pick {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--x2f-radius-lg);
+}
+
+.x2f-method-pick .x2f-method {
+  min-height: 52px;
+}
+
+.x2f-method-pick__button {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.x2f-method-pick__button:focus-visible,
+.x2f-method-pick__link:focus-visible {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: -2px;
+}
+
+/* Not the list rows' first-of-type corners: the card clips its own, and the rule stays. */
+.x2f-method-pick a.x2f-method.x2f-method-pick__link {
+  border-top: 1px solid var(--x2f-surface-raised);
+  border-radius: 0;
+}
+
+.x2f-method-pick__link .x2f-method__sub {
+  font-size: 14px;
+  line-height: 20px;
+}
+
 .x2f-method svg {
   flex-shrink: 0;
   color: var(--x2f-ink-muted);
