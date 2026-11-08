@@ -73,6 +73,9 @@ export function payBlockText(b: PayBlock, escrow: Pick<TradeEscrow, 'error' | 'r
       return stoppedText(escrow);
     case 'escrow-refused':
       return refusalText(escrow.refusal) ?? "Your device can't settle this trade as the server shows it. Don't send any money.";
+    case 'not-secured':
+      // Board BuyerPay (escrow=securing), owner Q12.
+      return 'Opens once the escrow is secured.';
     case 'escrow-not-ready':
       return "Your device is still checking the escrow. Keep this page open, and don't send any money yet.";
     case 'no-amount':
@@ -122,7 +125,8 @@ export function PaidFlowSheet({ view, escrow, refresh, open, onClose }: PaidFlow
         await refresh();
         return { ok: false, reason: 'total-changed' };
       }
-      if (e instanceof ApiCallError && e.status === 409 && e.code === 'wrong-state') {
+      // too-early: the server has not seen the escrow secured yet (owner Q12), whatever this view said.
+      if (e instanceof ApiCallError && e.status === 409 && (e.code === 'wrong-state' || e.code === 'too-early')) {
         // Moved on, or an earlier mark-paid landed and its answer was lost: re-read, and the screen for the new state takes over.
         close();
         await refresh();

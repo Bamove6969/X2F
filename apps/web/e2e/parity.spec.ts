@@ -252,6 +252,12 @@ test.describe('board texts', () => {
       'You pay no X2F fee when you take an offer.',
     );
     expect(withoutBoardMarkers('Buyer counts and rates are examples.')).toBe('');
+    // The boards' unsigned-copy badge is a marker, not app copy.
+    expect(withoutBoardMarkers('Draft copy')).toBe('');
+    expect(withoutBoardMarkers('This is a draft copy of the rules.')).toBe('This is a draft copy of the rules.');
+    expect(await boardTexts(page, 'SellerRefund')).not.toContain('Draft copy');
+    // Nor are the boards' own "Design notes" sections beside the app frame.
+    expect(await boardTexts(page, 'SellerRefund')).not.toContain('Design notes');
     const confirm = await boardTexts(page, 'SellerConfirm');
     expect(confirm).toContain('Trade K7M2-9QXA-4FTR-8WPN · Zelle');
     expect(confirm).toContain('Check your bank account for $412.50 sent via Zelle');
