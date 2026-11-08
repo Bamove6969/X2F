@@ -15,6 +15,7 @@ import { PAY_SECURED } from '../src/fixtures/payBoard.js';
 import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
 import { BOARD, SERVER_NOW, buyerAlertView, sellerNudgedView, sellerView } from './refundViews.js';
+import { INSIDE } from './session.js';
 
 type RefundView = TradeView;
 const PORT = 4319;
@@ -106,7 +107,7 @@ test('parity with SellerRefund at 1280x800, in the desktop shell', async ({ page
 test('parity with the Desktop board at 1280x800', async ({ page }) => {
   // The Desktop board is the buyer's paying room (TradeTimeline, counterparty card, chat): Task
   // 23's BuyerPay in this room, with the device's own figures and deal (e2e/pay.spec.ts has the rest).
-  await page.route('**/v1/account/me', (r) => r.fulfill({ json: { kind: 'trader' } }));
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: INSIDE }));
   await page.route(`**/v1/trades/${CODE}`, (r) => json(PAY_SECURED)(r));
   await page.addInitScript((e) => {
     window.__x2fFixtureEscrow = e;

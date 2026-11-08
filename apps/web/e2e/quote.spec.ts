@@ -6,6 +6,7 @@ import { fiatCents } from '@x2f/trade';
 import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { expectParity } from './parity.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
+import { INSIDE } from './session.js';
 
 /** The take body as Task 5 reads it (Revision 2026-10-27): the amount, the wallet and the quoted rate and total. */
 interface TakeBody {
@@ -43,7 +44,7 @@ const MIRA_BUYS = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, d
 async function stubApi(page: Page, s: Stub): Promise<Seen> {
   const seen: Seen = { takes: [], storedFiatCents: [], walletPosts: [] };
   await page.route('**/v1/account/me', (r) =>
-    s.signedIn ? r.fulfill({ json: { displayName: 'viewer_1', kind: 'trader', methods: ['pgp'] } }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
+    s.signedIn ? r.fulfill({ json: { displayName: 'viewer_1', ...INSIDE, methods: ['pgp'] } }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
   );
   await page.route('**/v1/methods?*', (r) =>
     r.fulfill({ json: { live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] } }),
@@ -161,35 +162,25 @@ test.describe('BuyQuote', () => {
     expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-new-0', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
   });
 
-  test("logged out, Trade goes to setup; Welcome's Start trading comes back in the same tab and the quote is shown again at the price now, never taken silently", async ({ page }) => {
+  test('logged out, the quote never opens: the front door sends the visitor to log in with the quote kept as returnTo, and signed in it opens (owner, 8 Nov 2026)', async ({ page }) => {
     const stub: Stub = { ...base, signedIn: false, wallets: [] };
     const seen = await stubApi(page, stub);
-    await page.goto(`${BUY}&amount=${B.amount}`);
-    await expect(card(page)).toContainText('1.250000 XMR');
-    await trade(page).click();
-    // Setup starts on the Terms (Task 28), with this quote and a pending-take nonce as returnTo.
-    await expect(page).toHaveURL(/\/setup\?returnTo=/);
-    await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
-    const returnTo = new URL(page.url()).searchParams.get('returnTo')!;
-    expect(new URL(returnTo, 'http://x').searchParams.get('resume')).toMatch(/^[0-9a-f]{32}$/);
+    const offerCalls: string[] = [];
+    page.on('request', (r) => {
+      const path = new URL(r.url()).pathname;
+      if (path === '/v1/offers' || path === '/v1/price') offerCalls.push(path);
+    });
+    const quote = `${BUY}&amount=${B.amount}`;
+    await page.goto(quote);
+    await expect(page).toHaveURL(`/login?returnTo=${encodeURIComponent(quote)}`);
+    await expect(card(page)).toHaveCount(0);
+    expect(offerCalls).toEqual([]);
     expect(seen.takes).toHaveLength(0);
-    // The steps in between are setup.spec's: here an account now exists with its first wallet, and
-    // the person is on Welcome in this same tab (the marker lives in this tab's sessionStorage).
-    // Setup took a while and the feed moved: the quote the person comes back to shows the rate now.
+    // Once logged in (the login returns to returnTo, login.spec), the same quote opens.
     stub.signedIn = true;
     stub.wallets = [B.wallets[0]];
-    stub.rate = '34000';
-    await page.goto(`/setup/welcome?returnTo=${encodeURIComponent(returnTo)}`);
-    await page.click('[data-part="start-trading"]');
-    await expect(page).toHaveURL(/\/buy\//);
-    await expect(page.getByRole('status')).toHaveText("You're back. Check the total, then tap Trade.");
-    await expect(card(page)).toContainText('$340.00 / XMR');
-    await expect(card(page)).toContainText('$412.50 USD');
-    expect(seen.takes).toHaveLength(0);
-    await trade(page).click();
-    await expect(page).toHaveURL(`/trade/${B.code}`);
-    expect(seen.takes).toHaveLength(1);
-    expect(seen.takes[0]).toMatchObject({ centsPerXmr: '34000', fiatCents: '41250' });
+    await page.goto(new URL(page.url()).searchParams.get('returnTo')!);
+    await expect(card(page)).toContainText('1.250000 XMR');
   });
 
   test("the rate the person sees is the rate that locks: a stale rate is refused price-changed, the quote re-quotes, and the fresh tap locks the new one", async ({ page }) => {

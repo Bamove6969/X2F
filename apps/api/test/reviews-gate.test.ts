@@ -87,9 +87,10 @@ const take = (who: Who, offer: string) => who.browser.post(`/v1/offers/${offer}/
 const refusal = (res: { statusCode: number; json(): unknown }) => ({ status: res.statusCode, ...(res.json() as object) });
 const rate = (who: Who, code: string, body: unknown = { neutral: true }) => who.browser.post(`/v1/trades/${code}/review`, body);
 const skip = (who: Who, code: string) => who.browser.post(`/v1/trades/${code}/review/skip`, {});
+/** Whether `offer` is listed to `viewer`, or to a bystander (a trader with no ties) by default. */
 const listed = async (offer: string, viewer?: Who) => {
   const url = '/v1/offers?side=sell&method=ZELLE&currency=USD';
-  const res = viewer ? await viewer.browser.get(url) : await app.inject({ method: 'GET', url });
+  const res = await (viewer ?? (await trader())).browser.get(url);
   expect(res.statusCode).toBe(200);
   return (res.json() as { id: string }[]).some((c) => c.id === offer);
 };

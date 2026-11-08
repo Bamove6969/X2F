@@ -93,20 +93,13 @@ test('a named send carries the refusal code; the form works at desktop width too
   await noSideScroll(page);
 });
 
-test('signed out: told before typing, and the draft is kept through the log-in round trip', async ({ page }) => {
+test('signed out, the form never opens: the front door sends the visitor to log in, keeping where they were going (owner, 8 Nov 2026)', async ({ page }) => {
   await stub(page);
   await page.unroute('**/v1/account/me');
-  let signedIn = false;
-  await page.route('**/v1/account/me', (r) => (signedIn ? json(ME)(r) : json({ error: 'not-authenticated' }, 401)(r)));
+  await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
   await page.goto('/feedback?from=trading-hold');
-  await expect(page.locator('[data-part="feedback-login-first"]')).toContainText('Log in to send feedback');
-  await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
-  await page.getByLabel('Your message').fill('Hold rules are unclear.');
-  signedIn = true;
-  // The person logs in elsewhere in this tab and comes back: the words are still there.
-  await page.goto('/feedback?from=trading-hold');
-  await expect(page.getByLabel('Your message')).toHaveValue('Hold rules are unclear.');
-  await expect(page.locator('[data-part="feedback-login-first"]')).toHaveCount(0);
+  await expect(page).toHaveURL(`/login?returnTo=${encodeURIComponent('/feedback?from=trading-hold')}`);
+  await expect(page.getByLabel('Your message')).toHaveCount(0);
 });
 
 // C11 review M1/M2: a real touch drag (CDP touch events, so the browser decides pan vs pointer) down

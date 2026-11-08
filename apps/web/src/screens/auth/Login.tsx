@@ -97,6 +97,13 @@ export function Login() {
           Use a backup
         </Link>
       </p>
+      {/* The front door (owner, 8 Nov 2026): every screen behind it sends a logged-out visitor here. */}
+      <p className="x2f-screen__foot">
+        New to X2F?{' '}
+        <Link className="x2f-link" to={`/setup?returnTo=${encodeURIComponent(returnTo)}`} data-part="create-account">
+          Create an account
+        </Link>
+      </p>
     </main>
   );
 }

@@ -6,7 +6,8 @@ import { PRICE_FEED_DEFAULTS, createPriceFeed, median, type PriceQuote, type Pri
 import { createFxRates } from '../src/price/fx.js';
 import { createMarketPrices } from '../src/price/market.js';
 import { PRICE_SOURCE_NAMES, parsePriceSources, priceSources, readCapped } from '../src/price/sources.js';
-import { testApp } from './helpers/app.js';
+import type { Browser } from './helpers/totp.js';
+import { tradeApp } from './helpers/tradeApp.js';
 import { VAPID_ENV } from './helpers/vapid.js';
 
 const T0 = new Date('2026-10-24T06:00:00Z');
@@ -551,6 +552,8 @@ describe('config PRICE_SOURCES', () => {
 describe('GET /v1/price', () => {
   let app: FastifyInstance;
   let setNow: (d: Date) => void;
+  // Behind the front door (owner, 8 Nov 2026): a signed-in, set-up trader reads the price.
+  let viewer: Browser;
   let answer: () => PriceQuote[] | Error = () => usd(33000n);
 
   beforeAll(async () => {
@@ -558,7 +561,9 @@ describe('GET /v1/price', () => {
     const xmr = createPriceFeed([stub('a', () => answer()), stub('b', () => answer())], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
     const prices = createMarketPrices({ xmr, fx: createFxRates([], { clock: c.clock }) });
     await prices.poll();
-    ({ app, setNow } = await testApp({ prices, clock: c.clock }));
+    let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
+    ({ app, setNow, trader } = await tradeApp({}, { prices, clock: c.clock }));
+    viewer = (await trader()).browser;
     const set = setNow;
     setNow = (d) => {
       c.set(d);
@@ -568,8 +573,14 @@ describe('GET /v1/price', () => {
   afterAll(async () => app.close());
   afterEach(() => setNow(T0));
 
-  it('answers the median with its time and the currency exponent, with no cookie (P3-M9)', async () => {
+  it('is 401 with no data without a session (the front door, owner 8 Nov 2026; it was open under P3-M9)', async () => {
     const res = await app.inject({ method: 'GET', url: '/v1/price?currency=USD' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'not-authenticated' });
+  });
+
+  it('answers the median with its time and the currency exponent, and sets no cookie', async () => {
+    const res = await viewer.get('/v1/price?currency=USD');
     expect(res.statusCode).toBe(200);
     expect(res.headers['set-cookie']).toBeUndefined();
     expect(res.json()).toEqual({ currency: 'USD', centsPerXmr: '33000', exponent: 2, at: T0.toISOString(), usdCentsPerXmr: '33000' });
@@ -577,26 +588,27 @@ describe('GET /v1/price', () => {
 
   it('is 503 price-unavailable once the median is 5 min + 1 ms old (Review Focus 5)', async () => {
     setNow(new Date(T0.getTime() + 5 * MIN + 1));
-    const res = await app.inject({ method: 'GET', url: '/v1/price?currency=USD' });
+    const res = await viewer.get('/v1/price?currency=USD');
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ error: 'price-unavailable' });
   });
 
   it('is 503 for a supported currency with no price', async () => {
-    const res = await app.inject({ method: 'GET', url: '/v1/price?currency=EUR' });
+    const res = await viewer.get('/v1/price?currency=EUR');
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ error: 'price-unavailable' });
   });
 
   it.each([[''], ['?currency=usd'], ['?currency=XXX'], ['?currency=USD&currency=EUR'], ['?currency=US']])('refuses %s with 400', async (qs) => {
-    const res = await app.inject({ method: 'GET', url: `/v1/price${qs}` });
+    const res = await viewer.get(`/v1/price${qs}`);
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'bad-request' });
   });
 
   it('logs no price, amount or currency', async () => {
-    const { app: a, logs } = await testApp();
+    const { app: a, logs, trader } = await tradeApp();
     try {
+      await (await trader()).browser.get('/v1/price?currency=USD');
       await a.inject({ method: 'GET', url: '/v1/price?currency=USD' });
       expect(logs.filter((l) => l.includes('33000') || l.includes('USD'))).toEqual([]);
     } finally {

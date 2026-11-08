@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { expect, test, type Page } from '@playwright/test';
 import { KNOWN_EXCEPTIONS, boardTexts, expectParity, missingTexts, reportPixels, withoutBoardMarkers } from './parity.js';
+import { signedIn } from './session.js';
 
 const run = promisify(execFile);
 const REPO = fileURLToPath(new URL('../../../', import.meta.url));
@@ -359,6 +360,8 @@ test.describe('board texts', () => {
 });
 
 test('the 1280×800 header text matches the Desktop board', async ({ page }) => {
+  // The header shows behind the front door (owner, 8 Nov 2026): a signed-in, set-up trader.
+  await signedIn(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/sell');
   await expect(page.locator('[data-shell="desktop"]')).toBeAttached();

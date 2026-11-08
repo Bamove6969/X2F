@@ -14,6 +14,7 @@ import { stubBrowseApi } from './browse-stub.js';
 import { startFixtures } from './fixtures-serve.js';
 import { FOLD_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 import { sellerView } from './refundViews.js';
+import { INSIDE } from './session.js';
 
 const PORT = 4326;
 const ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -33,7 +34,7 @@ test.afterAll(async () => {
 const DEVICE = { phase: 'ready' as const, amountAtomic: PAY_SECURED.amountAtomic, fiatCents: PAY_SECURED.fiatCents, deal: { poster: 'seller' as const, takeAmountAtomic: PAY_SECURED.amountAtomic } };
 
 async function openRoom(page: Page, view: TradeView = PAY_SECURED): Promise<void> {
-  await page.route('**/v1/account/me', (r) => r.fulfill({ json: { kind: 'trader' } }));
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: INSIDE }));
   await page.route(/\/v1\/trades\/[^/]+(\/events)?$/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(view) }));
   await page.addInitScript((e) => {
     window.__x2fFixtureEscrow = e;
@@ -436,7 +437,7 @@ test.describe('folding keeps the screen, the scroll position and typed text', ()
   });
 
   test('a half-typed amount on the quote survives unfolding and folding', async ({ page }) => {
-    await page.route('**/v1/account/me', (r) => r.fulfill({ json: { displayName: 'viewer_1', kind: 'trader', methods: ['pgp'] } }));
+    await page.route('**/v1/account/me', (r) => r.fulfill({ json: { displayName: 'viewer_1', ...INSIDE, methods: ['pgp'] } }));
     await page.route('**/v1/methods?*', (r) =>
       r.fulfill({ json: { live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] } }),
     );

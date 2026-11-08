@@ -26,9 +26,22 @@ async function stubNews(page: Page, items: unknown[]): Promise<{ writes: string[
 const titles = (page: Page) => page.locator('[data-part="news-item"] h2').allTextContents();
 const newTitles = (page: Page) => page.locator('[data-part="news-item"][data-new] h2').allTextContents();
 
-test('logged out: newest first with dates, all new, then seen on the next visit', async ({ page }) => {
-  const s = await stubNews(page, ITEMS);
+test('logged out, News never opens: the front door sends the visitor to log in, and nothing is read (owner, 8 Nov 2026)', async ({ page }) => {
+  const reads: string[] = [];
+  page.on('request', (r) => {
+    if (new URL(r.url()).pathname === '/v1/news') reads.push(r.url());
+  });
+  await stubNews(page, ITEMS);
   await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
+  await page.goto('/news');
+  await expect(page).toHaveURL('/login?returnTo=%2Fnews');
+  await expect(page.locator('[data-part="news-item"]')).toHaveCount(0);
+  expect(reads).toEqual([]);
+});
+
+test('newest first with dates, all new, then seen on the next visit', async ({ page }) => {
+  const s = await stubNews(page, ITEMS);
+  await page.route('**/v1/account/me', json({ displayName: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], termsCurrent: true }));
   await page.goto('/news');
   await expect(page.getByRole('heading', { level: 1, name: 'News' })).toBeVisible();
   expect(await titles(page)).toEqual(['Upgrade done', 'Planned upgrade', 'Welcome']);

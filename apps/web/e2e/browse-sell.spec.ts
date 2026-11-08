@@ -195,22 +195,17 @@ test.describe('/sell/:methodId (SellOffers board)', () => {
     }
   });
 
-  test('logged out, the lists render and no browse request fails', async ({ page }) => {
+  test('logged out, the lists never open: the front door sends the visitor to log in, keeping the path (owner, 8 Nov 2026)', async ({ page }) => {
     const seen = await stubApi(page, { signedIn: false });
-    const failed: string[] = [];
-    // GET /v1/site is the app shell's (Plan 4 Task 8: banner, maintenance), not a browse request.
-    page.on('response', (r) => {
-      const path = new URL(r.url()).pathname;
-      if (path.startsWith('/v1/') && path !== '/v1/account/me' && path !== '/v1/site' && r.status() >= 400) failed.push(`${r.status()} ${path}`);
-    });
     await page.goto('/sell');
-    await expect(page.locator('main a').first()).toBeVisible();
+    await expect(page).toHaveURL(/\/login\?returnTo=%2Fsell$/);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Log in');
     await page.goto('/sell/ZELLE');
-    await expect(page.locator('article')).toHaveCount(3);
-    await expect(page.getByRole('button', { name: 'Trade with mira.k' })).toBeEnabled();
-    expect(failed).toEqual([]);
+    await expect(page).toHaveURL(/\/login\?returnTo=%2Fsell%2FZELLE$/);
+    await expect(page.locator('article')).toHaveCount(0);
+    expect(await page.locator('body').innerText()).not.toContain('mira.k');
     const paths = new Set(seen.requests.map((r) => new URL(r.url()).pathname));
-    for (const p of ['/v1/methods', '/v1/offers', '/v1/price']) expect(paths.has(p), p).toBe(true);
+    for (const p of ['/v1/methods', '/v1/offers', '/v1/price']) expect(paths.has(p), p).toBe(false);
   });
 
   test('starter limits: an offer the viewer cannot take yet is greyed with "Opens at Building"', async ({ page }) => {

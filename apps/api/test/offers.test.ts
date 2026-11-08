@@ -41,11 +41,20 @@ let app: FastifyInstance;
 let deps: Deps;
 let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
 let anon: Browser;
+/**
+ * Browsing is behind the front door (owner, 8 Nov 2026; it was open to logged-out browsers under
+ * P3-M9): the lists and offers are read by a bystander, a graduated trader with no ties to anyone
+ * (so no starter cap marks `opensAt` on their cards, as nothing marked them for a logged-out browser).
+ */
+let viewer: Browser;
 let setNow: (d: Date) => void;
 
 beforeAll(async () => {
   ({ app, deps, trader, setNow } = await tradeApp({}, { prices }));
   anon = new Browser(app);
+  const v = await trader();
+  await history(v.id, { days: 60, completed: 20 });
+  viewer = v.browser;
 });
 afterAll(async () => {
   await app.close();
@@ -87,7 +96,7 @@ async function post(who: Who, over: Record<string, unknown> = {}): Promise<strin
 
 type Card = Record<string, unknown> & { id: string; poster: Record<string, unknown>; rate: string | null };
 
-async function list(q: string, who: Browser = anon): Promise<Card[]> {
+async function list(q: string, who: Browser = viewer): Promise<Card[]> {
   const res = await who.get(`/v1/offers?${q}`);
   expect(res.statusCode, res.body).toBe(200);
   return res.json() as Card[];
@@ -106,9 +115,14 @@ async function history(accountId: string, a: { days: number; completed: number }
 }
 
 describe('POST /v1/offers and GET /v1/offers', () => {
-  it('posts an offer and lists it to a logged-out browser, in the shape the web parses (P3-M9)', async () => {
+  it('posts an offer and lists it to a signed-in trader, in the shape the web parses; logged out gets 401 and no data', async () => {
     const p = await poster();
     const id = await post(p, { currency: 'CAD' });
+    for (const url of ['/v1/offers?side=sell&method=ZELLE&currency=CAD&sort=best', `/v1/offers/${id}`]) {
+      const out = await anon.get(url);
+      expect(out.statusCode, url).toBe(401);
+      expect(out.body, url).toBe('{"error":"not-authenticated"}');
+    }
     // CAD has no market in the fake feed: the market offer has no rate now.
     const cards = await list('side=sell&method=ZELLE&currency=CAD&sort=best');
     expect(cards).toEqual([
@@ -134,26 +148,26 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     expect(rows[0]).toEqual({ login_name: null, login_key: null, login_tag: currentLoginTag(deps, p.loginName) });
     expect(p.loginName.toLowerCase()).not.toBe(p.displayName.toLowerCase());
     for (const url of ['/v1/offers?side=sell&method=ZELLE&currency=CAD', `/v1/offers/${id}`]) {
-      expect((await anon.get(url)).body.toLowerCase()).not.toContain(p.loginName.toLowerCase());
+      expect((await viewer.get(url)).body.toLowerCase()).not.toContain(p.loginName.toLowerCase());
     }
     // Other sides, methods and currencies do not see it.
     expect(await list('side=buy&method=ZELLE&currency=CAD')).toEqual([]);
     expect(await list('side=sell&method=REVOLUT&currency=CAD')).toEqual([]);
   });
 
-  it('a market offer lists the market rate plus its margin; the single-offer route answers logged out too', async () => {
+  it('a market offer lists the market rate plus its margin; the single-offer route answers it too', async () => {
     const p = await poster();
     const id = await post(p, { currency: 'EUR', pricing: { mode: 'market', marginBps: -100 } });
     // EUR market 29700; −1% → 29403.
     const [card] = await list('side=sell&method=ZELLE&currency=EUR');
     expect(card).toMatchObject({ id, rate: '29403', pricing: { mode: 'market', marginBps: -100 } });
-    const one = await anon.get(`/v1/offers/${id}`);
+    const one = await viewer.get(`/v1/offers/${id}`);
     expect(one.statusCode).toBe(200);
     expect(one.json()).toEqual({
       ...card, side: 'sell', methodId: 'ZELLE', currency: 'EUR', terms: BODY.terms, status: 'live',
     });
-    expect((await anon.get('/v1/offers/00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);
-    expect((await anon.get('/v1/offers/not-a-uuid')).statusCode).toBe(404);
+    expect((await viewer.get('/v1/offers/00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);
+    expect((await viewer.get('/v1/offers/not-a-uuid')).statusCode).toBe(404);
   });
 
   it('a fixed-price offer lists its own rate while the feed is down; a market offer lists rate null', async () => {
@@ -192,7 +206,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
   it('refuses a bad query with 400', async () => {
     for (const q of ['', 'side=sell&currency=USD', 'side=both&method=ZELLE&currency=USD', 'side=sell&method=ZELLE&currency=usd',
       'side=sell&method=ZELLE&currency=USD&sort=cheap', 'side=sell&method=ZELLE&method=REVOLUT&currency=USD']) {
-      expect((await anon.get(`/v1/offers?${q}`)).statusCode, q).toBe(400);
+      expect((await viewer.get(`/v1/offers?${q}`)).statusCode, q).toBe(400);
     }
   });
 
@@ -283,7 +297,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     const id = await post(p, { ...gift, country: 'US' });
     const [card] = await list('side=buy&method=AMAZON_GIFT_CARD&currency=USD');
     expect(card).toMatchObject({ id, country: 'US' });
-    expect((await anon.get(`/v1/offers/${id}`)).json()).toMatchObject({ country: 'US' });
+    expect((await viewer.get(`/v1/offers/${id}`)).json()).toMatchObject({ country: 'US' });
     // A card without one has no country key at all.
     const plain = await post(p, { currency: 'INR' });
     expect('country' in (await list('side=sell&method=ZELLE&currency=INR')).find((c) => c.id === plain)!).toBe(false);
@@ -309,7 +323,7 @@ describe('PATCH /v1/offers/:id', () => {
     expect(paused.json()).toEqual({ id, status: 'paused' });
     expect(await list(q)).toEqual([]);
     // A paused offer is shown to its poster only.
-    expect((await anon.get(`/v1/offers/${id}`)).statusCode).toBe(404);
+    expect((await viewer.get(`/v1/offers/${id}`)).statusCode).toBe(404);
     expect((await p.browser.get(`/v1/offers/${id}`)).json()).toMatchObject({ status: 'paused' });
 
     expect((await p.browser.patch(`/v1/offers/${id}`, { status: 'live' })).json()).toEqual({ id, status: 'live' });
@@ -352,14 +366,14 @@ describe('who is listed', () => {
     await post(p, { currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '340000' } });
     const paused = await post(p, { currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '100' } });
     await p.browser.patch(`/v1/offers/${paused}`, { status: 'paused' });
-    const res = await anon.get('/v1/methods?side=sell&currency=SEK');
+    const res = await viewer.get('/v1/methods?side=sell&currency=SEK');
     expect(res.statusCode).toBe(200);
     const { live } = res.json() as { live: { id: string; offers: number; bestRate: string | null }[] };
     expect(live).toEqual([expect.objectContaining({ id: 'ZELLE', offers: 2, bestRate: '340000' })]);
     // Buy ads: the best is the highest.
     await post(p, { side: 'buy', currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '340000' } });
     await post(p, { side: 'buy', currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '360000' } });
-    const buy = (await anon.get('/v1/methods?side=buy&currency=SEK')).json() as { live: { id: string; bestRate: string | null }[] };
+    const buy = (await viewer.get('/v1/methods?side=buy&currency=SEK')).json() as { live: { id: string; bestRate: string | null }[] };
     expect(buy.live).toEqual([expect.objectContaining({ id: 'ZELLE', bestRate: '360000' })]);
   });
 });
@@ -406,7 +420,8 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
       return Object.fromEntries([small, mid, big].map((id) => [id, cards.find((c) => c.id === id)?.opensAt ?? '-']));
     };
 
-    expect(await opens(anon)).toEqual({ [small]: '-', [mid]: '-', [big]: '-' });
+    expect(await opens(viewer)).toEqual({ [small]: '-', [mid]: '-', [big]: '-' });
+    expect((await anon.get(`/v1/offers?${q}`)).statusCode).toBe(401);
     const starter = await trader();
     expect(await opens(starter.browser)).toEqual({ [small]: '-', [mid]: 'building', [big]: 'graduated' });
     const building = await trader();
@@ -509,7 +524,7 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
       expect(res.statusCode, JSON.stringify(t)).toBe(400);
     }
     const id = await post(p, { currency: 'UAH', terms: 'Team \u{1F469}‍\u{1F4BB} ok­ay\r\nline two\rthree\tend' });
-    expect((await anon.get(`/v1/offers/${id}`)).json()).toMatchObject({ terms: 'Team \u{1F469}‍\u{1F4BB} ok­ay\nline two\nthree\tend' });
+    expect((await viewer.get(`/v1/offers/${id}`)).json()).toMatchObject({ terms: 'Team \u{1F469}‍\u{1F4BB} ok­ay\nline two\nthree\tend' });
   });
 
   it('M3: lastSeenAt is public only to the 5 minutes (floored)', async () => {
@@ -526,8 +541,8 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     await deps.db.query('update site_flags set trading_paused = true');
     try {
       expect(await list('side=sell&method=ZELLE&currency=AED')).toEqual([]);
-      expect(((await anon.get('/v1/methods?side=sell&currency=AED')).json() as { live: unknown[] }).live).toEqual([]);
-      expect((await anon.get(`/v1/offers/${id}`)).statusCode).toBe(404);
+      expect(((await viewer.get('/v1/methods?side=sell&currency=AED')).json() as { live: unknown[] }).live).toEqual([]);
+      expect((await viewer.get(`/v1/offers/${id}`)).statusCode).toBe(404);
       expect((await p.browser.get(`/v1/offers/${id}`)).json()).toMatchObject({ id, status: 'live' });
     } finally {
       await deps.db.query('update site_flags set trading_paused = false');
@@ -554,18 +569,18 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     const d = await post(off, { currency: 'PKR' });
     await deps.db.query('insert into trading_holds (account_id, created_at) values ($1, $2)', [held.id, deps.clock()]);
     await deps.db.query('update accounts set disabled_at = $2 where id = $1', [off.id, deps.clock()]);
-    expect((await anon.get(`/v1/offers/${h}`)).statusCode).toBe(404);
-    expect((await anon.get(`/v1/offers/${d}`)).statusCode).toBe(404);
+    expect((await viewer.get(`/v1/offers/${h}`)).statusCode).toBe(404);
+    expect((await viewer.get(`/v1/offers/${d}`)).statusCode).toBe(404);
     // An SBP offer (only possible from before the method went under review) is hidden too.
     const p = await poster();
     const sbp = await post(p, { currency: 'BDT' });
     await deps.db.query(`update offers set method_id = 'SBP' where id = $1`, [sbp]);
-    expect((await anon.get(`/v1/offers/${sbp}`)).statusCode).toBe(404);
+    expect((await viewer.get(`/v1/offers/${sbp}`)).statusCode).toBe(404);
     expect(await list('side=sell&method=SBP&currency=BDT')).toEqual([]);
   });
 
   it('M11: a repeated sort is 400; browsing signed in does not touch the session', async () => {
-    expect((await anon.get('/v1/offers?side=sell&method=ZELLE&currency=USD&sort=best&sort=online')).statusCode).toBe(400);
+    expect((await viewer.get('/v1/offers?side=sell&method=ZELLE&currency=USD&sort=best&sort=online')).statusCode).toBe(400);
     const t = await trader();
     const before = new Date(deps.clock().getTime() - 60_000);
     await deps.db.query('update sessions set last_seen_at = $2 where account_id = $1', [t.id, before]);
@@ -647,7 +662,7 @@ describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
     const seen = async (who: Who, at: string): Promise<void> => {
       await deps.db.query('update sessions set last_seen_at = $2 where account_id = $1', [who.id, new Date(at)]);
     };
-    const online = async (): Promise<boolean> => ((await anon.get(`/v1/offers/${pOffer}`)).json() as Card).poster.online as boolean;
+    const online = async (): Promise<boolean> => ((await viewer.get(`/v1/offers/${pOffer}`)).json() as Card).poster.online as boolean;
     await seen(q, '2026-10-17T11:54:59.999Z');
     try {
       // Every request time in 11:55:00-11:59:59.999 gives the same answers at every moment.
@@ -683,7 +698,7 @@ describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
     await deps.db.query('update sessions set last_seen_at = $2 where account_id = $1', [q.id, new Date(deps.clock().getTime() - DAY)]);
     const shown = { online: true, lastSeenAt: deps.clock().toISOString() };
     const hidden = { online: false, lastSeenAt: null };
-    for (const who of [anon, other.browser]) {
+    for (const who of [viewer, other.browser]) {
       const cards = await list('side=sell&method=ZELLE&currency=JPY&sort=online', who);
       expect(cards.map((c) => c.id)).toEqual([pOffer, qOffer]);
       expect(cards.find((c) => c.id === pOffer)!.poster).toMatchObject(shown);

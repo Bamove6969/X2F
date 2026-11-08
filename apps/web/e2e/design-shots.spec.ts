@@ -914,7 +914,7 @@ test('60 News', async ({ page }) => {
     item(2, '2026-10-28T09:00:00.000Z', 'Planned upgrade', 'Tomorrow at 09:00 UTC. Trades in escrow are safe.'),
     item(1, '2026-10-20T09:00:00.000Z', 'Welcome', 'Hello from X2F.'),
   ], serverNow: '2026-10-29T12:00:00.000Z' }));
-  await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
+  await page.route('**/v1/account/me', json(TRADER_ME));
   await page.goto('/news');
   await expect(page.getByRole('heading', { level: 1, name: 'News' })).toBeVisible();
   await shot(page, '60-news');

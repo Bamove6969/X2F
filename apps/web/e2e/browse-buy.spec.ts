@@ -146,21 +146,15 @@ test.describe('/buy/:methodId (BuyOffers board)', () => {
     expect(await page.locator('body').innerText()).not.toContain('555-0100');
   });
 
-  test('logged out, the buy lists render and no browse request fails', async ({ page }) => {
+  test('logged out, the buy lists never open: the front door sends the visitor to log in, keeping the path (owner, 8 Nov 2026)', async ({ page }) => {
     const seen = await stub(page, { signedIn: false });
-    const failed: string[] = [];
-    // GET /v1/site is the app shell's (Plan 4 Task 8: banner, maintenance), not a browse request.
-    page.on('response', (r) => {
-      const path = new URL(r.url()).pathname;
-      if (path.startsWith('/v1/') && path !== '/v1/account/me' && path !== '/v1/site' && r.status() >= 400) failed.push(`${r.status()} ${path}`);
-    });
     await page.goto('/buy');
-    await expect(page.locator('main a').first()).toBeVisible();
+    await expect(page).toHaveURL(/\/login\?returnTo=%2Fbuy$/);
     await page.goto('/buy/ZELLE');
-    await expect(page.locator('article')).toHaveCount(3);
-    expect(failed).toEqual([]);
+    await expect(page).toHaveURL(/\/login\?returnTo=%2Fbuy%2FZELLE$/);
+    await expect(page.locator('article')).toHaveCount(0);
     const paths = new Set(seen.requests.map((r) => new URL(r.url()).pathname));
-    for (const p of ['/v1/methods', '/v1/offers', '/v1/price']) expect(paths.has(p), p).toBe(true);
+    for (const p of ['/v1/methods', '/v1/offers', '/v1/price']) expect(paths.has(p), p).toBe(false);
   });
 });
 

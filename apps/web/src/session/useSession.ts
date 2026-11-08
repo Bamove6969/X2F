@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AccountOverview } from '@x2f/auth-client';
-import { ApiCallError, api } from '../api/client.js';
+import { ApiCallError, api, setSessionGoneListener } from '../api/client.js';
 
 /**
  * The signed-in account, a thin hook over Plan 2's `me()` (`GET /v1/account/me`). It goes through
@@ -35,6 +35,17 @@ export function refreshSession(): void {
   once = undefined;
   for (const l of [...listeners]) l();
 }
+
+/**
+ * The server said the session is gone (a 401 `not-authenticated` from any call but `me`): every
+ * mounted `useSession` reads signed-out without asking again, so the screens behind the front door
+ * go to the login (session/frontDoor.tsx), which keeps `returnTo`.
+ */
+export function sessionEnded(): void {
+  once = Promise.resolve({ status: 'signed-out' });
+  for (const l of [...listeners]) l();
+}
+setSessionGoneListener(sessionEnded);
 
 /** The public display name exactly as stored (FU-A `displayName`); '' when the answer has none. */
 export function displayNameOf(me: { displayName?: string }): string {
