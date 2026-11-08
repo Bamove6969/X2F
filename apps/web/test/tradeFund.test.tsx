@@ -221,6 +221,18 @@ describe('escrow check and the security check', () => {
     expect(host.textContent).toContain("Escrow check: four words. They match on satoshi_ghost's screen.");
   });
 
+  it('the four words render as a numbered list, never run together (design proto review P2: "1. amber2. lotus3. ceda4r. violet")', async () => {
+    const host = await room();
+    const list = host.querySelector('[data-escrow-check] ol')!;
+    expect([...list.children].map((li) => li.tagName)).toEqual(['LI', 'LI', 'LI', 'LI']);
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/screens/trade/trade.css'), 'utf8');
+    const rule = /\.x2f-escrow-check__words\s*\{([^}]*)\}/.exec(css)![1]!;
+    // A flex row put each outside marker over the word before it; a grid with the numbers inside each item can't.
+    expect(rule).not.toMatch(/display:\s*flex/);
+    expect(rule).toMatch(/display:\s*grid/);
+    expect(rule).toMatch(/list-style-position:\s*inside/);
+  });
+
   for (const error of ['participants-mismatch', 'deal-mismatch'] as const) {
     it(`${error}: the danger state, no address, QR or wallet link anywhere`, async () => {
       setTradeEscrowHook(() => escrow({ phase: 'error', error }));

@@ -253,14 +253,22 @@
   margin: 0;
 }
 
+/* A numbered list in two columns (design proto review P2): the numbers sit inside each item, so
+   no marker can land on the word before it (the flex row ran them together: "1. amber2. lotus"). */
 .x2f-escrow-check__words {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--x2f-space-2) var(--x2f-space-4);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  gap: var(--x2f-space-2) var(--x2f-space-6);
   margin: 0;
-  padding: 0 0 0 20px;
+  padding: 0;
+  list-style: decimal;
+  list-style-position: inside;
   font-size: 18px;
   color: var(--x2f-escrow);
+}
+
+.x2f-escrow-check__words li::marker {
+  color: var(--x2f-ink-muted);
 }
 
 .x2f-fund-footer {
