@@ -213,7 +213,7 @@ class Component extends DCLogic {
       { id: 'satoshi', name: 'satoshi_ghost', init: 'SG', xmr: '275.4', rate: 330.00, online: true, seen: 'Online', trades: 1284, pos: 99.4, min: 50, max: 1500, release: '~8 min', vendor: true, badges: ['trusted', 'fast', 'clean', 'veteran', 'm100'] },
       { id: 'kettle', name: 'kettle.moss', init: 'KM', xmr: '31.2', rate: 331.50, online: false, seen: 'Seen 40 min ago', trades: 96, pos: 98, min: 100, max: 3000, release: '~20 min', vendor: true, badges: ['pgp'] },
       { id: 'lowtide', name: 'lowtide_rx', init: 'LR', xmr: '2.9', rate: 333.00, online: true, seen: 'Online', trades: 12, pos: 100, min: 20, max: 400, release: '~30 min', vendor: true, badges: ['fresh'] },
-      { id: 'mira', name: 'mira.k', init: 'MK', xmr: '41.7', rate: 334.00, online: true, seen: 'Online', trades: 212, pos: 99, min: 200, max: 2500, release: '~15 min', vendor: false, badges: ['pgp'] }
+      { id: 'mira', name: 'mira.k', init: 'MK', xmr: '41.7', rate: 334.00, online: true, seen: 'Online', trades: 212, pos: 99, min: 200, max: 2500, release: '~15 min', vendor: false, badges: ['trusted', 'pgp', 'fast', 'hw', 'm100'] }
     ];
     const money = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
     const sort = this.state.sort;

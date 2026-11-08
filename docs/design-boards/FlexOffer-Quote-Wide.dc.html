@@ -150,7 +150,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["greyed","hidden"],"default":"greyed"},"$preview":{"width":1280,"height":1445}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["greyed","hidden"],"default":"greyed"},"$preview":{"width":1280,"height":1481}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -175,7 +175,7 @@ class Component extends DCLogic {
           { id: 'paypal', name: 'PayPal', adj: 2, max: 500, instr: 'Send from a PayPal account in your own name. Put the trade code in the note.' },
           { id: 'cashapp', name: 'Cash App', adj: 0.5, instr: 'Cash App to the $cashtag in the trade room. Trade code in the note.' }
         ] },
-      { id: 'mk', name: 'mira.k', init: 'MK', vendor: false, feat: ['pgp'], more: 0, online: true, stats: '212 trades · 99% positive', rel: 6,
+      { id: 'mk', name: 'mira.k', init: 'MK', vendor: false, feat: ['trusted', 'pgp'], more: 3, online: true, stats: '212 trades · 99% positive', rel: 6,
         tiers: [{ from: 50, to: 300, m: 0.8, min: 0 }, { from: 300.01, to: 2000, m: 0.3, min: 10 }],
         methods: [
           { id: 'zelle', name: 'Zelle', adj: 0, instr: 'Zelle from a bank account in your own name. Trade code in the memo, nothing else.' },

@@ -73,7 +73,7 @@ def offer_bottom(price,sub):
             f'<span style="display: inline-flex; align-items: center; justify-content: center; height: 44px; padding: 0 18px; border-radius: 12px; border: 1px solid var(--line); font-size: 15px; font-weight: 600;">Trade</span></div>')
 def card(inner): return f'<article style="display: flex; flex-direction: column; gap: 14px; padding: 18px; border-radius: 16px; background: var(--surface);">{inner}</article>'
 C1=card(trader('satoshi_ghost','SG',STATS,['trusted','fast'],3)+offer_bottom('$336.50','Zelle · 2% above market'))
-C2=card(trader('mira.k','MK',STATS2,['pgp'],3,ring=False,vendor=False)+offer_bottom('$338.15','Zelle · 2.5% above market'))
+C2=card(trader('mira.k','MK',STATS2,['trusted','pgp'],3,vendor=False)+offer_bottom('$338.15','Zelle · 2.5% above market'))
 def sec(title,lead,body,w=None):
     return (f'<section style="display: flex; flex-direction: column; gap: 16px;{f" width: {w}px;" if w else ""}"><div style="display: flex; flex-direction: column; gap: 4px;">'
             f'<h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{title}</h2><p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{lead}</p></div>{body}</section>')

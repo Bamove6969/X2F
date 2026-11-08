@@ -87,8 +87,9 @@ class Component extends DCLogic {
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const rootStyle = THEMES[theme] + "width: 1280px; min-height: 1281px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;";
     const A = '3HW8-ZD2N-RT6K-Q9VB', B = 'K7M2-9QXA-4FTR-8WPN', C = 'P9VC-6KE1-YB4M-2HJD';
-    // One cast (head designer 7 Nov): fixed initials; satoshi_ghost keeps the Trusted ring.
+    // One cast (head designer 7 Nov): fixed initials. Trusted ring: satoshi_ghost, and mira.k since 8 Nov (212 trades · 99%, rule 200+).
     const CAST_INIT = { 'satoshi_ghost': 'SG', 'mira.k': 'MK' };
+    const TRUSTED = ['satoshi_ghost', 'mira.k'];
     const bare = (x) => x.toUpperCase().replace(/[^0-9A-Z]/g, '');
     const all = [
       ['Today 09:50', C, 'system', '', 'Dispute opened by the seller: payment not received; waiting for a moderator'],
@@ -113,7 +114,7 @@ class Component extends DCLogic {
       const parts = r[4].split(/(\d[\d.,:–]*\d|\d)/).filter(Boolean).map((t) => ({ t, style: /^\d/.test(t) ? "font-family: 'Atkinson Hyperlegible Mono', monospace;" : '' }));
       return { day: r[0].slice(0, sp), time: r[0].slice(sp + 1), code: r[1] || '', who: r[2], role: r[3], parts,
         isStaff: staffRole(r[3]), isSystem: r[2] === 'system', isTrader: r[2] !== 'system' && !staffRole(r[3]), init: CAST_INIT[r[2]] || r[2].replace(/[^a-z]/gi, '').slice(0, 2).toUpperCase(),
-        avStyle: "position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid " + (r[2] === 'satoshi_ghost' ? 'color-mix(in srgb, var(--escrow) 70%, transparent)' : 'var(--surface-raised)') + "; font-family: 'Familjen Grotesk', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: -0.01em;",
+        avStyle: "position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid " + (TRUSTED.indexOf(r[2]) >= 0 ? 'color-mix(in srgb, var(--escrow) 70%, transparent)' : 'var(--surface-raised)') + "; font-family: 'Familjen Grotesk', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: -0.01em;",
         // Staff (moderators, owner) carry the --mod identity; traders are plain; system is muted. Usernames are body text, never mono.
         whoStyle: 'font-size: 15px; line-height: 20px; font-weight: 600; ' + (r[2] === 'system' ? 'color: var(--ink-muted);' : ''),
         roleStyle: !r[3] ? 'display: none;' : (staffRole(r[3])
