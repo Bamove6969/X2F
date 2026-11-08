@@ -1,3 +1,4 @@
+import { normalizeTradeCode } from '@x2f/core';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
@@ -7,9 +8,16 @@ import { blockedEitherWaySql } from '../traders/blocks.js';
 import { findByPublicName, PUBLIC_NAME } from './names.js';
 import { canonicalTimeZone, formatClock, inQuietHours, parseClock } from './quiet.js';
 
-/** One nudge per sender every 10 minutes (spec 2.4): the sender's own limit, refused with `too-soon`. */
-export const NUDGE_GAP_MS = 10 * 60_000;
-/** At most 3 nudges received per hour from everyone combined: past it, nudges are dropped silently (`recipient-busy`). */
+/**
+ * One nudge per sender every 15 minutes (owner, 7 Nov: "once every 15 minutes", as many as
+ * needed): the sender's own limit, refused with `too-soon`. There is no cap on how many.
+ */
+export const NUDGE_GAP_MS = 15 * 60_000;
+/**
+ * At most 3 nudges received per hour from everyone combined: past it, nudges are dropped silently
+ * (`recipient-busy`). Not for a nudge inside an open trade: there the owner's rule is one per 15
+ * minutes with no cap on the number (7 Nov), so only the sender's gap limits them.
+ */
 export const RECIPIENT_LIMIT_PER_HOUR = 3;
 const HOUR_MS = 3_600_000;
 /** Nudge records are kept only as long as the longest limit needs them. */
@@ -95,6 +103,25 @@ function deliver(app: FastifyInstance, toId: string, ev: NudgeEvent): void {
 }
 
 /**
+ * Owner G2 / g66: the seller's refund unlocks only after at least one nudge since the escrow was
+ * secured. An accepted nudge from the trade's seller to its buyer, naming the trade or its linked
+ * chat, sets `trades.seller_nudged_at` while the trade is `secured` (the only state the refund is
+ * asked in, so the time is never before `secured_at`). Set whether or not the nudge was delivered:
+ * the seller did nudge, and the answer is the same 202 either way. A later nudge leaves it as is.
+ */
+async function recordSellerNudge(client: pg.PoolClient, sellerId: string, buyerId: string, context: string, now: Date): Promise<void> {
+  const code = normalizeTradeCode(context);
+  if (code === null) return;
+  await client.query(
+    `update trades t set seller_nudged_at = $3
+      where t.seller_account_id = $1 and t.buyer_account_id = $2 and t.state = 'secured'
+        and (t.seller_nudged_at is null or t.seller_nudged_at < t.secured_at)
+        and t.code in ($4, (select c.trade_code from chats c where c.code = $4))`,
+    [sellerId, buyerId, now, code],
+  );
+}
+
+/**
  * `POST /v1/nudges { to, context }`. The sender's own refusals are distinct: 403
  * `no-shared-context` (also for an unknown name or yourself) and 429 `too-soon`. Everything about
  * the recipient (a block either way outside an open trade (Task 37 review M6, N1), nudges off, quiet hours, 3 already this hour, disabled) is decided after
@@ -113,6 +140,8 @@ async function nudgeHandler(req: FastifyRequest, reply: FastifyReply) {
   if (recipient === null || shared === false) throw new ApiError(403, 'no-shared-context');
   // Review N1: inside an open trade a block does not drop the nudge (the trade finishes normally).
   const blockApplies = shared !== 'open-trade';
+  // Owner 7 Nov: inside an open trade nudges are one per 15 minutes with no cap on the number.
+  const capApplies = shared !== 'open-trade';
 
   const now = deps.clock();
   let deliverIt = false;
@@ -144,11 +173,13 @@ async function nudgeHandler(req: FastifyRequest, reply: FastifyReply) {
       const f = rows[0]!;
       fromName = f.from_name;
       const quiet = inQuietHours({ quietFrom: f.quiet_from, quietTo: f.quiet_to, tz: f.tz }, now);
-      deliverIt = !recipient.disabled && f.enabled && !quiet && !(blockApplies && f.blocked) && f.recent < RECIPIENT_LIMIT_PER_HOUR;
-      // Recorded either way: a dropped nudge still starts the sender's 10 minutes.
+      deliverIt =
+        !recipient.disabled && f.enabled && !quiet && !(blockApplies && f.blocked) && !(capApplies && f.recent >= RECIPIENT_LIMIT_PER_HOUR);
+      // Recorded either way: a dropped nudge still starts the sender's 15 minutes.
       await client.query('insert into nudges (from_id, to_id, sent_at, delivered) values ($1, $2, $3, $4)', [
         fromId, recipient.id, now, deliverIt,
       ]);
+      if (shared === 'open-trade') await recordSellerNudge(client, fromId, recipient.id, context, now);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
