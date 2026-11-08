@@ -607,3 +607,8 @@ SellerRefund: "After 90 min and one nudge" → "After 90 min and at least one nu
 - **Gift card list final** (p5-6): GiftCardBrand drops the draft tag and the Proposed group; Home Hardware and Canadian Tire sit in A→Z; 32 + Other. Per-brand legal check (Q30) still open.
 - **Removals wait 24 h** (p5-7): HoldChange (+Wide) rows read "Removed in 23 h 12 min" / "Removed after 24 h"; prose "Every change, removals included, applies after 24 h."; Team (+Wide) remove sheet: "Like every other change, this waits 24 h unless you're logged in with a passkey, security key or PGP key; they keep working until then." and "<name> will be removed after 24 h." (unsigned). Team gained a notes section with the p5-7 aside.
 - Jabber alerts and the team permissions review went in v134 (section above).
+
+## 8 Nov 2026: unsigned copy by screen, and the developer flow map
+
+- **docs/copy-unsigned-by-screen.md** (p5-1, p5-2): 86 screen sections in the order a user meets them, about 1,180 quoted lines, each with a context note; owner's own words marked as his; design's cancel wording under CancelRequest and SellerRefund (p5-2); Trusted 200+ and the Support headline recorded as decided.
+- **docs/design-flow-map-2026-11-08.md** (the owner asked for it directly): eight sections (entry and shell, signup, buy, sell, settings/account, help and notices, staff app, fold/desktop) with the screen order, trigger per arrow, board file, today's route or a proposed one, the state to show, Mermaid charts per section, and two demo paths (a whole buy trade and a whole sell trade) for the working demo. A FlowMap canvas board of the same map follows.
