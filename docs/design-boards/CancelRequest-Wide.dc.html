@@ -20,7 +20,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <div style="position: relative; flex-shrink: 0; min-height: 800px; display: flex;">
   <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
     <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; padding: 0 12px 20px;">X2F</span>
-    <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
+    <a href="MyTrades-Wide.dc.html" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
     <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
     <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
     <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
@@ -30,7 +30,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
   <div aria-hidden="{{bgHidden}}" style="flex-grow: 1; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
     <div style="display: flex; align-items: center; gap: 8px; width: 956px; margin-left: -12px;">
-      <a href="#" aria-label="Back to trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <a href="MyTrades-Wide.dc.html" aria-label="Back to trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
       <div style="display: flex; flex-direction: column; flex-grow: 1;">
         <h1 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">{{headTitle}}</h1>
         <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
@@ -41,6 +41,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </sc-if>
     </div>
 
+    <sc-if value="{{isOpenTrade}}" hint-placeholder-val="{{true}}">
+      <dl aria-label="The deal" style="display: flex; align-items: center; gap: 16px; min-height: 48px; box-sizing: border-box; width: 944px; margin: -8px 0 0; padding: 0 14px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px;"><div style="display: flex; align-items: baseline; gap: 8px; white-space: nowrap;"><dt style="color: var(--ink-muted);">Amount</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">1.250000</span> <span style="font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; font-weight: 600; color: var(--monero-ink);">XMR</span> <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">· $412.50</span></dd></div><span aria-hidden="true" style="width: 1px; height: 20px; background: var(--surface);"></span><div style="display: flex; align-items: baseline; gap: 8px; white-space: nowrap;"><dt style="color: var(--ink-muted);">Rate</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">$330.00</span> / XMR <span style="color: var(--ink-muted);">· <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.1%</span> above market</span></dd></div><span aria-hidden="true" style="width: 1px; height: 20px; background: var(--surface);"></span><div style="display: flex; align-items: baseline; gap: 8px; white-space: nowrap;"><dt style="color: var(--ink-muted);">Band</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">$50 – $500</span></dd></div><span aria-hidden="true" style="width: 1px; height: 20px; background: var(--surface);"></span><div style="display: flex; align-items: baseline; gap: 8px; white-space: nowrap;"><dt style="color: var(--ink-muted);">Zelle</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">90</span> min to pay</dd></div></dl>
+    </sc-if>
     <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
       <ol aria-label="Trade progress" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 944px; margin: -8px 0 0; padding: 0; list-style: none;">
         <sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
@@ -139,18 +142,18 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
         <sc-if value="{{isReturning}}" hint-placeholder-val="{{false}}">
           <div style="display: flex; align-items: center; gap: 16px;">
-            <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Back to my trades</a>
+            <a href="MyTrades-Wide.dc.html" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Back to my trades</a>
           </div>
         </sc-if>
         <sc-if value="{{isDoneBuyer}}" hint-placeholder-val="{{false}}">
           <div style="display: flex; align-items: center; gap: 16px;">
             <a href="BuyOffers.dc.html" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 16px; font-weight: 600; text-decoration: none;">Find another offer</a>
-            <a href="#" style="display: inline-flex; align-items: center; height: 44px; padding: 0 4px; color: var(--ink-muted); font-size: 15px; font-weight: 600; text-decoration: none;">Back to my trades</a>
+            <a href="MyTrades-Wide.dc.html" style="display: inline-flex; align-items: center; height: 44px; padding: 0 4px; color: var(--ink-muted); font-size: 15px; font-weight: 600; text-decoration: none;">Back to my trades</a>
           </div>
         </sc-if>
         <sc-if value="{{isDoneSeller}}" hint-placeholder-val="{{false}}">
           <div style="display: flex; align-items: center; gap: 16px;">
-            <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Back to my trades</a>
+            <a href="MyTrades-Wide.dc.html" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Back to my trades</a>
           </div>
         </sc-if>
       </main>
@@ -247,10 +250,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-weight: 600;">What does the "Zelle to" row show? The masked phone number is an example.</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>The seller's phone number, masked</li><li>The seller's full phone number</li><li>A Zelle name tag the seller sets on their offer</li></ul>
     </aside>
+      <aside aria-label="Anticipated by design: Deal summary under the title" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--escrow) 45%, transparent); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow);">Anticipated · design, 8 Nov · follows owner comment #4 and #11</span><span style="font-weight: 600;">Deal summary under the title</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Amount, rate with the offer's markup, the band this trade fell in and the time to pay, in kit inner-block rows (phone two rows, wide one), so nobody goes back to the offer to remember the deal.</li><li>Band <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50 – $500</span> is an example; it must match the bands BuyQuote shows (#4).</li></ul></aside>
+      <aside aria-label="Anticipated by design: Back goes to My trades" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--escrow) 45%, transparent); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow);">Anticipated · design, 8 Nov · follows owner comment #4</span><span style="font-weight: 600;">Back goes to My trades</span><span>The back arrow and the rail's Trade item open My trades (prototype review P1: an open trade couldn't be found again).</span></aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["buyer-confirms","returning","cancelled"],"default":"buyer-confirms"},"side":{"editor":"enum","options":["buyer","seller"],"default":"buyer"},"$preview":{"width":1280,"height":1565}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["buyer-confirms","returning","cancelled"],"default":"buyer-confirms"},"side":{"editor":"enum","options":["buyer","seller"],"default":"buyer"},"$preview":{"width":1280,"height":1799}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { view: null, key: '', sheet: true }; }
   renderVals() {
@@ -272,7 +277,7 @@ class Component extends DCLogic {
     const go = (v, extra) => this.setState(Object.assign({ view: v, key, sheet: false }, extra || {}));
 
     // Measured heights per view (design notes included).
-    const H = { ask: 1565, returningBuyer: 1565, returningSeller: 1565, doneBuyer: 1565, doneSeller: 1565 }[view] || 1565;
+    const H = { ask: 1799, returningBuyer: 1799, returningSeller: 1823, doneBuyer: 1799, doneSeller: 1799 }[view] || 1799;
     const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     // Digits in running text are set in mono (craft pass); words stay in body text.
@@ -344,7 +349,7 @@ class Component extends DCLogic {
       headTitle: sellerSide ? 'Selling to mira.k' : 'Buying from satoshi_ghost',
       isAsk: view === 'ask',
       isReturning,
-      isDone,
+      isDone, isOpenTrade: !isDone,
       isDoneBuyer: view === 'doneBuyer',
       isDoneSeller: view === 'doneSeller',
       isBuyerAfter: view === 'returningBuyer' || view === 'doneBuyer',

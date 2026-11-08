@@ -668,3 +668,22 @@ Questions for the owner: (1) logo A, B, C or D (design: C); (2) the browse page 
 - **Anticipated (#3, "is that the actual rate?"):** "Market rate · updated 14:05 UTC" under every market price.
 - Head-designer calls: Fold-Offers keeps its 1012 px viewport (the list scrolls); the sell side has no quote board, so SellOffers' Trade goes to TradeFund for now and a SellQuote board is queued. Example EUR rate €304.10 is invented. FlexOffer-Post's 2 Nov "nothing is converted" aside is superseded by #11 for display.
 - COPY-UNSIGNED: all new lines are listed on each board's notes (e.g. "Payment method", "Search 17 methods", "Vendor markup", "Converted at the market rate, before markup.", "One unit for the whole offer. Traders see both, converted at your price.", "This offer's bands", "The price changes with the amount", "Your amount", "Above $500 the rate changes to $331.88.", "Max", "Market rate · updated 14:05 UTC").
+
+## 8 Nov 2026: Anticipated from owner comments (canvas v143)
+
+The owner asked design to treat his 12 comments as a brief for the whole app and to reach screens before he does. Each change below carries an "Anticipated · design, 8 Nov · follows owner comment #N" aside on its board.
+
+- **The deal travels with the trade (#4, #11):** a deal summary under the title on TradeFund, BuyerPay, BuyerPaidWaiting (+Wide), SellerConfirm, SellerRefund, Warn-Release (+Wide), CancelRequest (+Wide): amount and fiat, rate with the markup ("$330.00 / XMR · 0.1% above market"), the band, and the method's time to pay. Nobody goes back to the offer to remember the deal.
+- **Only what applies to me (#6):** removed BuyerPay's "If you're comfortable with this seller, feel free to move the trade along now." (also against Q12); SellerConfirm's "Instant apps like Zelle get 2 h; bank wires get up to 24 h." → "Zelle gets 2 h."; BuyerPaidWaiting step 1 (the seller's task) → "Nothing to do on your side while satoshi_ghost checks Zelle. If they go quiet, you can nudge them once every 15 min."
+- **My trades (new, MyTrades + Wide; the prototype's worst P1):** active trades first (state key mark, partner avatar, amount, state chip, time left), then Recent, a My offers row, and a designed empty state with "How a trade goes". Every trade's back arrow and the wide rail's Trade item go there.
+- **When time runs out (#10, proto P1):** BuyerPay `window: expired` (no "Send exactly", no "I've paid"; a caution card with the buyer's real options per g67/G2/g66); TradeFund `fund: expired` ("Trade ended · Nothing moved", Find another offer).
+- **Small conveniences (#5) and bare space (#10):** Copy buttons on BuyerPay's amount and memo; SessionLength's empty band filled with "Counts from now" (G24) and "Any of your login methods extends it" (G10, Q73).
+- New shared pieces: deal summary, icon Copy button, My trades card.
+
+**Head designer's calls:** Main's Trade tab stays the marketplace; Main and Desktop get a "My trades" link with the active count (drawn next with the SellQuote board). Bands for satoshi_ghost: one set everywhere, $50–$500 at $330.00 and $500.01–$1,500 at $331.88 (BuyQuote's); "0.1% above market" becomes "0.03% above market" to match $330.00 on $329.90 — both aligned in the next pass.
+
+**For the owner (via you):**
+1. The poster's 1% fee: is it escrowed with the trade (the prototype escrows 1.262500 XMR for a 1.250000 trade), and where should the poster see it? Design's recommendation: yes, shown to the poster only, as one line in the deal summary ("Your fee 0.012500 XMR, taken when the trade completes").
+2. A buyer who paid but never tapped "I've paid" before time ran out: can they open a dispute at once? Recommendation: yes.
+3. A seller who never funds the escrow: any consequence beyond the trade ending? Recommendation: none on the first time; it counts as a cancelled trade on their profile.
+- Also open: SessionExtend still shows a 2-minute prompt where Q73 says 5 minutes (design fixes); the G37 incident ID isn't on DisputeRoom yet (design adds it with Copy).

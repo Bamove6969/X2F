@@ -59,6 +59,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </section>
 
         <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You can change this any time in <a href="Devices.dc.html" style="color: var(--monero-ink); padding: 12px 0;">Devices and sessions</a>.</p>
+        <ul aria-label="How sessions work" style="list-style: none; margin: 0; padding: 4px 4px 0; display: flex; flex-direction: column; gap: 16px;"><li style="display: flex; gap: 14px; align-items: center;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">Counts from now</span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">A new length starts the moment you pick it.</span></span></li><li style="display: flex; gap: 14px; align-items: center;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">Any of your login methods extends it</span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Passkey, security key, PGP key, or your username and password.</span></span></li></ul>
       </main>
 
       <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
@@ -116,10 +117,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-weight: 600;">A vendor is an account switched to Vendor in Settings &gt; Account type.</span>
       <span style="color: var(--ink-muted);">Switching needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key. See BecomeVendor.</span>
     </aside>
+      <aside aria-label="Anticipated by design: Two &quot;how it works&quot; rows fill the empty band" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--escrow) 45%, transparent); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow);">Anticipated · design, 8 Nov · follows owner comment #10 (no bare space)</span><span style="font-weight: 600;">Two "how it works" rows fill the empty band</span><span>The ask step left about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">240</span> px of bare space above Continue. Two kit icon rows now say what the owner decided: a new length counts from now (G24), and any login method extends it (G10, Q73).</span></aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","done"],"default":"ask"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"menu":{"editor":"enum","options":["closed","open"],"default":"closed"},"$preview":{"width":390,"height":1649}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","done"],"default":"ask"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"menu":{"editor":"enum","options":["closed","open"],"default":"closed"},"$preview":{"width":390,"height":1817}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { pick: null, pickFor: '', stepOver: null, stepFor: '', menu: null, menuFor: '' }; }
   renderVals() {
@@ -144,7 +146,7 @@ class Component extends DCLogic {
     const pick = (s.pick && s.pickFor === acct && TIMES.indexOf(s.pick) >= 0) ? s.pick : null;
 
     // Board = 844 px phone screen + the design-notes block under it (measured).
-    const NOTES_H = 805;
+    const NOTES_H = 973;
     const H = 844 + NOTES_H;
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 

@@ -23,7 +23,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <sc-if value="{{isOpenTrade}}" hint-placeholder-val="{{true}}">
     <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
       <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
-        <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+        <a href="MyTrades.dc.html" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
         <span style="display: inline-flex; align-items: center; gap: 12px;">
           <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
           <a href="#" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</a>
@@ -31,11 +31,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </div>
       <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
       <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">{{headTitle}}</h1>
+    <dl aria-label="The deal" style="position: relative; display: flex; flex-direction: column; margin: 12px 0 0; border-radius: 12px; background: var(--surface-raised);"><div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; min-height: 48px; box-sizing: border-box; padding: 12px 14px;"><div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><dt style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;">Amount</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; white-space: nowrap;">1.250000 <span style="font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; font-weight: 600; color: var(--monero-ink);">XMR</span></dd><dd style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); white-space: nowrap;">for <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$412.50</span></dd></div><div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right;"><dt style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;">Rate</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; white-space: nowrap;">$330.00 <span style="font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; font-weight: 400;">/ XMR</span></dd><dd style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.1%</span> above market</dd></div></div><div aria-hidden="true" style="height: 1px; margin: 0 14px; background: var(--surface);"></div><div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; box-sizing: border-box; padding: 0 14px; font-size: 14px; line-height: 20px;"><div style="display: flex; align-items: baseline; gap: 8px; white-space: nowrap;"><dt style="color: var(--ink-muted);">Band</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">$50 – $500</dd></div><div style="display: flex; align-items: baseline; gap: 8px; white-space: nowrap;"><dt style="color: var(--ink-muted);">Zelle</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">90</span> min to pay</dd></div></div></dl>
     </header>
   </sc-if>
   <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
     <header style="display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 6px;">
-      <a href="#" aria-label="Back to trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <a href="MyTrades.dc.html" aria-label="Back to trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
       <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
         <span style="font-size: 15px; line-height: 20px; font-weight: 600;">{{headTitle}}</span>
         <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
@@ -176,14 +177,14 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </div>
     </sc-if>
     <sc-if value="{{isReturning}}" hint-placeholder-val="{{false}}">
-      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 48px; margin-bottom: 8px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Back to my trades</a>
+      <a href="MyTrades.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; margin-bottom: 8px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Back to my trades</a>
     </sc-if>
     <sc-if value="{{isDoneBuyer}}" hint-placeholder-val="{{false}}">
       <a href="BuyOffers.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Find another offer</a>
-      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 44px; color: var(--ink-muted); font-size: 15px; font-weight: 600; text-decoration: none;">Back to my trades</a>
+      <a href="MyTrades.dc.html" style="display: flex; align-items: center; justify-content: center; height: 44px; color: var(--ink-muted); font-size: 15px; font-weight: 600; text-decoration: none;">Back to my trades</a>
     </sc-if>
     <sc-if value="{{isDoneSeller}}" hint-placeholder-val="{{false}}">
-      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 48px; margin-bottom: 8px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Back to my trades</a>
+      <a href="MyTrades.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; margin-bottom: 8px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Back to my trades</a>
     </sc-if>
   </footer>
   </div>
@@ -230,10 +231,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-weight: 600;">What does the "Zelle to" row show? The masked phone number is an example.</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>The seller's phone number, masked</li><li>The seller's full phone number</li><li>A Zelle name tag the seller sets on their offer</li></ul>
     </aside>
+      <aside aria-label="Anticipated by design: Deal summary under the title" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--escrow) 45%, transparent); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow);">Anticipated · design, 8 Nov · follows owner comment #4 and #11</span><span style="font-weight: 600;">Deal summary under the title</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Amount, rate with the offer's markup, the band this trade fell in and the time to pay, in kit inner-block rows (phone two rows, wide one), so nobody goes back to the offer to remember the deal.</li><li>Band <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50 – $500</span> is an example; it must match the bands BuyQuote shows (#4).</li></ul></aside>
+      <aside aria-label="Anticipated by design: Back goes to My trades" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--escrow) 45%, transparent); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow);">Anticipated · design, 8 Nov · follows owner comment #4</span><span style="font-weight: 600;">Back goes to My trades</span><span>The back arrow open My trades (prototype review P1: an open trade couldn't be found again).</span></aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["buyer-confirms","returning","cancelled"],"default":"buyer-confirms"},"side":{"editor":"enum","options":["buyer","seller"],"default":"buyer"},"$preview":{"width":390,"height":1909}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["buyer-confirms","returning","cancelled"],"default":"buyer-confirms"},"side":{"editor":"enum","options":["buyer","seller"],"default":"buyer"},"$preview":{"width":390,"height":2310}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { view: null, key: '', sheet: true }; }
   renderVals() {
@@ -255,8 +258,8 @@ class Component extends DCLogic {
     const go = (v, extra) => this.setState(Object.assign({ view: v, key, sheet: false }, extra || {}));
 
     // Measured app heights per view (the design notes sit below the app screen).
-    const APP_H = { ask: 844, returningBuyer: 981, returningSeller: 1077, doneBuyer: 1038, doneSeller: 990 }[view] || 844;
-    const NOTES_H = 1065;
+    const APP_H = { ask: 907, returningBuyer: 1106, returningSeller: 1202, doneBuyer: 1038, doneSeller: 990 }[view] || 907;
+    const NOTES_H = 1403;
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (APP_H + NOTES_H) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + APP_H + 'px; display: flex; flex-direction: column;';
 

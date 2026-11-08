@@ -18,14 +18,16 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 </style>
 </helmet>
 <div style="{{rootStyle}}">
+  <div style="position: relative; flex-shrink: 0; height: {{appH}}; overflow: hidden; display: flex; flex-direction: column;">
   <div aria-hidden="{{bgHidden}}" style="flex-grow: 1; display: flex; flex-direction: column;">
   <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
     <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
-      <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <a href="MyTrades.dc.html" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
       <a href="#" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</a>
     </div>
     <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
     <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Selling to mira.k</h1>
+    <dl aria-label="The deal" style="position: relative; display: flex; flex-direction: column; margin: 12px 0 0; border-radius: 12px; background: var(--surface-raised);"><div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; min-height: 48px; box-sizing: border-box; padding: 12px 14px;"><div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><dt style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;">Amount</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; white-space: nowrap;">1.250000 <span style="font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; font-weight: 600; color: var(--monero-ink);">XMR</span></dd><dd style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); white-space: nowrap;">for <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$412.50</span></dd></div><div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right;"><dt style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;">Rate</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; white-space: nowrap;">$330.00 <span style="font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; font-weight: 400;">/ XMR</span></dd><dd style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.1%</span> above market</dd></div></div><div aria-hidden="true" style="height: 1px; margin: 0 14px; background: var(--surface);"></div><div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; box-sizing: border-box; padding: 0 14px; font-size: 14px; line-height: 20px;"><div style="display: flex; align-items: baseline; gap: 8px; white-space: nowrap;"><dt style="color: var(--ink-muted);">Band</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">$50 – $500</dd></div><div style="display: flex; align-items: baseline; gap: 8px; white-space: nowrap;"><dt style="color: var(--ink-muted);">Zelle</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">90</span> min to pay</dd></div></div></dl>
   </header>
 
   <ol aria-label="Trade progress" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0; padding: 0 16px 16px; list-style: none;">
@@ -94,9 +96,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </section>
     </div>
   </sc-if>
+  </div>
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+      <aside aria-label="Anticipated by design: Deal summary under the title" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--escrow) 45%, transparent); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow);">Anticipated · design, 8 Nov · follows owner comment #4 and #11</span><span style="font-weight: 600;">Deal summary under the title</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Amount, rate with the offer's markup, the band this trade fell in and the time to pay, in kit inner-block rows (phone two rows, wide one), so nobody goes back to the offer to remember the deal.</li><li>Band <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50 – $500</span> is an example; it must match the bands BuyQuote shows (#4).</li><li>The sheet keeps its recipient row; the deal shows behind it.</li></ul></aside>
+      <aside aria-label="Anticipated by design: Back goes to My trades" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--escrow) 45%, transparent); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow);">Anticipated · design, 8 Nov · follows owner comment #4</span><span style="font-weight: 600;">Back goes to My trades</span><span>The back arrow open My trades (prototype review P1: an open trade couldn't be found again).</span></aside>
+  </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "$preview": {"width": 390, "height": 935}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "$preview": {"width": 390, "height": 1501}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { open: true, ok: false }; }
   renderVals() {
@@ -105,7 +113,9 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const H = this.state.ok ? 983 : 935;
+    const APP_H = this.state.ok ? 1108 : 1060;
+    const NOTES_H = 441;
+    const H = APP_H + NOTES_H;
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const { open, ok } = this.state;
     // Stepper (seller labels): "You check" is current.
@@ -118,7 +128,7 @@ class Component extends DCLogic {
       labelStyle: 'font-size: 12px; line-height: 16px; ' + (i === current ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
     }));
     return {
-      rootStyle, steps,
+      rootStyle, steps, appH: APP_H + 'px',
       open,
       bgHidden: open ? 'true' : 'false',
       showBtn: !ok,
