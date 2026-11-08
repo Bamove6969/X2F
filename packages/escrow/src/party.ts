@@ -98,6 +98,12 @@ export interface PartyHandle {
    */
   settle(o: Outcome): Promise<string | null>;
   /**
+   * The builder of the outcome this party is committed to (a tx set was built or received for it,
+   * so it can no longer switch), or null. Read from the saved state, so it survives a restart. The
+   * moderation watcher names its own tx's settlement kind from it (watcher revival re-verify R2).
+   */
+  committedBuilder?(): Role | null;
+  /**
    * The escrow's balance and incoming payments, read inside the party's own work queue so
    * wallet calls never interleave. Watchers and apps read the escrow only through this. Still
    * answers after the relay connection ended for good (ready() and settle() reject with the
@@ -998,6 +1004,11 @@ export function runParty(a: PartyArgs): PartyHandle {
         await advance();
       });
       return p;
+    },
+    committedBuilder() {
+      const rel = state.release;
+      if (!rel || !rel.committed) return null;
+      return rel.part === 'builder' ? a.role : rel.counterpart;
     },
     funds() {
       // The wallet stays readable after the relay connection ended for good (the relay closes a

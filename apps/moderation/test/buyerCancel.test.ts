@@ -437,14 +437,16 @@ describe('review round 3 R3-N1: an armed buyer cancel the buyer never builds doe
     expect(rec.escalated).toBeNull();
     // ... and the earlier (buyer-built) outcome is never handed to the party again: only refused re-asks.
     expect(l.party.settles.slice(1).every((o) => outcomeJson(o) === outcomeJson(REFUND))).toBe(true);
-    // The mod signs and submits the committed cancel itself: its own tx empties the escrow.
+    // The mod signs and submits the committed cancel itself: its own tx empties the escrow. The
+    // settled report names the kind the party signed (buyer-built: buyer-cancel), not the armed
+    // auto-refund (re-verify R2: the API would refuse that as settle-kind-changed for good).
     const tx = '9'.repeat(64);
     // Other trades in this file share the database and the log: count from here, so the growth is this trade's.
     const overBefore = m.logs.filter((x) => x === 'desk-trade-over').length;
     l.party.funds = { ...l.party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: tx, height: 90, spentAtomic: FUNDS }], ownTxs: [tx] };
     later(ctx, MIN);
     await m.handle.watch();
-    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: tx, settleKind: 'auto-refund' }]);
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: tx, settleKind: 'buyer-cancel' }]);
     // The desk sees the trade over (logged once per desk, logOnce) and hands nothing more to the party.
     expect(m.logs.filter((x) => x === 'desk-trade-over').length).toBeGreaterThan(overBefore);
     const asked = l.party.settles.length;

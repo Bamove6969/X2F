@@ -648,7 +648,7 @@ describe('the chain watcher', () => {
       await m.handle.stop();
     });
 
-    it('settled names the kind the sweep was proven for; a 409 settle-kind-changed is not counted, and the next pass proves it again (security review 7 Nov, finding 3)', async () => {
+    it('settled names the kind the sweep was proven for; a 409 settle-kind-changed is not counted, is backed off, and is proven again after the back-off (security review 7 Nov finding 3, re-verify R2)', async () => {
       const { net, fetch } = fakeNetwork();
       const logs: string[] = [];
       const m = await moderation(fetch, logs);
@@ -658,11 +658,15 @@ describe('the chain watcher', () => {
       net.answer = (r) => (r.kind === 'settled' ? { status: 409, error: 'settle-kind-changed' } : { status: 201 });
       await m.handle.watch();
       expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b'), settleKind: 'release' }]);
-      expect(logs).toContain('watch-report-refused-409');
+      expect(logs).toContain('settle-kind-changed');
       expect(net.closed).toEqual([]);
-      // The trade now settles as a mutual cancel: proven again against its minimums, then accepted.
+      // Re-verify R2: backed off like settle-kind-unknown, never asked again every pass.
+      await m.handle.watch();
+      expect(net.reports.filter((r) => r.kind === 'settled')).toHaveLength(1);
+      // The trade now settles as a mutual cancel: once the back-off is over, proven again against its minimums, then accepted.
       net.kinds.set(code, 'mutual-cancel');
       net.answer = () => ({ status: 201 });
+      clock = new Date(clock.getTime() + 61_000);
       await m.handle.watch();
       expect(p.proveCalls.at(-1)!.minimums).toEqual([{ address: TERMS.sellerRefund, amountAtomic: XMR }]);
       expect(net.reports.filter((r) => r.kind === 'settled').at(-1)).toEqual({ kind: 'settled', trade: code, txHash: hash('b'), settleKind: 'mutual-cancel' });

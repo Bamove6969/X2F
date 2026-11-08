@@ -140,6 +140,9 @@ describe('incoming funds, funds() and outcome buffering on regtest', () => {
       // Now the moderator settles the same outcome: the seller's set is built and signed.
       const [hash, sellerResult] = await minedWhile(node.rpcUri, funderAddress, Promise.all([t.parties.mod.settle(o), sellerDone]));
       await expect(wrongDone).rejects.toMatchObject({ code: 'bad-outcome' });
+      // Watcher revival re-verify R2: the committed outcome's builder, for the mod's own settled report.
+      expect(t.parties.mod.committedBuilder!()).toBe('seller');
+      expect(t.parties.seller.committedBuilder!()).toBe('seller');
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
       expect(sellerResult).toBeNull();
       await mine(node.rpcUri, 12, funderAddress);

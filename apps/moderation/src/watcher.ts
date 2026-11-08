@@ -361,13 +361,14 @@ export function createWatcher(o: WatcherOptions): Watcher {
     for (const r of reports) {
       const res = await o.link.report(reportBody(code, r, settledKind));
       if (accepted(res)) continue;
-      if (res.error === 'settle-kind-unknown') {
-        // The trade alone does not name the settlement's kind (a timed-out signing window); the
-        // API cannot decide it yet. Back off instead of asking every pass.
+      if (res.error === 'settle-kind-unknown' || res.error === 'settle-kind-changed') {
+        // The trade alone does not name the settlement's kind (a timed-out signing window), or no
+        // longer names the kind this pass counted (re-verify R2): back off instead of asking every
+        // pass; a later pass proves the sweep again against the kind then named.
         const prev = backoff.get(code);
         const delayMs = prev ? Math.min(prev.delayMs * 2, SETTLE_BACKOFF_MAX_MS) : SETTLE_BACKOFF_MS;
         backoff.set(code, { until: o.now().getTime() + delayMs, delayMs });
-        o.log({ reason: 'settle-kind-unknown' });
+        o.log({ reason: res.error });
       } else {
         o.log({ reason: `watch-report-refused-${res.status}` });
       }
@@ -425,10 +426,14 @@ export function createWatcher(o: WatcherOptions): Watcher {
       upSince,
     });
     // Finding 3: `settled` names the kind this pass counted the sweep for: the kind it was proven
-    // against, or for the mod's own tx this desk's armed refund (else the API's kind as just read).
-    // The API refuses it (409 settle-kind-changed) when the trade no longer names that kind.
+    // against, or for the mod's own tx the outcome its party actually committed to (re-verify R2:
+    // the desk only hands the seller-built auto-refund and the buyer-built cancel, so the builder
+    // names it; the armed kind can differ, R4-M2), else this desk's armed refund, else the API's
+    // kind as just read. The API refuses it (409 settle-kind-changed) when the trade no longer names that kind.
     const own = spend !== null && (f.ownTxs ?? []).includes(spend.txHash);
-    const settledKind = own ? (deskNow?.record().armed?.kind ?? item.settleKind) : settleKind;
+    const builder = own ? (handle.committedBuilder?.() ?? null) : null;
+    const signedKind: SettleKind | null = builder === 'buyer' ? 'buyer-cancel' : builder === 'seller' ? 'auto-refund' : null;
+    const settledKind = own ? (signedKind ?? deskNow?.record().armed?.kind ?? item.settleKind) : settleKind;
     if (!(await post(row.trade, step.reports, settledKind))) return true;
     // Task 10: the desk sees the same accepted facts, then decides the refunds the moderator signs alone.
     await ensureDesk(args);

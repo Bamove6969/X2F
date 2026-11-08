@@ -167,6 +167,8 @@ function fakeParty(): FakeParty {
         }
         return new Promise<string | null>(() => {});
       },
+      // The builder of the outcome this party committed to (re-verify R2): the first one once `committed`.
+      committedBuilder: () => (p.committed && p.settles[0] !== undefined ? p.settles[0].builder : null),
       funds: async () => {
         await p.onFunds?.();
         return { ...p.funds, incoming: p.funds.incoming.map((i) => ({ ...i })) };
