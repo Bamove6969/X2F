@@ -189,6 +189,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: 'Bank transfer (ACH)',
       why: 'The board names ACH differently from the catalog ("ACH bank transfer (US)", data/payment-methods.json); the board fix is a design to-do (lead, 2026-10-27).',
     },
+    ...['Anyone', '5+', '10+', '50+'].map((text) => ({
+      text,
+      why: 'Owner, 8 Nov ("This will be 5, 10, 25, 50"): Minimum completed trades is a segmented choice, No minimum / 5 / 10 / 25 / 50; the board still draws the old select (design to-do).',
+    })),
   ],
   // Task 27's dispute boards: parts other tasks build (Plan 5's evidence and unblurred proof, Task 20's chat).
   DisputeOpen: [

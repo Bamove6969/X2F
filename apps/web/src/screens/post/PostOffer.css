@@ -120,6 +120,17 @@
   height: 44px;
 }
 
+/* Minimum completed trades (owner, 8 Nov): one segmented row, No minimum wider than the numbers. */
+.post-mintrades {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr));
+  gap: var(--x2f-space-2);
+}
+
+.post-mintrades .x2f-chip-button {
+  font-size: 15px;
+}
+
 .post-field {
   display: flex;
   flex-direction: column;
@@ -145,8 +156,7 @@
 
 .post-field select,
 .post-field input,
-.post-field textarea,
-.post-inline select {
+.post-field textarea {
   border-radius: var(--x2f-radius-sm);
   border: 1px solid var(--x2f-line);
   background: var(--x2f-surface-raised);
@@ -185,20 +195,7 @@
   line-height: 18px;
 }
 
-.post-inline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 48px;
-  font-size: 15px;
-}
 
-.post-inline select {
-  height: 44px;
-  padding: 0 10px;
-  font-size: 15px;
-}
 
 /* The margin stepper: a 12 px surface-raised well inside the Your price card. */
 .post-margin {

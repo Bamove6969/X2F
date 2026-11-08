@@ -19,7 +19,7 @@ import {
   FIXED_STALE_WARNING,
   GIFT_CARD_WARNING,
   METHODS_FAILED,
-  MIN_TRADES,
+  MIN_TRADES_OPTIONS,
   POST_CURRENCIES,
   PRICE_UNAVAILABLE,
   afterPostPath,
@@ -43,7 +43,6 @@ import {
   validate,
   type FieldError,
   type FormState,
-  type MinTrades,
   type PriceMode,
 } from './post/offerForm.js';
 import './post/PostOffer.css';
@@ -406,16 +405,17 @@ export function PostOffer() {
 
         <section className="post-section post-card">
           <span className="x2f-section-title">Who can trade with you</span>
-          <div className="post-inline">
-            <label htmlFor="mintrades">Minimum completed trades</label>
-            <select id="mintrades" value={form.minTrades} onChange={(e) => set('minTrades', Number(e.target.value) as MinTrades)}>
-              {MIN_TRADES.map((n) => (
-                <option key={n} value={n}>
-                  {n === 0 ? 'Anyone' : `${n}+`}
-                </option>
-              ))}
-            </select>
-          </div>
+          <span className="post-label" id={`${ids}-mintrades`}>
+            Minimum completed trades
+          </span>
+          {/* Owner, 8 Nov: a fixed choice, No minimum (the default) or 5, 10, 25, 50. */}
+          <RadioChips
+            label={{ by: `${ids}-mintrades` }}
+            options={MIN_TRADES_OPTIONS}
+            value={MIN_TRADES_OPTIONS.find((o) => o.value === form.minTrades)!.id}
+            onChange={(id) => set('minTrades', MIN_TRADES_OPTIONS.find((o) => o.id === id)!.value)}
+            className="post-choices post-choices--small post-mintrades"
+          />
         </section>
 
         <section aria-label="Preview" className="post-section">

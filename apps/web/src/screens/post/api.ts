@@ -29,7 +29,8 @@ export interface PostOfferBody {
   pricing: { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
   minFiatCents: bigint;
   maxFiatCents: bigint;
-  minTrades: 0 | 5 | 10 | 50;
+  /** No minimum (null) or 5, 10, 25 or 50 completed trades (owner, 8 Nov). */
+  minTrades: null | 5 | 10 | 25 | 50;
   terms: string;
   /** The card's country for a gift-card method (ISO 3166-1 alpha-2, Revision 2026-10-21); absent otherwise. */
   country?: string;

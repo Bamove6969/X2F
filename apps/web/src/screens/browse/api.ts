@@ -71,6 +71,7 @@ export interface Offer {
   pricing: Pricing;
   minFiatCents: bigint;
   maxFiatCents: bigint;
+  /** The completed trades a taker needs; 0 for no minimum (the API sends null, owner 8 Nov). */
   minTrades: number;
   /** Set for a signed-in viewer whose cap is below the offer's minimum: the stage that opens it. */
   opensAt?: OpensAt;
@@ -198,6 +199,12 @@ function parsePricing(v: unknown, at: string): Pricing {
   return mode === 'market' ? { mode, marginBps: num(o, 'marginBps', at) } : { mode, centsPerXmr: big(o, 'centsPerXmr', at) };
 }
 
+/** `minTrades`: null is no minimum (owner, 8 Nov), read as 0; the key must be there. */
+export function minTradesOf(o: Obj, at: string): number {
+  if (!('minTrades' in o)) throw new ApiShapeError(`${at}.minTrades`);
+  return o.minTrades === null ? 0 : num(o, 'minTrades', at);
+}
+
 export function parseOffers(v: unknown): Offer[] {
   return list(v, 'offers').map((item, i) => {
     const at = `offers[${i}]`;
@@ -209,7 +216,7 @@ export function parseOffers(v: unknown): Offer[] {
       pricing: parsePricing(o.pricing, `${at}.pricing`),
       minFiatCents: big(o, 'minFiatCents', at),
       maxFiatCents: big(o, 'maxFiatCents', at),
-      minTrades: num(o, 'minTrades', at),
+      minTrades: minTradesOf(o, at),
     };
     if (o.opensAt !== undefined) offer.opensAt = oneOf(o, 'opensAt', at, OPENS_AT);
     return offer;

@@ -76,7 +76,8 @@ const f = (page: Page) => ({
   min: page.getByLabel('Smallest trade'),
   max: page.getByLabel('Largest trade'),
   terms: page.getByLabel('Your terms (optional)'),
-  minTrades: page.getByLabel('Minimum completed trades'),
+  minTrades: page.getByRole('radiogroup', { name: 'Minimum completed trades' }),
+  minTradesChoice: (name: string) => page.getByRole('radiogroup', { name: 'Minimum completed trades' }).getByRole('radio', { name, exact: true }),
   fixed: page.getByLabel('Your price per XMR'),
   market: page.getByRole('radio', { name: 'Market ± %' }),
   fixedMode: page.getByRole('radio', { name: 'Fixed price per XMR' }),
@@ -122,10 +123,12 @@ test('the board copy and the default market price', async ({ page }) => {
   await expect(page.getByText('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.', { exact: true })).toBeVisible();
   await expect(page.locator('[data-primary]')).toHaveCount(1);
   await expect(page.locator('[data-primary]')).toHaveText('Post offer');
-  // Minimum completed trades, shown openly to takers.
-  await expect(f(page).minTrades.locator('option')).toHaveText(['Anyone', '5+', '10+', '50+']);
-  await f(page).minTrades.selectOption({ label: '10+' });
-  await expect(preview.getByText('Selling XMR via Zelle · USD · you · 10+ completed trades', { exact: true })).toBeVisible();
+  // Minimum completed trades, shown openly to takers: a fixed choice (owner, 8 Nov), No minimum by default.
+  await expect(f(page).minTrades.getByRole('radio')).toHaveText(['No minimum', '5', '10', '25', '50']);
+  await expect(f(page).minTradesChoice('No minimum')).toBeChecked();
+  await f(page).minTradesChoice('25').click();
+  await expect(f(page).minTradesChoice('25')).toBeChecked();
+  await expect(preview.getByText('Selling XMR via Zelle · USD · you · 25+ completed trades', { exact: true })).toBeVisible();
 });
 
 test('the margin steps by 0.1%', async ({ page }) => {
@@ -213,7 +216,7 @@ test('Fixed shows the stale-price warning and posts pricing.mode = fixed', async
     pricing: { mode: 'fixed', centsPerXmr: '33500' },
     minFiatCents: '5000',
     maxFiatCents: '200000',
-    minTrades: 0,
+    minTrades: null,
     terms: '',
   });
 });
@@ -226,7 +229,7 @@ test('posting a sell ad returns to the list where buyers see it, with the offer 
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);
   await f(page).terms.fill('Put the trade number in the memo.');
-  await f(page).minTrades.selectOption({ label: '5+' });
+  await f(page).minTradesChoice('5').click();
   await f(page).post.click();
   await expect(page).toHaveURL(/\/buy\/ZELLE\?currency=USD$/);
   await expect(page.locator('article')).toHaveCount(1);

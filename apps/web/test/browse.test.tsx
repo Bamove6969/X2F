@@ -39,6 +39,15 @@ describe('browse API shapes', () => {
     expect(() => parseOffers([{ ...list[0]!, opensAt: 'starter' }])).toThrow(ApiShapeError);
   });
 
+  it('reads minTrades null (no minimum, owner 8 Nov) as 0; a missing or string minTrades fails', () => {
+    const list = raw();
+    expect(parseOffers([{ ...list[0]!, minTrades: null }])[0]!.minTrades).toBe(0);
+    expect(parseOffers([{ ...list[0]!, minTrades: 25 }])[0]!.minTrades).toBe(25);
+    const { minTrades: _m, ...noMin } = list[0]!;
+    expect(() => parseOffers([noMin])).toThrow(/minTrades/);
+    expect(() => parseOffers([{ ...list[0]!, minTrades: '5' }])).toThrow(ApiShapeError);
+  });
+
   it('fails loudly when the poster has no stage from the API', () => {
     const list = raw();
     const { stage: _s, ...poster } = list[0]!.poster;

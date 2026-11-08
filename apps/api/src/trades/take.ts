@@ -107,7 +107,8 @@ interface OfferRow {
   fixed_cents_per_xmr: string | null;
   min_fiat_cents: string;
   max_fiat_cents: string;
-  min_trades: number;
+  /** Null: no minimum (migration 315). */
+  min_trades: number | null;
   status: 'live' | 'paused' | 'removed';
   /** The poster may be seen: a trader, not disabled, with no trading hold (Task 4's LISTED). */
   poster_ok: boolean;
@@ -278,7 +279,7 @@ export function takeRoutes(app: FastifyInstance): void {
       const completed = (
         await c.query<{ n: number }>(`select ${COMPLETED_TRADES_SQL}::int as n from accounts a where a.id = $1`, [takerId])
       ).rows[0]!.n;
-      if (completed < r.min_trades) throw new ApiError(409, 'not-enough-trades');
+      if (completed < (r.min_trades ?? 0)) throw new ApiError(409, 'not-enough-trades');
 
       // The client's total must be its amount at its rate, as the quote works it out.
       if (fiatCents(b.amountAtomic, { currency: r.currency, centsPerXmr: b.centsPerXmr }) !== b.fiatCents) throw bad();

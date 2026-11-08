@@ -66,7 +66,8 @@ export function parseMyOffers(raw: unknown): MyOffer[] {
   return raw.map((o: unknown) => {
     if (!isRecord(o)) throw shape();
     if (o.side !== 'sell' && o.side !== 'buy') throw shape();
-    if (typeof o.minTrades !== 'number') throw shape();
+    // Null is no minimum (owner, 8 Nov), read as 0 as before.
+    if (o.minTrades !== null && typeof o.minTrades !== 'number') throw shape();
     const out: MyOffer = {
       id: str(o.id),
       side: o.side,
@@ -77,7 +78,7 @@ export function parseMyOffers(raw: unknown): MyOffer[] {
       pricing: parsePricing(o.pricing),
       minFiatCents: big(o.minFiatCents),
       maxFiatCents: big(o.maxFiatCents),
-      minTrades: o.minTrades,
+      minTrades: o.minTrades ?? 0,
       status: state(o.status),
     };
     if (o.country !== undefined) out.country = str(o.country);

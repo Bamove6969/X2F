@@ -42,7 +42,8 @@ export interface OfferCard {
   pricing: { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: string };
   minFiatCents: string;
   maxFiatCents: string;
-  minTrades: number;
+  /** The completed trades a taker needs: 5, 10, 25 or 50, or null for no minimum (owner, 8 Nov). */
+  minTrades: MinTrades;
   /** Gift-card offers only: the card's country, ISO 3166-1 alpha-2 (Revision 2026-10-27). */
   country?: string;
   /**
@@ -76,7 +77,7 @@ export interface MyOffer {
   pricing: OfferCard['pricing'];
   minFiatCents: string;
   maxFiatCents: string;
-  minTrades: number;
+  minTrades: MinTrades;
   country?: string;
   status: 'live' | 'paused';
   /**
@@ -108,7 +109,12 @@ export const SWITCH_MAX_IDS = 100;
 
 const SORTS = ['best', 'online', 'trades'] as const;
 type Sort = (typeof SORTS)[number];
-const MIN_TRADES = [0, 5, 10, 50] as const;
+/**
+ * "Minimum completed trades" is a fixed choice (owner, 8 Nov: "This will be 5, 10, 25, 50"): null is
+ * no minimum (the default). Migration 315 moved every stored value down to the next lower choice.
+ */
+export const MIN_TRADES_CHOICES = [5, 10, 25, 50] as const;
+export type MinTrades = (typeof MIN_TRADES_CHOICES)[number] | null;
 const STATUSES = ['live', 'paused', 'removed'] as const;
 export const TERMS_MAX = 4000;
 /** Fiat amounts: at most 14 digits of minor units (the web form takes 12 whole digits and 2 decimals). */
@@ -145,7 +151,7 @@ interface OfferRow {
   fixed_cents_per_xmr: string | null;
   min_fiat_cents: string;
   max_fiat_cents: string;
-  min_trades: number;
+  min_trades: MinTrades;
   terms: string;
   country: string | null;
   status: OfferStatus;
@@ -226,7 +232,7 @@ interface NewOffer {
   pricing: Pricing;
   minFiatCents: bigint;
   maxFiatCents: bigint;
-  minTrades: number;
+  minTrades: MinTrades;
   terms: string;
   country: string | null;
 }
@@ -265,12 +271,12 @@ function parseNewOffer(body: unknown): NewOffer & { countryGiven: unknown } {
   const min = fiat(minFiatCents);
   const max = fiat(maxFiatCents);
   if (min > max) throw bad();
-  if (typeof minTrades !== 'number' || !(MIN_TRADES as readonly number[]).includes(minTrades)) throw bad();
+  if (minTrades !== null && !(MIN_TRADES_CHOICES as readonly unknown[]).includes(minTrades)) throw bad();
   if (typeof terms !== 'string') throw bad();
   const cleanTerms = terms.replace(/\r\n?/g, '\n').trim();
   if ([...cleanTerms].length > TERMS_MAX || BAD_TERMS_CHAR.test(cleanTerms)) throw bad();
   return {
-    side, methodId, currency, pricing: parsePricing(pricing), minFiatCents: min, maxFiatCents: max, minTrades,
+    side, methodId, currency, pricing: parsePricing(pricing), minFiatCents: min, maxFiatCents: max, minTrades: minTrades as MinTrades,
     terms: cleanTerms, country: null, countryGiven: country,
   };
 }

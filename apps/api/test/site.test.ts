@@ -67,7 +67,7 @@ async function person() {
 
 const OFFER = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '100000', minTrades: 0, terms: 'Zelle only.',
+  minFiatCents: '1000', maxFiatCents: '100000', minTrades: null, terms: 'Zelle only.',
 };
 
 describe('GET /v1/site', () => {

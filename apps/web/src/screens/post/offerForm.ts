@@ -6,8 +6,19 @@ import { CURRENCIES } from '../browse/api.js';
 import type { PostOfferBody, PriceQuote, Side } from './api.js';
 import { isCountryCode } from './countries.js';
 
-export const MIN_TRADES = [0, 5, 10, 50] as const;
+/**
+ * "Minimum completed trades" is a fixed choice (owner, 8 Nov: "This will be 5, 10, 25, 50"); null is
+ * No minimum, the default (lead default). The API takes exactly these (apps/api/src/offers/routes.ts
+ * MIN_TRADES_CHOICES).
+ */
+export const MIN_TRADES = [null, 5, 10, 25, 50] as const;
 export type MinTrades = (typeof MIN_TRADES)[number];
+/** The segmented control's options: string ids for RadioChips. COPY-UNSIGNED: "No minimum" (owner's list, lead's label). */
+export const MIN_TRADES_OPTIONS: readonly { id: string; label: string; value: MinTrades }[] = MIN_TRADES.map((n) => ({
+  id: n === null ? 'none' : String(n),
+  label: n === null ? 'No minimum' : String(n),
+  value: n,
+}));
 export type PriceMode = 'market' | 'fixed';
 
 export interface FormState {
@@ -37,7 +48,7 @@ export const DEFAULT_FORM: FormState = {
   min: '',
   max: '',
   terms: '',
-  minTrades: 0,
+  minTrades: null,
   country: '',
 };
 
@@ -148,7 +159,7 @@ export function fixedPriceCheck(fixed: bigint, market: bigint, currency: string)
 
 export function previewLine(side: Side, methodName: string, currency: string, minTrades: MinTrades): string {
   const base = `${side === 'sell' ? 'Selling XMR' : 'Buying XMR'} via ${methodName} · ${currency} · you`;
-  return minTrades === 0 ? base : `${base} · ${minTrades}+ completed trades`;
+  return minTrades === null ? base : `${base} · ${minTrades}+ completed trades`;
 }
 
 /** Where takers see the new offer: buyers browse sell ads (/buy), sellers browse buy ads (/sell). */
@@ -289,7 +300,7 @@ export function loadDraft(storage: Storage): FormState | null {
     str(d.min, 32) &&
     str(d.max, 32) &&
     str(d.terms, 4000) &&
-    MIN_TRADES.includes(d.minTrades as MinTrades) &&
+    (MIN_TRADES as readonly unknown[]).includes(d.minTrades) &&
     (d.country === '' || isCountryCode(d.country));
   if (!ok) return null;
   return {
