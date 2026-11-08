@@ -22,6 +22,7 @@ import { fixtureLeakedList } from './helpers/leaked.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
 import { VAPID_ENV } from './helpers/vapid.js';
+import { SIG } from './helpers/signature.js';
 
 // Every HMAC made while a request runs is counted (parity: the same HMAC work for every name).
 vi.mock('node:crypto', async (importOriginal) => {
@@ -70,7 +71,7 @@ const key32 = () => new Uint8Array(crypto.randomBytes(32));
 const rotated = (id = 2): Keyring => ({ current: id, keys: new Map([[id, key32()], ...original.keys]) });
 
 const register = (b: Browser, loginName: string, displayName = `P${loginName}`) =>
-  b.post('/v1/register/password', { displayName, loginName, password: GOOD, deviceLabel: 'T', acceptedTerms: TERMS });
+  b.post('/v1/register/password', { displayName, loginName, password: GOOD, deviceLabel: 'T', acceptedTerms: TERMS, termsSignature: SIG });
 const login = (loginName: string, password = GOOD, b = new Browser(app)) =>
   b.post('/v1/login/password', { loginName, password, deviceLabel: 'T' });
 const backup = (loginName: string, code: string, b = new Browser(app)) =>
@@ -436,7 +437,7 @@ describe('sealed names in a waiting sign-up (FU-A review note 1)', () => {
     const { challengeId, encryptedMessage } = start.json() as { challengeId: string; encryptedMessage: string };
     const code = codeOf(await decrypt(encryptedMessage, pair.privateKey, undefined, deps.clock()));
     deps.config.loginNameKeys = rotated(6);
-    const res = await b.post('/v1/register/pgp/finish', { challengeId, code, deviceLabel: 'T', acceptedTerms: TERMS });
+    const res = await b.post('/v1/register/pgp/finish', { challengeId, code, deviceLabel: 'T', acceptedTerms: TERMS, termsSignature: SIG });
     expect(res.statusCode).toBe(201);
     const id = (await accountIdByLoginName(deps, loginName))!;
     expect((await tagRow(id)).login_tag_key_id).toBe(6);

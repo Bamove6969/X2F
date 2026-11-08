@@ -24,6 +24,7 @@ export {
   type PgpChallenge,
   type RegistrationChallenge,
   type SessionEntry,
+  type TermsSignature,
   type TeamAuditEntry,
   type TeamInviteView,
   type TeamMember,

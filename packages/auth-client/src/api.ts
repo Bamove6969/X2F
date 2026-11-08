@@ -14,9 +14,9 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type { AccountKind, ConfirmAction, IdleHours, MethodType } from '@x2f/accounts';
-import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginResult } from '@x2f/api';
+import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginResult, TermsSignature } from '@x2f/api';
 
-export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult };
+export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult, TermsSignature };
 
 /**
  * Plan 2 Task 17: a security change made from a login with only one way of proving it's you
@@ -303,7 +303,15 @@ export interface AuthApi {
   /** `GET /v1/pgp/signing-key`: X2F's official PGP key, which signs every challenge (R7). */
   getPgpSigningKey(): Promise<{ fingerprint: string; publicKey: string }>;
   /** Both names are picked at sign-up (spec 6.1): the public `displayName` and the private `loginName`; they must differ. */
-  registerPassword(b: { displayName: string; loginName: string; password: string; deviceLabel: string; acceptedTerms: string }): Promise<{
+  /** `acceptedTerms` and `termsSignature`: the Terms version accepted and the signature given with it (owner, 8 Nov 2026). */
+  registerPassword(b: {
+    displayName: string;
+    loginName: string;
+    password: string;
+    deviceLabel: string;
+    acceptedTerms: string;
+    termsSignature: TermsSignature;
+  }): Promise<{
     displayName: string;
   }>;
   /** Every failure is 401 `credentials-invalid` (`PASSWORD_LOGIN_MISMATCH`) with `misses`; check `shouldSendAway`. */
@@ -321,7 +329,7 @@ export interface AuthApi {
     holdUntil: string | null;
   }>;
   registerPgpStart(b: { displayName: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
-  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string }): Promise<{ displayName: string }>;
+  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string; termsSignature: TermsSignature }): Promise<{ displayName: string }>;
   /**
    * PGP login needs no name: `key` is the person's whole armored public key (an unknown key's decoy
    * goes to that key too). A fingerprint, or anything else, is 400 `key-unreadable`, the same for
@@ -335,6 +343,7 @@ export interface AuthApi {
     response: RegistrationResponseJSON;
     deviceLabel: string;
     acceptedTerms: string;
+    termsSignature: TermsSignature;
     label?: string;
   }): Promise<{ displayName: string }>;
   /** Without `loginName`: a discoverable passkey login (traders). */
@@ -375,7 +384,8 @@ export interface AuthApi {
 
   // Account overview (Task 11)
   me(): Promise<AccountOverview>;
-  acceptTerms(b: { version: string }): Promise<void>;
+  /** `POST /v1/account/terms`: a changed Terms version, accepted with a new signature (owner, 8 Nov 2026). */
+  acceptTerms(b: { version: string; signature: TermsSignature }): Promise<void>;
   listSessions(): Promise<SessionEntry[]>;
   endSession(id: string): Promise<void>;
   listAlerts(): Promise<AlertEntry[]>;

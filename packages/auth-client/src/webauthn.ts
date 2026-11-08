@@ -12,7 +12,7 @@ import {
   type RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type { ConfirmAction } from '@x2f/accounts';
-import type { AuthApi, Held, LoginResult, WebAuthnKind } from './api.js';
+import type { AuthApi, Held, LoginResult, TermsSignature, WebAuthnKind } from './api.js';
 
 export interface RegistrationCeremony {
   startRegistration(o: { optionsJSON: PublicKeyCredentialCreationOptionsJSON }): Promise<RegistrationResponseJSON>;
@@ -27,7 +27,8 @@ const BROWSER_AUTHENTICATION: AuthenticationCeremony = { startAuthentication };
 
 /**
  * Sign-up with a passkey or a security key (traders). `acceptedTerms` is the Terms version the
- * person accepted on the Terms screen (R10); it is never fetched and accepted on their behalf.
+ * person accepted on the Terms screen (R10), with the signature they gave there (`termsSignature`);
+ * neither is ever fetched or made up on their behalf.
  * Starts a session on success.
  */
 export async function registerWithWebAuthn(
@@ -36,13 +37,14 @@ export async function registerWithWebAuthn(
   kind: WebAuthnKind,
   deviceLabel: string,
   acceptedTerms: string,
+  termsSignature: TermsSignature,
   ceremony: RegistrationCeremony = BROWSER_REGISTRATION,
   o: { label?: string } = {},
 ): Promise<{ displayName: string }> {
   const { challengeId, options } = await api.registerWebAuthnStart({ displayName: names.displayName, loginName: names.loginName, kind });
   const response = await ceremony.startRegistration({ optionsJSON: options });
   return api.registerWebAuthnFinish({
-    challengeId, response, deviceLabel, acceptedTerms, ...(o.label !== undefined ? { label: o.label } : {}),
+    challengeId, response, deviceLabel, acceptedTerms, termsSignature, ...(o.label !== undefined ? { label: o.label } : {}),
   });
 }
 

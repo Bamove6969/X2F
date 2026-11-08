@@ -8,6 +8,7 @@ import { approvedLogin } from './helpers/approval.js';
 import { testApp } from './helpers/app.js';
 import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
+import { SIG } from './helpers/signature.js';
 
 // Plan 2 Task 15 (docs/security/plan-2-review.md): proofs for the findings of the security review.
 
@@ -57,7 +58,7 @@ describe('F1: the request budgets are global (Important; open until the Plan 6 p
     const rs = await reg.post('/v1/register/pgp/start', { displayName: 'Busy.Finisher', loginName: 'busy.fin.login', publicKey: k.publicKey });
     const rcode = codeOf(await decrypt(rs.json().encryptedMessage, k.privateKey));
     expect((await reg.post('/v1/register/pgp/finish', {
-      challengeId: rs.json().challengeId, code: rcode, deviceLabel: 'b', acceptedTerms: deps.config.termsVersion,
+      challengeId: rs.json().challengeId, code: rcode, deviceLabel: 'b', acceptedTerms: deps.config.termsVersion, termsSignature: SIG,
     })).statusCode).toBe(201);
 
     const b = new Browser(app);

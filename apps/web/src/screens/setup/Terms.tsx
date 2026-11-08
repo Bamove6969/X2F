@@ -1,12 +1,18 @@
 /**
  * The Terms of Service screen (spec 6.1 step 0, Plan 2 R10). The Terms text sits in a scroll box;
- * the tick box enables only once the box has been scrolled to its end, and **I accept** only once
- * it is ticked. The version comes from `GET /v1/terms`.
+ * the tick box enables only once the box has been scrolled to its end. Under it, the signature pad
+ * (owner, 8 Nov 2026: the Terms are agreed once, at account opening, with a tick and a signature,
+ * never per trade): **I accept** needs both the tick and a signature, drawn or typed. The version
+ * comes from `GET /v1/terms`.
  *
- * - `SetupTerms` (`/setup`): the first setup screen. Accepting keeps the version for the register
- *   call (`acceptedTerms`) and goes on to the names.
+ * - `SetupTerms` (`/setup`): the first setup screen. Accepting keeps the version and the signature
+ *   for the register call (`acceptedTerms`, `termsSignature`) and goes on to the names.
  * - `Terms` (`/terms`): a signed-in trader refused with `terms-required` (the Terms changed).
- *   Accepting posts `POST /v1/account/terms` and returns to `returnTo`.
+ *   Accepting posts `POST /v1/account/terms` `{ version, signature }` (a new version asks for a new
+ *   signature too) and returns to `returnTo`.
+ *
+ * The pad and its help line are not on the SetupTerms board; they sit under the tick box, before
+ * the board's footer, and their wording is unsigned.
  *
  * Board: SetupTerms (design/x2f-app/, mirrored from the canvas 2026-10-26): "Before you start", the
  * key points, then the full text in the box. "Terms of Service" and "Privacy Policy" in the tick
@@ -17,6 +23,7 @@
  * sign up again (Task 21 review follow-up). No board shows that line.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import type { TermsSignature } from '@x2f/auth-client';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { returnToFrom } from '../../api/client.js';
 import { refreshSession } from '../../session/useSession.js';
@@ -24,6 +31,7 @@ import { Button } from '../../ui/Button.js';
 import { authApi } from '../auth/authApi.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
 import { termsChanged } from './register.js';
+import { SignaturePad } from './SignaturePad.js';
 import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from './termsText.js';
 
 /** How close to the bottom (in CSS pixels) counts as the end, for rounding on zoomed screens. */
@@ -43,12 +51,15 @@ function TermsScreen({
   back?: string;
   /** Shown under the tick box. */
   after?: ReactNode;
-  onAccept: (version: string) => Promise<void>;
+  onAccept: (version: string, signature: TermsSignature) => Promise<void>;
 }) {
   const [version, setVersion] = useState<string | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [read, setRead] = useState(false);
   const [ticked, setTicked] = useState(false);
+  const [signature, setSignature] = useState<TermsSignature | null>(null);
+  /** Bumped to give a fresh, empty pad (the Terms changed: a new version needs a new signature). */
+  const [padKey, setPadKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -86,16 +97,18 @@ function TermsScreen({
   const stale = version !== null && version !== TERMS_TEXT_VERSION;
 
   const accept = async () => {
-    if (version === null || stale) return;
+    if (version === null || stale || signature === null) return;
     setBusy(true);
     setError(null);
     try {
-      await onAccept(version);
+      await onAccept(version, signature);
     } catch (e) {
       if (termsChanged(e)) {
         // The Terms changed between loading and accepting (review M3): read the new version first.
         setTicked(false);
         setRead(false);
+        setSignature(null);
+        setPadKey((k) => k + 1);
         if (box.current !== null) box.current.scrollTop = 0;
         // A box that shows everything has no scroll to wait for: it counts as read again at once.
         checkEnd();
@@ -125,7 +138,7 @@ function TermsScreen({
       fit
       {...(back !== undefined ? { back } : {})}
       footer={
-        <Button variant="primary" disabled={!ticked || version === null || stale || busy} onClick={() => void accept()} data-part="terms-accept">
+        <Button variant="primary" disabled={!ticked || signature === null || version === null || stale || busy} onClick={() => void accept()} data-part="terms-accept">
           I accept
         </Button>
       }
@@ -188,7 +201,7 @@ function TermsScreen({
           disabled={!read || stale}
           checked={ticked}
           onChange={(e) => setTicked(e.target.checked)}
-          {...(stale ? { 'aria-describedby': 'terms-stale' } : !read ? { 'aria-describedby': 'terms-hint' } : {})}
+          aria-describedby={[stale ? 'terms-stale' : !read ? 'terms-hint' : null, 'terms-sign-help'].filter((x) => x !== null).join(' ')}
           data-part="terms-tick"
         />
         <span>
@@ -203,6 +216,11 @@ function TermsScreen({
           .
         </span>
       </label>
+      <p className="x2f-sign__help" id="terms-sign-help">
+        Then sign in the white box with your finger, a pen or the mouse. A scribble or an X is fine. I accept needs both the tick and your
+        signature.
+      </p>
+      <SignaturePad key={padKey} onChange={setSignature} describedBy="terms-sign-help" />
       {after}
     </SetupFrame>
   );
@@ -225,8 +243,8 @@ export function SetupTerms() {
           </Link>
         </p>
       }
-      onAccept={async (version) => {
-        update({ terms: version });
+      onAccept={async (version, signature) => {
+        update({ terms: { version, signature } });
         go('name');
       }}
     />
@@ -242,8 +260,8 @@ export function Terms() {
       screen="terms"
       title="Updated Terms"
       intro="The Terms of Service have changed. Read them to the end and accept them to keep trading. The key points first:"
-      onAccept={async (version) => {
-        await authApi.acceptTerms({ version });
+      onAccept={async (version, signature) => {
+        await authApi.acceptTerms({ version, signature });
         refreshSession();
         void navigate(returnTo, { replace: true });
       }}

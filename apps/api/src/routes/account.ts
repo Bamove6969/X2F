@@ -1,6 +1,7 @@
 import { checkLoginName, isIdleHours, type AccountKind, type ConfirmAction, type IdleHours, type MethodType } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
+import { SIGNED_BODY_LIMIT, checkTermsSignature } from '../termsSignature.js';
 import { lockNames, loginNameTaken, loginTags, setLoginName } from '../accounts.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
@@ -282,20 +283,23 @@ export function accountRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/account/terms',
     // Task 17 (lead decision 2026-10-30): accepting the Terms is allowed during the hold (not a
-    // security change; refusing it could block finishing open trades).
-    { preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true }) },
+    // security change; refusing it could block finishing open trades). A changed version asks for
+    // a new signature too (owner, 8 Nov 2026): `{ version, signature }`, the signature replacing
+    // the one before (checkTermsSignature's 400s), with nothing else recorded about the signing.
+    { bodyLimit: SIGNED_BODY_LIMIT, preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true }) },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const version = d.config.termsVersion;
-      const body = req.body as { version?: unknown } | null | undefined;
+      const body = req.body as { version?: unknown; signature?: unknown } | null | undefined;
       const given = body !== null && typeof body === 'object' ? body.version : undefined;
       if (given !== version) throw new ApiError(400, 'terms-not-accepted', { version });
+      const signature = checkTermsSignature(body!.signature);
       const now = d.clock();
       await withTx(d.db, async (db) => {
         // Review round 4: the accepting session must still be live where it writes.
         await requireLiveSessionInTx(db, req.auth, now);
-        await db.query('update accounts set terms_version = $2, terms_accepted_at = $3 where id = $1 and kind = $4', [
-          req.auth.accountId, version, now, 'trader',
+        await db.query('update accounts set terms_version = $2, terms_accepted_at = $3, terms_signature = $5 where id = $1 and kind = $4', [
+          req.auth.accountId, version, now, 'trader', JSON.stringify(signature),
         ]);
       });
       return reply.code(204).send();

@@ -16,6 +16,7 @@ import { testApp, testConfig, testSigner } from './helpers/app.js';
 import { inspectPublicKey } from '@x2f/accounts';
 import { codeOf, decrypt, genKey, KEY_DATE, resign, type Pair } from './helpers/pgpKeys.js';
 import { spySql } from './helpers/sqlSpy.js';
+import { SIG } from './helpers/signature.js';
 
 const ORIGIN = 'https://x2f.test';
 const ONION = 'http://x2fexample.onion';
@@ -98,7 +99,7 @@ async function registerPgp(displayName: string, key: Pair, b = new Browser()): P
   expect(start.statusCode).toBe(200);
   const code = codeOf(await dec(start.json().encryptedMessage, key.privateKey));
   const fin = await b.post('/v1/register/pgp/finish', {
-    challengeId: start.json().challengeId, code, deviceLabel: 'Test browser', acceptedTerms: TERMS,
+    challengeId: start.json().challengeId, code, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
   });
   expect(fin.statusCode).toBe(201);
   return b;
@@ -173,7 +174,7 @@ describe('register', () => {
     expect(text).toContain(`Expires: ${exp}Z`);
     const code = codeOf(text).toLowerCase().replaceAll('-', '');
     const fin = await b.post('/v1/register/pgp/finish', {
-      challengeId: start.json().challengeId, code, deviceLabel: 'Test browser', acceptedTerms: TERMS,
+      challengeId: start.json().challengeId, code, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG,
     });
     expect(fin.statusCode).toBe(201);
     expect(fin.json()).toEqual({ displayName: name });
@@ -207,8 +208,16 @@ describe('register', () => {
     const bad = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: '2020-01-01' });
     expect(bad.statusCode).toBe(400);
     expect(bad.json()).toEqual({ error: 'terms-not-accepted', version: TERMS });
-    const ok = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS });
+    // The signature too (owner, 8 Nov 2026), still before the challenge is used.
+    for (const [termsSignature, error] of [[undefined, 'signature-required'], [{ kind: 'drawn', width: 1, height: 1, path: 'M9 9' }, 'signature-invalid']] as const) {
+      const unsigned = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature });
+      expect(unsigned.statusCode).toBe(400);
+      expect(unsigned.json()).toEqual({ error });
+    }
+    const ok = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(ok.statusCode).toBe(201);
+    const { rows } = await deps.db.query('select terms_signature from accounts where display_key = $1', [name.toLowerCase()]);
+    expect(rows[0].terms_signature).toEqual(SIG);
   });
 
   it('refuses a private key and stores nothing of it', async () => {
@@ -246,7 +255,7 @@ describe('register', () => {
     const free = await new Browser().post('/v1/register/pgp/start', { displayName: uniqueName(), loginName: 'never.used.9', publicKey: fresh.publicKey });
     expect(Object.keys(free.json()).sort()).toEqual(Object.keys(loginTaken.json()).sort());
     const code = codeOf(await dec(loginTaken.json().encryptedMessage, fresh.privateKey));
-    const fin = await lb.post('/v1/register/pgp/finish', { challengeId: loginTaken.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS });
+    const fin = await lb.post('/v1/register/pgp/finish', { challengeId: loginTaken.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(fin.statusCode).toBe(409);
     expect(fin.json()).toEqual({ error: 'names-unavailable' });
     const reserved = await registerStart(new Browser(), 'X2F.Support', ed);
@@ -263,7 +272,7 @@ describe('register', () => {
     const start = await registerStart(b, name, key);
     expect(start.statusCode).toBe(200);
     const code = codeOf(await dec(start.json().encryptedMessage, key.privateKey));
-    const fin = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS });
+    const fin = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(fin.statusCode).toBe(409);
     expect(fin.json()).toEqual({ error: 'key-in-use' });
     const { rows } = await deps.db.query('select 1 from accounts where display_key = $1', [name.toLowerCase()]);
@@ -606,7 +615,7 @@ describe('binding', () => {
     expect(c.json()).toEqual({ error: 'challenge-expired' });
     const s2 = await loginStart(home, key);
     const code2 = codeOf(await dec(s2.json().encryptedMessage, key.privateKey));
-    const r = await home.post('/v1/register/pgp/finish', { challengeId: s2.json().challengeId, code: code2, deviceLabel: 'x', acceptedTerms: TERMS });
+    const r = await home.post('/v1/register/pgp/finish', { challengeId: s2.json().challengeId, code: code2, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(r.json()).toEqual({ error: 'challenge-expired' });
   });
 
@@ -1037,7 +1046,7 @@ describe('review fixes', () => {
     const code = codeOf(await dec(start.json().encryptedMessage, key.privateKey));
     const onion = new Browser(ONION);
     onion.cookies = { ...b.cookies };
-    const fin = await onion.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS });
+    const fin = await onion.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(fin.statusCode).toBe(400);
     expect(fin.json()).toEqual({ error: 'challenge-expired' });
 
