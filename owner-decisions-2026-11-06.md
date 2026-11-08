@@ -106,3 +106,4 @@ Explanations asked for: Q3 ranges, Q19 watcher (done), Q26, Q29 and Q33 (My offe
 - Removals during a hold (p5-7): low-security logins get a 24-hour hold on every important change (account, team, wallet/cash-out and the rest), removals included, so nothing applies early. During the hold, the team lead who made the changes can log back in and undo some or all of them.
 - NEW RULE (p5-7): if the user has set up secure Jabber (XMPP) notifications, every change to their account sends a discreet notification that says an account change was made, without saying what. This is a new feature; it needs a design board and a build task.
 - Nudges (owner, 7 Nov, chat): there is no cap of one nudge. The limit is one nudge per 15 minutes, as many as needed. The seller's refund unlocks after 90 min from full funding and at least one nudge.
+- Next priority (owner, 7 Nov): once the owner has seen the working demo, the next topic is the permissions that can be set for team members.
