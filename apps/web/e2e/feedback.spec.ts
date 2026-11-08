@@ -68,12 +68,11 @@ test('a refusal opens CantDoThat; its feedback link leads to the form; an anonym
   await expect(page.locator('[data-primary]')).toHaveCount(1);
   await noSideScroll(page);
 
-  await page.getByRole('radio', { name: 'Complaint' }).check();
   await page.getByLabel('Your message').fill('A hold should say how long it lasts.');
   await page.getByLabel('Send anonymously').check();
   await page.getByRole('button', { name: 'Send' }).click();
   await expect(page.locator('[data-part="feedback-thanks"]')).toHaveText(THANKS);
-  expect(sent).toEqual([{ kind: 'complaint', text: 'A hold should say how long it lasts.', anonymous: true }]);
+  expect(sent).toEqual([{ kind: 'feedback', text: 'A hold should say how long it lasts.', anonymous: true }]);
 
   // Done goes back to where the person came from.
   await page.getByRole('button', { name: 'Done' }).click();
@@ -84,7 +83,6 @@ test('a named send carries the refusal code; the form works at desktop width too
   const sent = await stub(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/feedback?from=too-many-offers');
-  await expect(page.getByRole('radio', { name: 'Feedback' })).toBeChecked();
   await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
   await page.getByLabel('Your message').fill('Love it.');
   await page.getByRole('button', { name: 'Send' }).click();

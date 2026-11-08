@@ -57,7 +57,8 @@ test('after login, unseen news opens first and Continue goes on', async ({ page 
   await page.fill('#login-password', 'Correct-Horse-9!');
   await page.click('[data-part="password-login"]');
   await expect(page).toHaveURL(/\/news\?after=login&returnTo=%2Fwallets$/);
-  expect(await newTitles(page)).toHaveLength(3);
+  // Wait for the list: allTextContents() reads once and does not retry.
+  await expect(page.locator('[data-part="news-item"][data-new] h2')).toHaveCount(3);
   await page.click('[data-part="news-continue"]');
   await expect(page).toHaveURL(/\/wallets$/);
 

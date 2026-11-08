@@ -14,16 +14,17 @@
  * views form and sent; design review 1 Nov shots 62-63) with UI-kit parts only: the back header,
  * "Tell us what you think", a 9-row message box with its count, "Send anonymously" as a 24px box in
  * a 44px row, and the thank-you with "Sent as <name>." and Write another. The kind is not on the
- * board; it stays (the API files by kind; design session 2 Nov) as the kit's selectable cards. The owner's words are used where he
+ * board and has no choice (design build review 7 Nov): a draft keeps its kind, a new message is
+ * feedback. The owner's words are used where he
  * gave them (the checkbox and the thank-you); board copy is used as drawn; the rest is COPY-UNSIGNED.
  */
+import { FEEDBACK_FORM_DAILY } from '@x2f/core';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { displayNameOf, useSession } from '../session/useSession.js';
 import { clearFeedbackDraft, loadFeedbackDraft, saveFeedbackDraft } from './feedbackDraft.js';
 import { Button } from '../ui/Button.js';
-import { ChoiceGroup } from '../ui/Choice.js';
 import { CheckRow } from '../ui/CheckRow.js';
 import { FlowScreen } from '../ui/FlowScreen.js';
 import { Icon } from '../ui/icons.js';
@@ -42,6 +43,12 @@ export const FEEDBACK_NAMED_HINT = 'Your username is attached, so we can reply i
 /** A 400 from the form. COPY-UNSIGNED */
 export const FEEDBACK_BAD_TEXT = 'Your comment has a hidden character the form does not take. Retype it, or paste it as plain text.';
 
+/**
+ * Owner Q67 (6 Nov 2026): at most 10 sends a day, and the 11th says the limit is there to stop spam.
+ * COPY-UNSIGNED, DESIGNER-REVIEW: design words it (the owner asked design to).
+ */
+export const FEEDBACK_DAILY_LIMIT = `You've sent ${FEEDBACK_FORM_DAILY} today, the most for one day. The limit helps keep spam out. You can send more tomorrow.`;
+
 /** The owner's wording, exactly (2026-10-29). copy-lint lets this one sentence keep its "!". */
 export const FEEDBACK_THANKS = 'Thank you! Each and every comment is appreciated and reviewed to help make this community a better place for us all.';
 /** The Feedback board sets the owner's sentence as the heading "Thank you!" and the line under it. */
@@ -49,11 +56,6 @@ const THANKS_SPLIT = FEEDBACK_THANKS.search(/[.!?] /) + 1;
 const THANKS_HEAD = FEEDBACK_THANKS.slice(0, THANKS_SPLIT);
 const THANKS_BODY = FEEDBACK_THANKS.slice(THANKS_SPLIT + 1);
 
-const KINDS: readonly { id: FeedbackKind; label: string }[] = [
-  { id: 'complaint', label: 'Complaint' },
-  { id: 'feedback', label: 'Feedback' },
-  { id: 'recommendation', label: 'Recommendation' },
-];
 
 /** The refusal code from `?from=`, when it has the API's shape; anything else is dropped. */
 export { clearFeedbackDraft, loadFeedbackDraft };
@@ -79,13 +81,13 @@ export function Feedback() {
   // account wrote is never shown (round-2 review N-M6).
   const owner = session.status === 'signed-in' ? displayNameOf(session.me) || null : null;
   const [draft, setDraft] = useState(() => loadFeedbackDraft(null));
+  // The board has no kind choice: a draft keeps the kind it had, a new message is feedback.
   const [kind, setKind] = useState<FeedbackKind>(draft?.kind ?? 'feedback');
   const [text, setText] = useState(draft?.text ?? '');
   const [anonymous, setAnonymous] = useState(draft?.anonymous ?? false);
   const [state, setState] = useState<State>({ kind: 'idle' });
   const textId = useId();
   const countId = useId();
-  const kindId = useId();
   const formId = useId();
   const box = useRef<HTMLTextAreaElement>(null);
   const focusBox = useRef(false);
@@ -130,6 +132,7 @@ export function Feedback() {
       setState({ kind: 'sent' });
     } catch (err) {
       if (err instanceof ApiCallError && err.status === 401) setState({ kind: 'signed-out' });
+      else if (err instanceof ApiCallError && err.status === 429 && err.extra.limit === 'daily') setState({ kind: 'failed', message: FEEDBACK_DAILY_LIMIT });
       else if (err instanceof ApiCallError && (err.status === 429 || err.status === 503)) setState({ kind: 'failed', message: waitSentence(err.retryAfterSeconds) });
       // COPY-UNSIGNED. A 400: the text holds a character the form does not take (a hidden control
       // or direction mark), which retrying would never fix.
@@ -213,13 +216,7 @@ export function Feedback() {
             to send feedback. You can write it first: it is kept while you log in.
           </p>
         ) : null}
-        {/* Not on the board; kept (design session 2 Nov) as the kit's ChoiceGroup cards: real radios, selected = 2px ink ring on surface-raised. COPY-UNSIGNED */}
-        <div className="x2f-field">
-          <span className="x2f-kicker" id={kindId}>
-            What is it?
-          </span>
-          <ChoiceGroup look="card" options={KINDS.map((k) => ({ value: k.id, label: k.label }))} value={kind} onChange={setKind} labelledBy={kindId} part="feedback-kind" />
-        </div>
+        {/* The Feedback board (design build review 7 Nov): no "What is it?" choice; a new message is sent as feedback. */}
         <div className="x2f-field">
           <label htmlFor={textId} className="x2f-field-label">
             Your message

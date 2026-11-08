@@ -4,7 +4,8 @@
 import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FEEDBACK_ANON_HINT, FEEDBACK_BAD_TEXT, FEEDBACK_THANKS, Feedback, fromCode } from '../src/screens/Feedback.js';
+import { FEEDBACK_FORM_DAILY } from '@x2f/core';
+import { FEEDBACK_ANON_HINT, FEEDBACK_BAD_TEXT, FEEDBACK_DAILY_LIMIT, FEEDBACK_THANKS, Feedback, fromCode } from '../src/screens/Feedback.js';
 import { refreshSession } from '../src/session/useSession.js';
 import { logOut } from '../src/push/usePush.js';
 import { CANT_DO_CODES, CantDoThat, feedbackHref } from '../src/ui/CantDoThat.js';
@@ -174,15 +175,15 @@ describe('Feedback form', () => {
 
   it('sends a named comment with its refusal code, shows the owner\'s thank-you exactly, and moves focus to it', async () => {
     const { host, sent } = await open('/feedback?from=starter-limit', { status: 202, json: {} });
-    const labels = [...host.querySelectorAll('[role="radiogroup"] label')].map((l) => l.textContent);
-    expect(labels).toEqual(['Complaint', 'Feedback', 'Recommendation']);
+    // The Feedback board (design 7 Nov): no kind choice, the board's headline.
+    expect(host.querySelector('fieldset')).toBeNull();
+    expect(host.querySelector('h1')?.textContent).toBe('Tell us what you think');
     const send_ = host.querySelector<HTMLButtonElement>('[data-primary]')!;
     expect(send_.disabled).toBe(true);
-    fire(host.querySelector<HTMLInputElement>('input[value="complaint"]')!, new MouseEvent('click', { bubbles: true }));
     type(host.querySelector('textarea')!, '  The cap is too low.  ');
     expect(host.querySelector('[data-part="anon-hint"]')?.textContent).toBe('Your username is attached, so we can reply in the app.');
     await send(host);
-    expect(sent).toEqual([{ url: '/v1/feedback/form', body: { kind: 'complaint', text: 'The cap is too low.', anonymous: false, from: 'starter-limit' } }]);
+    expect(sent).toEqual([{ url: '/v1/feedback/form', body: { kind: 'feedback', text: 'The cap is too low.', anonymous: false, from: 'starter-limit' } }]);
     expect(host.querySelector('[data-part="feedback-thanks"]')?.textContent).toBe(FEEDBACK_THANKS);
     expect(FEEDBACK_THANKS).toBe('Thank you! Each and every comment is appreciated and reviewed to help make this community a better place for us all.');
     // Review M7: keyboard users keep their place.
@@ -191,7 +192,7 @@ describe('Feedback form', () => {
     expect(window.sessionStorage.getItem('x2f.feedback-draft')).toBeNull();
   });
 
-  it('the Feedback board (design review 62-63): the heading, a 9-row box with its count, 44px choice rows; the thanks says who it went as, and Write another starts over', async () => {
+  it('the Feedback board (design review 62-63): the heading, a 9-row box with its count, no kind choice; the thanks says who it went as, and Write another starts over', async () => {
     const { host } = await open('/feedback', { status: 202, json: {} });
     expect(host.querySelector('h1')?.textContent).toBe('Tell us what you think');
     const box = host.querySelector('textarea')!;
@@ -199,11 +200,9 @@ describe('Feedback form', () => {
     expect(host.querySelector('label[for="' + box.id + '"]')?.textContent).toBe('Your message');
     type(box, 'Hi');
     expect(host.querySelector('[data-part="feedback-count"]')?.textContent).toBe('2 of 2000 characters');
-    // No grooved fieldset: the kit's ChoiceGroup cards (design session 2 Nov), named by "What is it?".
-    const group = host.querySelector('[role="radiogroup"]')!;
+    // No kind choice at all (design build review 7 Nov): no radios, no fieldset.
+    expect(host.querySelector('[role="radiogroup"]')).toBeNull();
     expect(host.querySelector('fieldset')).toBeNull();
-    expect(document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent).toBe('What is it?');
-    expect([...group.querySelectorAll('label')].every((l) => l.getAttribute('data-look') === 'card')).toBe(true);
     await send(host);
     expect(host.querySelector('[data-part="feedback-thanks-heading"]')?.textContent).toBe('Thank you!');
     expect(host.querySelector('[data-part="feedback-sent-as"]')?.textContent).toMatch(/^Sent as .+\.$/);
@@ -230,24 +229,21 @@ describe('Feedback form', () => {
     expect(line.textContent).toMatch(/^Log in to send feedback/);
     expect(line.querySelector('a')?.getAttribute('href')).toBe('/login?returnTo=%2Ffeedback');
     expect(first.host.querySelector<HTMLButtonElement>('[data-primary]')!.disabled).toBe(true);
-    fire(first.host.querySelector<HTMLInputElement>('input[value="recommendation"]')!, new MouseEvent('click', { bubbles: true }));
     type(first.host.querySelector('textarea')!, 'Keep this.');
     first.unmount();
     // Back from logging in: signed in, the same words.
     refreshSession();
     const back = await open('/feedback', { status: 202, json: {} });
     expect(back.host.querySelector('textarea')!.value).toBe('Keep this.');
-    expect(back.host.querySelector<HTMLInputElement>('input[value="recommendation"]')!.checked).toBe(true);
     expect(back.host.querySelector('[data-part="feedback-login-first"]')).toBeNull();
     await send(back.host);
-    expect(back.sent).toEqual([{ url: '/v1/feedback/form', body: { kind: 'recommendation', text: 'Keep this.', anonymous: false } }]);
+    expect(back.sent).toEqual([{ url: '/v1/feedback/form', body: { kind: 'feedback', text: 'Keep this.', anonymous: false } }]);
   });
 
   it('round-2 N-M6: a draft another account wrote is dropped, and log-out clears the draft', async () => {
     window.sessionStorage.setItem('x2f.feedback-draft', JSON.stringify({ kind: 'complaint', text: 'from someone else', anonymous: true, owner: 'other_user' }));
     const b = await open('/feedback', { status: 202, json: {} });
     expect(b.host.querySelector('textarea')!.value).toBe('');
-    expect(b.host.querySelector<HTMLInputElement>('input[value="feedback"]')!.checked).toBe(true);
     expect(window.sessionStorage.getItem('x2f.feedback-draft')).toBeNull();
     // The signed-in account's own draft is kept, under its name.
     type(b.host.querySelector('textarea')!, 'mine');
@@ -268,6 +264,15 @@ describe('Feedback form', () => {
     await send(busy.host);
     expect(busy.host.querySelector('[role="alert"]')?.textContent).toBe('Too many tries. Try again in 2 minutes.');
     busy.unmount();
+    // Owner Q67: the 11th send of the day says the limit is there to stop spam.
+    const daily = await open('/feedback', { status: 429, json: { error: 'slow-down', retryAfterSeconds: 3600, limit: 'daily' } });
+    type(daily.host.querySelector('textarea')!, 'Hi');
+    await send(daily.host);
+    expect(daily.host.querySelector('[role="alert"]')?.textContent).toBe(FEEDBACK_DAILY_LIMIT);
+    // The number comes from @x2f/core, the same constant the API counts against.
+    expect(FEEDBACK_DAILY_LIMIT).toContain(`You've sent ${FEEDBACK_FORM_DAILY} today`);
+    expect(FEEDBACK_FORM_DAILY).toBe(10);
+    daily.unmount();
     const bad = await open('/feedback', { status: 400, json: { error: 'bad-request' } });
     type(bad.host.querySelector('textarea')!, 'Hi');
     await send(bad.host);
