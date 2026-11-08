@@ -13,7 +13,7 @@ IC={
 }
 def svg(n,s=16,sw=1.75,extra=''): return f'<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="{sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"{extra}>{IC[n]}</svg>'
 # badge: key, name, family tone, glyph (icon or numeral), meaning, earned
-B=[('trusted','Trusted','escrow','shield','500+ trades and 98%+ positive.','Earned 12 Mar 2026'),
+B=[('trusted','Trusted','escrow','shield','200+ trades and 98%+ positive.','Earned 12 Mar 2026'),
    ('clean','Clean record','escrow','clean','No lost disputes in 100 trades.','Earned 2 Jun 2026'),
    ('veteran','Veteran','escrow','medal','Trading on X2F for over a year.','Earned 1 Oct 2026'),
    ('fast','Fast','caution','bolt','Usually pays or releases within 10 min.','Earned 20 Apr 2026'),

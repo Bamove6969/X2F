@@ -153,6 +153,14 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </section>
       </div>
     </div>
+    <section aria-label="Design notes" style="display: flex; flex-direction: column; gap: 12px; padding: 24px 0 0; border-top: 1px solid var(--line);">
+      <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+      <aside aria-label="Decided by the owner: removals wait 24 h like every other change" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (p5-7)</span>
+        <span style="font-weight: 600;">Removing a member waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h like every other change.</span>
+        <span>The Remove sheet no longer says "They are logged out now"; it reads "Like every other change, this waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h; they keep working until then." and the confirmation note "… will be removed after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h." During the hold the lead can log back in with a passkey, security key or PGP key and untick it (HoldChange). Switching a member off still needs a strong login, so it applies at once.</span>
+      </aside>
+    </section>
   </main>
 
   <sc-if value="{{sheetOpen}}" hint-placeholder-val="{{false}}">
@@ -212,7 +220,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </sc-if>
         <sc-if value="{{isRemove}}" hint-placeholder-val="{{false}}">
           <h2 id="tm-sheet-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Remove {{removeName}}?</h2>
-          <p style="margin: 0; font-size: 16px; line-height: 24px;">They are logged out now and their login stops working. What they did stays in the audit log.</p>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">Like every other change, this waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h unless you're logged in with a passkey, security key or PGP key; they keep working until then. What they did stays in the audit log.</p>
           <div style="display: flex; justify-content: flex-end; align-items: center; gap: 12px;">
             <button type="button" onClick="{{closeSheet}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Cancel</button>
             <button type="button" onClick="{{doRemove}}" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; border: 1px solid var(--danger); border-radius: 12px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Remove {{removeName}}</button>
@@ -223,7 +231,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1506}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1705}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -326,7 +334,7 @@ class Component extends DCLogic {
 
     // Board height = measured content height (night, fonts loaded). The right column sets it (1510) up to 2 rows.
     // With 3 rows (the most allowed) the member column is taller: 1526 for 3 invites, +14 per member row, +70 for the status note.
-    const H = count >= MAX ? 1522 + 14 * s.list.filter((m) => m.kind === 'member').length + (s.note ? 70 : 0) : 1506;
+    const H = count >= MAX ? 1721 + 14 * s.list.filter((m) => m.kind === 'member').length + (s.note ? 70 : 0) : 1705;
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     return {
       rootStyle, members, presetRows, presetOpts,
@@ -349,7 +357,7 @@ class Component extends DCLogic {
       copy: () => this.setState({ copied: true }),
       finish: () => this.setState({ sheet: null, draft: '', list: s.list.concat([{ id: 'inv' + count + draft, name: draft, kind: 'invite', on: false, online: false, seen: '', since: '2 Nov 2026, 14:05 UTC', allowed: picked ? picked.n : 0, preset: s.pick }]), note: 'Invite link made for ' + draft + '. It expires in 24 hours.' }),
       removeName: target ? target.name : '',
-      doRemove: () => this.setState({ sheet: null, list: s.list.filter((m) => m.id !== s.target), note: (target ? target.name : 'Member') + ' was removed and logged out.' }),
+      doRemove: () => this.setState({ sheet: null, list: s.list.filter((m) => m.id !== s.target), note: (target ? target.name : 'Member') + ' will be removed after 24 h.' }),
       closeSheet: () => this.setState({ sheet: null })
     };
   }
