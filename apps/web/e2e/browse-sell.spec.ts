@@ -89,7 +89,8 @@ test.describe('/sell (Main board)', () => {
     await pick.focus();
     await page.keyboard.press('Enter');
     const sheet = page.getByRole('dialog', { name: 'Buyers paying in USD' });
-    await sheet.getByRole('radio', { name: 'Zelle' }).focus();
+    // The sheet opens with focus already on the checked radio: no Tab past Close first.
+    await expect(sheet.getByRole('radio', { name: 'Zelle' })).toBeFocused();
     await page.keyboard.press('ArrowDown');
     await expect(sheet.getByRole('radio', { name: 'Cash App' })).toBeChecked();
     await expect(sheet).toBeVisible();

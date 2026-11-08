@@ -184,6 +184,36 @@ describe('MethodList: the live section is one picker card', () => {
     expect(radios()).toHaveLength(BOARD_BUY_LIVE_USD.length);
   });
 
+  it('a pick survives a currency switch when that method is live there, else the card falls back to the first live one', async () => {
+    const row = (id: string, name: string, offers: number) => ({ id, name, group: 'Payment apps', giftCard: false, offers, bestRate: '33000' });
+    const zelle = row('ZELLE', 'Zelle', 34);
+    const cash = row('CASH_APP', 'Cash App', 27);
+    const sepa = row('SEPA', 'SEPA', 12);
+    const liveBy: Record<string, ReturnType<typeof row>[]> = { USD: [zelle, cash], EUR: [sepa, { ...cash, offers: 9 }], GBP: [sepa] };
+    stubMethods((c) => ({ live: liveBy[c] ?? [], all: liveBy[c] ?? [] }));
+    const { host } = await screen('/sell', 'sell');
+    const { act } = await import('react');
+    const href = () => liveSection(host).querySelector('a')!.getAttribute('href');
+    const chip = (c: string) => [...host.querySelectorAll<HTMLElement>('[role="radiogroup"] [role="radio"]')].find((b) => b.textContent === c)!;
+
+    click(liveSection(host).querySelector('button[aria-haspopup]')!);
+    click(radios().find((r) => r.value === 'CASH_APP')!.closest('label')!);
+    await act(settle);
+    expect(href()).toBe('/sell/CASH_APP?currency=USD');
+
+    // EUR: Cash App is live there (9 buyers), so the pick stays, with EUR numbers.
+    click(chip('EUR'));
+    await act(settle);
+    expect(href()).toBe('/sell/CASH_APP?currency=EUR');
+    expect(liveSection(host).textContent).toContain('9 buyers paying in EUR');
+
+    // GBP: Cash App has no buyers, so the first live method (SEPA) shows.
+    click(chip('GBP'));
+    await act(settle);
+    expect(href()).toBe('/sell/SEPA?currency=GBP');
+    expect(liveSection(host).querySelector('button[aria-haspopup]')!.textContent).toBe('Payment method: SEPA');
+  });
+
   it('no live method in the currency: no card, only the full list', async () => {
     stubMethods(() => ({ live: [], all: [{ id: 'SEPA', name: 'SEPA', group: 'Bank transfers', giftCard: false, offers: 0, bestRate: null }] }));
     const { host } = await screen('/sell?currency=GBP', 'sell');

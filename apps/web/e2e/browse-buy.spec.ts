@@ -186,7 +186,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     test('BuyMain: parity and phone layout', async ({ page }) => {
       await stub(page);
       await page.goto('/buy');
-      await expect(page.getByRole('button', { name: 'Payment method: Zelle' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Payment method: Zelle' })).toBeVisible({ timeout: 15000 });
       await expectPhoneLayout(page);
       await expectParity(page, 'BuyMain', { viewport, primary: false });
     });

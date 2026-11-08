@@ -75,7 +75,7 @@ export function MethodPicker({
           <Icon name="chevron-right" size={18} />
         </Link>
       </div>
-      <Sheet open={open} title={title} wide="dialog" handle onClose={() => setOpen(false)}>
+      <Sheet open={open} title={title} wide="dialog" handle initialFocus="input:checked" onClose={() => setOpen(false)}>
         <div className="x2f-method-pick__list" onClick={onClick} onKeyDown={onKeyDown}>
           <ChoiceGroup look="card" label={title} part="method-option" options={live.map((m) => ({ value: m.id, label: m.name, note: sub(m) }))} value={value.id} onChange={onChange} />
         </div>
