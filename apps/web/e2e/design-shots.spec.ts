@@ -647,15 +647,18 @@ test('36 BuyerPay while the escrow secures', async ({ page }) => {
   await shot(page, '36-trade-buyer-pay-securing');
 });
 
-test("37-39 Task 38-39: the pay warning, the two-step I've paid, marked as paid", async ({ page }) => {
+test("37-39 owner G56: Cancelling is final; the two-step I've paid, marked as paid", async ({ page }) => {
   await openRoom(page, PAY_SECURING, { warned: false });
-  const warn = page.getByRole('alertdialog');
-  await expect(warn).toContainText('Before you pay');
-  await shot(page, '37-trade-pay-warning');
-  await page.getByRole('button', { name: "I'll wait" }).click();
-  // The second step: I've paid, the warning again (still confirming), then the confirm sheet.
+  // The old pay warning (Task 38) is superseded by Q12 and never opens.
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cancel trade' }).click();
+  const final = page.getByRole('dialog', { name: 'Cancelling is final' });
+  await expect(final).toBeVisible();
+  await shot(page, '37-trade-cancel-final');
+  await final.getByRole('button', { name: 'Keep trading' }).click();
+  await expect(final).toHaveCount(0);
+  // The second step: I've paid, then the confirm sheet.
   await page.locator('[data-primary]').first().click();
-  if (await warn.count()) await page.getByRole('button', { name: "I've already paid" }).click();
   const sheet = page.getByRole('dialog');
   await expect(sheet).toContainText('Mark this trade as paid?');
   await sheet.getByRole('checkbox').check();

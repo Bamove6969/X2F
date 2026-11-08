@@ -46,6 +46,15 @@ export const MAX_DIFF_PIXEL_RATIO = 0.03;
  * (the progress steps, the counterparty card, the chat) are not exceptions.
  */
 export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: string }[]>> = {
+  SellerRefund: [
+    { text: 'mira.k gets a final alert and 15 minutes to say they already paid.', why: 'Owner G2 (7 Nov): the final-alert steps are gone from SellerRefund; the G2 board (docs/design-boards/SellerRefund.dc.html on wip/design-brief) keeps only the late-dispute warning. design/x2f-app/SellerRefund.dc.html predates it.' },
+    { text: 'If they stay silent, your 1.25 XMR comes back to your wallet automatically. No moderator needed.', why: 'Owner G2 (7 Nov): the final-alert steps are gone from SellerRefund; the G2 board (docs/design-boards/SellerRefund.dc.html on wip/design-brief) keeps only the late-dispute warning. design/x2f-app/SellerRefund.dc.html predates it.' },
+    { text: 'If they say they paid, a moderator checks both sides before anything moves.', why: 'Owner G2 (7 Nov): the final-alert steps are gone from SellerRefund; the G2 board (docs/design-boards/SellerRefund.dc.html on wip/design-brief) keeps only the late-dispute warning. design/x2f-app/SellerRefund.dc.html predates it.' },
+    {
+      text: 'Nudge mira.k',
+      why: 'Owner G2 (7 Nov): once Cancel is available the G2 board reads "Nudge again"; "Nudge mira.k" is the locked state\'s primary (e2e/refund.spec.ts checks both).',
+    },
+  ],
   TradeFund: [
     {
       text: 'Rate (locked when you fund)',
