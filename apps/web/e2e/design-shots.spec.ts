@@ -597,7 +597,7 @@ function apply(s: Room, e: Record<string, unknown>): { status: number; json: unk
 
 /**
  * Opens /trade/:code on the fixtures build with the fixture escrow ready for the board trade.
- * `warned` false leaves Task 38's warnings to show; `chat` keeps Task 20's real chat in the room.
+ * `warned` false leaves Task 38's release warning to show; `chat` keeps Task 20's real chat in the room.
  */
 async function openRoom(
   page: Page,
@@ -624,7 +624,6 @@ async function openRoom(
       if (f.chat) window.__x2fRealChat = true;
       if (f.warned) {
         try {
-          localStorage.setItem(`x2f.warned.pay.${f.code}`, '1');
           localStorage.setItem(`x2f.warned.release.${f.code}`, '1');
         } catch {
           // No store: the warning shows.
@@ -647,9 +646,10 @@ test('36 BuyerPay while the escrow secures', async ({ page }) => {
   await shot(page, '36-trade-buyer-pay-securing');
 });
 
-test("37-39 owner G56: Cancelling is final; the two-step I've paid, marked as paid", async ({ page }) => {
+// Shot 37 was Task 38's pay warning (board Warn-IvePaid, superseded by owner Q12); it is now the
+// buyer's "Cancelling is final" sheet (owner G56).
+test('37 owner G56: Cancelling is final', async ({ page }) => {
   await openRoom(page, PAY_SECURING, { warned: false });
-  // The old pay warning (Task 38) is superseded by Q12 and never opens.
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await page.getByRole('button', { name: 'Cancel trade' }).click();
   const final = page.getByRole('dialog', { name: 'Cancelling is final' });
@@ -657,7 +657,11 @@ test("37-39 owner G56: Cancelling is final; the two-step I've paid, marked as pa
   await shot(page, '37-trade-cancel-final');
   await final.getByRole('button', { name: 'Keep trading' }).click();
   await expect(final).toHaveCount(0);
-  // The second step: I've paid, then the confirm sheet.
+});
+
+test("38-39 Task 39: the two-step I've paid, marked as paid", async ({ page }) => {
+  await openRoom(page, PAY_SECURED);
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await page.locator('[data-primary]').first().click();
   const sheet = page.getByRole('dialog');
   await expect(sheet).toContainText('Mark this trade as paid?');

@@ -498,7 +498,10 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
 
     case 'mark-paid':
       if (by !== 'buyer') return fail('wrong-party');
-      if (s !== 'securing' && s !== 'secured' && s !== 'refund_requested') return fail('wrong-state');
+      // "I've paid" only once the escrow is secured, 10 of 10 confirmations and the coins unlocked
+      // (owner Q12, 2026-11-06): while it is still securing the buyer is told to wait, not refused as moved on.
+      if (s === 'securing') return fail('too-early');
+      if (s !== 'secured' && s !== 'refund_requested') return fail('wrong-state');
       // Once the auto-refund may run (autoRefundDecision: now >= finalAlertAt + 15 min) it is too late.
       // The window is frozen during maintenance, so a paused trade counts from the pause.
       if (s === 'refund_requested' && t.finalAlertAt !== null && base(t, now).getTime() >= addMin(t.finalAlertAt, TIMERS.finalAlertMin).getTime()) {

@@ -8,8 +8,10 @@
  * Every action records the event with the API first, then asks the escrow (Task 12's order):
  * - I've paid → PaidConfirmSheet → `mark-paid { fiatCents }` (the total the sheet showed), then
  *   `escrow.markPaid(fiatCents)` (the `trade.paid` signal). A `total-changed` refusal sends
- *   nothing: the trade is re-read and the sheet asks again with the new total. The old PayWarning
- *   (Task 38) no longer opens: the board marks Warn-IvePaid superseded by Q12.
+ *   nothing: the trade is re-read and the sheet asks again with the new total. Owner Q12: "I've
+ *   paid" and the seller's payment details only once the escrow is secured (10 of 10); before
+ *   that the button is closed and the details are a locked card (board Warn-IvePaid, Task 38's
+ *   pay warning, is superseded by Q12 and gone).
  * - Cancel trade (buyer, spec 2.3; owner G56 and g67): before "I've paid" it opens the
  *   "Cancelling is final" sheet (CancelFinalSheet.tsx), whose Cancel trade posts `buyer-cancel`,
  *   then `escrow.buyerCancel()`, which sends `trade.cancel`. After "I've paid" there is no cancel
@@ -17,7 +19,7 @@
  * - The seller never cancels alone: Propose cancel / Withdraw (mutual cancel); the buyer gets an
  *   accept/decline card, and Accept is `accept-cancel` then `escrow.proposeCancelSign()`.
  */
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { formatXmr } from '@x2f/trade';
 import { ApiCallError } from '../../api/client.js';
@@ -34,7 +36,7 @@ import { CancelProposalCard, SellerCancelControls } from './CancelSheet.js';
 import { setFinalAlertPaidSheet } from './FinalAlert.js';
 import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
-import { buyerCancelMode, escrowChip, finishBlock, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { buyerCancelMode, escrowChip, finishBlock, payBlock, paySecured, payTimer, showProposal, type EscrowChip } from './payModel.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
@@ -272,8 +274,39 @@ function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () 
   );
 }
 
+/**
+ * Owner Q12: before the escrow is secured the seller's details are a locked card (board BuyerPay,
+ * escrow=securing), and they are not even asked for; from `secured` on, "Send exactly".
+ */
+function PaymentCard(p: { view: TradeView; method: MethodInfo; total: DeviceTotal | null; rate: string | null }) {
+  if (paySecured(p.view)) return <SendExactlyCard {...p} />;
+  const etaMin = escrowChip(p.view)?.bar?.etaMin ?? null;
+  return (
+    <section aria-label="Payment details" className="x2f-card x2f-pay-card" data-fold-glance="pay" data-locked="">
+      <div className="x2f-pay-card__locked">
+        <span className="x2f-pay-card__lock" data-lock-tile="" aria-hidden="true">
+          <Icon name="lock" size={20} stroke={1.75} />
+        </span>
+        <span className="x2f-pay-card__locked-text">
+          <h2 className="x2f-pay-card__title">Payment details</h2>
+          {/* COPY-UNSIGNED: the no-minutes line is not on the board (the ETA is always known while securing). */}
+          <span className="x2f-pay-card__note">
+            {etaMin === null ? (
+              'They appear when the escrow is secured.'
+            ) : (
+              <>
+                They appear when the escrow is secured, in about <span className="x2f-mono">{etaMin}</span> min.
+              </>
+            )}
+          </span>
+        </span>
+      </div>
+    </section>
+  );
+}
+
 /** "Send exactly": the total, the seller's details for the method, the memo, (desktop) the rate, and the own-name warning. */
-function PaymentCard({ view, method, total, rate }: { view: TradeView; method: MethodInfo; total: DeviceTotal | null; rate: string | null }) {
+function SendExactlyCard({ view, method, total, rate }: { view: TradeView; method: MethodInfo; total: DeviceTotal | null; rate: string | null }) {
   const details = usePaymentDetails(view.code);
   const rows: { label: string; value: string }[] = details ?? [{ label: `${method.name} to`, value: 'Ask in the chat' }];
   return (
@@ -442,6 +475,8 @@ export function BuyerPay(p: TradeScreenProps) {
   const needsFinish = paid && !escrow.paidRecorded && (escrow.refusal === 'amount-unknown' || escrow.refusal === 'view-mismatch');
   const finishBlocked = finishBlock(view, escrow);
   const finishOk = finishBlocked === null;
+  // Owner Q12: no "I've paid" before the escrow is secured (`not-secured`), so no warning in front of it.
+  const payWhenId = useId();
   // Owner G56: the buyer's cancel asks once, "Cancelling is final".
   const [cancelSheet, setCancelSheet] = useState(false);
   const onIvePaid = () => {
@@ -472,7 +507,17 @@ export function BuyerPay(p: TradeScreenProps) {
     await action.run({ type: 'buyer-cancel' }, () => escrow.buyerCancel(), "Couldn't start the refund. Try again.");
   };
 
-  const primary = !paid ? (
+  // Owner Q12: before secured the reason is the button's muted caption (board BuyerPay, pay-when).
+  const primary = !paid && block === 'not-secured' ? (
+    <div className="x2f-pay__primary">
+      <Button variant="primary" disabled aria-describedby={payWhenId} onClick={onIvePaid}>
+        I've paid
+      </Button>
+      <p id={payWhenId} className="x2f-pay__caption" data-pay-block="not-secured">
+        {payBlockText(block, escrow)}
+      </p>
+    </div>
+  ) : !paid ? (
     <Button variant="primary" disabled={block !== null} onClick={onIvePaid}>
       I've paid
     </Button>
@@ -522,7 +567,7 @@ export function BuyerPay(p: TradeScreenProps) {
             </Button>
           ) : null}
         </div>
-      ) : !paid && block !== null && !(block === 'escrow-refused' && refusal !== null) ? (
+      ) : !paid && block !== null && block !== 'not-secured' && !(block === 'escrow-refused' && refusal !== null) ? (
         <p className="x2f-room__error" role="status" data-pay-block={block}>
           {payBlockText(block, escrow)}
         </p>
