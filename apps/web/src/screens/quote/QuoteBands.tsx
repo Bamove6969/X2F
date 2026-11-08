@@ -51,7 +51,7 @@ export function QuoteBands({ offer, quote, market }: { offer: QuoteOffer; quote:
           <Icon name="bands" size={20} stroke={1.75} />
         </span>
         <span className="x2f-quote__bands-titles">
-          <h2 id={`${id}-title`} className="x2f-quote__bands-title">
+          <h2 id={`${id}-title`} className="x2f-section-title">
             This offer&apos;s bands
           </h2>
           <span className="x2f-quote__muted-sm">The price changes with the amount</span>

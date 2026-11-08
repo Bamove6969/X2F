@@ -351,13 +351,6 @@
   min-width: 0;
 }
 
-.x2f-quote__bands-title {
-  margin: 0;
-  font-size: 18px;
-  line-height: 24px;
-  font-weight: 600;
-}
-
 .x2f-quote__bands-views {
   display: flex;
   flex-wrap: wrap;

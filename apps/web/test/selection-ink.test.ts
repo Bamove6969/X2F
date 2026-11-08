@@ -66,6 +66,7 @@ const ORANGE_ALLOWED = [
   // The XMR unit label (tokens.json monero-ink usage; BuyQuote board).
   'ui/ui.css .x2f-amount__unit',
   'screens/quote/quote.css .x2f-quote__xmr-unit',
+  'screens/quote/quote.css .x2f-quote__band-xmr-unit',
 ];
 
 describe('selection is ink, never orange', () => {
