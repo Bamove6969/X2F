@@ -222,6 +222,8 @@ export const CANT_DO_TITLE = {
   team: "This can't be done on the team",
   // Design build review 7 Nov: a title that says why (CantDoThat titles). COPY-UNSIGNED
   teamOwnerOnly: 'Only the owner can do this',
+  // COPY-UNSIGNED: 'forbidden' is a role issue, not an owner-only one (lead's review, 7 Nov).
+  teamRole: "Your role doesn't include this",
   teamWeak: 'Needs a Strong login',
   // COPY-UNSIGNED: the design review's title for shot 19 (too-many-members, now a server fallback).
   teamFull: 'Your team is full',
@@ -446,7 +448,8 @@ export const TOO_MANY_MEMBERS_CODE = 'too-many-members' satisfies CantDoCode;
  */
 /** The team refusal's title: who may do it, or why this device can't (design build review 7 Nov). */
 export function teamCantDoTitle(code: CantDoCode | string): string {
-  if (code === 'owner-only' || code === 'forbidden') return CANT_DO_TITLE.teamOwnerOnly;
+  if (code === 'owner-only') return CANT_DO_TITLE.teamOwnerOnly;
+  if (code === 'forbidden') return CANT_DO_TITLE.teamRole;
   if (code === 'weak-session') return CANT_DO_TITLE.teamWeak;
   if (code === TOO_MANY_MEMBERS_CODE) return CANT_DO_TITLE.teamFull;
   return CANT_DO_TITLE.team;
