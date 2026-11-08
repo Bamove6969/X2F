@@ -16,12 +16,18 @@ const KIT = new Set(['ui/Avatar.tsx', 'ui/Identity.tsx', 'ui/Hero.tsx', 'ui/Stat
 /** Where the moderator look may appear: the dispute screens and the trade chat. */
 const ALLOWED = (p: string) => p.startsWith('screens/dispute/') || p === 'chat/chat.css' || p === 'chat/ChatPanel.tsx';
 
+/** Trade screens that pass a tone variable to a chip from a literal-only table (no `mod`): glancePill's
+ * caution/escrow/danger, the maintenance chip's danger/caution. A new file here needs a reviewer's eye. */
+const TONE_VARIABLE_OK = new Set(['screens/Maintenance.tsx', 'screens/trade/BuyerPay.tsx', 'screens/trade/TradeGlance.tsx']);
+
 /** Every way to draw the moderator look (JSX props may span lines). */
-const MOD_LOOK: [string, RegExp][] = [
+const MOD_LOOK: [string, RegExp, Set<string>?][] = [
   ['mod role tag', /\brole=["']mod["']|data-role=["']mod/],
   ['role tag with a variable role', /<RoleTag\b[^>]*\brole=\{/],
   ['moderator tile', /<ModTile\b/],
-  ['identity row as a moderator', /<IdentityRow\b[^>]*\smod(?:=\{true\})?(?=[\s/>])/],
+  ['identity row as a moderator', /<IdentityRow\b(?:[^>]|=>|(?<=\s)>(?=\s))*\smod\b/],
+  ['moderator tag component', /<ModeratorTag\b/],
+  ['tone from a variable', /<(?:StatusChip|Hero)\b(?:[^>]|=>|(?<=\s)>(?=\s))*\btone=\{\s*(?!["'])/, TONE_VARIABLE_OK],
   ['mod tone', /\btone=(?:["']mod["']|\{\s*["']mod["']\s*\})|data-tone=["']mod/],
   ['mod colour token', /--x2f-mod\b/],
   ["the tag's words", /X2F Moderator|x2f-moderator-badge/i],
@@ -48,6 +54,11 @@ describe('moderator look scope', () => {
       "<Hero tone={'mod'}>",
       '.x { color: var(--x2f-mod); }',
       'X2F Moderator',
+      '<IdentityRow person={p} mod={isMod} />',
+      '<IdentityRow person={p} onPick={() => 1 > 0} mod />',
+      '<ModeratorTag />',
+      'const t = "mod" as const; <StatusChip tone={t}>',
+      '<Hero tone={x}>',
     ];
     for (const s of samples) expect(MOD_LOOK.some(([, re]) => re.test(s)), s).toBe(true);
     // Not the look: a data attribute named role, a dialog role, a modal.
@@ -56,9 +67,9 @@ describe('moderator look scope', () => {
     }
   });
 
-  for (const [what, re] of MOD_LOOK) {
+  for (const [what, re, exempt] of MOD_LOOK) {
     it(`${what}: only the dispute screens and the trade chat`, () => {
-      const outside = sources.filter((f) => !KIT.has(f.file) && !ALLOWED(f.file) && re.test(f.text)).map((f) => f.file);
+      const outside = sources.filter((f) => !KIT.has(f.file) && !ALLOWED(f.file) && !exempt?.has(f.file) && re.test(f.text)).map((f) => f.file);
       expect(outside).toEqual([]);
     });
   }
