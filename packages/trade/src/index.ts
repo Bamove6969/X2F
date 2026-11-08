@@ -29,6 +29,7 @@ export {
   fiatCents,
   formatFiat,
   formatXmr,
+  formatXmrExact,
   offerRate,
   posterRole,
   rateFor,

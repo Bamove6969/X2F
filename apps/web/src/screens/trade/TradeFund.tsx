@@ -19,7 +19,7 @@
  * until the device has that reading only the address is shown, with the rest as text.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { escrowPlan, formatFiat, formatXmr, moneroUri } from '@x2f/trade';
+import { escrowPlan, formatFiat, formatXmr, formatXmrExact, moneroUri } from '@x2f/trade';
 import { methodOf, postTradeEvent, type TradeView } from '../../api/trade.js';
 import { Amount } from '../../ui/Amount.js';
 import { Button } from '../../ui/Button.js';
@@ -28,7 +28,7 @@ import { EscrowDots } from '../../ui/EscrowDots.js';
 import { HoldButton } from '../../ui/HoldButton.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
-import { exactXmr, fundedForGood, hasFundMark, isFunded, isPhoneDevice, setFundMark, walletName } from './fund.js';
+import { fundedForGood, hasFundMark, isFunded, isPhoneDevice, setFundMark, walletName } from './fund.js';
 import { FundFallback, type SendNow } from './FundFallback.js';
 import { IntegrityFailed, Name, EscrowCheck, SetupStatus } from './SetupStatus.js';
 import { amountToSend, verifiedFunding, type TradeEscrow } from './seams.js';
@@ -155,7 +155,7 @@ function SellerQuote({ view, deal }: { view: TradeView; deal: TradeEscrow['deal'
     <section className="x2f-trade-quote" aria-label="Quote">
       <div className="x2f-trade-quote__head">
         <span className="x2f-trade-label">You send to escrow</span>
-        <Amount xmr={formatXmr(funds)} />
+        <Amount xmr={formatXmrExact(funds)} exact />
       </div>
       <div className="x2f-trade-quote__rows">
         <Row label="Rate (locked when the trade started)" value={rate} />
@@ -221,7 +221,7 @@ function WalletFooter({
       />
       {opened ? null : (
         <span className="x2f-fund-hint">
-          Opens {wallet} with the escrow address and {exactXmr(fundsAtomic)} XMR filled in. You confirm there.
+          Opens {wallet} with the escrow address and {formatXmrExact(fundsAtomic)} XMR filled in. You confirm there.
         </span>
       )}
       {opened || fallbackShown ? null : (
@@ -347,7 +347,7 @@ export function TradeFund({ view, escrow, serverClock, refresh }: TradeScreenPro
         <Grown view={view} />
         {!funded && received > 0n && received < funds ? (
           <p className="x2f-notice" role="status" data-short="">
-            Received {formatXmr(received)} of {formatXmr(funds)} XMR, send the rest
+            Received {formatXmr(received)} of {formatXmrExact(funds)} XMR, send the rest
           </p>
         ) : null}
         <GiftCard view={view} />

@@ -186,7 +186,7 @@ test.describe('TradeFund (seller, phone)', () => {
     await expect(page.getByText('Includes X2F fee (1%, your ad)')).toBeVisible();
     await expect(page.getByText('0.012500 XMR')).toBeVisible();
     await expect(page.locator('[data-wallet-link]')).toHaveAttribute('href', moneroUri(ADDRESS, B.amountAtomic + FEE));
-    await expect(page.getByText('Opens Cake Wallet with the escrow address and 1.2625 XMR filled in. You confirm there.')).toBeVisible();
+    await expect(page.getByText('Opens Cake Wallet with the escrow address and 1.262500 XMR filled in. You confirm there.')).toBeVisible();
   });
 
   test('the taker seller sees no X2F fee', async ({ page }) => {
@@ -309,6 +309,36 @@ test.describe('TradeFund on a desktop', () => {
     await expect(page.locator('[data-qr]')).toBeVisible();
     await expect(page.locator('[data-wallet-link]')).toHaveCount(0);
     await expect(page.locator('[data-escrow-address]')).toHaveText(ADDRESS);
+  });
+
+  test('a non-6-aligned amount is shown in full wherever it must be sent, and equals what Copy amount carries', async ({ page, context }) => {
+    // atomicForFiat floors to the atomic unit: real amounts have 12 places (review kit round 1, finding 1).
+    const ODD = 610_529_733_574n;
+    const odd = (over: View = {}) =>
+      sellerView({ amountAtomic: ODD.toString(), funding: { sellerFundsAtomic: ODD.toString(), escrowAddress: ADDRESS, uri: moneroUri(ADDRESS, ODD), walletApp: 'cake' }, ...over });
+    const deal = { poster: 'buyer' as const, takeAmountAtomic: ODD.toString() };
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await stub(page, () => odd(), { ...VERIFIED, deal });
+    await room(page);
+    await expect(page.getByText('Send exactly this amount: 0.610529733574 XMR')).toBeVisible();
+    await expect(page.locator('.x2f-trade-quote__head .x2f-amount')).toHaveText('0.610529733574 XMR');
+    await page.getByRole('button', { name: 'Copy amount' }).click();
+    await expect(page.getByText('Amount copied.')).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('0.610529733574');
+  });
+
+  test('short by under 0.000001: "Send the rest: 0.000000733574 XMR", never 0.000000', async ({ page }) => {
+    const ODD = 610_529_733_574n;
+    const view = sellerView({
+      amountAtomic: ODD.toString(),
+      receivedAtomic: '610529000000',
+      funding: { sellerFundsAtomic: ODD.toString(), escrowAddress: ADDRESS, uri: moneroUri(ADDRESS, ODD), walletApp: 'cake' },
+    });
+    await stub(page, () => view, { ...VERIFIED, deal: { poster: 'buyer', takeAmountAtomic: ODD.toString() }, receivedAtomic: '610529000000' });
+    await room(page);
+    await expect(page.getByText('Received 0.610529 of 0.610529733574 XMR, send the rest')).toBeVisible();
+    await expect(page.getByText('Send the rest: 0.000000733574 XMR')).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('0.000000 XMR');
   });
 
   test('at 1280x800 the room fits with no horizontal scroll and one primary', async ({ page }) => {
