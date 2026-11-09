@@ -12,9 +12,9 @@ import { staffDisputeRoutes } from '../disputes/staffRoutes.js';
 import type { appendLog } from '../log/append.js';
 import { assertRoutePerm, requireStaff, type StaffRoutePerm } from './guard.js';
 import { staffInviteRoutes } from './invites.js';
-import { keyTapRoutes } from './keyTap.js';
 import { staffMemberRoutes } from './members.js';
 import { ownerKeyRoutes } from './ownerKeys.js';
+import { keyTapRoutes } from './keyTap.js';
 import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from '../push/send.js';
 import { staffAccountRoutes } from './account.js';
 import { staffFeedbackRoutes } from './feedback.js';
@@ -22,6 +22,8 @@ import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffPastRepRoutes } from './pastrep.js';
 import { staffPriceHealthRoutes } from './priceHealth.js';
+import { ownerSetupRoutes } from './ownerSetup.js';
+import { serveStaffWeb } from './web.js';
 import { staffSettingsRoutes } from './settings.js';
 import { staffSiteRoutes } from './site.js';
 
@@ -39,6 +41,8 @@ export interface StaffDeps extends Deps {
   traderEvents?: Pick<EventBus, 'publish'>;
   /** The activity log's writer for the case routes (tests inject a failing one). */
   appendLog?: typeof appendLog;
+  /** `X2F_STAFF_WEB_ROOT`: the built staff app (apps/staff-web/dist), served on this origin (Task 16). */
+  staffWebRoot?: string;
 }
 
 /** One registered staff route, as the privilege matrix test (test/staff/routes.ts) lists it. */
@@ -142,6 +146,8 @@ export async function buildStaffApi(
   staffMemberRoutes(app);
   staffInviteRoutes(app);
   ownerKeyRoutes(app);
+  // Plan 4 Task 6: owner first-run setup (public-setup; locked for good once it finishes).
+  ownerSetupRoutes(app);
   // Plan 4 Task 8: the owner's settings (settings.write) and the site controls (site.control).
   staffSettingsRoutes(app);
   staffSiteRoutes(app);
@@ -159,6 +165,8 @@ export async function buildStaffApi(
     ...(deps.traderEvents ? { traderEvents: deps.traderEvents } : {}),
     ...(deps.appendLog ? { appendLog: deps.appendLog } : {}),
   });
+  // Plan 4 Task 16: the staff web app's pages, last, so every API route above wins.
+  if (deps.staffWebRoot !== undefined) await serveStaffWeb(app, deps.staffWebRoot);
 
   return app;
 }

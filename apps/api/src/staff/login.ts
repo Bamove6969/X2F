@@ -9,7 +9,7 @@ import { loadStaff, requireStaff, withinHours } from './guard.js';
 import { isTrusted } from '../auth/device.js';
 import type { Deps } from '../app.js';
 
-const PUBLIC_LOGIN = { perm: 'public-login' } as const;
+export const PUBLIC_LOGIN = { perm: 'public-login' } as const;
 
 /**
  * Plan 4 Task 4's `afterAuthenticate` for every staff login step. It runs only after the key or the

@@ -162,9 +162,24 @@ export function staffInviteRoutes(app: FastifyInstance): void {
   // The invitee
 
   app.get('/staff/v1/invites/accept/:token', pub, async (req) => {
-    const i = await openInvite(req.server.deps.db, tokenOf(req), req.server.deps.clock());
+    const db = req.server.deps.db;
+    const i = await openInvite(db, tokenOf(req), req.server.deps.clock());
     req.server.budgets.start.take();
-    return { role: i.role, hours: i.hours, expiresAt: i.expires_at.toISOString() };
+    // A return visit (the account was made earlier on this link): what is in so far, so the page
+    // carries on at the keys with the right counts (attested security keys, passkeys, PGP keys).
+    let resume: { keys: number; passkeys: number; pgp: number; keyCheckCode: string | null } | null = null;
+    if (i.account_id !== null) {
+      const { rows } = await db.query<{ passkeys: number; pgp: number; first: Buffer | null }>(
+        `select (select count(*)::int from webauthn_credentials w where w.account_id = $1 and w.kind = 'passkey') as passkeys,
+                (select count(*)::int from pgp_keys p where p.account_id = $1) as pgp,
+                (select w.public_key from webauthn_credentials w where w.account_id = $1 and w.kind = 'security-key' and w.attested
+                  order by w.created_at, w.id limit 1) as first`,
+        [i.account_id],
+      );
+      const r = rows[0]!;
+      resume = { keys: await attestedKeyCount(db, i.account_id), passkeys: r.passkeys, pgp: r.pgp, keyCheckCode: r.first ? keyCheckCode(new Uint8Array(r.first)) : null };
+    }
+    return { role: i.role, hours: i.hours, expiresAt: i.expires_at.toISOString(), resume };
   });
 
   app.post('/staff/v1/invites/accept/:token/account', pub, async (req, reply) => {

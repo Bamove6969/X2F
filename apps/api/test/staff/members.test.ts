@@ -106,7 +106,7 @@ describe('invites', () => {
     expect(await logEntries(t.deps, 'staff.invite-created')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ inviteId: inv.inviteId, role: 'mod' }) });
 
     const view = await invitee().get(acceptUrl(inv.token));
-    expect(view.json()).toEqual({ role: 'mod', hours: OFFICE, expiresAt: inv.expiresAt });
+    expect(view.json()).toEqual({ role: 'mod', hours: OFFICE, expiresAt: inv.expiresAt, resume: null });
 
     const s = await signUp(inv.token, { passkey: true });
     expect(s.finish.statusCode, s.finish.body).toBe(201);
@@ -212,6 +212,14 @@ describe('invites', () => {
     expect(rows[0]!.disabled_at).not.toBeNull();
     const again = await b.post(acceptUrl(inv.token, '/account'), { displayName: 'Other1x', loginName: 'otherlogin1x' });
     expect(again.statusCode).toBe(409);
+    // A return visit resumes: the account is made, and the keys added so far are counted.
+    const resume = async () => (await invitee().get(acceptUrl(inv.token))).json().resume;
+    expect(await resume()).toEqual({ keys: 0, passkeys: 0, pgp: 0, keyCheckCode: null });
+    expect((await addInviteKey(b, inv.token, t.newKey())).statusCode).toBe(201);
+    expect((await addInviteKey(b, inv.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
+    expect((await addInvitePgp(b, inv.token, await genKey())).statusCode).toBe(201);
+    const { rows: cred } = await t.deps.db.query<{ public_key: Buffer }>("select public_key from webauthn_credentials where account_id = $1 and kind = 'security-key'", [id]);
+    expect(await resume()).toEqual({ keys: 1, passkeys: 1, pgp: 1, keyCheckCode: keyCheckCode(new Uint8Array(cred[0]!.public_key)) });
     // Keys and PGP before the names: refused.
     const fresh = await createInvite('mod');
     expect((await invitee().post(acceptUrl(fresh.token, '/key/start'), { kind: 'security-key' })).statusCode).toBe(409);

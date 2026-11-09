@@ -17,42 +17,11 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { returnToFrom } from '../api/client.js';
 import { Button } from '../ui/Button.js';
-import { fetchNews, markSeen, postedDate, readLastSeen, rememberNews, type NewsItem } from './news-model.js';
+import { fetchNews, markSeen, readLastSeen, rememberNews, type NewsItem } from './news-model.js';
+import { NewsMessage } from './NewsMessage.js';
 import './screens.css';
 
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; items: NewsItem[]; seenBefore: number };
-
-function Message({ item, isNew }: { item: NewsItem; isNew: boolean }) {
-  const titleId = `news-${item.id}-title`;
-  return (
-    <article className="x2f-card" data-part="news-item" data-new={isNew ? '' : undefined} aria-labelledby={titleId}>
-      <div className="x2f-row">
-        <h2 className="x2f-card__title" id={titleId}>
-          {item.title}
-        </h2>
-        {isNew ? (
-          <span className="x2f-badge" data-tone="escrow" data-part="news-new">
-            New
-          </span>
-        ) : null}
-      </div>
-      <p className="x2f-note" data-part="news-date">
-        Posted <time dateTime={item.publishedAt}>{postedDate(item.publishedAt)}</time>
-        {item.editedAt !== null ? (
-          <>
-            {' · Updated '}
-            <time dateTime={item.editedAt}>{postedDate(item.editedAt)}</time>
-          </>
-        ) : null}
-      </p>
-      {item.body.split(/\n+/).map((para, i) => (
-        <p className="x2f-sheet__body" key={i}>
-          {para}
-        </p>
-      ))}
-    </article>
-  );
-}
 
 export function News() {
   const navigate = useNavigate();
@@ -105,7 +74,7 @@ export function News() {
           {state.items.length > 0 ? (
             <section className="x2f-stack" aria-label="Messages" data-part="news-list">
               {state.items.map((i) => (
-                <Message key={i.id} item={i} isNew={i.id > state.seenBefore} />
+                <NewsMessage key={i.id} item={i} isNew={i.id > state.seenBefore} />
               ))}
             </section>
           ) : null}

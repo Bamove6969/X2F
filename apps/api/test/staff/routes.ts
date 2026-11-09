@@ -76,6 +76,14 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/owner/keys', perm: 'self', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/owner/keys/start', perm: 'self', allowed: OWNER, body: {} },
   { method: 'POST', url: '/staff/v1/owner/keys/finish', perm: 'self', allowed: OWNER, body: {} },
+  // Plan 4 Task 6: owner first-run setup (public; 404 setup-locked once locked, and here: an owner exists).
+  { method: 'POST', url: '/staff/v1/setup/code', perm: 'public-setup', allowed: 'public', body: { code: 'AAAA-AAAA-AAAA' } },
+  { method: 'POST', url: '/staff/v1/setup/account', perm: 'public-setup', allowed: 'public', body: { displayName: 'matrix.owner', loginName: 'matrix-login' } },
+  { method: 'POST', url: '/staff/v1/setup/key/start', perm: 'public-setup', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/key/finish', perm: 'public-setup', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/pgp/start', perm: 'public-setup', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/pgp/finish', perm: 'public-setup', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/finish', perm: 'public-setup', allowed: 'public', body: {} },
   // Plan 4 Task 8: the owner's settings and the site controls (a sample tap id is never valid).
   { method: 'GET', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER, body: { firstResponseH: 5 } },
@@ -86,7 +94,8 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', allowed: OWNER, body: { on: false } },
   { method: 'POST', url: '/staff/v1/site/auto-close/resume', perm: 'site.control', allowed: OWNER, body: {} },
-  // Plan 4 Task 28: News, written by the owner.
+  // Plan 4 Task 28: News, written by the owner (the list: Task 16's NewsEditor).
+  { method: 'GET', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'A message.' } },
   { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'Edited.' } },
   { method: 'DELETE', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER },

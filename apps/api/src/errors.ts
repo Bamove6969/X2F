@@ -137,6 +137,9 @@ export type ApiErrorCode =
   | 'both-owner-keys-required'
   // Owner G3 (review P-m1): a staff passkey that reports a security-key model is that key again.
   | 'passkey-is-security-key'
+  // Plan 4, Task 6: owner first-run setup.
+  | 'setup-locked'
+  | 'owner-needs-pgp'
   // Plan 5 Task 10 on the staff API: the past-rep claim is no longer live (revoked, removed, rejected).
   | 'not-live'
   // Plan 5, Task 10: past reputation claims.

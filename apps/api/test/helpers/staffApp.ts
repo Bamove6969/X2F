@@ -16,7 +16,10 @@ export const TRADER_ORIGIN = 'https://x2f.test';
 export const MODERATION_STUB: ModerationClient = NO_MODERATION;
 
 /** The trader API and the staff API on one database and one clock; `overrides` go to `testApp`. */
-export async function staffApps(overrides: Partial<Deps> = {}, staffOptions: { pushTransport?: PushTransport } = {}): Promise<{
+export async function staffApps(
+  overrides: Partial<Deps> = {},
+  staffOptions: { pushTransport?: PushTransport; webRoot?: string } = {},
+): Promise<{
   app: FastifyInstance;
   trader: FastifyInstance;
   deps: Deps;
@@ -26,7 +29,11 @@ export async function staffApps(overrides: Partial<Deps> = {}, staffOptions: { p
 }> {
   const t = await testApp(overrides);
   const { stream, logs } = captureLogs();
-  const app = await buildStaffApi({ ...t.deps, staffOrigin: STAFF_ORIGIN, moderation: MODERATION_STUB }, { logStream: stream, ...staffOptions });
+  const { webRoot, ...options } = staffOptions;
+  const app = await buildStaffApi(
+    { ...t.deps, staffOrigin: STAFF_ORIGIN, moderation: MODERATION_STUB, ...(webRoot !== undefined ? { staffWebRoot: webRoot } : {}) },
+    { logStream: stream, ...options },
+  );
   return {
     app, trader: t.app, deps: t.deps, setNow: t.setNow, logs,
     async close() {

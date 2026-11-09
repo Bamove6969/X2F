@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { WEB_SRC, lintSource, lintTree } from '../../../tools/copy-lint.js';
+import { STAFF_WEB_SRC, WEB_SRC, lintSource, lintTree } from '../../../tools/copy-lint.js';
 
 const run = promisify(execFile);
 const REPO = fileURLToPath(new URL('../../../', import.meta.url));
@@ -117,6 +117,13 @@ describe('copy-lint', () => {
   it('passes on apps/web/src as committed', () => {
     expect(lintTree(WEB_SRC)).toEqual([]);
   }, 30_000); // reads every source file: slow while other agents load the machine
+
+  it('passes on apps/staff-web/src as committed (Plan 4 Task 16), with the staff refusal map as a home', () => {
+    expect(lintTree(STAFF_WEB_SRC)).toEqual([]);
+    // The staff map words refusals by design; the same words anywhere else in staff-web are judged.
+    expect(lintSource("export const r = { forbidden: 'Your role does not include this page.' };\n", 'apps/staff-web/src/refusals.ts')).toEqual([]);
+    expect(lintSource("export const s = 'outside-login-hours';\n", 'apps/staff-web/src/screens/X.tsx').map((f) => f.rule)).toEqual(['refusal']);
+  }, 30_000);
 
   describe('lintTree and the CLI over a planted temp folder', () => {
     let dir = '';

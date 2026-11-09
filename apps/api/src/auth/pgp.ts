@@ -262,9 +262,9 @@ export const PGP_BODY_LIMIT = 64 * 1024;
 const START_WINDOW_MS = 5 * 60_000;
 const STARTS_PER_DEVICE = 5;
 
-type Purpose = 'register' | 'login' | 'confirm' | 'add-key' | 'team-join' | 'staff-join';
-/** The sign-ups that prove a pasted key before it is stored: a team member's (Plan 2 Task 18) and a staff invitee's (Plan 4 Task 7). */
-export type JoinPurpose = 'team-join' | 'staff-join';
+type Purpose = 'register' | 'login' | 'confirm' | 'add-key' | 'team-join' | 'staff-join' | 'owner-setup';
+/** The sign-ups that prove a pasted key before it is stored: a team member's (Plan 2 Task 18), a staff invitee's (Plan 4 Task 7) and the owner's at first-run setup (Plan 4 Task 6). */
+export type JoinPurpose = 'team-join' | 'staff-join' | 'owner-setup';
 
 export interface IssuedChallenge {
   challengeId: string;
@@ -890,6 +890,7 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
  * Checks a member's pasted key (400 with the key's refusal) and issues a `team-join` challenge to
  * it, keeping the sealed storable key in the payload for `checkTeamJoinCode`. `accountId` is null
  * for the first factor (no member account yet) and the member's account for a second PGP key.
+ * Plan 4 Task 6's owner setup uses the same flow with `purpose: 'owner-setup'` (the pending owner).
  */
 export async function issueTeamJoinChallenge(
   deps: Deps,
