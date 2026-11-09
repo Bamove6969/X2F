@@ -9,3 +9,13 @@ export {
   MAX_RECEIVING_CHAINS, MAX_SKIPPED_KEYS, createChain, decrypt, encrypt, initAlice, initBob, messageKeys, nextChain,
   type AliceParameters, type BobParameters, type Chain, type MessageKeys, type SessionState,
 } from './ratchet.js';
+export {
+  OMEMO_NS, PAYLOAD_IV_LENGTH, PAYLOAD_KEY_LENGTH, PAYLOAD_TAG_LENGTH, decryptPayload, encryptPayload, encryptedElement, keyAndTag, parseEncryptedElement,
+  type EncryptedElement, type Payload,
+} from './envelope.js';
+export {
+  DEVICELIST_NODE, PREKEY_COUNT, bundleNode, bundleXml, deviceListXml, generateBundleSecrets, newDeviceId, parseBundleSecrets, serializeBundleSecrets,
+  type BundleSecrets,
+} from './bundle.js';
+export { encryptMessage, registrationIdFor, type EncryptOptions, type RecipientBundle, type SenderIdentity } from './omemo.js';
+export { OmemoDevice } from './device.js';
