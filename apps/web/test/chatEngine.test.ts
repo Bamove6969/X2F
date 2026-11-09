@@ -594,6 +594,26 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
     expect((api.posted[0] as Envelope).seq).toBe(0);
   });
 
+  it('review M2 (pay details): the worker itself refuses a package while the trade is not secured (not-ready): nothing sealed or posted, the seq kept; a plain line still goes', async () => {
+    api.view.tradeSecuredAt = null;
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await expect(e.sendPay(chat, INTERAC)).rejects.toMatchObject({ code: 'not-ready' });
+    expect(api.posted).toHaveLength(0);
+    expect((await store.load(chat))!.state?.nextSeq ?? 0).toBe(0);
+    await e.send(chat, 'the escrow is still securing');
+    expect((api.posted[0] as Envelope).seq).toBe(0);
+    // Secured: the same package goes.
+    api.view.tradeSecuredAt = '2026-10-28T12:30:00.000Z';
+    const snap = await e.sendPay(chat, INTERAC);
+    expect(snap.lines.map((l) => [l.text, l.pay ?? null])).toEqual([
+      ['the escrow is still securing', null],
+      [TEXT, INTERAC],
+    ]);
+    expect(api.posted).toHaveLength(2);
+  });
+
   it("shows the seller's package as a line with `pay`, and again after a reopen (no text or boxes kept on the device)", async () => {
     await engine().sync(chat);
     const parts = attest();

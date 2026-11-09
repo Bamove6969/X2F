@@ -469,6 +469,20 @@ describe('ChatPanel: the payee\'s payment details boxes and the payer\'s card (J
     expect(field(host, 'name')!.value).toBe('Jane Doe');
   });
 
+  it("review M2 (pay details): the worker's own refusal of a package before the escrow is secured (not-ready) is said as the secured line", async () => {
+    current = snap({ role: 'seller' });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    fill(field(host, 'name')!, 'Jane Doe');
+    fill(field(host, 'email')!, 'jane@example.ca');
+    client.sendPay.mockRejectedValueOnce(new ChatFailed('not-ready'));
+    submit(boxes(host)!);
+    await flush();
+    expect(client.sendPay).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[data-pay-error]')?.textContent).toBe('You can send these once the escrow is secured.');
+    expect(field(host, 'name')!.value).toBe('Jane Doe');
+  });
+
   it("the payer sees the seller's package as a card with the boxes, and the announcement reads its plain text", async () => {
     current = snap({ role: 'buyer' });
     const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);

@@ -127,7 +127,7 @@ export class ChatSendFailed extends Error {
 export interface ChatEngine {
   sync(chat: string): Promise<ChatSnapshot>;
   send(chat: string, text: string): Promise<ChatSnapshot>;
-  /** Seals and posts the payee's packaged payment details (J-08); 'bad-details' for a bad package. */
+  /** Seals and posts the payee's packaged payment details (J-08); 'bad-details' for a bad package, 'not-ready' while the trade is not secured (owner Q12). */
   sendPay(chat: string, pay: PayDetailsPayload): Promise<ChatSnapshot>;
   /**
    * Asks the API about every chat stored on this device and erases each one it answers 410
@@ -447,12 +447,17 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     }
   };
 
-  /** Seals with `make` and posts, the same way for a line and a package. */
-  function post(chat: string, make: (a: Omit<Parameters<typeof sealChatMessage>[0], 'text'>) => Promise<{ envelope: Envelope; state: ChatState }>): Promise<ChatSnapshot> {
+  /**
+   * Seals with `make` and posts, the same way for a line and a package. A package (`secured`) is
+   * refused with 'not-ready' while the API's view says the trade is not secured (owner Q12): the
+   * page's closed button is not the only gate (pay-details review M2), and no seq is spent.
+   */
+  function post(chat: string, make: (a: Omit<Parameters<typeof sealChatMessage>[0], 'text'>) => Promise<{ envelope: Envelope; state: ChatState }>, secured = false): Promise<ChatSnapshot> {
     return serial(chat, () => purging(chat, async () => {
       for (let attempt = 0; attempt < 2; attempt++) {
         const s = await syncLocked(chat);
         if (s.snap.phase !== 'ready' || !s.rec || !s.parts) throw new ChatSendFailed('not-ready');
+        if (secured && s.view.tradeSecuredAt === null) throw new ChatSendFailed('not-ready');
         let sealed;
         try {
           sealed = await make({ role: s.rec.role, me: toIdentity(s.rec.identity), participants: s.parts, state: s.rec.state ?? newChatState(await chatChannel(chat)) });
@@ -495,7 +500,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       return gone;
     },
     send: (chat, text) => post(chat, (a) => sealChatMessage({ ...a, text })),
-    sendPay: (chat, pay) => post(chat, (a) => sealPayDetails({ ...a, pay })),
+    sendPay: (chat, pay) => post(chat, (a) => sealPayDetails({ ...a, pay }), true),
   };
 }
 

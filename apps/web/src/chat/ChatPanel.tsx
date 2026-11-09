@@ -356,6 +356,8 @@ function groupsOf(spec: readonly PayFieldSpec[]): Map<string, string[]> {
   return groups;
 }
 
+// COPY-UNSIGNED (J-08, owner Q12): why Send is closed while the escrow is securing (and the worker's own refusal of an early package).
+const PAY_NOT_SECURED = 'You can send these once the escrow is secured.';
 // COPY-UNSIGNED (J-08): the boxes' own words. `joinLabels` reads "Email, Phone number".
 const joinLabels = (labels: string[]): string => labels.join(', ');
 const oneOfHint = (labels: string[]): string => `Fill in at least one of: ${joinLabels(labels)}.`;
@@ -379,6 +381,8 @@ function payErrorText(e: unknown, spec: readonly PayFieldSpec[]): string {
     }
   }
   if (e instanceof ChatFailed && e.code === 'bad-text') return 'Leave out hidden characters.';
+  // The worker's own gate (owner Q12, pay-details review M2): the boxes only show in a ready chat, so not-ready here means not secured.
+  if (e instanceof ChatFailed && e.code === 'not-ready') return PAY_NOT_SECURED;
   return SEND_ERRORS[failureOf(e)];
 }
 
@@ -460,9 +464,8 @@ function PayBoxes({ chat, name, methodId, secured, onSent }: { chat: string; nam
         Send payment details
       </button>
       {secured ? null : (
-        // COPY-UNSIGNED (J-08, owner Q12): why Send is closed while the escrow is securing.
         <p id={whyId} className="x2f-chat__pay-hint" data-pay-block="not-secured">
-          You can send these once the escrow is secured.
+          {PAY_NOT_SECURED}
         </p>
       )}
       {error !== null ? (
