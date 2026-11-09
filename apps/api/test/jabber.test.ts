@@ -86,7 +86,14 @@ describe('the fixed texts', () => {
       expect(normalizeJid(bad), String(bad)).toBeNull();
     }
     expect(maskJid('mira.lee@xmpp.example.org')).toBe('mira…@xmpp.example.org');
-    expect(maskJid('bob@x.org')).toBe('bob…@x.org');
+    expect(maskJid('miral@x.org')).toBe('mira…@x.org');
+  });
+
+  it('review L3: a local part of four characters or fewer shows only its first character', () => {
+    expect(maskJid('mira@xmpp.example.org')).toBe('m…@xmpp.example.org');
+    expect(maskJid('bob@x.org')).toBe('b…@x.org');
+    expect(maskJid('al@x.org')).toBe('a…@x.org');
+    expect(maskJid('z@x.org')).toBe('z…@x.org');
   });
 });
 

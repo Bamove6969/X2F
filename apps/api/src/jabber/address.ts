@@ -14,10 +14,14 @@ export function normalizeJid(raw: unknown): string | null {
   return BARE_JID.test(jid) ? jid : null;
 }
 
-/** The board's mask: up to the first four characters, an ellipsis, then the server (`mira…@xmpp.example.org`). */
+/**
+ * The board's mask: the first four characters, an ellipsis, then the server (`mira…@xmpp.example.org`).
+ * A local part of four characters or fewer shows only its first character (review L3), so the
+ * mask never gives back a whole short address (`b…@xmpp.org`, not `bob…@xmpp.org`).
+ */
 export function maskJid(jid: string): string {
   const at = jid.indexOf('@');
-  return `${jid.slice(0, Math.min(4, at))}…${jid.slice(at)}`;
+  return `${jid.slice(0, at > 4 ? 4 : 1)}…${jid.slice(at)}`;
 }
 
 const boxes = new WeakMap<Keyring, SecretBox>();
