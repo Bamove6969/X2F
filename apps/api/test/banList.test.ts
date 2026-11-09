@@ -97,8 +97,8 @@ describe('recordBan', () => {
     const key = await genKey();
     await insertPgpKey(deps.db, deps.config, { accountId: member, fingerprint: key.fingerprint, armored: key.publicKey, now: deps.clock() });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
-       values ($1, 'Sam', 'sam', '{trades}', $2, $3, $2, $2)`,
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, 'Sam', 'sam', '{trades-see-active}', $2, $3, $2, $2)`,
       [team, deps.clock(), member],
     );
     const fps = await keyFingerprints(key.publicKey);

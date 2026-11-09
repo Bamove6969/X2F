@@ -74,9 +74,9 @@ describe('the last login is recorded', () => {
     const t = await vendor();
     const loginId = await seedAccount(deps, { loginName: `vimember${++n}x`, displayName: `vi-${n}-placeholder`, kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
-      [t.id, `ViMember${n}`, `vimember${n}`, ['trades'], START, loginId],
+      [t.id, `ViMember${n}`, `vimember${n}`, ['trades-see-active'], START, loginId],
     );
     setNow(at(30 * DAY));
     const res = await new Browser(app).post('/t/login', { accountId: loginId });

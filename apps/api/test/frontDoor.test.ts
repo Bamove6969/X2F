@@ -192,9 +192,9 @@ describe('a team member signs the Terms themselves', () => {
     const loginId = await seedAccount(deps, { loginName: `ml${tag}`, displayName: `m-${tag}-placeholder`, kind: 'member', termsVersion: terms });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
-      [owner.id, `Mem${tag}`, `mem${tag}`, ['offers', 'trades'], now, loginId],
+      [owner.id, `Mem${tag}`, `mem${tag}`, ['offers-see', 'trades-see-active'], now, loginId],
     );
     const browser = new Browser(app);
     expect((await browser.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
