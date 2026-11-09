@@ -120,13 +120,13 @@ describe('GET /internal/v1/watch', () => {
     const item = async (code: string) =>
       ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<Record<string, unknown>> }).trades.find((x) => x.trade === code);
     expect((await item(open.code))?.paused).toBe(false);
-    await deps.db.query('update site_flags set maintenance_since = $1', [NOW]);
+    await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [NOW]);
     try {
       expect((await item(open.code))?.paused).toBe(true);
       // a closed trade has no timer to stop (and the timer loop never pauses it)
       expect((await item(closed.code))?.paused).toBe(false);
     } finally {
-      await deps.db.query('update site_flags set maintenance_since = null');
+      await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     }
     expect((await item(open.code))?.paused).toBe(false);
   });

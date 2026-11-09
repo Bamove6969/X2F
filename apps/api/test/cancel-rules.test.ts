@@ -256,12 +256,12 @@ describe('review M3: a refund the node never confirms is not polled forever', ()
     const hash = 'e3'.repeat(32);
     const { t, at } = await staleCancel(hash);
     const short = async () => null;
-    await deps.db.query('update site_flags set maintenance_since = $1', [deps.clock()]);
+    await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [deps.clock()]);
     try {
       await watchCancelReturns(at, short);
       expect((await loadTrade(deps.db, t.code))!.state).toBe('refunded');
     } finally {
-      await deps.db.query('update site_flags set maintenance_since = null');
+      await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     }
     // A paused trade (the timer loop paused it for the maintenance, not yet resumed) waits too.
     await applyEvent(deps, t.code, { type: 'pause' }, 'system');

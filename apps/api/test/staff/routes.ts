@@ -84,6 +84,9 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'PUT', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER, body: { text: 'Matrix is down for an hour.', kind: 'info' } },
   { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', allowed: OWNER, body: { on: false } },
+  // J-04 (owner G19): a planned maintenance announced ahead.
+  { method: 'PUT', url: '/staff/v1/site/maintenance/planned', perm: 'site.control', allowed: OWNER, body: { startsAt: '2099-01-01T00:00:00.000Z', endsAt: '2099-01-01T02:00:00.000Z' } },
+  { method: 'DELETE', url: '/staff/v1/site/maintenance/planned', perm: 'site.control', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/site/auto-close/resume', perm: 'site.control', allowed: OWNER, body: {} },
   // Plan 4 Task 28: News, written by the owner.
   { method: 'POST', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'A message.' } },

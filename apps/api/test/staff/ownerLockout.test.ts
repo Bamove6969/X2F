@@ -193,7 +193,7 @@ describe('owner lockout', () => {
   });
 
   it('maintenance and the emergency stop leave every staff route working', async () => {
-    await t.deps.db.query('update site_flags set trading_paused = true, maintenance_since = $1', [MON_NOON]);
+    await t.deps.db.query("update site_flags set trading_paused = true, maintenance_since = $1, maintenance_kind = 'unplanned'", [MON_NOON]);
     try {
       expect((await owner.browser.get('/staff/v1/me')).statusCode).toBe(200);
       expect((await owner.browser.get('/staff/v1/members')).statusCode).toBe(200);
@@ -202,7 +202,7 @@ describe('owner lockout', () => {
       const { res } = await ownerLogin(owner.keys[1]!);
       expect(res.json()).toEqual({ status: 'ok' });
     } finally {
-      await t.deps.db.query('update site_flags set trading_paused = false, maintenance_since = null');
+      await t.deps.db.query('update site_flags set trading_paused = false, maintenance_since = null, maintenance_kind = null');
     }
   });
 });
