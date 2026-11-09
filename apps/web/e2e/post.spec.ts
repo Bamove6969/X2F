@@ -441,11 +441,16 @@ test('trade size in XMR by default: one switch per box, both boxes switch togeth
   await expect(preview.locator('[data-part="preview-fiat"]')).toHaveText(/^≈ CA\$[\d,.]+ – CA\$[\d,.]+ CAD$/);
   await expect(page.locator('[data-part="other-unit"]').first()).toHaveText(/^≈ CA\$[\d,.]+ at your price \(\+0\.5%\)$/);
 
-  // Tapping the currency on the Largest box moves both boxes.
+  // Tapping the currency on the Largest box moves both boxes, and converts what was typed at your
+  // price (review H1): "0.5" is never re-read as CA$0.50.
   await largest.getByRole('radio', { name: 'CAD' }).click();
   await expect(smallest.getByRole('radio', { name: 'CAD' })).toBeChecked();
+  await expect(f(page).min).not.toHaveValue('0.5');
+  await expect(f(page).min).toHaveValue(/^\d+(\.\d{1,2})?$/);
   await smallest.getByRole('radio', { name: 'XMR' }).click();
   await expect(largest.getByRole('radio', { name: 'XMR' })).toBeChecked();
+  await f(page).min.fill('0.5');
+  await f(page).max.fill('25');
 
   await f(page).post.click();
   await expect.poll(() => posts.length).toBe(1);
