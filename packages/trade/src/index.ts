@@ -29,6 +29,7 @@ export {
   fiatCents,
   formatFiat,
   formatXmr,
+  formatXmrExact,
   offerRate,
   posterRole,
   rateFor,
@@ -76,6 +77,7 @@ export {
 export { modPartyArgs, modPartyPlan, type ModPartyArgs, type ModPartyFacts, type ModPartyPlan } from './modParty.js';
 export {
   CHAT_AFTER_CLOSE_DAYS,
+  CHAT_AFTER_DISPUTE_DAYS,
   CHAT_BODY_MAX_BYTES,
   CHAT_MSG_TYPE,
   CHAT_PRETRADE_IDLE_DAYS,

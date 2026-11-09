@@ -9,7 +9,7 @@
  */
 import { useMemo, useState } from 'react';
 import qrcode from 'qrcode-generator';
-import { formatXmr } from '@x2f/trade';
+import { formatXmrExact } from '@x2f/trade';
 import { Button } from '../../ui/Button.js';
 import { exactXmr } from './fund.js';
 
@@ -79,7 +79,7 @@ export function FundFallback({
   return (
     <section className="x2f-fund-fallback" aria-label="QR code or address" data-fund-fallback="" data-address-only={send === null ? 'true' : 'false'}>
       <p className="x2f-fund-exact">
-        {rest ? 'Send the rest:' : 'Send exactly this amount:'} <span className="x2f-mono">{formatXmr(shown)} XMR</span>
+        {rest ? 'Send the rest:' : 'Send exactly this amount:'} <span className="x2f-mono">{formatXmrExact(shown)} XMR</span>
       </p>
       {qr === null ? null : (
         <svg

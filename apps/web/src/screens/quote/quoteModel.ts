@@ -3,7 +3,7 @@
 // the rate from offerRate, XMR for a fiat amount from atomicForFiat, the fiat total from fiatCents
 // and what the seller locks from escrowPlan. This file only reads what the person typed and picks
 // which of those results to show; it does no money maths of its own.
-import { atomicForFiat, escrowPlan, fiatCents, formatXmr, offerRate, posterRole, type Price, type Pricing } from '@x2f/trade';
+import { atomicForFiat, escrowPlan, fiatCents, formatXmr, formatXmrExact, offerRate, posterRole, type Price, type Pricing } from '@x2f/trade';
 
 /** The ad's side: a sell ad (the poster sells XMR, the taker buys: BuyQuote) or a buy ad (SellQuote). */
 export type AdSide = 'sell' | 'buy';
@@ -136,15 +136,11 @@ function mulDivHalfUp(a: bigint, b: bigint, d: bigint): bigint {
 
 /**
  * The XMR figure as shown: exactly what is sent. The board's 6 places, and more (up to all 12) only
- * when the amount has non-zero digits past the sixth, trailing zeros trimmed, so 1.0000009 typed on
- * SellQuote is never shown as "1.000000" (formatXmr truncates; Task 18 review, item 5).
+ * when the amount has non-zero digits past the sixth, so 1.0000009 typed on SellQuote is never
+ * shown as "1.000000" (Task 18 review, item 5). The rule is @x2f/trade formatXmrExact, which every
+ * figure the user must send uses.
  */
-export function xmrText(atomic: bigint): string {
-  const full = formatXmr(atomic, 12);
-  const trimmed = full.replace(/0+$/, '');
-  const places = trimmed.length - trimmed.indexOf('.') - 1;
-  return places >= 6 ? trimmed : formatXmr(atomic, 6);
-}
+export const xmrText = formatXmrExact;
 
 /**
  * Minor units as a currency string with `exponent` decimals: 41250n USD → "$412.50", 41250n JPY
@@ -166,6 +162,7 @@ export function formatMinor(minor: bigint, currency: string, exponent: number): 
 /** Money with no fraction shown when it is zero: the board's "$50 to $1,500". */
 export function fiatWhole(minor: bigint, currency: string, exponent = 2): string {
   const s = formatMinor(minor, currency, exponent);
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- exponent is a number (currency minor-unit digits), not text
   return exponent > 0 && minor % 10n ** BigInt(exponent) === 0n ? s.replace(new RegExp(`\\.0{${exponent}}(?=\\D*$)`), '') : s;
 }
 

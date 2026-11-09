@@ -2,7 +2,7 @@
 // "now" here is the server's clock (useServerClock), never the device's alone (Review Focus 3).
 // Copy is from the DisputeOpen, DisputeRoom and DisputeRuling boards; lines marked COPY-UNSIGNED
 // have no board yet (spec wording or Plan 4 A8) and wait for the owner's sign-off.
-import { TIMERS, escrowPlan, formatXmr } from '@x2f/trade';
+import { TIMERS, escrowPlan, formatXmr, formatXmrExact } from '@x2f/trade';
 import { formatRemaining } from '../../ui/Countdown.js';
 import type { DisputeReason, DisputeTrade, DisputeView, Party, Reason, RulingView } from './api.js';
 
@@ -158,6 +158,17 @@ export function xmrInText(atomic: string | bigint): string {
   return `${whole}.${kept}`;
 }
 
+/**
+ * As xmrInText, but for an amount a side must send (review kit round 1, finding 1): exact to the
+ * atomic unit (formatXmrExact), so 0.610529733574 is never written as 0.610529. Trailing zeros are
+ * dropped the same way, keeping at least two: an aligned amount still reads "1.25".
+ */
+export function xmrInTextExact(atomic: string | bigint): string {
+  const exact = formatXmrExact(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
+  const [whole, frac = ''] = exact.split('.');
+  return `${whole}.${frac.replace(/0+$/, '').padEnd(2, '0')}`;
+}
+
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** "10:14", in the viewer's own time zone. */
@@ -258,7 +269,8 @@ export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: stri
 export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, _now: Date, poster: Party): RulingCopy {
   const r = d.ruling;
   if (r === null) throw new Error('no ruling');
-  const amount = `${xmrInText(amountAtomic)} XMR`;
+  // What the seller must send on a seller-sends-xmr ruling: exact, never cut at 6 places.
+  const amount = `${xmrInTextExact(amountAtomic)} XMR`;
   // Lead review 7 Nov: what the ruling pays out, as `payoutsFor('dispute-buyer' | 'dispute-seller')`
   // builds it for a fully funded escrow. The poster pays the 1% fee: on a buyer's ad the buyer gets
   // the amount less the fee; the seller's refund is the amount either way.

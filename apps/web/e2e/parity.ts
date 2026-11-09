@@ -397,6 +397,7 @@ const escapeRe = (p: string) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** A board text with MASKs (runtime-filled {{…}} placeholders): each MASK matches any text. */
 function boardPattern(s: string): RegExp {
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- test harness, inputs are board/page text in our own fixtures, escaped by escapeRe
   return new RegExp(`^${s.split(MASK).map(escapeRe).join('.+?')}$`);
 }
 
@@ -405,6 +406,7 @@ function boardPattern(s: string): RegExp {
  * value-shaped piece (VALUE), so the mask never absorbs words of the board text around it.
  */
 function pagePattern(s: string): RegExp {
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- test harness, inputs are board/page text in our own fixtures, escaped by escapeRe
   return new RegExp(`^${s.split(MASK).map(escapeRe).join(VALUE)}$`);
 }
 
