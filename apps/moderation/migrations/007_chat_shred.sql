@@ -13,7 +13,9 @@
 -- A chat is never shredded while the trade this service recorded it linked to (or the order's own
 -- trade) was seen disputed within CHAT_AFTER_DISPUTE_DAYS, whatever trade the order names, nor while
 -- the order's trade disagrees with the recorded link. Rows of both tables go once last_seen_at is
--- past MOD_DISPUTE_SEEN_DAYS (the owner's 90 days).
+-- past MOD_DISPUTE_SEEN_DAYS (the owner's 90 days); a mod_chat_trade row only once its trade has no
+-- mod_dispute_seen row left (review N1), so a link outlives the list naming the chat while its
+-- dispute is still seen.
 create table mod_dispute_seen (
   trade text primary key,
   first_seen_at timestamptz not null,

@@ -47,7 +47,7 @@ export const OTHER_DEVICE = 'This conversation is open on another device';
 /** A chat that answers 404: purged, or (silently) a block between the two outside an open trade. */
 export const CHAT_CLOSED = 'This chat has been closed.';
 /** Review I2: a line this device took earlier whose envelope the server no longer serves as it was. */
-// not-a-refusal: a note in place of a chat line, not a rule the user ran into
+// COPY-UNSIGNED (chat shred review I2: the gap line). not-a-refusal: a note in place of a chat line, not a rule the user ran into
 export const MISSING_LINE = 'A message you saw earlier is no longer on the server.';
 /** How often an open panel syncs with no live event: quickly while the chat is being secured. */
 export const CHAT_POLL_MS = { waiting: 3_000, ready: 15_000 } as const;
@@ -225,6 +225,7 @@ export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
                     {MISSING_LINE}
                     {l.at !== null && !Number.isNaN(new Date(l.at).getTime()) ? (
                       <>
+                        {/* COPY-UNSIGNED (chat shred review I2): the gap line's "Sent <time>." suffix. */}
                         {' Sent '}
                         <time dateTime={l.at}>{utcDateTime(new Date(l.at))}</time>.
                       </>

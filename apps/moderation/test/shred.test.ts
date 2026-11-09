@@ -326,6 +326,41 @@ describe('the shred pass', () => {
     expect((await db.query('select 1 from mod_chat_trade where chat = $1', [c.chat])).rows).toHaveLength(0);
   });
 
+  it('review N1: a link is kept while its trade\'s dispute is still seen, though the list stopped naming the chat; it goes once the dispute record goes', async () => {
+    const c = await attestedChat();
+    const trade = newTradeCode();
+    const other = newTradeCode();
+    let chat: string | null = c.chat;
+    let orders: Order[] = [];
+    const reasons: string[] = [];
+    const net = fakeApi({ orders: () => orders, watch: () => [{ trade, state: 'disputed', chat }, { trade: other, state: 'released', chat: null }] });
+    const mod = await moderation(net.fetch, (e) => reasons.push(e.reason));
+    now = new Date(T0.getTime() + 10 * DAY);
+    await mod.watch();
+    // From here the list shows the trade disputed with no chat, past the link's own 90 days.
+    chat = null;
+    for (const day of [50, 90, 130]) {
+      now = new Date(T0.getTime() + day * DAY);
+      await mod.watch();
+    }
+    now = new Date(T0.getTime() + (10 + CHAT_AFTER_DISPUTE_DAYS) * DAY + 1);
+    for (const named of [null, other]) {
+      orders = [order(c.chat, named)];
+      reasons.length = 0;
+      expect(await mod.shredTick()).toEqual([]);
+      expect(reasons).toContain('chat-shred-held-dispute');
+    }
+    expect((await db.query<{ trade: string }>('select trade from mod_chat_trade where chat = $1', [c.chat])).rows.map((r) => r.trade)).toEqual([trade]);
+    expect(await loadChatIdentity(db, keystoreKey, c.chat)).not.toBeNull();
+    // Once the dispute is no longer seen, both records go at the same cutoff.
+    const silent = fakeApi({ orders: () => [order(newTradeCode())], watch: () => [] });
+    const later = await moderation(silent.fetch);
+    now = new Date(T0.getTime() + (130 + CHAT_AFTER_DISPUTE_DAYS) * DAY + 1);
+    await later.shredTick();
+    expect((await db.query('select 1 from mod_dispute_seen where trade = $1', [trade])).rows).toHaveLength(0);
+    expect((await db.query('select 1 from mod_chat_trade where chat = $1', [c.chat])).rows).toHaveLength(0);
+  });
+
   it('holds a trade chat while the watch list shows its trade open (any state but released, refunded or cancelled), and every trade chat when the list cannot be read', async () => {
     const c = await attestedChat();
     const trade = newTradeCode();

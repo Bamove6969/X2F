@@ -460,7 +460,9 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     const at = now();
     const cutoff = new Date(at.getTime() - MOD_DISPUTE_SEEN_DAYS * DAY_MS);
     await o.db.query('delete from mod_dispute_seen where last_seen_at < $1', [cutoff]);
-    await o.db.query('delete from mod_chat_trade where last_seen_at < $1', [cutoff]);
+    // A link goes only once its trade has no dispute record left (review N1): the list can stop naming
+    // the chat while the dispute is still being seen, and dispute records go at the same cutoff.
+    await o.db.query('delete from mod_chat_trade m where m.last_seen_at < $1 and not exists (select 1 from mod_dispute_seen d where d.trade = m.trade)', [cutoff]);
     if (orders.length === 0) return done;
     // Read every pass with orders: it also records the links and disputes the holds go by.
     let watch: Map<string, WatchItem> | null = null;
