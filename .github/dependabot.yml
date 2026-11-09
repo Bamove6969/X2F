@@ -1,0 +1,68 @@
+# Dependabot: security updates (switch on in repo settings) plus weekly grouped version updates.
+# Dependency versions stay EXACT-pinned (rulings R31/R33), so versioning-strategy is
+# "increase": Dependabot rewrites the pinned number in package.json and never adds ^ or ~.
+# The 14-day release-age rule is enforced with cooldown. Security updates ignore cooldown.
+version: 2
+updates:
+  - package-ecosystem: npm
+    # One root package-lock.json covers every workspace; list the workspace folders too so
+    # their package.json pins are bumped.
+    directories:
+      - /
+      - /apps/*
+      - /packages/*
+      - /tools/*
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    versioning-strategy: increase
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 14
+    groups:
+      npm-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:30"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns:
+          - "*"
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "ci"
+
+  # No Dockerfile exists in the repo today, and Dependabot reports an error for an ecosystem
+  # with no files, so this block is commented out. Uncomment it when the first Dockerfile lands.
+  # - package-ecosystem: docker
+  #   directory: /
+  #   schedule:
+  #     interval: weekly
+  #     day: monday
+  #     time: "07:00"
+  #     timezone: Etc/UTC
+  #   open-pull-requests-limit: 3
+  #   groups:
+  #     docker:
+  #       patterns:
+  #         - "*"
+  #   labels:
+  #     - dependencies
+  #   commit-message:
+  #     prefix: "deps"

@@ -57,6 +57,7 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     finalAlertAt: null,
     finalAlertSeenAt: null,
     settleBy: null,
+    releaseClaimedAt: null,
     pausedAt: null,
     closedAt: null,
     cancelConfirmedAt: null,

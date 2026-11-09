@@ -4,7 +4,7 @@
 import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { moneroUri } from '@x2f/trade';
+import { escrowPlan, formatXmrExact, moneroUri } from '@x2f/trade';
 import type { TradeView } from '../src/api/trade.js';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -61,6 +61,7 @@ const base: TradeView = {
   finalAlertAt: null,
   finalAlertSeenAt: null,
   settleBy: null,
+  releaseClaimedAt: null,
   pausedAt: null,
   closedAt: null,
   cancelConfirmedAt: null,
@@ -538,6 +539,99 @@ describe('after a short payment the seller funds only the remainder (review 2026
     expect(host.textContent).toContain('Send the rest: 0.250000 XMR');
     expect(host.innerHTML).not.toContain('tx_amount=1.25');
     expect(host.querySelector('[data-qr]')).not.toBeNull();
+  });
+});
+
+describe('figures to send are exact, never truncated to 6 places (review kit round 1, finding 1)', () => {
+  // A real trade: atomicForFiat floors to the atomic unit, so the amount has 12 places.
+  const ODD = 610_529_733_574n;
+  const ODD_DEAL = { ...TAKER_DEAL, takeAmountAtomic: ODD };
+  const odd: TradeView = { ...base, amountAtomic: String(ODD), funding: { ...base.funding!, sellerFundsAtomic: String(ODD) } };
+  const desktop = () => vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (X11; Linux x86_64)', maxTouchPoints: 0 });
+  const phone = () => vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Linux; Android 14)', maxTouchPoints: 5 });
+  const buttons = (host: HTMLElement) => [...host.querySelectorAll('button')];
+  const shownSend = (host: HTMLElement) => host.querySelector('.x2f-fund-exact .x2f-mono')!.textContent!.replace(/ XMR$/, '');
+  const copyAmount = async (host: HTMLElement): Promise<string[]> => {
+    const copied: string[] = [];
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: async (t: string) => void copied.push(t) } });
+    await act(async () => buttons(host).find((b) => b.textContent === 'Copy amount')!.click());
+    await flush();
+    return copied;
+  };
+
+  it('desktop: "Send exactly this amount: 0.610529733574 XMR", the same figure the copy, QR and link carry', async () => {
+    desktop();
+    current = odd;
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL }));
+    const host = await room();
+    expect(host.textContent).toContain('Send exactly this amount: 0.610529733574 XMR');
+    expect(host.textContent).not.toContain('0.610529 XMR');
+    expect(host.querySelector('[data-qr] path')!.getAttribute('d')).toBe(qrPath(moneroUri(ADDRESS, ODD)).d);
+    const copied = await copyAmount(host);
+    expect(copied).toEqual(['0.610529733574']);
+    expect(shownSend(host)).toBe(copied[0]);
+  });
+
+  it('"You send to escrow" shows the exact amount; the fee line stays at 6 places', async () => {
+    current = odd;
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL }));
+    let host = await room();
+    expect(host.querySelector('.x2f-trade-quote__head .x2f-amount')?.textContent).toBe('0.610529733574 XMR');
+    const plan = escrowPlan({ amountAtomic: ODD, poster: 'seller' });
+    current = { ...odd, poster: 'seller', fee: { atomic: String(plan.feeAtomic) }, funding: { ...odd.funding!, sellerFundsAtomic: String(plan.sellerFundsAtomic) } };
+    setTradeEscrowHook(() => verified({ deal: { ...ODD_DEAL, poster: 'seller' } }));
+    host = await room();
+    expect(host.querySelector('.x2f-trade-quote__head .x2f-amount')?.textContent).toBe(`${formatXmrExact(plan.sellerFundsAtomic)} XMR`);
+    expect(formatXmrExact(plan.sellerFundsAtomic)).toBe('0.616635030909');
+    expect(host.textContent).toContain('Includes X2F fee (1%, your ad)0.006105 XMR');
+  });
+
+  it('short by less than 0.000001: the rest is shown in full, never "Send the rest: 0.000000 XMR"', async () => {
+    desktop();
+    current = { ...odd, receivedAtomic: '610529000000' };
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL, receivedAtomic: 610_529_000_000n }));
+    const host = await room();
+    expect(host.textContent).toContain('Received 0.610529 of 0.610529733574 XMR, send the rest');
+    expect(host.textContent).toContain('Send the rest: 0.000000733574 XMR');
+    expect(host.textContent).not.toContain('0.000000 XMR');
+    expect(host.querySelector('[data-qr] path')!.getAttribute('d')).toBe(qrPath(moneroUri(ADDRESS, 733_574n)).d);
+    const copied = await copyAmount(host);
+    expect(copied).toEqual(['0.000000733574']);
+    expect(shownSend(host)).toBe(copied[0]);
+  });
+
+  it('a received amount with digits past the 6th: "Received" is exact too, so the two figures never read the same', async () => {
+    desktop();
+    current = { ...odd, receivedAtomic: '610529700000' };
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL, receivedAtomic: 610_529_700_000n }));
+    const host = await room();
+    expect(host.textContent).toContain('Received 0.6105297 of 0.610529733574 XMR, send the rest');
+    expect(host.textContent).toContain('Send the rest: 0.000000033574 XMR');
+  });
+
+  it('the rest with no device reading yet (address only) is exact too', async () => {
+    current = { ...odd, receivedAtomic: '610529000000' };
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL, receivedAtomic: null }));
+    const host = await room();
+    expect(host.textContent).toContain('Send the rest: 0.000000733574 XMR');
+  });
+
+  it('phone: the wallet hint names the exact amount the link fills in', async () => {
+    phone();
+    current = { ...odd, receivedAtomic: '610529000000' };
+    setTradeEscrowHook(() => verified({ deal: ODD_DEAL, receivedAtomic: 610_529_000_000n }));
+    const host = await room();
+    expect(host.textContent).toContain('the escrow address and 0.000000733574 XMR filled in');
+    expect(host.querySelector('[data-wallet-link]')?.getAttribute('href')).toBe(moneroUri(ADDRESS, 733_574n));
+  });
+
+  it('an aligned amount: the shown figure and the copied one are the same amount', async () => {
+    desktop();
+    const host = await room();
+    expect(shownSend(host)).toBe('1.250000');
+    const copied = await copyAmount(host);
+    expect(copied).toEqual(['1.25']);
+    expect(Number(shownSend(host))).toBe(Number(copied[0]));
   });
 });
 

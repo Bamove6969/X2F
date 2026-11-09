@@ -166,6 +166,18 @@ describe('Amount', () => {
   it('refuses an XMR amount without 6 decimals', () => {
     expect(() => render(<Amount xmr="1.25" />)).toThrow();
   });
+
+  it('refuses more than 6 decimals unless exact (a figure to send)', () => {
+    expect(() => render(<Amount xmr="0.610529733574" />)).toThrow();
+  });
+
+  it('exact: 6 to 12 decimals with no trailing zero past the 6th (formatXmrExact output)', () => {
+    expect(render(<Amount xmr="0.610529733574" exact />).host.textContent).toBe('0.610529733574 XMR');
+    expect(render(<Amount xmr="1.250000" exact />).host.textContent).toBe('1.250000 XMR');
+    expect(() => render(<Amount xmr="1.25" exact />)).toThrow();
+    expect(() => render(<Amount xmr="1.2500000" exact />)).toThrow();
+    expect(() => render(<Amount xmr="1.0000000000001" exact />)).toThrow();
+  });
 });
 
 describe('TradeHeader and MethodExplainer', () => {
