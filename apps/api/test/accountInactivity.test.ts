@@ -114,8 +114,7 @@ describe('closeInactiveAccounts (Q77)', () => {
 
   it('a closed vendor cannot log in (403 account-disabled), and its live offer is no longer listed', async () => {
     const t = await vendor();
-    const offerId = await seedOffer(deps, t.id, 'seller');
-    await deps.db.query("update offers set status = 'live', method_id = 'ZELLE' where id = $1", [offerId]);
+    const offerId = await seedOffer(deps, t.id, 'seller', { methodId: 'ZELLE', status: 'live' });
     const other = await trader();
     expect((await other.browser.get(`/v1/offers/${offerId}`)).statusCode).toBe(200);
     await closeDueAccounts(deps, at(INACTIVE_MS));
@@ -272,8 +271,7 @@ describe('lead vendor review item 3 / security review 8 Nov M4: takes, closes an
 
   it('a close that holds the account lock wins: the take waiting on it finds the poster closed (404) and starts no trade', async () => {
     const t = await vendor();
-    const offerId = await seedOffer(deps, t.id, 'seller');
-    await deps.db.query("update offers set status = 'live', method_id = 'ZELLE' where id = $1", [offerId]);
+    const offerId = await seedOffer(deps, t.id, 'seller', { methodId: 'ZELLE', status: 'live' });
     const when = at(INACTIVE_MS);
     setNow(when);
     const taker = await trader(); // logged in now, so its session is live at the take
@@ -283,7 +281,7 @@ describe('lead vendor review item 3 / security review 8 Nov M4: takes, closes an
       await c.query('select id from accounts where id = $1 for update', [t.id]);
       await c.query("update accounts set disabled_at = $2, closed_at = $2, closed_reason = 'inactive' where id = $1", [t.id, when]);
       const taking = taker.browser.post(`/v1/offers/${offerId}/take`, {
-        amountAtomic: '100000000000', walletId: '00000000-0000-4000-8000-000000000001', centsPerXmr: '30000', fiatCents: '3000',
+        amountAtomic: '100000000000', walletId: '00000000-0000-4000-8000-000000000001', centsPerXmr: '30000', fiatCents: '3000', methodId: 'ZELLE', currency: 'USD',
       });
       await untilBlocked();
       await c.query('commit');

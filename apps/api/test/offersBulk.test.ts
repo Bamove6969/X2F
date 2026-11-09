@@ -8,6 +8,7 @@ import { testDb } from './helpers/db.js';
 import { makeVendor } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
+import { flexBody, renameOfferMethod } from './helpers/offers.js';
 
 // Plan 3 Task 36: My offers. GET /v1/account/offers and POST /v1/account/offers/status (turn some
 // or all of my offers on or off). Real Postgres, one database for the file; each test uses its own
@@ -73,7 +74,7 @@ const BODY = {
 };
 
 async function post(who: Who, over: Record<string, unknown> = {}): Promise<string> {
-  const res = await who.browser.post('/v1/offers', { ...BODY, ...over });
+  const res = await who.browser.post('/v1/offers', flexBody({ ...BODY, ...over }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }
@@ -128,6 +129,10 @@ describe('GET /v1/account/offers', () => {
       id: b, side: 'buy', methodId: 'REVOLUT', methodName: expect.any(String), currency: 'EUR', rate: '26730',
       pricing: { mode: 'market', marginBps: -1000 }, amountUnit: 'fiat', minAtomic: '187055742611', maxAtomic: '7482229704451',
       minFiatCents: '5000', maxFiatCents: '200000', minTrades: null,
+      // J-16: the first currency's bands, every currency priced, every method with its instructions.
+      tiers: [{ min: '5000', max: '200000', marginBps: -1000, minTrades: null, methodIds: null }],
+      currencies: [{ currency: 'EUR', rate: '26730', tiers: [{ min: '5000', max: '200000', marginBps: -1000, minTrades: null, methodIds: null }] }],
+      methods: [{ methodId: 'REVOLUT', adjustBps: 0, instructions: '', currencies: ['EUR'], instructionsByCurrency: {} }],
       status: 'paused', createdAt: expect.any(String),
     });
     expect(list[1]).toMatchObject({ id: a, methodId: 'ZELLE', methodName: 'Zelle', rate: '33165', status: 'live', pricing: { mode: 'market', marginBps: 50 } });
@@ -249,7 +254,8 @@ describe('POST /v1/account/offers/status', () => {
     const p = await poster();
     const a = await post(p);
     // As if SBP had been available when posted.
-    await deps.db.query(`update offers set method_id = 'SBP', status = 'paused' where id = $1`, [a]);
+    await renameOfferMethod(deps.db, a, 'SBP');
+    await deps.db.query(`update offers set status = 'paused' where id = $1`, [a]);
     expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'paused', refused: 'method-unavailable' }]);
   });
 
@@ -303,15 +309,15 @@ describe('POST /v1/account/offers/status', () => {
     for (let round = 0; round < 3; round++) {
       const res = await Promise.all([
         p.browser.post('/v1/account/offers/status', { ids: 'all', status: 'live' }),
-        p.browser.post('/v1/offers', { ...BODY, currency: 'SEK' }),
-        p.browser.post('/v1/offers', { ...BODY, currency: 'SEK' }),
+        p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'SEK' })),
+        p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'SEK' })),
         p.browser.patch(`/v1/offers/${a}`, { status: 'paused' }),
         p.browser.patch(`/v1/offers/${b}`, { status: 'live' }),
         p.browser.post('/v1/account/offers/status', { ids: 'all', status: 'paused' }),
       ]);
       for (const r of res) expect([200, 201, 409], r.body).toContain(r.statusCode);
       const { rows } = await deps.db.query<{ n: number }>(
-        `select count(*)::int as n from offers where account_id = $1 and currency = 'SEK' and status <> 'removed'`,
+        `select count(*)::int as n from offers o join offer_currencies c on c.offer_id = o.id where o.account_id = $1 and c.currency = 'SEK' and o.status <> 'removed'`,
         [p.id],
       );
       expect(rows[0]!.n).toBeLessThanOrEqual(3);
@@ -346,7 +352,7 @@ describe('review fixes (Task 36 review 2026-10-29)', () => {
     await hold(p.id);
     expect(await hiddenOf()).toEqual({ [a]: 'trading-hold', [b]: null });
     await deps.db.query('update trading_holds set lifted_at = $2 where account_id = $1', [p.id, deps.clock()]);
-    await deps.db.query(`update offers set method_id = 'SBP' where id = $1`, [a]);
+    await renameOfferMethod(deps.db, a, 'SBP');
     expect(await hiddenOf()).toEqual({ [a]: 'method-unavailable', [b]: null });
   });
 
@@ -354,7 +360,7 @@ describe('review fixes (Task 36 review 2026-10-29)', () => {
     const p = await poster();
     const a = await post(p);
     await setStatus(p, [a], 'paused');
-    await deps.db.query(`update offers set method_id = 'SBP' where id = $1`, [a]);
+    await renameOfferMethod(deps.db, a, 'SBP');
     await hold(p.id);
     expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'method-unavailable' });
     expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'paused', refused: 'method-unavailable' }]);
@@ -394,7 +400,7 @@ describe('review fixes (Task 36 review 2026-10-29)', () => {
     // Round-2 m1 (lead decision 2026-10-29): removing is shutting off too, so it works on stale Terms.
     expect((await p.browser.patch(`/v1/offers/${c}`, { status: 'removed' })).json()).toEqual({ id: c, status: 'removed' });
     // Posting still needs the current Terms.
-    expect((await p.browser.post('/v1/offers', BODY)).json()).toEqual(terms);
+    expect((await p.browser.post('/v1/offers', flexBody(BODY))).json()).toEqual(terms);
     expect(await statuses(p.id)).toEqual({ [a]: 'paused', [b]: 'paused', [c]: 'removed' });
 
     await deps.db.query('update accounts set terms_version = $2 where id = $1', [p.id, deps.config.termsVersion]);
@@ -411,7 +417,7 @@ describe('review fixes (Task 36 review 2026-10-29)', () => {
       const { rows: w } = await deps.db.query<{ id: string }>('select id from wallets where account_id = $1', [taker.id]);
       const takeBody = {
         amountAtomic: amount.toString(), walletId: w[0]!.id, centsPerXmr: '33000',
-        fiatCents: fiatCents(amount, { currency: 'USD', centsPerXmr: 33_000n }).toString(),
+        fiatCents: fiatCents(amount, { currency: 'USD', centsPerXmr: 33_000n }).toString(), methodId: 'ZELLE', currency: 'USD',
       };
       // Hold both account rows so all three requests queue inside their transactions, then let go.
       const holder = await deps.db.connect();

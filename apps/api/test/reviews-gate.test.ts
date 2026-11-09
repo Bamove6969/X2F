@@ -10,6 +10,7 @@ import { makeVendor } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
+import { flexBody } from './helpers/offers.js';
 
 // Plan 5 Task 3: the rate-first gate (spec 5.1, P5-A4; Review Focus 5). A trader with a reviewable
 // trade they have not rated cannot take an offer, cannot be taken as a poster, cannot set up a trade
@@ -77,7 +78,7 @@ const OFFER = {
 async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<string> {
   // Owner 2 Nov 2026: only vendor accounts post offers.
   await makeVendor(deps, who.id);
-  const res = await who.browser.post('/v1/offers', { ...OFFER, ...over });
+  const res = await who.browser.post('/v1/offers', flexBody({ ...OFFER, ...over }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }
@@ -85,6 +86,7 @@ async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<
 const tenth = XMR / 10n;
 const takeBody = (who: Who) => ({
   amountAtomic: tenth.toString(), walletId: who.wallet, centsPerXmr: '33000', fiatCents: fiatCents(tenth, { currency: 'USD', centsPerXmr: 33_000n }).toString(),
+  methodId: 'ZELLE', currency: 'USD',
 });
 const take = (who: Who, offer: string) => who.browser.post(`/v1/offers/${offer}/take`, takeBody(who));
 const refusal = (res: { statusCode: number; json(): unknown }) => ({ status: res.statusCode, ...(res.json() as object) });

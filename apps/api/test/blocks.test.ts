@@ -9,6 +9,7 @@ import { makeVendor } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
+import { flexBody } from './helpers/offers.js';
 
 // Plan 3 Task 37: the trader-to-trader block (spec 2.4). Real Postgres, one database for the file.
 
@@ -68,10 +69,10 @@ const ownCurrency = (): string => {
 };
 
 async function post(who: Who, currency: string, marginBps = 0): Promise<string> {
-  const res = await who.browser.post('/v1/offers', {
+  const res = await who.browser.post('/v1/offers', flexBody({
     side: 'sell', methodId: 'ZELLE', currency, pricing: { mode: 'market', marginBps },
     minFiatCents: '5000', maxFiatCents: '200000', minTrades: null, terms: 'Zelle only.',
-  });
+  }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }

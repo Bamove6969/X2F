@@ -13,6 +13,7 @@ import { MODERATION_STUB, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, lo
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, driveTo, fakeAddress, markSellerNudged, seedTrade } from './helpers/trades.js';
 import { makeVendor } from './helpers/accounts.js';
+import { flexBody } from './helpers/offers.js';
 
 const T0 = new Date('2026-11-02T12:00:00Z');
 const MIN = 60_000;
@@ -87,7 +88,7 @@ describe('emergency stop', () => {
     // Only a vendor posts offers (account types, owner 2 Nov).
     await makeVendor(deps, seller.id);
     const buyer = await person();
-    const posted = await seller.browser.post('/v1/offers', OFFER);
+    const posted = await seller.browser.post('/v1/offers', flexBody(OFFER));
     expect(posted.statusCode, posted.body).toBe(201);
     const offerId = (posted.json() as { id: string }).id;
 
@@ -120,10 +121,10 @@ describe('emergency stop', () => {
       const amount = XMR / 20n;
       const take = await buyer.browser.post(`/v1/offers/${offerId}/take`, {
         amountAtomic: amount.toString(), walletId: buyer.wallet, centsPerXmr: '33000',
-        fiatCents: fiatCents(amount, { currency: 'USD', centsPerXmr: 33_000n }).toString(),
+        fiatCents: fiatCents(amount, { currency: 'USD', centsPerXmr: 33_000n }).toString(), methodId: 'ZELLE', currency: 'USD',
       });
       expect({ status: take.statusCode, error: errorOf(take) }).toEqual({ status: 409, error: 'trading-paused' });
-      const post = await seller.browser.post('/v1/offers', OFFER);
+      const post = await seller.browser.post('/v1/offers', flexBody(OFFER));
       expect({ status: post.statusCode, error: errorOf(post) }).toEqual({ status: 409, error: 'trading-paused' });
 
       const release = await seller.browser.post(`/v1/trades/${paid.code}/events`, { type: 'release-started' });

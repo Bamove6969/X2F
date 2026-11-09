@@ -9,6 +9,7 @@ import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { FIAT, XMR, driveTo, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
 import { LIVE_SESSION_TRADING_ROUTES } from '../src/auth/hold.js';
+import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
 
 // Plan 3 Task 5: taking an offer, and the poster's wallet route. Real Postgres (one database per
 // file); a fake market so each test can move the price or take the feed down.
@@ -92,7 +93,7 @@ const OFFER = {
 };
 
 async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<string> {
-  const res = await who.browser.post('/v1/offers', { ...OFFER, ...over });
+  const res = await who.browser.post('/v1/offers', flexBody({ ...OFFER, ...over }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }
@@ -101,7 +102,7 @@ async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<
 function body(who: Who, amountAtomic: bigint, centsPerXmr = market.usdCentsPerXmr!, over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     amountAtomic: amountAtomic.toString(), walletId: who.wallet, centsPerXmr: centsPerXmr.toString(),
-    fiatCents: fiatCents(amountAtomic, { currency: 'USD', centsPerXmr }).toString(), ...over,
+    fiatCents: fiatCents(amountAtomic, { currency: 'USD', centsPerXmr }).toString(), methodId: 'ZELLE', currency: 'USD', ...over,
   };
 }
 
@@ -257,16 +258,9 @@ describe('POST /v1/offers/:id/take', () => {
     const buyer = await person();
     // Migration 345 refuses new fixed rows; lift it for this one insert, as a row from before the rule.
     await deps.db.query('alter table offers drop constraint if exists offers_market_only');
-    const { rows } = await deps.db.query<{ id: string }>(
-      `insert into offers (account_id, side, method_id, currency, price_mode, fixed_cents_per_xmr, min_fiat_cents, max_fiat_cents,
-                           min_trades, terms, status, created_at, updated_at)
-       values ($1, 'sell', 'ZELLE', 'USD', 'fixed', 34000, 1000, 1000000, null, '', 'live', $2, $2) returning id`,
-      [seller.id, deps.clock()],
-    );
-    await deps.db.query(
-      `alter table offers add constraint offers_market_only check (price_mode = 'market' and margin_bps is not null and fixed_cents_per_xmr is null) not valid`,
-    );
-    const legacy = rows[0]!.id;
+    const legacy = await insertOffer(deps.db, { accountId: seller.id, side: 'sell', methodId: 'ZELLE', currency: 'USD', min: 1000, max: 1000000, at: deps.clock() });
+    await deps.db.query(`update offers set price_mode = 'fixed', fixed_cents_per_xmr = 34000 where id = $1`, [legacy]);
+    await deps.db.query(`alter table offers add constraint offers_market_only check (price_mode = 'market' and fixed_cents_per_xmr is null) not valid`);
     expect(refusal(await take(buyer, legacy, body(buyer, tenth, 34_000n)))).toEqual({ status: 404, error: 'not-found' });
     market.usdCentsPerXmr = null;
     expect(refusal(await take(buyer, legacy, body(buyer, tenth, 34_000n)))).toEqual({ status: 404, error: 'not-found' });
@@ -309,7 +303,8 @@ describe('POST /v1/offers/:id/take', () => {
     await taken(buyer, offer, body(buyer, (XMR * 3000n) / 33_000n + 1n));
 
     const picky = await postOffer(seller, { minTrades: 5 });
-    expect(refusal(await take(buyer, picky, body(buyer, tenth)))).toEqual({ status: 409, error: 'not-enough-trades' });
+    // The band's rule goes with the refusal (Task 34 review I2, kept by J-16).
+    expect(refusal(await take(buyer, picky, body(buyer, tenth)))).toEqual({ status: 409, error: 'not-enough-trades', minTrades: 5 });
   });
 
   it('a waiting wallet is wallet-not-ready; no usable wallet at all is no-wallet', async () => {
@@ -340,9 +335,10 @@ describe('POST /v1/offers/:id/take', () => {
     expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 409, error: 'trading-hold' });
 
     const other = await person();
-    await deps.db.query(`update offers set method_id = 'SBP' where id = $1`, [offer]);
-    expect(refusal(await take(other, offer, body(other, tenth)))).toEqual({ status: 409, error: 'method-unavailable' });
-    await deps.db.query(`update offers set method_id = 'ZELLE', status = 'paused' where id = $1`, [offer]);
+    await renameOfferMethod(deps.db, offer, 'SBP');
+    expect(refusal(await take(other, offer, body(other, tenth, undefined, { methodId: 'SBP' })))).toEqual({ status: 409, error: 'method-unavailable' });
+    await renameOfferMethod(deps.db, offer, 'ZELLE');
+    await deps.db.query(`update offers set status = 'paused' where id = $1`, [offer]);
     expect(refusal(await take(other, offer, body(other, tenth)))).toEqual({ status: 404, error: 'not-found' });
     // A poster on a hold has no listed offers.
     await deps.db.query(`update offers set status = 'live' where id = $1`, [offer]);
@@ -476,7 +472,7 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     const offer = await postOffer(seller, { currency: 'EUR', pricing: { mode: 'market', marginBps: 0 } });
     const eur = (amount: bigint) => ({
       amountAtomic: amount.toString(), walletId: buyer.wallet, centsPerXmr: '29700',
-      fiatCents: fiatCents(amount, { currency: 'EUR', centsPerXmr: 29_700n }).toString(),
+      fiatCents: fiatCents(amount, { currency: 'EUR', centsPerXmr: 29_700n }).toString(), methodId: 'ZELLE', currency: 'EUR',
     });
     const over = (XMR * 21_000n) / 29_700n;
     expect(refusal(await take(buyer, offer, eur(over)))).toEqual({ status: 409, error: 'starter-limit', stage: 'starter', capUsdCents: '20000' });
@@ -820,7 +816,7 @@ describe('a session revoked while its trading request waits (review round 5 M2)'
     },
     'POST /v1/offers': async () => {
       const who = await person();
-      await revokedWhileWaiting([`select 1 from accounts where id = '${who.id}' for update`], who.id, () => who.browser.post('/v1/offers', OFFER));
+      await revokedWhileWaiting([`select 1 from accounts where id = '${who.id}' for update`], who.id, () => who.browser.post('/v1/offers', flexBody(OFFER)));
       // (person() seeds removed offers for its history trades.)
       expect((await deps.db.query("select 1 from offers where account_id = $1 and status <> 'removed'", [who.id])).rows).toHaveLength(0);
     },

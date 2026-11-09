@@ -10,6 +10,7 @@ import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, fakeAddress, happyPath, seedReviews, seedTrade } from './helpers/trades.js';
+import { flexBody } from './helpers/offers.js';
 
 // The offer card's trust row (design review 8 Nov, item 5; boards SellOffers/BuyOffers): trades, %
 // positive, earned badges, and "Releases in ~8 min" / "Pays in ~6 min". Every figure comes from real
@@ -100,7 +101,7 @@ const OFFER = { methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', m
 async function post(who: Who, side: 'sell' | 'buy'): Promise<string> {
   // Only vendors post offers (owner 2 Nov 2026, vendor.test.ts); the poster becomes one here.
   await makeVendor(deps, who.id);
-  const res = await who.browser.post('/v1/offers', { ...OFFER, side });
+  const res = await who.browser.post('/v1/offers', flexBody({ ...OFFER, side }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }
