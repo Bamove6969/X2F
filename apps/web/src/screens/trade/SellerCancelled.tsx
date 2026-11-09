@@ -3,9 +3,12 @@
  * while the seller's cancel refund settles (`settling` as `auto-refund`). The time to pay ended
  * before the buyer tapped "I've paid" and the seller cancelled, so the XMR is going back to the
  * seller at once: there is no final warning and nothing for the buyer to sign. A buyer who paid
- * late anyway can open a dispute at once (the machine allows the buyer's `open-dispute` here); the
- * moderator then stops co-signing the refund if it has not gone out yet. Once the refund lands the
- * trade is `refunded` and Task 27's RefundedSlot takes over (its 48-hour dispute window).
+ * late anyway can open a dispute at once (the machine allows the buyer's `open-dispute` here). In
+ * the usual case it does not stop the refund: the moderator co-signs within seconds of the cancel
+ * and a refund already handed out still lands, so the case goes on as an after-refund dispute (the
+ * seller is asked to send the XMR as agreed; review I1, 8 Nov). Only a dispute opened before the
+ * moderator's pass keeps the coins in escrow. With no dispute, once the refund lands the trade is
+ * `refunded` and Task 27's RefundedSlot takes over (its 48-hour dispute window).
  *
  * COPY-UNSIGNED: no board draws this screen yet.
  */

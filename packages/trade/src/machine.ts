@@ -444,9 +444,14 @@ function onDispute(t: Trade, by: Party, now: Date): Trade {
       return open();
     case 'settling':
       // Owner 8 Nov (p9-2): the seller cancelled after the time to pay and the refund to them has
-      // started; a buyer who paid late anyway may dispute at once, before the refund lands (the
-      // moderator then stops co-signing it: the API shows `disputed`).
+      // started; a buyer who paid late anyway may dispute at once. Usually the refund lands anyway:
+      // the moderator co-signs in its first pass after the cancel (about 5 s) and a refund already
+      // handed out is never taken back, so the case goes on as an after-refund dispute (the seller is
+      // asked to send the XMR; see `settled` and review I1). Only a dispute that beats that pass
+      // stops the co-signing (the API shows `disputed`) and keeps the coins in escrow for a ruling.
       if (by === 'buyer' && t.settling === 'auto-refund') return open();
+      // Past settleBy either side may dispute; for the seller's own cancel that is their deliberate
+      // exit from a refund that never builds (it blocks the armed refund until a ruling; review M3).
       if (t.settleBy === null || !past(now, t.settleBy)) return fail('too-early');
       return open();
     case 'refunded': {
@@ -505,6 +510,15 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
       if (typeof e.txHash !== 'string' || e.txHash === '') throw new RangeError('bad tx hash');
       if (!SETTLED_FROM.includes(s)) return fail('wrong-state');
       if (!SETTLE_KINDS.includes(e.kind)) throw new RangeError('unknown settle kind');
+      // The seller's cancel refund that lands after a dispute was opened on it (review I1, 8 Nov):
+      // the moderator nearly always handed it out before the dispute, so it completes anyway. The
+      // trade stays `disputed` and open with the tx on record, the same shape as a buyer's dispute
+      // opened after the refund landed; the API marks the dispute after-refund in the same
+      // transaction. The same tx reported again changes nothing.
+      if (s === 'disputed' && t.settling === 'auto-refund' && e.kind === 'auto-refund') {
+        if (t.txHash === e.txHash) return t;
+        if (t.txHash === null) return { ...t, settleBy: null, txHash: e.txHash };
+      }
       const state = e.kind === 'release' ? 'released' : 'refunded';
       return { ...t, state, settling: e.kind, settleBy: null, txHash: e.txHash, closedAt: now };
     }

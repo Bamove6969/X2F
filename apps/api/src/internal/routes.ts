@@ -281,8 +281,19 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       if (kind !== claimedKind) throw new Refused(409, 'settle-kind-changed');
       event = { ...event, kind: claimedKind };
       const claimed = claimedKind;
-      within = async (_c, prev) => {
+      within = async (c, prev, next) => {
         if (settleKindFor(prev) !== claimed) throw new Refused(409, 'settle-kind-changed');
+        // Review I1 (8 Nov): the seller's cancel refund landed on a trade disputed meanwhile (the
+        // machine keeps it `disputed` and records the tx). The escrow is empty now, so the open
+        // dispute becomes after-refund in this same transaction: its ruling offers the after-refund
+        // outcomes (the seller sends the XMR, or no action), never an escrow payout that can't run.
+        if (prev.state === 'disputed' && next.state === 'disputed' && prev.txHash === null && next.txHash !== null) {
+          await c.query(
+            `update disputes set after_refund = true
+              where code = $1 and closed_at is null and seq = (select max(seq) from disputes where code = $1)`,
+            [code],
+          );
+        }
       };
     }
     try {

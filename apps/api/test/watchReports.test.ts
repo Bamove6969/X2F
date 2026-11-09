@@ -7,7 +7,9 @@ import sodium from 'libsodium-wrappers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { buildInternalListener } from '../src/internal/routes.js';
+import { loadDispute, startDispute } from '../src/disputes/store.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
+import { publishRuling } from './helpers/disputes.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
@@ -239,6 +241,45 @@ describe('POST /internal/v1/reports: watcher reports', () => {
     const res = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: null });
     expect(res.statusCode).toBe(409);
     expect(res.json()).toEqual({ error: 'settle-kind-unknown' });
+  });
+
+  it("a buyer's dispute on the seller's cancel: the refund that lands anyway is recorded and the dispute becomes after-refund (review I1, 8 Nov)", async () => {
+    const t = await trade();
+    const secured = await driveTo(deps, t, 'secured');
+    const later = (ms: number) => ({ db: deps.db, clock: () => new Date(secured.payBy!.getTime() + ms) });
+    await applyEvent(later(60_000), t.code, { type: 'request-refund' }, 'seller');
+    // The buyer disputes at once (p9-2), as the dispute route does: the trade and the row together.
+    await applyEvent(later(90_000), t.code, { type: 'open-dispute' }, 'buyer', async (client, prev, _next, now) => {
+      await startDispute(client, prev, { openedBy: 'buyer', reason: 'paid', note: '', afterRefund: prev.state === 'refunded', now, prices: null });
+    });
+    expect(await loadDispute(deps.db, t.code)).toMatchObject({ afterRefund: false });
+    // The moderator had already handed the refund out: it lands, and the watcher reports it.
+    const watch = await signed('GET', '/internal/v1/watch');
+    expect((watch.json() as { trades: { trade: string; settleKind: string | null }[] }).trades.find((x) => x.trade === t.code)?.settleKind).toBe('auto-refund');
+    const txHash = randomBytes(32).toString('hex');
+    const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'auto-refund' });
+    expect(res.statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', settling: 'auto-refund', txHash, closedAt: null, dispute: { by: 'buyer' } });
+    const d = await loadDispute(deps.db, t.code);
+    expect(d).toMatchObject({ afterRefund: true, status: 'open' });
+    // The after-refund remedy is now on offer: the seller is asked to send the XMR as agreed.
+    expect((await publishRuling(deps, t.code, { outcome: 'seller-sends-xmr' })).ruling?.outcome).toBe('seller-sends-xmr');
+    // The same report again is a no-op the watcher counts as done; the dispute stays as it is.
+    expect((await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'auto-refund' })).statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', txHash, closedAt: null });
+  });
+
+  it("a dispute on any other settlement is not touched by a refund that lands (only the seller's cancel)", async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'paid');
+    const opened = { db: deps.db, clock: () => new Date(deps.clock().getTime() + 10 * 86_400_000) };
+    await applyEvent(opened, t.code, { type: 'open-dispute' }, 'seller', async (client, prev, _next, now) => {
+      await startDispute(client, prev, { openedBy: 'seller', reason: 'other', note: '', afterRefund: false, now, prices: null });
+    });
+    const res = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: 'auto-refund' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({ error: 'settle-kind-unknown' });
+    expect(await loadDispute(deps.db, t.code)).toMatchObject({ afterRefund: false });
   });
 
   it('settled where the trade alone does not name the kind is refused 409 settle-kind-unknown (the watcher retries)', async () => {

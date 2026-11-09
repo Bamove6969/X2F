@@ -877,8 +877,18 @@ describe('open-dispute', () => {
     expect(d.settling).toBe('auto-refund');
     expect(rule(() => apply(c, { type: 'open-dispute' }, 'seller', at(122)))).toBe('too-early');
     expect(apply(c, { type: 'open-dispute' }, 'seller', at(136, 1)).state).toBe('disputed');
-    // Once disputed, a refund that already went out is still recorded (the moderator then decides).
-    expect(apply(d, { type: 'settled', kind: 'auto-refund', txHash: 'ee'.repeat(32) }, 'system', at(130)).state).toBe('refunded');
+    // Once disputed, a refund that already went out is still recorded, and the case goes on as an
+    // after-refund dispute (review I1, 8 Nov): the trade stays `disputed`, open, with the tx on record,
+    // the same shape as a buyer's dispute opened after the refund landed.
+    const landed = apply(d, { type: 'settled', kind: 'auto-refund', txHash: 'ee'.repeat(32) }, 'system', at(130));
+    expect(landed).toMatchObject({ state: 'disputed', settling: 'auto-refund', txHash: 'ee'.repeat(32), settleBy: null, closedAt: null, dispute: { by: 'buyer', at: at(121) } });
+    // The same report again changes nothing (the watcher or the desk may repeat it).
+    expect(apply(landed, { type: 'settled', kind: 'auto-refund', txHash: 'ee'.repeat(32) }, 'system', at(131))).toBe(landed);
+    // The seller's own dispute on their cancel (past settleBy) is the same once the refund lands.
+    const bySeller = apply(c, { type: 'open-dispute' }, 'seller', at(137));
+    expect(apply(bySeller, { type: 'settled', kind: 'auto-refund', txHash: 'ee'.repeat(32) }, 'system', at(140))).toMatchObject({ state: 'disputed', txHash: 'ee'.repeat(32), closedAt: null });
+    // Another kind on the disputed cancel is recorded as before (a ruling's own payout).
+    expect(apply(d, { type: 'settled', kind: 'release', txHash: 'ee'.repeat(32) }, 'system', at(130)).state).toBe('released');
     // A release or a buyer's cancel still settling: no early buyer dispute.
     expect(rule(() => apply(settling(), { type: 'open-dispute' }, 'buyer', at(51)))).toBe('too-early');
     const bc = apply(secured(), { type: 'buyer-cancel' }, 'buyer', at(40));
