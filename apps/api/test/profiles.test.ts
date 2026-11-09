@@ -118,6 +118,23 @@ describe('method profiles', () => {
     expect(isGiftCard('ZELLE')).toBe(false);
   });
 
+  it('lists the owner\'s gift cards: the top 30 + Home Hardware + Canadian Tire + Other, Razer Gold dropped (J-17, T-057, owner p5-6)', () => {
+    const gifts = catalog().filter((m) => m.giftCard).map((m) => m.name);
+    expect(gifts).toEqual([
+      'Amazon gift card', 'Apple gift card', 'Google Play gift card', 'Uber gift card', 'Uber Eats gift card', 'DoorDash gift card',
+      'Walmart gift card', 'Best Buy gift card', 'Home Depot gift card', 'Steam gift card', 'PlayStation gift card', 'Xbox gift card',
+      'IKEA gift card', 'Sephora gift card', 'Starbucks gift card', 'Airbnb gift card', 'Roblox gift card', 'Nintendo eShop gift card',
+      'Visa prepaid gift card', 'Mastercard prepaid gift card', 'Instacart gift card', 'Air Canada gift card', 'Petro-Canada gift card',
+      'Esso gift card', 'SkipTheDishes gift card', 'Sobeys gift card', 'Winners gift card', 'Lululemon gift card', 'Tim Hortons gift card',
+      'Target gift card', 'Home Hardware gift card', 'Canadian Tire gift card', 'Other gift card',
+    ]);
+    // 32 brands + Other; nothing else in the group (PaysafeCard is not on the owner's list).
+    expect(gifts).toHaveLength(33);
+    for (const id of ['RAZER_GOLD_GIFT_CARD', 'PAYSAFE']) expect(getMethod(id), id).toBeNull();
+    // Every one of them takes the gift-card profile (45 minutes to check, G50).
+    for (const m of catalog().filter((c) => c.giftCard)) expect(tradeProfile(m.id).confirmWindowMin, m.id).toBe(45);
+  });
+
   it('loads every catalog entry once', () => {
     const ids = catalog().map((m) => m.id);
     expect(ids).toEqual(raw.methods.map((m) => m.id));
