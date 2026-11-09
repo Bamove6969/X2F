@@ -10,7 +10,8 @@ import { SESSION_COOKIE, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, log
 import { seedAccount } from '../helpers/accounts.js';
 import { driveTo, seedTrade } from '../helpers/trades.js';
 import { applyEvent } from '../../src/trades/store.js';
-import { addPgpKey, attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
+import { KEY_AAGUID, addPgpKey, attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
+import { createSoftAuthenticator } from '../helpers/softAuthenticator.js';
 
 const MON_NOON = new Date('2026-11-02T12:00:00Z');
 const HOUR = 3_600_000;
@@ -168,6 +169,27 @@ describe('invites', () => {
     const h = await signUp(helper.token, { noKey: true, twoPgp: true });
     expect(h.finish.statusCode, h.finish.body).toBe(201);
     expect(h.finish.json()).toEqual({ keyCheckCode: null });
+  });
+
+  it('owner G3 (review P-m1): a passkey that reports a security-key model is refused (passkey-is-security-key)', async () => {
+    const mod = await createInvite('mod');
+    const b = invitee();
+    expect((await pickNames(b, mod.token)).res.statusCode).toBe(201);
+    expect((await addInviteKey(b, mod.token, t.newKey())).statusCode).toBe(201);
+    // The same model registered again as a resident passkey: with the attestation stripped (the
+    // AAGUID still reported), or with the full attestation statement.
+    const stripped = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: KEY_AAGUID, none: true } });
+    for (const key of [stripped, t.newKey()]) {
+      const res = await addInviteKey(b, mod.token, key, 'passkey');
+      expect([res.statusCode, errorOf(res)]).toEqual([409, 'passkey-is-security-key']);
+    }
+    const { rows } = await t.deps.db.query<{ kind: string }>(
+      "select w.kind from webauthn_credentials w join staff_invites i on i.account_id = w.account_id where i.id = $1",
+      [mod.inviteId],
+    );
+    expect(rows.map((r) => r.kind)).toEqual(['security-key']);
+    // Another device (a phone's passkey, no allowlisted AAGUID) is accepted.
+    expect((await addInviteKey(b, mod.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
   });
 
   it('every staff login is two factors: one PGP key alone gets two-factors-required', async () => {

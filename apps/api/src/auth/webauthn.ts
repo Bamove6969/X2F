@@ -296,6 +296,15 @@ async function verifyRegistration(
   const kind = a.kind ?? (attested ? 'security-key' : 'passkey');
   if (kind === 'passkey' && !info.userVerified) throw failed();
   assertCredentialAllowed(a.accountKind, { kind, attested });
+  // Owner G3 (review P-m1): a moderator's passkey must be another device than their security key,
+  // or the key-plus-passkey pair is one key and its PIN. A staff passkey is registered without
+  // attestation, so the AAGUID is the client's word: one on the staff security-key allowlist (a
+  // YubiKey registered a second time as a resident passkey, the common case) is refused. A client
+  // that zeroes or forges the AAGUID is not caught; the same credential twice is refused by
+  // `insertCredential` (credential IDs are unique).
+  if (a.accountKind === 'staff' && kind === 'passkey' && info.aaguid !== ZERO_AAGUID && deps.attestation.isAllowed(info.aaguid, 'packed', 'staff')) {
+    throw new ApiError(409, 'passkey-is-security-key');
+  }
   return {
     credentialId: info.credential.id,
     publicKey: info.credential.publicKey,
