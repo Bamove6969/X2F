@@ -100,6 +100,11 @@ const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: s
     change: `update account_blocks set created_at = now() + interval '1 s' where account_id = $1`,
     where: 'account_id = $1',
   },
+  banned_identifiers: {
+    insert: `insert into banned_identifiers (kind, tag_key_id, tag, account_id, banned_at) values ('display-name', 1, decode('${randomBytes(32).toString('hex')}', 'hex'), $1, now())`,
+    change: `update banned_identifiers set banned_at = now() + interval '1 s' where account_id = $1`,
+    where: 'account_id = $1',
+  },
   past_reputation: {
     insert: `insert into past_reputation (account_id, site, evidence_url, claimed_trades, fingerprint, key_enc, challenge_text, signature_enc, status, created_at)
              values ($1, 'Bisq', 'https://archive.ph/x', 3, '${hex40()}', '\\x01', 't', '\\x01', 'signed', now())`,
@@ -191,9 +196,11 @@ describe('each change path queues exactly one notice per transaction', () => {
     await withJabber(a);
     await db.query('update accounts set had_wallet = true, login_tag = $2, login_tag_key_id = 2 where id = $1', [a, randomBytes(32)]);
     expect(await notices(a)).toBe(0);
+    await db.query('update accounts set last_login_at = now(), terms_signature = $2 where id = $1', [a, randomBytes(16)]);
+    expect(await notices(a), 'last_login_at and terms_signature are bookkeeping (lead default, p11-119)').toBe(0);
     await db.query('update accounts set one_device = true where id = $1', [a]);
     expect(await notices(a)).toBe(1);
-    await db.query('update accounts set idle_hours = 2 where id = $1', [a]);
+    await db.query('update accounts set idle_reminder_minutes = 15 where id = $1', [a]);
     await db.query('update accounts set disabled_at = now() where id = $1', [a]);
     expect(await notices(a)).toBe(3);
   });
@@ -208,7 +215,7 @@ describe('each change path queues exactly one notice per transaction', () => {
       await c.query(`insert into passwords (account_id, hash, updated_at) values ($1, 'h', now())`, [a]);
       await c.query('commit');
       await c.query('begin');
-      await c.query('update accounts set idle_hours = 4 where id = $1', [a]);
+      await c.query('update accounts set idle_reminder_minutes = 30 where id = $1', [a]);
       await c.query('rollback');
     } finally {
       c.release();

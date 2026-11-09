@@ -26,12 +26,18 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     accountColumn: 'id',
     // A new account has no Jabber yet; an account's deletion cascades to its contact (notified there).
     ops: ['update'],
+    // Batch 4 classification (lead default, owner p11-119): the account's type and vendor date, its
+    // close (closed_at, closed_reason) and the idle reminder are changes the owner should hear about;
+    // last_login_at and the sealed Terms signature are bookkeeping. idle_hours went with migration 307.
     changes: [
       'id', 'display_name', 'display_key', 'kind', 'terms_version', 'terms_accepted_at', 'created_at', 'disabled_at',
-      'legacy_login_name', 'one_device', 'idle_hours', 'show_traded_total',
+      'legacy_login_name', 'one_device', 'show_traded_total', 'account_type', 'vendor_since', 'closed_at', 'closed_reason',
+      'idle_reminder_minutes',
     ],
     bookkeeping: {
       had_wallet: 'set with the first wallet, which notifies through wallets',
+      last_login_at: 'set by every login (new logins have their own push and alert); lead default, owner p11-119',
+      terms_signature: 'the sealed signature stored with terms_accepted_at (which notifies) and erased by the close (closed_at notifies); lead default, owner p11-119',
       webauthn_user_id: 'set once in the sign-up transaction',
       login_tag: 'rotated to the current key after a login (retagLoginName); a name set also flips legacy_login_name',
       login_tag_key_id: 'rotated with login_tag',
@@ -105,6 +111,14 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
     ],
     bookkeeping: {},
   },
+  {
+    // A ban of one of this account's identifiers (migration 017): the owner should hear about it
+    // (lead default, owner p11-119). account_id is set null when the account goes; the trigger is
+    // in migration 334.
+    table: 'banned_identifiers', accountColumn: 'account_id', ops: ALL,
+    changes: ['id', 'kind', 'tag_key_id', 'tag', 'account_id', 'banned_at'],
+    bookkeeping: {},
+  },
 ];
 
 /**
@@ -138,6 +152,9 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'staff_invites.created_by': 'staff records',
   'staff_invites.account_id': 'staff records',
   'key_taps.account_id': 'a staff security-key tap',
+  // Batch 4 (lead default, owner p11-119): silent.
+  'account_action_minutes.account_id': 'pay and release timings kept by finished trades (the Fast badge), not the account',
+  'closed_account_keys.account_id': "a closed account's identifier tags kept for the ban scope, written by the close itself (closed_at notifies)",
   'feedback_form.account_id': 'feedback sent to X2F',
   'team_members.member_account_id': "a member's login account; its changes notify the team account through the trigger",
 };
