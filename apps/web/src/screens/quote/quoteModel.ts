@@ -57,6 +57,8 @@ export interface MarketNow {
   centsPerXmr: bigint;
   exponent: number;
   usdCentsPerXmr: bigint | null;
+  /** When the feed took this price (the route's `at`), for the bands card's "updated 14:05 UTC". */
+  at?: string;
 }
 
 /**

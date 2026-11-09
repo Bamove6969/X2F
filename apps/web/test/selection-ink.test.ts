@@ -78,6 +78,7 @@ const ORANGE_ALLOWED = [
   'ui/ui.css .x2f-logo__dot',
   // The ad card's range rows (BuyOffers / SellOffers boards v142).
   "screens/browse/browse.css .x2f-offer__unit[data-unit='xmr']",
+  'screens/quote/quote.css .x2f-quote__band-xmr-unit',
 ];
 
 describe('selection is ink, never orange', () => {

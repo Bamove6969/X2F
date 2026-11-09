@@ -151,8 +151,23 @@
   background: var(--x2f-surface-raised);
 }
 
+/* Focus (design review 8 Nov item 4): a soft 1 px ink border on the field, as on the boards, in
+   place of the global 2 px outline drawn around the bare input (a hard white box inside the field). */
+.x2f-quote__box:has(input:focus-visible) {
+  border-color: var(--x2f-ink);
+}
+
+.x2f-quote__box input:focus-visible {
+  outline: none;
+}
+
 .x2f-quote__box[data-bad] {
   border-color: var(--x2f-danger);
+}
+
+/* In error the border stays danger; focus thickens it to 2 px so it still shows. */
+.x2f-quote__box[data-bad]:has(input:focus-visible) {
+  box-shadow: inset 0 0 0 1px var(--x2f-danger);
 }
 
 .x2f-quote__box input {
@@ -252,6 +267,16 @@
   outline-offset: 2px;
 }
 
+/* Before login: one plain row saying the wallet comes with the account (nothing to pick). */
+.x2f-quote__wallet--none {
+  cursor: default;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__wallet--none > svg {
+  flex-shrink: 0;
+}
+
 .x2f-quote__wallet-text {
   display: flex;
   flex-direction: column;
@@ -305,6 +330,13 @@
   font-weight: 500;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* An exact figure past 6 places (SellQuote, up to 12): smaller, so it fits a 360 px card. */
+.x2f-quote__xmr[data-long] {
+  font-size: 26px;
+  line-height: 32px;
 }
 
 .x2f-quote__xmr-unit {
@@ -314,6 +346,192 @@
   font-weight: var(--x2f-heading-weight);
   letter-spacing: 0;
   color: var(--x2f-monero-ink);
+}
+
+/*
+ * "This offer's bands" (BuyQuote board, canvas v142): a 20 px padded surface card, a 40 px icon
+ * tile beside an 18/24 title and a 13/18 sub-line; the With markup / Without chips; bands as 12 px
+ * surface-raised rows (10/12 padding), the one holding the amount ringed in 2 px ink; the clip
+ * lines at 14/20 ink; the freshness line at 13/18 muted.
+ */
+.x2f-quote__bands {
+  gap: 12px;
+}
+
+.x2f-quote__bands-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.x2f-quote__bands-tile {
+  display: flex;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__bands-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.x2f-quote__bands-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.x2f-quote__band-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-quote__band {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  border: 2px solid transparent;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-quote__band[aria-current='true'] {
+  border-color: var(--x2f-ink);
+}
+
+.x2f-quote__band-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0 var(--x2f-space-2);
+}
+
+.x2f-quote__band-name {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-quote__band-label {
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__band-here {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--x2f-ink);
+  color: var(--x2f-ground);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.x2f-quote__band-rate {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+  white-space: nowrap;
+}
+
+.x2f-quote__band-rate .x2f-quote__mono {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__band-range {
+  font-size: 15px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.x2f-quote__band-range .x2f-quote__mono {
+  font-weight: 500;
+}
+
+.x2f-quote__band-unit {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__band-markup {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+  white-space: nowrap;
+}
+
+.x2f-quote__band-markup .x2f-quote__mono {
+  color: var(--x2f-escrow);
+}
+
+.x2f-quote__band-xmr-unit {
+  font-weight: 600;
+  color: var(--x2f-monero-ink);
+}
+
+.x2f-quote__band-clip {
+  display: flex;
+  gap: var(--x2f-space-2);
+  align-items: flex-start;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__band-clip > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__band-updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
+/* Forced colors (High Contrast) replaces border colours and drops box-shadow, and the input has no
+   outline, so the box draws one (WCAG 2.4.7; review I1). */
+@media (forced-colors: active) {
+  .x2f-quote__box:focus-within {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  .x2f-quote__band[aria-current='true'] {
+    border-color: CanvasText;
+  }
 }
 
 /* The rows: one 12 px surface-raised block, 48 px rows, a 1 px inset rule between rows. */
