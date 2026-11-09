@@ -8,6 +8,25 @@ const SHAPES = {
   'chevron-left': <path d="M15 18l-6-6 6-6" />,
   'chevron-right': <path d="M9 6l6 6-6 6" />,
   'chevron-down': <path d="M6 9l6 6 6-6" />,
+  // AccountFrozen board (D-016): the "Trading frozen" chip, and the paused rows.
+  snowflake: (
+    <>
+      <path d="M12 2v20M4 7l16 10M20 7L4 17" />
+      <path d="M9 4l3 2 3-2M9 20l3-2 3 2" />
+    </>
+  ),
+  'pause-circle': (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M10 9v6M14 9v6" />
+    </>
+  ),
+  swap: (
+    <>
+      <path d="M4 8h13l-3-3" />
+      <path d="M20 16H7l3 3" />
+    </>
+  ),
   // BuyQuote / SellQuote / OfferAd boards (j31a): the "What applies to you" tile.
   'list-check': (
     <>

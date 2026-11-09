@@ -1,0 +1,110 @@
+/*
+ * AccountFrozen board (D-016, wip/design-brief): a full-screen notice like Ban-Notice, with the
+ * kit's caution hero, then two cards. Colours are design tokens only; no inline styles (CSP).
+ */
+.x2f-frozen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  min-height: 100dvh;
+  box-sizing: border-box;
+  padding: var(--x2f-space-2) var(--x2f-space-4) var(--x2f-space-4);
+  background: var(--x2f-ground);
+  color: var(--x2f-ink);
+}
+
+.x2f-frozen__header {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  min-height: 44px;
+}
+
+.x2f-frozen__header > .x2f-icon-button {
+  margin-left: -10px;
+}
+
+.x2f-frozen__page {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.x2f-frozen__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.x2f-frozen__facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.x2f-frozen__facts > div + div {
+  padding-top: 10px;
+  border-top: 1px solid var(--x2f-line);
+}
+
+.x2f-frozen__facts dt {
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-frozen__facts dd {
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.x2f-frozen__mono {
+  font-family: var(--x2f-font-mono);
+}
+
+.x2f-frozen__card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--x2f-space-4) var(--x2f-space-5);
+  border-radius: var(--x2f-radius-lg);
+  background: var(--x2f-surface);
+}
+
+.x2f-frozen__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-frozen__list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.x2f-frozen__list li > svg {
+  flex-shrink: 0;
+}
+
+.x2f-frozen__list[data-tone='escrow'] li > svg {
+  color: var(--x2f-escrow);
+}
+
+.x2f-frozen__list[data-tone='caution'] li > svg {
+  color: var(--x2f-caution);
+}
+
+.x2f-frozen__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  margin-top: auto;
+}
