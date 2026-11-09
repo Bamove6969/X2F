@@ -36,13 +36,18 @@
  *   and time, `missing`, no text (review I2). A drop is shown as a gap, never hidden.
  * - Envelopes at or below the cursor were all decided before: on a re-read, one with no receipt is
  *   skipped, never opened (review M2).
+ * - Only what may become valid on a later sync stops the cursor: a moderator line outside a dispute
+ *   (`mod-not-allowed`) and, by the held path above, a well-formed package before the trade is
+ *   secured. An envelope that can never become a line (a payload that is not a chat message, a
+ *   lying, malformed or mod-signed package) is passed with a receipt marked `refused`, so the
+ *   counterparty cannot make every later sync re-fetch the rest of the chat (pay-details review M1).
  * - Erase on purge: when the API answers 410 `chat-purged` for a chat, its record and the lines in
  *   memory are erased; `sweep` checks every stored chat once per worker start. A 404 keeps the
  *   record (a block hides a chat with that same 404, and it may come back).
  */
 import type { Role } from '@x2f/core';
 import { isPlainObject, ProtocolError, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
-import { AttestationError, PayDetailsError, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
+import { AttestationError, PayDetailsError, checkChatEnvelope, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
 import type { ChatRecord, ChatStore, StoredChatReceipt } from './store.js';
 
@@ -160,6 +165,15 @@ const MAX_PAGES = 20;
 /** Most envelope pages read in one sync in all (the re-read of the lines already taken included). */
 const MAX_TOTAL_PAGES = 1_000;
 const sigOf = (envelope: unknown): string | null => (isPlainObject(envelope) && typeof envelope.sig === 'string' ? envelope.sig : null);
+/** The sender and seq an envelope's header claims (its shape checked, nothing verified), or null when it is not even an envelope. */
+function headerOf(envelope: unknown, channel: string): { from: Role; seq: number } | null {
+  try {
+    const env = checkChatEnvelope(envelope, channel);
+    return { from: env.from, seq: env.seq };
+  } catch {
+    return null;
+  }
+}
 
 export function createChatEngine(d: ChatEngineDeps): ChatEngine {
   /** One operation at a time per chat (posts are sent one by one, chatCrypto's contract). */
@@ -185,8 +199,11 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     const session = rec ? sessions.get(rec.chat) : undefined;
     /** A receipt the reads went past without showing it again: a placeholder (review I2). */
     const judged = (id: string): boolean => session !== undefined && (session.reached === 'all' || BigInt(id) <= session.reached);
-    /** A package held until the escrow is secured (owner Q12) is not a line yet, not even a placeholder. */
-    const withheld = (m: StoredChatReceipt): boolean => m.heldPay === true && session?.texts.has(m.id) !== true;
+    /**
+     * A package held until the escrow is secured (owner Q12) is not a line yet, not even a
+     * placeholder; an envelope refused for good (pay-details review M1) never is.
+     */
+    const withheld = (m: StoredChatReceipt): boolean => m.refused === true || (m.heldPay === true && session?.texts.has(m.id) !== true);
     return {
       phase,
       more,
@@ -302,7 +319,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     const known = new Map(receipts.map((r) => [r.id, r]));
     let unread = false;
     const lastSeq = new Map<Role, number>();
-    for (const m of receipts) lastSeq.set(m.from, Math.max(lastSeq.get(m.from) ?? -1, m.seq));
+    // A refused envelope's seq was never taken (the sender may reuse it), so it does not count.
+    for (const m of receipts) if (m.refused !== true) lastSeq.set(m.from, Math.max(lastSeq.get(m.from) ?? -1, m.seq));
     for (let page = 0, total = 0; page < MAX_PAGES && total < MAX_TOTAL_PAGES; total++) {
       const { envelopes, more } = await d.api.listEnvelopes(rec.chat, after);
       if (envelopes.some((e) => BigInt(e.id) > start)) page++;
@@ -311,7 +329,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         const past = BigInt(e.id) > start;
         const receipt = known.get(e.id);
         if (receipt) {
-          if (!shown.has(e.id)) {
+          if (receipt.refused !== true && !shown.has(e.id)) {
             const again = await reopen(rec, me, parts, e, receipt, channel, secured);
             if (again !== null) shown.set(e.id, again);
           }
@@ -359,9 +377,20 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           known.set(m.id, m);
           if (!withhold) shown.set(m.id, shownOf(r.message));
         } catch (err) {
-          // A moderator line outside a dispute, or a message that did not parse, is tried again on
-          // a later sync: the cursor stops before it (the guard did not move for it).
-          if (err instanceof ChatError && (err.code === 'mod-not-allowed' || err.code === 'bad-message')) advance = false;
+          // A moderator line outside a dispute is tried again on a later sync: the cursor stops
+          // before it (the guard did not move for it). A package before the trade is secured was
+          // held above. Nothing else can become valid later.
+          if (err instanceof ChatError && err.code === 'mod-not-allowed') advance = false;
+          else if (err instanceof ChatError && err.code === 'bad-message') {
+            // Decided for good (pay-details review M1): a receipt marks it refused so a re-read never
+            // opens it again, and the cursor passes it. The guard did not move: the sender may reuse the seq.
+            const h = headerOf(e.envelope, channel);
+            if (h !== null) {
+              const m: StoredChatReceipt = { id: e.id, from: h.from, seq: h.seq, sig: sigOf(e.envelope), at: typeof e.at === 'string' ? e.at : null, gapBefore: false, refused: true };
+              receipts.push(m);
+              known.set(m.id, m);
+            }
+          }
           // Anything else (a replay of a line already shown, a forged or foreign envelope) is skipped.
         }
         if (!advance) held = true;

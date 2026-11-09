@@ -253,10 +253,11 @@ export interface OpenChatArgs {
  * On success returns the message and the new state; persist the state before showing the
  * message. The input state is not changed, so a rejected envelope leaves no trace.
  *
- * Intended consequences of "no trace": an envelope refused with 'mod-not-allowed' or
- * 'bad-message' must not advance the panel's `GET …?after=` cursor (it is re-fetched and
- * re-tried, e.g. once a dispute opens), and a sender whose message was 'bad-message' may reuse
- * that seq, because this reader's guard did not move for it.
+ * Intended consequences of "no trace": an envelope refused with 'mod-not-allowed' (or a package
+ * refused only for `payAllowed`) must not advance the engine's `GET …?after=` cursor: it is
+ * re-fetched and re-tried once a dispute opens (or the trade is secured). Any other 'bad-message'
+ * is decided for good and the engine passes it (pay-details review M1); either way a sender whose
+ * message was 'bad-message' may reuse that seq, because this reader's guard did not move for it.
  */
 export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{ message: ChatMessage; state: ChatState }> {
   const state = parseChatState(a.state, a.state.channel);

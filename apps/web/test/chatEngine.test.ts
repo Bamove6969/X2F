@@ -1,4 +1,4 @@
-import { newTradeCode } from '@x2f/core';
+import { newTradeCode, type Role } from '@x2f/core';
 import { seal, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { attestationBytes, channelFor, chatIdentityProofValid, checkChatEnvelope, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
@@ -37,6 +37,8 @@ class FakeApi implements ChatApi {
   refused = false;
   envelopes: ApiEnvelope[] = [];
   posted: unknown[] = [];
+  /** Every `after` the engine asked for (which envelopes a sync fetched). */
+  afters: string[] = [];
   nextId = 1;
   /** The API purged the chat: every route answers 410 chat-purged (or 404 for `blocked`). */
   gone: 410 | 404 | null = null;
@@ -64,6 +66,7 @@ class FakeApi implements ChatApi {
   }
   async listEnvelopes(_chat: string, after: string) {
     this.check();
+    this.afters.push(after);
     const list = this.envelopes.filter((e) => BigInt(e.id) > BigInt(after));
     return { envelopes: list.slice(0, 2), more: list.length > 2 };
   }
@@ -631,6 +634,63 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
       [TEXT, INTERAC],
       ['sent too early, sorry', null],
     ]);
+  });
+
+  /** A tampered seller client: an arbitrary inner payload sealed as the seller, bypassing the chat's own checks. */
+  async function sellerRaw(payload: unknown, seq: number, parts: Participants, from: Role = 'seller'): Promise<Envelope> {
+    return seal({ trade: channel, from, seq, type: 'chat.msg', payload, to: ['buyer', 'seller', 'mod'], me: from === 'mod' ? mod : seller, participants: parts });
+  }
+
+  it('review M1 (pay details): an envelope that can never become valid is skipped for good: the cursor passes it, later lines show, and the next sync fetches nothing again', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    await fromSeller('before', parts);
+    // A lying package (the text is not the rendering of its boxes), a malformed payload, a mod-signed package.
+    api.add('seller', await sellerRaw({ text: 'Payment details\nFull name: Jane Doe\nEmail: other@example.ca', pay: INTERAC }, 1, parts));
+    api.add('seller', await sellerRaw({ text: 7 }, 2, parts));
+    api.add('mod', await sellerRaw({ text: TEXT, pay: INTERAC }, 0, parts, 'mod'));
+    // The guard did not move for any of them, so the seller may reuse seq 1 (chatCrypto's contract).
+    await fromSeller('after', parts, 'seller', 1);
+    const e = engine();
+    const first = await e.sync(chat);
+    expect(first.lines.map((l) => [l.text, l.missing ?? false, l.gapBefore])).toEqual([
+      ['before', false, false],
+      ['after', false, false],
+    ]);
+    // The next sync asks only past the last envelope: the refused ones are not fetched again.
+    api.afters = [];
+    expect((await e.sync(chat)).lines.map((l) => l.text)).toEqual(['before', 'after']);
+    expect(api.afters).toEqual(['5']);
+    // Each refused envelope has a receipt marked refused and nothing else of it; the cursor is past them.
+    const rec = (await store.load(chat))!;
+    expect(rec.cursor).toBe('5');
+    expect(rec.receipts.map((r) => [r.id, r.refused === true])).toEqual([['1', false], ['2', true], ['3', true], ['4', true], ['5', false]]);
+    for (const s of ['Jane Doe', 'other@example.ca', 'INTERAC_E_TRANSFER']) expect(JSON.stringify(store.records.get(chat)), s).not.toContain(s);
+    // A reopened app (a new engine) re-reads the chat: the refused ones are neither lines nor placeholders.
+    api.afters = [];
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.missing ?? false])).toEqual([['before', false], ['after', false]]);
+    expect(api.afters[0]).toBe('0');
+  });
+
+  it('review M1 (pay details): only what may become valid later is tried again: a moderator line outside a dispute, a package before the escrow is secured', async () => {
+    api.view.tradeSecuredAt = null;
+    await engine().sync(chat);
+    const parts = attest();
+    api.add('mod', await sellerRaw({ text: 'Moderator here' }, 0, parts, 'mod'));
+    await sellerPay(INTERAC, parts);
+    await fromSeller('later', parts);
+    const e = engine();
+    expect((await e.sync(chat)).lines.map((l) => l.text)).toEqual(['later']);
+    // The next sync fetches from before the moderator line (the cursor stopped there), and the held package is a held receipt.
+    api.afters = [];
+    await e.sync(chat);
+    expect(api.afters[0]).toBe('0');
+    expect((await store.load(chat))!.receipts.map((r) => [r.id, r.heldPay === true, r.refused === true])).toEqual([['2', true, false], ['3', false, false]]);
+    // Both become valid: the dispute opens and the escrow is secured.
+    api.view.disputeOpen = true;
+    api.view.tradeSecuredAt = '2026-10-28T12:30:00.000Z';
+    expect((await e.sync(chat)).lines.map((l) => [l.from, l.text])).toEqual([['mod', 'Moderator here'], ['seller', TEXT], ['seller', 'later']]);
   });
 
   it('the worker answers chat-send-pay like a send, and a non-package is bad-details', async () => {
