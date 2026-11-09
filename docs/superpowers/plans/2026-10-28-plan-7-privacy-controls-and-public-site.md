@@ -32,7 +32,7 @@ Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's a
 
 - **Privacy (spec 4.1).** No IP is stored or logged. Logs never contain trade codes, display names, Jabber addresses, PGP fingerprints, alert text or search queries. `disableRequestLogging: true`, `trustProxy` never set.
 - **Deletion is real.** A purge deletes rows (or nulls columns) with the `x2f_purge` role; nothing is "soft-deleted" with a flag and kept. Backups keep deleted data for up to D6 days (Plan 6 gap G1), and the Privacy screen and FAQ say so.
-- **One retention rule, no exceptions** (owner 2026-10-29). An undisputed trade is deleted whole 30 days after `closed_at` (`TRADE_KEEP_DAYS = 30`). A disputed trade is deleted 90 days after `disputes.opened_at` (`DISPUTE_KEEP_DAYS = 90`, Plan 4 Task 23), and never while its dispute is still open. Nobody can choose another time or delete early, including staff.
+- **One retention rule, no exceptions** (owner 2026-10-29). An undisputed trade is deleted whole 30 days after `closed_at` (`TRADE_KEEP_DAYS = 30`). A disputed trade is deleted 90 days after `disputes.closed_at` (the dispute closing, owner p11-11, 2026-11-09; `DISPUTE_KEEP_DAYS = 90`, Plan 4 Task 23), and never while its dispute is still open. Nobody can choose another time or delete early, including staff.
 - **No per-trade stub.** Before a trade is deleted its numbers are added to the account's running totals (Plan 5 Task 20) and the revenue ledger (Plan 4 Task 32). Reviews are permanent and stand alone (Plan 5).
 - **Moderator reading rules are unchanged** (owner 2026-10-27, spec 6.6): chat stays readable by the moderator once a dispute opens; before that, rules and the activity log stop them, not encryption. This plan changes no chat key.
 - **Alerts say nothing.** Every off-app alert body is exactly one of the fixed push texts ("Someone nudged you on X2F", "Something changed in a trade on X2F", and for the owner "Something needs your attention"), with no trade code, display name, amount or link beyond the site root.
@@ -90,7 +90,7 @@ Rewritten 2026-10-29. Old Tasks 1–4 (per-side and whole-trade self-delete sett
   - `interface RetentionFacts { closedAt: Date | null; disputeOpenedAt: Date | null; disputeClosed: boolean; refundDisputeWindowEndsAt: Date | null }`
   - `tradeDeleteAt(f): Date | null`: `null` while the trade is open; `closedAt + 30 d` with no dispute; `disputeOpenedAt + 90 d` with a dispute; never before the dispute is closed; **OPEN pending the owner's answer to question A:** never before `refundDisputeWindowEndsAt` (the dispute-after-refund window; the lead recommends 30 days; open point in Plan 3 Revision 2026-10-29).
   - `tradeDeleteDue(f, now): boolean`.
-- [ ] **Step 1: Write the failing tests:** a released trade is due at close + 30 d and not 1 ms before; a dispute opened at day 29 moves it to the button + 90 d; a dispute still open at day 90 is not due; an open trade is never due.
+- [ ] **Step 1: Write the failing tests:** a released trade is due at close + 30 d and not 1 ms before; a dispute opened at day 29 moves it to the dispute's closing + 90 d; a trade whose dispute is still open is not due; an open trade is never due.
 - [ ] **Step 2:** Run `flock ~/x2f-comms/check.lock npm test -- --project @x2f/trade`; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.

@@ -6,9 +6,9 @@
 
 Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's answers register of 2026-11-09. Where this list differs from older text, this list wins.
 
-- **Offer cap (owner Q31, 6 Nov):** 3 buying + 3 selling per account in total, paused offers counted, no seventh; built on main (`OFFER_CAP_DEFAULTS`, keys `offers_max_buy` / `offers_max_sell`). Task 34 must not change the cap; the "2 per side per currency, 20 in total" text below is superseded.
-- **Bands and methods (owner Q23, 6 Nov):** Task 34 limits are 3 bands per currency and 5 payment types per offer (the code has 5 and 10: change to 3 and 5).
-- **Price sources (owner Q7, 6 Nov):** Task 3 maximum source gap is 3% (`maxSpreadBps` 300); fourth source off by default.
+- **Offer cap (owner Q31, 6 Nov):** 3 buying + 3 selling per account in total, paused offers counted, no seventh; built on `wip/lead-offer-rules` (batch 3), not yet on main (`OFFER_CAP_DEFAULTS`, keys `offers_max_buy` / `offers_max_sell`). Task 34 must not change the cap; the "2 per side per currency, 20 in total" text below is superseded.
+- **Bands and methods (owner Q23, 6 Nov):** Task 34 limits are 3 bands per currency and 5 payment types per offer (the Task 34 branch `wip/second-p3-task34-web`, not on main, has 5 and 10: change to 3 and 5).
+- **Price sources (owner Q7, 6 Nov):** Task 3 maximum source gap is 3% (`maxSpreadBps` 300; measured from the median, as the code does, pending review O1); fourth source off by default.
 - **Disputed trades are kept 90 days from the dispute closing (owner p11-11),** not from the dispute button; the older lines below carry a struck-through note.
 - **Trades erased 30 days after they end (owner p11-17, unchanged); window to file a dispute after a trade closes: 72 h per owner p11-17, pending confirmation of which window (p11-51).** The owner said 72 h in place of 48 h but did not say which window; the only one built is the buyer's dispute within 48 h of a no-show refund (`TIMERS.disputeAfterRefundHours = 48`). The number in code and in the older text stays 48 until the lead confirms.
 - **Team chat label (owner p11-25, changes R44):** a member's chat messages are labelled "<lead's display name> Assistant 1", "Assistant 2" (for example "Circa 55 Assistant 1"); the member's own name is not shown.
@@ -232,7 +232,7 @@ Plan 3 makes these additive amendments to Plan 1 code, all in Task 7: (1) `Escro
 2. **The seller sends the wrong amount** (short, over, or extra coins late): a short seller stays at "Received X of Y, send the rest" and lapses with a full refund; a surplus goes to the ad poster and the fee output stays exact; coins arriving late hold the payout until every coin has 10 confirmations, then it sweeps everything. Tests owned by Tasks 1 and 9.
 3. **The phone's clock is wrong by ±10 min:** countdowns and what buttons allow follow the server's deadlines, never the device clock. Tests owned by Tasks 2 and 22.
 4. **Many people take one ad at once:** a sell ad serves every buyer concurrently (one waiting take per buyer); a buy ad has at most one trade awaiting funding per amount, so five sellers racing get one trade and four `ad-busy`. Test owned by Task 5.
-5. **The price feed is down, stale (> 5 min) or sources disagree (by more than 3%, owner Q7, 2026-11-09; was 5%):** Trade on a market-priced offer is disabled with "Price unavailable right now" rather than quoting an old rate; a fixed-price offer keeps its own price (see Open questions). Test owned by Task 3.
+5. **The price feed is down, stale (> 5 min) or sources disagree (by more than 3% from the median, owner Q7, 6 Nov, pending review O1; was 5%):** Trade on a market-priced offer is disabled with "Price unavailable right now" rather than quoting an old rate; a fixed-price offer keeps its own price (see Open questions). Test owned by Task 3.
 
 ---
 
@@ -786,7 +786,7 @@ Revision 2026-10-29 (lead decision, Task 5 review I2; supersedes "locks exactly 
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat: end-to-end encrypted chat`.
 
-**Revision 2026-10-29 (owner):** `purgeChats` deletes envelopes 30 days after the trade closes (`TRADE_KEEP_DAYS`), or 90 days after ~~the dispute button~~ the dispute closing (owner p11-11, 2026-11-09) for a disputed trade, not 90 days after close. See "Revision 2026-10-29 (owner)" at the end.
+**Revision 2026-10-29 (owner):** `purgeChats` deletes envelopes 30 days after the trade closes (`TRADE_KEEP_DAYS`), or 90 days after ~~the dispute button~~ the dispute closing (owner p11-11, 2026-11-09) for a disputed trade, not 30 days after the trade closes. See "Revision 2026-10-29 (owner)" at the end.
 
 ### Task 21: PostOffer
 
@@ -1090,12 +1090,12 @@ Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note. Sour
 Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revisions > this note. Source: the owner's answers of 2026-10-29 (`~/x2f-comms/owner-answers-2026-10-28.md`), recorded in the spec's "Revision 2026-10-29 (owner)" and `HANDOFF.md` "Decided 2026-10-29 (owner)".
 
 - **Task 4 (offers).**
-  - **Caps.** *Superseded 2026-11-09 (owner Q31, 6 Nov): 3 buying + 3 selling per account in total, across every method and currency, paused offers counted, no seventh and no on-hold seventh; already built on main (`OFFER_CAP_DEFAULTS`), so Task 34 must not change the cap.* Older text: The owner set **2 offers per side (buy or sell) per currency, and 20 in total**, as part of flexible offers (one offer can carry several methods and price tiers). The built cap of 3 per (side, method, currency) and 20 in total stays until new Task 34 lands; Task 34 changes the count to (side, currency) and the default `offers_max_per_market` to 2. Plan 4's Settings screen shows both numbers.
+  - **Caps.** *Superseded 2026-11-09 (owner Q31, 6 Nov): 3 buying + 3 selling per account in total, across every method and currency, paused offers counted, no seventh and no on-hold seventh; built on `wip/lead-offer-rules` (batch 3), landing before Task 34 (`OFFER_CAP_DEFAULTS`), so Task 34 must not change the cap.* Older text: The owner set **2 offers per side (buy or sell) per currency, and 20 in total**, as part of flexible offers (one offer can carry several methods and price tiers). The built cap of 3 per (side, method, currency) and 20 in total stays until new Task 34 lands; Task 34 changes the count to (side, currency) and the default `offers_max_per_market` to 2. Plan 4's Settings screen shows both numbers.
   - **The cap refusal** (409 `too-many-offers`) is a "can't do that" case: the web shows "Sorry, you're limited to 3 offers per side ..." (N = 3, owner Q31) `// COPY-UNSIGNED` with the feedback link (Plan 5 new Task 21).
   - **Pause and resume all offers** is new Task 36, built on the existing per-offer `PATCH status`.
 - **Task 6 (retention).**
   - **An undisputed trade self-destructs 30 days after it ends** (`closed_at`). This is the advertised self-destruct. There are no user-chosen delete times and no early or manual delete.
-  - **A disputed trade is kept 90 days from ~~the moment the dispute button was pressed~~ the dispute closing (owner p11-11, 2026-11-09)** (`disputes.opened_at`), then deleted (Plan 4 Task 23).
+  - **A disputed trade is kept 90 days from ~~the moment the dispute button was pressed~~ the dispute closing (owner p11-11, 2026-11-09)** (`disputes.closed_at`), then deleted (Plan 4 Task 23).
   - `purgeTradeAddresses` changes from 90 to 30 days after `closed_at` (constant `TRADE_KEEP_DAYS = 30`), still skipping a trade with a dispute. Task 20's `chatPurgeDue` takes the same 30 days.
   - **No per-trade stub.** Plan 7 Task 2 deletes the trade row itself, with its events, identities, attestations and chat, after first adding the trade to the account's running totals (completed trades and so on). So every table with a foreign key to `trades(code)` needs `on delete cascade`, or the purge deletes children first; the `trade_events` trigger already lets `x2f_purge` delete.
   - **Open (not decided here):** P3-M10 `disputeAfterRefundDays: 90` is longer than the 30-day delete. Either the window shrinks to 30 days or less, or a refunded trade is kept until its window closes. The lead or the owner decides; until then Plan 7 Task 2 skips a refunded trade still inside that window.
@@ -1124,13 +1124,13 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 **Interfaces:**
 - Produces:
   - `type Tier = { minFiatCents: string; maxFiatCents: string; marginBps: number; minTrades: 0|5|10|50 }` (*lead default (2026-10-29), owner may change:* the owner said "buyer must have X completed trades"; the four values match the existing offer rule); `type OfferMethod = { methodId: string; instructions: string; adjustBps: number }`.
-  - **Limits (owner Q23, 6 Nov 2026):** at most 3 bands (tiers) per currency and at most 5 payment types (methods) per offer; the built `MAX_BANDS = 5` (web) and `MAX_METHODS = 10` (API and web) are wrong and change to 3 and 5. `tiersValid` and the `POST /v1/offers` validation refuse more.
+  - **Limits (owner Q23, 6 Nov 2026):** at most 3 bands (tiers) per currency and at most 5 payment types (methods) per offer; the `MAX_BANDS = 5` (web) and `MAX_METHODS = 10` (API and web) on the Task 34 branch (`wip/second-p3-task34-web`, not on main) are wrong and change to 3 and 5. `tiersValid` and the `POST /v1/offers` validation refuse more.
   - `tiersValid(tiers)`: ranges never overlap; gaps are allowed; at least one tier. `tierFor(tiers, fiatCents)` → the tier or `null` (a gap).
   - `finalRate(offer, fiatCents, methodId, marketRate)` = market + the tier's margin + the method's adjustment (fixed-price offers: the fixed price + the method's adjustment).
   - Tables `offer_tiers(offer_id, min_fiat_cents, max_fiat_cents, margin_bps, min_trades)` and `offer_methods(offer_id, method_id, instructions, adjust_bps)`; the old single `method_id`, margin and range become the first rows (migration copies them).
   - `POST /v1/offers` accepts `tiers` and `methods`; `GET /v1/offers?amount&method` returns each card's final rate for that amount and method (`null` when the amount falls in a gap).
   - `POST /v1/offers/:id/take` requires `methodId` (one of the offer's methods); the chosen method, its instructions and the final rate are **locked into the signed trade terms**.
-  - **Cap:** *not changed by this task (owner Q31, 2026-11-09): 3 buying + 3 selling per account in total, keys `offers_max_buy` and `offers_max_sell`, already on main.* Refusal 409 `too-many-offers`. (Older text: 2 per (side, currency) and 20 in total, `offers_max_per_market` default 2.)
+  - **Cap:** *not changed by this task (owner Q31, 6 Nov): 3 buying + 3 selling per account in total, keys `offers_max_buy` and `offers_max_sell`, built on `wip/lead-offer-rules` (batch 3), landing before this task.* Refusal 409 `too-many-offers`. (Older text: 2 per (side, currency) and 20 in total, `offers_max_per_market` default 2.)
 - [ ] **Step 1: Write the failing tests:** overlapping tiers → 400; a gap amount gets no rate and a take in a gap → 409 `out-of-range`; a tier rule (`minTrades`) refuses a taker below it; the take locks the chosen method and the attested terms carry it; a method not on the offer → 400; a fourth tier in one currency → 400; a sixth payment type → 400 (owner Q23); the fourth offer on one side (any currency or method) → `too-many-offers`; the seventh offer → `too-many-offers` (owner Q31); an old single-method offer still lists and takes after the migration.
 - [ ] **Step 2:** Run `flock ~/x2f-comms/check.lock npm test -- --project @x2f/trade` and `--project @x2f/api`; expect FAIL.
 - [ ] **Step 3:** Implement.
