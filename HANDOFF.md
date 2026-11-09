@@ -188,7 +188,7 @@ Since 2026-10-21 two Claude sessions work on X2F; see `docs/coordination.md` for
 - Claude Code was downgraded from 2.1.300 to 2.1.292 by `/restart`, then the update channel was set to "latest". `/upgrade` showed "Login interrupted".
 
 ## Decided 2026-10-23 (owner)
-- Price feed: the lead picks 3 public XMR price sources that need no account and are reachable over Tor, and the server uses their median. Sources are kept in config and can be changed later. Trading on market offers pauses when the price is stale (> 5 min) or the sources disagree (Plan 3 Task 3). **Every currency gets a market price** (owner, 2026-10-24; spec 11.6): the XMR/USD median times dollar exchange rates from three keyless sources used in a fixed order of trust (the first if it is up and fresh under 1 hour, else the next); screens show the local price and its US-dollar value.
+- Price feed: the lead picks 3 public XMR price sources that need no account and are reachable over Tor, and the server uses their median. Sources are kept in config and can be changed later. Trading on market offers pauses when the price is stale (> 5 min) or the sources disagree by more than 3% (owner Q7, 2026-11-09; was 5%) (Plan 3 Task 3). **Every currency gets a market price** (owner, 2026-10-24; spec 11.6): the XMR/USD median times dollar exchange rates from three keyless sources used in a fixed order of trust (the first if it is up and fresh under 1 hour, else the next); screens show the local price and its US-dollar value.
 
 ## Decided 2026-10-27 (owner)
 
@@ -261,3 +261,4 @@ Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's a
 
 - **Offer cap (owner Q31, 6 Nov):** 3 buying + 3 selling per account in total, no seventh.
 - **Bands and methods (owner Q23, 6 Nov):** at most 3 amount bands per currency, 5 payment types per offer.
+- **Price sources (owner Q7, 6 Nov):** 3% maximum gap; fourth source off by default until its Tor check passes (docs/dev-setup.md).

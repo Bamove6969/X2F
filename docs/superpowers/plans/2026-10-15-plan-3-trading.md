@@ -8,6 +8,7 @@ Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's a
 
 - **Offer cap (owner Q31, 6 Nov):** 3 buying + 3 selling per account in total, paused offers counted, no seventh; built on main (`OFFER_CAP_DEFAULTS`, keys `offers_max_buy` / `offers_max_sell`). Task 34 must not change the cap; the "2 per side per currency, 20 in total" text below is superseded.
 - **Bands and methods (owner Q23, 6 Nov):** Task 34 limits are 3 bands per currency and 5 payment types per offer (the code has 5 and 10: change to 3 and 5).
+- **Price sources (owner Q7, 6 Nov):** Task 3 maximum source gap is 3% (`maxSpreadBps` 300); fourth source off by default.
 
 ## Revision 2026-10-29 (Task 10 as built, second, `wip/second-p3-task10`; not reviewed yet)
 
@@ -228,7 +229,7 @@ Plan 3 makes these additive amendments to Plan 1 code, all in Task 7: (1) `Escro
 2. **The seller sends the wrong amount** (short, over, or extra coins late): a short seller stays at "Received X of Y, send the rest" and lapses with a full refund; a surplus goes to the ad poster and the fee output stays exact; coins arriving late hold the payout until every coin has 10 confirmations, then it sweeps everything. Tests owned by Tasks 1 and 9.
 3. **The phone's clock is wrong by ±10 min:** countdowns and what buttons allow follow the server's deadlines, never the device clock. Tests owned by Tasks 2 and 22.
 4. **Many people take one ad at once:** a sell ad serves every buyer concurrently (one waiting take per buyer); a buy ad has at most one trade awaiting funding per amount, so five sellers racing get one trade and four `ad-busy`. Test owned by Task 5.
-5. **The price feed is down, stale (> 5 min) or sources disagree:** Trade on a market-priced offer is disabled with "Price unavailable right now" rather than quoting an old rate; a fixed-price offer keeps its own price (see Open questions). Test owned by Task 3.
+5. **The price feed is down, stale (> 5 min) or sources disagree (by more than 3%, owner Q7, 2026-11-09; was 5%):** Trade on a market-priced offer is disabled with "Price unavailable right now" rather than quoting an old rate; a fixed-price offer keeps its own price (see Open questions). Test owned by Task 3.
 
 ---
 
