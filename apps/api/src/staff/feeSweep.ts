@@ -85,8 +85,9 @@ const big = (v: string | null): bigint | null => (v === null ? null : BigInt(v))
 const cfgOf = (r: Row | undefined): FeeSweepConfig =>
   r ? { thresholdAtomic: big(r.fee_sweep_threshold_atomic), floatAtomic: big(r.fee_sweep_float_atomic), coldAddress: r.fee_sweep_cold_address } : { thresholdAtomic: null, floatAtomic: null, coldAddress: null };
 
-export async function getFeeSweepConfig(q: Queryable): Promise<FeeSweepConfig & { setAt: Date | null }> {
-  const r = (await q.query<Row>(SELECT)).rows[0];
+/** The sweep settings; `forShare` locks the row for the caller's transaction (a concurrent save waits). */
+export async function getFeeSweepConfig(q: Queryable, opts: { forShare?: boolean } = {}): Promise<FeeSweepConfig & { setAt: Date | null }> {
+  const r = (await q.query<Row>(opts.forShare ? `${SELECT} for share` : SELECT)).rows[0];
   return { ...cfgOf(r), setAt: r?.fee_sweep_set_at ?? null };
 }
 
@@ -107,7 +108,15 @@ export interface FeeSweepDeps {
 export type FeeSweepResult =
   | { outcome: 'off' | 'below-threshold' | 'busy' | 'held-after-failure' | 'held-unfinished' }
   | { outcome: 'sent'; amountAtomic: bigint; keepAtomic: bigint; txHash: string }
-  | { outcome: 'failed'; amountAtomic: bigint; keepAtomic: bigint; reason: 'not-wired' | 'send-error' };
+  | { outcome: 'failed'; amountAtomic: bigint; keepAtomic: bigint; reason: FeeSweepFailReason };
+
+/**
+ * Why an attempt failed. `not-wired`: the Plan 6 tripwire; `send-error`: the send threw or returned
+ * no tx hash; `settings-changed`: the owner changed the cold address or turned the sweep off after
+ * the pass started, so it did not send (review F2); `settings-unread`: the settings could not be
+ * read again before the send, so it did not send. Only `send-error` follows a send call.
+ */
+export type FeeSweepFailReason = 'not-wired' | 'send-error' | 'settings-changed' | 'settings-unread';
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const LOCK_KEY = 'x2f-fee-sweep';
@@ -121,6 +130,10 @@ const LOCK_KEY = 'x2f-fee-sweep';
  * 3. a second transaction settles the attempt (`sent` with its tx hash, or `failed`), logs it
  *    (`treasury.swept` or `treasury.sweep-failed`) and on a failure alerts the owner again
  *    (`fee-sweep-failed`).
+ * Step 1 reads the settings `for share`, so a concurrent save waits for it. Just before the send
+ * the settings are read again under the same lock: if the cold address changed or the sweep was
+ * turned off since step 1, nothing is sent and the attempt is settled `failed` (`settings-changed`,
+ * review F2).
  * If the process dies or step 3 fails after the send, the attempt stays `pending`: its result is
  * unknown, so no pass sends again (`held-unfinished`) until the owner saves the sweep settings
  * again, as after a failure (`held-after-failure`, no repeat alerts every pass). One pass at a time
@@ -139,7 +152,7 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
     await client.query('begin');
     let started: { id: string; coldAddress: string; plan: Extract<FeeSweepPlan, { due: true }> };
     try {
-      const cfg = await getFeeSweepConfig(client);
+      const cfg = await getFeeSweepConfig(client, { forShare: true });
       const plan = planFeeSweep(cfg, await d.wallet.unlockedAtomic());
       if (!plan.due) {
         await client.query('rollback');
@@ -164,15 +177,25 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
     }
     if (d.push) await pushOwnerAlert({ db: d.db, push: d.push }, 'fee-sweep-due');
 
-    // Step 2: the send, outside any transaction.
+    // Step 2: the settings again, under lock, right before the send (review F2); then the send,
+    // outside any transaction.
     const { plan } = started;
+    const failed = (reason: FeeSweepFailReason) => ({ outcome: 'failed' as const, amountAtomic: plan.amountAtomic, keepAtomic: plan.keepAtomic, reason });
     let result: Extract<FeeSweepResult, { outcome: 'sent' | 'failed' }>;
-    try {
-      const { txHash } = await send({ coldAddress: started.coldAddress, amountAtomic: plan.amountAtomic });
-      if (typeof txHash !== 'string' || !HEX64.test(txHash)) throw new Error('send returned no tx hash');
-      result = { outcome: 'sent', amountAtomic: plan.amountAtomic, keepAtomic: plan.keepAtomic, txHash };
-    } catch (e) {
-      result = { outcome: 'failed', amountAtomic: plan.amountAtomic, keepAtomic: plan.keepAtomic, reason: e instanceof FeeWalletNotWiredError ? 'not-wired' : 'send-error' };
+    const recheck = await settingsStillAllow(client, started.coldAddress).then(
+      (ok): FeeSweepFailReason | null => (ok ? null : 'settings-changed'),
+      (): FeeSweepFailReason => 'settings-unread',
+    );
+    if (recheck !== null) {
+      result = failed(recheck);
+    } else {
+      try {
+        const { txHash } = await send({ coldAddress: started.coldAddress, amountAtomic: plan.amountAtomic });
+        if (typeof txHash !== 'string' || !HEX64.test(txHash)) throw new Error('send returned no tx hash');
+        result = { outcome: 'sent', amountAtomic: plan.amountAtomic, keepAtomic: plan.keepAtomic, txHash };
+      } catch (e) {
+        result = failed(e instanceof FeeWalletNotWiredError ? 'not-wired' : 'send-error');
+      }
     }
 
     // Step 3: settle the attempt.
@@ -199,6 +222,22 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
   } finally {
     if (locked) await client.query('select pg_advisory_unlock(hashtext($1))', [LOCK_KEY]).catch(() => undefined);
     client.release();
+  }
+}
+
+/**
+ * Step 2's check (review F2): reads the settings `for share` in a short transaction on the pass's
+ * connection; true while the sweep is still on and the cold address is the one step 1 read.
+ */
+async function settingsStillAllow(client: pg.PoolClient, coldAddress: string): Promise<boolean> {
+  await client.query('begin');
+  try {
+    const now = await getFeeSweepConfig(client, { forShare: true });
+    await client.query('commit');
+    return now.thresholdAtomic !== null && now.coldAddress === coldAddress;
+  } catch (e) {
+    await client.query('rollback').catch(() => undefined);
+    throw e;
   }
 }
 

@@ -277,6 +277,81 @@ describe('the sweep pass (runFeeSweep)', () => {
     expect(inner).toEqual({ outcome: 'busy' });
   });
 
+  // Review F2: the send uses the settings as they are just before it, not as step 1 read them.
+  it('the owner changes the cold address mid-pass: nothing is sent, the attempt is failed (settings-changed), the next pass uses the new address', async () => {
+    const now = new Date(T0.getTime() + 700_000);
+    setNow(now);
+    await setSweep(10n * XMR, 3n * XMR, now);
+    balance = 13n * XMR;
+    const sent: Array<{ coldAddress: string; amountAtomic: bigint }> = [];
+    const changedAt = new Date(now.getTime() + 5_000);
+    const res = await runFeeSweep({
+      ...base(),
+      // The push runs after step 1 committed and before the send: the owner saves a new address then.
+      push: { send: async () => {
+        await deps.db.query('update settings set fee_sweep_cold_address = $1, fee_sweep_set_at = $2', [OTHER, changedAt]);
+        return true;
+      } },
+      send: async (a) => (sent.push(a), { txHash: '12'.repeat(32) }),
+    });
+    expect(res).toEqual({ outcome: 'failed', amountAtomic: 10n * XMR, keepAtomic: 3n * XMR, reason: 'settings-changed' });
+    expect(sent).toEqual([]);
+    expect((await sweeps()).at(-1)).toMatchObject({ outcome: 'failed', tx_hash: null });
+    expect((await ownerAlerts('fee-sweep-failed')).at(-1)).toMatchObject({ reason: 'settings-changed' });
+    expect((await logEntries(deps, 'treasury.sweep-failed')).map((r) => JSON.parse(r.detail) as unknown).at(-1)).toEqual({ amountAtomic: (10n * XMR).toString(), reason: 'settings-changed' });
+    // The owner's change came after the attempt, so it lifts the hold: the next pass sends to the new address.
+    setNow(new Date(now.getTime() + 60_000));
+    expect(await runFeeSweep({ ...base(), send: async (a) => (sent.push(a), { txHash: '12'.repeat(32) }) })).toMatchObject({ outcome: 'sent' });
+    expect(sent).toEqual([{ coldAddress: OTHER, amountAtomic: 10n * XMR }]);
+    await setSweep(10n * XMR, 3n * XMR, new Date(now.getTime() + 61_000));
+  });
+
+  it('the owner turns the sweep off mid-pass: nothing is sent, the attempt is failed (settings-changed)', async () => {
+    const now = new Date(T0.getTime() + 800_000);
+    setNow(now);
+    await setSweep(10n * XMR, 3n * XMR, now);
+    balance = 13n * XMR;
+    const sent: unknown[] = [];
+    const res = await runFeeSweep({
+      ...base(),
+      push: { send: async () => {
+        await deps.db.query('update settings set fee_sweep_threshold_atomic = null, fee_sweep_float_atomic = null, fee_sweep_cold_address = null, fee_sweep_set_at = $1', [new Date(now.getTime() + 5_000)]);
+        return true;
+      } },
+      send: async (a) => (sent.push(a), { txHash: '34'.repeat(32) }),
+    });
+    expect(res).toMatchObject({ outcome: 'failed', reason: 'settings-changed' });
+    expect(sent).toEqual([]);
+    expect((await sweeps()).at(-1)).toMatchObject({ outcome: 'failed' });
+  });
+
+  it('step 1 reads the settings under a share lock: a concurrent settings write waits for it', async () => {
+    const now = new Date(T0.getTime() + 900_000);
+    setNow(now);
+    await setSweep(10n * XMR, 3n * XMR, now);
+    let writeError: unknown = 'not tried';
+    const res = await runFeeSweep({
+      ...base(),
+      wallet: {
+        unlockedAtomic: async () => {
+          // Step 1's transaction is open here, after it read the settings.
+          const c = await deps.db.connect();
+          try {
+            await c.query('begin');
+            await c.query("set local lock_timeout = '200ms'");
+            writeError = await c.query('update settings set fee_sweep_set_at = $1', [now]).then(() => null, (e: unknown) => e);
+            await c.query('rollback');
+          } finally {
+            c.release();
+          }
+          return 1n;
+        },
+      },
+    });
+    expect(res).toEqual({ outcome: 'below-threshold' });
+    expect(writeError).toMatchObject({ code: '55P03' });
+  });
+
   it('the attempts table refuses a sent row without a tx hash and a pending row with a settled time', async () => {
     const row = [T0, '5', '4', '1'];
     await expect(deps.db.query(`insert into fee_sweeps (at, balance_atomic, amount_atomic, keep_atomic, outcome) values ($1, $2, $3, $4, 'sent')`, row)).rejects.toThrow(/check/);
