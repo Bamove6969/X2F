@@ -93,14 +93,19 @@
   }
 }
 
-/* Status chips (TradeFund, Desktop boards). */
+/* Status chips (design kit handoff 4.2): 28 px pill, 14% of the tone (16% for neutral and mod,
+   whose text is ink and mod), caps 13/16 600 .04em, 16 px icon. Never orange. */
 .x2f-chip {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: var(--x2f-space-2);
-  padding: 6px 12px;
+  gap: 6px;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
   border-radius: var(--x2f-radius-pill);
-  background: var(--x2f-surface-raised);
+  background: color-mix(in srgb, var(--x2f-chip-tone, var(--x2f-ink-muted)) 14%, transparent);
+  color: var(--x2f-chip-tone, var(--x2f-ink));
   font-size: var(--x2f-label-size);
   line-height: var(--x2f-label-line);
   font-weight: var(--x2f-label-weight);
@@ -108,20 +113,40 @@
   text-transform: uppercase;
 }
 
-.x2f-chip[data-tone='caution'],
+.x2f-chip[data-tone='caution'] {
+  --x2f-chip-tone: var(--x2f-caution);
+}
+
+.x2f-chip[data-tone='escrow'] {
+  --x2f-chip-tone: var(--x2f-escrow);
+}
+
+.x2f-chip[data-tone='danger'] {
+  --x2f-chip-tone: var(--x2f-danger);
+}
+
+.x2f-chip[data-tone='team'] {
+  --x2f-chip-tone: var(--x2f-team);
+}
+
+.x2f-chip[data-tone='mod'] {
+  background: color-mix(in srgb, var(--x2f-mod) 16%, transparent);
+  color: var(--x2f-mod);
+}
+
+.x2f-chip[data-tone='neutral'] {
+  background: color-mix(in srgb, var(--x2f-ink-muted) 16%, transparent);
+  color: var(--x2f-ink);
+}
+
 .x2f-badge[data-tone='caution'],
 .x2f-dots[data-tone='caution'] {
   color: var(--x2f-caution);
 }
 
-.x2f-chip[data-tone='escrow'],
 .x2f-badge[data-tone='escrow'],
 .x2f-dots[data-tone='escrow'] {
   color: var(--x2f-escrow);
-}
-
-.x2f-chip[data-tone='danger'] {
-  color: var(--x2f-danger);
 }
 
 /* Badge pills (SellOffers board). */
@@ -136,18 +161,6 @@
   font-weight: 600;
   letter-spacing: var(--x2f-label-tracking);
   text-transform: uppercase;
-}
-
-/* The X2F Moderator badge (DisputeRoom board). */
-.x2f-moderator-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--x2f-space-1);
-  padding: 2px 8px;
-  border: 1px solid var(--x2f-moderator);
-  border-radius: var(--x2f-radius-pill);
-  color: var(--x2f-moderator);
-  font-weight: 600;
 }
 
 /* The 2-of-3 dots (TradeFund board). */
@@ -172,7 +185,8 @@
 }
 
 /* Countdowns use the mono face with tabular figures; the context sets the colour. */
-.x2f-countdown {
+/* Timers (kit handoff 1.5): mono digits, units in the surrounding body type. */
+.x2f-countdown__n {
   font-family: var(--x2f-font-mono);
   font-variant-numeric: tabular-nums;
 }
@@ -258,8 +272,11 @@
 }
 
 .x2f-trade-header__title {
-  font-size: 16px;
-  font-weight: 600;
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: var(--x2f-screen-title-weight);
+  letter-spacing: var(--x2f-screen-title-tracking);
 }
 
 .x2f-trade-header__sub {
@@ -299,8 +316,7 @@
 .x2f-sheet-backdrop {
   position: absolute;
   inset: 0;
-  background: var(--x2f-ground);
-  opacity: 0.8;
+  background: var(--x2f-scrim);
 }
 
 .x2f-sheet {
@@ -387,26 +403,18 @@
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   touch-action: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--x2f-monero) 25%, transparent);
-  transition:
-    background-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+  transition: background-color 160ms ease;
 }
 
-.x2f-hold:not(:disabled):hover,
-.x2f-hold[data-holding='true'] {
-  transform: translateY(-1px);
-  box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--x2f-monero) 35%, transparent),
-    0 0 32px color-mix(in srgb, var(--x2f-monero) 55%, transparent);
+/* Ruling 16 (kit handoff): hover is a 6% ink overlay, never a glow. */
+.x2f-hold:not(:disabled):hover {
+  background: color-mix(in srgb, var(--x2f-ink) 6%, var(--x2f-monero));
 }
 
 .x2f-hold:disabled {
   border: 1px solid var(--x2f-line);
   background: transparent;
   color: var(--x2f-ink-muted);
-  box-shadow: none;
   cursor: not-allowed;
 }
 
@@ -417,22 +425,24 @@
   background: var(--x2f-escrow);
   color: var(--x2f-ground);
   cursor: default;
-  box-shadow: none;
-  transform: none;
 }
 
+/* Hold progress (kit review 4, WCAG 1.4.11): the strongest on-monero overlay the label allows
+   (on-monero text on it reads 4.5:1), and a 2 px on-monero front edge, 6.45:1 against the unfilled
+   button, so progress shows at 3:1+. The fill grows by its right inset, not a transform, so the edge
+   stays 2 px wide. */
 .x2f-hold__fill {
   position: absolute;
-  inset: 0;
-  background: var(--x2f-monero-hold);
-  transform: scaleX(0);
-  transform-origin: left center;
+  inset: 0 100% 0 0;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--x2f-on-monero) 20%, transparent);
   pointer-events: none;
 }
 
 .x2f-hold[data-holding='true'] .x2f-hold__fill {
-  transform: scaleX(1);
-  transition: transform var(--x2f-hold-ms) linear;
+  right: 0;
+  border-right: 2px solid var(--x2f-on-monero);
+  transition: right var(--x2f-hold-ms) linear;
 }
 
 .x2f-hold__top,
@@ -510,49 +520,140 @@
   min-height: calc(100dvh - var(--x2f-tab-bar-height));
 }
 
-/* Desktop frame (Desktop board). */
+/* Logo D (src/ui/Logo.tsx): the letters are currentColor, the dot the one Monero orange. */
+.x2f-logo {
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.x2f-logo__dot {
+  fill: var(--x2f-monero);
+}
+
+/* Wide frame (Job 3; the *-Wide boards). After login: the 240 px left rail and the page beside it.
+   Before login: the logo centred at the top (Login-Wide). */
 .x2f-desktop {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
 }
 
-.x2f-desktop__header {
+.x2f-desktop[data-wide-frame='rail'] {
+  flex-direction: row;
+}
+
+/* SellQuote-Wide: 240 px, 24 16 padding, a 1 px raised line on its right, 4 px between items; it
+   stays in view while the page scrolls. */
+.x2f-rail {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: var(--x2f-space-1);
+  box-sizing: border-box;
+  width: 240px;
+  height: 100vh;
+  overflow-y: auto;
+  padding: var(--x2f-space-6) var(--x2f-space-4);
+  border-right: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-rail__head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0 var(--x2f-space-3) var(--x2f-space-5);
+}
+
+.x2f-rail__home {
   display: flex;
   align-items: center;
-  gap: var(--x2f-space-6);
-  padding: var(--x2f-space-4) 32px;
-  border-bottom: 1px solid var(--x2f-surface-raised);
+  /* 44 px touch target; the negative margin keeps the layout where it was (review M3). */
+  min-height: 44px;
+  margin: -10px 0;
+  flex-shrink: 0;
+  color: var(--x2f-ink);
 }
 
-.x2f-wordmark {
-  font-family: var(--x2f-font-display);
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: var(--x2f-display-tracking);
+/* The page name under the logo: row title, 16/22 600 ink. */
+.x2f-rail__page {
+  max-width: 100%;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--x2f-ink);
+  overflow-wrap: break-word;
 }
 
-.x2f-desktop__nav {
+.x2f-rail__code {
+  font-family: var(--x2f-font-mono);
+}
+
+.x2f-rail__link {
   display: flex;
-  gap: var(--x2f-space-6);
-  font-size: 15px;
-}
-
-.x2f-desktop__nav a {
+  align-items: center;
+  gap: var(--x2f-space-3);
+  height: 44px;
+  padding: 0 var(--x2f-space-3);
+  border-radius: var(--x2f-radius-sm);
   color: var(--x2f-ink-muted);
+  text-decoration: none;
 }
 
-.x2f-desktop__nav a[aria-current='page'] {
+.x2f-rail__link:hover {
+  color: var(--x2f-ink);
+}
+
+/* The current page: ink on the raised surface with the 2 px ink inset line at its start (kit 1.1). */
+.x2f-rail__link[aria-current='page'] {
+  background: var(--x2f-surface-raised);
+  box-shadow: inset 2px 0 0 var(--x2f-ink);
   color: var(--x2f-ink);
   font-weight: 600;
+}
+
+/* Login-Wide, SignupSecurity-Wide: the 32 px logo centred, 56 px from the top. */
+.x2f-wide-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 56px 32px 0;
+  color: var(--x2f-ink);
 }
 
 .x2f-desktop__body {
   display: flex;
   flex-direction: column;
   flex-grow: 1;
+  min-width: 0;
   min-height: 0;
   padding: var(--x2f-space-6) 32px;
+}
+
+/* Beside the rail the page pads 32 48 48 (SellQuote-Wide, Settings-Wide) and is never a stretched
+   phone: one column is at most 720 px; a screen that lays out two columns (the trade room, the
+   quote, a two-column page) takes up to 944 px, the boards' 560 + 24 + 360. Panes (src/ui/Panes.tsx)
+   are display: contents on wide, so the screen under them is the box that is sized. The flows size
+   their own card and page looks (see .x2f-flow below). */
+[data-wide-frame='rail'] > .x2f-desktop__body {
+  padding: 32px 48px 48px;
+}
+
+[data-wide-frame='rail'] > .x2f-desktop__body > :not(.x2f-panes),
+[data-wide-frame='rail'] > .x2f-desktop__body > .x2f-panes > [data-pane='main'] > * {
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
+}
+
+[data-wide-frame='rail'] > .x2f-desktop__body > :is(.x2f-flow[data-look='page'], :has(.x2f-room), :has(.x2f-columns), :has(.x2f-flow[data-look='page'])),
+[data-wide-frame='rail'] > .x2f-desktop__body > .x2f-panes > [data-pane='main'] > :is(.x2f-quote, :has(.x2f-room), :has(.x2f-columns), :has(.x2f-flow[data-look='page'])) {
+  max-width: 944px;
 }
 
 /*
@@ -1047,10 +1148,11 @@
 .x2f-flow__title {
   flex-grow: 1;
   margin: 0;
-  font-family: var(--x2f-title-family);
-  font-size: var(--x2f-title-size);
-  line-height: var(--x2f-title-line);
-  font-weight: var(--x2f-title-weight);
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: var(--x2f-screen-title-weight);
+  letter-spacing: var(--x2f-screen-title-tracking);
 }
 
 .x2f-flow__main {
@@ -1181,25 +1283,7 @@
   background: var(--x2f-surface-raised);
 }
 
-/* A status chip with a tinted wash (visual system v2, section 7): 28 px pill, 14% of the tone. */
-.x2f-chip[data-look='tint'] {
-  gap: 6px;
-  height: 28px;
-  box-sizing: border-box;
-  padding: 0 10px;
-}
-
-.x2f-chip[data-look='tint'][data-tone='caution'] {
-  background: color-mix(in srgb, var(--x2f-caution) 14%, transparent);
-}
-
-.x2f-chip[data-look='tint'][data-tone='escrow'] {
-  background: color-mix(in srgb, var(--x2f-escrow) 14%, transparent);
-}
-
-.x2f-chip[data-look='tint'][data-tone='danger'] {
-  background: color-mix(in srgb, var(--x2f-danger) 14%, transparent);
-}
+/* Every status chip is the tinted wash now (kit 4.2); `data-look="tint"` is kept on old callers. */
 
 .x2f-big-number {
   font-family: var(--x2f-font-mono);
@@ -1264,7 +1348,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-.x2f-num[data-ink='true'] {
+.x2f-num[data-ink='true'],
+.x2f-countdown[data-ink='true'] {
   color: var(--x2f-ink);
 }
 
@@ -1447,22 +1532,7 @@
   font-size: 15px;
 }
 
-/* A small tag beside a name ("This device", "Team member"). */
-.x2f-tag {
-  align-self: flex-start;
-  padding: 1px 8px;
-  border: 1px solid var(--x2f-line);
-  border-radius: var(--x2f-radius-pill);
-  color: var(--x2f-ink-muted);
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 600;
-}
-
-.x2f-tag[data-tone='team'] {
-  border-color: var(--x2f-team);
-  color: var(--x2f-team);
-}
+/* The small tags beside a name ("This device", "Team member") are the kit's RoleTag (kit.css). */
 
 /* Devices board: "Log out all team members", outlined in the team colour (disabled keeps the shared look). */
 .x2f-button--secondary[data-tone='team']:not(:disabled) {
@@ -1470,22 +1540,7 @@
   color: var(--x2f-team);
 }
 
-/* Initials avatar for a team member. */
-.x2f-avatar {
-  display: flex;
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--x2f-radius-pill);
-  background: var(--x2f-team);
-  color: var(--x2f-ground);
-  font-size: 14px;
-  line-height: 16px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
+/* A team member's initials avatar is the kit's Avatar kind="team" (kit.css). */
 
 /* A setting row: label and hint on the left, the control on the right. */
 .x2f-setting {
@@ -1591,11 +1646,16 @@
   background: transparent;
 }
 
-/* Ticked: the shared selection style (with PickButton and ChoiceGroup, above). The card's border is
-   1 px (dashed when off), so a 1 px inset ring makes the 2 px ink line. */
+/* Ticked: the shared selection style (with PickButton and ChoiceGroup, above): a 2 px ink border
+   (kit 1.5, never a shadow). The card's border is 1 px, so the padding gives back the extra 1 px. */
 .x2f-select-card[data-selected='true'] {
-  border-color: var(--x2f-ink);
-  box-shadow: inset 0 0 0 1px var(--x2f-ink);
+  padding: calc(var(--x2f-space-1) - 1px);
+  border: 2px solid var(--x2f-ink);
+}
+
+/* Ticked and switched off: the ink selection keeps the dashed "off" look (kit review 7). */
+.x2f-select-card[data-on='false'][data-selected='true'] {
+  border-style: dashed;
 }
 
 /* In two panes the card's text is a PickButton (MyOffers' RowText), drawn bare inside the card so

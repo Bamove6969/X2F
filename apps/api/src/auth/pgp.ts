@@ -13,20 +13,21 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
-  PGP_PURPOSE, actionHash, challengeText, describeAction, encryptChallenge, inspectPublicKey,
+  PGP_PURPOSE, STRICT_CONFIG, actionHash, challengeText, describeAction, encryptChallenge, inspectPublicKey,
   newLoginCode, normalizeLoginCode, pastedRecipientStillValid, type AccountKind, type ConfirmAction, type InspectOptions, type KeyInspection,
 } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import * as openpgp from 'openpgp';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
+import { assertKeyNotBanned, hasBinding, keyFingerprints } from '../bans.js';
 import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, openNames, sealNames } from '../accounts.js';
 import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
-import { issueConfirmToken, requireConfirm } from './confirm.js';
+import { confirmerOf, issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
@@ -89,7 +90,9 @@ export async function loadPgpSigner(path: string, expectedFingerprint: string): 
 const ARMOR_CONFIG: openpgp.Config = { ...openpgp.config, showComment: false, showVersion: false };
 
 /**
- * What X2F keeps of a public key. User ID packets (names, emails) and their certifications are
+ * What X2F keeps of a public key. A subkey with no valid binding signature from the primary key is
+ * dropped (security review 8 Nov I1: anyone can append another person's key as one). User ID
+ * packets (names, emails) and their certifications are
  * removed when the key stays usable without them (v6 keys, whose direct-key signature carries the
  * key's settings): the stripped key must pass `inspectPublicKey` at `now` with the same
  * fingerprint and expiry. Otherwise (v4) the key is kept whole. Either way it is re-armored with
@@ -99,6 +102,9 @@ const ARMOR_CONFIG: openpgp.Config = { ...openpgp.config, showComment: false, sh
  */
 export async function storableKey(armored: string, now: Date, options: InspectOptions = {}): Promise<string> {
   const key = await openpgp.readKey({ armoredKey: armored });
+  const bound: openpgp.Subkey[] = [];
+  for (const s of key.subkeys) if (await hasBinding(key, s)) bound.push(s);
+  key.subkeys = bound;
   const whole = key.armor(ARMOR_CONFIG);
   if (key.keyPacket.version !== 6 || key.users.length === 0) return whole;
   const stripped = await openpgp.readKey({ armoredKey: whole });
@@ -138,19 +144,53 @@ export function openKey(config: Config, sealed: Buffer, fingerprint: string, lab
 }
 
 /**
+ * The fingerprint (lower-case hex) of the subkey, or primary key, a challenge to `key` at `now` is
+ * encrypted to (`encryptChallenge`'s choice, under the same strict rules); null when there is none.
+ * A code from that challenge proves the person holds it (security review 8 Nov I1).
+ */
+export async function challengeRecipient(key: string | openpgp.Key, now: Date): Promise<string | null> {
+  try {
+    const k = typeof key === 'string' ? await openpgp.readKey({ armoredKey: key, config: STRICT_CONFIG }) : key;
+    return (await k.getEncryptionKey(undefined, now, undefined, STRICT_CONFIG)).getFingerprint().toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Security review 8 Nov I1 (optional fix): 409 `key-in-use` when a subkey of `storable` is another
+ * account's PGP key (its primary fingerprint). Checked at the write, after proof, as key-in-use is.
+ */
+async function assertNoSubkeyInUse(db: Queryable, storable: string, fingerprint: string): Promise<void> {
+  const subs = (await keyFingerprints(storable)).filter((f) => f !== fingerprint.toLowerCase());
+  if (subs.length === 0) return;
+  const { rowCount } = await db.query('select 1 from pgp_keys where fingerprint = any($1::text[]) limit 1', [subs]);
+  if ((rowCount ?? 0) > 0) throw new ApiError(409, 'key-in-use');
+}
+
+/**
  * Stores a public key for an account (inside the caller's transaction when given a client):
- * reduced by `storableKey`, sealed, and inserted. A fingerprint already on any account → 409
- * `key-in-use`.
+ * reduced by `storableKey`, sealed, and inserted, with `proved` (the subkey the code was encrypted
+ * to; by default the one a challenge at `now` goes to) in `proved_subkeys`. A fingerprint already on
+ * any account, or a subkey that is another account's key → 409 `key-in-use`; a key with a banned
+ * fingerprint (primary or subkey) → 409 `key-unavailable`.
  */
 export async function insertPgpKey(
   db: Queryable,
   config: Config,
-  a: { accountId: string; fingerprint: string; armored: string; now: Date },
+  a: { accountId: string; fingerprint: string; armored: string; now: Date; proved?: string | null | undefined },
 ): Promise<void> {
-  const sealed = sealKey(config, await storableKey(a.armored, a.now), a.fingerprint);
+  // The ban list (owner 2 Nov 2026, bans.ts): the only ban check of a sign-up or join key, after the
+  // code proved it (lead review 2026-11-06 item 1), next to the key-in-use refusal below and with
+  // the same shape (409, `{ error }`); it runs for every key, banned or not (one query either way).
+  await assertKeyNotBanned(db, config, a.armored);
+  const storable = await storableKey(a.armored, a.now);
+  await assertNoSubkeyInUse(db, storable, a.fingerprint);
+  const proved = a.proved !== undefined ? a.proved : await challengeRecipient(storable, a.now);
+  const sealed = sealKey(config, storable, a.fingerprint);
   try {
-    await db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
-      a.accountId, a.fingerprint, sealed, a.now,
+    await db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at, proved_subkeys) values ($1, $2, $3, $4, $5)', [
+      a.accountId, a.fingerprint, sealed, a.now, proved === null ? [] : [proved],
     ]);
   } catch (e) {
     const err = e as { code?: string; constraint?: string };
@@ -159,21 +199,31 @@ export async function insertPgpKey(
   }
 }
 
-/** A key kept in a challenge's payload until `finish`: its fingerprint and the sealed storable armor. */
+/**
+ * A key kept in a challenge's payload until `finish`: its fingerprint, the sealed storable armor and
+ * `recipient`, the subkey the challenge to it is encrypted to (I1: the code proves that one).
+ */
 interface PendingKey {
   fingerprint: string;
   keyEnc: string;
+  recipient?: string | null;
 }
 
 async function pendingKey(config: Config, armored: string, fingerprint: string, now: Date): Promise<{ storable: string; pending: PendingKey }> {
   const storable = await storableKey(armored, now);
-  return { storable, pending: { fingerprint, keyEnc: sealKey(config, storable, fingerprint).toString('base64') } };
+  return { storable, pending: { fingerprint, keyEnc: sealKey(config, storable, fingerprint).toString('base64'), recipient: await challengeRecipient(storable, now) } };
 }
 
 function readPendingKey(payload: Record<string, unknown>, field: string): PendingKey {
   const v = payload[field] as Partial<PendingKey> | undefined;
   if (!v || typeof v.fingerprint !== 'string' || typeof v.keyEnc !== 'string') throw new Error('challenge payload is malformed');
-  return { fingerprint: v.fingerprint, keyEnc: v.keyEnc };
+  const recipient = typeof v.recipient === 'string' || v.recipient === null ? { recipient: v.recipient } : {};
+  return { fingerprint: v.fingerprint, keyEnc: v.keyEnc, ...recipient };
+}
+
+/** `{ proved }` for insertPgpKey from a pending key that names its recipient; empty for an older payload. */
+function provedOf(p: PendingKey): { proved?: string | null } {
+  return p.recipient !== undefined ? { proved: p.recipient } : {};
 }
 
 interface StoredKey {
@@ -532,6 +582,10 @@ function usedFingerprints(payload: Record<string, unknown>): string[] {
 export interface PgpLoginOptions {
   kinds: AccountKind[];
   afterAuthenticate?: (accountId: string) => Promise<void>;
+  /** Owner G3: one factor is enough on a known device for this account (the staff app decides). */
+  oneFactorOnKnownDevice?: (accountId: string, device: Buffer) => Promise<boolean>;
+  /** Owner G3: two PGP keys are no pair for this staff account (the staff app decides: moderators). */
+  pgpPairRefused?: (accountId: string) => Promise<boolean>;
   /** Route `config` for both routes (Plan 4's staff app marks them `{ perm: 'public-login' }`). */
   routeConfig?: Record<string, unknown>;
 }
@@ -581,9 +635,19 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
     const now = deps.clock();
     if (row.payload.refreshed !== undefined) {
       const refreshed = readPendingKey(row.payload, 'refreshed');
-      await deps.db.query('update pgp_keys set armored_enc = $3 where account_id = $1 and fingerprint = $2', [
-        account.id, refreshed.fingerprint, Buffer.from(refreshed.keyEnc, 'base64'),
-      ]);
+      const refreshedArmored = openKey(deps.config, Buffer.from(refreshed.keyEnc, 'base64'), refreshed.fingerprint);
+      // Lead review 6 Nov item 2: the refreshed (merged) key may carry a subkey that is banned; the
+      // ban list is checked here, after proof, before anything is stored (409 key-unavailable).
+      await assertKeyNotBanned(deps.db, deps.config, refreshedArmored);
+      await assertNoSubkeyInUse(deps.db, refreshedArmored, refreshed.fingerprint);
+      // I1: the code proved the subkey the challenge went to (the pasted key's choice).
+      const proved = typeof row.payload.recipient === 'string' ? [row.payload.recipient] : [];
+      await deps.db.query(
+        `update pgp_keys set armored_enc = $3,
+                proved_subkeys = array(select distinct f from unnest(proved_subkeys || $4::text[]) f order by f)
+          where account_id = $1 and fingerprint = $2`,
+        [account.id, refreshed.fingerprint, Buffer.from(refreshed.keyEnc, 'base64'), proved],
+      );
     }
     if (fingerprints.length === 1) {
       await deps.db.query('update pgp_keys set last_used_at = $3 where account_id = $1 and fingerprint = $2', [account.id, fingerprints[0], now]);
@@ -594,6 +658,8 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
       deviceLabel,
       ...(boundPending !== undefined ? { pendingId: boundPending } : {}),
       ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}),
+      ...(opts.oneFactorOnKnownDevice ? { oneFactorOnKnownDevice: opts.oneFactorOnKnownDevice } : {}),
+      ...(opts.pgpPairRefused ? { pgpPairRefused: opts.pgpPairRefused } : {}),
     });
     return result;
   });
@@ -647,6 +713,8 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
   // M-2: the challenge goes to the subkey the *pasted* key picks; it must still be valid in the
   // merged copy, else the decoy (also to the pasted key, so the message looks the same).
   const recipientOk = await pastedRecipientStillValid(merged.pasted, merged.key, now);
+  // I1: the subkey the challenge goes to, which a code proves; worked out for an unknown key too (M-1).
+  const recipient = await challengeRecipient(merged.pasted, now);
   const { pending } = await pendingKey(deps.config, merged.armored, fingerprint, now);
   // The pending-step lookup runs whenever a pendingId is given, known key or not.
   const pendingRow = pendingId !== undefined ? await pendingFirstFactor(deps, pendingId, account?.id ?? NIL_UUID, device, now, realmOf(req).app) : undefined;
@@ -655,7 +723,9 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
   const pendingOk = pendingRow === undefined || (pendingRow !== null && !usedFingerprints(pendingRow).includes(fingerprint));
 
   if (!account || !mergedOk || !recipientOk || !pendingOk) return decoyPgpChallenge(deps, req, { toKey: pasted, payload: startPayload });
-  const payload: Record<string, unknown> = { ...startPayload, refreshed: pending, fingerprints: [fingerprint] };
+  const payload: Record<string, unknown> = {
+    ...startPayload, refreshed: pending, fingerprints: [fingerprint], recipient,
+  };
   if (pendingId !== undefined) payload.pendingId = pendingId;
   // Always to exactly the one key the person pasted, so a code proves that key (staff pairs compare
   // key sets, and the second step's key must differ from the first's).
@@ -682,8 +752,10 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   const names = await assertNewNames(deps.db, b.displayName, b.loginName);
   const publicKey = str(b, 'publicKey');
   const inspection = await inspectOrRefuse(publicKey, now);
-  await assertDisplayNameFree(deps.db, names);
-  // Fingerprint clashes are not checked here: only `finish`, after the code proves the key, says key-in-use.
+  await assertDisplayNameFree(deps.db, names, deps.config);
+  // Fingerprint clashes and the ban list are not checked here: only `finish`, after the code proves
+  // the key, says key-in-use or key-unavailable (insertPgpKey). A check here would tell anyone,
+  // with no proof, whether a key is in use or banned (lead review 2026-11-06 item 1).
   const { storable, pending } = await pendingKey(deps.config, publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {
     accountId: null, sessionId: null, purpose: 'register', purposeText: PGP_PURPOSE.register,
@@ -713,7 +785,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
     await client.query('begin');
     try {
       accountId = await createAccount(client, deps.config, { ...names, kind: 'trader', termsVersion: terms, now });
-      await insertPgpKey(client, deps.config, { accountId, fingerprint: pending.fingerprint, armored, now });
+      await insertPgpKey(client, deps.config, { accountId, fingerprint: pending.fingerprint, armored, now, ...provedOf(pending) });
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -729,7 +801,9 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
 async function confirmStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const action: ConfirmAction = parseConfirmAction(body(req).action);
-  const stored = await storedKeys(deps, req.auth.accountId);
+  // A team member proves it's them with their own keys, and only for MEMBER_CONFIRM_ACTIONS (Q73).
+  const confirmer = await confirmerOf(deps.db, req.auth, action);
+  const stored = await storedKeys(deps, confirmer.accountId);
   if (stored.length === 0) throw new ApiError(403, 'method-not-allowed');
   const keys = await usableKeys(stored, deps.clock());
   return issuePgpChallenge(deps, req, {
@@ -746,6 +820,7 @@ async function confirmFinish(req: FastifyRequest) {
   });
   const action = parseConfirmAction(row.payload.action);
   if ((await actionHash(action)) !== row.payload.actionHash) throw new ApiError(400, 'challenge-expired');
+  await confirmerOf(deps.db, req.auth, action);
   const confirmToken = await issueConfirmToken(deps, { sessionId: req.auth.sessionId, accountId: req.auth.accountId, action, method: 'pgp' });
   return { confirmToken };
 }
@@ -759,6 +834,7 @@ const inspected = new WeakMap<FastifyRequest, { armored: string; fingerprint: st
 const inspectNewKey: preHandlerAsyncHookHandler = async function (req) {
   const armored = str(body(req), 'publicKey');
   const r = await inspectOrRefuse(armored, req.server.deps.clock());
+  // The ban list is checked only once the code proves the key (applyPgpKey), never here.
   inspected.set(req, { armored, fingerprint: r.fingerprint });
 };
 
@@ -790,8 +866,8 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
     await client.query('begin');
     try {
       // Task 17: a waiting login's new key starts the hold and waits in it.
-      held = await gateChange(client, req, { kind: 'pgp', fingerprint: pending.fingerprint, keyEnc: pending.keyEnc });
-      if (held === null) await applyPgpKey(client, req.auth.accountId, pending.fingerprint, sealed, now);
+      held = await gateChange(client, req, { kind: 'pgp', fingerprint: pending.fingerprint, keyEnc: pending.keyEnc, recipient: pending.recipient ?? null });
+      if (held === null) await applyPgpKey(client, deps.config, req.auth.accountId, pending.fingerprint, sealed, now, pending.recipient);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -824,6 +900,7 @@ export async function issueTeamJoinChallenge(
   const purpose = a.purpose ?? 'team-join';
   const now = deps.clock();
   const inspection = await inspectOrRefuse(a.publicKey, now);
+  // The ban list is checked only at the write, after the code proves the key (insertPgpKey).
   const { storable, pending } = await pendingKey(deps.config, a.publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {
     accountId: a.accountId, sessionId: null, purpose, purposeText: PGP_PURPOSE[purpose],
@@ -844,7 +921,7 @@ export async function checkTeamJoinCode(
   code: string,
   accountId: string | null,
   purpose: JoinPurpose = 'team-join',
-): Promise<{ payload: Record<string, unknown>; fingerprint: string; armored: string }> {
+): Promise<{ payload: Record<string, unknown>; fingerprint: string; armored: string; proved?: string | null }> {
   const row = await checkPgpCode(deps, req, challengeId, code, { purpose });
   const device = deviceHash(req);
   const sameDevice = device !== null && row.device_hash !== null && row.device_hash.equals(device);
@@ -854,18 +931,29 @@ export async function checkTeamJoinCode(
     payload: row.payload,
     fingerprint: pending.fingerprint,
     armored: openKey(deps.config, Buffer.from(pending.keyEnc, 'base64'), pending.fingerprint),
+    ...provedOf(pending),
   };
 }
 
 /**
  * The write of an added key (the route's, or a pending one when the hold ends by time): the sealed
  * storable key as `pendingKey` made it, alert `login-method-added`. 409 `key-in-use` when the
- * fingerprint is on any account.
+ * fingerprint is on any account, 409 `key-unavailable` when the key is on the ban list.
  */
-export async function applyPgpKey(db: Queryable, accountId: string, fingerprint: string, sealed: Buffer, now: Date): Promise<void> {
+export async function applyPgpKey(
+  db: Queryable, config: Config, accountId: string, fingerprint: string, sealed: Buffer, now: Date, proved?: string | null,
+): Promise<void> {
+  // The ban list (owner 2 Nov 2026, bans.ts): the only ban check of an added key, after the code
+  // proved it (never at start: lead review 2026-11-06 item 1). A key that waited out the hold is
+  // checked here too; there it is dropped as a key-in-use one is (hold.ts).
+  const armored = openKey(config, sealed, fingerprint);
+  await assertKeyNotBanned(db, config, armored);
+  await assertNoSubkeyInUse(db, armored, fingerprint);
+  // I1: the subkey the code was encrypted to (an older pending change without it: the one a challenge goes to now).
+  const recipient = proved !== undefined ? proved : await challengeRecipient(armored, now);
   try {
-    await db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
-      accountId, fingerprint, sealed, now,
+    await db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at, proved_subkeys) values ($1, $2, $3, $4, $5)', [
+      accountId, fingerprint, sealed, now, recipient === null ? [] : [recipient],
     ]);
   } catch (e) {
     const err = e as { code?: string; constraint?: string };
@@ -906,7 +994,7 @@ export function pgpAddKeyRoutesAt(
     await withTx(deps.db, async (c) => {
       await lockAccount(c, req.auth.accountId);
       await o.inTx(c, req, pending.fingerprint);
-      await applyPgpKey(c, req.auth.accountId, pending.fingerprint, sealed, now);
+      await applyPgpKey(c, deps.config, req.auth.accountId, pending.fingerprint, sealed, now, pending.recipient);
     });
     return { fingerprint: pending.fingerprint };
   });
@@ -927,8 +1015,10 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
 
   await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...TRADER_LOGIN_KINDS] }), { prefix: '/v1/login/pgp' });
 
-  app.post('/v1/confirm/pgp/start', { preHandler: requireSession() }, confirmStart);
-  app.post('/v1/confirm/pgp/finish', { preHandler: requireSession() }, confirmFinish);
+  // Members reach these only for MEMBER_CONFIRM_ACTIONS ("Stay logged in", owner Q73): `confirmerOf`.
+  // Review M5: on old Terms only "Stay logged in" (`staleTermsOnlyToExtend`).
+  app.post('/v1/confirm/pgp/start', { preHandler: [requireSession({ member: 'any', allowStaleTerms: true }), staleTermsOnlyToExtend] }, confirmStart);
+  app.post('/v1/confirm/pgp/finish', { preHandler: requireSession({ member: 'any', allowStaleTerms: true }) }, confirmFinish);
 
   app.post(
     '/v1/account/pgp/start',

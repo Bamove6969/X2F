@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-a{color:#ff7a1a}a:hover{color:#ffa060}
+a{color:#ff6600}a:hover{color:#ff8533}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
 input::placeholder{color:#9aa4b2}
 </style>
@@ -108,7 +108,7 @@ class Component extends DCLogic {
     const filters = [['all', 'All open'], ['mine', 'Assigned to you'], ['free', 'Unassigned'], ['approval', 'Needs approval']].map(([id, label]) => ({
       label: label + ' (' + count(id) + ')',
       on: f === id ? 'true' : 'false',
-      style: 'height: 36px; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 14px; cursor: pointer; ' + (f === id ? 'border: 1px solid #ff7a1a; background: #20262f; color: #eef1f5; font-weight: 600;' : 'border: 1px solid #6b7584; background: transparent; color: #eef1f5;'),
+      style: 'height: 36px; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 14px; cursor: pointer; ' + (f === id ? 'border: 1px solid #ff6600; background: #20262f; color: #eef1f5; font-weight: 600;' : 'border: 1px solid #6b7584; background: transparent; color: #eef1f5;'),
       pick: () => this.setState({ filter: id })
     }));
     const take = (id) => this.setState({ mine: Object.assign({}, this.state.mine, { [id]: true }) });
@@ -131,7 +131,7 @@ class Component extends DCLogic {
       filters, rows, empty: rows.length === 0,
       freeCount: free.length,
       noneFree: free.length === 0,
-      takeStyle: 'display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (free.length ? 'border: 0; background: #ff7a1a; color: #1a0e05; cursor: pointer;' : 'border: 1px solid #6b7584; background: transparent; color: #9aa4b2; cursor: not-allowed;'),
+      takeStyle: 'display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (free.length ? 'border: 0; background: #ff6600; color: #1a0e05; cursor: pointer;' : 'border: 1px solid #6b7584; background: transparent; color: #9aa4b2; cursor: not-allowed;'),
       takeNext: () => { if (free.length) take(free[0].id); }
     };
   }

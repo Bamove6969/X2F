@@ -99,7 +99,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     const other = t.buyerId === me ? t.sellerId : t.buyerId;
     const now = deps.clock();
     return toTradeView(t, me, now, {
-      counterparty: await traderSummary(deps.db, other, now, me),
+      counterparty: await traderSummary(deps.db, other, now, me, other === t.sellerId ? 'seller' : 'buyer'),
       profile: profile(t.methodId) ?? null,
       sellerWalletApp: row.seller_wallet_app,
       finalAlertSeenAt: row.final_alert_seen_at,

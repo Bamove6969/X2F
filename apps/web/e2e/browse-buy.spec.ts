@@ -29,7 +29,13 @@ test.describe('/buy (BuyMain board)', () => {
     await expect(live.getByRole('button', { name: 'Payment method: Zelle' })).toHaveAttribute('aria-haspopup', 'dialog');
     await expect(live.locator('a')).toHaveCount(1);
     await expect(live.getByRole('link', { name: 'Zelle 29 sellers taking USD · from $330.00' })).toHaveAttribute('href', '/buy/ZELLE?currency=USD');
-    const names = await page.locator('section', { has: page.getByRole('heading', { name: 'All payment methods' }) }).locator('a [data-part="name"]').allTextContents();
+    // Folded into one row until opened (design review 8 Nov, item 7).
+    const all = page.locator('section', { has: page.getByRole('heading', { name: 'All payment methods' }) });
+    await expect(all.locator('a [data-part="name"]')).toHaveCount(0);
+    await all.getByRole('button', { name: /more payment methods/ }).click();
+    await expect(all.locator('a [data-part="name"]').first()).toBeVisible();
+    const names = await all.locator('a [data-part="name"]').allTextContents();
+    expect(names.length).toBeGreaterThan(50);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'en')));
     await expect(page.getByRole('searchbox', { name: 'Search payment methods' })).toHaveAttribute('placeholder', `Search ${CATALOG.length} payment methods`);
     await expect(page.getByRole('radio', { name: 'Most sellers' })).toHaveAttribute('aria-checked', 'true');
@@ -120,7 +126,7 @@ test.describe('/buy/:methodId (BuyOffers board)', () => {
     await stub(page);
     await page.goto('/buy/ZELLE');
     const satoshi = page.locator('article', { has: page.locator('[data-username]', { hasText: 'satoshi_ghost' }) });
-    await expect(satoshi).toContainText('$0.10 above market');
+    await expect(satoshi.locator('[data-part="markup"]')).toHaveText('+$0.10Vendor markup');
   });
 
   test('starter limits on the buy side: greyed "Opens at …" cards, New from the API stage', async ({ page }) => {

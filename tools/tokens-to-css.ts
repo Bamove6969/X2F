@@ -20,7 +20,11 @@ interface TypeStyle {
 }
 
 export interface Tokens {
-  color: { tokens: { name: string; value: { night: string; day: string } }[] };
+  color: {
+    tokens: { name: string; value: { night: string; day: string } }[];
+    /** Translucent overlays (the scrim behind sheets): the only rgba() values (design kit handoff 1.1). */
+    scrims?: { name: string; value: { night: string; day: string } }[];
+  };
   type: { families: Record<string, string>; groups: { name: string; family: string; styles: TypeStyle[] }[] };
   spacing: { tokens: ValueToken[] };
   radius: { tokens: ValueToken[] };
@@ -29,6 +33,9 @@ export interface Tokens {
 const NAME = /^[a-z][a-z0-9-]*$/;
 // Values go into CSS verbatim, so only the shapes tokens.json uses are accepted.
 const COLOUR = /^#[0-9a-f]{6}$/;
+const BYTE = String.raw`(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)`;
+const ALPHA = String.raw`(?:0|1|0?\.\d{1,3})`;
+const SCRIM = new RegExp(`^rgba\\(${BYTE},${BYTE},${BYTE},${ALPHA}\\)$`);
 const LENGTH = /^-?\d+(\.\d+)?(px|em)$/;
 const FAMILY = /^[A-Za-z0-9 ",-]+$/;
 
@@ -44,6 +51,12 @@ export function tokensToCss(t: Tokens): string {
   for (const c of t.color.tokens) {
     check(NAME.test(c.name), `colour name ${c.name}`);
     check(COLOUR.test(c.value.night) && COLOUR.test(c.value.day), `colour value for ${c.name}`);
+    night.push(decl(c.name, c.value.night));
+    day.push(decl(c.name, c.value.day));
+  }
+  for (const c of t.color.scrims ?? []) {
+    check(NAME.test(c.name), `scrim name ${c.name}`);
+    check(SCRIM.test(c.value.night) && SCRIM.test(c.value.day), `scrim value for ${c.name}`);
     night.push(decl(c.name, c.value.night));
     day.push(decl(c.name, c.value.day));
   }

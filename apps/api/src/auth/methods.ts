@@ -4,8 +4,10 @@
  * - Which methods an account kind may hold (`allowedMethods`): traders all six; staff PGP, security
  *   keys and passkeys; the owner PGP and security keys. Staff and the owner never get a password,
  *   TOTP or recovery codes (R2), so they have no reset and no backup login.
- * - Staff and the owner always log in with two factors (R1): `pairAllowed` says which two make a
- *   login, `needsAfter` what a first factor still needs; `completeLogin` (login.ts) applies both.
+ * - Staff and the owner log in with two factors (R1): `pairAllowed` says which two make a login,
+ *   `needsAfter` what a first factor still needs; `completeLogin` (login.ts) applies both. The one
+ *   exception is owner G3's known device: a moderator holding all three methods logs in with one
+ *   of them on a device they logged in on before (`knownDeviceRule`, staff/login.ts).
  * - Removing a method never leaves an account unable to log in: at least one primary method, and
  *   for the owner two attested security keys and a PGP key, for staff a valid pair (`removeMethod`);
  *   for staff and the owner only PGP keys usable now count (a revoked or expired key logs in no one).
@@ -76,17 +78,23 @@ const isPasskey = (f: LoginFactor): boolean => f.method === 'passkey';
 
 /**
  * Whether two factors make a staff or owner login (order does not matter). Owner: PGP and an
- * attested security key. Staff: PGP and an attested security key, PGP and a passkey, or two PGP
- * factors whose key sets have nothing in common (a PGP code proves only "one of the keys it was
- * encrypted to", so the sets must be disjoint). A passkey with a security key, two WebAuthn factors
- * and any trader pair are never a pair.
+ * attested security key. Staff: PGP and an attested security key, PGP and a passkey, an attested
+ * security key and a passkey (owner G3), or two PGP factors whose key sets have nothing in common
+ * (a PGP code proves only "one of the keys it was encrypted to", so the sets must be disjoint).
+ * `o.pgpPair: false` (a moderator or senior moderator, owner G3: "two of the three" means two
+ * different methods, and two PGP keys are one method, usually on one keyring) refuses the two-PGP
+ * pair. Two security keys, two passkeys and any trader pair are never a pair.
  */
-export function pairAllowed(kind: AccountKind, a: LoginFactor, b: LoginFactor): boolean {
+export function pairAllowed(kind: AccountKind, a: LoginFactor, b: LoginFactor, o: PairOptions = {}): boolean {
   const pgpWith = (other: (f: LoginFactor) => boolean) => (isPgp(a) && other(b)) || (other(a) && isPgp(b));
   if (kind === 'owner') return pgpWith(isAttestedKey);
   if (kind === 'staff' || kind === 'member') {
     if (pgpWith(isAttestedKey) || pgpWith(isPasskey)) return true;
+    // Owner G3 (7 Nov): a moderator holds a security key, a PGP key and a passkey; any two of them
+    // log in on a new device, so a security key and a passkey together are a pair too (staff only).
+    if (kind === 'staff' && ((isAttestedKey(a) && isPasskey(b)) || (isPasskey(a) && isAttestedKey(b)))) return true;
     if (!isPgp(a) || !isPgp(b)) return false;
+    if (kind === 'staff' && o.pgpPair === false) return false;
     const first = pgpSet(a);
     for (const fp of pgpSet(b)) if (first.has(fp)) return false;
     return true;
@@ -94,14 +102,26 @@ export function pairAllowed(kind: AccountKind, a: LoginFactor, b: LoginFactor): 
   return false;
 }
 
+/** Options of `pairAllowed` and `needsAfter`. */
+export interface PairOptions {
+  /** False: two PGP factors are no pair (staff only; the staff app sets it for moderators, owner G3). */
+  pgpPair?: boolean;
+}
+
 /** What a staff or owner login still needs after `first`; empty when `first` can be in no pair. */
-export function needsAfter(kind: AccountKind, first: LoginFactor): MethodType[] {
+export function needsAfter(kind: AccountKind, first: LoginFactor, o: PairOptions = {}): MethodType[] {
   if (kind === 'owner') {
     if (isPgp(first)) return ['security-key'];
     if (isAttestedKey(first)) return ['pgp'];
     return [];
   }
-  if (kind === 'staff' || kind === 'member') {
+  if (kind === 'staff') {
+    if (isPgp(first)) return o.pgpPair === false ? ['security-key', 'passkey'] : ['pgp', 'security-key', 'passkey'];
+    if (isAttestedKey(first)) return ['pgp', 'passkey'];
+    if (isPasskey(first)) return ['pgp', 'security-key'];
+    return [];
+  }
+  if (kind === 'member') {
     if (isPgp(first)) return ['pgp', 'security-key', 'passkey'];
     if (isAttestedKey(first) || isPasskey(first)) return ['pgp'];
     return [];
@@ -376,18 +396,23 @@ export async function removeMethod(
  * account's method); 409 `last-login-method` when what is left would not log in (`leavesLogin`).
  */
 async function removable(db: Queryable, config: Config, accountId: string, type: string, id: string, now: Date) {
-  const acct = await db.query<{ kind: AccountKind }>('select kind from accounts where id = $1 for update', [accountId]);
+  const acct = await db.query<{ kind: AccountKind; account_type: string }>('select kind, account_type from accounts where id = $1 for update', [accountId]);
   const kind = acct.rows[0]?.kind;
   if (kind === undefined) throw new ApiError(401, 'not-authenticated');
   const found = await findMethod(db, accountId, type, id);
   if (found === null) throw new ApiError(404, 'not-found');
-  // Staff and the owner have no reset (R2): only keys a login challenge can go to count.
-  const usable = kind === 'trader' ? null : await usablePgpIds(db, config, accountId, now);
+  // Staff and the owner have no reset (R2): only keys a login challenge can go to count. A vendor's
+  // G13 check below counts them too (security review 8 Nov M3: an expired key logs no one in).
+  const vendor = acct.rows[0]!.account_type === 'vendor';
+  const usable = kind === 'trader' && !vendor ? null : await usablePgpIds(db, config, accountId, now);
   const counts = await countsOf(db, accountId);
   const after: Counts = { ...counts, usablePgp: usable?.size ?? counts.pgp };
   for (const [k, n] of Object.entries(found.less) as Array<[keyof Counts, number]>) after[k] -= n;
   if (found.type === 'pgp' && (usable === null || usable.has(id))) after.usablePgp -= 1;
   if (!leavesLogin(kind, after)) throw new ApiError(409, 'last-login-method');
+  // Owner G13 (7 Nov): a vendor never goes back to a password-only login. Its last passkey,
+  // security key or PGP key can only be exchanged: add the new one, then remove the old.
+  if (vendor && after.usablePgp + after.keys + after.passkeys === 0) throw new ApiError(409, 'last-login-method');
   return found;
 }
 

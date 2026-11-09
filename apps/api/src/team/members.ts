@@ -26,6 +26,7 @@ import { waits } from '../auth/strength.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
 import { MAX_TEAM_MEMBERS, type TeamRole } from './perms.js';
+import { assertVendor } from '../routes/accountType.js';
 
 /** An invite lives this long (as Plan 4's staff invites). */
 export const INVITE_TTL_MS = 24 * 3_600_000;
@@ -154,6 +155,9 @@ async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { stro
   const hold = await holdInTx(c, caller.settle, caller.accountId, now);
   if (hold !== null) throw holdRefusal(hold.holdUntil);
   if (o.strong && waits(live.strength)) throw weakRefusal();
+  // Owner 2 Nov 2026: team members are for vendor accounts only. Inviting and changing roles need
+  // a vendor (403 `not-vendor`); a trader's team from before migration 198 can still be removed.
+  if (o.strong) await assertVendor(c, caller.accountId);
 }
 
 /**

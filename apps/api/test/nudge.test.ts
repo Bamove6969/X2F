@@ -934,7 +934,7 @@ describe('shared context from open chats (Task 20)', () => {
   async function seedChat(sellerId: string, buyerId: string, tradeCode: string | null = null): Promise<string> {
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-       values ($1, 'sell', 'zelle', 'USD', 'market', 100, 1000, 100000, 0, '', 'live', now(), now()) returning id`,
+       values ($1, 'sell', 'zelle', 'USD', 'market', 100, 1000, 100000, null, '', 'live', now(), now()) returning id`,
       [sellerId],
     );
     const code = newTradeCode();

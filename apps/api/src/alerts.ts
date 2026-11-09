@@ -24,11 +24,15 @@ export type AlertKind =
   // Plan 2 Task 18: to the account owner, about the team.
   | 'team-member-joined'
   | 'team-member-login'
+  // Owner 2 Nov 2026: the account switched to a vendor account (detail: the confirm method).
+  | 'became-vendor'
   // Owner only: price health (spec 11.6, Plan 3 Task 3).
   | 'price-source-failing'
   | 'price-source-recovered'
   | 'market-prices-paused'
-  | 'market-prices-resumed';
+  | 'market-prices-resumed'
+  // Owner only: the vendor auto-close hit its per-run cap (lead vendor review item 4).
+  | 'auto-close-capped';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,

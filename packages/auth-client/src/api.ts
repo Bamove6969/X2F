@@ -13,7 +13,7 @@ import type {
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
-import type { AccountKind, ConfirmAction, IdleHours, MethodType } from '@x2f/accounts';
+import type { AccountKind, ConfirmAction, MethodType } from '@x2f/accounts';
 import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginResult } from '@x2f/api';
 
 export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult };
@@ -183,7 +183,6 @@ export interface AccountOverview {
   methods: MethodType[];
   hasBackup: boolean;
   suggestions: Suggestion[];
-  logoutTimer: LogoutTimer;
   termsCurrent: boolean;
   /** Task 17: when the account's 24-hour hold ends, while one runs (any session of the account). Optional: older API builds do not send it. */
   accountHoldUntil?: string | null;
@@ -192,6 +191,31 @@ export interface AccountOverview {
    * for, with their own login methods); null for the account owner. Optional: older API builds do not send it.
    */
   member?: { name: string; roles: TeamRole[] } | null;
+  /**
+   * The calling session's length (owner, 2 Nov 2026): set for a full trader session, null for staff,
+   * owner and backup sessions. Optional: older API builds do not send it.
+   */
+  session?: SessionInfo | null;
+  /**
+   * The person's idle reminder (owner, Q75, 6 Nov 2026): minutes without activity before the app
+   * reminds them (never a logout), or null when off (the default). A team member's is their own.
+   * Optional: older API builds do not send it.
+   */
+  idleReminderMinutes?: number | null;
+  /**
+   * Owner 2 Nov 2026: 'trader' (takes offers) or 'vendor' (posts offers, may have team members,
+   * pays the 1% fee); a member sees the account they work for. Optional: older API builds do not
+   * send it (read it with `isVendor`).
+   */
+  accountType?: AccountType;
+}
+
+/** Owner 2 Nov 2026: Trader and Vendor accounts. */
+export type AccountType = 'trader' | 'vendor';
+
+/** True only when the API says the account is a vendor (an older API build that sends nothing: false). */
+export function isVendor(me: Pick<AccountOverview, 'accountType'> | null | undefined): boolean {
+  return me?.accountType === 'vendor';
 }
 
 /** Plan 2 Task 18: a team member's roles (spec 6.7). */
@@ -285,12 +309,17 @@ export interface WalletRule {
 }
 
 /**
- * The logout timer (owner, 2026-10-23): idle hours before a session ends. Traders choose one of
- * `IDLE_HOURS` (2-12, default 12; `adjustable`); staff and owner are fixed at 2.
+ * A session's length (owner, 2 Nov 2026): chosen after every login (`lengthHours` null until then,
+ * from `choices`); it ends at `expiresAt` unless "Stay logged in" extends it (`extendSession`).
  */
-export interface LogoutTimer {
-  idleHours: number;
-  adjustable: boolean;
+export interface SessionInfo {
+  lengthHours: number | null;
+  choices: number[];
+  expiresAt: string;
+  /** True for every full trader session, a team member's included (owner Q73, 6 Nov 2026). */
+  canExtend: boolean;
+  /** The server's time as it answered (for `serverClock`). */
+  serverNow: string;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -408,10 +437,23 @@ export interface AuthApi {
   getWalletRule(): Promise<WalletRule>;
   /** Needs no confirm; the server always records a `wallet-removed` alert. */
   removeWallet(id: string): Promise<void>;
-  // Logout timer (owner, 2026-10-23)
-  getLogoutTimer(): Promise<LogoutTimer>;
-  /** Full trader sessions only; applies to the current session at once. */
-  setLogoutTimer(b: { idleHours: IdleHours }): Promise<LogoutTimer | Held>;
+  // Session length (owner, 2 Nov 2026). Full trader sessions only.
+  /** This session's length: before it is chosen, from the login; after, shorter applies now, longer from the next extend. */
+  setSessionLength(b: { hours: number }): Promise<SessionInfo>;
+  /**
+   * "Stay logged in": confirm `{ kind: 'extend-session' }` with one of the person's own login methods
+   * first (a team member's own too). `hours`, one of `SessionInfo.choices`, becomes the length and
+   * counts from now (owner Q73); absent, the session's own length.
+   */
+  extendSession(b: Token & { hours?: number }): Promise<SessionInfo>;
+  /** The person's idle reminder (owner Q75): one of IDLE_REMINDER_MINUTES, or null for off. */
+  setIdleReminder(b: { minutes: number | null }): Promise<{ idleReminderMinutes: number | null }>;
+
+  /**
+   * Owner 2 Nov 2026: switch to a vendor account. Confirm `become-vendor` (`becomeVendorAction`;
+   * only a passkey, security key or PGP key may confirm it). 403 `vendor-needs-key` without one.
+   */
+  becomeVendor(b: Token): Promise<{ accountType: 'vendor' }>;
 
   // Team members (Plan 2 Task 18). The account owner's side: a member gets 403 `owner-only`.
   getTeam(): Promise<{ members: TeamMember[]; max: number }>;
@@ -564,8 +606,11 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     addWallets: (b) => post('/v1/wallets', b),
     getWalletRule: () => get('/v1/wallets/rule'),
     removeWallet: (id) => done(call('DELETE', `/v1/wallets/${seg(id)}`)),
-    getLogoutTimer: () => get('/v1/account/security/logout-timer'),
-    setLogoutTimer: (b) => call('PUT', '/v1/account/security/logout-timer', b),
+    setSessionLength: (b) => call('PUT', '/v1/account/session/length', b),
+    extendSession: (b) => post('/v1/account/session/extend', b),
+    setIdleReminder: (b) => call('PUT', '/v1/account/idle-reminder', b),
+
+    becomeVendor: (b) => call('PUT', '/v1/account/type', { type: 'vendor', ...b }),
 
     getTeam: () => get('/v1/team'),
     inviteMember: (b) => post('/v1/team/invites', b),

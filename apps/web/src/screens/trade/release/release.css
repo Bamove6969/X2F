@@ -76,7 +76,6 @@
 }
 
 .x2f-release__window .x2f-countdown {
-  font-family: var(--x2f-font-mono);
   color: var(--x2f-ink);
 }
 
@@ -101,10 +100,11 @@
 
 .x2f-release__title {
   margin: 0;
-  font-family: var(--x2f-title-family);
-  font-size: var(--x2f-title-size);
-  line-height: var(--x2f-title-line);
-  font-weight: var(--x2f-title-weight);
+  font-family: var(--x2f-sheet-title-family);
+  font-size: var(--x2f-sheet-title-size);
+  line-height: var(--x2f-sheet-title-line);
+  font-weight: var(--x2f-sheet-title-weight);
+  letter-spacing: var(--x2f-sheet-title-tracking);
   overflow-wrap: anywhere;
 }
 

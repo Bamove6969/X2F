@@ -159,12 +159,24 @@ describe('MethodList: the live section is one picker card', () => {
     expect(sec.querySelector('a')!.getAttribute('href')).toBe('/sell/ZELLE?currency=USD');
     expect(sec.textContent).toContain('34 buyers paying in USD · up to $331.20');
     expect(sec.textContent).not.toContain('Cash App');
-    // Methods with no live offer stay listed below, A–Z.
+    // Methods with no live offer are collapsed under All payment methods (design review 8 Nov, item 7),
+    // one line for all of them; opened, they are listed A–Z.
     const rest = host.querySelectorAll('main section')[1]!;
     expect(rest.querySelector('h2')!.textContent).toBe('All payment methods');
-    expect([...rest.querySelectorAll('[data-part="name"]')].map((n) => n.textContent)).toEqual(['SEPA']);
+    expect(rest.querySelectorAll('[data-part="name"]')).toHaveLength(0);
+    const toggle = rest.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toContain('1 more payment method');
+    expect(toggle.textContent).toContain('No USD buyers right now · post an offer');
 
     const { act } = await import('react');
+    click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect([...rest.querySelectorAll('[data-part="name"]')].map((n) => n.textContent)).toEqual(['SEPA']);
+    expect(rest.querySelector(`#${toggle.getAttribute('aria-controls')}`)).not.toBeNull();
+    click(toggle);
+    expect(rest.querySelectorAll('[data-part="name"]')).toHaveLength(0);
+
     click(sec.querySelector('button[aria-haspopup]')!);
     click(radios().find((r) => r.value === 'CASH_APP')!.closest('label')!);
     await act(settle);
@@ -219,5 +231,23 @@ describe('MethodList: the live section is one picker card', () => {
     const { host } = await screen('/sell?currency=GBP', 'sell');
     expect(host.querySelector('button[aria-haspopup]')).toBeNull();
     expect([...host.querySelectorAll('main h2')].map((h) => h.textContent)).toEqual(['All payment methods']);
+    // With no live method at all, the one line says so and counts every method.
+    expect(host.querySelector('button[aria-expanded]')!.textContent).toContain('1 payment method');
+    expect(host.querySelector('button[aria-expanded]')!.textContent).toContain('No GBP buyers right now · post an offer');
+  });
+
+  it('a search still lists every match as rows, collapsed or not', async () => {
+    stubMethods(() => ({ live: BOARD_SELL_LIVE_USD, all: [...BOARD_SELL_LIVE_USD, { id: 'SEPA', name: 'SEPA', group: 'Bank transfers', giftCard: false, offers: 0, bestRate: null }] }));
+    const { host } = await screen('/sell', 'sell');
+    const input = host.querySelector<HTMLInputElement>('#browse-search')!;
+    const { act } = await import('react');
+    await act(async () => {
+      const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+      set.call(input, 'sep');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect([...host.querySelectorAll('main h2')].map((h) => h.textContent)).toEqual(['1 match']);
+    expect([...host.querySelectorAll('main [data-part="name"]')].map((n) => n.textContent)).toEqual(['SEPA']);
+    expect(host.querySelector('main button[aria-expanded]')).toBeNull();
   });
 });

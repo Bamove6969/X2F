@@ -149,7 +149,6 @@ async function securityApi(page: Page, o: { me?: Record<string, unknown>; sessio
     { id: 's2', deviceLabel: 'Chrome on Android', level: 'full', createdAt: '2026-10-22T00:00:00.000Z', lastSeenAt: '2026-10-30T00:00:00.000Z', current: false, member: null },
   ]));
   await page.route('**/v1/account/alerts', json([]));
-  await page.route('**/v1/account/security/logout-timer', json({ idleHours: 12, adjustable: true }));
   await page.route('**/v1/account/security/devices', json(o.devices ?? { oneDevice: false, maxDevices: 3 }));
 }
 
@@ -234,14 +233,14 @@ test('12 a held backup session: the hold banner on Security', async ({ page }) =
 });
 
 test('13 a change from a one-proof login is held: "takes effect at"', async ({ page }) => {
+  // The logout timer that used to be this shot's held change is retired (session length, owner
+  // 2 Nov 2026): One device at a time on Devices is the held change now.
   await securityApi(page);
-  await page.route('**/v1/account/security/logout-timer', async (r) =>
-    r.request().method() === 'PUT' ? json({ status: 'held', holdUntil: HOLD_UNTIL }, 202)(r) : json({ idleHours: 12, adjustable: true })(r),
-  );
-  await page.goto('/settings/security');
-  await page.selectOption('[data-part="logout-timer-select"]', '2');
-  await expect(page.locator('[data-part="logout-timer-status"]')).toContainText('This change takes effect at');
-  await shot(page, '13-security-held-change', { scrollTo: page.locator('[data-part="logout-timer-status"]') });
+  await page.route('**/v1/account/security/one-device', json({ status: 'held', holdUntil: HOLD_UNTIL }, 202));
+  await page.goto('/settings/devices');
+  await page.locator('[data-part="one-device-toggle"]').click();
+  await expect(page.locator('[data-part="held-note"]')).toContainText('This change takes effect at');
+  await shot(page, '13-devices-held-change', { scrollTo: page.locator('[data-part="held-note"]') });
 });
 
 // ---- 14-28 Team members (Plan 2 Task 18) ----------------------------------------------------------
@@ -928,8 +927,9 @@ test('61-63 CantDoThat on PostOffer, the feedback form, the thank-you', async ({
   await page.route('**/v1/offers', (r) => (r.request().method() === 'POST' ? json({ error: 'trading-hold' }, 409)(r) : r.fallback()));
   await page.route('**/v1/feedback/form', json({}, 202));
   await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+  await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+  await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
   await page.getByRole('button', { name: 'Post offer' }).click();
   const popup = page.getByRole('dialog', { name: "This offer can't be posted" });
   await expect(popup).toBeVisible();
@@ -1047,8 +1047,9 @@ test("71 the seller quote (mira.k's buy ad), a wallet picked", async ({ page }) 
 test('72 PostOffer', async ({ page }) => {
   await postApi(page);
   await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+  await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+  await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
   await expect(page.getByText("Your price follows the market")).toBeVisible();
   await shot(page, '72-postoffer');
   await shot(page, '72b-postoffer-preview', { scrollTo: page.getByText('How others will see it') });

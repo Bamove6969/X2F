@@ -19,7 +19,8 @@ import './screens.css';
 // COPY-UNSIGNED: the emergency line follows the owner's Q15 words (2026-10-28).
 export const MAINTENANCE_COPY = {
   title: 'X2F is down for maintenance',
-  chip: { planned: 'Planned maintenance', emergency: 'Emergency maintenance' },
+  // Owner G19 (7 Nov): an emergency is known only internally; traders read "Unplanned". COPY-UNSIGNED.
+  chip: { planned: 'Planned maintenance', emergency: 'Unplanned maintenance' },
   planned: "We're doing planned maintenance. We'll be back soon.",
   emergency: "Unscheduled but necessary maintenance. We'll be back as soon as possible.",
   from: 'From the X2F team',
@@ -29,7 +30,7 @@ export const MAINTENANCE_COPY = {
 export function Maintenance({ maintenance, onRetry }: { maintenance: NonNullable<SiteInfo['maintenance']>; onRetry: () => void }) {
   return (
     <main className="x2f-screen" data-screen="maintenance">
-      <StatusChip tone={maintenance.kind === 'emergency' ? 'danger' : 'caution'} icon="clock" label={MAINTENANCE_COPY.chip[maintenance.kind]} />
+      <StatusChip tone="caution" icon="clock" label={MAINTENANCE_COPY.chip[maintenance.kind]} />
       <h1 className="x2f-screen__title">{MAINTENANCE_COPY.title}</h1>
       <Notice tone="caution" live="off" data-part="maintenance-message">
         {maintenance.message ?? MAINTENANCE_COPY[maintenance.kind]}

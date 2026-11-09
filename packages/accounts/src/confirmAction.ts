@@ -29,7 +29,24 @@ export type ConfirmAction =
   /** Changes one member's roles to exactly `roles`. */
   | { kind: 'team-roles'; memberId: string; roles: string }
   /** Removes one member (or cancels an invite). */
-  | { kind: 'team-remove'; memberId: string };
+  | { kind: 'team-remove'; memberId: string }
+  /** "Stay logged in?" (owner, 2 Nov 2026): extend this session by its length. Bound to the session by the token. */
+  | { kind: 'extend-session' }
+  /**
+   * Owner 2 Nov 2026: the account holder switches the account from Trader to Vendor (it turns on
+   * the 1% fee). Only a passkey, security key or PGP key may confirm it (`STRONG_ONLY_ACTIONS`).
+   */
+  | { kind: 'become-vendor' };
+
+/**
+ * Actions only a passkey, security key or PGP key may confirm: the confirm sheet offers no
+ * password for them, and the server issues no password confirm token for them.
+ */
+export const STRONG_ONLY_ACTIONS: readonly ConfirmAction['kind'][] = ['become-vendor'];
+
+export function needsStrongConfirm(a: ConfirmAction): boolean {
+  return STRONG_ONLY_ACTIONS.includes(a.kind);
+}
 
 /** Canonical JSON of a flat object of strings: keys sorted, no whitespace. */
 function canonical(a: ConfirmAction): string {
@@ -78,6 +95,10 @@ export function describeAction(a: ConfirmAction): string {
       return `change a team member's roles to ${teamRoleWords(a.roles)}`;
     case 'team-remove':
       return 'remove a team member';
+    case 'extend-session':
+      return 'stay logged in';
+    case 'become-vendor':
+      return 'switch to a vendor account';
   }
 }
 

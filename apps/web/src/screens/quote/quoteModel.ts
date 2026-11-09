@@ -3,7 +3,21 @@
 // the rate from offerRate, XMR for a fiat amount from atomicForFiat, the fiat total from fiatCents
 // and what the seller locks from escrowPlan. This file only reads what the person typed and picks
 // which of those results to show; it does no money maths of its own.
-import { atomicForFiat, escrowPlan, fiatCents, formatXmr, formatXmrExact, offerRate, posterRole, type Price, type Pricing } from '@x2f/trade';
+import {
+  atomicForFiat,
+  escrowPlan,
+  fiatCents,
+  formatXmr,
+  formatXmrExact,
+  offerRate,
+  posterRole,
+  rangeAllows,
+  tradeFiatLimits,
+  type AmountUnit,
+  type OfferRange,
+  type Price,
+  type Pricing,
+} from '@x2f/trade';
 
 /** The ad's side: a sell ad (the poster sells XMR, the taker buys: BuyQuote) or a buy ad (SellQuote). */
 export type AdSide = 'sell' | 'buy';
@@ -19,8 +33,16 @@ export interface QuoteOffer {
   /** Public fields only: the poster's display name (spec 6.1) and stage. */
   poster: { displayName: string; stage: Stage };
   pricing: Pricing;
-  minFiatCents: bigint;
-  maxFiatCents: bigint;
+  /**
+   * The range in the unit the poster set (owner, 8 Nov): that pair is exact and is the one the take
+   * checks (@x2f/trade rangeAllows); the other pair is the API's conversion at load time, or null,
+   * and the quote never checks against it (review M1).
+   */
+  amountUnit: AmountUnit;
+  minAtomic: bigint | null;
+  maxAtomic: bigint | null;
+  minFiatCents: bigint | null;
+  maxFiatCents: bigint | null;
   minTrades: number;
   /** Set by the API for a signed-in viewer whose cap is below the offer's minimum (Revision 2026-10-24). */
   opensAt?: OpensAt;
@@ -107,11 +129,20 @@ export function quote(i: { offer: QuoteOffer; market: MarketNow | null; text: st
 
   const typed = parseAmount(text, unit, quoteExponent(offer, market));
   if (typed === null || typed === 0n) return { kind: 'enter', rate };
-  const amountAtomic = unit === 'fiat' ? atomicForFiat(typed, rate) : typed;
+  const range = quoteRange(offer);
+  let amountAtomic = unit === 'fiat' ? atomicForFiat(typed, rate) : typed;
+  // Fiat typed on an XMR range: the card shows each bound as its fiat total (rounded half up), and
+  // flooring that total back to XMR can land a few atomic units outside. When the bound's own fiat
+  // total is the figure typed, the bound itself is the amount (review M1).
+  if (unit === 'fiat' && range.unit === 'xmr') {
+    if (amountAtomic < range.min && fiatCents(range.min, rate) === typed) amountAtomic = range.min;
+    if (amountAtomic > range.max && fiatCents(range.max, rate) === typed) amountAtomic = range.max;
+  }
   if (amountAtomic === 0n) return { kind: 'too-low', rate };
   const total = fiatCents(amountAtomic, rate);
-  if (total < offer.minFiatCents) return { kind: 'too-low', rate };
-  if (total > offer.maxFiatCents) return { kind: 'too-high', rate };
+  // The take's own check, in the poster's unit, at the rate now (review M1).
+  const fits = rangeAllows(range, amountAtomic, rate);
+  if (fits !== 'ok') return { kind: fits, rate };
 
   // The US-dollar figures are the trade's own figures (at the offer's rate, margin or fixed price
   // included) converted at the exchange rate the feed implies, usdCentsPerXmr / centsPerXmr: never
@@ -182,6 +213,30 @@ export function amountText(fiatMinorMax: bigint, unit: Unit, rate: Price, expone
     return exponent === 0 ? `${fiatMinorMax}` : `${fiatMinorMax / u}.${(fiatMinorMax % u).toString().padStart(exponent, '0')}`;
   }
   return formatXmr(atomicForFiat(fiatMinorMax, rate));
+}
+
+/** The poster's own range, exact (the pair `amountUnit` names; the offer parser checked it is there). */
+export function quoteRange(o: Pick<QuoteOffer, 'amountUnit' | 'minAtomic' | 'maxAtomic' | 'minFiatCents' | 'maxFiatCents'>): OfferRange {
+  return o.amountUnit === 'xmr' ? { unit: 'xmr', min: o.minAtomic!, max: o.maxAtomic! } : { unit: 'fiat', min: o.minFiatCents!, max: o.maxFiatCents! };
+}
+
+/** The range as the help line says it, in the poster's unit: "$50" and "$1,500", or "0.100000 XMR". */
+export function rangeText(o: QuoteOffer, exponent: number): { min: string; max: string } {
+  const r = quoteRange(o);
+  if (r.unit === 'xmr') return { min: `${xmrText(r.min)} XMR`, max: `${xmrText(r.max)} XMR` };
+  return { min: fiatWhole(r.min, o.currency, exponent), max: fiatWhole(r.max, o.currency, exponent) };
+}
+
+/** What Max puts in the box in `unit`: an amount the quote passes at `rate`, the offer's maximum or just under it. */
+export function maxText(o: QuoteOffer, unit: Unit, rate: Price, exponent: number): string {
+  const r = quoteRange(o);
+  if (r.unit === 'fiat') return amountText(r.max, unit, rate, exponent);
+  return unit === 'xmr' ? xmrText(r.max) : amountText(fiatCents(r.max, rate), 'fiat', rate, exponent);
+}
+
+/** The fiat maximum the trade records at `rate` (@x2f/trade tradeFiatLimits), for the trade room's deal. */
+export function dealMaxFiat(o: QuoteOffer, rate: Price): bigint {
+  return tradeFiatLimits(quoteRange(o), rate).maxFiatCents;
 }
 
 export const STAGE_NAMES: Record<Stage, string> = { starter: 'Starter', building: 'Building', graduated: 'Graduated' };

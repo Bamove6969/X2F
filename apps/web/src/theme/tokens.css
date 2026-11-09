@@ -10,16 +10,16 @@
   --x2f-line: #6b7584;
   --x2f-ink: #eef1f5;
   --x2f-ink-muted: #9aa4b2;
-  --x2f-monero: #ff7a1a;
-  --x2f-monero-ink: #ff7a1a;
+  --x2f-monero: #ff6600;
+  --x2f-monero-ink: #ff6600;
   --x2f-on-monero: #1a0e05;
   --x2f-escrow: #4cc3d9;
   --x2f-caution: #f2c14e;
   --x2f-danger: #ff6b8a;
   --x2f-monero-ink-hover: #ffa060;
-  --x2f-monero-hold: #ffc08a;
-  --x2f-moderator: #b69cff;
+  --x2f-mod: #b69cff;
   --x2f-team: #7aa2ff;
+  --x2f-scrim: rgba(0,0,0,0.6);
 }
 
 :root[data-theme=day] {
@@ -30,16 +30,16 @@
   --x2f-line: #7a8494;
   --x2f-ink: #12161c;
   --x2f-ink-muted: #566070;
-  --x2f-monero: #f26822;
-  --x2f-monero-ink: #b84a00;
+  --x2f-monero: #ff6600;
+  --x2f-monero-ink: #b34800;
   --x2f-on-monero: #1a0e05;
-  --x2f-escrow: #0b7285;
-  --x2f-caution: #8a5a00;
-  --x2f-danger: #c2255c;
+  --x2f-escrow: #0a6677;
+  --x2f-caution: #815400;
+  --x2f-danger: #ae2152;
   --x2f-monero-ink-hover: #9c3f00;
-  --x2f-monero-hold: #f7a47a;
-  --x2f-moderator: #6741d9;
-  --x2f-team: #2f5bd3;
+  --x2f-mod: #623ece;
+  --x2f-team: #2c55c5;
+  --x2f-scrim: rgba(18,22,28,0.45);
 }
 
 :root {
@@ -51,6 +51,7 @@
   --x2f-space-6: 24px;
   --x2f-space-8: 32px;
   --x2f-radius-sm: 6px;
+  --x2f-radius-tile: 10px;
   --x2f-radius-md: 12px;
   --x2f-radius-lg: 16px;
   --x2f-radius-pill: 999px;
@@ -62,10 +63,11 @@
   --x2f-display-line: 44px;
   --x2f-display-weight: 700;
   --x2f-display-tracking: -0.02em;
-  --x2f-title-family: var(--x2f-font-display);
-  --x2f-title-size: 24px;
-  --x2f-title-line: 30px;
-  --x2f-title-weight: 600;
+  --x2f-result-headline-family: var(--x2f-font-display);
+  --x2f-result-headline-size: 32px;
+  --x2f-result-headline-line: 36px;
+  --x2f-result-headline-weight: 700;
+  --x2f-result-headline-tracking: -0.02em;
   --x2f-sheet-title-family: var(--x2f-font-display);
   --x2f-sheet-title-size: 24px;
   --x2f-sheet-title-line: 30px;
@@ -89,6 +91,11 @@
   --x2f-label-line: 16px;
   --x2f-label-weight: 600;
   --x2f-label-tracking: 0.04em;
+  --x2f-hero-number-family: var(--x2f-font-mono);
+  --x2f-hero-number-size: 40px;
+  --x2f-hero-number-line: 44px;
+  --x2f-hero-number-weight: 500;
+  --x2f-hero-number-tracking: -0.02em;
   --x2f-amount-family: var(--x2f-font-mono);
   --x2f-amount-size: 28px;
   --x2f-amount-line: 32px;

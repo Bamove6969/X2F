@@ -35,7 +35,7 @@ export async function seedOffer(deps: Pick<Deps, 'db' | 'clock'>, posterId: stri
   const { rows } = await deps.db.query<{ id: string }>(
     `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents,
                          min_trades, terms, status, created_at, updated_at)
-     values ($1, $2, 'zelle', 'USD', 'market', 0, 1000, 100000, 0, '', 'removed', $3, $3) returning id`,
+     values ($1, $2, 'zelle', 'USD', 'market', 0, 1000, 100000, null, '', 'removed', $3, $3) returning id`,
     [posterId, poster === 'seller' ? 'sell' : 'buy', deps.clock()],
   );
   return rows[0]!.id;

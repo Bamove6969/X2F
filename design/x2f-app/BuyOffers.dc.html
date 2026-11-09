@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-a{color:#ff7a1a}a:hover{color:#ffa060}
+a{color:#ff6600}a:hover{color:#ff8533}
 button:focus-visible,a:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
 </style>
 </helmet>
@@ -67,7 +67,7 @@ button:focus-visible,a:focus-visible{outline:2px solid #eef1f5;outline-offset:2p
         </div>
         <span style="font-size: 13px; color: #9aa4b2; text-align: right;">$50 – $1,500<br>Releases in ~8 min</span>
       </div>
-      <a href="BuyQuote.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-size: 16px; font-weight: 600; text-decoration: none;" aria-label="Trade with satoshi_ghost">Trade</a>
+      <a href="BuyQuote.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; border-radius: 12px; background: #ff6600; color: #1a0e05; font-size: 16px; font-weight: 600; text-decoration: none;" aria-label="Trade with satoshi_ghost">Trade</a>
     </article>
 
     <article style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: #171b22;">
@@ -126,7 +126,7 @@ class Component extends DCLogic {
       label,
       on: sort === id ? 'true' : 'false',
       style: 'height: 32px; padding: 0 12px; border-radius: 999px; font-family: inherit; font-size: 14px; cursor: pointer; ' + (sort === id
-        ? 'border: 1px solid #ff7a1a; background: #20262f; color: #eef1f5; font-weight: 600;'
+        ? 'border: 1px solid #ff6600; background: #20262f; color: #eef1f5; font-weight: 600;'
         : 'border: 1px solid #6b7584; background: transparent; color: #eef1f5;'),
       pick: () => this.setState({ sort: id })
     }));

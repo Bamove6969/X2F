@@ -42,7 +42,7 @@
  *   `names-unavailable` and the settle's savepoint drops the change. Left as it is on purpose; new
  *   code should take the account lock last.
  */
-import type { IdleHours, MethodType } from '@x2f/accounts';
+import type { MethodType } from '@x2f/accounts';
 import type { FastifyBaseLogger, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
@@ -52,7 +52,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
-import { applyLoginName, applyLogoutTimer, applyOneDevice } from '../routes/account.js';
+import { applyLoginName, applyOneDevice } from '../routes/account.js';
 import { applyWallets, type PendingWallet } from '../wallets/routes.js';
 import type { ConfirmMethod } from './confirm.js';
 import { applyRemoval } from './methods.js';
@@ -74,14 +74,18 @@ export type HoldReason = 'weak-change' | 'weak-new-device' | 'weak-backup-login'
 export type PendingChange =
   | { kind: 'password'; hash: string; pepperId: number }
   | { kind: 'totp'; secretEnc: string; step: number }
-  | { kind: 'pgp'; fingerprint: string; keyEnc: string }
+  | { kind: 'pgp'; fingerprint: string; keyEnc: string; recipient?: string | null }
   | { kind: 'webauthn'; credential: StoredCredential; label: string }
   | { kind: 'recovery-codes'; keyId: number; hashes: string[] }
   | { kind: 'remove-method'; type: MethodType; id: string }
   /** FU-D: the name's keyed tag under `keyId`, never the name. */
   | { kind: 'login-name'; tag: string; keyId: number }
   | { kind: 'one-device'; on: boolean }
-  | { kind: 'logout-timer'; idleHours: IdleHours }
+  /**
+   * Retired with the logout timer (session length, owner 2 Nov 2026; migration 307): a change of
+   * this kind stored before then is dropped when its hold settles. Nothing creates one now.
+   */
+  | { kind: 'logout-timer'; idleHours: number }
   /** Review round 2 N-I4 (lead decision 2026-10-30): payout wallets added by a session whose login waits; `method` is the confirm's. */
   | { kind: 'wallets'; items: PendingWallet[]; method: ConfirmMethod | null };
 
@@ -198,7 +202,7 @@ async function applyChange(db: Queryable, config: Config, accountId: string, c: 
       await applyTotp(db, accountId, Buffer.from(c.secretEnc, 'base64'), c.step, now);
       return false;
     case 'pgp':
-      await applyPgpKey(db, accountId, c.fingerprint, Buffer.from(c.keyEnc, 'base64'), now);
+      await applyPgpKey(db, config, accountId, c.fingerprint, Buffer.from(c.keyEnc, 'base64'), now, c.recipient);
       return false;
     case 'webauthn':
       await applyCredential(db, accountId, c.credential, c.label, now);
@@ -215,7 +219,7 @@ async function applyChange(db: Queryable, config: Config, accountId: string, c: 
       await applyOneDevice(db, accountId, c.on, now);
       return false;
     case 'logout-timer':
-      await applyLogoutTimer(db, accountId, c.idleHours, now);
+      // Retired (migration 307): nothing to apply.
       return false;
     case 'wallets':
       await applyWallets(db, accountId, c.items, c.method, now);
@@ -453,7 +457,6 @@ export const SECURITY_CHANGE_ROUTES: readonly string[] = [
   'DELETE /v1/account/methods/:type/:id',
   'POST /v1/account/login-name',
   'PUT /v1/account/security/one-device',
-  'PUT /v1/account/security/logout-timer',
   // Review round 2 N-I4 (lead decision 2026-10-30): a payout wallet added by a session whose login
   // waits (PGP alone included) waits out the hold like the rest, whatever the confirm method.
   'POST /v1/wallets',
@@ -492,11 +495,16 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'DELETE /v1/account/push',
   'POST /v1/account/alerts/:id/seen',
   'POST /v1/account/terms',
+  // Session length (owner, 2 Nov 2026): the calling session's own length and "Stay logged in".
+  'PUT /v1/account/session/length',
+  'POST /v1/account/session/extend',
   // Plan 2 Task 18 (team members), classified at its landing next to Tasks 16-17: the account
   // owner's invites, role changes and removals (team/members.ts; the lock is the account's).
   'POST /v1/team/invites',
   'PATCH /v1/team/members/:id',
   'DELETE /v1/team/members/:id',
+  // Owner 2 Nov 2026: switching to a vendor account (routes/accountType.ts; the lock is the account's).
+  'PUT /v1/account/type',
   // Plan 5 Task 10 review round 1 M3: the claim insert re-checks the session and the hold under the
   // account lock (as Task 18's ownerWriteGate).
   'POST /v1/account/past-rep/finish',
@@ -536,6 +544,8 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/review/skip': "a participant's Skip review of their own finished trade (a review_skips row only); no account, session, approval or security state, no new obligation",
   // C12b (owner 2026-11-01/02): the opt-in "traded to date" profile line.
   'PUT /v1/account/profile/traded-total': "the caller's own profile display preference (one accounts column); no session, approval or security state, no obligation",
+  // Owner Q75 (6 Nov 2026): the idle reminder.
+  'PUT /v1/account/idle-reminder': "the person's own reminder preference (one accounts column of their login); never ends or extends a session; no approval or security state, no obligation",
   // Plan 5 Task 4 (platform feedback), classified at its merge with Tasks 16-17.
   'POST /v1/feedback': 'a platform-feedback row only, holding nothing about the sender; no account, session, approval or security state, no obligation',
   'POST /v1/trades/:code/dispute': 'finishes an open trade (R42); creates no new obligation',
@@ -585,6 +595,8 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   // TODO(owner 1 Nov: removal queues until hold end, wire to hold_changes when recovery rules land);
   // refused until then (see team/members.ts `ownerWriteGate`).
   'DELETE /v1/team/members/:id',
+  // Owner 2 Nov 2026: switching to a vendor account waits out a hold (checked again under the lock).
+  'PUT /v1/account/type',
   // Plan 5 Task 10 (owner 1 Nov: during a hold the account is offline to everyone). Listing and
   // removing one's own claims stay open.
   'POST /v1/account/past-rep/start',
