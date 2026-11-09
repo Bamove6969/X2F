@@ -77,6 +77,8 @@ export interface TradeView {
    * Optional: live-event views and older API builds may leave it out.
    */
   counterpartyProblem?: boolean;
+  /** Owner G7 (lead review 8 Nov I5): the buyer's cancel is recorded and waits for the other account's problem to end. Not shown on screen yet. */
+  cancelWaiting?: boolean;
   methodId: string;
   profile: unknown;
   amountAtomic: string;

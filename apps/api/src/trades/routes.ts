@@ -2,7 +2,7 @@ import { addressEnd } from '@x2f/accounts';
 import { normalizeTradeCode } from '@x2f/core';
 import { CLIENT_EVENTS, TradeRuleError, UNLOCK_CONFIRMATIONS, type Trade, type TradeEvent } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { counterpartyProblem, refuseHeldTradeEvent } from './held.js';
+import { cancelWaiting, counterpartyProblem, refuseHeldTradeEvent } from './held.js';
 import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
@@ -10,7 +10,8 @@ import { assertLiveMember, auditMember, type AuditAction } from '../team/audit.j
 import { assertMemberMaySend } from '../team/perms.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
-import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
+import { applyEvent, eventRecord, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
+import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
 import { roleOf, toTradeView, traderSummary, type TradeView } from './view.js';
 
 /** Task 3's `getProfile`; the default (until Task 3 is wired in) knows no profiles. */
@@ -105,6 +106,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       sellerWalletApp: row.seller_wallet_app,
       finalAlertSeenAt: row.final_alert_seen_at,
       counterpartyProblem: await counterpartyProblem(deps.db, t.code, other),
+      cancelWaiting: await cancelWaiting(deps.db, t.code),
     });
   };
 
@@ -205,10 +207,16 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
         async (client, _prev, _next, now) => {
           await auditMember(client, req.auth, { action: e.type as AuditAction, tradeCode: row.code }, now);
         },
-        async (client, now) => {
+        async (client, now, prev) => {
           await requireLiveSessionInTx(client, req.auth, now);
-          // Hold model v3: a trade held by a recovery-code hold moves for nobody (trades/held.ts).
-          await refuseHeldTradeEvent(client, row.code, req.auth.accountId, e.type);
+          // Hold model v3: a trade held by a recovery-code hold moves for nobody (trades/held.ts);
+          // the partner's buyer-cancel is only recorded while coins are in escrow (owner G7, I5).
+          const held = await refuseHeldTradeEvent(client, row.code, req.auth.accountId, e.type, { prev, now });
+          if (held === 'recorded') {
+            await auditMember(client, req.auth, { action: e.type as AuditAction, tradeCode: row.code }, now);
+            await appendLog(client, { at: now, actor: actorOfBy(by), tradeCode: row.code, action: 'trade.buyer-cancel', detail: tradeLogDetail(eventRecord(e), 'trade.buyer-cancel') });
+          }
+          return held;
         },
       );
     } catch (err) {

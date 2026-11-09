@@ -861,17 +861,41 @@ describe('a recovery-code login', () => {
     expect((await partner.browser.get(`/v1/trades/${s.code}`)).json()).toMatchObject({ counterpartyProblem: false });
   });
 
-  it("the partner's way out of a held funded trade stays open: the buyer's cancel goes through (paused or not)", async () => {
+  it("lead review 8 Nov I5, owner G7: the partner's buyer-cancel on a held funded trade is recorded; the escrow return waits for the hold's end", async () => {
     const t = await ownerWithCode();
     const partner = await trader();
     const { trade } = await seedTrade(deps, { sellerId: t.id, buyerId: partner.id, poster: 'buyer' });
     const s = await driveTo(deps, trade, 'secured');
     expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
-    expect((await deps.db.query<{ paused_at: Date | null }>('select paused_at from trades where code = $1', [s.code])).rows[0]!.paused_at).not.toBeNull();
+    const state = async () => (await deps.db.query<{ state: string; settling: string | null; p: Date | null }>('select state, settling, paused_at as p from trades where code = $1', [s.code])).rows[0]!;
+    expect((await state()).p).not.toBeNull();
     const r = await partner.browser.post(`/v1/trades/${s.code}/events`, { type: 'buyer-cancel' });
     expect(r.statusCode, r.body).toBe(200);
-    const { rows } = await deps.db.query<{ state: string; settling: string | null }>('select state, settling from trades where code = $1', [s.code]);
-    expect(rows[0]).toEqual({ state: 'settling', settling: 'buyer-cancel' });
+    expect(r.json()).toMatchObject({ cancelWaiting: true, counterpartyProblem: true });
+    // Nothing moves: the trade is not settling, so no refund can be co-signed.
+    expect(await state()).toMatchObject({ state: 'secured', settling: null });
+    expect((await deps.db.query<{ c: Date | null }>('select cancel_requested_at as c from held_trades where code = $1', [s.code])).rows[0]!.c).not.toBeNull();
+    // Asked again: still only recorded.
+    expect((await partner.browser.post(`/v1/trades/${s.code}/events`, { type: 'buyer-cancel' })).statusCode).toBe(200);
+    await syncHeldTradesJob(noPublish).run(deps.db, now);
+    expect(await state()).toMatchObject({ state: 'secured', settling: null });
+    // The hold ends: the trade resumes and the recorded cancel is carried out.
+    expect(await endHoldByModerator(deps, t.id, { staffId: null })).toBe(true);
+    expect(await state()).toEqual({ state: 'settling', settling: 'buyer-cancel', p: null });
+    expect((await partner.browser.get(`/v1/trades/${s.code}`)).json()).toMatchObject({ cancelWaiting: false, counterpartyProblem: false });
+  });
+
+  it('lead review 8 Nov I5: a recorded buyer-cancel gives way to a dispute; the moderator decides', async () => {
+    const t = await ownerWithCode();
+    const partner = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: t.id, buyerId: partner.id, poster: 'buyer' });
+    const s = await driveTo(deps, trade, 'secured');
+    expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
+    expect((await partner.browser.post(`/v1/trades/${s.code}/events`, { type: 'buyer-cancel' })).statusCode).toBe(200);
+    expect((await partner.browser.post(`/v1/trades/${s.code}/dispute`, { reason: 'silent', note: 'The seller went quiet.' })).statusCode).toBe(200);
+    expect(await endHoldByModerator(deps, t.id, { staffId: null })).toBe(true);
+    const row = await deps.db.query<{ state: string; settling: string | null }>('select state, settling from trades where code = $1', [s.code]);
+    expect(row.rows[0]).toEqual({ state: 'disputed', settling: null });
   });
 
   it("a trade marked for cancelling that the machine no longer lets cancel (Fund escrow tapped meanwhile) is paused instead, by the minute job", async () => {

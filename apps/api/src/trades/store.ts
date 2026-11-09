@@ -338,7 +338,12 @@ export async function applyEvent(
   e: TradeEvent,
   by: By,
   within?: (client: pg.PoolClient, prev: Trade, next: Trade, now: Date) => Promise<void>,
-  before?: (client: pg.PoolClient, now: Date) => Promise<void>,
+  /**
+   * Runs after the trade row lock, before the machine. Returning `'recorded'` stops the event:
+   * `before`'s own writes commit, the trade is not changed and nothing is published (a held
+   * trade's buyer-cancel, trades/held.ts).
+   */
+  before?: (client: pg.PoolClient, now: Date, prev: Trade) => Promise<void | 'recorded'>,
 ): Promise<Trade> {
   const client: pg.PoolClient = await deps.db.connect();
   let next: Trade;
@@ -348,8 +353,11 @@ export async function applyEvent(
       const row = await loadTradeRow(client, code, true);
       if (!row) throw new ApiError(404, 'not-found');
       const now = deps.clock();
-      if (before) await before(client, now);
       const prev = rowToTrade(row);
+      if (before && (await before(client, now, prev)) === 'recorded') {
+        await client.query('commit');
+        return prev;
+      }
       next = apply(prev, e, by, now);
       // An event that changes nothing (the same chain numbers again, a tick with nothing due)
       // writes no row, appends no event and publishes nothing.

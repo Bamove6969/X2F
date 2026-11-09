@@ -80,6 +80,10 @@ create table held_trades (
   held_at timestamptz not null,
   paused text not null default 'todo' check (paused in ('todo', 'paused', 'skipped', 'cancelled')),
   released_at timestamptz,
+  -- Owner G7 (lead review 8 Nov I5): the partner's buyer-cancel asked for while the trade is held
+  -- and its escrow holds coins. Recorded only; carried out when the trade's last row goes (no coins
+  -- move during the hold); a moderator's decision (a dispute) takes its place.
+  cancel_requested_at timestamptz,
   primary key (code, account_id)
 );
 create index held_trades_account on held_trades (account_id);

@@ -25,7 +25,7 @@
  *   row, and `/internal/v1/watch` reports it paused, so neither the API's deadlines nor the
  *   moderation service's timers run while it is held (owner G7; lead review 8 Nov C2).
  */
-import { TradeRuleError } from '@x2f/trade';
+import { TradeRuleError, apply, type Trade } from '@x2f/trade';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
@@ -36,7 +36,8 @@ import { applyEvent, noPublish, type TradePublisher } from './store.js';
 /**
  * The partner's events allowed on a held trade: leaving it, and opening a dispute (owner G7: the
  * partner still reaches a moderator; no money moves until the moderator decides). The machine
- * decides whether each may.
+ * decides whether each may. A buyer-cancel that would return escrowed coins is only recorded
+ * (`refuseHeldTradeEvent`), and carried out when the hold ends.
  */
 export const PARTNER_EXITS: readonly string[] = ['buyer-cancel', 'walk-away', 'open-dispute'];
 
@@ -120,6 +121,17 @@ export async function syncHeldTrades(deps: Pick<Deps, 'db' | 'clock'> & { publis
           if (!(e instanceof ApiError) && !(e instanceof TradeRuleError)) throw e;
         }
       }
+      // Owner G7 (lead review 8 Nov I5): the partner's buyer-cancel recorded during the hold is
+      // carried out now, as the buyer's (a dispute opened meanwhile makes the machine refuse it).
+      const asked = await deps.db.query('select 1 from held_trades where code = $1 and cancel_requested_at is not null', [r.code]);
+      if (asked.rows.length > 0) {
+        try {
+          await applyEvent(store, r.code, { type: 'buyer-cancel' }, 'buyer');
+          n++;
+        } catch (e) {
+          if (!(e instanceof ApiError) && !(e instanceof TradeRuleError)) throw e;
+        }
+      }
     }
     await deps.db.query('delete from held_trades where code = $1 and account_id = $2 and released_at is not null', [r.code, r.account_id]);
   }
@@ -162,8 +174,21 @@ export function syncHeldTradesJob(publish: TradePublisher): RetentionJob {
  * Inside a trade event's transaction, after the trade row lock (`applyEvent`'s `before`): 403
  * `recovery-hold` for the held account's own sessions, 409 `counterparty-unavailable` for the
  * partner's events other than the ways out, while the trade has an open row.
+ *
+ * Owner G7 (lead review 8 Nov I5): the partner's buyer-cancel that would start returning escrowed
+ * coins (the machine's `settling`) is recorded on the trade's open rows (`cancel_requested_at`)
+ * instead, and `'recorded'` is returned: the caller commits that and changes nothing else. The
+ * sync carries it out when the trade's last row goes; a dispute opened meanwhile takes its place
+ * (the machine refuses the cancel then). A buyer-cancel that moves no coins (nothing funded) goes
+ * through as before.
  */
-export async function refuseHeldTradeEvent(db: Queryable, code: string, accountId: string, eventType: string): Promise<void> {
+export async function refuseHeldTradeEvent(
+  db: Queryable,
+  code: string,
+  accountId: string,
+  eventType: string,
+  held?: { prev: Trade; now: Date },
+): Promise<void | 'recorded'> {
   const { rows } = await db.query<{ account_id: string }>('select account_id from held_trades where code = $1 and released_at is null', [code]);
   if (rows.length === 0) return;
   if (rows.some((r) => r.account_id === accountId)) {
@@ -171,6 +196,22 @@ export async function refuseHeldTradeEvent(db: Queryable, code: string, accountI
     throw new ApiError(403, 'recovery-hold', until.rows[0] ? { holdUntil: until.rows[0].hold_until.toISOString() } : undefined);
   }
   if (!PARTNER_EXITS.includes(eventType)) throw new ApiError(409, 'counterparty-unavailable');
+  if (eventType !== 'buyer-cancel' || held === undefined) return;
+  let next: Trade;
+  try {
+    next = apply(held.prev, { type: 'buyer-cancel' }, 'buyer', held.now);
+  } catch {
+    return; // the machine refuses it: the caller's apply answers the same refusal
+  }
+  if (next.state !== 'settling') return;
+  await db.query('update held_trades set cancel_requested_at = coalesce(cancel_requested_at, $2) where code = $1 and released_at is null', [code, held.now]);
+  return 'recorded';
+}
+
+/** True when the partner's buyer-cancel of a held trade is recorded and waits for the hold's end (I5). */
+export async function cancelWaiting(db: Queryable, code: string): Promise<boolean> {
+  const { rows } = await db.query('select 1 from held_trades where code = $1 and released_at is null and cancel_requested_at is not null', [code]);
+  return rows.length > 0;
 }
 
 /** True when the trade's other party (`otherId`) has it held: the partner's view flag. */

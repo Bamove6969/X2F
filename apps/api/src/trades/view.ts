@@ -94,6 +94,11 @@ export interface TradeView {
    * why. False when the view is built without it (live events).
    */
   counterpartyProblem: boolean;
+  /**
+   * Owner G7 (lead review 8 Nov I5): this trade's buyer-cancel is recorded and waits for the other
+   * account's temporary problem to end (no coins move meanwhile). False when built without it.
+   */
+  cancelWaiting: boolean;
 }
 
 /** The extra facts a view needs that are not trade fields. */
@@ -106,6 +111,8 @@ export interface ViewContext {
   finalAlertSeenAt: Date | null;
   /** Hold model v3: see `TradeView.counterpartyProblem`. */
   counterpartyProblem?: boolean;
+  /** See `TradeView.cancelWaiting`. */
+  cancelWaiting?: boolean;
 }
 
 /**
@@ -170,6 +177,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     nextDeadline: iso(nextDeadline(t)),
     serverNow: serverNow.toISOString(),
     counterpartyProblem: ctx.counterpartyProblem ?? false,
+    cancelWaiting: ctx.cancelWaiting ?? false,
   };
   if (role === t.poster) view.fee = { atomic: t.feeAtomic.toString() };
   return view;
