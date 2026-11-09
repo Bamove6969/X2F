@@ -60,17 +60,42 @@ export function serializeBundleSecrets(s: BundleSecrets): Buffer {
   }), 'utf8');
 }
 
+/**
+ * Reads a bundle back from its sealed form. The input is the decrypted secret itself, so every
+ * failure is a fixed text (review L4): V8's `JSON.parse` error would quote a piece of the source,
+ * which here holds private keys in hex.
+ */
 export function parseBundleSecrets(buf: Uint8Array, identityPrivate: Uint8Array): BundleSecrets {
-  const j = JSON.parse(Buffer.from(buf).toString('utf8')) as {
-    v: number; signedPreKeyId: number; signedPreKey: string; signedPreKeySignature: string; preKeys: Array<{ id: number; key: string }>;
+  const malformed = () => new RangeError('omemo: stored bundle is malformed');
+  let j: unknown;
+  try {
+    j = JSON.parse(Buffer.from(buf).toString('utf8'));
+  } catch {
+    throw malformed();
+  }
+  if (typeof j !== 'object' || j === null || Array.isArray(j)) throw malformed();
+  const o = j as Record<string, unknown>;
+  if (o.v !== 1) throw new RangeError('omemo: unknown bundle format');
+  const id = (v: unknown): number => {
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) throw malformed();
+    return v;
   };
-  if (j.v !== 1) throw new RangeError('omemo: unknown bundle format');
-  const pair = (hex: string): KeyPair => {
-    const privateKey = Buffer.from(hex, 'hex');
+  const hex = (v: unknown, bytes: number): Buffer => {
+    if (typeof v !== 'string' || v.length !== 2 * bytes || !/^[0-9a-f]*$/.test(v)) throw malformed();
+    return Buffer.from(v, 'hex');
+  };
+  const pair = (v: unknown): KeyPair => {
+    const privateKey = hex(v, 32);
     return { privateKey, publicKey: x25519PublicKey(privateKey) };
   };
-  const signedPreKey = pair(j.signedPreKey);
-  const signedPreKeySignature = Buffer.from(j.signedPreKeySignature, 'hex');
+  if (!Array.isArray(o.preKeys)) throw malformed();
+  const preKeys = o.preKeys.map((p: unknown) => {
+    if (typeof p !== 'object' || p === null) throw malformed();
+    const q = p as Record<string, unknown>;
+    return { id: id(q.id), key: pair(q.key) };
+  });
+  const signedPreKey = pair(o.signedPreKey);
+  const signedPreKeySignature = hex(o.signedPreKeySignature, 64);
   if (!xeddsaVerify(x25519PublicKey(identityPrivate), wireKey(signedPreKey.publicKey), signedPreKeySignature)) throw new RangeError('omemo: stored bundle does not verify');
-  return { signedPreKeyId: j.signedPreKeyId, signedPreKey, signedPreKeySignature, preKeys: j.preKeys.map((p) => ({ id: p.id, key: pair(p.key) })) };
+  return { signedPreKeyId: id(o.signedPreKeyId), signedPreKey, signedPreKeySignature, preKeys };
 }

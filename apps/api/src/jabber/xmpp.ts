@@ -36,8 +36,8 @@ import { connect, type ConnectionOptions, type TLSSocket } from 'node:tls';
 import type { XmppConfig } from '../config.js';
 import { BARE_JID } from '../config.js';
 import {
-  DEVICELIST_NODE, bundleNode, isEncryptedElement, isResultIq, itemsRequest, parseBundle, parseDeviceList, publishRequest, type OmemoAnnounce, type OmemoBundle,
-  type OmemoEncrypt,
+  DEVICELIST_NODE, bundleNode, isEncryptedElement, isResultIq, itemsRequest, parseBundle, parseDeviceList, publishRequest, type OmemoAnnounce, type OmemoAnnouncement,
+  type OmemoBundle, type OmemoEncrypt,
 } from './omemo.js';
 import { SCRAM_MECHANISMS, scramClient } from './scram.js';
 import { messageText, SENDER_NAME, type JabberMessage, type JabberSender, type SendOptions } from './sender.js';
@@ -252,7 +252,12 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
 
         // OMEMO (owner ruling p11-31). Our own device list and bundle first, so the recipient's client can read our keys.
         if (opts.announce) {
-          const ours = await opts.announce();
+          let ours: OmemoAnnouncement;
+          try {
+            ours = await opts.announce();
+          } catch {
+            throw new XmppError('omemo'); // never the loader's words (review L4)
+          }
           for (const [node, item] of [[DEVICELIST_NODE, ours.deviceList], [bundleNode(ours.deviceId), ours.bundle]] as const) {
             const id = newId();
             write(publishRequest(id, node, item, xmlEscape));

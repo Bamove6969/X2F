@@ -510,6 +510,20 @@ describe('xmppSender: OMEMO is mandatory (owner ruling p11-31); never a plaintex
     expect(none.all()).not.toContain('<message');
   });
 
+  it("review L4: an announce() that fails is the sender's own fixed error, whatever the loader said, and nothing is published or sent", async () => {
+    const MARK = 'c0ffee00deadbeef';
+    for (const failure of [new Error(`stored bundle ${MARK} does not open`), new SyntaxError(`Unexpected token ${MARK} in JSON`), MARK]) {
+      const s = await setup({ opts: { encrypt: fakeEncrypt, announce: async () => { throw failure; } } });
+      const e = await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' }).catch((x: unknown) => x);
+      expect(e).toBeInstanceOf(Error);
+      expect((e as Error).message).toBe('xmpp: omemo failed');
+      expect((e as Error).name).toBe('XmppError');
+      expect(s.published).toEqual([]);
+      expect(s.all()).not.toContain('<message');
+      expect(s.all()).not.toContain(MARK);
+    }
+  });
+
   it('a server that refuses the publish fails the send before the recipient is looked up and before any message', async () => {
     const s = await setup({ devices: [{ id: 11, bundle: new OmemoDevice(11, 20).bundleXml() }], rejectPublish: true, opts: realOmemo() });
     await expect(s.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: publish failed');

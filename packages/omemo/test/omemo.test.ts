@@ -56,6 +56,46 @@ describe('our bundle', () => {
     expect(() => parseBundleSecrets(serializeBundleSecrets(s), x25519KeyPair().privateKey)).toThrow(/verify/);
     expect(serializeBundleSecrets(s).toString()).not.toContain(s.signedPreKey.publicKey.toString('hex'));
   });
+
+  it('review L4: a malformed stored bundle fails with a fixed text that quotes nothing of the (decrypted) input or of any key', () => {
+    const id = x25519KeyPair();
+    const s = generateBundleSecrets(id.privateKey, 3);
+    const good = serializeBundleSecrets(s).toString('utf8');
+    const MARK = 'c0ffee00deadbeef';
+    const bad: string[] = [
+      `${good.slice(0, -1)}${MARK}`, // cut JSON, with a marker where V8 would quote the source
+      good.replace('"v":1', `"v":1,"x":"${MARK}`), // unterminated string
+      good.replace('"v":1', '"v":2'),
+      'null',
+      '[]',
+      `{"v":1,"signedPreKeyId":1,"signedPreKey":"${MARK}","signedPreKeySignature":"00","preKeys":[]}`,
+      good.replace('"preKeys":[', '"preKeys":{"a":['),
+      JSON.stringify({ ...JSON.parse(good), preKeys: [{ id: 'one', key: MARK }] }),
+      JSON.stringify({ ...JSON.parse(good), signedPreKeySignature: MARK }),
+    ];
+    const secrets = [id.privateKey, s.signedPreKey.privateKey, ...s.preKeys.map((p) => p.key.privateKey)].map((b) => b.toString('hex'));
+    for (const b of bad) {
+      let e: Error | null = null;
+      try {
+        parseBundleSecrets(Buffer.from(b, 'utf8'), id.privateKey);
+      } catch (x) {
+        e = x as Error;
+      }
+      expect(e, b.slice(0, 60)).not.toBeNull();
+      expect(e!.message, b.slice(0, 60)).toMatch(/^omemo: (stored bundle|unknown bundle format)/);
+      expect(e!.message).not.toContain(MARK);
+      for (const hex of secrets) expect(e!.message).not.toContain(hex.slice(0, 8));
+      expect(e!.message.length).toBeLessThan(80);
+    }
+    // A bundle moved to another identity: the fixed text as well, with no key in it.
+    let moved: Error | null = null;
+    try {
+      parseBundleSecrets(Buffer.from(good, 'utf8'), x25519KeyPair().privateKey);
+    } catch (x) {
+      moved = x as Error;
+    }
+    expect(moved!.message).toBe('omemo: stored bundle does not verify');
+  });
 });
 
 describe('encryptMessage', () => {
