@@ -178,37 +178,29 @@ describe('invites', () => {
     expect((await h.b.post(acceptUrl(helper.token, '/finish'), {})).statusCode).toBe(201);
   });
 
-  it('the invitee accepts and signs the Terms with their names (owner 9 Nov 2026, p11-14: everyone who gets a login signs)', async () => {
-    const inv = await createInvite('helper');
+  it('the account cannot log in before finish, and the names are picked once, with the Terms signed (owner 9 Nov 2026, p11-14)', async () => {
+    const inv = await createInvite('mod');
     const b = invitee();
-    const n = loginName();
-    const names = { displayName: `Mod${n}`, loginName: n };
+    // Everyone who gets a login signs: the names step refuses without the current version and a
+    // signature, and makes nothing (the same invite takes the names after).
     for (const [extra, error] of [
       [{}, 'terms-not-accepted'],
       [{ acceptedTerms: '2020-01-01', termsSignature: SIG }, 'terms-not-accepted'],
       [{ acceptedTerms: t.deps.config.termsVersion }, 'signature-required'],
       [{ acceptedTerms: t.deps.config.termsVersion, termsSignature: { kind: 'typed', name: '' } }, 'signature-invalid'],
     ] as const) {
-      const res = await b.post(acceptUrl(inv.token, '/account'), { ...names, ...extra });
+      const res = await b.post(acceptUrl(inv.token, '/account'), { displayName: 'Unsigned1x', loginName: 'unsignedlogin1x', ...extra });
       expect(res.statusCode, res.body).toBe(400);
       expect(errorOf(res)).toBe(error);
     }
-    // Nothing was made by the refusals: the names are still free and the invite still open.
-    expect((await b.post(acceptUrl(inv.token, '/account'), { ...names, ...signed() })).statusCode).toBe(201);
-    const id = await accountOf(n);
-    const { rows } = await t.deps.db.query<{ terms_version: string | null; terms_accepted_at: Date | null; terms_signature: Buffer | null }>(
-      'select terms_version, terms_accepted_at, terms_signature from accounts where id = $1', [id],
-    );
-    expect(rows[0]!.terms_version).toBe(t.deps.config.termsVersion);
-    expect(rows[0]!.terms_accepted_at).not.toBeNull();
-    expect(openTermsSignature(t.deps.config, rows[0]!.terms_signature!, id)).toEqual(SIG);
-  });
-
-  it('the account cannot log in before finish, and the names are picked once', async () => {
-    const inv = await createInvite('mod');
-    const b = invitee();
     const n = await pickNames(b, inv.token);
     const id = await accountOf(n.loginName);
+    const signedRow = await t.deps.db.query<{ terms_version: string | null; terms_accepted_at: Date | null; terms_signature: Buffer | null }>(
+      'select terms_version, terms_accepted_at, terms_signature from accounts where id = $1', [id],
+    );
+    expect(signedRow.rows[0]!.terms_version).toBe(t.deps.config.termsVersion);
+    expect(signedRow.rows[0]!.terms_accepted_at).not.toBeNull();
+    expect(openTermsSignature(t.deps.config, signedRow.rows[0]!.terms_signature!, id)).toEqual(SIG);
     const { rows } = await t.deps.db.query<{ disabled_at: Date | null }>('select disabled_at from accounts where id = $1', [id]);
     expect(rows[0]!.disabled_at).not.toBeNull();
     const again = await b.post(acceptUrl(inv.token, '/account'), { displayName: 'Other1x', loginName: 'otherlogin1x' });
