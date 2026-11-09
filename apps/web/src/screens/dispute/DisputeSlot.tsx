@@ -16,6 +16,7 @@ import { DisputeEntry } from './DisputeEntry.js';
 import { TradeTitle } from './DisputeOpen.js';
 import { DisputeRoom } from './DisputeRoom.js';
 import { DisputeRuling } from './DisputeRuling.js';
+import { DoNotPay, mustNotPay } from './DoNotPay.js';
 import { disputeScreenFor } from './DisputeScreen.js';
 import { disputeEntry, refundReason } from './rules.js';
 import './dispute.css';
@@ -67,7 +68,16 @@ export function DisputeSlot({ code, view, refresh, serverClock }: TradeScreenPro
   // A disputed trade is never offered the open form (disputeScreenFor); 'open' cannot happen here.
   const shown = screen.kind === 'room' ? screen.dispute : null;
   if (shown === null) return null;
-  return <DisputeRoom trade={trade} methodName={methodName} dispute={shown} serverClock={serverClock} backTo={listFor(trade.role)} />;
+  const room = <DisputeRoom trade={trade} methodName={methodName} dispute={shown} serverClock={serverClock} backTo={listFor(trade.role)} />;
+  // Owner p11-16: a dispute before "I've paid": the buyer's "I've paid" greyed out, with the pop-up.
+  if (!mustNotPay(view)) return room;
+  return (
+    <>
+      {room}
+      <DoNotPay />
+
+    </>
+  );
 }
 
 /**

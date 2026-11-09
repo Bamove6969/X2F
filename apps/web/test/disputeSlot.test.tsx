@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { serverClock } from '../src/api/client.js';
 import type { TradeView } from '../src/api/trade.js';
 import { DisputeSlot, RefundedSlot } from '../src/screens/dispute/DisputeSlot.js';
+import { DO_NOT_PAY, mustNotPay } from '../src/screens/dispute/DoNotPay.js';
 import { PENDING_ESCROW } from '../src/screens/trade/seams.js';
 import '../src/screens/trade/screens.js';
 import { screenFor, type TradeScreenProps } from '../src/screens/trade/TradeRoom.js';
@@ -89,6 +90,33 @@ describe('DisputeSlot', () => {
     expect(urls.some((u) => /\/dispute$/.test(u))).toBe(true);
     // The room's back link goes to the trader's list, not back to the room itself.
     expect(host.querySelector('a[href="/sell"]')).not.toBeNull();
+  });
+
+  it("p11-16: the seller's dispute before \"I've paid\": the buyer's I've paid is greyed out and a pop-up says not to send money", async () => {
+    disputeAnswer = () => jsonResponse(openDispute({ openedBy: 'seller' }));
+    const v = disputedView({ role: 'buyer', paidAt: null, dispute: { by: 'seller', at: at(-1 * MIN) } });
+    expect(mustNotPay(v)).toBe(true);
+    const { host } = render(
+      <MemoryRouter>
+        <DisputeSlot {...props(v)} />
+      </MemoryRouter>,
+    );
+    await settle();
+    const paid = [...host.querySelectorAll('button')].find((b) => b.textContent === "I've paid");
+    expect(paid?.disabled).toBe(true);
+    const dialog = document.body.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain(DO_NOT_PAY.title);
+    expect(dialog?.textContent).toContain('Do not send funds by any payment method to the seller');
+    expect(dialog?.textContent).toContain('a moderator has been called in');
+  });
+
+  it("p11-16: no pop-up for the seller, for a buyer who already tapped I've paid, or for the buyer's own dispute", () => {
+    const base = { paidAt: null, dispute: { by: 'seller' as const, at: at(-1 * MIN) } };
+    expect(mustNotPay(disputedView({ ...base, role: 'seller' }))).toBe(false);
+    expect(mustNotPay(disputedView({ ...base, role: 'buyer', paidAt: at(-30 * MIN) }))).toBe(false);
+    expect(mustNotPay(disputedView({ ...base, role: 'buyer', dispute: { by: 'buyer', at: at(-1 * MIN) } }))).toBe(false);
+    // X2F's own escalation counts as the other side's: the buyer must not pay either.
+    expect(mustNotPay(disputedView({ ...base, role: 'buyer', dispute: { by: 'system', at: at(-1 * MIN) } }))).toBe(true);
   });
 
   it('a disputed trade with no dispute record yet still shows the room, never the open form', async () => {
