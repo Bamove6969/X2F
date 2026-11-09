@@ -436,6 +436,29 @@ describe('BuyQuote', () => {
     expect(primary(host).disabled).toBe(true);
   });
 
+  it('design review 8 Nov item 4: "You receive" shows 6 places (0.151515, not 0.151515151515); the take still sends the exact amount', async () => {
+    const { host } = await open(`${BUY}&amount=50`);
+    pick(host, 'w-cake');
+    const figure = host.querySelector('.x2f-quote__xmr')!;
+    expect(figure.textContent).toBe('0.151515 XMR');
+    expect(figure.hasAttribute('data-long')).toBe(false);
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes[0]!.amountAtomic).toBe('151515151515');
+  });
+
+  it('design review 8 Nov item 4: logged out, "Which wallet gets paid?" is still there, saying the wallet comes with the account', async () => {
+    session.status = 'signed-out';
+    const { host } = await open(`${BUY}&amount=412.50`);
+    const group = host.querySelector('[data-part="wallets-signed-out"]')!;
+    expect(group.getAttribute('role')).toBe('group');
+    const label = host.querySelector(`#${group.getAttribute('aria-labelledby')}`);
+    expect(label?.textContent).toBe('Which wallet gets paid?');
+    expect(group.textContent).toContain('You add your wallet when you set up your account, then pick it here.');
+    // Nothing to pick yet: no radios, and no made-up wallet rows.
+    expect(group.querySelector('input')).toBeNull();
+  });
+
   it('logged out, Trade goes to setup with returnTo = this quote with a pending-take nonce', async () => {
     session.status = 'signed-out';
     const { host } = await open(`${BUY}&amount=412.50`);
@@ -540,6 +563,8 @@ describe('SellQuote', () => {
     const rows = host.querySelector('section[aria-label="What you get"]')!.textContent ?? '';
     expect(rows).toContain('1.0000009 XMR');
     expect(rows).not.toContain('1.000000 XMR');
+    // An exact figure past 6 places is the long size, so 12 places fit a phone card (review 8 Nov item 4).
+    expect(host.querySelector('.x2f-quote__xmr')!.hasAttribute('data-long')).toBe(true);
     // Switching the unit and back keeps the exact amount: nothing is silently re-rounded.
     fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Enter USD')!, new MouseEvent('click', { bubbles: true }));
     expect(host.querySelector<HTMLInputElement>('#quote-amount')!.value).toBe('330.00');

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { posterRole, type Price } from '@x2f/trade';
+import { formatXmr, posterRole, type Price } from '@x2f/trade';
 import { useSession } from '../../session/useSession.js';
 import { addressEnd } from '../../ui/addressEnd.js';
 import { BlockAction } from '../settings/BlockAction.js';
@@ -41,6 +41,14 @@ export interface QuoteCopy {
   /** The big figure: label and the XMR it shows. */
   headline: string;
   headlineXmr: (q: Extract<Quote, { kind: 'ok' }>) => bigint;
+  /**
+   * True when the figure is an amount the person will send (SellQuote: what the seller locks), so
+   * it is shown exact (formatXmrExact, the exact-send rule); else the boards' 6 places (formatXmr,
+   * truncated, never overstated). Design review 8 Nov item 4.
+   */
+  headlineExact: boolean;
+  /** The wallet group's line before login, where there are no wallets to pick yet. COPY-UNSIGNED */
+  signedOutPickLine: string;
   /** The line under the figure for a picked wallet. */
   walletLine: (name: string, end: string) => ReactNode;
   noWalletLine: string;
@@ -255,6 +263,11 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const cantDo = state.error === null ? null : takeCantDo(state.error);
   const cantDoOpen = cantDo !== null && closedError !== state.error;
 
+  const headlineAtomic = ok ? copy.headlineXmr(ok) : 0n;
+  // The board's 6 places ("1.250000"); exact only for a figure the person sends (headlineExact).
+  // data-long (more than 6 places) takes the smaller size so 12 places fit a phone card.
+  const headlineFigure = copy.headlineExact ? xmrText(headlineAtomic) : formatXmr(headlineAtomic);
+
   let walletLine: ReactNode = copy.noWalletLine;
   if (signedIn === false) walletLine = copy.signedOutWalletLine;
   // The ending is cut from the full address the take will confirm, never the API's addressEnd (Task 19 re-review, gap 2).
@@ -330,13 +343,26 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
         {signedIn === true && wallets.kind === 'ready' ? (
           <WalletPicker legend={copy.walletLegend} wallets={wallets.value} picked={pickedWallet?.id ?? null} onPick={setPicked} addHref={addWalletHref(false)} />
         ) : null}
+        {signedIn === false ? (
+          // Design review 8 Nov item 4: the wallet group is on the board before login too. There
+          // is nothing to pick yet (the wallet comes with the account), so it says so; no radios.
+          <div role="group" aria-labelledby="quote-wallets-label" className="x2f-quote__wallets" data-part="wallets-signed-out">
+            <span id="quote-wallets-label" className="x2f-quote__label">
+              {copy.walletLegend}
+            </span>
+            <div className="x2f-quote__wallet x2f-quote__wallet--none">
+              <Icon name="wallet" size={20} stroke={1.75} />
+              <span className="x2f-quote__muted-sm">{copy.signedOutPickLine}</span>
+            </div>
+          </div>
+        ) : null}
         {signedIn === true && wallets.kind === 'failed' ? <p className="x2f-quote__note">Your wallets could not be loaded right now. Try again in a moment.</p> : null}
 
         <section aria-label="What you get" className="x2f-quote__card">
           <div className="x2f-quote__figure">
             <span className="x2f-section-title">{copy.headline}</span>
-            <span className="x2f-quote__xmr">
-              {xmrText(ok ? copy.headlineXmr(ok) : 0n)} <span className="x2f-quote__xmr-unit">XMR</span>
+            <span className="x2f-quote__xmr" data-long={(headlineFigure.split('.')[1] ?? '').length > 6 ? '' : undefined}>
+              {headlineFigure} <span className="x2f-quote__xmr-unit">XMR</span>
             </span>
             <span className="x2f-quote__muted-sm">{walletLine}</span>
           </div>

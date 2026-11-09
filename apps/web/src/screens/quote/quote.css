@@ -151,8 +151,23 @@
   background: var(--x2f-surface-raised);
 }
 
+/* Focus (design review 8 Nov item 4): a soft 1 px ink border on the field, as on the boards, in
+   place of the global 2 px outline drawn around the bare input (a hard white box inside the field). */
+.x2f-quote__box:focus-within {
+  border-color: var(--x2f-ink);
+}
+
+.x2f-quote__box input:focus-visible {
+  outline: none;
+}
+
 .x2f-quote__box[data-bad] {
   border-color: var(--x2f-danger);
+}
+
+/* In error the border stays danger; focus thickens it to 2 px so it still shows. */
+.x2f-quote__box[data-bad]:focus-within {
+  box-shadow: inset 0 0 0 1px var(--x2f-danger);
 }
 
 .x2f-quote__box input {
@@ -252,6 +267,16 @@
   outline-offset: 2px;
 }
 
+/* Before login: one plain row saying the wallet comes with the account (nothing to pick). */
+.x2f-quote__wallet--none {
+  cursor: default;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__wallet--none > svg {
+  flex-shrink: 0;
+}
+
 .x2f-quote__wallet-text {
   display: flex;
   flex-direction: column;
@@ -305,6 +330,13 @@
   font-weight: 500;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* An exact figure past 6 places (SellQuote, up to 12): smaller, so it fits a 360 px card. */
+.x2f-quote__xmr[data-long] {
+  font-size: 26px;
+  line-height: 32px;
 }
 
 .x2f-quote__xmr-unit {

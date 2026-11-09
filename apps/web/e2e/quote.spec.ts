@@ -207,8 +207,10 @@ test.describe('BuyQuote', () => {
     expect(seen.takes[0]!.centsPerXmr).toBe('33000');
     expect(seen.storedFiatCents).toHaveLength(0);
     await expect(card(page)).toContainText('$340.00 / XMR');
-    // $412.50 at $340.00 is 1.213235294117 XMR, shown in full: the figure is what is sent (M5).
-    await expect(card(page)).toContainText('1.213235294117 XMR');
+    // $412.50 at $340.00 is 1.213235294117 XMR. The buyer sends no XMR, so "You receive" shows the
+    // boards' 6 places (design review 8 Nov item 4); the take still carries the exact amount.
+    await expect(card(page)).toContainText('1.213235 XMR');
+    await expect(card(page)).not.toContainText('1.213235294117');
     await expect(card(page)).toContainText('$412.50 USD');
     await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
@@ -429,6 +431,25 @@ for (const viewport of PHONE_VIEWPORTS) {
       await page.getByRole('button', { name: 'Max' }).click();
       await page.getByRole('radio', { name: /Cake Wallet/ }).check();
       await expect(card(page)).toContainText('4.545454 XMR');
+      await expectPhoneLayout(page);
+    });
+
+    // Design review 8 Nov item 4: the figure overflowed the card at 12 places, and the wallet group
+    // was missing before login.
+    test('BuyQuote logged out at $50: 6 places, the wallet group, phone layout', async ({ page }) => {
+      await stubApi(page, { ...base, signedIn: false, wallets: [] });
+      await page.goto(`${BUY}&amount=50`);
+      await expect(card(page)).toContainText('0.151515 XMR');
+      await expect(page.getByRole('group', { name: 'Which wallet gets paid?' })).toBeVisible();
+      await expectPhoneLayout(page);
+    });
+
+    test('SellQuote with a 12-place exact amount: shown in full and it fits', async ({ page }) => {
+      await stubApi(page, { ...base, offers: [MIRA_BUYS] });
+      await page.goto(SELL);
+      await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+      await page.locator('#quote-amount').fill('1.151515151515');
+      await expect(card(page)).toContainText('1.151515151515 XMR');
       await expectPhoneLayout(page);
     });
   });

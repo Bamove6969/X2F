@@ -18,6 +18,9 @@ export const BUY_QUOTE_COPY: QuoteCopy = {
   walletLegend: 'Which wallet gets paid?',
   headline: 'You receive',
   headlineXmr: (q) => q.receiveAtomic,
+  // What the buyer receives is not a figure anyone sends: the boards' 6 places (review 8 Nov item 4).
+  headlineExact: false,
+  signedOutPickLine: 'You add your wallet when you set up your account, then pick it here.',
   walletLine: (name, end) => (
     <>
       In {name}, address ending <span className="x2f-quote__mono">{end}</span>
