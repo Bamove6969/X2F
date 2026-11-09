@@ -10,6 +10,12 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-14-x2f-design.md` sections 4.1, 6.1–6.6, 8, 9. Review applied: `docs/superpowers/plans/2026-10-15-plans-2-3-review.md`. Builds on Plan 1 (`docs/superpowers/plans/2026-10-15-plan-1-escrow-core.md`): workspace, `tools/check.sh`, `@x2f/core` (`newTradeCode`, `normalizeTradeCode`). Note: `@x2f/core`'s `Role` (`buyer | seller | mod`) is a *trade* role; account kinds here are a separate type, `AccountKind`.
 
+## Revision 2026-11-09 (owner)
+
+Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's answers register of 2026-11-09. Where this list differs from older text, this list wins.
+
+- **24-hour hold (owner p11-26):** the hold is only on the changes being made; everything else (offers, trades, other logins) works as normal. A team member's weak login holds only that member's own changes; the team account never freezes because of a member. Replaces the account-wide effects of 30 Oct (offers hidden, trades cancelled or held). Reach to the recovery-code hold is awaiting the lead.
+
 ## Revision 2026-10-15
 
 Applied every Plan 2 item and cross-plan reconciliation from the review. Authority: spec > review > previous plan.
