@@ -23,6 +23,7 @@ import { purgeExpired } from '../src/auth/challenges.js';
 import { RECOVERY_CODE_COUNT } from '../src/auth/recovery.js';
 import { syncHeldTradesJob } from '../src/trades/held.js';
 import { applyEvent, noPublish } from '../src/trades/store.js';
+import { siteMaintenanceSince, startTimers } from '../src/trades/timers.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
 import { accountIdByLoginName } from './helpers/accounts.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
@@ -747,6 +748,41 @@ describe('a recovery-code login', () => {
     const after = await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code]);
     expect(after.rows[0]!.p).toBeNull();
     expect((await deps.db.query('select 1 from held_trades where code = $1', [s.code])).rowCount).toBe(0);
+  });
+
+  it('lead review 8 Nov C2: the real timer loop never resumes a held trade, across passes and a maintenance on/off; it resumes after the hold', async () => {
+    const t = await ownerWithCode();
+    const partner = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: t.id, buyerId: partner.id, poster: 'buyer' });
+    const s = await driveTo(deps, trade, 'secured');
+    expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
+    const pausedAt = async () => (await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code])).rows[0]!.p;
+    const held = await pausedAt();
+    expect(held).not.toBeNull();
+    const timers = startTimers({ db: deps.db, clock: deps.clock, maintenanceSince: () => siteMaintenanceSince(deps.db), intervalMs: 0 });
+    try {
+      const mine = async () => (await timers.tick()).applied.filter((a) => a.code === s.code);
+      expect(await mine()).toEqual([]);
+      later(10 * 60_000);
+      expect(await mine()).toEqual([]);
+      expect((await pausedAt())?.getTime()).toBe(held!.getTime());
+      await deps.db.query('update site_flags set maintenance_since = $1', [now]);
+      try {
+        expect(await mine()).toEqual([]);
+      } finally {
+        await deps.db.query('update site_flags set maintenance_since = null');
+      }
+      expect(await mine()).toEqual([]);
+      expect((await pausedAt())?.getTime()).toBe(held!.getTime());
+      // The partner's mark-paid is still refused, and the trade's deadlines have not run.
+      expect(errorOf(await partner.browser.post(`/v1/trades/${s.code}/events`, { type: 'mark-paid', fiatCents: FIAT.toString() }))).toBe('counterparty-unavailable');
+      // The hold ends (a moderator): the sync resumes it, and the loop goes on as usual.
+      expect(await endHoldByModerator(deps, t.id, { staffId: null })).toBe(true);
+      expect(await pausedAt()).toBeNull();
+      expect(await mine()).toEqual([]);
+    } finally {
+      await timers.stop();
+    }
   });
 
   it('owner G7, lead review item 5: on a paused held trade the partner opens a dispute; the held account cannot', async () => {

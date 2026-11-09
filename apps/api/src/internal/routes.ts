@@ -312,10 +312,11 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   // an open trade also counts as paused as soon as `site_flags.maintenance_since` is set, before the
   // timer loop's next pass writes its `paused_at`, so the moderator decides nothing in that gap.
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; state: TradeState; settling: SettleKind | null; paused_at: Date | null; final_alert_at: Date | null; seen: Date | null; site_paused: boolean }>(
+    const { rows } = await o.db.query<{ code: string; state: TradeState; settling: SettleKind | null; paused_at: Date | null; final_alert_at: Date | null; seen: Date | null; site_paused: boolean; held: boolean }>(
       `select t.code, t.state, t.settling, t.paused_at, t.final_alert_at,
               case when t.final_alert_delivered is true then t.final_alert_seen_at end as seen,
-              (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused
+              (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused,
+              exists (select 1 from held_trades h where h.code = t.code and h.released_at is null) as held
          from trades t
          join trade_attestations a on a.code = t.code
         where t.closed_at is null or t.closed_at > $1
@@ -327,7 +328,9 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         trade: r.code,
         state: r.state,
         settleKind: settleKindFor({ state: r.state, settling: r.settling }),
-        paused: r.paused_at !== null || r.site_paused,
+        // Lead review 8 Nov C2 (owner G7): a trade a recovery-code hold holds is paused for the
+        // moderator's timers too, until the hold ends or a moderator decides.
+        paused: r.paused_at !== null || r.site_paused || r.held,
         finalAlertSeenAt: r.seen ? r.seen.toISOString() : null,
         finalAlertAt: r.final_alert_at ? r.final_alert_at.toISOString() : null,
       })),

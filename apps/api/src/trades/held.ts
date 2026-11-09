@@ -21,9 +21,9 @@
  *   commit): the trade closes as cancelled. Should the machine refuse it (coins seen or "Fund
  *   escrow" tapped since the login), the trade is paused instead, as a `pause` row's.
  *
- * SEAM (not done here): the trade timer loop (timerLoop.ts) is not running in the API yet; when it
- * lands, its "maintenance off: resume every paused trade" must skip trades with an open
- * `held_trades` row.
+ * - The trade timer loop (trades/timers.ts, every 5 s) never resumes or ticks a trade with an open
+ *   row, and `/internal/v1/watch` reports it paused, so neither the API's deadlines nor the
+ *   moderation service's timers run while it is held (owner G7; lead review 8 Nov C2).
  */
 import { TradeRuleError } from '@x2f/trade';
 import type pg from 'pg';

@@ -7,7 +7,7 @@ import { applyEvent, rowToTrade, type TradePublisher, type TradeRow } from './st
  * cancel awaiting the seller's Confirm cancel, Task 39), asks the pure
  * `timerEvents` which system events are due (deadline ticks, maintenance pause/resume, the lapse
  * escalation) and applies each through the trade store in order, each with its own `at` (a pause
- * is at `maintenance_since`). A trade the pure layer or the store refuses is logged by its rule
+ * is at `maintenance_since`), never resuming or ticking a trade a recovery-code hold holds. A trade the pure layer or the store refuses is logged by its rule
  * code and the pass goes on; a failed pass is logged and the next one runs on schedule.
  */
 export interface TimerDeps {
@@ -45,13 +45,18 @@ export function startTimers(deps: TimerDeps): TimerHandle {
     // Open trades, paused ones, and a buyer's cancel still waiting for the seller's Confirm cancel
     // (closed, but its 48 h auto-close and maintenance still apply: `awaitingCancelConfirm`, Task 39;
     // the pure layer re-checks the rest of that rule).
-    const { rows } = await deps.db.query<TradeRow>(
-      `select * from trades
-        where closed_at is null or paused_at is not null
-           or (state = 'refunded' and settling = 'buyer-cancel' and cancel_confirmed_at is null and dispute_by is null and paid_at is null)
-        order by code`,
+    // `held`: an open `held_trades` row (an account in a recovery-code hold, trades/held.ts). Such a
+    // trade stays paused until the hold ends or a moderator decides (owner G7; lead review 8 Nov C2):
+    // the loop never resumes or ticks it; the hold's own sync resumes it when its last row goes.
+    const { rows } = await deps.db.query<TradeRow & { held: boolean }>(
+      `select t.*, exists (select 1 from held_trades h where h.code = t.code and h.released_at is null) as held
+         from trades t
+        where t.closed_at is null or t.paused_at is not null
+           or (t.state = 'refunded' and t.settling = 'buyer-cancel' and t.cancel_confirmed_at is null and t.dispute_by is null and t.paid_at is null)
+        order by t.code`,
     );
-    const pass = timerEvents(rows.map(rowToTrade), maintenance, deps.clock());
+    const held = new Set(rows.filter((r) => r.held).map((r) => r.code));
+    const pass = timerEvents(rows.map(rowToTrade), maintenance, deps.clock(), held);
     const applied: { code: string; type: string }[] = [];
     const skipped = [...pass.skipped];
     for (const s of pass.skipped) log({ reason: `timer-skipped-${s.reason}` });
