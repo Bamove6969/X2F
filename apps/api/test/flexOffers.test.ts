@@ -1,15 +1,15 @@
-import { fiatCents, rateFor } from '@x2f/trade';
+import { atomicForFiat, fiatCents, rateFor } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { currencyExponent } from '../src/price/currencies.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { loadTradeRow } from '../src/trades/store.js';
+import { loadTrade, loadTradeRow } from '../src/trades/store.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { flexBody } from './helpers/offers.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
-import { XMR, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
+import { XMR, driveTo, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
 
 // J-16, Plan 3 Tasks 34/35 rebuilt with the owner's numbers: at most 3 bands per currency and 5
 // payment types per offer (Q23), bands in whole units following on one unit later (2 Nov), a second
@@ -347,6 +347,111 @@ describe('taking a flexible offer', () => {
     const t = await person(0);
     const r = rateFor(market$('ZAR'), 0).centsPerXmr;
     expect(refusal(await t.browser.post(`/v1/offers/${id}/take`, takeBody(t, XMR, r, 'ZELLE', 'ZAR')))).toEqual({ status: 409, error: 'not-enough-trades', minTrades: 25 });
+  });
+});
+
+describe('review M1: the band the taker gets, the instructions once secured, the no-rate paths, the band edges', () => {
+  it("a taker who misses the better band's rule and quotes its rate is refused price-changed; that band never locks (M1a)", async () => {
+    const p = await person();
+    const id = await post(p, flex('BRL', { currencies: [{ currency: 'BRL', bands: [band('10', '1000', 200), band('10', '1000', 50, 10)] }] }));
+    const m = market$('BRL');
+    const newbie = await person(0);
+    // The +0.5% band is for 10 completed trades; a newbie's band is +2%, about 1.5% off, past the 0.5% tolerance.
+    const better = rateFor(m, 50).centsPerXmr;
+    expect(refusal(await newbie.browser.post(`/v1/offers/${id}/take`, takeBody(newbie, XMR / 4n, better, 'ZELLE', 'BRL')))).toEqual({ status: 409, error: 'price-changed' });
+    expect((await deps.db.query('select 1 from trades where offer_id = $1', [id])).rowCount).toBe(0);
+    // Quoting their own band's rate, they trade at it.
+    const own = rateFor(m, 200).centsPerXmr;
+    const res = await newbie.browser.post(`/v1/offers/${id}/take`, takeBody(newbie, XMR / 4n, own, 'ZELLE', 'BRL'));
+    expect(res.statusCode, res.body).toBe(200);
+    expect((res.json() as { centsPerXmr: string }).centsPerXmr).toBe(own.toString());
+  });
+
+  it('the locked instructions reach both traders once the escrow is secured, and neither before (M1b)', async () => {
+    const p = await person();
+    const id = await post(p, flex('ARS', { methods: [method('ZELLE', 0, 'Zelle to pay@example.test')] }));
+    const t = await person();
+    const res = await t.browser.post(`/v1/offers/${id}/take`, takeBody(t, XMR / 4n, rateFor(market$('ARS'), 100).centsPerXmr, 'ZELLE', 'ARS'));
+    expect(res.statusCode, res.body).toBe(200);
+    const code = (res.json() as { code: string }).code;
+    const shown = async (who: Who) => ((await who.browser.get(`/v1/trades/${code}`)).json() as { paymentInstructions: unknown }).paymentInstructions;
+    expect([await shown(t), await shown(p)]).toEqual([null, null]);
+    await driveTo(deps, (await loadTrade(deps.db, code))!, 'funding');
+    expect([await shown(t), await shown(p)]).toEqual([null, null]);
+    await driveTo(deps, (await loadTrade(deps.db, code))!, 'secured');
+    expect([await shown(t), await shown(p)]).toEqual(['Zelle to pay@example.test', 'Zelle to pay@example.test']);
+  });
+
+  it("offer detail: anyone but the poster gets the currency's methods without their instructions; the poster gets them (M1c)", async () => {
+    const p = await person();
+    const id = await post(p, flex('IDR', {
+      methods: [method('ZELLE', 0, 'Zelle to pay@example.test'), method('PAYPAL', 200, 'PayPal shared', { instructionsByCurrency: { IDR: 'PayPal IDR to id@example.test' } })],
+    }));
+    const other = await person();
+    for (const who of [anon, other.browser]) {
+      const res = await who.get(`/v1/offers/${id}?currency=IDR`);
+      expect(res.statusCode, res.body).toBe(200);
+      expect((res.json() as { methods: unknown[] }).methods).toEqual([{ methodId: 'ZELLE', adjustBps: 0 }, { methodId: 'PAYPAL', adjustBps: 200 }]);
+      expect(res.body).not.toContain('example.test');
+    }
+    const own = (await p.browser.get(`/v1/offers/${id}?currency=IDR`)).json() as { methods: unknown[] };
+    expect(own.methods).toEqual([
+      { methodId: 'ZELLE', adjustBps: 0, instructions: 'Zelle to pay@example.test' },
+      { methodId: 'PAYPAL', adjustBps: 200, instructions: 'PayPal IDR to id@example.test' },
+    ]);
+  });
+
+  it('a take in the unpriced currency of a multi-currency offer is refused price-unavailable; its other currency still takes (M1d)', async () => {
+    const p = await person();
+    const id = await post(p, { ...flex('PHP'), currencies: [{ currency: 'PHP', bands: [band('10', '100')] }, { currency: 'INR', bands: [band('10', '100')] }] });
+    const t = await person();
+    // The rate the taker's quote showed before the feed lost INR.
+    const quoted = market$('INR').centsPerXmr;
+    market.unpriced = new Set(['INR']);
+    expect(refusal(await t.browser.post(`/v1/offers/${id}/take`, takeBody(t, XMR / 4n, quoted, 'ZELLE', 'INR')))).toEqual({ status: 409, error: 'price-unavailable' });
+    expect((await deps.db.query('select 1 from trades where offer_id = $1', [id])).rowCount).toBe(0);
+    const ok = await t.browser.post(`/v1/offers/${id}/take`, takeBody(t, XMR / 4n, market$('PHP').centsPerXmr, 'ZELLE', 'PHP'));
+    expect(ok.statusCode, ok.body).toBe(200);
+  });
+
+  it('an offer hidden while its currency has no rate is listed again once the rate returns (M1e)', async () => {
+    const p = await person();
+    const id = await post(p, flex('SGD'));
+    const q = 'side=sell&method=ZELLE&currency=SGD';
+    expect((await list(q)).some((c) => c.id === id)).toBe(true);
+    market.unpriced = new Set(['SGD']);
+    expect(await list(q)).toEqual([]);
+    market.unpriced = new Set();
+    expect((await list(q)).find((c) => c.id === id)).toMatchObject({ currency: 'SGD', rate: rateFor(market$('SGD'), 100).centsPerXmr.toString() });
+  });
+
+  it('band edges through a take (owner 2 Nov: 200-500 then 501-800): 500.50 and 500.99 lock the first band, 501.00 the second; 199.99 and 800.01 are out of range (M1f)', async () => {
+    // Totals up to 800 (about $800 here): Building traders, whose cap is $1,000.
+    const p = await person(5);
+    const id = await post(p, flex('CNY', { currencies: [{ currency: 'CNY', bands: [band('200', '500', 100), band('501', '800', 200)] }] }));
+    const m = market$('CNY');
+    const r1 = rateFor(m, 100).centsPerXmr;
+    const r2 = rateFor(m, 200).centsPerXmr;
+    /** The smallest amount whose total at `rate` is exactly `cents` (fiatCents rounds half up). */
+    const amountFor = (cents: bigint, rate: bigint): bigint => {
+      const at = { currency: 'CNY', centsPerXmr: rate };
+      let a = atomicForFiat(cents, at);
+      while (fiatCents(a, at) < cents) a += 1n;
+      expect(fiatCents(a, at)).toBe(cents);
+      return a;
+    };
+    const takeAt = async (t: Who, cents: bigint, rate: bigint) => t.browser.post(`/v1/offers/${id}/take`, takeBody(t, amountFor(cents, rate), rate, 'ZELLE', 'CNY'));
+    // A refused take leaves no trade, so one taker tries both ends; each take that goes through needs a taker of its own (one waiting take per buyer per ad).
+    const edge = await person(5);
+    for (const [cents, rate] of [[19999n, r1], [80001n, r2]] as const) {
+      expect(refusal(await takeAt(edge, cents, rate)), String(cents)).toEqual({ status: 409, error: 'out-of-range' });
+    }
+    // The band is picked by the total, and the rate that locks is that band's: a wrong band would answer price-changed (1% apart).
+    for (const [cents, rate] of [[20000n, r1], [50050n, r1], [50099n, r1], [50100n, r2], [80000n, r2]] as const) {
+      const res = await takeAt(await person(5), cents, rate);
+      expect(res.statusCode, `${cents}: ${res.body}`).toBe(200);
+      expect(res.json()).toMatchObject({ centsPerXmr: rate.toString(), fiatCents: cents.toString() });
+    }
   });
 });
 
