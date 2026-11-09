@@ -4,8 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAccount, assertDisplayNameFree, type NewNames } from '../src/accounts.js';
 import type { Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
-import { insertPgpKey } from '../src/auth/pgp.js';
-import { jabberBanned, keyFingerprints, normalizeJabber, recordBan, recordBannedValues } from '../src/bans.js';
+import { insertPgpKey, storableKey } from '../src/auth/pgp.js';
+import { assertKeyNotBanned, jabberBanned, keyFingerprints, normalizeJabber, recordBan, recordBannedValues } from '../src/bans.js';
 import { ApiError } from '../src/errors.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
@@ -295,6 +295,134 @@ describe('Jabber (seam: no Jabber alert account in the code yet)', () => {
     expect(await jabberBanned(deps.db, deps.config, 'EVIL@jabber.example/laptop')).toBe(true);
     expect(await jabberBanned(deps.db, deps.config, 'good@jabber.example')).toBe(false);
     expect(await jabberBanned(deps.db, deps.config, 'garbage')).toBe(false);
+  });
+});
+
+describe('security review 8 Nov I1: a ban covers only what the banned account controls', () => {
+  // Mallory takes Vera's public key and appends her primary key packet to his own key as a subkey
+  // (the fingerprint is the same: it hashes only the key body). He needs nothing from Vera. A ban of
+  // his account must not ban her key, or every PGP login of hers would end 409 key-unavailable.
+
+  /**
+   * Mallory's public key with `foreign` (another person's primary key body) appended as a subkey:
+   * with no binding at all, or bound by Mallory as an encryption or a signing subkey (a signing one
+   * without the foreign key's back-signature, which only the foreign key's owner can make).
+   */
+  async function withForeignSubkey(mallory: { privateKey: string }, foreign: string, bind: 'none' | 'encrypt' | 'sign'): Promise<string> {
+    const m = await openpgp.readPrivateKey({ armoredKey: mallory.privateKey });
+    const f = await openpgp.readKey({ armoredKey: foreign });
+    const sub = new openpgp.PublicSubkeyPacket();
+    sub.read(f.keyPacket.write());
+    const list = m.toPublic().toPacketList();
+    list.push(sub);
+    if (bind !== 'none') {
+      const sig = new openpgp.SignaturePacket();
+      sig.signatureType = openpgp.enums.signature.subkeyBinding;
+      sig.publicKeyAlgorithm = m.keyPacket.algorithm;
+      sig.hashAlgorithm = openpgp.enums.hash.sha256;
+      sig.keyFlags = new Uint8Array([bind === 'sign' ? openpgp.enums.keyFlags.signData : openpgp.enums.keyFlags.encryptCommunication | openpgp.enums.keyFlags.encryptStorage]);
+      // The typings omit sign's config argument, which openpgp reads.
+      const sign = sig.sign.bind(sig) as (...a: unknown[]) => Promise<void>;
+      await sign(m.keyPacket, { key: m.keyPacket, bind: sub }, new Date(deps.clock().getTime() - 60_000), false, openpgp.config);
+      list.push(sig);
+    }
+    return openpgp.armor(openpgp.enums.armor.publicKey, list.write());
+  }
+
+  /** Signs up through the routes with `publicKey` (decrypted with `privateKey`): the new account's id (null if refused) and the finish answer. */
+  async function register(publicKey: string, privateKey: string) {
+    const display = uniq('Mal');
+    const b = new Browser(app);
+    const start = await b.post('/v1/register/pgp/start', { displayName: display, loginName: uniq('mal.login'), publicKey });
+    expect(start.statusCode, start.body).toBe(200);
+    const code = codeOf(await decrypt(start.json().encryptedMessage, privateKey));
+    const finish = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion });
+    const { rows } = await deps.db.query<{ id: string }>('select id from accounts where display_key = $1', [display.toLowerCase()]);
+    return { id: rows[0]?.id ?? null, finish };
+  }
+
+  /** Vera: an account, and her own PGP key (not yet stored). */
+  async function vera() {
+    return { id: await seedAccount(deps, { loginName: uniq('vera') }), key: await genKey() };
+  }
+
+  async function loginWith(key: { publicKey: string; privateKey: string }) {
+    const b = new Browser(app);
+    const start = await b.post('/v1/login/pgp/start', { key: key.publicKey });
+    expect(start.statusCode, start.body).toBe(200);
+    const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey, undefined, deps.clock()));
+    return b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Desk' });
+  }
+
+  for (const bind of ['none', 'encrypt', 'sign'] as const) {
+    it(`a banned account whose key carries another account's key as a subkey (${bind === 'none' ? 'no binding' : `bound for ${bind}, no back-signature`}) does not ban that account's key`, async () => {
+      const v = await vera();
+      const mallory = await genKey();
+      const combined = await withForeignSubkey(mallory, v.key.publicKey, bind);
+      // The reviewer's proof of concept: the combined key lists Vera's fingerprint among its subkeys.
+      expect(await keyFingerprints(combined)).toContain(v.key.fingerprint.toLowerCase());
+      // Mallory signs up before Vera's key is on file (afterwards, a bound copy is refused: below).
+      const m = await register(combined, mallory.privateKey);
+      expect(m.finish.statusCode, m.finish.body).toBe(201);
+      await insertPgpKey(deps.db, deps.config, { accountId: v.id, fingerprint: v.key.fingerprint, armored: v.key.publicKey, now: deps.clock() });
+      await recordBan(deps, m.id!);
+      await expect(assertKeyNotBanned(deps.db, deps.config, v.key.publicKey)).resolves.toBeUndefined();
+      // Mallory's own key is banned.
+      await expect(assertKeyNotBanned(deps.db, deps.config, mallory.publicKey)).rejects.toMatchObject({ code: 'key-unavailable' });
+      const login = await loginWith(v.key);
+      expect(login.statusCode, login.body).toBe(200);
+    });
+  }
+
+  it('storableKey drops a subkey with no valid binding (the stored copy never carries it)', async () => {
+    const v = await vera();
+    const mallory = await genKey();
+    const stored = await storableKey(await withForeignSubkey(mallory, v.key.publicKey, 'none'), deps.clock());
+    expect(await keyFingerprints(stored)).toEqual(await keyFingerprints(mallory.publicKey));
+    // A bound subkey is kept (a ban still skips it: above).
+    const bound = await storableKey(await withForeignSubkey(mallory, v.key.publicKey, 'encrypt'), deps.clock());
+    expect(await keyFingerprints(bound)).toContain(v.key.fingerprint.toLowerCase());
+  });
+
+  it("a key whose subkey is already another account's key is refused after proof (409 key-in-use) and creates nothing", async () => {
+    const v = await vera();
+    await insertPgpKey(deps.db, deps.config, { accountId: v.id, fingerprint: v.key.fingerprint, armored: v.key.publicKey, now: deps.clock() });
+    const mallory = await genKey();
+    const m = await register(await withForeignSubkey(mallory, v.key.publicKey, 'sign'), mallory.privateKey);
+    expect([m.finish.statusCode, m.finish.json()]).toEqual([409, { error: 'key-in-use' }]);
+    expect(m.id).toBeNull();
+  });
+
+  it('bans the subkeys the account proved, one a later login proved too, and signing subkeys that signed back', async () => {
+    const k = await genKey({ subkeys: [{}, { sign: true }] });
+    const id = await seedAccount(deps, { loginName: uniq('prover') });
+    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: k.fingerprint, armored: k.publicKey, now: deps.clock() });
+    // A newer encryption subkey: the next login's challenge goes to it, so that login proves it.
+    const priv = await openpgp.readPrivateKey({ armoredKey: k.privateKey });
+    const grown = await priv.addSubkey({ date: new Date(deps.clock().getTime() - 60_000) });
+    const newEnc = grown.getSubkeys().at(-1)!.getFingerprint();
+    const login = await loginWith({ publicKey: grown.toPublic().armor(), privateKey: grown.armor() });
+    expect(login.statusCode, login.body).toBe(200);
+    const { rows } = await deps.db.query<{ proved_subkeys: string[] }>('select proved_subkeys from pgp_keys where account_id = $1', [id]);
+    expect(rows[0]!.proved_subkeys).toContain(newEnc);
+    // login name + primary + first encryption subkey (proved at the write) + signing subkey + the new encryption subkey
+    expect((await recordBan(deps, id)).recorded).toBe(2 + 4);
+    for (const fp of await keyFingerprints(grown.toPublic().armor())) {
+      await expect(recordBannedValues(deps.db, deps.config, { kind: 'pgp-fingerprint', values: [fp], accountId: null, now: deps.clock() })).resolves.toBe(0);
+    }
+  });
+
+  it('an encryption subkey the account never proved is not banned', async () => {
+    // Two encryption subkeys: challenges go to the newer one only.
+    const k = await genKey({ subkeys: [{}, { date: new Date('2026-02-01T00:00:00Z') }] });
+    const id = await seedAccount(deps, { loginName: uniq('twoenc') });
+    await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: k.fingerprint, armored: k.publicKey, now: deps.clock() });
+    await recordBan(deps, id);
+    const older = (await openpgp.readKey({ armoredKey: k.publicKey })).getSubkeys()[0]!.getFingerprint();
+    expect((await keyFingerprints(k.publicKey)).length).toBe(3);
+    // The older subkey is not on the list (recording it now adds a row); the primary is.
+    await expect(recordBannedValues(deps.db, deps.config, { kind: 'pgp-fingerprint', values: [k.fingerprint.toLowerCase()], accountId: null, now: deps.clock() })).resolves.toBe(0);
+    await expect(recordBannedValues(deps.db, deps.config, { kind: 'pgp-fingerprint', values: [older], accountId: null, now: deps.clock() })).resolves.toBe(1);
   });
 });
 

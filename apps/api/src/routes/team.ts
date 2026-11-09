@@ -251,7 +251,7 @@ export function teamRoutes(app: FastifyInstance): void {
     const setup = await inTransaction(deps.db, async (c) => {
       const m = await startMember(c, deps.config, {
         inviteId, names, now,
-        addKey: (memberAccountId) => insertPgpKey(c, deps.config, { accountId: memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now }),
+        addKey: (memberAccountId) => insertPgpKey(c, deps.config, { accountId: memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved }),
       });
       const { rows } = await c.query<{ id: string }>(
         `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
@@ -338,7 +338,7 @@ export function teamRoutes(app: FastifyInstance): void {
     await inTransaction(deps.db, async (c) => {
       await useSetup(c, setup.id, now);
       // A second, different key: the same fingerprint is `key-in-use` (two PGP factors need disjoint keys).
-      await insertPgpKey(c, deps.config, { accountId: setup.memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now });
+      await insertPgpKey(c, deps.config, { accountId: setup.memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved });
       await finishMember(c, setup.memberAccountId, now);
     });
     // Landing review M1: two PGP keys were just proven, so the member's first session is strong.

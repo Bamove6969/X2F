@@ -74,7 +74,7 @@ export type HoldReason = 'weak-change' | 'weak-new-device' | 'weak-backup-login'
 export type PendingChange =
   | { kind: 'password'; hash: string; pepperId: number }
   | { kind: 'totp'; secretEnc: string; step: number }
-  | { kind: 'pgp'; fingerprint: string; keyEnc: string }
+  | { kind: 'pgp'; fingerprint: string; keyEnc: string; recipient?: string | null }
   | { kind: 'webauthn'; credential: StoredCredential; label: string }
   | { kind: 'recovery-codes'; keyId: number; hashes: string[] }
   | { kind: 'remove-method'; type: MethodType; id: string }
@@ -198,7 +198,7 @@ async function applyChange(db: Queryable, config: Config, accountId: string, c: 
       await applyTotp(db, accountId, Buffer.from(c.secretEnc, 'base64'), c.step, now);
       return false;
     case 'pgp':
-      await applyPgpKey(db, config, accountId, c.fingerprint, Buffer.from(c.keyEnc, 'base64'), now);
+      await applyPgpKey(db, config, accountId, c.fingerprint, Buffer.from(c.keyEnc, 'base64'), now, c.recipient);
       return false;
     case 'webauthn':
       await applyCredential(db, accountId, c.credential, c.label, now);
