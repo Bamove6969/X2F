@@ -182,6 +182,11 @@ describe('SellerRefund: the board copy', () => {
     const none = mount(lying, { escrow: escrowFake(null).escrow });
     expect(none.host.textContent).toContain("you'll be asked to send mira.k the 9.990000 XMR as agreed");
   });
+
+  it('the XMR owed is exact, never cut at 6 places (review kit round 1, finding 1)', () => {
+    const { host } = mount(sellerView({ amountAtomic: '610529733574' }), { escrow: escrowFake(610_529_733_574n).escrow });
+    expect(host.textContent).toContain("you'll be asked to send mira.k the 0.610529733574 XMR as agreed");
+  });
 });
 
 describe('SellerRefund: Cancel & get refund', () => {

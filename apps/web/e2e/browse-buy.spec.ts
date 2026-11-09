@@ -25,10 +25,10 @@ test.describe('/buy (BuyMain board)', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('How do you want to pay?');
     await expect(page.getByRole('tab', { name: 'Buy' })).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('main h2')).toHaveText(['Sellers taking USD', 'All payment methods']);
-    const live = page.locator('section', { has: page.getByRole('heading', { name: 'Sellers taking USD' }) }).locator('a');
-    await expect(live.first()).toContainText('Zelle');
-    await expect(live.first()).toContainText('29 sellers taking USD · from $330.00');
-    await expect(live.first()).toHaveAttribute('href', '/buy/ZELLE?currency=USD');
+    const live = page.locator('section', { has: page.getByRole('heading', { name: 'Sellers taking USD' }) });
+    await expect(live.getByRole('button', { name: 'Payment method: Zelle' })).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(live.locator('a')).toHaveCount(1);
+    await expect(live.getByRole('link', { name: 'Zelle 29 sellers taking USD · from $330.00' })).toHaveAttribute('href', '/buy/ZELLE?currency=USD');
     const names = await page.locator('section', { has: page.getByRole('heading', { name: 'All payment methods' }) }).locator('a [data-part="name"]').allTextContents();
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'en')));
     await expect(page.getByRole('searchbox', { name: 'Search payment methods' })).toHaveAttribute('placeholder', `Search ${CATALOG.length} payment methods`);
@@ -42,7 +42,19 @@ test.describe('/buy (BuyMain board)', () => {
     await page.goto('/buy');
     await page.getByRole('radio', { name: 'Best rate' }).click();
     await expect.poll(() => seen.requests.some((r) => /\/v1\/methods\?.*side=sell.*sort=rate/.test(r.url()))).toBe(true);
-    await expect(page.locator('section').first().locator('a').first()).toContainText('Zelle');
+    await expect(page.locator('section').first().getByRole('button', { name: 'Payment method: Zelle' })).toBeVisible();
+  });
+
+  test('the live card picks among the methods with sellers in the currency (owner 2026-11-08)', async ({ page }) => {
+    await stub(page);
+    await page.goto('/buy');
+    await page.getByRole('button', { name: 'Payment method: Zelle' }).click();
+    const sheet = page.getByRole('dialog', { name: 'Sellers taking USD' });
+    await expect(sheet.getByRole('radio')).toHaveCount(BOARD_BUY_LIVE_USD.length);
+    const second = BOARD_BUY_LIVE_USD[1];
+    await sheet.getByRole('radio', { name: second.name }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(page.getByRole('link', { name: new RegExp(`^${second.name} ${second.offers} sellers taking USD`) })).toHaveAttribute('href', `/buy/${second.id}?currency=USD`);
   });
 
   test('a search hit list under Best rate puts the lowest rate first', async ({ page }) => {
@@ -168,7 +180,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     test('BuyMain: parity and phone layout', async ({ page }) => {
       await stub(page);
       await page.goto('/buy');
-      await expect(page.locator('main a').first()).toContainText('Zelle');
+      await expect(page.getByRole('button', { name: 'Payment method: Zelle' })).toBeVisible({ timeout: 15000 });
       await expectPhoneLayout(page);
       await expectParity(page, 'BuyMain', { viewport, primary: false });
     });
