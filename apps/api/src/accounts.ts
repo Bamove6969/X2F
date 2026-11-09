@@ -4,6 +4,7 @@ import type { Deps } from './app.js';
 import { subkey, type Config } from './config.js';
 import type { Queryable } from './db/pool.js';
 import { ApiError } from './errors.js';
+import { bannedTagSql, displayNameBanned } from './bans.js';
 
 /**
  * The two names of a new account: the display name as typed and as its case-insensitive key, and
@@ -89,12 +90,15 @@ export function openNames(config: Config, sealed: unknown): NewNames {
  * code or the authenticator has proved the key), and is answered with the generic
  * `names-unavailable`, so there is no cheap way to test whether a private login name exists.
  */
-export async function assertDisplayNameFree(db: Queryable, n: NewNames): Promise<void> {
+export async function assertDisplayNameFree(db: Queryable, n: NewNames, config?: Config): Promise<void> {
   const { rows } = await db.query<{ display_key: string }>('select display_key from accounts where display_key in ($1, $2)', [
     n.displayKey, n.loginKey,
   ]);
   if (rows.some((r) => r.display_key === n.displayKey)) throw new ApiError(409, 'display-name-taken');
   if (rows.length > 0) throw new ApiError(409, 'names-unavailable');
+  // The ban list (owner 2 Nov 2026, bans.ts): a banned display name reads as taken, early. Only
+  // banned display names: a banned private login name is found by `createAccount`, generically.
+  if (config !== undefined && (await displayNameBanned(db, config, n.displayKey))) throw new ApiError(409, 'display-name-taken');
 }
 
 /** Domain separation of the login-name tag (FU-D). */
@@ -230,8 +234,13 @@ export async function lockNames(db: Queryable): Promise<void> {
  * `displayKey`, also that no account's login tag is that display name's (review I1 B: a display
  * name may never be someone's private login name). A login name waiting out an account's 24-hour
  * hold (`account_holds.pending_change` of kind `login-name`, its tag under its key id) counts as
- * taken in both namespaces too (review round 2 N-M1). One query; the tags are computed by the caller.
+ * taken in both namespaces too (review round 2 N-M1), and so does a name on the ban list (owner 2
+ * Nov 2026, bans.ts: a banned display or login name, in either namespace). One query; the tags
+ * are computed by the caller.
  */
+/** Every banned name is out of both namespaces (owner 2 Nov 2026, the ban list; bans.ts). */
+const BANNED_NAMES = ['display-name', 'login-name'] as const;
+
 async function namesTaken(
   db: Queryable,
   q: { self: string | null; loginKey: string; login: LoginTags; display: LoginTags | null },
@@ -246,7 +255,8 @@ async function namesTaken(
     `select exists (select 1 from accounts where display_key = $1)
          or exists (select 1 from accounts a where ${loginTagMatch('a', 2)} and a.id is distinct from $4)
          or exists (select 1 from accounts a where ${loginTagMatch('a', 5)} and a.id is distinct from $4)
-         or ${pending(2)} or ${pending(5)} as taken`,
+         or ${pending(2)} or ${pending(5)}
+         or ${bannedTagSql(BANNED_NAMES, 2)} or ${bannedTagSql(BANNED_NAMES, 5)} as taken`,
     [q.loginKey, q.login.ids, q.login.tags, q.self, q.display?.ids ?? [], q.display?.tags ?? []],
   );
   return rows[0]!.taken;

@@ -1,7 +1,7 @@
 // C2-D1: the path, title and helpers of the Devices screen ("Devices and sessions" board, docs/design-boards/Devices.dc.html
 // on wip/design-brief). The board is marked Draft copy, so every sentence here is COPY-UNSIGNED
 // until the owner signs the board off. The board's sentences about behaviour X2F does not have yet
-// (members' "Can log in" switch, members not counting toward the limit, the session-length choice, the passkey / security key / PGP way in without an approval,
+// (members' "Can log in" switch, members not counting toward the limit, the passkey / security key / PGP way in without an approval,
 // the recovery code's hold for everyone) are left out; see the C2-D1 report. "Log out all team
 // members" is built (C2-D1b, review I1), without the board's sentence about switching members off.
 

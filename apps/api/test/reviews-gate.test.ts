@@ -6,6 +6,7 @@ import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { hasPendingReview } from '../src/reviews/gate.js';
 import { loadTradeRow } from '../src/trades/store.js';
+import { makeVendor } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
@@ -70,10 +71,12 @@ async function released(who: Who, role: 'buyer' | 'seller' = 'buyer'): Promise<s
 
 const OFFER = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: 0, terms: 'Zelle only.',
+  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: null, terms: 'Zelle only.',
 };
 
 async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<string> {
+  // Owner 2 Nov 2026: only vendor accounts post offers.
+  await makeVendor(deps, who.id);
   const res = await who.browser.post('/v1/offers', { ...OFFER, ...over });
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;

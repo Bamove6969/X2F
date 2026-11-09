@@ -11,3 +11,6 @@ design/x2f-app/support.js
 
 # Helper agents keep scratch files here (never commit them)
 .scratch/
+
+# TypeScript incremental build state (review P-m3)
+*.tsbuildinfo

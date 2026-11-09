@@ -118,6 +118,11 @@ export type ApiErrorCode =
   | 'forbidden'
   | 'too-many-members'
   | 'member-cannot-sign'
+  // Owner 2 Nov 2026: Trader and Vendor accounts (only a vendor posts offers or has a team; the
+  // switch needs a passkey, security key or PGP key), and the ban list (a banned PGP key).
+  | 'not-vendor'
+  | 'vendor-needs-key'
+  | 'key-unavailable'
   // Plan 4, Task 4: staff login hours (a login, or an open session, outside the window).
   | 'outside-login-hours'
   // Plan 4, Task 7: staff invites and the owner's protections.
@@ -126,6 +131,12 @@ export type ApiErrorCode =
   | 'two-factors-required'
   | 'owner-protected'
   | 'owner-needs-two-keys'
+  // Owner G3 (7 Nov): a moderator holds a security key, a PGP key and a passkey.
+  | 'all-three-methods-required'
+  // Owner G4 (7 Nov): adding or removing an owner key needs taps by both owner keys.
+  | 'both-owner-keys-required'
+  // Owner G3 (review P-m1): a staff passkey that reports a security-key model is that key again.
+  | 'passkey-is-security-key'
   // Plan 5 Task 10 on the staff API: the past-rep claim is no longer live (revoked, removed, rejected).
   | 'not-live'
   // Plan 5, Task 10: past reputation claims.

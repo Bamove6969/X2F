@@ -11,6 +11,8 @@ import {
   TERMS_LONG_TEXT,
   DEFAULT_FORM,
   FIXED_STALE_WARNING,
+  MIN_TRADES,
+  MIN_TRADES_OPTIONS,
   POST_CURRENCIES,
   afterPostPath,
   fixedPriceCheck,
@@ -34,6 +36,8 @@ import {
 const form = (over: Partial<FormState> = {}): FormState => ({
   ...DEFAULT_FORM,
   methodId: 'ZELLE',
+  // These tests type fiat; offerAmounts.test.tsx covers the XMR default.
+  unit: 'fiat',
   min: '$50',
   max: '$2,000',
   ...over,
@@ -178,8 +182,7 @@ describe('validate', () => {
       methodId: 'ZELLE',
       currency: 'USD',
       pricing: { mode: 'market', marginBps: 50 },
-      minFiatCents: 5000n,
-      maxFiatCents: 200000n,
+      amounts: { amountUnit: 'fiat', minFiatCents: 5000n, maxFiatCents: 200000n },
       minTrades: 5,
       terms: 'Memo: trade number',
     });
@@ -244,9 +247,31 @@ describe('validate: terms (the API rule, Task 4 review M2)', () => {
   });
 });
 
+describe('minimum completed trades (owner, 8 Nov: "This will be 5, 10, 25, 50")', () => {
+  it('is a fixed choice: No minimum (the default), 5, 10, 25 or 50', () => {
+    expect(MIN_TRADES).toEqual([null, 5, 10, 25, 50]);
+    expect(DEFAULT_FORM.minTrades).toBeNull();
+    expect(MIN_TRADES_OPTIONS.map((o) => o.label)).toEqual(['No minimum', '5', '10', '25', '50']);
+  });
+
+  it('posts null for no minimum and the number for a choice', () => {
+    expect(validate(form()).body?.minTrades).toBeNull();
+    for (const n of [5, 10, 25, 50] as const) expect(validate(form({ minTrades: n })).body?.minTrades).toBe(n);
+  });
+
+  it('a no-minimum draft round-trips', () => {
+    const s = memoryStorage();
+    saveDraft(s, form({ minTrades: null }));
+    expect(loadDraft(s)?.minTrades).toBeNull();
+    saveDraft(s, form({ minTrades: 25 }));
+    expect(loadDraft(s)?.minTrades).toBe(25);
+  });
+});
+
 describe('preview and navigation', () => {
   it('says who can trade openly, never a name (the board says "you")', () => {
-    expect(previewLine('sell', 'Zelle', 'USD', 0)).toBe('Selling XMR via Zelle · USD · you');
+    expect(previewLine('sell', 'Zelle', 'USD', null)).toBe('Selling XMR via Zelle · USD · you');
+    expect(previewLine('sell', 'Zelle', 'USD', 25)).toBe('Selling XMR via Zelle · USD · you · 25+ completed trades');
     expect(previewLine('buy', 'Zelle', 'EUR', 10)).toBe('Buying XMR via Zelle · EUR · you · 10+ completed trades');
   });
 
@@ -281,6 +306,9 @@ describe('draft', () => {
     expect(loadDraft(s)).toBeNull();
     s.setItem('x2f.post-draft', JSON.stringify({ ...form(), minTrades: 7 }));
     expect(loadDraft(s)).toBeNull();
+    // A draft from before the owner's choices (0 for anyone) is No minimum, never read as a minimum (review L2).
+    s.setItem('x2f.post-draft', JSON.stringify({ ...form(), minTrades: 0 }));
+    expect(loadDraft(s)?.minTrades).toBeNull();
     s.setItem('x2f.post-draft', JSON.stringify({ ...form(), side: 'steal' }));
     expect(loadDraft(s)).toBeNull();
   });

@@ -4,6 +4,7 @@
 // not give is lead wording until the owner signs it off (COPY-UNSIGNED).
 import { CANT_DO_CODES, MY_OFFERS_HIDDEN, TRADING_HOLD_CODE, isCantDoCode, myOffersRowText, type CantDoCode, type MyOffersHidden } from '../../ui/cantDoCodes.js';
 import { formatAmount, formatPrice, marginText } from '../post/offerForm.js';
+import { xmrRangeText } from '../browse/offerAmounts.js';
 import type { MyOffer, OfferState, SwitchResult } from './api.js';
 
 /** The route of the My offers screen (under Profile, where the bottom nav's Profile tab points). */
@@ -77,9 +78,10 @@ export function offerPrice(o: MyOffer): string {
   return offerPriceParts(o).join(' · ');
 }
 
-/** The limits in mono: "$50 – $2,000" (the line adds " per trade"). */
+/** The limits in mono, in the unit the poster set them in: "$50 – $2,000", "1.000000 – 5.000000 XMR" (the line adds " per trade"). */
 export function offerLimitsRange(o: MyOffer): string {
-  return `${formatAmount(o.minFiatCents, o.currency)} – ${formatAmount(o.maxFiatCents, o.currency)}`;
+  if (o.amountUnit === 'xmr') return `${xmrRangeText(o.minAtomic!, o.maxAtomic!)} XMR`;
+  return `${formatAmount(o.minFiatCents!, o.currency)} – ${formatAmount(o.maxFiatCents!, o.currency)}`;
 }
 
 /** The limits line: "$50 – $2,000 per trade". */

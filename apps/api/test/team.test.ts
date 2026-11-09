@@ -16,7 +16,8 @@ import { MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '..
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
 import { openEvents, until, type SseStream } from './helpers/sse.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { seedAccount } from './helpers/accounts.js';
+import { recordBannedValues } from '../src/bans.js';
+import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { Browser, ORIGIN } from './helpers/totp.js';
@@ -92,9 +93,10 @@ async function addWallet(accountId: string): Promise<string> {
   return rows[0]!.id;
 }
 
-/** A team account (a trader with a usable wallet). */
+/** A team account (a vendor with a usable wallet; owner 2 Nov 2026: teams are for vendors only). */
 async function team(): Promise<Who & { wallet: string }> {
   const t = await trader();
+  await makeVendor(deps, t.id);
   return { ...t, wallet: await addWallet(t.id) };
 }
 
@@ -141,7 +143,7 @@ async function invite(owner: Who, displayName: string, roles: Role[]) {
 
 const OFFER = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: 0, terms: 'Zelle only.',
+  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: null, terms: 'Zelle only.',
 };
 
 function takeBody(walletId: string, amountAtomic = XMR / 10n): Record<string, unknown> {
@@ -241,6 +243,39 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect(((await owner.browser.get('/v1/team')).json() as { members: { status: string }[] }).members[0]!.status).toBe('active');
   });
 
+  it('a banned key (lead review 2026-11-06 item 1): join start answers as for any key; finish reaches insertPgpKey and refuses 409 key-unavailable, nothing created', async () => {
+    const owner = await team();
+    const created = (await invite(owner, `Banjoin${++n}x`, ['trades'])).json() as { id: string; invite: string };
+    const banned = await genKey();
+    await recordBannedValues(deps.db, deps.config, { kind: 'pgp-fingerprint', values: [banned.fingerprint.toLowerCase()], accountId: null, now: deps.clock() });
+    const b = new Browser(app);
+    const s1 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: banned.publicKey });
+    expect(s1.statusCode, s1.body).toBe(200);
+    const c1 = s1.json() as { challengeId: string; encryptedMessage: string };
+    const f1 = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: codeOf(await decrypt(c1.encryptedMessage, banned.privateKey, undefined, deps.clock())) });
+    expect(err(f1)).toEqual({ status: 409, error: 'key-unavailable' });
+    // The transaction rolled back: no member account, the key is nowhere, the invite is still open.
+    expect((await deps.db.query('select 1 from pgp_keys where fingerprint = $1', [banned.fingerprint.toLowerCase()])).rowCount).toBe(0);
+    expect((await deps.db.query('select member_account_id from team_members where id = $1', [created.id])).rows[0]).toEqual({ member_account_id: null });
+    expect((await new Browser(app).post('/v1/team/invite', { invite: created.invite })).statusCode).toBe(200);
+
+    // The second PGP factor goes through insertPgpKey as well.
+    const k1 = await genKey();
+    const s2 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: k1.publicKey });
+    const c2 = s2.json() as { challengeId: string; encryptedMessage: string };
+    const f2 = await b.post('/v1/team/join/finish', { challengeId: c2.challengeId, code: codeOf(await decrypt(c2.encryptedMessage, k1.privateKey, undefined, deps.clock())) });
+    expect(f2.statusCode, f2.body).toBe(201);
+    const { setupId } = f2.json() as { setupId: string };
+    const s3 = await b.post('/v1/team/join/second/pgp/start', { setupId, publicKey: banned.publicKey });
+    expect(s3.statusCode, s3.body).toBe(200);
+    const c3 = s3.json() as { challengeId: string; encryptedMessage: string };
+    const f3 = await b.post('/v1/team/join/second/pgp/finish', {
+      setupId, challengeId: c3.challengeId, code: codeOf(await decrypt(c3.encryptedMessage, banned.privateKey, undefined, deps.clock())), deviceLabel: 'Test',
+    });
+    expect(err(f3)).toEqual({ status: 409, error: 'key-unavailable' });
+    expect((await deps.db.query('select 1 from pgp_keys where fingerprint = $1', [banned.fingerprint.toLowerCase()])).rowCount).toBe(0);
+  });
+
   it('a member login with a password alone is refused (members never hold a password)', async () => {
     const owner = await team();
     const m = await member(owner.id, ['offers']);
@@ -321,11 +356,15 @@ describe('owner-only', () => {
       await m.browser.patch(`/v1/team/members/${m.id}`, { roles: ['offers'] }),
       await m.browser.delete(`/v1/team/members/${m.id}`),
       await m.browser.get('/v1/team/audit'),
-      await m.browser.put('/v1/account/security/logout-timer', { idleHours: 12 }),
       await m.browser.get('/v1/account/sessions'),
+      // Owner Q73: a member confirms with their own methods for "Stay logged in" only.
+      await m.browser.post('/v1/confirm/pgp/start', { action: { kind: 'set-password' } }),
+      await m.browser.post('/v1/confirm/webauthn/start', { action: { kind: 'team-remove', memberId: m.id } }),
       await m.browser.post('/v1/account/login-name', { loginName: 'whatever1' }),
     ];
     for (const r of refused) expect(err(r)).toEqual({ status: 403, error: 'owner-only' });
+    // Owner Q73 (6 Nov 2026): a member extends their own session, with a proof of their own.
+    expect(err(await m.browser.post('/v1/account/session/extend', {}))).toEqual({ status: 403, error: 'confirm-required' });
     // Every member may read who they are (the overview of the account they work for).
     expect((await m.browser.get('/v1/account/me')).statusCode).toBe(200);
   });
@@ -710,6 +749,15 @@ describe('the audit log covers every member action (review M3)', () => {
     const EXEMPT: Record<string, string> = {
       'POST /v1/feedback/form': 'anonymous by design (Plan 5 Task 21): not an account action, and a row would tie the member to the text',
       'POST /v1/trades/:code/identity': 'refused to every member (ownerDeviceOnly, member-cannot-sign) until Plan 3 Task 42',
+      'PUT /v1/account/session/length': "the member's own session length after their own login (owner, 2 Nov 2026): not an account action",
+      // Owner Q73 (6 Nov 2026): a member extends their own session with their own login methods.
+      'POST /v1/account/session/extend': "the member's own session, re-proved with their own login method: not an account action",
+      'POST /v1/confirm/pgp/start': "a confirm challenge to the member's own keys, extend-session only (confirmerOf): writes a challenge row, not an account action",
+      'POST /v1/confirm/pgp/finish': 'a confirm token for the calling session, extend-session only: not an account action',
+      'POST /v1/confirm/webauthn/start': "a confirm challenge for the member's own credentials, extend-session only: not an account action",
+      'POST /v1/confirm/webauthn/finish': 'a confirm token for the calling session, extend-session only: not an account action',
+      // Owner Q75: the member's own idle reminder, on their own login account.
+      'PUT /v1/account/idle-reminder': "the member's own reminder preference on their own login: not an account action",
     };
     const found: string[] = [];
     const audited = new Set<string>();

@@ -389,8 +389,9 @@ async function postApi(page: Page, roles: string[], post: { status: number; body
 
 async function postOffer(page: Page): Promise<void> {
   await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+  await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+  await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
   await page.getByRole('button', { name: 'Post offer' }).click();
 }
 
@@ -582,7 +583,7 @@ test('the owner changes roles and removes a member; the member is then signed ou
     { id: 's-own', deviceLabel: 'Pixel 8', level: 'full', createdAt: LATER, lastSeenAt: LATER, current: true, member: null },
     { id: 's-m', deviceLabel: 'Firefox on Linux', level: 'full', createdAt: LATER, lastSeenAt: LATER, current: false, member: 'Basil' },
   ]));
-  await page.route(/\/v1\/account\/security.*/, json({ idleHours: 12, adjustable: true }));
+  await page.route('**/v1/account/security/devices', json({ oneDevice: false, maxDevices: 3 }));
   await page.goto('/settings/devices');
   // C2-D1 (Devices board): members' sessions are their own card.
   const row = page.locator('[data-part="team-sessions"] li[data-member="Basil"]');

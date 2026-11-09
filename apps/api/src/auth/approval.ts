@@ -221,6 +221,7 @@ export async function traderLogin(
   ensureDeviceCookie(req, reply);
   const device = deviceHash(req)!;
   const now = deps.clock();
+  // Matched on token_hash only, never prev_token_hash (S-m1): a login sent with the token before an extend, in its short window, is not "this browser's own session".
   const presented = presentedTokenHash(req);
   const secret = randomBytes(32).toString('base64url');
   const settle = settleOf(req);

@@ -45,6 +45,8 @@ function big(o: Obj, k: string, at: string): bigint {
 export async function fetchOffer(side: AdSide, method: string, currency: string, id: string, signal?: AbortSignal): Promise<QuoteOffer | null> {
   const q = new URLSearchParams({ side, method, currency, sort: 'best' });
   const found = parseOffers(await api(`/v1/offers?${q}`, signal ? { signal } : {})).find((o) => o.id === id);
+  // The quote checks the poster's own unit at its own rate (review M1), so an offer set in XMR with
+  // the feed down is still quoted: it reads "Price unavailable right now", never "no longer listed".
   return found === undefined ? null : quoteOffer(found, side, currency);
 }
 
@@ -57,6 +59,9 @@ export function quoteOffer(o: Offer, side: AdSide, currency: string): QuoteOffer
     // The public display name (spec 6.1); the private login name never reaches here.
     poster: { displayName: o.poster.displayName, stage: o.poster.stage },
     pricing: o.pricing,
+    amountUnit: o.amountUnit,
+    minAtomic: o.minAtomic,
+    maxAtomic: o.maxAtomic,
     minFiatCents: o.minFiatCents,
     maxFiatCents: o.maxFiatCents,
     minTrades: o.minTrades,

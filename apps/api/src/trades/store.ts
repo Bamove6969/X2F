@@ -7,6 +7,7 @@ import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
 import { bookTradeRevenue } from '../staff/revenue.js';
+import { countActionTimes } from '../traders/actionTimes.js';
 import { countTradeTotals } from '../traders/tradedTotal.js';
 
 /**
@@ -381,6 +382,8 @@ export async function applyEvent(
         // revenue ledger, once per trade; a cancel or a refund pays none (staff/revenue.ts).
         await bookTradeRevenue(client, code);
       }
+      // P5-A8: a release by the seller adds both sides' action times to their running lists (once; traders/actionTimes.ts).
+      if (next.state !== prev.state && next.state === 'released') await countActionTimes(client, code);
       if (within) await within(client, prev, next, now);
       // Plan 4 Task 3: one activity-log entry per stored event, in the same transaction. It is the
       // last statement before the commit (M2): the log lock serialises every append on the site,

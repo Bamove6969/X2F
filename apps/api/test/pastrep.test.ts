@@ -542,6 +542,21 @@ describe('one fingerprint, one account (P5-A24)', () => {
     ]));
   });
 
+  it('owner G21 (7 Nov): once one account\'s claim on a key is revoked, another account that proves the key may claim it', async () => {
+    const a = await login();
+    const c1 = await start(a.b, ed);
+    const first = (await finishOf(a.b, c1.challengeId, await clearsign(c1.text, ed))).json().id as string;
+    // While A's claim is live, B is refused.
+    const bAcc = await login();
+    const blocked = await start(bAcc.b, ed);
+    expect((await finishOf(bAcc.b, blocked.challengeId, await clearsign(blocked.text, ed))).json()).toMatchObject({ error: 'fingerprint-claimed' });
+    await deps.db.query(`update past_reputation set status = 'revoked', decided_at = $2, reason = 'test' where id = $1`, [first, T0]);
+    const c2 = await start(bAcc.b, ed);
+    const res = await finishOf(bAcc.b, c2.challengeId, await clearsign(c2.text, ed));
+    expect(res.statusCode, res.body).toBe(201);
+    expect((await rows()).find((r) => r.id === res.json().id)).toMatchObject({ account_id: bAcc.id, fingerprint: ed.fingerprint, status: 'signed' });
+  });
+
   it("another account's claim cannot be removed (404) and is not listed", async () => {
     const a = await login();
     const c = await start(a.b, ed);

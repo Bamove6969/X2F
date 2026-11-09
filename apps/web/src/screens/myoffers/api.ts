@@ -19,8 +19,15 @@ export interface MyOffer {
   currency: string;
   rate: bigint | null;
   pricing: { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
-  minFiatCents: bigint;
-  maxFiatCents: bigint;
+  /**
+   * The unit the range was set in (owner, 8 Nov): that pair is exact; the API sends the other at the
+   * offer's rate now, or null with no rate.
+   */
+  amountUnit: 'xmr' | 'fiat';
+  minAtomic: bigint | null;
+  maxAtomic: bigint | null;
+  minFiatCents: bigint | null;
+  maxFiatCents: bigint | null;
   minTrades: number;
   country?: string;
   status: OfferState;
@@ -45,6 +52,19 @@ function big(v: unknown): bigint {
   return BigInt(v);
 }
 
+const bigOrNull = (v: unknown): bigint | null => (v === null ? null : big(v));
+
+/** The range: an answer without `amountUnit` is in fiat (before 8 Nov); the own pair is required, in order. */
+function amounts(o: Record<string, unknown>): Pick<MyOffer, 'amountUnit' | 'minAtomic' | 'maxAtomic' | 'minFiatCents' | 'maxFiatCents'> {
+  if (o.amountUnit === undefined) return { amountUnit: 'fiat', minAtomic: null, maxAtomic: null, minFiatCents: big(o.minFiatCents), maxFiatCents: big(o.maxFiatCents) };
+  if (o.amountUnit !== 'xmr' && o.amountUnit !== 'fiat') throw shape();
+  for (const k of ['minAtomic', 'maxAtomic', 'minFiatCents', 'maxFiatCents']) if (!(k in o)) throw shape();
+  const out = { amountUnit: o.amountUnit as 'xmr' | 'fiat', minAtomic: bigOrNull(o.minAtomic), maxAtomic: bigOrNull(o.maxAtomic), minFiatCents: bigOrNull(o.minFiatCents), maxFiatCents: bigOrNull(o.maxFiatCents) };
+  const [lo, hi] = out.amountUnit === 'xmr' ? [out.minAtomic, out.maxAtomic] : [out.minFiatCents, out.maxFiatCents];
+  if (lo === null || hi === null || lo <= 0n || hi < lo) throw shape();
+  return out;
+}
+
 function state(v: unknown): OfferState {
   if (v !== 'live' && v !== 'paused') throw shape();
   return v;
@@ -66,7 +86,8 @@ export function parseMyOffers(raw: unknown): MyOffer[] {
   return raw.map((o: unknown) => {
     if (!isRecord(o)) throw shape();
     if (o.side !== 'sell' && o.side !== 'buy') throw shape();
-    if (typeof o.minTrades !== 'number') throw shape();
+    // Null is no minimum (owner, 8 Nov), read as 0 as before.
+    if (o.minTrades !== null && typeof o.minTrades !== 'number') throw shape();
     const out: MyOffer = {
       id: str(o.id),
       side: o.side,
@@ -75,9 +96,8 @@ export function parseMyOffers(raw: unknown): MyOffer[] {
       currency: str(o.currency),
       rate: o.rate === null ? null : big(o.rate),
       pricing: parsePricing(o.pricing),
-      minFiatCents: big(o.minFiatCents),
-      maxFiatCents: big(o.maxFiatCents),
-      minTrades: o.minTrades,
+      ...amounts(o),
+      minTrades: o.minTrades ?? 0,
       status: state(o.status),
     };
     if (o.country !== undefined) out.country = str(o.country);

@@ -1,5 +1,6 @@
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { UNCHOSEN_SESSION_HOURS } from '@x2f/accounts';
 import type { Deps } from '../src/app.js';
 import { EventBus, type LiveEvent } from '../src/events/bus.js';
 import { PUBLIC_NAME_COLUMN, acceptedEvent, publicName } from '../src/events/publicName.js';
@@ -439,6 +440,20 @@ describe('a session revoked between requireTrader and attach (security review ME
     expect(app.events.size).toBe(0);
   });
 
+  it('a session shortened in that window ends the stream at the new, earlier end (review S-m2)', async () => {
+    const t = await trader();
+    // `PUT session/length` shortened the session (its closeSession found nothing to close yet): the
+    // stream must not live on to the old end that requireTrader read.
+    afterAttach = async () => {
+      await deps.db.query('update sessions set expires_at = $2 where account_id = $1', [t.id, new Date(deps.clock().getTime() + 200)]);
+    };
+    const s = await stream(t.b);
+    expect(s.status).toBe(200);
+    const started = Date.now();
+    await Promise.race([s.ended, new Promise((_, fail) => setTimeout(() => fail(new Error('stream outlived the shortened session')), 2000))]);
+    expect(Date.now() - started).toBeLessThan(1500);
+  });
+
   it('an event published before the headers go out is delivered after them, in order', async () => {
     const t = await trader();
     afterAttach = async () => {
@@ -455,7 +470,7 @@ describe('a session revoked between requireTrader and attach (security review ME
 describe('GET /v1/events never refreshes the session (review 2026-10-27, Important 1)', () => {
   const HOUR = 3600_000;
 
-  /** An app whose streams end fast, with a trader on the default 12-hour logout timer. */
+  /** An app whose streams end fast, with a trader whose session length is not chosen yet (UNCHOSEN_SESSION_HOURS). */
   async function shortApp(maxStreamMs: number, loginAt: Date) {
     const short = await testApp({}, { events: { perAccount: 2, global: 4, heartbeatMs: 1000, maxStreamMs } });
     short.setNow(loginAt);
@@ -478,13 +493,14 @@ describe('GET /v1/events never refreshes the session (review 2026-10-27, Importa
     return { ...short, b, session };
   }
 
-  it('an open stream reconnecting for longer than the inactivity timeout still ends with an expired session', async () => {
+  it('an open stream reconnecting until past the session length still ends with an expired session', async () => {
     const start = new Date(T0.getTime() + 500 * DAY);
     const short = await shortApp(80, start);
     try {
       const before = await short.session();
-      // Hour 0 and hour 11: the tab is open and reconnecting, the user touches nothing.
-      for (const hours of [0, 11]) {
+      // Session length (owner, 2 Nov 2026): the session ends UNCHOSEN_SESSION_HOURS after the login.
+      // At hour 0 and just before the end the tab is open and reconnecting; the user touches nothing.
+      for (const hours of [0, UNCHOSEN_SESSION_HOURS - 0.25]) {
         short.setNow(new Date(start.getTime() + hours * HOUR));
         const s = await openEvents(short.app, short.b.cookies);
         expect(s.status, `hour ${hours}`).toBe(200);
@@ -493,8 +509,8 @@ describe('GET /v1/events never refreshes the session (review 2026-10-27, Importa
       }
       // No stream touched the session: last_seen_at and expires_at are what the login wrote.
       expect(await short.session()).toEqual(before);
-      // Hour 13: past the 12-hour logout timer, the reconnect is refused and nothing else revives it.
-      short.setNow(new Date(start.getTime() + 13 * HOUR));
+      // Past the session's end the reconnect is refused and nothing else revives it.
+      short.setNow(new Date(start.getTime() + (UNCHOSEN_SESSION_HOURS + 1) * HOUR));
       const s = await openEvents(short.app, short.b.cookies);
       expect(s.status).toBe(401);
       expect(s.body).toEqual({ error: 'not-authenticated' });
@@ -504,7 +520,7 @@ describe('GET /v1/events never refreshes the session (review 2026-10-27, Importa
     }
   });
 
-  it("a stream ends at the session's idle deadline when that comes before maxStreamMs", async () => {
+  it("a stream ends at the session's end when that comes before maxStreamMs", async () => {
     const short = await shortApp(60_000, new Date(T0.getTime() + 501 * DAY));
     try {
       const { expires_at } = await short.session();
@@ -513,7 +529,7 @@ describe('GET /v1/events never refreshes the session (review 2026-10-27, Importa
       const s = await openEvents(short.app, short.b.cookies);
       expect(s.status).toBe(200);
       const t = Date.now();
-      await Promise.race([s.ended, new Promise((_, fail) => setTimeout(() => fail(new Error('stream outlived the idle deadline')), 2000))]);
+      await Promise.race([s.ended, new Promise((_, fail) => setTimeout(() => fail(new Error('stream outlived the session end')), 2000))]);
       expect(Date.now() - t).toBeLessThan(1500);
     } finally {
       await short.app.close();

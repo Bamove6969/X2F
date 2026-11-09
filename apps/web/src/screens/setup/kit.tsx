@@ -125,7 +125,8 @@ export function SetupIntro({ title, children }: { title: ReactNode; children?: R
 
 /**
  * A refused register call. A name problem links back to the names screen (what they typed is kept);
- * a key already on another account links back to the key screen and to Log in (review I1).
+ * a key already on another account links back to the key screen and to Log in (review I1); a
+ * refused key (key-unavailable) links back to the key screen only.
  */
 export function RegisterError({ error }: { error: SetupError | null }) {
   const { path, returnTo } = useSetup();
@@ -138,6 +139,14 @@ export function RegisterError({ error }: { error: SetupError | null }) {
           {' '}
           <Link className="x2f-link" to={path('name')} data-part="change-names">
             Change your names
+          </Link>
+        </>
+      ) : null}
+      {error.keyRefused ? (
+        <>
+          {' '}
+          <Link className="x2f-link" to={path('pgp-key')} replace data-part="other-key">
+            Use a different key
           </Link>
         </>
       ) : null}
