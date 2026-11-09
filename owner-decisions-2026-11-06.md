@@ -150,3 +150,20 @@ Teams (p7):
 - Lead to the cloud (owner, 8 Nov): the lead moves to a cloud session after the current batch lands. The owner allows one 1Password service account token in the cloud lead's environment ("If we need a single token in order to reach all of the other ones so be it"), replacing the 6 Nov rule that the vault token stays off cloud sessions. Lead recommends a dedicated vault, read-only.
 - No-proof warning (owner, 8 Nov): when a buyer taps "I've paid" with no proof attached, a pop-up asks if they are sure, says proof can be instrumental in winning a dispute, and leaves it to them. Design words it. Lead default: this one always shows (it can't be silenced like the p7-2 confirm).
 - Chat retention (owner, 8 Nov): chat keys and messages are kept 30 days after the trade closes (a dispute can be opened in that window), then destroyed. If a dispute happens, they are kept 90 days (owner: "being used for training purposes"), then destroyed. A dispute opened inside the 30 days stops the 30-day destruction. Lead reading: 90 days counted from the dispute closing.
+
+## 8 Nov, page 11 (9pBDGqKsBqz6b5XWWaPxZX); owner's words in owner-answers-page11-2026-11-08.md
+- Chat encryption (p11-1): no Matrix; build it ourselves on what exists.
+- Keys and staff access (p11-2): one per-trade membership model, like Windows permissions: buyer and seller are members; on a dispute the assigned moderator is added and can read everything; a senior moderator or the owner can be added later and see the full history plus the first moderator's actions. An audit log (who wrote or tapped what, with times) is compiled from the start of every trade; destroyed when the trade completes without a dispute, or 90 days after the dispute or appeal is resolved. Where the keys are kept and how they're filed against the trade is to be designed.
+- Deleted chats (p11-3): "No stick to what is already decided"; keys destroyed "at the 48 mark unless dispute happens". CONFLICTS with p11-9 (30th day): asked again as p11-17. Until answered the built 30-day rule stands.
+- Second device (p11-4): full abilities on additional devices; consider approving a new login from a notification on an already logged-in device, with no 24-hour hold on the new device; that notice is a secure Jabber notice as well. Security rule change to confirm in design before building.
+- Removed staff (p11-5): any event of any sort goes in the audit log.
+- Launch trade cap (p11-6): $5,000 per trade.
+- Freelance crypto review (p11-7): no; a proper audit from the site's revenue.
+- GitHub security alerts (p11-8): yes. Done 8 Nov: alerts, automatic security fixes, `dependencies` label.
+- Terms (p11-9): completed trades are destroyed on the 30th day; disputed orders are kept up to 90 days, privacy-tool scrubbed, and used to train admins as the site gets off the ground.
+- Device copies (p11-10): purge is system wide; owner's premise is that data is live from the server. In fact devices hold a local copy: the app must erase it too.
+- 90 days start (p11-11): the day the dispute closes.
+- Demo (p11-12): Tailscale (done).
+- Signature (p11-13, 14, 15): erased when the account closes; everyone who gets a login signs; wording: tick to agree to the rules and terms, then sign your name, then begin account creation; design writes it.
+- Seller dispute before "I've paid" (p11-16): yes. The party who wants out can dispute once the XMR is escrowed and the other won't cancel; that immediately greys out the other trader's "payment sent" and shows a pop-up: do not send funds by any payment method, a dispute has been triggered and a moderator summoned. Design for wording.
+
