@@ -26,6 +26,7 @@ import { testApp } from './helpers/app.js';
 import { createSoftAuthenticator, createTestCa, writeTestMds, type SoftAuthenticator, type TestCa } from './helpers/softAuthenticator.js';
 import { spySql } from './helpers/sqlSpy.js';
 import { SIG } from './helpers/signature.js';
+import { openTermsSignature } from '../src/termsSignature.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-17T12:00:00Z');
@@ -227,8 +228,10 @@ describe('passkey sign-up and discoverable login', () => {
     expect(await accountIdByLoginName(deps, username)).toBeUndefined();
     const ok = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG });
     expect(ok.statusCode).toBe(201);
-    const { rows } = await deps.db.query('select terms_version, terms_signature from accounts where id = $1', [await accountIdByLoginName(deps, username)]);
-    expect(rows[0]).toEqual({ terms_version: TERMS, terms_signature: SIG });
+    const id = (await accountIdByLoginName(deps, username))!;
+    const { rows } = await deps.db.query('select terms_version, terms_signature from accounts where id = $1', [id]);
+    expect(rows[0].terms_version).toBe(TERMS);
+    expect(openTermsSignature(deps.config, rows[0].terms_signature, id)).toEqual(SIG);
   });
 
   it('puts a 32-byte user handle in the options, never the username', async () => {

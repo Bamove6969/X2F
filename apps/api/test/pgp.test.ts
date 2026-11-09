@@ -17,6 +17,7 @@ import { inspectPublicKey } from '@x2f/accounts';
 import { codeOf, decrypt, genKey, KEY_DATE, resign, type Pair } from './helpers/pgpKeys.js';
 import { spySql } from './helpers/sqlSpy.js';
 import { SIG } from './helpers/signature.js';
+import { openTermsSignature } from '../src/termsSignature.js';
 
 const ORIGIN = 'https://x2f.test';
 const ONION = 'http://x2fexample.onion';
@@ -216,8 +217,8 @@ describe('register', () => {
     }
     const ok = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(ok.statusCode).toBe(201);
-    const { rows } = await deps.db.query('select terms_signature from accounts where display_key = $1', [name.toLowerCase()]);
-    expect(rows[0].terms_signature).toEqual(SIG);
+    const { rows } = await deps.db.query('select id, terms_signature from accounts where display_key = $1', [name.toLowerCase()]);
+    expect(openTermsSignature(deps.config, rows[0].terms_signature, rows[0].id)).toEqual(SIG);
   });
 
   it('refuses a private key and stores nothing of it', async () => {

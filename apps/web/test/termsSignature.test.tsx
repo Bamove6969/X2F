@@ -2,6 +2,7 @@
 // Owner, 8 Nov 2026: the Terms are agreed once, at account opening (and again when they change),
 // with the tick AND a signature. The pad's model, the pad (empty vs drawn, Clear, the typed
 // fallback) and the screen's gating (I accept needs both), against a stubbed auth client.
+import { createHash } from 'node:crypto';
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,7 +12,7 @@ import {
 } from '../src/screens/setup/signature.js';
 import { SignaturePad } from '../src/screens/setup/SignaturePad.js';
 import { Terms } from '../src/screens/setup/Terms.js';
-import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
+import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 import { fire, render } from './render.js';
 
 const auth = vi.hoisted(() => ({
@@ -95,6 +96,20 @@ describe('signature model', () => {
     expect(typedSignature('می\u200cخواهم')).toEqual({ kind: 'typed', name: 'می\u200cخواهم' });
   });
 
+  // Security review 2026-11-08, finding 7: the same list as the API's test.
+  it('refuses every invisible character, alone as the whole name and inside one', () => {
+    const invisible = [
+      '\u00ad', '\u034f', '\u115f', '\u1160', '\u17b4', '\u180e', '\u2065', '\u2800', '\u3164', '\ufe0f', '\uffa0', '\ufff9', '\u{1bca0}', '\u{1d173}', '\u{e0100}',
+    ];
+    expect(invisible).toHaveLength(15);
+    for (const c of invisible) {
+      expect(typedSignature(c), `alone ${c.codePointAt(0)!.toString(16)}`).toBeNull();
+      expect(typedSignature(`Mi${c}ra`), `inside ${c.codePointAt(0)!.toString(16)}`).toBeNull();
+    }
+    expect(typedSignature('José Núñez')).toEqual({ kind: 'typed', name: 'José Núñez' });
+    expect(typedSignature('李小龙')).toEqual({ kind: 'typed', name: '李小龙' });
+  });
+
   it('scales strokes when the pad changes size', () => {
     expect(scaleStrokes([[[10, 10], [20, 30]]], { width: 100, height: 50 }, { width: 200, height: 100 })).toEqual([[[20, 20], [40, 60]]]);
   });
@@ -157,12 +172,31 @@ describe('SignaturePad', () => {
     expect(last()).toEqual({ kind: 'drawn', width: PAD_W, height: PAD_H, path: 'M10 10L60 60' });
   });
 
+  // Security review 2026-11-08, finding 2: the browser must not offer the person's real name.
+  it('does not autofill a name into the typed fallback', () => {
+    const { host } = mount();
+    click(host.querySelector('[data-part="signature-type"]'));
+    expect(host.querySelector('[data-part="signature-name"]')!.getAttribute('autocomplete')).toBe('off');
+  });
+
   it('shows a Sign here baseline that is not part of the drawing', () => {
     const { host } = mount();
     const line = host.querySelector('.x2f-sign__line')!;
     expect(line.textContent).toBe('Sign here');
     expect(line.getAttribute('aria-hidden')).toBe('true');
     expect(host.querySelector('.x2f-sign__pad canvas')).not.toBeNull();
+  });
+});
+
+// Security review 2026-11-08, finding 10: a signature binds to the version label, so the label has
+// to move whenever the words do. Editing the Terms fails here until TERMS_TEXT_VERSION (and the
+// server's X2F_TERMS_VERSION) moves too; then put the new version and hash in this pin.
+describe('the Terms text is pinned to its version', () => {
+  const PIN = { version: '2026-10-17', sha256: 'e289f18543876a3c93016d0b663bc560ec5520fbaa8353a4896281ba388f01f3' };
+
+  it('has not changed without a new version', () => {
+    const text = JSON.stringify({ TERMS_DRAFT_NOTE, KEY_POINTS, PRIVACY_HEADING, TERMS });
+    expect({ version: TERMS_TEXT_VERSION, sha256: createHash('sha256').update(text, 'utf8').digest('hex') }).toEqual(PIN);
   });
 });
 

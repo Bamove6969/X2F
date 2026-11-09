@@ -1,10 +1,10 @@
-import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { checkLoginName, checkNames, lookAlikeKey, type AccountKind } from '@x2f/accounts';
 import type { Deps } from './app.js';
 import { subkey, type Config } from './config.js';
 import type { Queryable } from './db/pool.js';
 import { ApiError } from './errors.js';
-import { checkTermsSignature, type TermsSignature } from './termsSignature.js';
+import { checkTermsSignature, sealTermsSignature, type TermsSignature } from './termsSignature.js';
 
 /**
  * The two names of a new account: the display name as typed and as its case-insensitive key, and
@@ -293,6 +293,11 @@ export function assertTermsAccepted(
   return { version, signature: checkTermsSignature(termsSignature) };
 }
 
+/** What a new account agreed to: a trader always signs the Terms; nobody else has a version or a signature. */
+export type NewAccountTerms =
+  | { kind: 'trader'; termsVersion: string; termsSignature: TermsSignature }
+  | { kind: Exclude<AccountKind, 'trader'>; termsVersion: null; termsSignature?: never };
+
 /** The unique constraints a new account's names can still hit after `namesTaken` (a racing writer without the lock). */
 const NAME_CONSTRAINTS: ReadonlySet<string> = new Set(['accounts_display_key_key', 'accounts_login_tag_key', 'name_keys_pkey']);
 
@@ -305,29 +310,31 @@ const NAME_CONSTRAINTS: ReadonlySet<string> = new Set(['accounts_display_key_key
  * `names-unavailable`, one answer for all, so it never says which one (or that a login name
  * exists). The names-differ check SQL can no longer make is here too (400 `names-same`;
  * `assertNewNames` already refused it). `webauthn_user_id` is 32 random bytes. Terms version and
- * acceptance time are both null when `termsVersion` is null (staff and owner, Plan 4); the Terms
- * signature (`termsSignature`, traders) is stored with them and nothing else about the signing.
+ * acceptance time are both null when `termsVersion` is null (staff, owner and team members, Plan
+ * 4); a trader always has both and a Terms signature, sealed to the account (so its id is chosen
+ * here, not by the database), and nothing else about the signing is stored.
  */
 export async function createAccount(
   db: Queryable,
   config: Config,
-  a: NewNames & { kind: AccountKind; termsVersion: string | null; termsSignature?: TermsSignature | null; now: Date },
+  a: NewNames & NewAccountTerms & { now: Date },
 ): Promise<string> {
   if (a.loginKey === a.displayKey) throw new ApiError(400, 'names-same');
   const login = loginTags(config, a.loginKey);
   const display = loginTags(config, a.displayKey);
   if (await namesTaken(db, { self: null, loginKey: a.loginKey, login, display })) throw new ApiError(409, 'names-unavailable');
+  const id = randomUUID();
   try {
-    const { rows } = await db.query<{ id: string }>(
-      `insert into accounts (display_name, display_key, login_tag, login_tag_key_id, kind, webauthn_user_id, terms_version, terms_accepted_at, terms_signature, created_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
+    await db.query(
+      `insert into accounts (id, display_name, display_key, login_tag, login_tag_key_id, kind, webauthn_user_id, terms_version, terms_accepted_at, terms_signature, created_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
-        a.displayName, a.displayKey, login.current, config.loginNameKeys.current, a.kind, randomBytes(32),
+        id, a.displayName, a.displayKey, login.current, config.loginNameKeys.current, a.kind, randomBytes(32),
         a.termsVersion, a.termsVersion === null ? null : a.now,
-        a.termsVersion === null || a.termsSignature == null ? null : JSON.stringify(a.termsSignature), a.now,
+        a.kind === 'trader' ? sealTermsSignature(config, a.termsSignature, id) : null, a.now,
       ],
     );
-    return rows[0]!.id;
+    return id;
   } catch (e) {
     const err = e as { code?: string; constraint?: string };
     if (err.code === '23505' && err.constraint !== undefined && NAME_CONSTRAINTS.has(err.constraint)) {

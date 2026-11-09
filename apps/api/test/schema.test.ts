@@ -595,6 +595,8 @@ describe('config', () => {
     expect(subkey(c, 'decoy')).not.toEqual(a);
     expect(subkey(c, 'device')).not.toEqual(subkey(c, 'decoy'));
     expect(subkey(c, 'login-seal')).not.toEqual(subkey(c, 'name'));
+    expect(subkey(c, 'terms-signature')).not.toEqual(subkey(c, 'pgp-key'));
+    expect(subkey(c, 'terms-signature')).not.toEqual(subkey(c, 'login-seal'));
     expect(subkey(testConfig(), 'totp')).not.toEqual(a);
   });
 

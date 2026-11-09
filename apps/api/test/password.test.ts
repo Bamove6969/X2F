@@ -15,6 +15,7 @@ import { testApp } from './helpers/app.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { spySql } from './helpers/sqlSpy.js';
 import { SIG } from './helpers/signature.js';
+import { SIGNATURE_SEALED_MAX_BYTES, openTermsSignature } from '../src/termsSignature.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-17T12:00:00Z');
@@ -116,10 +117,9 @@ describe('terms on sign-up (R10)', () => {
 
 describe('the Terms signature on sign-up (owner, 8 Nov 2026)', () => {
   const signatureOf = async (loginName: string) => {
-    const { rows } = await deps.db.query<{ terms_signature: unknown }>('select terms_signature from accounts where id = $1', [
-      await accountIdByLoginName(deps, loginName),
-    ]);
-    return rows[0]?.terms_signature;
+    const id = (await accountIdByLoginName(deps, loginName))!;
+    const { rows } = await deps.db.query<{ terms_signature: Buffer }>('select terms_signature from accounts where id = $1', [id]);
+    return openTermsSignature(deps.config, rows[0]!.terms_signature, id);
   };
 
   it('stores the drawn signature with the account, exactly as checked and nothing more', async () => {
@@ -131,6 +131,38 @@ describe('the Terms signature on sign-up (owner, 8 Nov 2026)', () => {
     const res = await register('signed.t1', GOOD, { acceptedTerms: TERMS, termsSignature: { kind: 'typed', name: '  Mira  K ' } });
     expect(res.statusCode).toBe(201);
     expect(await signatureOf('signed.t1')).toEqual({ kind: 'typed', name: 'Mira K' });
+  });
+
+  it('keeps the signature sealed at rest, bound to its account', async () => {
+    expect((await register('sealed.t1', GOOD, { acceptedTerms: TERMS, termsSignature: { kind: 'typed', name: 'Mira Sealed' } })).statusCode).toBe(201);
+    const id = (await accountIdByLoginName(deps, 'sealed.t1'))!;
+    const { rows } = await deps.db.query<{ terms_signature: Buffer; type: string }>(
+      'select terms_signature, pg_typeof(terms_signature)::text as type from accounts where id = $1', [id],
+    );
+    expect(rows[0]!.type).toBe('bytea');
+    expect(rows[0]!.terms_signature.includes('Mira Sealed')).toBe(false);
+    expect(() => openTermsSignature(deps.config, rows[0]!.terms_signature, '00000000-0000-4000-8000-00000000000a')).toThrow();
+  });
+
+  it('the column takes the largest sealed signature and refuses anything longer', async () => {
+    expect((await register('sealed.t2')).statusCode).toBe(201);
+    const id = await accountIdByLoginName(deps, 'sealed.t2');
+    const set = (n: number) => deps.db.query('update accounts set terms_signature = $2 where id = $1', [id, Buffer.alloc(n)]);
+    await expect(set(SIGNATURE_SEALED_MAX_BYTES)).resolves.toBeDefined();
+    await expect(set(SIGNATURE_SEALED_MAX_BYTES + 1)).rejects.toMatchObject({ code: '23514' });
+  });
+
+  // Security review 2026-11-08, finding 6: reachable without logging in, it was a 500.
+  it('answers 400 to a deeply nested signature on every sign-up route', async () => {
+    const nested = `${'['.repeat(20_000)}${']'.repeat(20_000)}`;
+    for (const url of ['/v1/register/password', '/v1/register/pgp/finish', '/v1/register/webauthn/finish']) {
+      const res = await app.inject({
+        method: 'POST', url, headers: { origin: ORIGIN, 'content-type': 'application/json' },
+        payload: `{"acceptedTerms":"${TERMS}","termsSignature":{"a":${nested}}}`,
+      });
+      expect(res.statusCode, url).toBe(400);
+      expect(res.json(), url).toEqual({ error: 'signature-invalid' });
+    }
   });
 
   it('refuses a missing, wrong-type or too-large signature before hashing or creating anything', async () => {

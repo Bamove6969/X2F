@@ -62,16 +62,22 @@ export function drawnSignature(strokes: readonly Stroke[], width: number, height
   return path === '' ? null : { kind: 'drawn', width: box.width, height: box.height, path };
 }
 
-/** Control, bidi and invisible characters (ALM, ZWSP, LRM/RLM, word joiner and invisible operators, BOM, tag characters), refused in a typed name. ZWNJ and ZWJ stay allowed: some scripts and emoji need them. */
-const BAD_NAME_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\u{e0000}-\u{e007f}]/u;
-/** Nothing visible once ZWNJ, ZWJ and whitespace are gone. */
+/**
+ * Refused in a typed name: control and format characters and everything Unicode marks as ignorable
+ * (each draws nothing), plus the blank braille cell U+2800. ZWNJ and ZWJ stay allowed: some scripts
+ * and emoji need them. The API's `checkTermsSignature` has the same rule.
+ */
+const BAD_NAME_CHARS = /(?![\u200c\u200d])[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}\u2800]/u;
+/** Nothing visible once ZWNJ, ZWJ and whitespace are gone (`BAD_NAME_CHARS` has refused the rest). */
 const NO_VISIBLE = /^[\u200c\u200d\s]*$/u;
+/** With the `u` flag a valid pair is one code point, so this matches lone surrogates only. */
+const LONE_SURROGATE = /[\uD800-\uDFFF]/u;
 
 /** The typed signature, trimmed with runs of spaces folded, or `null` when nothing usable is typed. */
 export function typedSignature(name: string): TermsSignature | null {
   const raw = name.normalize('NFC');
   const clean = raw.trim().replace(/\s+/gu, ' ');
-  if (!name.isWellFormed() || NO_VISIBLE.test(clean) || [...clean].length > MAX_TYPED_NAME || BAD_NAME_CHARS.test(raw)) return null;
+  if (LONE_SURROGATE.test(name) || NO_VISIBLE.test(clean) || [...clean].length > MAX_TYPED_NAME || BAD_NAME_CHARS.test(raw)) return null;
   return { kind: 'typed', name: clean };
 }
 

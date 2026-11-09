@@ -16,13 +16,21 @@
  *
  * `checkTermsSignature` refuses with 400: missing → `signature-required`; not one of the two shapes
  * (extra keys, a bad path, coordinates outside the box, an empty, control-character, invisible-character or lone-surrogate name) →
- * `signature-invalid`; more than `SIGNATURE_MAX_BYTES` as JSON → `signature-too-large` (checked
- * first, so a huge value is never parsed).
+ * `signature-invalid`; more than `SIGNATURE_MAX_BYTES` as JSON → `signature-too-large`. Only the
+ * fields of a recognised shape are ever measured or read, so hostile nesting can't overflow the
+ * stack, and the size comes before the path grammar and the name's normalising.
+ *
+ * At rest it is sealed (`sealTermsSignature`): a signature or typed name identifies a person, so a
+ * database dump or backup alone must not reveal it (security review 2026-11-08, finding 3).
  */
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { subkey, type Config } from './config.js';
 import { ApiError } from './errors.js';
 
 /** The cap on a signature, as its JSON text in UTF-8 (owner's example, 64 KB). */
 export const SIGNATURE_MAX_BYTES = 64 * 1024;
+/** The largest stored value: nonce (12) ‖ the JSON ‖ tag (16). Migration 316's check is this number. */
+export const SIGNATURE_SEALED_MAX_BYTES = 12 + SIGNATURE_MAX_BYTES + 16;
 /** Room a sign-up or accept route adds to its body limit for the signature (its JSON, plus the key). */
 export const SIGNATURE_BODY_ALLOWANCE = SIGNATURE_MAX_BYTES + 1024;
 /** The body limit of a route that takes a signature: the app's default (`BODY_LIMIT`, 16 KiB) plus that room. */
@@ -78,31 +86,68 @@ export function validPath(path: string, width: number, height: number): boolean 
   return true;
 }
 
-/** Control, bidi and invisible characters (ALM, ZWSP, LRM/RLM, word joiner and invisible operators, BOM, tag characters), refused in a typed name. ZWNJ and ZWJ stay allowed: some scripts and emoji need them. */
-const BAD_NAME_CHARS = /[\u0000-\u001f\u007f-\u009f\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\u{e0000}-\u{e007f}]/u;
-/** Nothing visible once ZWNJ, ZWJ and whitespace are gone. */
+/**
+ * Refused in a typed name: control and format characters and everything Unicode marks as ignorable
+ * (each draws nothing), plus the blank braille cell U+2800. ZWNJ and ZWJ stay allowed: some scripts
+ * and emoji need them. The web's `typedSignature` has the same rule.
+ */
+const BAD_NAME_CHARS = /(?![\u200c\u200d])[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}\u2800]/u;
+/** Nothing visible once ZWNJ, ZWJ and whitespace are gone (`BAD_NAME_CHARS` has refused the rest). */
 const NO_VISIBLE = /^[\u200c\u200d\s]*$/u;
+/** With the `u` flag a valid pair is one code point, so this matches lone surrogates only. */
+const LONE_SURROGATE = /[\uD800-\uDFFF]/u;
+
+/** Measures a signature whose fields are already known to be flat. */
+function assertFits(signature: TermsSignature): void {
+  if (Buffer.byteLength(JSON.stringify(signature), 'utf8') > SIGNATURE_MAX_BYTES) throw new ApiError(400, 'signature-too-large');
+}
 
 /** The checked signature (see the module comment for the refusals). */
 export function checkTermsSignature(value: unknown): TermsSignature {
   if (value === undefined || value === null) throw new ApiError(400, 'signature-required');
   if (typeof value !== 'object' || Array.isArray(value)) throw invalid();
-  if (Buffer.byteLength(JSON.stringify(value), 'utf8') > SIGNATURE_MAX_BYTES) throw new ApiError(400, 'signature-too-large');
   const o = value as Record<string, unknown>;
   if (o.kind === 'drawn') {
     if (!exactKeys(o, ['kind', 'width', 'height', 'path'])) throw invalid();
     const { width, height, path } = o;
-    if (!isBox(width) || !isBox(height) || typeof path !== 'string' || !validPath(path, width, height)) throw invalid();
+    if (!isBox(width) || !isBox(height) || typeof path !== 'string') throw invalid();
+    assertFits({ kind: 'drawn', width, height, path });
+    if (!validPath(path, width, height)) throw invalid();
     return { kind: 'drawn', width, height, path };
   }
   if (o.kind === 'typed') {
     if (!exactKeys(o, ['kind', 'name'])) throw invalid();
     if (typeof o.name !== 'string') throw invalid();
+    assertFits({ kind: 'typed', name: o.name });
+    if (LONE_SURROGATE.test(o.name)) throw invalid(); // it would reach Postgres and fail there with a 500
     const raw = o.name.normalize('NFC');
     const name = raw.trim().replace(/\s+/gu, ' ');
-    if (!o.name.isWellFormed()) throw invalid(); // a lone surrogate would reach Postgres and fail there with a 500
     if (NO_VISIBLE.test(name) || [...name].length > MAX_TYPED_NAME || BAD_NAME_CHARS.test(raw)) throw invalid();
     return { kind: 'typed', name };
   }
   throw invalid();
+}
+
+const sealAad = (accountId: string) => Buffer.from(`x2f/terms-signature/${accountId}`, 'utf8');
+
+/**
+ * AES-256-GCM under `subkey('terms-signature')`, bound to the account: nonce (12) \u2016 ciphertext \u2016
+ * tag (16), the shape of `sealKey`. A stored signature moved to another row does not open.
+ */
+export function sealTermsSignature(config: Config, signature: TermsSignature, accountId: string): Buffer {
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', subkey(config, 'terms-signature'), nonce, { authTagLength: 16 });
+  cipher.setAAD(sealAad(accountId));
+  const body = Buffer.concat([cipher.update(JSON.stringify(signature), 'utf8'), cipher.final()]);
+  return Buffer.concat([nonce, body, cipher.getAuthTag()]);
+}
+
+/** Opens a stored signature in memory. Throws if it was altered or belongs to another account. */
+export function openTermsSignature(config: Config, sealed: Buffer, accountId: string): TermsSignature {
+  if (sealed.length < 12 + 16) throw new Error('stored signature is malformed');
+  const decipher = createDecipheriv('aes-256-gcm', subkey(config, 'terms-signature'), sealed.subarray(0, 12), { authTagLength: 16 });
+  decipher.setAAD(sealAad(accountId));
+  decipher.setAuthTag(sealed.subarray(sealed.length - 16));
+  const text = Buffer.concat([decipher.update(sealed.subarray(12, sealed.length - 16)), decipher.final()]).toString('utf8');
+  return JSON.parse(text) as TermsSignature;
 }

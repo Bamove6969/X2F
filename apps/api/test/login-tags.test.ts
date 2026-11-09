@@ -289,7 +289,7 @@ describe('uniqueness across keys', () => {
     const b: Keyring = { current: 1, keys: new Map([[1, original.keys.get(1)!], [2, a.keys.get(2)!]]) };
     const name = uniq('roll');
     const names = (d: string) => ({
-      displayName: d, displayKey: d.toLowerCase(), loginKey: name.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, now: new Date(),
+      displayName: d, displayKey: d.toLowerCase(), loginKey: name.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, termsSignature: SIG, now: new Date(),
     });
     const first = await deps.db.connect();
     const second = await deps.db.connect();
@@ -320,6 +320,20 @@ describe('uniqueness across keys', () => {
     expect(row).toEqual({ login_tag: currentLoginTag(deps, name, 5), login_tag_key_id: 5, login_name: null, login_key: null });
   });
 
+  // Security review 2026-11-08, finding 9. `npm run typecheck` is what enforces these.
+  it('createAccount needs a signature and a version for a trader, by type', () => {
+    type Args = Parameters<typeof createAccount>[2];
+    const base = { displayName: 'A', displayKey: 'a', loginKey: 'b', now: new Date() };
+    // @ts-expect-error a trader must carry a signature
+    const unsigned: Args = { ...base, kind: 'trader', termsVersion: TERMS };
+    // @ts-expect-error a trader must carry a Terms version
+    const unversioned: Args = { ...base, kind: 'trader', termsVersion: null, termsSignature: SIG };
+    // @ts-expect-error a signature belongs to a trader only
+    const staffSigned: Args = { ...base, kind: 'staff', termsVersion: null, termsSignature: SIG };
+    const staff: Args = { ...base, kind: 'staff', termsVersion: null };
+    expect([unsigned, unversioned, staffSigned, staff]).toHaveLength(4);
+  });
+
   it('createAccount refuses equal names itself (the check SQL can no longer make)', async () => {
     const client = await deps.db.connect();
     try {
@@ -327,7 +341,7 @@ describe('uniqueness across keys', () => {
       await expect(
         createAccount(client, deps.config, {
           displayName: 'Same.Name1', displayKey: 'same.name1', loginKey: 'same.name1',
-          kind: 'trader', termsVersion: TERMS, now: new Date(),
+          kind: 'trader', termsVersion: TERMS, termsSignature: SIG, now: new Date(),
         }),
       ).rejects.toEqual(new ApiError(400, 'names-same'));
     } finally {
@@ -339,7 +353,7 @@ describe('uniqueness across keys', () => {
 
 describe('one namespace for both names with tags (FU-A review I1, coordination note 2)', () => {
   const names = (display: string, login: string) => ({
-    displayName: display, displayKey: display.toLowerCase(), loginKey: login.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, now: new Date(),
+    displayName: display, displayKey: display.toLowerCase(), loginKey: login.toLowerCase(), kind: 'trader' as const, termsVersion: TERMS, termsSignature: SIG, now: new Date(),
   });
 
   it("B: a display name that is someone's login name under an old key is refused at create (names-unavailable)", async () => {

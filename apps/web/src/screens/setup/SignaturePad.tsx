@@ -163,7 +163,7 @@ export function SignaturePad({ onChange, describedBy }: { onChange: (sig: TermsS
           ref={nameInput}
           id={nameId}
           type="text"
-          autoComplete="name"
+          autoComplete="off"
           maxLength={MAX_TYPED_NAME}
           value={name}
           onChange={(e) => setName(e.target.value)}

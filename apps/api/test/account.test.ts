@@ -10,6 +10,7 @@ import { currentLoginTag, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser } from './helpers/totp.js';
 import { SIG } from './helpers/signature.js';
+import { openTermsSignature } from '../src/termsSignature.js';
 
 const T0 = new Date('2026-10-17T12:00:00Z');
 const MIN = 60_000;
@@ -676,10 +677,12 @@ describe('Terms of Service (R10)', () => {
       const typed = { kind: 'typed', name: 'Mira K' };
       const ok = await b.post('/v1/account/terms', { version: newVersion, signature: typed });
       expect(ok.statusCode).toBe(204);
-      const { rows } = await deps.db.query<{ terms_version: string; terms_accepted_at: Date; terms_signature: unknown }>(
+      const { rows } = await deps.db.query<{ terms_version: string; terms_accepted_at: Date; terms_signature: Buffer }>(
         'select terms_version, terms_accepted_at, terms_signature from accounts where id = $1', [id],
       );
-      expect(rows[0]).toEqual({ terms_version: newVersion, terms_accepted_at: now, terms_signature: typed });
+      expect(rows[0]!.terms_version).toBe(newVersion);
+      expect(rows[0]!.terms_accepted_at).toEqual(now);
+      expect(openTermsSignature(deps.config, rows[0]!.terms_signature, id)).toEqual(typed);
       // The signature is never sent back (it is not in me).
       expect(JSON.stringify(await me(b))).not.toContain('Mira K');
       expect((await b.get('/v1/account/alerts')).statusCode).toBe(200);
@@ -688,6 +691,39 @@ describe('Terms of Service (R10)', () => {
       // Staff carry no Terms version and are unaffected.
       expect((await s.get('/v1/account/alerts')).statusCode).toBe(200);
       expect((await me(s)).termsCurrent).toBe(true);
+    } finally {
+      deps.config.termsVersion = oldVersion;
+    }
+  });
+
+  // Security review 2026-11-08, finding 5.
+  it('a session cannot replace the signature at the version already signed', async () => {
+    const { id } = await account();
+    await addPgp(id);
+    const b = await loggedIn(id);
+    const row = async () =>
+      (await deps.db.query<{ terms_accepted_at: Date; terms_signature: Buffer }>('select terms_accepted_at, terms_signature from accounts where id = $1', [id])).rows[0]!;
+    const oldVersion = deps.config.termsVersion;
+    const newVersion = '2026-11-02';
+    deps.config.termsVersion = newVersion;
+    try {
+      const first = { kind: 'typed', name: 'First Signer' };
+      expect((await b.post('/v1/account/terms', { version: newVersion, signature: first })).statusCode).toBe(204);
+      const before = await row();
+      setNow(at(MIN));
+      // Answers the same as a first signing, and changes nothing.
+      expect((await b.post('/v1/account/terms', { version: newVersion, signature: { kind: 'typed', name: 'Someone Else' } })).statusCode).toBe(204);
+      const after = await row();
+      expect(after.terms_accepted_at).toEqual(before.terms_accepted_at);
+      expect(after.terms_signature.equals(before.terms_signature)).toBe(true);
+      expect(openTermsSignature(deps.config, after.terms_signature, id)).toEqual(first);
+
+      // A later version is signed afresh.
+      const later = '2026-11-03';
+      deps.config.termsVersion = later;
+      const second = { kind: 'typed', name: 'Second Signer' };
+      expect((await b.post('/v1/account/terms', { version: later, signature: second })).statusCode).toBe(204);
+      expect(openTermsSignature(deps.config, (await row()).terms_signature, id)).toEqual(second);
     } finally {
       deps.config.termsVersion = oldVersion;
     }

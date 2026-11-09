@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { BODY_LIMIT } from '../src/app.js';
 import { ApiError } from '../src/errors.js';
 import {
-  MAX_TYPED_NAME, SIGNATURE_BODY_ALLOWANCE, SIGNATURE_MAX_BYTES, SIGNED_BODY_LIMIT, checkTermsSignature, validPath,
+  MAX_TYPED_NAME, SIGNATURE_BODY_ALLOWANCE, SIGNATURE_MAX_BYTES, SIGNATURE_SEALED_MAX_BYTES, SIGNED_BODY_LIMIT, checkTermsSignature,
+  openTermsSignature, sealTermsSignature, validPath, type TermsSignature,
 } from '../src/termsSignature.js';
+import { testConfig } from './helpers/app.js';
 
 const code = (f: () => unknown): string | undefined => {
   try {
@@ -68,6 +70,39 @@ describe('checkTermsSignature (owner, 8 Nov 2026)', () => {
     for (const b of bad) expect(code(() => checkTermsSignature(b)), JSON.stringify(b)).toBe('signature-invalid');
   });
 
+  // Security review 2026-11-08, finding 7: each was accepted alone and inside a name.
+  const INVISIBLE = [
+    '\u00ad', '\u034f', '\u115f', '\u1160', '\u17b4', '\u180e', '\u2065', '\u2800', '\u3164', '\ufe0f', '\uffa0', '\ufff9', '\u{1bca0}', '\u{1d173}', '\u{e0100}',
+  ];
+
+  it('refuses every invisible character, alone as the whole name and inside one', () => {
+    expect(INVISIBLE).toHaveLength(15);
+    for (const c of INVISIBLE) {
+      const hex = c.codePointAt(0)!.toString(16);
+      expect(code(() => checkTermsSignature({ kind: 'typed', name: c })), `alone ${hex}`).toBe('signature-invalid');
+      expect(code(() => checkTermsSignature({ kind: 'typed', name: `Mi${c}ra` })), `inside ${hex}`).toBe('signature-invalid');
+    }
+  });
+
+  it('still takes ordinary names in any script, with accents and combining marks', () => {
+    for (const name of ['José Núñez', "O'Neil-Smith", '李小龙', 'Анна', 'नमस्ते', 'X']) {
+      expect(checkTermsSignature({ kind: 'typed', name })).toEqual({ kind: 'typed', name: name.normalize('NFC') });
+    }
+  });
+
+  // Security review 2026-11-08, finding 6: JSON.stringify ran first and overflowed the stack.
+  it('refuses deeply nested input as invalid, without overflowing the stack', () => {
+    let deep: unknown = [];
+    for (let i = 0; i < 200_000; i++) deep = [deep];
+    const cases: unknown[] = [
+      { a: deep }, deep, { kind: deep },
+      { kind: 'typed', name: deep }, { kind: 'typed', name: 'Mira', extra: deep },
+      { kind: 'drawn', width: deep, height: 120, path: 'M0 0' }, { kind: 'drawn', width: 320, height: deep, path: 'M0 0' },
+      { kind: 'drawn', width: 320, height: 120, path: deep }, { kind: 'drawn', width: 320, height: 120, path: 'M0 0', extra: deep },
+    ];
+    for (const c of cases) expect(code(() => checkTermsSignature(c))).toBe('signature-invalid');
+  });
+
   it('allows ZWNJ and ZWJ inside a name with visible characters', () => {
     expect(checkTermsSignature({ kind: 'typed', name: 'می\u200cخواهم' })).toEqual({ kind: 'typed', name: 'می\u200cخواهم' });
     expect(checkTermsSignature({ kind: 'typed', name: '👩\u200d💻' }).kind).toBe('typed');
@@ -91,8 +126,52 @@ describe('checkTermsSignature (owner, 8 Nov 2026)', () => {
     expect(performance.now() - started).toBeLessThan(2000);
   });
 
+  it('measures a typed name against the cap too', () => {
+    expect(code(() => checkTermsSignature({ kind: 'typed', name: 'x'.repeat(SIGNATURE_MAX_BYTES) }))).toBe('signature-too-large');
+  });
+
   it('routes that take a signature have room for it in their body limit', () => {
     expect(SIGNED_BODY_LIMIT).toBe(BODY_LIMIT + SIGNATURE_BODY_ALLOWANCE);
     expect(SIGNATURE_BODY_ALLOWANCE).toBeGreaterThan(SIGNATURE_MAX_BYTES);
+  });
+});
+
+// Security review 2026-11-08, finding 3.
+describe('sealing a signature for storage', () => {
+  const config = testConfig();
+  const A = '00000000-0000-4000-8000-00000000000a';
+  const B = '00000000-0000-4000-8000-00000000000b';
+  const typed: TermsSignature = { kind: 'typed', name: 'Mira K' };
+  const drawn: TermsSignature = { kind: 'drawn', width: 320, height: 120, path: 'M10 10L60 60' };
+
+  it('opens to exactly what was sealed', () => {
+    expect(openTermsSignature(config, sealTermsSignature(config, typed, A), A)).toEqual(typed);
+    expect(openTermsSignature(config, sealTermsSignature(config, drawn, A), A)).toEqual(drawn);
+  });
+
+  it('shows nothing of the signature and differs every time', () => {
+    const one = sealTermsSignature(config, typed, A);
+    expect(one.includes('Mira')).toBe(false);
+    expect(one.includes('typed')).toBe(false);
+    expect(sealTermsSignature(config, typed, A).equals(one)).toBe(false);
+  });
+
+  it('does not open for another account, under another key, or when altered', () => {
+    const sealed = sealTermsSignature(config, typed, A);
+    expect(() => openTermsSignature(config, sealed, B)).toThrow();
+    expect(() => openTermsSignature(testConfig(), sealed, A)).toThrow();
+    const flipped = Buffer.from(sealed);
+    flipped[14]! ^= 1;
+    expect(() => openTermsSignature(config, flipped, A)).toThrow();
+    expect(() => openTermsSignature(config, Buffer.alloc(27), A)).toThrow();
+  });
+
+  it('adds 28 bytes, so the largest signature fits the column', () => {
+    const point = 'L100 100';
+    const sig: TermsSignature = { kind: 'drawn', width: 320, height: 120, path: `M0 0${point.repeat(Math.floor((SIGNATURE_MAX_BYTES - 100) / point.length))}` };
+    const size = Buffer.byteLength(JSON.stringify(sig), 'utf8');
+    expect(size).toBeLessThanOrEqual(SIGNATURE_MAX_BYTES);
+    expect(sealTermsSignature(config, sig, A)).toHaveLength(size + 28);
+    expect(SIGNATURE_SEALED_MAX_BYTES).toBe(SIGNATURE_MAX_BYTES + 28);
   });
 });

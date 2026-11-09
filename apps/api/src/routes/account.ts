@@ -1,7 +1,7 @@
 import { checkLoginName, isIdleHours, type AccountKind, type ConfirmAction, type IdleHours, type MethodType } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
-import { SIGNED_BODY_LIMIT, checkTermsSignature } from '../termsSignature.js';
+import { SIGNED_BODY_LIMIT, checkTermsSignature, sealTermsSignature } from '../termsSignature.js';
 import { lockNames, loginNameTaken, loginTags, setLoginName } from '../accounts.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
@@ -286,6 +286,8 @@ export function accountRoutes(app: FastifyInstance): void {
     // security change; refusing it could block finishing open trades). A changed version asks for
     // a new signature too (owner, 8 Nov 2026): `{ version, signature }`, the signature replacing
     // the one before (checkTermsSignature's 400s), with nothing else recorded about the signing.
+    // Only a changed version writes: repeating the current one answers 204 and changes nothing, so
+    // a session can't rewrite what was signed or when.
     { bodyLimit: SIGNED_BODY_LIMIT, preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true }) },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
@@ -298,8 +300,8 @@ export function accountRoutes(app: FastifyInstance): void {
       await withTx(d.db, async (db) => {
         // Review round 4: the accepting session must still be live where it writes.
         await requireLiveSessionInTx(db, req.auth, now);
-        await db.query('update accounts set terms_version = $2, terms_accepted_at = $3, terms_signature = $5 where id = $1 and kind = $4', [
-          req.auth.accountId, version, now, 'trader', JSON.stringify(signature),
+        await db.query('update accounts set terms_version = $2, terms_accepted_at = $3, terms_signature = $5 where id = $1 and kind = $4 and terms_version is distinct from $2', [
+          req.auth.accountId, version, now, 'trader', sealTermsSignature(d.config, signature, req.auth.accountId),
         ]);
       });
       return reply.code(204).send();
