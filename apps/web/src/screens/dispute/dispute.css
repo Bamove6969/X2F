@@ -420,6 +420,12 @@
   font-size: 14px;
   line-height: 20px;
 }
+/* D-069: the cooperate line under the read-access line, in ink (not muted, not danger). */
+.dispute-cooperate {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink);
+}
 .dispute-mod-name {
   color: var(--x2f-mod);
   font-weight: 600;
