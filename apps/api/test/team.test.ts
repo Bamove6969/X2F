@@ -206,7 +206,8 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect(view.statusCode, view.body).toBe(200);
     // Review 2026-11-08 F3: whoever holds the link, before joining, learns only what the invite
     // asks of them; the vendor is named only once they are inside.
-    expect(Object.keys(view.json() as object).sort()).toEqual(['displayName', 'expiresAt', 'roles']);
+    // Job 1c: the invite's boxes (and their preset) are what it asks of them too.
+    expect(Object.keys(view.json() as object).sort()).toEqual(['abilities', 'displayName', 'expiresAt', 'preset', 'roles']);
     expect(view.json()).toMatchObject({ displayName: `Joiner${n}x`, roles: ['trades'] });
     expect(view.body).not.toContain(owner.displayName);
     // Review 6a5949a6 F6: the vendor's name is not even loaded, so no later spread can send it.
@@ -826,7 +827,7 @@ describe('the audit log covers every member action (review M3)', () => {
     for (const r of found) expect([...live], r).toContain(r);
     // The scan sees the routes it must (so a refactor that hides them fails here, not silently).
     for (const r of ['POST /v1/offers', 'PATCH /v1/offers/:id', 'POST /v1/account/offers/status', 'POST /v1/offers/:id/take', 'POST /v1/trades/:code/wallet',
-      'POST /v1/trades/:code/events', 'POST /v1/trades/:code/dispute', 'POST /v1/trades/:code/appeal', ...Object.keys(EXEMPT)]) {
+      'POST /v1/trades/:code/events', 'POST /v1/trades/:code/appeal', ...Object.keys(EXEMPT)]) {
       expect(found, r).toContain(r);
     }
     // D-066: opening a dispute lets no member through (the scan and the hook agree).
@@ -1175,7 +1176,7 @@ describe("owner p4-8: a member's hold rights over the lead's waiting changes (Ho
     const body = (await t.m.browser.get('/v1/account/hold')).json() as { rights: string; changes: { count: number; items: Array<{ id: string; kind: string; mine: boolean }> } };
     expect(body.rights).toBe('see');
     expect(body.changes.count).toBe(1);
-    expect(body.changes.items).toMatchObject([{ id: t.changeId, kind: 'team-roles', mine: false }]);
+    expect(body.changes.items).toMatchObject([{ id: t.changeId, kind: 'team-abilities', mine: false }]);
     expect(err(await t.m.browser.delete(`/v1/account/hold/changes/${t.changeId}`))).toEqual({ status: 403, error: 'forbidden' });
   });
 
@@ -1198,8 +1199,8 @@ describe("owner p4-8: a member's hold rights over the lead's waiting changes (Ho
     const r = await t.m.browser.post('/v1/account/hold/changes/approve', { ids: [t.changeId] });
     expect(r.statusCode, r.body).toBe(200);
     expect(r.json()).toEqual({ status: 'applied', count: 1 });
-    const roles = await deps.db.query<{ roles: string[] }>('select roles from team_members where id = $1', [t.other.id]);
-    expect(roles.rows[0]!.roles).toEqual(['offers', 'trades']);
+    const boxes = await deps.db.query<{ abilities: string[] }>('select abilities from team_members where id = $1', [t.other.id]);
+    expect(boxes.rows[0]!.abilities).toEqual(rolesToAbilities(['offers', 'trades']));
     expect((await auditRows(t.owner.id)).map((r) => r.action)).toContain('hold-changes-approved');
   });
 
@@ -1236,6 +1237,100 @@ describe("owner p4-8: a member's hold rights over the lead's waiting changes (Ho
     const m = await member(owner.id, ['trades']);
     const confirmToken = await confirmed(owner, { kind: 'team-roles', memberId: m.id, roles: 'trades,hold-see,hold-cancel' });
     const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { roles: ['hold-cancel', 'trades', 'hold-see'], confirmToken });
+    expect(res.statusCode, res.body).toBe(200);
+    expect((res.json() as { roles: string[] }).roles).toEqual(['trades', 'hold-see', 'hold-cancel']);
+  });
+});
+
+describe('review 2026-11-09 M1: the boxes and the 24-hour hold (hold v3 staging, item 10)', () => {
+  const weak = async (b: Browser) => deps.db.query("update sessions set strength = 'weak-single' where id = $1", [await sessionId(b)]);
+  const boxesOf = async (memberId: string) =>
+    (await deps.db.query<{ abilities: string[] }>('select abilities from team_members where id = $1', [memberId])).rows[0]!.abilities;
+  const stagedOf = async (changeId: string) =>
+    (await deps.db.query<{ change: Record<string, unknown> }>('select change from hold_changes where id = $1', [changeId])).rows[0]?.change;
+
+  it('a weak session\'s { abilities } change is staged like { roles }: 202, nothing written until 24 h after it is submitted', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers']);
+    await weak(owner.browser);
+    const abilities = ['offers-see', 'trades-see-active', 'trades-mark-paid'];
+    const confirmToken = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: abilities.join(',') });
+    const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities, confirmToken });
+    expect(res.statusCode, res.body).toBe(202);
+    const changeId = (res.json() as { changeId: string }).changeId;
+    expect(await stagedOf(changeId)).toEqual({ kind: 'team-abilities', memberId: m.id, abilities });
+    expect(await boxesOf(m.id)).toEqual(rolesToAbilities(['offers']));
+    expect((await owner.browser.post('/v1/account/hold/changes/submit', { ids: [changeId] })).statusCode).toBe(200);
+    const due = new Date(deps.clock().getTime() + HOLD_MS);
+    await settleDueChanges(deps.config, app.events).run(deps.db, new Date(due.getTime() - 1000));
+    expect(await boxesOf(m.id)).toEqual(rolesToAbilities(['offers']));
+    await settleDueChanges(deps.config, app.events).run(deps.db, due);
+    expect(await boxesOf(m.id)).toEqual(abilities);
+  });
+
+  it('a weak session\'s old { roles } body is staged as the same boxes (one staged kind for both shapes)', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers']);
+    await weak(owner.browser);
+    const confirmToken = await confirmed(owner, { kind: 'team-roles', memberId: m.id, roles: 'trades,hold-cancel' });
+    const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { roles: ['trades', 'hold-cancel'], confirmToken });
+    expect(res.statusCode, res.body).toBe(202);
+    expect(await stagedOf((res.json() as { changeId: string }).changeId)).toEqual({
+      kind: 'team-abilities', memberId: m.id, abilities: rolesToAbilities(['trades', 'hold-cancel']),
+    });
+  });
+
+  it('a waiting boxes change is checked again when it applies: a set that is no longer grantable is dropped, the member keeps their boxes', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers']);
+    await weak(owner.browser);
+    const confirmToken = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: 'offers-see' });
+    const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities: ['offers-see'], confirmToken });
+    expect(res.statusCode, res.body).toBe(202);
+    const changeId = (res.json() as { changeId: string }).changeId;
+    expect(await stagedOf(changeId)).toEqual({ kind: 'team-abilities', memberId: m.id, abilities: ['offers-see'] });
+    expect((await owner.browser.post('/v1/account/hold/changes/submit', { ids: [changeId] })).statusCode).toBe(200);
+    // As if the catalogue changed while it waited: a box that is owner-only now, and one unknown.
+    for (const abilities of [['offers-see', 'wallets-manage'], ['offers-see', 'no-such-box']]) {
+      await deps.db.query("update hold_changes set change = jsonb_set(change, '{abilities}', $2::jsonb) where id = $1", [changeId, JSON.stringify(abilities)]);
+      const draft = await deps.db.query<{ abilities: string[] }>('select change->\'abilities\' as abilities from hold_changes where id = $1', [changeId]);
+      expect(draft.rows[0]!.abilities).toEqual(abilities);
+    }
+    await settleDueChanges(deps.config, app.events).run(deps.db, new Date(deps.clock().getTime() + HOLD_MS));
+    expect(await stagedOf(changeId)).toBeUndefined();
+    expect(await boxesOf(m.id)).toEqual(rolesToAbilities(['offers']));
+    const { rows } = await deps.db.query<{ detail: { applied: unknown[]; dropped: unknown[] } }>(
+      "select detail from alerts where account_id = $1 and kind = 'hold-changes-applied'", [owner.id],
+    );
+    expect(rows.map((r) => [r.detail.applied.length, r.detail.dropped.length])).toEqual([[0, 1]]);
+  });
+
+  it('the waiting-changes view names the boxes of a staged change', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers']);
+    await weak(owner.browser);
+    const abilities = ['offers-see', 'notes-view'];
+    const confirmToken = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: abilities.join(',') });
+    expect((await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities, confirmToken })).statusCode).toBe(202);
+    const drafts = ((await owner.browser.get('/v1/account/hold')).json() as { drafts: Array<Record<string, unknown>> }).drafts;
+    expect(drafts).toMatchObject([{ kind: 'team-abilities', memberId: m.id, abilities, abilityLabels: ['See offers', 'View notes on traders'] }]);
+  });
+
+  it('a member stored with "End a hold" alone passes the see and cancel routes (the inclusion rule on boxes)', async () => {
+    const owner = await team();
+    const m = await member(owner.id, { abilities: ['hold-end'] });
+    const v = await m.browser.get('/v1/account/hold');
+    expect(v.statusCode, v.body).toBe(200);
+    expect((v.json() as { rights: string }).rights).toBe('end');
+    expect((await m.browser.delete('/v1/account/hold/changes')).statusCode).toBe(204);
+  });
+
+  it('a strong lead grants a hold box through { abilities }', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['trades']);
+    const abilities = [...rolesToAbilities(['trades']), 'hold-cancel'];
+    const confirmToken = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: abilities.join(',') });
+    const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities, confirmToken });
     expect(res.statusCode, res.body).toBe(200);
     expect((res.json() as { roles: string[] }).roles).toEqual(['trades', 'hold-see', 'hold-cancel']);
   });
@@ -1287,7 +1382,11 @@ describe('the owner\'s hard rules no box can grant (J-10)', () => {
     const other = await team();
     const m = await member(owner.id, ['offers', 'trades']);
     const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
-    await driveTo(deps, d.trade, 'secured');
+    // A dispute opens on a paid trade once the seller's confirm window is over (batch 2/3 rules); the
+    // window outlives the unchosen 2-hour session, so both logins take 6 hours.
+    for (const b of [m.browser, owner.browser]) expect((await b.put('/v1/account/session/length', { hours: 6 })).statusCode).toBe(200);
+    const dp = await driveTo(deps, d.trade, 'paid');
+    setNow(dp.confirmBy!);
     expect(err(await m.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'x' }))).toEqual({ status: 403, error: 'owner-only' });
     expect((await deps.db.query('select 1 from disputes where code = $1', [d.code])).rowCount).toBe(0);
     expect(await auditRows(owner.id)).toEqual([]);
@@ -1339,7 +1438,8 @@ describe('the owner\'s hard rules no box can grant (J-10)', () => {
       await m.browser.post('/v1/team/invites', { displayName: 'Sneaky02', abilities: ['offers-see'] }),
       await m.browser.patch(`/v1/team/members/${m.id}`, { abilities: ['offers-see'] }),
       await m.browser.delete(`/v1/team/members/${m.id}`),
-      await m.browser.put('/v1/account/security/logout-timer', { idleHours: 12 }),
+      // (The logout timer of this test's base is retired on hold v3: migration 307.)
+      await m.browser.put('/v1/account/security/one-device', { on: true }),
       await m.browser.get('/v1/account/sessions'),
     ];
     for (const r of refused) expect(err(r)).toEqual({ status: 403, error: 'owner-only' });
@@ -1412,7 +1512,33 @@ describe('the abilities catalogue on the API (J-10)', () => {
     const lists = [...sql.matchAll(/'\{([a-z,-]+)\}'::text\[\]/g)].map((m) => m[1]!.split(','));
     expect(lists[0]).toEqual([...ROLE_ABILITIES.offers]);
     expect(lists[1]).toEqual([...ROLE_ABILITIES.trades]);
-    expect(new Set(lists[2])).toEqual(HARD_OWNER_ONLY);
+    // Review 2026-11-09 M1: hold v3's three member rights (migration 016), each with the ones it included.
+    expect(lists[2]).toEqual([...ROLE_ABILITIES['hold-see']]);
+    expect(lists[3]).toEqual([...ROLE_ABILITIES['hold-cancel']]);
+    expect(lists[4]).toEqual([...ROLE_ABILITIES['hold-end']]);
+    expect(new Set(lists[5])).toEqual(HARD_OWNER_ONLY);
+  });
+
+  it('review 2026-11-09 M1: migration 360 run on hold v3 rows keeps every hold right with the ones it included, and a hold-only member does not abort it', async () => {
+    const sql = readFileSync(`${ROOT}apps/api/migrations/360_team_abilities.sql`, 'utf8');
+    const update = /update team_members set abilities = array\([\s\S]*?\);\n/.exec(sql)![0];
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      // A stand-in for the table as 016 left it (roles, no abilities yet): a temp table is found first.
+      await c.query('create temp table team_members (n int, roles text[], abilities text[]) on commit drop');
+      const before: string[][] = [['offers', 'hold-see'], ['hold-end'], ['trades', 'hold-cancel'], ['hold-see', 'hold-cancel', 'hold-end'], ['offers']];
+      for (const [i, roles] of before.entries()) await c.query('insert into team_members (n, roles) values ($1, $2)', [i, roles]);
+      await c.query(update);
+      const { rows } = await c.query<{ abilities: string[] }>('select abilities from team_members order by n');
+      const want = before.map((roles) => [...new Set(roles.flatMap((r) => ROLE_ABILITIES[r as keyof typeof ROLE_ABILITIES]))].sort());
+      expect(rows.map((r) => r.abilities)).toEqual(want);
+      for (const r of rows) expect(r.abilities.length).toBeGreaterThan(0);
+      expect(rows[1]!.abilities).toEqual(['hold-cancel', 'hold-end', 'hold-see']);
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
   });
 
   it('GET /v1/team/permissions lists the groups, every ability with its risk, rule and preset defaults, and the presets', async () => {
