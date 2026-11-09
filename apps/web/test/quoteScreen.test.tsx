@@ -2,7 +2,7 @@
 // Task 18: BuyQuote and the seller quote, rendered against a stubbed API (the Task 3/4/5 shapes in
 // src/screens/quote/api.ts, all on the line now).
 import { act } from 'react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fiatCents } from '@x2f/trade';
 import { BuyQuote } from '../src/screens/quote/BuyQuote.js';
@@ -111,6 +111,16 @@ function Where() {
   const l = useLocation();
   arrivedState = l.state;
   return <output data-where={l.pathname + l.search} />;
+}
+
+/** The browser's Back button, for the panes' history (lead review 2026-11-06 m1). */
+function BrowserBack() {
+  const navigate = useNavigate();
+  return (
+    <button type="button" data-browser-back="" onClick={() => void navigate(-1)}>
+      browser back
+    </button>
+  );
 }
 
 async function settle(): Promise<void> {
@@ -603,6 +613,9 @@ describe('the quote across a fold (review M1, M2, M3)', () => {
           <Route path="/buy/:methodId/:offerId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
           <Route path="*" element={<Where />} />
         </Routes>
+        {/* The URL the panes leave behind (m2), read with `where`; the browser's Back (lead m1). */}
+        <Where />
+        <BrowserBack />
       </MemoryRouter>,
     );
     await settle();
@@ -677,6 +690,73 @@ describe('the quote across a fold (review M1, M2, M3)', () => {
     expect(host.querySelector('[role="alert"]')?.textContent).toBe('The price moved. Check the new total and tap Trade again.');
     await layout(false);
     expect(host.querySelector('[role="alert"]')?.textContent).toBe('The price moved. Check the new total and tap Trade again.');
+  });
+
+  // Review 2026-11-06 m2: before an offer is picked, the pane shows the first offer's quote on the
+  // list's URL. The first input there picks it (writes it to the URL), so a fold keeps that quote.
+  const LIST = '/buy/ZELLE?currency=USD';
+  it('with nothing picked, an amount typed in the pane quote stays across a fold (m2)', async () => {
+    panes = true;
+    const { host } = await openRoute(LIST);
+    expect(host.querySelector('[data-pane="side"] [data-screen="quote"]')).not.toBeNull();
+    // The pane shows the first offer, but the URL is still the list's.
+    expect(new URL(where(host)!, 'http://x2f.test').pathname).toBe('/buy/ZELLE');
+    type(host, '100');
+    await settle();
+    // The first input picks the shown offer: it is now in the URL, with the amount.
+    const url = new URL(where(host)!, 'http://x2f.test');
+    expect(url.pathname).toBe('/buy/ZELLE/offer-ghost');
+    expect(url.searchParams.get('amount')).toBe('100');
+    expect(host.querySelector('[data-pane="main"] button[aria-pressed="true"]')?.textContent).toContain('satoshi_ghost');
+    expect(amount(host).value).toBe('100');
+
+    await layout(false);
+    expect(quotes(host)).toHaveLength(1);
+    expect(host.textContent).toContain('Buying from satoshi_ghost');
+    expect(amount(host).value).toBe('100');
+  });
+
+  // Lead review 2026-11-06 m1: Back to the list undoes the pick, so the pane's quote starts afresh
+  // (it is on the list's URL again) and the next first input picks it again.
+  it('Back to the list after the first input: the pane quote starts afresh, and the next input picks it again (lead m1)', async () => {
+    panes = true;
+    const { host } = await openRoute(LIST);
+    type(host, '100');
+    await settle();
+    expect(new URL(where(host)!, 'http://x2f.test').pathname).toBe('/buy/ZELLE/offer-ghost');
+    fire(host.querySelector<HTMLElement>('[data-browser-back]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(new URL(where(host)!, 'http://x2f.test').pathname).toBe('/buy/ZELLE');
+    expect(amount(host).value).toBe('');
+    type(host, '50');
+    await settle();
+    expect(new URL(where(host)!, 'http://x2f.test').pathname).toBe('/buy/ZELLE/offer-ghost');
+    await layout(false);
+    expect(quotes(host)).toHaveLength(1);
+    expect(amount(host).value).toBe('50');
+  });
+
+  it('with nothing picked, a refusal that answers after a fold is shown on the phone quote (m2)', async () => {
+    panes = true;
+    let answer: () => void = () => undefined;
+    stub.gate = new Promise<void>((r) => (answer = r));
+    stub.take = () => ({ status: 409, json: { error: 'price-changed' } });
+    // The amount sits in the list's URL (it came from the method list), so the first input is the tap.
+    const { host } = await openRoute(`${LIST}&amount=412.50`);
+    expect(amount(host).value).toBe('412.50');
+    pick(host, 'w-cake');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    expect(new URL(where(host)!, 'http://x2f.test').pathname).toBe('/buy/ZELLE/offer-ghost');
+
+    await layout(false);
+    expect(quotes(host)).toHaveLength(1);
+    expect(primary(host).disabled).toBe(true);
+    answer();
+    await settle();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('The price moved. Check the new total and tap Trade again.');
+    expect(stub.takes).toHaveLength(1);
   });
 
   it('"You\'re back" stays across an unfold (M1)', async () => {

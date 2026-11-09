@@ -213,7 +213,9 @@ export function TradeGlance({ view, escrow, serverClock, layout }: Pick<TradeScr
  * method, the gift-card warning. Information only: no control.
  */
 function PayFacts({ view, method, total, xmr }: { view: TradeView; method: MethodInfo; total: DeviceTotal; xmr: bigint | null }) {
-  const details = usePaymentDetails(view.code);
+  // The same fallback as the pay screen's PaymentCard (BuyerPay.tsx), which the tabletop hides:
+  // with the seller's details unknown, the buyer is still told where to ask (review 2026-11-06 m3).
+  const rows = usePaymentDetails(view.code) ?? [{ label: `${method.name} to`, value: 'Ask in the chat' }];
   return (
     <>
       <p className="x2f-fold-glance__fact" data-glance-pay="">
@@ -228,7 +230,7 @@ function PayFacts({ view, method, total, xmr }: { view: TradeView; method: Metho
             </>
           ) : null}
         </span>
-        {(details ?? []).map((d) => (
+        {rows.map((d) => (
           <span key={d.label} className="x2f-muted">
             {d.label} <span className="x2f-mono">{d.value}</span>
           </span>

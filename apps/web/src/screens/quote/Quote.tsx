@@ -101,8 +101,12 @@ function rateOf(q: Quote): Price | null {
  * `pane`: the quote in the pane beside the offers (two panes, Fold-Offers). The offer comes from
  * the props, not the route (the route may be the list's), the back link is left out (the list is
  * beside it) and the screen draws no `<main>` landmark of its own (it is in the panes' aside).
+ * `pane.onFirstInput`: set while the pane shows an offer nobody picked yet, on the list's URL. This
+ * quote then leaves the URL alone; the person's first input here (amount, unit, Max, wallet) or
+ * Trade tap hands it the quote's params instead, so the offer and its amount go into the URL in one
+ * step and a fold keeps this quote (fold review 2026-11-06 m2).
  */
-export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId: string; offerId: string } }) {
+export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId: string; offerId: string; onFirstInput?: ((params: URLSearchParams) => void) | undefined } }) {
   const route = useParams();
   const methodId = pane?.methodId ?? route.methodId ?? '';
   const offerId = pane?.offerId ?? route.offerId ?? '';
@@ -119,7 +123,13 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const [unit, setUnitState] = useState<Unit>(
     params.get('unit') === 'xmr' ? 'xmr' : params.get('unit') === 'fiat' ? 'fiat' : (kept.amount?.unit ?? copy.defaultUnit),
   );
+  // m2: set by the first input on an unpicked pane quote, read once by the effect below.
+  const firstInput = useRef(false);
+  const touched = () => {
+    if (pane?.onFirstInput) firstInput.current = true;
+  };
   const setText = (t: string) => {
+    touched();
     setTextState(t);
     keep({ amount: t === '' ? null : { text: t, unit } });
   };
@@ -154,12 +164,21 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   // `resume` is kept until the effect below has read it once (`resumed`), then dropped for good:
   // a re-render in the same batch (the wallet it picks) must not put it back from stale params.
   const resumed = useRef(false);
+  const onFirstInput = pane?.onFirstInput;
   useEffect(() => {
+    if (!onFirstInput || !firstInput.current) return;
+    firstInput.current = false;
+    onFirstInput(here);
+  });
+  useEffect(() => {
+    // Unpicked, the URL is the list's: only the first input writes it, picking the offer (above).
+    // Writing it here as well would race that navigation and put the list's path back.
+    if (onFirstInput) return;
     const resume = params.get('resume');
     const next = new URLSearchParams(here);
     if (resume !== null && !resumed.current) next.set('resume', resume);
     if (next.toString() !== params.toString()) setParams(next, { replace: true });
-  }, [here, params, setParams]);
+  }, [here, params, setParams, onFirstInput]);
 
   const path = `/${copy.adSide === 'sell' ? 'buy' : 'sell'}/${encodeURIComponent(methodId)}/${encodeURIComponent(offerId)}`;
   const pending = { offerId, unit, text };
@@ -230,6 +249,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
     const to: Unit = unit === 'fiat' ? 'xmr' : 'fiat';
     // The exact amount travels across the switch: nothing is re-rounded behind the person's back.
     const next = ok ? (to === 'xmr' ? xmrText(ok.amountAtomic) : amountText(ok.fiatCents, 'fiat', ok.rate, exponent)) : '';
+    touched();
     setTextState(next);
     setUnitState(to);
     keep({ amount: next === '' ? null : { text: next, unit: to } });
@@ -327,7 +347,16 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
         </section>
 
         {signedIn === true && wallets.kind === 'ready' ? (
-          <WalletPicker legend={copy.walletLegend} wallets={wallets.value} picked={pickedWallet?.id ?? null} onPick={setPicked} addHref={addWalletHref(false)} />
+          <WalletPicker
+            legend={copy.walletLegend}
+            wallets={wallets.value}
+            picked={pickedWallet?.id ?? null}
+            onPick={(id) => {
+              touched();
+              setPicked(id);
+            }}
+            addHref={addWalletHref(false)}
+          />
         ) : null}
         {signedIn === true && wallets.kind === 'failed' ? <p className="x2f-quote__note">Your wallets could not be loaded right now. Try again in a moment.</p> : null}
 
@@ -399,7 +428,11 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
           <Button
             variant="primary"
             disabled={!canTrade}
-            onClick={() => ok && take({ quote: { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents }, walletId: pickedWallet?.id ?? null, confirmed, resumeHref })}
+            onClick={() => {
+              if (!ok) return;
+              touched();
+              take({ quote: { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents }, walletId: pickedWallet?.id ?? null, confirmed, resumeHref });
+            }}
           >
             Trade
           </Button>

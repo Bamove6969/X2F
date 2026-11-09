@@ -504,6 +504,24 @@ test.describe('screens with two panes: nothing across the hinge (design review 5
     });
   }
 
+  test('Fold-Offers, nothing picked: an amount typed in the pane quote stays across a fold, and Back returns to the list (review 2026-11-06 m2)', async ({ page }) => {
+    await page.setViewportSize({ width: 884, height: 1104 });
+    await offers(page);
+    await page.goto(`${ORIGIN}/sell/ZELLE`);
+    expect(await fold(page)).toBe('two');
+    const side = page.locator('[data-pane="side"]');
+    const first = page.locator('[data-pane="main"] button[aria-pressed="true"]');
+    const who = (await first.locator('[data-username]').textContent())!;
+    expect(new URL(page.url()).pathname).toBe('/sell/ZELLE');
+    await side.locator('#quote-amount').fill('100');
+    await expect.poll(() => new URL(page.url()).pathname).toMatch(/^\/sell\/ZELLE\/[^/]+$/);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('[data-screen="quote"]')).toContainText(who);
+    await expect(page.locator('#quote-amount')).toHaveValue('100');
+    await page.goBack();
+    await expect(page.locator('.x2f-browse')).toBeVisible();
+  });
+
   test('Fold-MyOffers: the list, and the picked offer\'s details with its switch beside it', async ({ page }) => {
     await page.setViewportSize({ width: 884, height: 1104 });
     const list = [

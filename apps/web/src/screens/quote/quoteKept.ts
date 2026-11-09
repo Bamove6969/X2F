@@ -85,6 +85,16 @@ export function useQuoteKept(offerId: string): [QuoteKept, (patch: Partial<Quote
   return [value, set];
 }
 
+/**
+ * Forgets one offer's kept quote unless a take is in flight; true when forgotten. Back to the offer
+ * list undoes the pick, so the pane's quote starts afresh (OffersRoute, lead review 2026-11-06 m1).
+ */
+export function forgetQuote(offerId: string): boolean {
+  if (readQuote(offerId).busy) return false;
+  if (store.delete(offerId)) notify(offerId);
+  return true;
+}
+
 /** For tests: forget every kept quote. */
 export function forgetQuotes(): void {
   const ids = [...store.keys()];
