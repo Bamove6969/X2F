@@ -49,6 +49,9 @@ export const TEAM_COPY = {
   // The lead defaults the owner may change (spec 6.7).
   ownerKeeps: 'Payout wallets, your login methods, security settings and the team itself stay with you.',
   oneReputation: 'Your account has one reputation. Everything a member does shows in the log below.',
+  // Owner p7-9 (8 Nov, replacing p4-8's "no stronger than the lead"): members may use ANY login
+  // method. Not built yet (lead report 2026-11-08: the join, member logins and their strength need
+  // rules first); this line says what the join enforces today, so it changes with the build.
   twoFactors: 'Each member logs in with their own two factors: a PGP key plus a security key, a passkey or a second PGP key.',
   // Plan 3 Task 42 (R44): members cannot release yet.
   releaseNote: 'Releasing or securing coins still happens on your own device.',
@@ -67,6 +70,9 @@ export const TEAM_COPY = {
   pickRole: 'Pick at least one role.',
   inviteTitle: 'Invite a member',
   nameLabel: 'Their name in trade chats',
+  // Owner 2026-10-28 (R44): chat labels name the member, "Team Calcium member: Aurora", which the
+  // owner chose over design's "never which member". Design build gaps Job 1 (and board TeamChat)
+  // still ask for "never which member": left as the owner ruled, raised with the lead 2026-11-08.
   nameHint: 'Chat shows it as "Team <your name> member: <their name>".',
   inviteButton: 'Make an invite link',
   // Team board (wip/design-brief), the full state, with the 1 Nov limit as a number.
@@ -92,6 +98,7 @@ export const JOIN_COPY = {
   loading: 'Checking your invite…',
   gone: 'This invite link has been used, has run out or is not complete. Ask for a new one.',
   invited: (team: string, name: string, roles: readonly TeamRole[]) => `${team} invited you as ${name}, for ${rolesText(roles)}.`,
+  // What the join enforces today; owner p7-9 (any login method) is not built yet (see TEAM_COPY.twoFactors).
   twoFactors: 'You log in with two factors: first a PGP key, then a security key, a passkey or a second PGP key.',
   loginNameLabel: 'Your private login name',
   loginNameHint: 'Only you use it to log in. Nobody else sees it.',
