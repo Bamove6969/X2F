@@ -10,9 +10,9 @@ Status words used below: **built** (on `main`, with tests), **partly built** (li
 
 What we try to protect:
 
-- **Coins.** No X2F server, alone or together with any one trader, should be able to move escrowed coins anywhere the honest parties did not agree to.
+- **Coins.** No X2F server alone can move escrowed coins, and neither can the API or the message relay together with one trader. The moderation service is different: it holds one of the three key shares, and its share plus any one trader's share is the 2-of-3 threshold. If the moderation service is compromised and the attacker is also a party to a trade, or colludes with one, that trade's escrow can be moved. The moderation service's own rules (3.4) bind it only while it runs honest code. This is inherent in 2-of-3 escrow with an arbitrator key. It is why the moderation service is a separate process with its own database and holds nothing beyond what section 2 lists, and why we are seeking an external audit (section 9). Running it as its own system user on its own host is **planned**.
 - **Trade content.** Chat, payment proofs and payout addresses should not be readable by the network, the message relay, or anyone who copies X2F's API database.
-- **Identity.** X2F asks for no name, email or phone. Login names should not be recoverable from a stolen database.
+- **Identity.** X2F asks for no name, email or phone. Login names should not be recoverable from a stolen database. A PGP key a user pastes may still carry a name or email in its user IDs (section 2).
 
 Attackers we consider:
 
@@ -21,7 +21,7 @@ Attackers we consider:
 | Network observer | Sees and changes traffic. TLS is assumed; Tor users also hide their IP. |
 | Message relay | Sees, drops, reorders and replays every escrow and signal message. |
 | API server or its database | Full control of the API process and database. |
-| Moderation service | Holds the moderator's escrow key and chat identity for each trade. |
+| Moderation service | Holds the moderator's escrow key and chat identity for each trade. Together with one trader it reaches the 2-of-3 threshold (section 1, Coins). |
 | One trader | Controls its own app and keys, and may lie or send malformed data. |
 | Web origin | Whoever controls the web server can change the app's code (section 8). |
 
@@ -31,7 +31,7 @@ Out of scope: a compromised trader device, the fiat leg of the trade (X2F never 
 
 X2F runs two separate services with separate databases. The **API** (accounts, trades, chat storage) has no access to the **moderation service**'s database.
 
-**The API holds:** accounts (login names only as HMAC tags; display names); public keys and WebAuthn credentials; PGP public keys, encrypted at rest; password hashes; encrypted TOTP secrets; trade records, including both payout addresses until they are cleared (section 7); chat envelopes as ciphertext; and the public keys of each trade's participants.
+**The API holds:** accounts (login names only as HMAC tags, or sealed while a sign-up waits in its challenge, section 6; display names); public keys and WebAuthn credentials; PGP public keys, encrypted at rest (v4 keys, which are most keys in use, keep their user IDs, which may contain a name or email); password hashes; encrypted TOTP secrets; trade records, including both payout addresses until they are cleared (section 7); chat envelopes as ciphertext; and the public keys of each trade's participants.
 
 **The moderation service holds, per trade:** the moderator's trade identity (Ed25519/X25519), its escrow wallet session (its one multisig key share), and that wallet's password. Per chat, it holds the moderator's chat identity. It also holds the long-term **moderation signing key**, whose public half is built into the apps. All of this is sealed with AES-256-GCM under `MOD_KEYSTORE_KEY`, with the trade or chat code as associated data. The wallet password is sealed under a separate HKDF subkey, in a separate table from the wallet session.
 
@@ -46,7 +46,7 @@ X2F runs two separate services with separate databases. The **API** (accounts, t
 
 ## 3. Escrow
 
-**Status: built** for normal release, mutual cancel, lapse refund, buyer cancel and the buyer no-show refund. **Planned** for moderator rulings: on `main`, `verifyRuling` refuses every ruling, so the moderator key cannot yet pay out a dispute.
+**Status: built** for normal release, mutual cancel, lapse refund, buyer cancel and the buyer no-show refund. **Planned** for moderator rulings: on `main`, `verifyRuling` refuses every ruling, so the moderation service cannot yet co-sign a dispute payout.
 
 ### 3.1 Keys
 
@@ -56,7 +56,7 @@ Each trade gets a fresh Monero 2-of-3 multisig wallet (monero-ts 0.11.16, `THRES
 - the **seller**, made in the seller's browser;
 - the **moderator**, made by the moderation service.
 
-**X2F holds at most one share per trade, the moderator's.** No server holds a second share. On the device, the trader's share and the wallet password sit in IndexedDB, wrapped by a non-extractable WebCrypto AES-256-GCM key. Per-trade wallet passwords are 32 random bytes, never a user password. **Planned:** a backup of the device share encrypted to the user's own PGP key.
+**X2F holds at most one share per trade, the moderator's.** No server holds a second share. The moderator's share never signs alone: it always co-signs with a trader (table below), and that pair is the threshold (section 1). On the device, the trader's share and the wallet password sit in IndexedDB, wrapped by a non-extractable WebCrypto AES-256-GCM key. Per-trade wallet passwords are 32 random bytes, never a user password. **Planned:** a backup of the device share encrypted to the user's own PGP key.
 
 | Outcome | Builder | Co-signer |
 |---|---|---|
@@ -92,7 +92,7 @@ Escrow setup and signals (`trade.terms`, `trade.paid`, `trade.cancel`, and so on
 ### 3.3 How a payout is built and checked
 
 1. Each party reads the escrow's balance itself and acts only when the whole balance is unlocked (balance = unlocked).
-2. Every party computes the payout list with the same pure function (`payoutsFor`), from the attested deal, the addresses signed in `trade.terms`, the fee wallet built into the app, and that balance. The list always sweeps the whole balance. Output 0 bears the network fee. The fee output is exactly 1% of the trade. Any surplus goes to the seller.
+2. Every party computes the payout list with the same pure function (`payoutsFor`), from the attested deal, the addresses signed in `trade.terms`, the fee wallet built into the app, and that balance. The list always sweeps the whole balance. Output 0 bears the network fee. On a release, the fee output is exactly 1% of the trade. Cancels and refunds have no fee output: every refund sweeps the whole balance to the seller. Of the planned dispute payouts, the one a seller wins on a buyer's ad has no fee output either. Any surplus goes to the seller.
 3. A trader app settles only an outcome whose payout list is exactly one of the shapes its role may settle (`cosignPolicy`): same order, same addresses, same amounts.
 4. The builder makes the multisig transaction set. Before signing, the co-signer decodes it and checks it with `checkTxSet`. It fails closed unless all of these hold:
    - the set holds exactly one transaction;
@@ -104,11 +104,13 @@ Escrow setup and signals (`trade.terms`, `trade.paid`, `trade.cancel`, and so on
    - inputs = outputs + fee.
 
    Nothing is signed if any check fails.
+
+   **Assumption for the auditor:** `checkTxSet` reads the destinations that monero-ts (wallet2) decodes from the multisig transaction set. The check is only as good as wallet2 binding those decoded destinations to the transaction it then signs. We understand that wallet2 rebuilds the transaction from its construction data when signing, but we have not verified this for the monero-ts 0.11.16 path.
 5. A party commits to one outcome once a transaction set has been built or accepted for it, and cannot then be switched to another.
 
 ### 3.4 The moderator's limits
 
-Today, the moderation service may sign on its own only in the two automatic cases. Both pay **one output of the whole balance to the seller's refund address, as the seller's own identity signed it in `trade.terms`**. The API's copy of the address is never used. Any other destination is refused (`wrong-destination`), and the co-sign check in 3.3 still applies.
+These rules are code the moderation service runs on itself: they bind an honest service, not a compromised one (section 1). The moderator's share never signs alone; it co-signs with a trader. Today, until rulings land, the moderation service co-signs without a human only in the two automatic cases. Both pay **one output of the whole balance to the seller's refund address, as the seller's own identity signed it in `trade.terms`**. The API's copy of the address is never used. Any other destination is refused (`wrong-destination`), and the co-sign check in 3.3 still applies.
 
 - **Buyer cancel.** The moderation service must itself have opened a valid `trade.cancel` sealed by the buyer's trade identity. It refuses once it has seen a valid `trade.paid` from the buyer.
 - **Buyer no-show refund.** All of these must hold:
@@ -206,11 +208,11 @@ Known limits of the design:
   - The decrypted message names the site, its host, the purpose and the time. It is signed with the official X2F PGP key, whose fingerprint is published.
   - An unknown key gets a decoy of the same shape, so the page does not reveal whether an account exists.
   - The server stores only SHA-256 of the code. Only asking for codes is rate-limited, not guessing.
-  - Accepted keys are RSA 4096+, Ed25519 and Ed448. They are stored encrypted (AES-256-GCM), with user IDs stripped where the key survives it.
+  - Accepted keys are RSA 4096+, Ed25519 and Ed448. They are stored encrypted (AES-256-GCM). User IDs are stripped only from v6 keys, and only where the key survives it. v4 keys, which are most keys in use, are stored whole, with their user IDs, which often hold a real name and email.
 - **Passkeys and security keys.** WebAuthn through SimpleWebAuthn, with origin and RP ID checks. Passkeys require user verification.
 - **Passwords.** Argon2id (64 MiB, t=3) over HMAC-SHA-256 of the password under a server-side pepper, checked against a leaked-password list kept on X2F's own server.
-- **TOTP.** Secrets are sealed under separate keys. TOTP is a second factor or a backup only, never the only login.
-- **Login names.** Stored only as HMAC-SHA-256 under a server key (`x2f/login-name\0` + the lower-cased NFC name). A stolen database alone does not reveal them. The display name is separate and public.
+- **TOTP.** Secrets are sealed under separate keys. TOTP cannot be an account's only login method; used alone it is a weak login, and security changes then wait 24 hours.
+- **Login names.** Stored only as HMAC-SHA-256 under a server key (`x2f/login-name\0` + the lower-cased NFC name). While a sign-up waits in its login challenge, the challenge keeps the login name sealed with AES-256-GCM under a server subkey (`login-seal`), never as plaintext. A stolen database alone does not reveal them. The display name is separate and public.
 
 ## 7. Retention
 
@@ -228,7 +230,7 @@ How deletion works:
   - deleting the whole trade record at 30 days, which the published rule calls for;
   - deleting the moderator's chat identity and attestation from the moderation database;
   - erasing device copies.
-- The design's rule for disputed trades counts the 90 days from the moment the dispute button is pressed. The code counts from when the dispute closes. This is under review.
+- For disputed trades the 90 days count from the dispute closing (owner ruling, 2026-11-09).
 - Backups may hold ciphertext for their own retention window.
 - The API turns off request logging. The policy is to log no IP addresses.
 
@@ -254,13 +256,15 @@ An onion address protects users' network location and removes the certificate au
 
 ## 9. Known gaps, in one place
 
-1. Every chat is readable by the moderation service today (4.3). The fix is 4.4.
-2. Moderator rulings are not built. Dispute payouts are refused (3.4).
-3. The proof pipeline is not wired into the web app (5).
-4. Whole-trade deletion at 30 days, moderation-side chat deletion and device erasure are not built (7).
-5. Web-delivered code (8). The onion address, native apps and SRI are not built.
-6. Monero multisig is labelled experimental upstream, and the FCMP++ upgrade will change it. The escrow sits behind one interface (`EscrowEngine`) so it can be swapped.
-7. No external audit has been done yet.
+1. A compromised moderation service together with one trader reaches the 2-of-3 threshold and can move that trade's escrow; its refund-only rules (3.4) bind only an honest service (section 1).
+2. Every chat is readable by the moderation service today (4.3). The fix is 4.4.
+3. Moderator rulings are not built. Dispute payouts are refused (3.4).
+4. The proof pipeline is not wired into the web app (5).
+5. Whole-trade deletion at 30 days, moderation-side chat deletion and device erasure are not built (7).
+6. Web-delivered code (8). The onion address, native apps and SRI are not built.
+7. Monero multisig is labelled experimental upstream, and the FCMP++ upgrade will change it. The escrow sits behind one interface (`EscrowEngine`) so it can be swapped.
+8. The transaction-set check relies on wallet2 binding the decoded destinations to the signed transaction; not yet verified for monero-ts 0.11.16 (3.3).
+9. No external audit has been done yet.
 
 ## Appendix: where each claim lives (paths from the repository root)
 
@@ -277,7 +281,7 @@ An onion address protects users' network location and removes the certificate au
 - Relay join check: `apps/relay/src/server.ts`
 - Retention: `packages/trade/src/chat.ts` (`CHAT_*_DAYS`), `apps/api/src/chat/retention.ts`, `apps/api/src/trades/purge.ts`, `apps/api/src/retentionJobs.ts`
 - Proofs: `packages/proof/src/clean.ts`, `detect.ts`, `redact.ts`, `seal.ts`; `apps/web/src/proof/reencode.ts`
-- Logins: `apps/api/src/auth/pgp.ts`, `packages/accounts/src/loginCode.ts`, `packages/accounts/src/pgp.ts`, `apps/api/src/auth/webauthn.ts`, `apps/api/src/auth/password.ts`, `apps/api/src/auth/totp.ts`, `apps/api/src/accounts.ts` (`loginTag`), `apps/api/src/config.ts` (`subkey`)
+- Logins: `apps/api/src/auth/pgp.ts`, `packages/accounts/src/loginCode.ts`, `packages/accounts/src/pgp.ts`, `apps/api/src/auth/webauthn.ts`, `apps/api/src/auth/password.ts`, `apps/api/src/auth/totp.ts`, `apps/api/src/accounts.ts` (`loginTag`, `sealNames`), `apps/api/src/config.ts` (`subkey`)
 - CSP and origins: `apps/api/src/static/serve.ts` (`cspFor`); request logging: `apps/api/src/app.ts`
 - Design background: `docs/superpowers/specs/2026-10-14-x2f-design.md` sections 3, 4 and 6; `docs/security/research-2026-10-15-escrow-threats.md`
 - Planned membership keys: the design note "Trade chat: one key per trade, with members" (2026-11-08), not yet published in this repository
