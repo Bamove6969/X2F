@@ -454,6 +454,17 @@ a.x2f-method:last-of-type {
   color: var(--x2f-ink-muted);
 }
 
+/* The trust row's figures (kit 2.7: every number in mono ink) and Online in the escrow tone. */
+.x2f-offer__num {
+  font-family: var(--x2f-font-mono);
+  color: var(--x2f-ink);
+}
+
+.x2f-offer__online {
+  color: var(--x2f-escrow);
+  font-weight: 600;
+}
+
 /* "Display amounts including vendor markup" (owner, 8 Nov): the kit's tick box and its words. */
 .x2f-browse__markup {
   display: flex;

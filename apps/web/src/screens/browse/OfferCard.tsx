@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { BadgePill } from '../../ui/BadgePill.js';
 import { Button } from '../../ui/Button.js';
 import { Icon, type IconName } from '../../ui/icons.js';
@@ -27,6 +27,10 @@ const BADGES: Record<string, BadgeInfo> = {
   trusted: { label: 'Trusted', icon: 'shield-check', tone: 'escrow', meaning: '100+ trades, 98%+ positive' },
   fast: { label: 'Fast', icon: 'bolt', tone: 'escrow', meaning: 'usually pays or releases within 10 min' },
   veteran: { label: 'Veteran', icon: 'star', tone: 'escrow', meaning: 'trading on X2F for 1+ year' },
+  // The ids the API earns them under (@x2f/reputation badges.ts); COPY-UNSIGNED: the 3- and 5-year labels (P5-A12).
+  'veteran-1': { label: 'Veteran', icon: 'star', tone: 'escrow', meaning: 'trading on X2F for 1+ year' },
+  'veteran-3': { label: 'Veteran · 3 years', icon: 'star', tone: 'escrow', meaning: 'trading on X2F for 3+ years' },
+  'veteran-5': { label: 'Veteran · 5 years', icon: 'star', tone: 'escrow', meaning: 'trading on X2F for 5+ years' },
   pgp: { label: 'PGP verified', icon: 'pgp-key', tone: 'escrow', meaning: 'signs in with a verified PGP key' },
   'security-key': { label: 'Security key verified', icon: 'security-key', tone: 'escrow', meaning: 'protects the account with a hardware key' },
   'clean-record': { label: 'Clean record', icon: 'shield', tone: 'escrow', meaning: '100 trades with no lost disputes' },
@@ -49,21 +53,50 @@ function badgesOf(offer: Offer): BadgeInfo[] {
 
 const STAGE_NAME: Record<OpensAt, string> = { building: 'Building', graduated: 'Graduated' };
 
-function seen(lastSeenAt: string | null, now: Date): string {
+/** A figure in the meta line: mono ink (kit 2.7, `mono_digits`). */
+const Num = ({ children }: { children: ReactNode }) => (
+  <span className="x2f-offer__num" data-part="num">
+    {children}
+  </span>
+);
+
+function seen(lastSeenAt: string | null, now: Date): ReactNode {
   if (lastSeenAt === null) return 'Offline';
   const min = Math.max(0, Math.floor((now.getTime() - Date.parse(lastSeenAt)) / 60_000));
   if (!Number.isFinite(min)) return 'Offline';
   if (min < 1) return 'Seen just now';
-  if (min < 60) return `Seen ${min} min ago`;
-  if (min < 48 * 60) return `Seen ${Math.floor(min / 60)} h ago`;
-  return `Seen ${Math.floor(min / (24 * 60))} d ago`;
+  if (min < 60) return <>Seen <Num>{min}</Num> min ago</>;
+  if (min < 48 * 60) return <>Seen <Num>{Math.floor(min / 60)}</Num> h ago</>;
+  return <>Seen <Num>{Math.floor(min / (24 * 60))}</Num> d ago</>;
 }
 
-function posterLine(offer: Offer, now: Date): string {
+/**
+ * The trust row's meta line (boards SellOffers/BuyOffers, kit 2.7): "Online · 212 trades · 99%
+ * positive", Online in the escrow tone and every number in mono. The figures are the API's own
+ * (completed trades, % positive from reviews); no % positive until a rated review exists.
+ */
+function posterLine(offer: Offer, now: Date): ReactNode {
   const p = offer.poster;
-  const parts = [p.online ? 'Online' : seen(p.lastSeenAt, now), `${p.completedTrades} ${p.completedTrades === 1 ? 'trade' : 'trades'}`];
-  if (p.positivePct !== null) parts.push(`${p.positivePct}% positive`);
-  return parts.join(' · ');
+  const parts: ReactNode[] = [
+    p.online ? (
+      <span key="seen" className="x2f-offer__online" data-part="online">
+        Online
+      </span>
+    ) : (
+      <span key="seen">{seen(p.lastSeenAt, now)}</span>
+    ),
+    <span key="trades">
+      <Num>{p.completedTrades.toLocaleString('en-US')}</Num> {p.completedTrades === 1 ? 'trade' : 'trades'}
+    </span>,
+  ];
+  if (p.positivePct !== null) {
+    parts.push(
+      <span key="pct">
+        <Num>{p.positivePct}%</Num> positive
+      </span>,
+    );
+  }
+  return parts.flatMap((part, i) => (i === 0 ? [part] : [' · ', part]));
 }
 
 /**

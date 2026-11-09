@@ -191,6 +191,36 @@ describe('badges on the card', () => {
     expect(badgeLabels(host)).toEqual(['Security key verified', 'Veteran']);
     expect(host.querySelector('button[aria-label^="Show all"]')).toBeNull();
   });
+
+  it('reads the ids the API earns them under (@x2f/reputation): veteran-1, -3, -5 and the trade milestones', () => {
+    const mira = byName('mira.k');
+    const { host } = card({ ...mira, poster: { ...mira.poster, badges: ['trades-50', 'veteran-3', 'veteran-1', 'veteran-5', 'clean-record'] } });
+    expect(badgeLabels(host)).toEqual(['50 trades', 'Veteran · 3 years']);
+    fire(host.querySelector<HTMLButtonElement>('button[aria-label="Show all 5 badges"]')!, new MouseEvent('click', { bubbles: true }));
+    const tip = host.querySelector('[role="tooltip"]')!.textContent;
+    expect(tip).toContain('Veteran · trading on X2F for 1+ year');
+    expect(tip).toContain('Veteran · 5 years · trading on X2F for 5+ years');
+    expect(tip).toContain('Clean record · 100 trades with no lost disputes');
+  });
+});
+
+describe('the trust row (design review 8 Nov, item 5; kit 2.7: every number in mono)', () => {
+  it('Online in the escrow tone, the trade count and % positive in mono, the words around them plain', () => {
+    const { host } = card(byName('mira.k'));
+    const sub = host.querySelector('.x2f-offer__sub')!;
+    expect(sub.textContent).toBe('Online · 212 trades · 99% positive');
+    expect([...sub.querySelectorAll('[data-part="num"]')].map((n) => n.textContent)).toEqual(['212', '99%']);
+    expect(sub.querySelector('[data-part="online"]')!.textContent).toBe('Online');
+  });
+
+  it('offline: "Seen 2 h ago" with the 2 in mono; no % positive until a rated review exists', () => {
+    const owl = byName('nightowl_44');
+    const { host } = card({ ...owl, poster: { ...owl.poster, positivePct: null } });
+    const sub = host.querySelector('.x2f-offer__sub')!;
+    expect(sub.textContent).toBe('Seen 2 h ago · 58 trades');
+    expect([...sub.querySelectorAll('[data-part="num"]')].map((n) => n.textContent)).toEqual(['2', '58']);
+    expect(sub.querySelector('[data-part="online"]')).toBeNull();
+  });
 });
 
 describe('OfferCard as a pick row (two panes, Fold-Offers)', () => {
