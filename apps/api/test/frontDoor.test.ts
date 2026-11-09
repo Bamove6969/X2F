@@ -6,7 +6,7 @@
 import type { FastifyInstance, RouteOptions } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { OWN_DATA_READS, PUBLIC_ROUTES, runsInside } from '../src/auth/frontDoor.js';
+import { OWN_DATA_READS, OWN_DATA_WRITES, PUBLIC_ROUTES, runsInside } from '../src/auth/frontDoor.js';
 import { runsWithSession } from '../src/auth/sessions.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -103,18 +103,32 @@ describe('the route list', () => {
   // Review 2026-11-08 F2: "some session" is not the front door. Every read behind a session either
   // runs behind `requireInside` (and is then checked below, logged out, half set up and on a
   // recovery session) or answers only the caller's own data, with the reason recorded.
-  it('every session-guarded read is behind requireInside or is listed as own-data-only with a reason; READS covers every requireInside read', async () => {
+  // Review 6a5949a6 F2b: every method, not only GET. A write behind a session (a "search" POST, say)
+  // is behind requireInside or listed in OWN_DATA_WRITES with what it writes and answers.
+  it('every session-guarded route, whatever its method, is behind requireInside or is listed as own-data-only with a reason; READS covers every requireInside route', async () => {
     await app.ready();
     const inside = new Set<string>();
-    const own = new Set<string>();
+    const ownReads = new Set<string>();
+    const ownWrites = new Set<string>();
     for (const r of registered) {
       if (r.url.startsWith('/t/') || !runsWithSession(r.preHandler)) continue;
-      const methods = [r.method].flat().filter((m) => m === 'GET');
-      for (const m of methods) (runsInside(r.preHandler) ? inside : own).add(`${m} ${r.url}`);
+      for (const m of [r.method].flat()) {
+        if (m === 'HEAD') continue;
+        const route = `${m} ${r.url}`;
+        if (runsInside(r.preHandler)) inside.add(route);
+        else (m === 'GET' ? ownReads : ownWrites).add(route);
+      }
     }
-    expect([...own].sort()).toEqual(Object.keys(OWN_DATA_READS).sort());
-    for (const [route, why] of Object.entries(OWN_DATA_READS)) expect(why.length, route).toBeGreaterThan(5);
+    expect([...ownReads].sort()).toEqual(Object.keys(OWN_DATA_READS).sort());
+    expect([...ownWrites].sort()).toEqual(Object.keys(OWN_DATA_WRITES).sort());
+    for (const [route, why] of Object.entries({ ...OWN_DATA_READS, ...OWN_DATA_WRITES })) expect(why.length, route).toBeGreaterThan(5);
+    // Every requireInside route is a GET with its own checks below (READS); a write behind it fails here.
     expect([...inside].sort()).toEqual([...new Set(READS.map((r) => routeOf(r.url)))].sort());
+    // No route is in two lists, and each list names routes that run the way it says.
+    const all = [...Object.keys(PUBLIC_ROUTES), ...Object.keys(OWN_DATA_READS), ...Object.keys(OWN_DATA_WRITES), ...inside];
+    expect(new Set(all).size, 'a route listed twice').toBe(all.length);
+    for (const route of Object.keys(OWN_DATA_READS)) expect(route.startsWith('GET '), route).toBe(true);
+    for (const route of Object.keys(OWN_DATA_WRITES)) expect(route.startsWith('GET '), route).toBe(false);
   });
 });
 

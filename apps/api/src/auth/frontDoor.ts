@@ -78,6 +78,78 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Every route other than GET (and HEAD) behind a session that is not `requireInside`, with the reason
+ * it may be: each writes only to the caller's own account, trades, chats or settings, and answers
+ * only with the result of that write (or the caller's own data), never other traders' data (review
+ * 6a5949a6 F2b). `test/frontDoor.test.ts` fails when a session-guarded write is neither here nor
+ * behind `requireInside`. The live-session and hold checks are classified separately (auth/hold.ts).
+ */
+export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
+  // Login methods and security settings (my own account).
+  'PUT /v1/account/password': 'sets or changes my own password; no data back',
+  'POST /v1/account/pgp/start': 'an add-key challenge for my own account, encrypted to the key I sent',
+  'POST /v1/account/pgp/finish': 'adds a PGP key to my own account',
+  'POST /v1/account/webauthn/start': 'registration options for my own account',
+  'POST /v1/account/webauthn/finish': 'adds a passkey or security key to my own account',
+  'POST /v1/account/totp/start': 'an authenticator enrolment secret for my own account',
+  'POST /v1/account/totp/finish': 'turns on the authenticator for my own account',
+  'POST /v1/account/recovery-codes': 'new recovery codes for my own account',
+  'DELETE /v1/account/methods/:type/:id': 'removes one of my own login methods',
+  'POST /v1/account/login-name': 'changes my own login name',
+  'PUT /v1/account/security/one-device': 'my own one-device setting',
+  'PUT /v1/account/security/logout-timer': 'my own logout timer',
+  'POST /v1/confirm/password': 'a confirm token bound to my own session',
+  'POST /v1/confirm/pgp/start': 'a confirm challenge bound to my own session, for my own key',
+  'POST /v1/confirm/pgp/finish': 'a confirm token bound to my own session',
+  'POST /v1/confirm/webauthn/start': 'confirm options bound to my own session, for my own keys',
+  'POST /v1/confirm/webauthn/finish': 'a confirm token bound to my own session',
+  // Sessions, approvals, alerts, push and the Terms (my own account).
+  'POST /v1/account/approvals/:id': 'my decision on one of my own new-device login approvals',
+  'DELETE /v1/account/sessions/:id': 'ends one of my own sessions',
+  'DELETE /v1/account/recovery-sessions/:id': 'cancels one of my own backup sessions',
+  'POST /v1/account/push': 'my own push subscription',
+  'DELETE /v1/account/push': 'drops my own push subscriptions',
+  'POST /v1/account/alerts/:id/seen': 'marks one of my own alerts seen',
+  'POST /v1/account/terms': 'my own acceptance of the current Terms (a member: their own login account)',
+  // Settings and social rows (my own account).
+  'PUT /v1/account/nudges': 'my own nudge setting',
+  'POST /v1/account/blocks': 'a block row of mine; no data back (404 for a name that is not a trader)',
+  'DELETE /v1/account/blocks/:displayName': 'removes a block row of mine; no data back',
+  'PUT /v1/account/profile/traded-total': 'my own traded-total display setting',
+  'POST /v1/account/past-rep/start': 'a past-rep challenge for my own claim',
+  'POST /v1/account/past-rep/finish': 'my own past-rep claim',
+  'DELETE /v1/account/past-rep/:id': 'removes my own past-rep claim',
+  'POST /v1/method-suggestions': 'a method suggestion row of mine; no data back',
+  'POST /v1/feedback': 'a platform-feedback row; no data back',
+  'POST /v1/feedback/form': 'a feedback row; no data back',
+  // Wallets and offers (my own).
+  'POST /v1/wallets': 'adds my own payout wallets; answers them',
+  'DELETE /v1/wallets/:id': 'removes one of my own payout wallets',
+  'POST /v1/offers': 'posts my own offer; answers its id',
+  'PATCH /v1/offers/:id': 'pauses, removes or relists my own offer (403 wrong-party for anyone else\'s)',
+  'POST /v1/account/offers/status': 'turns my own offers on or off',
+  // Trades and chats (participants only).
+  'POST /v1/offers/:id/take': 'opens my own trade on a listed offer; answers its code and locked price',
+  'POST /v1/trades/:code/events': 'an event in one of my own trades (participants only); answers its view',
+  'POST /v1/trades/:code/wallet': "the poster's payout wallet for one of my own trades, from my own wallets",
+  'POST /v1/trades/:code/identity': 'my identity for one of my own trades (participants only)',
+  'POST /v1/trades/:code/chat': 'the chat of one of my own trades (participants only)',
+  'POST /v1/trades/:code/dispute': 'opens a dispute on one of my own trades (participants only)',
+  'POST /v1/trades/:code/appeal': 'appeals a ruling on one of my own trades (participants only)',
+  'POST /v1/trades/:code/review': 'my review of one of my own finished trades',
+  'POST /v1/trades/:code/review/skip': 'skips my review of one of my own finished trades',
+  'POST /v1/trades/:code/final-alert-seen': 'marks the final alert of one of my own trades seen',
+  'POST /v1/nudges': 'a nudge to the other party of one of my own trades; answers its state',
+  'POST /v1/chats': 'opens my own pre-trade chat on a listed offer; answers its code and my role',
+  'POST /v1/chats/:chat/identity': 'my chat identity key for one of my own chats',
+  'POST /v1/chats/:chat/envelopes': 'an encrypted line in one of my own chats',
+  // My own team (account owner only).
+  'POST /v1/team/invites': 'an invite to my own team; answers its id, code and deadline',
+  'PATCH /v1/team/members/:id': "changes a member's roles in my own team",
+  'DELETE /v1/team/members/:id': 'removes a member from my own team',
+};
+
+/**
  * Every trader API route that runs without a session, with the reason it must. Each one serves the
  * front door: logging in, creating an account, getting back in, the Terms text to read before
  * agreeing, or a bare "up / maintenance" answer. Nothing here returns marketplace or user data.
