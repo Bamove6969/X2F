@@ -482,21 +482,21 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
 });
 
 describe('review fixes (Task 4 review 2026-10-28)', () => {
-  it('Q31: at most 3 live or paused selling offers per account across every method and currency (409 too-many-offers); removed ones do not count', async () => {
+  it('Q31: at most 3 live or paused selling offers per account across every method and currency (409 too-many-offers with the caps, review M2); removed ones do not count', async () => {
     const p = await poster();
     // Three markets, one side: the account's selling count is 3 whatever the method and currency.
     const ids = [await post(p, { currency: 'TRY' }), await post(p, { currency: 'EUR', methodId: 'REVOLUT' }), await post(p, { currency: 'GBP', methodId: 'REVOLUT' })];
     for (const [currency, methodId] of [['TRY', 'ZELLE'], ['ILS', 'REVOLUT'], ['CHF', 'REVOLUT']]) {
       const over = await p.browser.post('/v1/offers', { ...BODY, currency, methodId });
       expect(over.statusCode).toBe(409);
-      expect(over.json()).toEqual({ error: 'too-many-offers' });
+      expect(over.json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 3 });
     }
     // A paused offer still counts (no seventh kept on hold); a removed one does not.
     await p.browser.patch(`/v1/offers/${ids[0]}`, { status: 'paused' });
     expect((await p.browser.post('/v1/offers', { ...BODY, currency: 'NZD' })).statusCode).toBe(409);
     await p.browser.patch(`/v1/offers/${ids[0]}`, { status: 'removed' });
     await post(p, { currency: 'NZD' });
-    expect((await p.browser.post('/v1/offers', { ...BODY, currency: 'AUD' })).json()).toEqual({ error: 'too-many-offers' });
+    expect((await p.browser.post('/v1/offers', { ...BODY, currency: 'AUD' })).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 3 });
   });
 
   it('Q31: exactly 3 buying + 3 selling offers per account, a seventh refused; the owner settings move each side, relisting included', async () => {
@@ -507,7 +507,7 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     for (const side of ['sell', 'buy']) {
       const over = await p.browser.post('/v1/offers', { ...BODY, side, currency: 'ILS', methodId: 'REVOLUT' });
       expect(over.statusCode).toBe(409);
-      expect(over.json()).toEqual({ error: 'too-many-offers' });
+      expect(over.json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 3 });
     }
     const { rows } = await deps.db.query(`select count(*)::int as n from offers where account_id = $1 and status <> 'removed'`, [p.id]);
     expect(rows[0]).toEqual({ n: 6 });
@@ -520,9 +520,9 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     await q.browser.patch(`/v1/offers/${b}`, { status: 'paused' });
     await deps.db.query(`insert into owner_settings (key, value, updated_at) values ('offers_max_sell', 1, now())`);
     try {
-      expect((await q.browser.post('/v1/offers', { ...BODY, currency: 'NZD' })).json()).toEqual({ error: 'too-many-offers' });
+      expect((await q.browser.post('/v1/offers', { ...BODY, currency: 'NZD' })).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 1 });
       // Relisting counts the others on its side: one other paused selling offer is already the cap of 1.
-      expect((await q.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'too-many-offers' });
+      expect((await q.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 1 });
       // The buying side keeps its own cap of 3.
       await post(q, { currency: 'NZD', side: 'buy' });
       await q.browser.patch(`/v1/offers/${b}`, { status: 'removed' });
@@ -532,7 +532,7 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     }
     await deps.db.query(`insert into owner_settings (key, value, updated_at) values ('offers_max_buy', 2, now())`);
     try {
-      expect((await q.browser.post('/v1/offers', { ...BODY, side: 'buy', currency: 'CAD' })).json()).toEqual({ error: 'too-many-offers' });
+      expect((await q.browser.post('/v1/offers', { ...BODY, side: 'buy', currency: 'CAD' })).json()).toEqual({ error: 'too-many-offers', buy: 2, sell: 3 });
       await post(q, { currency: 'CAD' });
     } finally {
       await deps.db.query(`delete from owner_settings where key = 'offers_max_buy'`);

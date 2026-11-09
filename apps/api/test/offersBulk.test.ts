@@ -225,7 +225,7 @@ describe('POST /v1/account/offers/status', () => {
         { id: c, status: 'live' },
       ]);
       // The same answer as the single relist route.
-      expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'too-many-offers', perSide: 1 });
+      expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 1 });
       await p.browser.patch(`/v1/offers/${b}`, { status: 'removed' });
       expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'live' }]);
     } finally {

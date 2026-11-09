@@ -274,7 +274,7 @@ export function chatCantDoText(code: CantDoCode): string {
 }
 
 /**
- * The offer cap the API enforces (owner 2026-11-01, C2-A1: 3 buying and 3 selling offers per
+ * The offer cap the API enforces (owner 6 Nov 2026, Q31: 3 buying and 3 selling offers per
  * account; apps/api/src/offers/routes.ts OFFER_CAP_DEFAULTS), said wherever the cap is explained:
  * PostOffer's and My offers' CantDoThat for `too-many-offers` and the My offers footnote.
  * PostOffer says the 409's own number (`offerCapLine`, review M2); the My offers footnote and its
@@ -283,25 +283,26 @@ export function chatCantDoText(code: CantDoCode): string {
 export const OFFER_CAP_LINE = 'You can have 3 buying and 3 selling offers.'; // COPY-UNSIGNED
 
 /**
- * The offer cap a 409 `too-many-offers` carries (cap-dispute review M2: `offers_max_per_side` is an
- * owner setting, not a fixed number). The API sends `{ perSide }` on POST and PATCH (C2-A1). Same
- * shape as wip/second-p3-task34-web's, so the two merge to one.
+ * The offer caps a 409 `too-many-offers` carries (cap-dispute review M2: the caps are owner
+ * settings, not fixed numbers). The API sends `{ buy, sell }` on POST and PATCH (owner Q31: the
+ * settings `offers_max_buy` and `offers_max_sell`, apps/api/src/offers/routes.ts OFFER_CAP_KEYS).
  */
 export interface OfferCaps {
-  perSide: number;
+  buy: number;
+  sell: number;
 }
 
-/** The cap from a refusal's extra fields, or null when the API sent none (or nonsense). */
+/** The caps from a refusal's extra fields, or null when the API sent none (or nonsense). */
 export function offerCapsOf(extra: Record<string, unknown> | undefined): OfferCaps | null {
   const ok = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 1 && v <= 1000;
-  return extra && ok(extra.perSide) ? { perSide: extra.perSide } : null;
+  return extra && ok(extra.buy) && ok(extra.sell) ? { buy: extra.buy, sell: extra.sell } : null;
 }
 
-/** The cap line with the number the API sent (the owner setting), else the default line. COPY-UNSIGNED */
+/** The cap line with the numbers the API sent (the owner settings), else the default line. COPY-UNSIGNED */
 export function offerCapLine(caps: OfferCaps | null): string {
-  if (caps === null || caps.perSide === 3) return OFFER_CAP_LINE;
-  const n = caps.perSide;
-  return `You can have ${n} buying and ${n} selling ${n === 1 ? 'offer' : 'offers'}.`;
+  if (caps === null || (caps.buy === 3 && caps.sell === 3)) return OFFER_CAP_LINE;
+  const { buy, sell } = caps;
+  return `You can have ${buy} buying and ${sell} selling ${sell === 1 ? 'offer' : 'offers'}.`;
 }
 
 /** What a refused Post offer says; `caps` from the API's refusal (offerCapsOf). */

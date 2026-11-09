@@ -332,16 +332,17 @@ describe('refusalText', () => {
   });
 });
 describe('refusalText: the cap from the 409 (cap-dispute review M2)', () => {
-  it("too-many-offers says the cap the API sent ({ perSide }, an owner setting), else the default 3", () => {
-    expect(refusalText('too-many-offers', { perSide: 3 })).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then post this one.');
-    expect(refusalText('too-many-offers', { perSide: 5 })).toBe('You can have 5 buying and 5 selling offers. Remove one you no longer need, then post this one.');
-    expect(refusalText('too-many-offers', { perSide: 1 })).toMatch(/^You can have 1 buying and 1 selling offer\. /);
-    // No cap, or nonsense: the default line.
-    for (const extra of [undefined, {}, { perSide: 0 }, { perSide: 1001 }, { perSide: 2.5 }, { perSide: '2' }, { perMarket: 2, total: 20 }]) {
+  it("too-many-offers says the caps the API sent ({ buy, sell }, owner settings, Q31), else the default 3 + 3", () => {
+    expect(refusalText('too-many-offers', { buy: 3, sell: 3 })).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then post this one.');
+    expect(refusalText('too-many-offers', { buy: 5, sell: 5 })).toBe('You can have 5 buying and 5 selling offers. Remove one you no longer need, then post this one.');
+    expect(refusalText('too-many-offers', { buy: 2, sell: 4 })).toBe('You can have 2 buying and 4 selling offers. Remove one you no longer need, then post this one.');
+    expect(refusalText('too-many-offers', { buy: 1, sell: 1 })).toMatch(/^You can have 1 buying and 1 selling offer\. /);
+    // No caps, half of them, or nonsense: the default line.
+    for (const extra of [undefined, {}, { buy: 5 }, { sell: 5 }, { buy: 0, sell: 3 }, { buy: 1001, sell: 3 }, { buy: 2.5, sell: 3 }, { buy: '2', sell: 3 }, { perSide: 2 }, { perMarket: 2, total: 20 }]) {
       expect(refusalText('too-many-offers', extra)).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then post this one.');
     }
     // Other codes ignore it.
-    expect(refusalText('trading-hold', { perSide: 5 })).toBe(refusalText('trading-hold'));
+    expect(refusalText('trading-hold', { buy: 5, sell: 5 })).toBe(refusalText('trading-hold'));
   });
 });
 

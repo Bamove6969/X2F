@@ -274,8 +274,8 @@ test('a held user sees the API refusal as text', async ({ page }) => {
   await expect(page).toHaveURL(/\/post/);
 });
 
-test('the offer cap refusal says the number the API sent (cap-dispute review M2: { perSide } is an owner setting)', async ({ page }) => {
-  await stub(page, { post: { status: 409, body: { error: 'too-many-offers', perSide: 5 } } });
+test('the offer cap refusal says the number the API sent (cap-dispute review M2, Q31: { buy, sell } are owner settings)', async ({ page }) => {
+  await stub(page, { post: { status: 409, body: { error: 'too-many-offers', buy: 5, sell: 5 } } });
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);
   await f(page).post.click();

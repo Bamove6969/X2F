@@ -372,11 +372,19 @@ async function loadOfferCaps(db: Queryable): Promise<Record<Side, number>> {
 }
 
 /**
+ * 409 `too-many-offers` with the caps that refused it (`{ buy, sell }`, the owner settings in force;
+ * review M2: the web says the API's numbers, not a fixed 3 + 3).
+ */
+function tooManyOffers(caps: Record<Side, number>): ApiError {
+  return new ApiError(409, 'too-many-offers', { buy: caps.buy, sell: caps.sell });
+}
+
+/**
  * Posting or relisting, inside the caller's transaction (review M1): refused while the site's
  * trading is paused (409 `trading-paused`), while the account has a trading hold (409
  * `trading-hold`), without a usable payout wallet (409 `no-wallet`, spec 6.4; a wallet still in
  * its 24-hour wait does not count), and at the account's offer cap for the offer's side (409
- * `too-many-offers`, owner Q31; `except` is the offer being relisted).
+ * `too-many-offers` `{ buy, sell }`, owner Q31; `except` is the offer being relisted).
  *
  * The account row is locked `for update` first, so one account's posts and relists run one at a
  * time (the cap cannot be raced) and a hold being inserted (its foreign key takes a key-share lock
@@ -402,7 +410,7 @@ async function assertMayPost(
        from offers where account_id = $1 and side = $2 and status <> 'removed' and ($3::uuid is null or id <> $3::uuid)`,
     [accountId, side, except],
   );
-  if (rows[0]!.same >= caps[side]) throw new ApiError(409, 'too-many-offers');
+  if (rows[0]!.same >= caps[side]) throw tooManyOffers(caps);
 }
 
 /**
