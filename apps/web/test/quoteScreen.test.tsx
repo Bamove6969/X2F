@@ -923,6 +923,31 @@ describe('the courtesy sheet after Trade (j31a section 2)', () => {
     expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
   });
 
+  // Review L1 (9 Nov 2026): every way of closing the sheet lands in the trade room, not only Got it.
+  it('Escape on the sheet lands in the trade room, with the confirmed state', async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    await takeIt(host);
+    expect(where(host)).toBeNull();
+    const dialog = sheet()!.closest<HTMLElement>('[role="dialog"]')!;
+    fire(dialog, new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await settle();
+    expect(sheet()).toBeNull();
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    expect(arrivedState).toMatchObject({ confirmed: { role: 'buyer' } });
+  });
+
+  it('a tap on the backdrop lands in the trade room, with the confirmed state', async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    await takeIt(host);
+    expect(where(host)).toBeNull();
+    const backdrop = sheet()!.closest('.x2f-sheet-layer')!.querySelector('[data-part="backdrop"]')!;
+    fire(backdrop, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(sheet()).toBeNull();
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    expect(arrivedState).toMatchObject({ confirmed: { role: 'buyer' } });
+  });
+
   it('a refused take shows no sheet', async () => {
     stub.take = () => ({ status: 409, json: { error: 'price-changed' } });
     const { host } = await open(`${BUY}&amount=412.50`);
