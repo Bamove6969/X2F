@@ -125,7 +125,8 @@ export function SetupIntro({ title, children }: { title: ReactNode; children?: R
 }
 
 /**
- * A refused register call. A name problem links back to the names screen (what they typed is kept);
+ * A refused register call. A name problem links back to the screen of the name to change (review
+ * F8: a display-name refusal to the display-name screen, any other to the username; what they typed is kept);
  * a key already on another account links back to the key screen and to Log in (review I1).
  */
 export function RegisterError({ error }: { error: SetupError | null }) {
@@ -137,7 +138,7 @@ export function RegisterError({ error }: { error: SetupError | null }) {
       {error.names ? (
         <>
           {' '}
-          <Link className="x2f-link" to={path('name')} data-part="change-names">
+          <Link className="x2f-link" to={path(error.names)} data-part="change-names">
             Change your names
           </Link>
         </>

@@ -134,7 +134,7 @@ describe('setupError (review fix round M1, M2, I1)', () => {
     );
   });
   it('names refusals link back to the names screen; anything else is the fallback', () => {
-    expect(setupError(new AuthApiError(409, 'display-name-taken'), fallback)).toEqual({ text: 'That display name is taken. Pick another.', names: true });
+    expect(setupError(new AuthApiError(409, 'display-name-taken'), fallback)).toEqual({ text: 'That display name is taken. Pick another.', names: 'display-name' });
     expect(setupError(new TypeError('network'), fallback)).toEqual({ text: fallback });
   });
 });

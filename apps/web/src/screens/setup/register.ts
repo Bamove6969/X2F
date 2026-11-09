@@ -68,7 +68,8 @@ export const KEY_IN_USE = 'That key is already used by another X2F account. Use 
 /** A refused setup call as the screen shows it; `names` and `keyInUse` add their links (RegisterError). */
 export interface SetupError {
   text: string;
-  names?: true;
+  /** The step whose name to change: the display name's own screen, or the username's (review F8). */
+  names?: 'name' | 'display-name';
   keyInUse?: true;
 }
 
@@ -97,8 +98,8 @@ function minutes(seconds: number | undefined): string {
  */
 export function setupError(e: unknown, fallback: string, o: { expired?: string } = {}): SetupError {
   const names = nameError(e);
-  if (names !== null) return { text: names, names: true };
   const code = errorCode(e);
+  if (names !== null) return { text: names, names: code !== null && code.startsWith('display-name-') ? 'display-name' : 'name' };
   if (code === 'key-in-use') return { text: KEY_IN_USE, keyInUse: true };
   if (e instanceof AuthApiError || e instanceof ApiCallError) {
     if (e.status === 503 && code === 'busy') return { text: `X2F is busy right now. Try again in ${minutes(e.retryAfterSeconds)}.` };
