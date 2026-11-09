@@ -438,7 +438,9 @@ describe('members', () => {
     // Switch-off can be undone: the login is not closed, so its signature stays.
     expect((await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {})).statusCode).toBe(200);
     expect(await signature(mod.id)).not.toBeNull();
-    expect((await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`)).statusCode).toBe(204);
+    // Removal needs a tap bound to them (owner G4, batch 3).
+    const removeTap = await tap(owner, { kind: 'remove-staff', accountId: mod.id });
+    expect((await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`, { tapId: removeTap })).statusCode).toBe(204);
     expect(await signature(mod.id)).toBeNull();
     // Only the removed person's.
     expect(await signature(other.id)).not.toBeNull();
