@@ -5,6 +5,7 @@ import type { Deps } from '../../src/app.js';
 import { SESSION_COOKIE, STAFF_SESSION_COOKIE } from '../../src/auth/sessions.js';
 import { buildStaffApi, type ModerationClient } from '../../src/staff/app.js';
 import type { PushTransport } from '../../src/push/send.js';
+import type { TradePublisher } from '../../src/trades/store.js';
 import { seedAccount } from './accounts.js';
 import { testApp } from './app.js';
 import { captureLogs } from './logs.js';
@@ -15,7 +16,11 @@ export const TRADER_ORIGIN = 'https://x2f.test';
 export const MODERATION_STUB: ModerationClient = { name: 'moderation' };
 
 /** The trader API and the staff API on one database and one clock; `overrides` go to `testApp`. */
-export async function staffApps(overrides: Partial<Deps> = {}, staffOptions: { pushTransport?: PushTransport } = {}): Promise<{
+export async function staffApps(
+  overrides: Partial<Deps> = {},
+  staffOptions: { pushTransport?: PushTransport } = {},
+  staffDeps: { tradePublish?: TradePublisher } = {},
+): Promise<{
   app: FastifyInstance;
   trader: FastifyInstance;
   deps: Deps;
@@ -25,7 +30,7 @@ export async function staffApps(overrides: Partial<Deps> = {}, staffOptions: { p
 }> {
   const t = await testApp(overrides);
   const { stream, logs } = captureLogs();
-  const app = await buildStaffApi({ ...t.deps, staffOrigin: STAFF_ORIGIN, moderation: MODERATION_STUB }, { logStream: stream, ...staffOptions });
+  const app = await buildStaffApi({ ...t.deps, staffOrigin: STAFF_ORIGIN, moderation: MODERATION_STUB, ...staffDeps }, { logStream: stream, ...staffOptions });
   return {
     app, trader: t.app, deps: t.deps, setNow: t.setNow, logs,
     async close() {

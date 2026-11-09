@@ -1,3 +1,4 @@
+import type { TradePublisher } from '../trades/store.js';
 import fastifyCookie from '@fastify/cookie';
 import { can } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
@@ -37,6 +38,11 @@ export interface StaffDeps extends Deps {
   /** The WebAuthn relying party of staff keys; default the staff origin's host name. */
   staffRpId?: string;
   moderation: ModerationClient;
+  /**
+   * The trader app's trade publisher (main.ts passes `app.tradePublish`): a staff action that moves
+   * a trade (ending a hold resumes its trades) reaches the traders' live views. Unset: nobody hears.
+   */
+  tradePublish?: TradePublisher;
 }
 
 /** One registered staff route, as the privilege matrix test (test/staff/routes.ts) lists it. */

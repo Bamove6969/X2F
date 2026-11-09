@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { LISTEN_OPTIONS, type Deps } from '../app.js';
 import { LOOPBACK_HOSTS } from '../static/serve.js';
 import { buildStaffApi, type ModerationClient } from './app.js';
+import type { TradePublisher } from '../trades/store.js';
 import { startHoursSweeper } from './sweeper.js';
 
 /** The staff listener's settings; `null` when `X2F_STAFF_ORIGIN` is unset (no staff app on this host). */
@@ -45,8 +46,10 @@ const NO_MODERATION: ModerationClient = { name: 'moderation' };
  * Builds the staff API, starts the login-hours sweeper and listens on `X2F_STAFF_PORT` (default
  * 8082, bound to `X2F_STAFF_HOST`, default 127.0.0.1). Called by `main.ts`; `close()` stops both.
  */
-export async function startStaffApi(deps: Deps, s: StaffListen): Promise<{ app: FastifyInstance; close(): Promise<void> }> {
-  const app = await buildStaffApi({ ...deps, staffOrigin: s.origin, ...(s.rpId ? { staffRpId: s.rpId } : {}), moderation: NO_MODERATION });
+export async function startStaffApi(deps: Deps, s: StaffListen, tradePublish?: TradePublisher): Promise<{ app: FastifyInstance; close(): Promise<void> }> {
+  const app = await buildStaffApi({
+    ...deps, staffOrigin: s.origin, ...(s.rpId ? { staffRpId: s.rpId } : {}), moderation: NO_MODERATION, ...(tradePublish ? { tradePublish } : {}),
+  });
   const sweeper = startHoursSweeper({ db: deps.db, clock: deps.clock, events: app.events }, (err) => app.log.error({ err }, 'staff hours sweep failed'));
   await app.listen({ ...LISTEN_OPTIONS, host: s.host, port: s.port });
   return {

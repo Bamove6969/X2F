@@ -130,7 +130,7 @@ if (internal) {
 
 // Plan 4 Task 4: the staff API on its own origin and port (X2F_STAFF_ORIGIN, X2F_STAFF_PORT); unset: none.
 const staffListen = staffListenFromEnv(process.env);
-const staff = staffListen ? await startStaffApi(deps, staffListen) : null;
+const staff = staffListen ? await startStaffApi(deps, staffListen, app.tradePublish) : null;
 
 // Plan 3 Task 9: the timer loop (deadline ticks, lapse escalation, and maintenance pause/resume
 // from `site_flags.maintenance_since`).

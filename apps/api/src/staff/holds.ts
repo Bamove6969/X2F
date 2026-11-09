@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { endHoldByModerator, extendHoldByModerator, lockAccount, withTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
+import type { StaffDeps } from './app.js';
 import { requireStaff } from './guard.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -50,10 +51,11 @@ export function staffHoldRoutes(app: FastifyInstance): void {
   app.post('/staff/v1/accounts/:id/hold/end', opts, async (req, reply) => {
     const accountId = accountOf(req.params);
     const deps = req.server.deps;
-    const ended = await endHoldByModerator(deps, accountId, { staffId: req.staff.accountId }, req.server.events);
+    // The log entry is written in the hold's own transaction (lead review 8 Nov minor 6, owner G35),
+    // and the resumed trades are published to the trader app's live views.
+    const ended = await endHoldByModerator(deps, accountId, { staffId: req.staff.accountId }, req.server.events, (deps as Partial<StaffDeps>).tradePublish, (c, now) =>
+      appendLog(c, { at: now, actor: actor(req), tradeCode: null, action: 'hold.ended', detail: { accountId } }));
     if (!ended) throw new ApiError(404, 'not-found');
-    // The hold ended in its own transaction; the log entry follows it.
-    await withTx(deps.db, (c) => appendLog(c, { at: deps.clock(), actor: actor(req), tradeCode: null, action: 'hold.ended', detail: { accountId } }));
     return reply.code(204).send();
   });
 }

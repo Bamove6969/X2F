@@ -682,9 +682,11 @@ export async function extendHoldByModerator(db: Queryable, accountId: string, un
 
 /**
  * Moderator hook (route: staff/holds.ts): ends the account's hold now, in a transaction of its own with the
- * account locked: the pending change of an older-model hold is discarded, the held trades are
- * released and resumed after the commit, alert `hold-ended` `{ reason: 'moderator' }`. Sessions
- * are left as they are (the moderator vetted the person in). False when no hold ran.
+ * account locked: the pending change of an older-model hold is dropped, the held trades are
+ * released and resumed after the commit (through `publish`, so the partners' live views hear it),
+ * alert `hold-ended` `{ reason: 'moderator' }`, and `audit` (the staff route's activity-log entry)
+ * in the same transaction (lead review 8 Nov minor 6: no unaudited end, owner G35). Sessions are
+ * left as they are (the moderator vetted the person in). False when no hold ran.
  */
 export async function endHoldByModerator(
   deps: Pick<Deps, 'db' | 'clock' | 'config'>,
@@ -692,6 +694,7 @@ export async function endHoldByModerator(
   by: { staffId: string | null },
   events?: SettleDeps['events'],
   publish?: TradePublisher,
+  audit?: (db: pg.PoolClient, now: Date) => Promise<unknown>,
 ): Promise<boolean> {
   const now = deps.clock();
   const ended = await withTx(deps.db, async (db) => {
@@ -705,6 +708,7 @@ export async function endHoldByModerator(
       [accountId, now],
     );
     await addAlert(db, accountId, 'hold-ended', { reason: 'moderator', cancelled: hold.pendingChange?.kind ?? null, staff: by.staffId !== null }, now);
+    if (audit) await audit(db, now);
     return true;
   });
   if (ended) await syncHeldTrades({ db: deps.db, clock: deps.clock, ...(publish ? { publish } : {}) }, accountId);
