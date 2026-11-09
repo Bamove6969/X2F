@@ -32,7 +32,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiCallError } from '../api/client.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
-import { utcDateTime } from '../ui/dates.js';
+import { formatDateTime as utcDateTime } from '../ui/dates.js';
 import { CANT_DO_TITLE, chatCantDoText, isCantDoCode, type CantDoCode } from '../ui/cantDoCodes.js';
 import { ModeratorTag } from '../screens/dispute/ModeratorTag.js';
 import { BlockAction } from '../screens/settings/BlockAction.js';

@@ -13,6 +13,7 @@ import { quotePath } from '../src/screens/quote/quoteModel.js';
 import { forgetQuotes } from '../src/screens/quote/quoteKept.js';
 import { OffersRoute } from '../src/screens/browse/OffersRoute.js';
 import { BUY_COPY } from '../src/screens/browse/BuyCopy.js';
+import { SELL_COPY } from '../src/screens/browse/SellCopy.js';
 import { fire, render } from './render.js';
 
 const session = vi.hoisted(() => ({ status: 'signed-in' as 'signed-in' | 'signed-out' | 'loading' }));
@@ -464,6 +465,31 @@ describe('BuyQuote', () => {
     expect(primary(host).disabled).toBe(true);
   });
 
+  it('design review 8 Nov item 4: "You receive" shows 6 places (0.151515, not 0.151515151515); the take still sends the exact amount', async () => {
+    const { host } = await open(`${BUY}&amount=50`);
+    pick(host, 'w-cake');
+    const figure = host.querySelector('.x2f-quote__xmr')!;
+    expect(figure.textContent).toBe('0.151515 XMR');
+    expect(figure.hasAttribute('data-long')).toBe(false);
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes[0]!.amountAtomic).toBe('151515151515');
+  });
+
+  it('design review 8 Nov item 4: logged out, "Which wallet gets paid?" is still there, saying the wallet comes with the account', async () => {
+    session.status = 'signed-out';
+    const { host } = await open(`${BUY}&amount=412.50`);
+    const group = host.querySelector('[data-part="wallets-signed-out"]')!;
+    expect(group.getAttribute('role')).toBe('group');
+    const label = host.querySelector(`#${group.getAttribute('aria-labelledby')}`);
+    expect(label?.textContent).toBe('Which wallet gets paid?');
+    expect(group.textContent).toContain('You add your wallet when you set up your account, then pick it here.');
+    // Nothing to pick yet: no radios, and no made-up wallet rows.
+    expect(group.querySelector('input')).toBeNull();
+    // Said once (review m5): the line under the figure does not repeat it.
+    expect(host.textContent!.match(/when you set up your account/g)).toHaveLength(1);
+  });
+
   it('logged out, Trade goes to setup with returnTo = this quote with a pending-take nonce', async () => {
     session.status = 'signed-out';
     const { host } = await open(`${BUY}&amount=412.50`);
@@ -541,6 +567,9 @@ describe('a 0-decimal currency', () => {
     expect(text).toContain('1.250000 XMR');
     expect(text).toContain('¥41,250 JPY');
     expect(text).not.toMatch(/¥[\d,]+\.\d/);
+    // The bands card reads the same exponent: whole yen, never ¥50 for ¥5,000.
+    expect(text).toContain('¥5,000 – ¥150,000 JPY');
+    expect(text).toContain('¥33,000 / XMR¥5,000');
     // The dollar figures stay in cents: ¥33,000 / XMR is $220.00 / XMR.
     expect(text).toContain('$220.00 / XMR');
     expect(text).toContain('About $275.00 USD');
@@ -565,6 +594,8 @@ describe('SellQuote', () => {
     const rows = host.querySelector('section[aria-label="What you get"]')!.textContent ?? '';
     expect(rows).toContain('1.0000009 XMR');
     expect(rows).not.toContain('1.000000 XMR');
+    // An exact figure past 6 places is the long size, so 12 places fit a phone card (review 8 Nov item 4).
+    expect(host.querySelector('.x2f-quote__xmr')!.hasAttribute('data-long')).toBe(true);
     // Switching the unit and back keeps the exact amount: nothing is silently re-rounded.
     fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Enter USD')!, new MouseEvent('click', { bubbles: true }));
     expect(host.querySelector<HTMLInputElement>('#quote-amount')!.value).toBe('330.00');
@@ -612,6 +643,151 @@ describe('SellQuote', () => {
 // Review 2026-11-01 M1-M3: a fold or unfold moves the quote between the phone screen and the pane
 // beside the offers, which mounts a new QuoteScreen. What the person typed and picked, and the
 // take's state (in flight, refused, "You're back", the blocked poster), stay with the offer.
+describe("This offer's bands (BuyQuote board, canvas v142; owner 2026-11-08)", () => {
+  const bands = (host: HTMLElement) => host.querySelector<HTMLElement>('section[data-part="offer-bands"]')!;
+  const rows = (host: HTMLElement) => [...bands(host).querySelectorAll<HTMLElement>('[data-part="band"]')];
+  const current = (host: HTMLElement) => rows(host).filter((r) => r.getAttribute('aria-current') === 'true');
+  const part = (el: Element, p: string) => el.querySelector(`[data-part="${p}"]`)?.textContent ?? null;
+  const view = (host: HTMLElement, label: string) => [...bands(host).querySelectorAll<HTMLButtonElement>('[role="radio"]')].find((b) => b.textContent === label)!;
+  const MARKED_UP = { ...GHOST, pricing: { mode: 'market', marginBps: 250 }, rate: '33825' };
+
+  it('sits right under "You receive", titled and described as on the board', async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    const card = host.querySelector('section[aria-label="What you get"]')!;
+    expect(card.nextElementSibling).toBe(bands(host));
+    const titleId = bands(host).getAttribute('aria-labelledby')!;
+    expect(bands(host).querySelector('h2')?.id).toBe(titleId);
+    expect(bands(host).querySelector('h2')?.textContent).toBe("This offer's bands");
+    expect(bands(host).textContent).toContain('The price changes with the amount');
+    expect(bands(host).querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('Amounts in XMR');
+    expect(bands(host).querySelector('ul')?.getAttribute('aria-label')).toBe('Bands');
+  });
+
+  it('each band: its name, its rate per XMR, its range in the offer currency and in XMR, and its markup', async () => {
+    stub.offers = [MARKED_UP];
+    const { host } = await open(`${BUY}&amount=412.50`);
+    const row = rows(host)[0]!;
+    expect(rows(host)).toHaveLength(1);
+    expect(row.textContent).toContain('Band 1');
+    expect(part(row, 'band-rate')).toBe('$338.25');
+    expect(row.textContent).toContain('$338.25 / XMR');
+    expect(part(row, 'band-range')).toBe('$50 – $1,500');
+    expect(row.textContent).toContain('$50 – $1,500 USD');
+    expect(part(row, 'band-markup')).toBe('+2.50%');
+    expect(row.textContent).toContain('+2.50% markup');
+    expect(part(row, 'band-xmr')).toBe('≈ 0.147819 – 4.434589');
+  });
+
+  it("the range is the offer card's own (the same words on the offers screen)", async () => {
+    stub.offers = [{ ...MIRA, minTrades: 10 }];
+    const { host } = await open(`${quotePath('buy', 'ZELLE', 'offer-mira', 'CAD')}&amount=600&unit=fiat`);
+    const row = rows(host)[0]!;
+    expect(part(row, 'band-range')).toBe('CA$50 – CA$1,500');
+    expect(row.textContent).toContain('CA$50 – CA$1,500 CAD');
+    expect(row.textContent).toContain('10+ completed trades');
+    const list = render(
+      <MemoryRouter initialEntries={['/sell/ZELLE?currency=CAD']}>
+        <Routes>
+          <Route path="/sell/:methodId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    // Batch 2's card has a row per unit; the poster's own (fiat here) is the band's range, word for word.
+    expect(list.host.querySelector('[data-part="range-fiat"] .x2f-offer__figures')?.textContent).toBe(part(row, 'band-range'));
+  });
+
+  it('an offer set in XMR (batch 2): the band shows its XMR range, as the card does, and "≈" the fiat at the live rate (lead 9 Nov)', async () => {
+    const XMR_SET = { ...MIRA, id: 'offer-mira', amountUnit: 'xmr', minAtomic: '100000000000', maxAtomic: '1000000000000', minFiatCents: null, maxFiatCents: null };
+    stub.offers = [XMR_SET];
+    const { host } = await open(`${quotePath('buy', 'ZELLE', 'offer-mira', 'USD')}&amount=0.5&unit=xmr`);
+    const row = rows(host)[0]!;
+    expect(part(row, 'band-range')).toBe('0.100000 – 1.000000');
+    expect(row.textContent).toContain('0.100000 – 1.000000 XMR');
+    // Converted at the band's rate ($330.00, at market): never shown as exact.
+    expect(part(row, 'band-fiat')).toBe('≈ $33 – $330');
+    expect(row.textContent).toContain('≈ $33 – $330 USD');
+    expect(part(row, 'band-xmr')).toBeNull();
+    // Placed by the XMR amount, the unit the take checks.
+    expect(current(host)).toHaveLength(1);
+    type(host, '1.000000000001');
+    expect(current(host)).toHaveLength(0);
+    type(host, '1');
+    expect(current(host)).toHaveLength(1);
+    const list = render(
+      <MemoryRouter initialEntries={['/sell/ZELLE?currency=USD']}>
+        <Routes>
+          <Route path="/sell/:methodId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(list.host.querySelector('[data-part="range-xmr"] .x2f-offer__figures')?.textContent).toBe(part(row, 'band-range'));
+  });
+
+  it('With markup / Without: the XMR at the band price or at the market rate, with the freshness line; the fiat range and the quote stay', async () => {
+    stub.offers = [MARKED_UP];
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(view(host, 'With markup').getAttribute('aria-checked')).toBe('true');
+    expect(bands(host).querySelector('[data-part="band-updated"]')).toBeNull();
+    fire(view(host, 'Without'), new MouseEvent('click', { bubbles: true }));
+    expect(view(host, 'Without').getAttribute('aria-checked')).toBe('true');
+    const row = rows(host)[0]!;
+    expect(part(row, 'band-xmr')).toBe('≈ 0.151515 – 4.545454');
+    expect(part(row, 'band-rate')).toBe('$330.00');
+    expect(row.textContent).toContain('market rate');
+    expect(part(row, 'band-markup')).toBeNull();
+    expect(part(bands(host), 'band-updated')).toBe('Market rate · updated 00:00 UTC');
+    expect(part(row, 'band-range')).toBe('$50 – $1,500');
+    expect(host.querySelector('section[aria-label="What you get"]')?.textContent).toContain('$412.50 USD');
+    fire(view(host, 'With markup'), new MouseEvent('click', { bubbles: true }));
+    expect(part(rows(host)[0]!, 'band-xmr')).toBe('≈ 0.147819 – 4.434589');
+  });
+
+  it('rings the band holding the amount with "Your amount", live, both edges inside; none outside the offer', async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(current(host)).toHaveLength(1);
+    expect(current(host)[0]!.textContent).toContain('Your amount');
+    for (const [typed, inside] of [['49.99', false], ['50', true], ['1500', true], ['1500.01', false], ['', false]] as const) {
+      type(host, typed);
+      expect(current(host), typed).toHaveLength(inside ? 1 : 0);
+    }
+    expect(bands(host).textContent).not.toContain('Your amount');
+  });
+
+  it("BuyQuote keeps Max (owner #5): it fills the offer's largest trade and the ring follows", async () => {
+    const { host } = await open(`${BUY}&amount=49`);
+    expect(current(host)).toHaveLength(0);
+    fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Max')!, new MouseEvent('click', { bubbles: true }));
+    expect(host.querySelector<HTMLInputElement>('#quote-amount')?.value).toBe('1500.00');
+    expect(current(host)).toHaveLength(1);
+  });
+
+  it('an XMR amount (SellQuote enters XMR first) is placed by its fiat total', async () => {
+    const { host } = await open(quotePath('buy', 'ZELLE', 'offer-mira', 'USD'));
+    expect(host.querySelector('.x2f-quote__unit')?.textContent).toBe('XMR');
+    type(host, '1');
+    expect(current(host)).toHaveLength(1);
+    type(host, '5');
+    expect(current(host)).toHaveLength(0);
+  });
+
+  it('one band: no clip line (the rate never changes with the amount)', async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(bands(host).querySelectorAll('[data-part="band-clip"]')).toHaveLength(0);
+  });
+
+  it('with the price feed down the bands still show their ranges; no rate, no XMR, no band marked', async () => {
+    stub.price = 'down';
+    const { host } = await open(`${BUY}&amount=412.50`);
+    const row = rows(host)[0]!;
+    expect(part(row, 'band-range')).toBe('$50 – $1,500');
+    expect(part(row, 'band-rate')).toBeNull();
+    expect(part(row, 'band-xmr')).toBeNull();
+    expect(current(host)).toHaveLength(0);
+  });
+});
+
 describe('the quote across a fold (review M1, M2, M3)', () => {
   let panes = false;
   beforeEach(() => {

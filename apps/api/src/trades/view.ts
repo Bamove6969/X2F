@@ -58,6 +58,12 @@ export interface TradeView {
   payBy: string | null;
   paidAt: string | null;
   confirmBy: string | null;
+  /**
+   * The trade's confirm window in minutes, fixed at take by the payment type (owner 2026-11-07 F9:
+   * 90 for instant types up to 4 days for cash by mail). `confirmBy` is paid time plus this, later by
+   * any maintenance; it is also when either side may open a dispute in `paid` (owner p9-4).
+   */
+  confirmWindowMin: number;
   settleBy: string | null;
   /**
    * When the moderator's watcher reported that a buyer or seller says their side of the
@@ -141,6 +147,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     payBy: iso(t.payBy),
     paidAt: iso(t.paidAt),
     confirmBy: iso(t.confirmBy),
+    confirmWindowMin: t.confirmWindowMin,
     settleBy: iso(t.settleBy),
     releaseClaimedAt: t.state === 'settling' ? iso(t.releaseClaimedAt) : null,
     pausedAt: iso(t.pausedAt),

@@ -7,6 +7,7 @@ import { CantDoThat } from '../ui/CantDoThat.js';
 import { CANT_DO_TITLE, RECOVERY_SESSION_WALLETS, isCantDoCode, walletsCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
 import { Icon } from '../ui/icons.js';
 import { Sheet } from '../ui/Sheet.js';
+import { formatDateTime } from '../ui/dates.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from './auth/ConfirmSheet.js';
 import { heldNote, refusalText } from './auth/refusals.js';
 import {
@@ -26,7 +27,6 @@ import {
 } from './wallets-model.js';
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
-import { utcDateTime } from '../ui/dates.js';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
@@ -35,9 +35,8 @@ import { utcDateTime } from '../ui/dates.js';
 
 const LABEL_MAX = 40;
 
-function when(iso: string): string {
-  return utcDateTime(new Date(iso));
-}
+/** "6 Nov 2026, 15:00 UTC" (ui/dates.ts, the one date format). */
+const when = (iso: string): string => formatDateTime(iso);
 
 /** 403 `recovery-session`: a backup login cannot change where coins are paid (Plan 2; in the refusal text map). */
 export { RECOVERY_SESSION_WALLETS };

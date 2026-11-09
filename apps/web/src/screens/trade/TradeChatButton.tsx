@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Button } from '../../ui/Button.js';
+import { Icon } from '../../ui/icons.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { useTradeChat } from './paySeams.js';
 import { publicName, type TradeView } from './payTypes.js';
@@ -18,7 +19,8 @@ export function ChatSlot({ view }: { view: TradeView }) {
   return Chat ? <Chat code={view.code} name={publicName(view.counterparty)} /> : null;
 }
 
-export function ChatButton({ view, primary }: { view: TradeView; primary?: boolean }) {
+/** `link` is the paid room's inline "Message … in chat" (board BuyerPaidWaiting). */
+export function ChatButton({ view, primary, link }: { view: TradeView; primary?: boolean; link?: boolean }) {
   const [open, setOpen] = useState(false);
   // With the room's chat pane showing (Task 40), the chat is already beside the screen: the sheet
   // closes on unfold (one draft, one composer), and the primary Chat moves the focus there.
@@ -38,6 +40,11 @@ export function ChatButton({ view, primary }: { view: TradeView; primary?: boole
         <Button variant="primary" onClick={onChat}>
           Chat
         </Button>
+      ) : link ? (
+        <button type="button" className="x2f-inline-action" onClick={onChat} data-part="paid-chat">
+          <Icon name="chat" size={20} />
+          Message {publicName(view.counterparty)} in chat
+        </button>
       ) : (
         <button type="button" className="x2f-room__chat" onClick={onChat} data-chat-link="">
           Chat

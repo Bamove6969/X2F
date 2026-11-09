@@ -33,13 +33,31 @@ export interface MethodProfile {
   fields: { key: string; label: string; kind: FieldKind }[];
 }
 
-/** The launch profiles (spec 11.5): Zelle, Cash App, Revolut, Wise, ACH, SEPA, Cash by mail, Custom method. */
-export const LAUNCH_PROFILE_IDS = ['ZELLE', 'CASH_APP', 'REVOLUT', 'TRANSFERWISE', 'ACH_TRANSFER', 'SEPA', 'PAY_BY_MAIL', 'CUSTOM'] as const;
+/**
+ * The profiles (spec 11.5's launch set: Zelle, Cash App, Revolut, Wise, ACH, SEPA, Cash by mail,
+ * Custom method; then owner 2026-11-07 F9, "give the common payment types their own profile",
+ * research F1's table: Interac, SEPA Instant, PayPal, Venmo, PIX, UPI, Faster Payments, domestic
+ * wire, SWIFT and one for every gift card).
+ */
+export const LAUNCH_PROFILE_IDS = [
+  'ZELLE', 'CASH_APP', 'REVOLUT', 'TRANSFERWISE', 'ACH_TRANSFER', 'SEPA', 'PAY_BY_MAIL', 'CUSTOM',
+  'INTERAC_E_TRANSFER', 'SEPA_INSTANT', 'PAYPAL', 'VENMO', 'PIX', 'UPI', 'FASTER_PAYMENTS', 'DOMESTIC_WIRE_TRANSFER', 'SWIFT', 'OTHER_GIFT_CARD',
+] as const;
+
+/** The profile a method with none of its own uses at take: the Custom method's (24 h). */
+export const FALLBACK_PROFILE_ID = 'CUSTOM';
+/** The profile every gift card without one of its own uses (owner G50: 45 minutes to check a card). */
+export const GIFT_CARD_PROFILE_ID = 'OTHER_GIFT_CARD';
 
 export const GIFT_CARD_GROUP = 'Gift cards & vouchers';
 
 /** The shortest confirm window: the instant types' 90 minutes (owner F9, 7 Nov; was 120). */
 export const MIN_CONFIRM_WINDOW_MIN = 90;
+/**
+ * The shortest for a gift card profile only (a catalog method in "Gift cards & vouchers"): owner
+ * G50, "the person holding the escrow has 45 minutes to check a card". Every other profile keeps 90.
+ */
+export const MIN_GIFT_CARD_CONFIRM_WINDOW_MIN = 45;
 
 const DATA = new URL('../../../../data/', import.meta.url);
 const ARRIVALS = ['instant', 'same-day', 'days'] as const;
@@ -90,13 +108,14 @@ export function loadProfiles(raw: unknown, methods: readonly CatalogMethod[]): M
     if (landsIn.toLowerCase().includes(method.name.toLowerCase())) throw bad(file, `${p.id}: landsIn must not name the method`);
     const arr = ARRIVALS.find((a) => a === arrival);
     if (!arr) throw bad(file, `${p.id}: arrival`);
+    const minWindow = method.giftCard ? MIN_GIFT_CARD_CONFIRM_WINDOW_MIN : MIN_CONFIRM_WINDOW_MIN;
     if (
       typeof confirmWindowMin !== 'number' ||
       !Number.isInteger(confirmWindowMin) ||
-      confirmWindowMin < MIN_CONFIRM_WINDOW_MIN ||
+      confirmWindowMin < minWindow ||
       confirmWindowMin > MAX_CONFIRM_WINDOW_MIN
     ) {
-      throw bad(file, `${p.id}: confirmWindowMin must be ${MIN_CONFIRM_WINDOW_MIN}-${MAX_CONFIRM_WINDOW_MIN}`);
+      throw bad(file, `${p.id}: confirmWindowMin must be ${minWindow}-${MAX_CONFIRM_WINDOW_MIN}`);
     }
     if (!Array.isArray(fields) || fields.length === 0) throw bad(file, `${p.id}: fields`);
     const outFields = fields.map((f: unknown) => {
@@ -127,6 +146,16 @@ export function getMethod(id: string): CatalogMethod | null {
 
 export function getProfile(id: string): MethodProfile | null {
   return PROFILE_BY_ID.get(id) ?? null;
+}
+
+/**
+ * The profile a trade on `methodId` is taken with (its confirm window, which is also either
+ * side's wait before a dispute): the method's own, else the gift card one for any gift card, else the Custom method's.
+ */
+export function tradeProfile(methodId: string): MethodProfile {
+  const p = getProfile(methodId) ?? (isGiftCard(methodId) ? getProfile(GIFT_CARD_PROFILE_ID) : null) ?? getProfile(FALLBACK_PROFILE_ID);
+  if (p === null) throw new Error('no fallback method profile');
+  return p;
 }
 
 /** In the catalog and not waiting for legal review (P3-I20): only these may be listed or offered. */

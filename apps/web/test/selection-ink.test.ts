@@ -71,12 +71,14 @@ const ORANGE_ALLOWED = [
   'screens/dispute/dispute.css .dispute-retry',
   // The XMR unit label (tokens.json monero-ink usage; BuyQuote board).
   'ui/ui.css .x2f-amount__unit',
+  'ui/ui.css .x2f-xmr__unit',
   'ui/kit.css .x2f-recipient__unit',
   'screens/quote/quote.css .x2f-quote__xmr-unit',
   // Logo D's dot (docs/brand/svg on wip/design-brief: the dot is #ff6600 in every colour variant).
   'ui/ui.css .x2f-logo__dot',
   // The ad card's range rows (BuyOffers / SellOffers boards v142).
   "screens/browse/browse.css .x2f-offer__unit[data-unit='xmr']",
+  'screens/quote/quote.css .x2f-quote__band-xmr-unit',
 ];
 
 describe('selection is ink, never orange', () => {

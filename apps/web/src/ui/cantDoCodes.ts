@@ -277,13 +277,45 @@ export function chatCantDoText(code: CantDoCode): string {
   return code === 'own-offer' ? 'This is your own offer.' : "You can't open this chat right now.";
 }
 
-/** What a refused Post offer says. */
-export function postCantDoText(code: CantDoCode): string {
+/**
+ * The offer cap the API enforces (owner 6 Nov 2026, Q31: 3 buying and 3 selling offers per
+ * account; apps/api/src/offers/routes.ts OFFER_CAP_DEFAULTS), said wherever the cap is explained:
+ * PostOffer's and My offers' CantDoThat for `too-many-offers` and the My offers footnote.
+ * PostOffer says the 409's own number (`offerCapLine`, review M2); the My offers footnote and its
+ * bulk turn-on refusal (whose per-offer result carries no cap) say this default. COPY-UNSIGNED
+ */
+export const OFFER_CAP_LINE = 'You can have 3 buying and 3 selling offers.'; // COPY-UNSIGNED
+
+/**
+ * The offer caps a 409 `too-many-offers` carries (cap-dispute review M2: the caps are owner
+ * settings, not fixed numbers). The API sends `{ buy, sell }` on POST and PATCH (owner Q31: the
+ * settings `offers_max_buy` and `offers_max_sell`, apps/api/src/offers/routes.ts OFFER_CAP_KEYS).
+ */
+export interface OfferCaps {
+  buy: number;
+  sell: number;
+}
+
+/** The caps from a refusal's extra fields, or null when the API sent none (or nonsense). */
+export function offerCapsOf(extra: Record<string, unknown> | undefined): OfferCaps | null {
+  const ok = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 1 && v <= 1000;
+  return extra && ok(extra.buy) && ok(extra.sell) ? { buy: extra.buy, sell: extra.sell } : null;
+}
+
+/** The cap line with the numbers the API sent (the owner settings), else the default line. COPY-UNSIGNED */
+export function offerCapLine(caps: OfferCaps | null): string {
+  if (caps === null || (caps.buy === 3 && caps.sell === 3)) return OFFER_CAP_LINE;
+  const { buy, sell } = caps;
+  return `You can have ${buy} buying and ${sell} selling ${sell === 1 ? 'offer' : 'offers'}.`;
+}
+
+/** What a refused Post offer says; `caps` from the API's refusal (offerCapsOf). */
+export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null): string {
   switch (code) {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'too-many-offers':
-      return 'You have as many offers as you can post for now. Remove one you no longer need, then post this one.';
+      return `${offerCapLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED
     // Plan 2 Task 18: a team member without the Offers role.
     case 'forbidden':
     case 'owner-only':
@@ -341,9 +373,10 @@ export function myOffersCantDoText(code: CantDoCode, n: number): string {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.";
     case 'too-many-offers':
+      // C2-A1: the cap is per side now (owner 2026-11-01), not per market. COPY-UNSIGNED
       return n === 1
-        ? 'You have more offers in this market than the limit allows now. Remove one you no longer need, then turn this one on.'
-        : 'You have more offers in some markets than the limit allows now. Remove ones you no longer need, then turn these on.';
+        ? `${OFFER_CAP_LINE} Remove one you no longer need, then turn this one on.`
+        : `${OFFER_CAP_LINE} Remove ones you no longer need, then turn these on.`;
     default:
       return "Your account can't turn these offers on right now.";
   }
@@ -357,7 +390,7 @@ export function myOffersCantDoRow(code: CantDoCode): string {
     case 'trading-hold':
       return 'Stayed off: your account has a trading hold.';
     case 'too-many-offers':
-      return 'Stayed off: over the offer limit for this market.';
+      return 'Stayed off: over the offer limit.'; // C2-A1: per side, not per market. COPY-UNSIGNED
     default:
       return 'Stayed off.';
   }
@@ -421,7 +454,7 @@ export const HOLD_CODE = 'recovery-hold' satisfies CantDoCode;
 /**
  * 403 `recovery-hold`: the account's 24-hour hold after a login with only one way of proving it's
  * you, or a backup login (Plan 2 Task 17; owner 2026-10-29 14:12: PGP alone does not end it).
- * `when` is "until Tue 3:05 PM" or "for a day".
+ * `when` is "until 6 Nov 2026, 15:00 UTC" or "for a day".
  */
 export function holdText(when: string): string {
   return `Your account is on a 24-hour hold after a login with only one way of proving it's you, so new trades, wallet changes and login changes wait ${when}. Trades already open can still be finished. Logging in with a passkey, a security key, or your password and authenticator code from before the hold ends it.`;
@@ -429,7 +462,7 @@ export function holdText(when: string): string {
 
 /**
  * 403 `recovery-hold` on the login screen (review round 3 R3-M3): this login was refused a session
- * because it waits, and the hold is still running. `when` is "until Tue 3:05 PM" or "for a day".
+ * because it waits, and the hold is still running. `when` is "until 6 Nov 2026, 15:00 UTC" or "for a day".
  * It says what this login cannot do and what the reader can do, whatever methods the account has
  * (the login screen does not know them); review round 4 R4-M3: a backup login spends a recovery
  * code and pushes the hold's end out to 24 hours from then. COPY-UNSIGNED

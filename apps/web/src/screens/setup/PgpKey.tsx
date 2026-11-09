@@ -4,6 +4,7 @@
  * Continue asks X2F for the first login message (`POST /v1/register/pgp/start`). Nothing inside the
  * key besides its fingerprint is shown.
  */
+import { formatDate } from '../../ui/dates.js';
 import { useEffect, useState } from 'react';
 import { inspectPublicKey } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
@@ -27,7 +28,7 @@ function keyType(k: Extract<KeyInspection, { ok: true }>): string {
 }
 
 function expiry(at: Date | null): string {
-  return at === null ? 'Never' : at.toISOString().slice(0, 10);
+  return at === null ? 'Never' : formatDate(at);
 }
 
 export function PgpKey() {

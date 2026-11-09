@@ -181,7 +181,7 @@ describe('Feedback form', () => {
     const send_ = host.querySelector<HTMLButtonElement>('[data-primary]')!;
     expect(send_.disabled).toBe(true);
     type(host.querySelector('textarea')!, '  The cap is too low.  ');
-    expect(host.querySelector('[data-part="anon-hint"]')?.textContent).toMatch(/with your username/);
+    expect(host.querySelector('[data-part="anon-hint"]')?.textContent).toBe('Your username is attached, so we can reply in the app.');
     await send(host);
     expect(sent).toEqual([{ url: '/v1/feedback/form', body: { kind: 'feedback', text: 'The cap is too low.', anonymous: false, from: 'starter-limit' } }]);
     expect(host.querySelector('[data-part="feedback-thanks"]')?.textContent).toBe(FEEDBACK_THANKS);
@@ -192,16 +192,35 @@ describe('Feedback form', () => {
     expect(window.sessionStorage.getItem('x2f.feedback-draft')).toBeNull();
   });
 
+  it('the Feedback board (design review 62-63): the heading, a 9-row box with its count, no kind choice; the thanks says who it went as, and Write another starts over', async () => {
+    const { host } = await open('/feedback', { status: 202, json: {} });
+    expect(host.querySelector('h1')?.textContent).toBe('Tell us what you think');
+    const box = host.querySelector('textarea')!;
+    expect(box.getAttribute('rows')).toBe('9');
+    expect(host.querySelector('label[for="' + box.id + '"]')?.textContent).toBe('Your message');
+    type(box, 'Hi');
+    expect(host.querySelector('[data-part="feedback-count"]')?.textContent).toBe('2 of 2000 characters');
+    // No kind choice at all (design build review 7 Nov): no radios, no fieldset.
+    expect(host.querySelector('[role="radiogroup"]')).toBeNull();
+    expect(host.querySelector('fieldset')).toBeNull();
+    await send(host);
+    expect(host.querySelector('[data-part="feedback-thanks-heading"]')?.textContent).toBe('Thank you!');
+    expect(host.querySelector('[data-part="feedback-sent-as"]')?.textContent).toMatch(/^Sent as .+\.$/);
+    fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Write another')!, new MouseEvent('click', { bubbles: true }));
+    expect(host.querySelector('textarea')?.value).toBe('');
+  });
+
   it('"Send anonymously" sends anonymous: true and the hint promises only what is true (review M1)', async () => {
     const { host, sent } = await open('/feedback?from=trading-hold', { status: 202, json: {} });
-    const box = [...host.querySelectorAll('label')].find((l) => l.textContent === 'Send anonymously')!.querySelector('input')!;
+    const box = host.querySelector<HTMLInputElement>('[data-part="feedback-anon"] input')!;
     fire(box, new MouseEvent('click', { bubbles: true }));
     expect(host.querySelector('[data-part="anon-hint"]')?.textContent).toBe(FEEDBACK_ANON_HINT);
-    expect(FEEDBACK_ANON_HINT).toMatch(/We don't record who sent it/);
+    expect(FEEDBACK_ANON_HINT).toBe("Your username isn't attached, so we can't follow up with you.");
     type(host.querySelector('textarea')!, 'Hi');
     await send(host);
     // No refusal code on an anonymous send.
     expect(sent).toEqual([{ url: '/v1/feedback/form', body: { kind: 'feedback', text: 'Hi', anonymous: true } }]);
+    expect(host.querySelector('[data-part="feedback-sent-as"]')?.textContent).toBe('Sent anonymously.');
   });
 
   it('a signed-out visitor is told before typing, and the draft survives the log-in round trip (review M6)', async () => {

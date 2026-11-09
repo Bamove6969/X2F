@@ -31,6 +31,13 @@ const SHAPES = {
     </>
   ),
   check: <path d="M5 12l4 4 10-10" />,
+  // Refunded board: the XMR went back.
+  undo: (
+    <>
+      <path d="M9 14l-5-5 5-5" />
+      <path d="M4 9h11a5 5 0 010 10h-3" />
+    </>
+  ),
   shield: <path d={SHIELD} />,
   // LoginApprove board: a blocked login.
   'shield-x': (
@@ -121,6 +128,13 @@ const SHAPES = {
       <path d="M10.3 21a1.94 1.94 0 003.4 0" />
     </>
   ),
+  // Two ticks (News board "Mark all as read").
+  'check-double': (
+    <>
+      <path d="M2 12l5 5L18 6" />
+      <path d="M12 16l1 1 9-11" />
+    </>
+  ),
   // The ringing bell (SellerRefund board "Nudge mira.k").
   'bell-ring': (
     <>
@@ -175,6 +189,10 @@ const SHAPES = {
       <path d="M12 17h.01" />
     </>
   ),
+  // BuyQuote's "This offer's bands" card (canvas v142): its 40 px tile, and the clip lines' arrows.
+  bands: <path d="M4 20V14M10 20V9M16 20V12M22 20V5" />,
+  'arrow-up-right': <path d="M7 17L17 7M9 7h8v8" />,
+  'arrow-down-right': <path d="M7 7l10 10M17 9v8H9" />,
 } satisfies Record<string, ReactElement>;
 
 export type IconName = keyof typeof SHAPES;

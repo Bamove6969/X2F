@@ -23,6 +23,7 @@ import { CantDoThat } from '../../ui/CantDoThat.js';
 import { ChoiceGroup } from '../../ui/Choice.js';
 import { CANT_DO_TITLE, TOO_MANY_DEVICES_CODE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { StatusIcon } from '../../ui/icons.js';
+import { Facts } from '../../ui/Facts.js';
 import { lastActive, utcWhen } from '../../ui/lastActive.js';
 import { Notice } from '../../ui/Notice.js';
 import { Sheet } from '../../ui/Sheet.js';
@@ -229,23 +230,15 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
     kicker = 'New login';
     body = (
       <div className="x2f-stack" data-part="approve-ask">
-        <dl className="x2f-facts">
-          <div>
-            <dt>Device</dt>
-            <dd data-strong="true">{label}</dd>
-          </div>
-          <div>
-            <dt>Time</dt>
-            <dd className="x2f-num" data-mask="clock">
-              {utcWhen(approval.createdAt)}
-            </dd>
-          </div>
-          <div>
-            <dt>Where</dt>
-            {/* not-a-refusal: explains why there is no place */}
-            <dd>Not shown. X2F doesn't log IP addresses, so we can't show where.</dd>
-          </div>
-        </dl>
+        <Facts
+          layout="stacked"
+          rows={[
+            { key: 'Device', value: label, strong: true },
+            { key: 'Time', value: <span data-mask="clock">{utcWhen(approval.createdAt)}</span>, mono: true },
+            // not-a-refusal: explains why there is no place
+            { key: 'Where', value: "Not shown. X2F doesn't log IP addresses, so we can't show where." },
+          ]}
+        />
         <p className="x2f-h3" id="approve-numbers">
           If it's you, tap the number shown on the new device
         </p>

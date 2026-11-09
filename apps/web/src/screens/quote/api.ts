@@ -94,7 +94,9 @@ export async function fetchMarket(currency: string, signal?: AbortSignal): Promi
     const exponent = num(o, 'exponent', 'price');
     if (!Number.isInteger(exponent) || exponent < 0 || exponent > 4) throw new ApiShapeError('price.exponent');
     const usd = o.usdCentsPerXmr;
-    return { centsPerXmr: big(o, 'centsPerXmr', 'price'), exponent, usdCentsPerXmr: usd === undefined || usd === null ? null : big(o, 'usdCentsPerXmr', 'price') };
+    const at = str(o, 'at', 'price');
+    if (Number.isNaN(Date.parse(at))) throw new ApiShapeError('price.at');
+    return { centsPerXmr: big(o, 'centsPerXmr', 'price'), exponent, usdCentsPerXmr: usd === undefined || usd === null ? null : big(o, 'usdCentsPerXmr', 'price'), at };
   } catch (e) {
     if (e instanceof ApiCallError && e.status === 503 && e.code === 'price-unavailable') return null;
     throw e;

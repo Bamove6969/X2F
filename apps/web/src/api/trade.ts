@@ -97,6 +97,11 @@ export interface TradeView {
   payBy: string | null;
   paidAt: string | null;
   confirmBy: string | null;
+  /**
+   * The trade's confirm window in minutes, fixed at take by the payment type (owner 2026-11-07 F9:
+   * 90 for instant types up to 4 days). Either side may dispute in `paid` from `confirmBy` (owner p9-4).
+   */
+  confirmWindowMin: number;
   settleBy: string | null;
   /**
    * When a trader's side of the settlement was reported done (Task 9 I/O, lead decision b): the

@@ -209,7 +209,7 @@ describe('POST /v1/account/offers/status', () => {
     expect(await setStatus(p, [a], 'paused')).toEqual([{ id: a, status: 'paused' }]);
   });
 
-  it('caps are checked per offer as relisting checks them; the others still switch (per-offer results)', async () => {
+  it('caps are checked per offer as relisting checks them (per side, owner 2026-11-01); the others still switch (per-offer results)', async () => {
     const p = await poster();
     const a = await post(p, { currency: 'GBP' });
     const b = await post(p, { currency: 'CHF' });
@@ -225,7 +225,7 @@ describe('POST /v1/account/offers/status', () => {
         { id: c, status: 'live' },
       ]);
       // The same answer as the single relist route.
-      expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'too-many-offers' });
+      expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 1 });
       await p.browser.patch(`/v1/offers/${b}`, { status: 'removed' });
       expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'live' }]);
     } finally {
@@ -241,6 +241,24 @@ describe('POST /v1/account/offers/status', () => {
     } finally {
       await deps.db.query(`delete from owner_settings where key = 'offers_max_buy'`);
     }
+  });
+
+  it('a fourth selling offer (over the default cap of 3 per side, e.g. after the cap was lowered) stays off; buying offers still go on', async () => {
+    const p = await poster();
+    const sells = [await post(p, { currency: 'GBP' }), await post(p, { currency: 'CHF' }), await post(p, { currency: 'EUR' })];
+    const buy = await post(p, { side: 'buy', currency: 'EUR' });
+    await setStatus(p, 'all', 'paused');
+    // As if posted before the per-side cap: a fourth selling offer, paused.
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, fixed_cents_per_xmr, min_fiat_cents, max_fiat_cents, min_trades, terms, country, status, created_at, updated_at)
+       select account_id, side, method_id, 'USD', price_mode, margin_bps, fixed_cents_per_xmr, min_fiat_cents, max_fiat_cents, min_trades, terms, country, 'paused', created_at, updated_at from offers where id = $1
+       returning id`,
+      [sells[0]],
+    );
+    const fourth = rows[0]!.id;
+    const on = await setStatus(p, [...sells, fourth, buy], 'live');
+    for (const r of on.filter((x) => x.id !== buy)) expect(r).toEqual({ id: r.id, status: 'paused', refused: 'too-many-offers' });
+    expect(on.find((r) => r.id === buy)).toEqual({ id: buy, status: 'live' });
   });
 
   it('an offer whose method went under legal review cannot go back on (method-unavailable)', async () => {

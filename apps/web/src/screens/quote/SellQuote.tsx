@@ -18,13 +18,16 @@ export const SELL_QUOTE_COPY: QuoteCopy = {
   walletLegend: 'Which wallet sends the XMR?',
   headline: 'You lock in escrow',
   headlineXmr: (q) => q.sellerFundsAtomic,
+  // What the seller locks is what they will send: exact (Task 18 review item 5, the exact-send rule).
+  headlineExact: true,
+  // COPY-UNSIGNED (design review 8 Nov item 4)
+  signedOutPickLine: 'You add your wallet when you set up your account, then pick it here. Refunds go back to it.',
   walletLine: (name, end) => (
     <>
       From {name}, address ending <span className="x2f-quote__mono">{end}</span>. Refunds go back to it.
     </>
   ),
   noWalletLine: 'Pick the wallet you send from. Refunds go back to it.',
-  signedOutWalletLine: 'From the wallet you add when you set up your account.',
   networkFee: 'paid by your wallet when you send',
   total: (method) => `You get via ${method}`,
   footnote: (poster) =>

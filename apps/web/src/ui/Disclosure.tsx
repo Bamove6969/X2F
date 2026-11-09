@@ -7,7 +7,18 @@ import './ui.css';
  * it?"): a real button with aria-expanded and aria-controls, and a chevron that turns when open.
  * `children` gets the id the button controls, for the element it renders.
  */
-export function Disclosure({ summary, part, children }: { summary: ReactNode; part?: string; children: (id: string) => ReactNode }) {
+export function Disclosure({
+  summary,
+  note,
+  part,
+  children,
+}: {
+  summary: ReactNode;
+  /** Muted words on the row before the chevron (BuyerPaidWaiting "$412.50 · Zelle"). */
+  note?: ReactNode;
+  part?: string;
+  children: (id: string) => ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const id = useId();
   return (
@@ -21,7 +32,14 @@ export function Disclosure({ summary, part, children }: { summary: ReactNode; pa
         data-part={part}
         data-open={open ? 'true' : 'false'}
       >
-        {summary}
+        {note === undefined ? (
+          summary
+        ) : (
+          <span className="x2f-disclosure__summary">
+            <span>{summary}</span>
+            <span className="x2f-disclosure__note">{note}</span>
+          </span>
+        )}
         <span className="x2f-disclosure__chevron">
           <Icon name="chevron-down" size={20} />
         </span>

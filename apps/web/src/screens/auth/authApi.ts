@@ -89,7 +89,8 @@ export async function afterLogin(navigate: (to: string) => void, returnTo: strin
     // The login itself succeeded; carry on. Any call that needs the new Terms still answers
     // `terms-required`, which the API client routes to the Terms screen.
   }
-  const next = (await hasUnseenNews()) ? `/news?returnTo=${encodeURIComponent(returnTo)}` : returnTo;
+  // `after=login`: the News page that opened by itself offers "Don't show me this again".
+  const next = (await hasUnseenNews()) ? `/news?after=login&returnTo=${encodeURIComponent(returnTo)}` : returnTo;
   const target = termsCurrent ? next : `/terms?returnTo=${encodeURIComponent(next)}`;
   navigate(askLength ? `${SESSION_LENGTH_PATH}?returnTo=${encodeURIComponent(target)}` : target);
 }

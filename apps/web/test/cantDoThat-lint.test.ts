@@ -131,7 +131,11 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // (Plan 4 Task 15, 6 Nov 2026): owner Q38's hourglass says the time left ("... at most",
     // DisputeRoom.tsx), not a rule. 52 -> 53 (batch 3 landing, 5b3b38c5): the front door's Landing
     // board promise that X2F "can't move them alone" (Landing.tsx) reassures about escrow, not a rule.
-    expect(notARefusal).toBeLessThanOrEqual(53);
+    // 53 -> 56 (results-port db357970, batch 4): design results' BuyerPaidWaiting "You can't cancel
+    // after marking as paid", said ahead of time, the Feedback anonymous hint "we can't follow up with
+    // you", and Refunded's "Until they pay it back, they can't trade." (design's wording 7 Nov), which
+    // explains a ruling about the other trader.
+    expect(notARefusal).toBeLessThanOrEqual(56);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

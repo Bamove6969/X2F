@@ -65,7 +65,7 @@ test('a refusal opens CantDoThat; its feedback link leads to the form; an anonym
   await page.getByRole('button', { name: 'Post offer' }).click();
   await page.getByRole('dialog').getByRole('link', { name: 'feedback' }).click();
   await expect(page).toHaveURL(/\/feedback\?from=trading-hold$/);
-  await expect(page.getByRole('heading', { name: 'Tell us what you think' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Tell us what you think' })).toBeVisible();
   await expect(page.locator('[data-primary]')).toHaveCount(1);
   await noSideScroll(page);
 
