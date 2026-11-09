@@ -520,49 +520,136 @@
   min-height: calc(100dvh - var(--x2f-tab-bar-height));
 }
 
-/* Desktop frame (Desktop board). */
+/* Logo D (src/ui/Logo.tsx): the letters are currentColor, the dot the one Monero orange. */
+.x2f-logo {
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.x2f-logo__dot {
+  fill: var(--x2f-monero);
+}
+
+/* Wide frame (Job 3; the *-Wide boards). After login: the 240 px left rail and the page beside it.
+   Before login: the logo centred at the top (Login-Wide). */
 .x2f-desktop {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
 }
 
-.x2f-desktop__header {
+.x2f-desktop[data-wide-frame='rail'] {
+  flex-direction: row;
+}
+
+/* SellQuote-Wide: 240 px, 24 16 padding, a 1 px raised line on its right, 4 px between items; it
+   stays in view while the page scrolls. */
+.x2f-rail {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: var(--x2f-space-1);
+  box-sizing: border-box;
+  width: 240px;
+  height: 100vh;
+  overflow-y: auto;
+  padding: var(--x2f-space-6) var(--x2f-space-4);
+  border-right: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-rail__head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0 var(--x2f-space-3) var(--x2f-space-5);
+}
+
+.x2f-rail__home {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--x2f-ink);
+}
+
+/* The page name under the logo: row title, 16/22 600 ink. */
+.x2f-rail__page {
+  max-width: 100%;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--x2f-ink);
+  overflow-wrap: break-word;
+}
+
+.x2f-rail__code {
+  font-family: var(--x2f-font-mono);
+}
+
+.x2f-rail__link {
   display: flex;
   align-items: center;
-  gap: var(--x2f-space-6);
-  padding: var(--x2f-space-4) 32px;
-  border-bottom: 1px solid var(--x2f-surface-raised);
-}
-
-.x2f-wordmark {
-  font-family: var(--x2f-font-display);
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: var(--x2f-display-tracking);
-}
-
-.x2f-desktop__nav {
-  display: flex;
-  gap: var(--x2f-space-6);
-  font-size: 15px;
-}
-
-.x2f-desktop__nav a {
+  gap: var(--x2f-space-3);
+  height: 44px;
+  padding: 0 var(--x2f-space-3);
+  border-radius: var(--x2f-radius-sm);
   color: var(--x2f-ink-muted);
+  text-decoration: none;
 }
 
-.x2f-desktop__nav a[aria-current='page'] {
+.x2f-rail__link:hover {
+  color: var(--x2f-ink);
+}
+
+/* The current page: ink on the raised surface with the 2 px ink inset line at its start (kit 1.1). */
+.x2f-rail__link[aria-current='page'] {
+  background: var(--x2f-surface-raised);
+  box-shadow: inset 2px 0 0 var(--x2f-ink);
   color: var(--x2f-ink);
   font-weight: 600;
+}
+
+/* Login-Wide, SignupSecurity-Wide: the 32 px logo centred, 56 px from the top. */
+.x2f-wide-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 56px 32px 0;
+  color: var(--x2f-ink);
 }
 
 .x2f-desktop__body {
   display: flex;
   flex-direction: column;
   flex-grow: 1;
+  min-width: 0;
   min-height: 0;
   padding: var(--x2f-space-6) 32px;
+}
+
+/* Beside the rail the page pads 32 48 48 (SellQuote-Wide, Settings-Wide) and is never a stretched
+   phone: one column is at most 720 px; a screen that lays out two columns (the trade room, the
+   quote, a two-column page) takes up to 944 px, the boards' 560 + 24 + 360. Panes (src/ui/Panes.tsx)
+   are display: contents on wide, so the screen under them is the box that is sized. The flows size
+   their own card and page looks (see .x2f-flow below). */
+[data-wide-frame='rail'] > .x2f-desktop__body {
+  padding: 32px 48px 48px;
+}
+
+[data-wide-frame='rail'] > .x2f-desktop__body > :not(.x2f-panes),
+[data-wide-frame='rail'] > .x2f-desktop__body > .x2f-panes > [data-pane='main'] > * {
+  width: 100%;
+  max-width: 720px;
+  box-sizing: border-box;
+}
+
+[data-wide-frame='rail'] > .x2f-desktop__body > :is(:has(.x2f-room), :has(.x2f-columns)),
+[data-wide-frame='rail'] > .x2f-desktop__body > .x2f-panes > [data-pane='main'] > :is(.x2f-quote, :has(.x2f-room), :has(.x2f-columns)) {
+  max-width: 944px;
 }
 
 /*

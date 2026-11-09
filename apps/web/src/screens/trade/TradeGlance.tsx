@@ -29,6 +29,7 @@ import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import type { IconName } from '../../ui/icons.js';
 import { StatusChip, type Tone } from '../../ui/StatusChip.js';
+import { Logo } from '../../ui/Logo.js';
 import { deviceTotal, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
 import { payBlock, payTimer } from './payModel.js';
 import { GIFT_CARD_WARNING, payMethodOf, usePaymentDetails, type MethodInfo } from './paySeams.js';
@@ -151,8 +152,9 @@ export function TradeGlance({ view, escrow, serverClock, layout }: Pick<TradeScr
     <div className="x2f-fold-glance" data-cover={cover || undefined} data-step={step ?? undefined}>
       {cover ? (
         <div className="x2f-fold-glance__top">
-          {/* Fold-Cover's "X2F · +2 more trades": the count of the other trades needs the API (not built). */}
-          <span className="x2f-trade-label">X2F</span>
+          {/* Fold-Cover's "X2F · +2 more trades", with logo D for the letters (design review 8 Nov 2026,
+              item 3): the count of the other trades needs the API (not built). */}
+          <Logo size={24} />
           {chip}
         </div>
       ) : null}

@@ -28,8 +28,16 @@
   min-height: 44px;
 }
 
-.x2f-browse__bar .x2f-wordmark {
-  line-height: 30px;
+.x2f-browse__logo {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  color: var(--x2f-ink);
+}
+
+/* Wide: the rail carries the logo (Job 3), so the header does not repeat it. */
+[data-shell='desktop'] .x2f-browse__logo {
+  display: none;
 }
 
 /* The heading is the kit's screen title (28/32 700); this only places it. */
