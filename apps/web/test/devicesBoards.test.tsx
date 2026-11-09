@@ -537,13 +537,14 @@ describe('"Devices and sessions" board (Devices)', () => {
 describe('Devices wordings (G-007)', () => {
   const SESSION = { choices: [8, 12, 24], expiresAt: new Date(NOW + 3_600_000).toISOString(), canExtend: true, serverNow: new Date(NOW).toISOString() };
   const member = (displayName: string) => ({ id: displayName, displayName, roles: ['offers'], status: 'active', inviteExpiresAt: null, joinedAt: new Date(NOW).toISOString(), createdAt: new Date(NOW).toISOString() });
-  const mount = (o: { sessions?: unknown[]; settings?: unknown; team?: unknown; lengthHours?: number | null }) => {
+  const mount = (o: { sessions?: unknown[]; settings?: unknown; team?: unknown; lengthHours?: number | null; accountType?: 'trader' | 'vendor' }) => {
     handler = (url) => {
       if (url === '/v1/account/sessions') return json(200, o.sessions ?? SESSIONS);
       if (url === '/v1/account/security/devices') return json(200, o.settings ?? { oneDevice: false, maxDevices: 3 });
       if (url === '/v1/team') return o.team === undefined ? json(403, { error: 'forbidden' }) : json(200, o.team);
-      if (url === '/v1/account/me' && o.lengthHours !== undefined) {
-        return json(200, { displayName: 'nightowl', kind: 'vendor', level: 'full', session: { ...SESSION, lengthHours: o.lengthHours } });
+      if (url === '/v1/account/me' && (o.lengthHours !== undefined || o.accountType !== undefined)) {
+        const session = o.lengthHours === undefined ? null : { ...SESSION, lengthHours: o.lengthHours };
+        return json(200, { displayName: 'nightowl', kind: 'trader', level: 'full', session, ...(o.accountType === undefined ? {} : { accountType: o.accountType }) });
       }
       return undefined;
     };
@@ -584,7 +585,7 @@ describe('Devices wordings (G-007)', () => {
   });
 
   it('a team with no members yet: "No team members yet", the help line and Add a team member; no Log out all team members', async () => {
-    const { host } = mount({ sessions: mine, team: { members: [], max: 3 } });
+    const { host } = mount({ sessions: mine, team: { members: [], max: 3 }, accountType: 'vendor' });
     await settle();
     const team = part(host, 'team-sessions')!;
     expect(team.querySelector('h3')?.textContent).toBe('Team members logged in');
@@ -598,7 +599,7 @@ describe('Devices wordings (G-007)', () => {
   });
 
   it('members, none logged in: "No team members are logged in." and Log out all team members disabled', async () => {
-    const { host } = mount({ sessions: mine, team: { members: [member('desk_ana')], max: 3 } });
+    const { host } = mount({ sessions: mine, team: { members: [member('desk_ana')], max: 3 }, accountType: 'vendor' });
     await settle();
     const team = part(host, 'team-sessions')!;
     expect(team.textContent).toContain('No team members are logged in.');
@@ -608,6 +609,25 @@ describe('Devices wordings (G-007)', () => {
 
   it('no team for this account (the team call refused): no team card, as before', async () => {
     const { host } = mount({ sessions: mine });
+    await settle();
+    expect(part(host, 'team-sessions')).toBeNull();
+  });
+
+  // Review M2 (9 Nov 2026): GET /v1/team answers a plain trader's own session with 200
+  // { members: [], max: 3 }; only vendor accounts have team members (owner, 2 Nov 2026).
+  it('a trader account (the team call answers an empty team): no team card, no "Add a team member"', async () => {
+    const { host } = mount({ sessions: mine, team: { members: [], max: 3 }, accountType: 'trader' });
+    await settle();
+    expect(calls.some((c) => c.url === '/v1/team')).toBe(true);
+    expect(part(host, 'team-sessions')).toBeNull();
+    expect(part(host, 'team-empty')).toBeNull();
+    expect(host.textContent).not.toContain('No team members yet');
+    expect(host.textContent).not.toContain('Add a team member');
+    expect(host.textContent).not.toContain('No team members are logged in.');
+  });
+
+  it('an account whose type the API does not send (an older build): no team card from an empty team', async () => {
+    const { host } = mount({ sessions: mine, team: { members: [], max: 3 }, lengthHours: 8 });
     await settle();
     expect(part(host, 'team-sessions')).toBeNull();
   });

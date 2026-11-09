@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { isHeld, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry, type SessionInfo } from '@x2f/auth-client';
+import { isHeld, isVendor, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry, type SessionInfo } from '@x2f/auth-client';
 import { Avatar, RoleTag } from '../../ui/Avatar.js';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
@@ -141,8 +141,12 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
   const [length, setLength] = useState<SessionInfo | null>(null);
   const [lengthNote, setLengthNote] = useState<string | null>(null);
   // G-007: the team's size, so the team card can say none are logged in, or there are none yet;
-  // null when this account has no team (the call is refused) or it has not answered.
-  const [teamSize, setTeamSize] = useState<{ members: number; max: number } | null>(null);
+  // null when this account has no team (the call is refused) or it has not answered. Only a vendor
+  // account has a team (owner, 2 Nov 2026), but GET /v1/team answers a plain trader's own session
+  // too ({ members: [], max: 3 }), so the reply counts only once me() says the account is a vendor.
+  const [teamReply, setTeamReply] = useState<{ members: number; max: number } | null>(null);
+  const [vendor, setVendor] = useState(false);
+  const teamSize = vendor ? teamReply : null;
 
   const refresh = useCallback(async () => {
     setSessions(await authApi.listSessions());
@@ -153,8 +157,14 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
     // Staff and owner accounts have no device setting (403): the screen then shows the list only.
     authApi.getDeviceSettings().then(setSettings, () => undefined);
     // Staff, owner and backup sessions have no length (null): the field is then left out.
-    authApi.me().then((m) => setLength(m.session ?? null), () => undefined);
-    authApi.getTeam().then((t) => setTeamSize({ members: t.members.length, max: t.max }), () => undefined);
+    authApi.me().then(
+      (m) => {
+        setLength(m.session ?? null);
+        setVendor(isVendor(m));
+      },
+      () => undefined,
+    );
+    authApi.getTeam().then((t) => setTeamReply({ members: t.members.length, max: t.max }), () => undefined);
   }, [refresh]);
 
   const end = async (ids: string[], done: string) => {
