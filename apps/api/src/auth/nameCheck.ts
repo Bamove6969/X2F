@@ -17,6 +17,10 @@
  * Both counts live in Postgres (`takeSharedBucket`, review F2), so they bound the whole site however
  * many API processes run, and a restart does not refill them. The device count is taken first, so
  * the site budget is spent only by requests that passed their device's limit (review F3).
+ * In front of both sits an in-memory load shed of the same sizes, per process (`budgets.nameCheck*Shed`,
+ * review S1, like every other public route's `budgets.*.take()`): a flood, with made-up cookies or
+ * none, is refused there before any query, so it cannot fill `login_throttle` with rows or queue the
+ * shared pool on the `name-check:site` row. The Postgres counts stay the real limit across processes.
  * A name found this way still has its per-name login throttle (R28), so guesses at its password stay
  * paced; what a finder gains is knowing where to aim them.
  */
@@ -34,7 +38,11 @@ async function nameCheck(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   ensureDeviceCookie(req, reply);
   // The cookie was just minted when missing, so there is always a device to key on.
-  await takeSharedBucket(deps, `name-check:dev:${deviceHash(req)!.toString('hex')}`, NAME_CHECK_DEVICE_BUCKET, { status: 429, code: 'slow-down' });
+  const device = deviceHash(req)!.toString('hex');
+  // Load shed first, in memory (review S1): an empty bucket refuses before any query.
+  req.server.budgets.nameCheckDeviceShed.take(device);
+  req.server.budgets.nameCheckShed.take();
+  await takeSharedBucket(deps, `name-check:dev:${device}`, NAME_CHECK_DEVICE_BUCKET, { status: 429, code: 'slow-down' });
   await takeSharedBucket(deps, 'name-check:site', NAME_CHECK_BUCKET, { status: 503, code: 'busy' });
   const b = req.body as Record<string, unknown> | null;
   if (b === null || typeof b !== 'object' || Array.isArray(b) || typeof b.loginName !== 'string') throw new ApiError(400, 'bad-request');

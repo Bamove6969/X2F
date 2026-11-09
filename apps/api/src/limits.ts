@@ -98,7 +98,10 @@ export const APPROVAL_DECISION_BUCKET: BucketSize = { capacity: 10, perMinute: 5
 export const NAME_CHECK_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 /**
  * The same route per device cookie, also in Postgres (checked first, so a device over its pace never
- * spends the site budget, review F3).
+ * spends the site budget, review F3). Both sizes are also used for the route's in-memory load shed
+ * (`nameCheckShed`, `nameCheckDeviceShed`, review S1), taken before the shared counts: one process
+ * alone can never pass more than the shared budget, so the shed refuses nothing the shared count
+ * would allow from that process, and an empty shed refuses without touching the database.
  */
 export const NAME_CHECK_DEVICE_BUCKET: BucketSize = { capacity: 10, perMinute: 2 };
 
@@ -180,6 +183,13 @@ export interface Budgets {
   register: TokenBucket;
   start: TokenBucket;
   suggest: TokenBucket;
+  /**
+   * `POST /v1/register/name-check`, site wide, in this process only: a load shed in front of the
+   * shared `name-check:site` bucket (review S1, 9 Nov), so a flood is refused before any query.
+   */
+  nameCheckShed: TokenBucket;
+  /** The same per device cookie, in this process only: the shed in front of `name-check:dev:<hash>`. */
+  nameCheckDeviceShed: KeyedBuckets;
   /** Per session: `PUT /v1/account/password` (review round 3 R3-I1). */
   securityChange: KeyedBuckets;
   /** Per session: `POST /v1/account/approvals/:id` (review round 4 R4-I1). */
@@ -200,6 +210,8 @@ export function newBudgets(clock: () => Date): Budgets {
     register: new TokenBucket(REGISTER_BUCKET.capacity, REGISTER_BUCKET.perMinute, clock),
     start: new TokenBucket(START_BUCKET.capacity, START_BUCKET.perMinute, clock),
     suggest: new TokenBucket(SUGGEST_BUCKET.capacity, SUGGEST_BUCKET.perMinute, clock),
+    nameCheckShed: new TokenBucket(NAME_CHECK_BUCKET.capacity, NAME_CHECK_BUCKET.perMinute, clock),
+    nameCheckDeviceShed: new KeyedBuckets(NAME_CHECK_DEVICE_BUCKET, clock),
     securityChange: new KeyedBuckets(SECURITY_CHANGE_BUCKET, clock),
     approvalDecision: new KeyedBuckets(APPROVAL_DECISION_BUCKET, clock),
     chatOpen: new KeyedBuckets(CHAT_OPEN_BUCKET, clock),

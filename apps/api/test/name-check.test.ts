@@ -9,6 +9,7 @@ import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { NAME_CHECK_BUCKET, NAME_CHECK_DEVICE_BUCKET } from '../src/limits.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
+import { spySql } from './helpers/sqlSpy.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-11-08T12:00:00Z');
@@ -137,6 +138,45 @@ describe('POST /v1/register/name-check', () => {
     for (let i = 0; i < NAME_CHECK_DEVICE_BUCKET.capacity; i++) expect((await check({ loginName: unique('m') }, madeUp)).statusCode).toBe(200);
     expect((await check({ loginName: unique('m') }, madeUp)).statusCode).toBe(429);
     expect((await check({ loginName: unique('m') }, 'B'.repeat(43))).statusCode).toBe(200);
+  });
+
+  // Review S1 (signup-rules review, 9 Nov): an in-memory load shed sits in front of the Postgres
+  // counts, so a flood is refused before any query (no new row per made-up cookie, no queue on the
+  // site row), like every other public route's in-memory budget.
+  const routeSql = (sql: string[]) => sql.filter((q) => /login_throttle|accounts|names/.test(q));
+  const deviceRows = async () =>
+    Number((await deps.db.query<{ n: string }>("select count(*) as n from login_throttle where key like 'name-check:%'")).rows[0]!.n);
+
+  it('an empty in-memory site shed refuses with 503 busy before any query: no row for a made-up cookie', async () => {
+    for (let i = 0; i < NAME_CHECK_BUCKET.capacity; i++) app.budgets.nameCheckShed.take();
+    const before = await deviceRows();
+    const spy = spySql(deps.db);
+    let res: LightMyRequestResponse;
+    try {
+      res = await check({ loginName: unique('f') }, 'C'.repeat(43));
+      expect(routeSql(spy.sql())).toEqual([]);
+    } finally {
+      spy.restore();
+    }
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({ error: 'busy' });
+    expect(res.json().retryAfterSeconds).toBeGreaterThan(0);
+    expect(await deviceRows()).toBe(before);
+  });
+
+  it("an empty in-memory device shed refuses with 429 slow-down before any query", async () => {
+    const mine = await device();
+    for (let i = 1; i < NAME_CHECK_DEVICE_BUCKET.capacity; i++) expect((await check({ loginName: unique('d') }, mine)).statusCode).toBe(200);
+    const spy = spySql(deps.db);
+    let res: LightMyRequestResponse;
+    try {
+      res = await check({ loginName: unique('d') }, mine);
+      expect(routeSql(spy.sql())).toEqual([]);
+    } finally {
+      spy.restore();
+    }
+    expect(res.statusCode).toBe(429);
+    expect(res.json()).toMatchObject({ error: 'slow-down' });
   });
 
   // Review F2: the counts live in Postgres, so every API process (and a restart) shares them.
