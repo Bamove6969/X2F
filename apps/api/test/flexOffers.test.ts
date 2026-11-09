@@ -455,6 +455,25 @@ describe('review M1: the band the taker gets, the instructions once secured, the
   });
 });
 
+describe('review M2: two bands priced within the 0.5% tolerance', () => {
+  it("a taker quoting the better band they do not qualify for gets their own band, at its rate; the answer carries the rate that locked", async () => {
+    const p = await person();
+    // +2.0% for anyone, +1.7% for 5 completed trades: 0.3% apart, inside the tolerance.
+    const id = await post(p, flex('BMD', { currencies: [{ currency: 'BMD', bands: [band('10', '1000', 200), band('10', '1000', 170, 5)] }] }));
+    const m = market$('BMD');
+    const newbie = await person(0);
+    const shown = rateFor(m, 170).centsPerXmr;
+    const locked = rateFor(m, 200).centsPerXmr;
+    const res = await newbie.browser.post(`/v1/offers/${id}/take`, takeBody(newbie, XMR / 4n, shown, 'ZELLE', 'BMD'));
+    expect(res.statusCode, res.body).toBe(200);
+    const out = res.json() as { code: string; centsPerXmr: string; fiatCents: string };
+    // Not the rate they quoted: the server's band, the rate it locked, and that rate's total.
+    expect(out.centsPerXmr).toBe(locked.toString());
+    expect(out.fiatCents).toBe(fiatCents(XMR / 4n, { currency: 'BMD', centsPerXmr: locked }).toString());
+    expect((await loadTradeRow(deps.db, out.code))!.locked_cents_per_xmr).toBe(locked.toString());
+  });
+});
+
 describe('written once, and removed offers keep no payment details', () => {
   it('bands, currencies and methods never change; removing an offer blanks its instructions', async () => {
     const p = await person();

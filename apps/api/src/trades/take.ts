@@ -299,6 +299,14 @@ export function takeRoutes(app: FastifyInstance): void {
       if ('refused' in pick) {
         throw pick.refused === 'out-of-range' ? new ApiError(409, 'out-of-range') : new ApiError(409, 'not-enough-trades', { minTrades: pick.minTrades });
       }
+      // The rate that locks is this band's (lockRate), never the client's; the quoted rate only
+      // detects a move past the 0.5% tolerance. So when two bands holding the take are priced within
+      // 0.5% of each other (say +2.0% for anyone and +1.7% for 5 trades) and the quote came from the
+      // band this taker does not qualify for (a stale viewerTrades on the card, or a trade count that
+      // changed between the list and the take), the take is not refused: it goes through at the band
+      // they do qualify for, up to 0.5% from the rate shown, and the answer below carries the rate
+      // that locked (flex-offers review M2). Bands further apart refuse with `price-changed`, so a
+      // quote from a better band never locks that band either way.
       const rate = lockRate(b.currency, pick.tier, method, b.centsPerXmr, deps.prices);
       const total = fiatCents(b.amountAtomic, rate);
       // The size in the poster's unit (owner, 8 Nov): an XMR band compares the amount, a fiat band
