@@ -177,7 +177,9 @@ describe('Team (settings)', () => {
     await settle();
     const popup = byPart(document, 'cant-do-that');
     expect(popup?.getAttribute('data-from')).toBe('weak-session');
-    expect(popup?.textContent).toContain("can't invite team members or change their roles");
+    expect(popup?.textContent).toContain("can't invite team members");
+    // Lead review 8 Nov: role changes and removals from such a device wait 24 hours; they are not refused.
+    expect(popup?.textContent).not.toContain('change their roles');
     expect(byPart(host, 'invite-url')).toBeNull();
   });
 

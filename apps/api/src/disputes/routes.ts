@@ -13,6 +13,7 @@ import { roleOf } from '../trades/view.js';
 import { appendLog } from '../log/append.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, startDispute, withDispute } from './store.js';
+import { refuseHeldTradeEvent } from '../trades/held.js';
 
 /**
  * Trader-side disputes (Plan 3 Task 27; spec 2.3, 6.6), on Plan 4's dispute machine (Task 10):
@@ -249,6 +250,9 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     try {
       await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, { type: 'open-dispute' }, side, async (client, prev, _next, now) => {
         if (prev.dispute !== null) throw new ApiError(409, 'dispute-exists');
+        // A held trade: the held account's own sessions are refused (403 recovery-hold); the
+        // partner may open one (owner G7; lead hold v3 review item 5 and minor).
+        await refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute');
         // Plan 4 Task 10: the machine starts here, with the owner's settings as they are now (the
         // large-trade limit is a snapshot) and the trade's USD value; `dispute.opened` is logged.
         await startDispute(client, prev, { openedBy: side, reason, note, afterRefund: prev.state === 'refunded', now, prices: deps.prices });
@@ -278,6 +282,8 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     const deps = req.server.deps;
     try {
       await withDispute({ db: deps.db, clock: deps.clock, events: req.server.events }, { code: row.code }, async (d, client, now) => {
+        // A held trade's own account may not appeal while held (lead hold v3 review, minor).
+        await refuseHeldTradeEvent(client, row.code, req.auth.accountId, 'open-dispute');
         const s = await disputeSettings(client);
         const by = { kind: 'trader' as const, side };
         // Refused here, before anything is written, when the machine would refuse it: only a

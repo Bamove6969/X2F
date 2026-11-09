@@ -13,7 +13,10 @@ import { addAlert } from '../alerts.js';
 import type { TeamRole } from '../team/perms.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
-import { gateChange, heldReply, holdUntil, pushHoldStarted, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
+import { changesWait, pendingSummary } from '../auth/holdChanges.js';
+import { revealDue } from '../auth/recovery.js';
+import { waits, type LoginStrength } from '../auth/strength.js';
+import { gateChange, stagedReply, holdUntil, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
 import { personAccountId, requireSession, rotateSessionToken, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
@@ -37,8 +40,19 @@ export interface AccountOverview {
   hasBackup: boolean;
   suggestions: Suggestion[];
   termsCurrent: boolean;
-  /** Task 17: the end of the account's 24-hour hold while one runs (any session of the account), else null. */
+  /** The end of the account's 24-hour hold (a recovery-code login, hold model v3) while one runs, else null. */
   accountHoldUntil: string | null;
+  /** Hold model v3: the account's changes waiting their 24 h (the banner "N changes take effect on <date>"), else null. */
+  pendingChanges: { count: number; takesEffectAt: string } | null;
+  /**
+   * Owner p4-8: for a team member, while the lead's changes wait, when they take effect (the
+   * member's banner "A hold is on"; no count, nothing listed); null otherwise and for the lead.
+   */
+  teamHold: { takesEffectAt: string } | null;
+  /** Hold model v3: this session's changes are staged and wait 24 h (the pop-up warns before the first one). */
+  changesWait: boolean;
+  /** Hold model v3: a recovery code replaced a used one and this session may show it once (`POST /v1/account/recovery-code/reveal`). */
+  recoveryCodeToShow: boolean;
   /**
    * Owner 2 Nov 2026: 'trader' (takes offers) or 'vendor' (posts offers, may have team members,
    * pays the 1% fee). For a team member, the type of the account they work for.
@@ -118,6 +132,12 @@ export interface MethodCounts {
   totp: boolean;
   /** Recovery codes not yet used. */
   recoveryCodes: number;
+}
+
+/** Owner p4-8: the lead's waiting changes as a member's banner sees them: only the date. */
+async function teamHoldOf(db: Queryable, accountId: string): Promise<{ takesEffectAt: string } | null> {
+  const p = await pendingSummary(db, accountId);
+  return p === null ? null : { takesEffectAt: p.takesEffectAt };
 }
 
 /**
@@ -250,6 +270,10 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
       (row.terms_version === deps.config.termsVersion && (member === null || memberTerms === deps.config.termsVersion)),
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
     accountType: row.account_type,
+    pendingChanges: member !== null ? null : await pendingSummary(deps.db, accountId),
+    teamHold: member === null ? null : await teamHoldOf(deps.db, accountId),
+    changesWait: member !== null ? false : await changesWait(req),
+    recoveryCodeToShow: member !== null ? false : await revealDue(deps.db, accountId, sessionId, deps.clock()),
     member,
     // The end this request's token has (review S-m1: the token before an extend keeps the old end).
     session: row.kind === 'trader' && row.level === 'full'
@@ -327,7 +351,7 @@ export function accountRoutes(app: FastifyInstance): void {
     if (!row.legacy_login_name) throw new ApiError(409, 'login-name-set');
     if (r.key === row.display_key) throw new ApiError(400, 'names-same');
     const client = await d.db.connect();
-    let held: { holdUntil: Date } | null = null;
+    let held: { changeId: string } | null = null;
     try {
       await client.query('begin');
       try {
@@ -351,8 +375,7 @@ export function accountRoutes(app: FastifyInstance): void {
       client.release();
     }
     if (held !== null) {
-      pushHoldStarted(req, req.auth.accountId);
-      return reply.code(202).send(heldReply(held));
+      return reply.code(202).send(stagedReply(held));
     }
     return { ok: true };
   });
@@ -408,6 +431,10 @@ export function accountRoutes(app: FastifyInstance): void {
    *   the app then confirms it's them and calls `POST /v1/account/session/extend` with `hours`.
    * A shortened session's live streams are ended (review M1); the app reconnects with the new end.
    * Not a held change: it only ends this session sooner, or sets its length at the login itself.
+   * Hold model v3 (lead reading of owner p11-26, 9 Nov 2026, "the 24-hour hold is really just a hold
+   * on the changes you are implementing; everything else functions as normal"; the owner is asked
+   * on page 11): a username-and-password session's session length, extend and idle reminder are
+   * never staged, since they change nothing about the account's security. Extend keeps its confirm.
    */
   app.put(
     '/v1/account/session/length',
@@ -542,7 +569,7 @@ export function accountRoutes(app: FastifyInstance): void {
       const d = deps();
       const on = req.confirmedAction?.kind === 'set-one-device' && req.confirmedAction.on === 'on';
       const client = await d.db.connect();
-      let held: { holdUntil: Date } | null = null;
+      let held: { changeId: string } | null = null;
       try {
         await client.query('begin');
         try {
@@ -557,8 +584,7 @@ export function accountRoutes(app: FastifyInstance): void {
         client.release();
       }
       if (held !== null) {
-        pushHoldStarted(req, req.auth.accountId);
-        return reply.code(202).send(heldReply(held));
+        return reply.code(202).send(stagedReply(held));
       }
       return { oneDevice: on, maxDevices: await maxDevices(d.db) };
     },
@@ -598,12 +624,30 @@ export function accountRoutes(app: FastifyInstance): void {
         const { rows } = await db.query('select 1 from sessions where id = $1 and account_id = $2', [id, req.auth.accountId]);
         if (rows.length === 0) throw new ApiError(404, 'not-found');
         // Review round 2 N-I3, round 3 R3-M2 (lead decision 2026-10-30): a session whose login waits
-        // may log out only itself, never any other session, hold or not (403 `weak-session`): the
-        // owner's weak phone keeps its session, and with it the push subscription that carries the
-        // hold's warning.
-        if (id !== req.auth.sessionId && weakOf(caller, now)) throw weakRefusal();
+        // may not log out an older or a stronger session (403 `weak-session`): the owner's weak
+        // phone keeps its session, and with it the push subscription that carries the hold's
+        // warning. Owner g64 (lead review 8 Nov I4): it may end the account owner's own
+        // username-and-password sessions that are NEWER than itself, so the real owner's older
+        // session kicks out a thief's, and the thief's newer one never kicks the owner (as R4-M1
+        // for backup sessions). Alert `sessions-ended` `{ count: 1, reason: 'older-session' }`.
+        let kicked = false;
+        if (id !== req.auth.sessionId && weakOf(caller, now)) {
+          const t = await db.query<{ created_at: Date; strength: LoginStrength | null; level: string; member_id: string | null }>(
+            'select created_at, strength, level, member_id from sessions where id = $1 and revoked_at is null', [id],
+          );
+          const target = t.rows[0];
+          if (!target || req.auth.memberId !== null || target.level !== 'full' || target.member_id !== null || !waits(target.strength) || target.created_at.getTime() <= caller.created_at.getTime()) {
+            throw weakRefusal();
+          }
+          kicked = true;
+        }
         const r = await db.query('update sessions set revoked_at = $2 where id = $1 and revoked_at is null', [id, now]);
-        return (r.rowCount ?? 0) > 0;
+        const ended = (r.rowCount ?? 0) > 0;
+        if (ended && kicked) {
+          await addAlert(db, req.auth.accountId, 'sessions-ended', { count: 1, reason: 'older-session' }, now);
+          req.log.info({ reason: 'weak-session-ended-newer' }, 'session ended');
+        }
+        return ended;
       });
       // Its streams end once the revocation has committed.
       if (ended) req.server.events.closeSession(req.auth.accountId, id);
@@ -657,7 +701,8 @@ export function accountRoutes(app: FastifyInstance): void {
 
 /** The alerts a weak session may not mark seen (review round 2 N-M3): the hold's own and the login alerts. */
 export const OWNER_WARNINGS: readonly string[] = [
-  'hold-started', 'hold-ended', 'new-login', 'recovery-login', 'login-approval', 'login-blocked', 'logged-out-by-new-device', 'sessions-ended',
+  'hold-started', 'hold-ended', 'hold-extended', 'hold-changes-submitted', 'hold-changes-cancelled', 'hold-changes-discarded', 'hold-changes-applied',
+  'recovery-code-renewed', 'new-login', 'recovery-login', 'login-approval', 'login-blocked', 'logged-out-by-new-device', 'sessions-ended',
 ];
 
 /**

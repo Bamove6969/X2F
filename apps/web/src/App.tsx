@@ -33,6 +33,7 @@ import { IdleReminderScreen } from './screens/settings/IdleReminderSettings.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
+import { AccountChangesScreen, ChangesBanner, ChangesCapPopup } from './screens/settings/HoldChanges.js';
 import { Security } from './screens/settings/Security.js';
 import { Team } from './screens/settings/Team.js';
 import { AccountType } from './screens/settings/AccountType.js';
@@ -83,8 +84,11 @@ function Layout({ nav, banner, door = false }: { nav: boolean; banner: SiteBanne
       <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
         {/* Plan 4 Task 8: the owner's banner at the top of every trader screen. */}
         <SiteBanner banner={banner} />
+        {/* Hold model v3: waiting changes and a new recovery code, on every screen (HoldChange board). */}
+        <ChangesBanner />
         <Outlet />
       </div>
+      <ChangesCapPopup />
       {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} /> : null}
     </div>
   );
@@ -225,6 +229,7 @@ export function App() {
             <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
             <Route path="/wallets" element={<Wallets />} />
             <Route path="/settings/security" element={<Security />} />
+            <Route path="/settings/changes" element={<AccountChangesScreen />} />
             <Route path="/settings/devices" element={<DevicesRoute />} />
             <Route path="/settings/blocked" element={<Blocked />} />
             <Route path="/settings/team" element={<Team />} />

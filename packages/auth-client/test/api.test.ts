@@ -33,19 +33,19 @@ afterEach(() => {
 describe('createAuthApi requests', () => {
   it('posts JSON to the route on the same origin by default, with same-origin credentials', async () => {
     const { sent, fetch } = recorder();
-    await createAuthApi({ fetch }).loginPgpStart({ key: 'KEY' });
+    await createAuthApi({ fetch }).loginPgpStart({ loginName: 'sample.login', key: 'KEY' });
     expect(sent).toHaveLength(1);
     const s = sent[0]!;
     expect(s.url).toBe('/v1/login/pgp/start');
     expect(s.init.method).toBe('POST');
     expect(s.init.credentials).toBe('same-origin');
     expect(headersOf(s).get('content-type')).toBe('application/json');
-    expect(bodyOf(s)).toEqual({ key: 'KEY' });
+    expect(bodyOf(s)).toEqual({ loginName: 'sample.login', key: 'KEY' });
   });
 
   it('puts baseUrl in front of the path', async () => {
     const { sent, fetch } = recorder();
-    await createAuthApi({ baseUrl: 'http://127.0.0.1:4000', fetch }).loginPgpStart({ key: 'KEY' });
+    await createAuthApi({ baseUrl: 'http://127.0.0.1:4000', fetch }).loginPgpStart({ loginName: 'sample.login', key: 'KEY' });
     expect(sent[0]!.url).toBe('http://127.0.0.1:4000/v1/login/pgp/start');
   });
 
@@ -170,7 +170,7 @@ describe('createAuthApi requests', () => {
 
   it('refuses redirects instead of following them', async () => {
     const { sent, fetch } = recorder();
-    await createAuthApi({ fetch }).loginPgpStart({ key: 'KEY' });
+    await createAuthApi({ fetch }).loginPgpStart({ loginName: 'sample.login', key: 'KEY' });
     await createAuthApi({ fetch }).me();
     expect(sent.map((s) => s.init.redirect)).toEqual(['error', 'error']);
   });

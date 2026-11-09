@@ -145,6 +145,18 @@ describe('GET /internal/v1/watch', () => {
     expect(trades.find((x) => x.trade === alone.code)?.chat).toBeNull();
   });
 
+  it('lead review 8 Nov C2: a trade with an open held_trades row shows paused (G7: the moderator decides), its release shows it again', async () => {
+    const t = await trade();
+    const { rows } = await deps.db.query<{ seller_account_id: string }>('select seller_account_id from trades where code = $1', [t.code]);
+    const item = async () =>
+      ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<Record<string, unknown>> }).trades.find((x) => x.trade === t.code);
+    expect((await item())?.paused).toBe(false);
+    await deps.db.query(`insert into held_trades (code, account_id, action, held_at) values ($1, $2, 'pause', $3)`, [t.code, rows[0]!.seller_account_id, NOW]);
+    expect((await item())?.paused).toBe(true);
+    await deps.db.query('update held_trades set released_at = $2 where code = $1', [t.code, NOW]);
+    expect((await item())?.paused).toBe(false);
+  });
+
   it('refuses an unsigned request', async () => {
     const res = await internal.inject({ method: 'GET', url: '/internal/v1/watch' });
     expect(res.statusCode).toBe(401);

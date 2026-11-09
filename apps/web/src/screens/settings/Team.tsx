@@ -13,6 +13,7 @@ import { useCallback, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router';
 import {
   AuthApiError,
+  isStaged,
   teamInviteAction,
   teamRemoveAction,
   teamRolesAction,
@@ -23,14 +24,15 @@ import {
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat, isCantDoCode, type CantDoCode } from '../../ui/CantDoThat.js';
-import { CANT_DO_TITLE, HOLD_CODE, TOO_MANY_MEMBERS_CODE, teamCantDoText, teamCantDoTitle } from '../../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, HOLD_CODE, TOO_MANY_CHANGES_CODE, TOO_MANY_MEMBERS_CODE, holdChangesCantDoText, teamCantDoText, teamCantDoTitle } from '../../ui/cantDoCodes.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { holdSentence } from '../auth/refusals.js';
+import { StagedNote } from './HoldChanges.js';
 import { JOIN_PATH, ROLE_WORDS, TEAM_COPY as C, TEAM_PATH } from './teamCopy.js';
 import '../screens.css';
 
-const ROLES: readonly TeamRole[] = ['offers', 'trades'];
+const ROLES: readonly TeamRole[] = ['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'];
 
 /** The link a new member opens: the code rides in the fragment, which browsers never send. */
 export function inviteLink(origin: string, code: string): string {
@@ -75,6 +77,8 @@ export function Team() {
   const [cantDo, setCantDo] = useState<CantDo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [said, setSaid] = useState('');
+  // Hold model v3: a role change from a username-and-password login is staged as a draft (202).
+  const [staged, setStaged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState('');
   const [roles, setRoles] = useState<TeamRole[]>(['offers']);
@@ -125,6 +129,7 @@ export function Team() {
     setBusy(true);
     setError(null);
     setSaid('');
+    setStaged(false);
     try {
       await f();
     } catch (e) {
@@ -154,16 +159,19 @@ export function Team() {
         setError(C.pickRole);
         return;
       }
-      await withConfirm(teamRolesAction(m.id, next), (confirmToken) => authApi.setMemberRoles(m.id, { roles: next, confirmToken }), prove);
+      const r = await withConfirm(teamRolesAction(m.id, next), (confirmToken) => authApi.setMemberRoles(m.id, { roles: next, confirmToken }), prove);
       setEditing(null);
-      setSaid(C.rolesSaved(m.displayName));
+      if (isStaged(r)) setStaged(true);
+      else setSaid(C.rolesSaved(m.displayName));
       await load();
     });
 
   const remove = (m: TeamMember) =>
     run(async () => {
-      await withConfirm(teamRemoveAction(m.id), (confirmToken) => authApi.removeMember(m.id, { confirmToken }), prove);
-      setSaid(C.removed(m.displayName));
+      const r = await withConfirm(teamRemoveAction(m.id), (confirmToken) => authApi.removeMember(m.id, { confirmToken }), prove);
+      // Owner p5-7: from a username-and-password login the removal waits 24 h like every change.
+      if (isStaged(r)) setStaged(true);
+      else setSaid(C.removed(m.displayName));
       await load();
     });
 
@@ -226,6 +234,7 @@ export function Team() {
         <p className="x2f-note" role="status" data-part="team-said">
           {said}
         </p>
+        {staged ? <StagedNote /> : null}
 
         {members !== null ? (
           <section className="x2f-card" data-part="team-members" aria-labelledby="team-members-h">
@@ -359,12 +368,14 @@ export function Team() {
 
         {cantDo !== null ? (
           <CantDoThat
-            title={teamCantDoTitle(cantDo.code)}
+            title={cantDo.code === TOO_MANY_CHANGES_CODE ? CANT_DO_TITLE.changes : teamCantDoTitle(cantDo.code)}
             body={
               // Owner 2026-10-30: every team change waits out the account's 24-hour hold (the hold's own sentence).
               cantDo.code === HOLD_CODE
                 ? holdSentence(cantDo.holdUntil)
-                : teamCantDoText(cantDo.code, cantDo.max !== undefined ? { max: cantDo.max } : {})
+                : cantDo.code === TOO_MANY_CHANGES_CODE
+                  ? holdChangesCantDoText(cantDo.max)
+                  : teamCantDoText(cantDo.code, cantDo.max !== undefined ? { max: cantDo.max } : {})
             }
             from={cantDo.code}
             onClose={() => setCantDo(null)}

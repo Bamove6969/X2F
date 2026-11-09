@@ -131,6 +131,15 @@ describe('timer loop decisions (Task 9, pure)', () => {
     expect(resumed!.setupBy).toEqual(at(35)); // 15 + 20 min pause
   });
 
+  test('lead review 8 Nov C2 (owner G7): a held trade is never resumed or ticked; maintenance still pauses it', () => {
+    const paused = sys(taken(), { type: 'pause' }, at(10));
+    const held = new Set([paused.code]);
+    expect(decide([paused], null, at(30), held).events).toEqual([]);
+    const open = secured('HELD2345EFGH6789');
+    expect(decide([open], null, at(24 * 60), new Set([open.code])).events).toEqual([]);
+    expect(decide([open], at(5), at(6), new Set([open.code])).events.map((e) => e.event)).toEqual([{ type: 'pause' }]);
+  });
+
   test('maintenance on for 20 min moves payBy by 20 min and no tick fires meanwhile', () => {
     let trades = [secured()];
     const payBy = trades[0]!.payBy!;

@@ -21,7 +21,7 @@ import { createAccount, type NewNames } from '../accounts.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
-import { holdInTx, holdRefusal, requireLiveSessionInTx, weakRefusal, type SettleDeps } from '../auth/hold.js';
+import { holdInTx, holdRefusal, requireLiveSessionInTx, weakRefusal, type LiveSession, type SettleDeps } from '../auth/hold.js';
 import { waits } from '../auth/strength.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
@@ -144,13 +144,13 @@ export interface Caller {
  * (`requireStrongSession`, routes/team.ts), so no confirm token is spent. Removal needs no strong
  * session (it only takes access away).
  *
- * TODO(owner 1 Nov: removal queues until hold end, wire to hold_changes when recovery rules land):
- * the owner wants a member removal asked for during a hold queued and applied when the 24 hours
- * end. This branch has no queue for it (the `hold_changes` queue lives on wip/lead-p2-recovery-rules,
- * not landed; `account_holds.pending_change` holds only the one security change that started the
- * hold), so removal stays refused with `recovery-hold` here until then.
+ * Hold model v3 (owner 2 Nov 2026): during an account hold (a recovery-code login) every session of
+ * the account is logged out, so no owner session is left to ask; the 1 Nov wish that a removal
+ * asked for during a hold waits for its end has no case left. A role change by a username-and-
+ * password session is staged and waits 24 h (routes/team.ts, `gateChange`). A removal by one is staged
+ * too and the member keeps their access until it applies (owner p5-7, 7 Nov, replacing G5).
  */
-async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { strong: boolean }): Promise<void> {
+async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { strong: boolean }): Promise<LiveSession> {
   const live = await requireLiveSessionInTx(c, caller, now);
   const hold = await holdInTx(c, caller.settle, caller.accountId, now);
   if (hold !== null) throw holdRefusal(hold.holdUntil);
@@ -158,6 +158,7 @@ async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { stro
   // Owner 2 Nov 2026: team members are for vendor accounts only. Inviting and changing roles need
   // a vendor (403 `not-vendor`); a trader's team from before migration 198 can still be removed.
   if (o.strong) await assertVendor(c, caller.accountId);
+  return live;
 }
 
 /**
@@ -215,25 +216,44 @@ export async function removeMember(
   deps: Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeSession'> },
   caller: Caller,
   memberId: string,
-): Promise<void> {
+  /**
+   * Owner p5-7 (7 Nov 2026, replacing G5): the route's `gateChange`, run after the member is found.
+   * When it stages the removal (a username-and-password session) nothing else is written: the
+   * member keeps their access until the change applies 24 h after it is submitted.
+   */
+  gate: (c: Queryable) => Promise<{ changeId: string } | null> = async () => null,
+): Promise<{ changeId: string } | null> {
   const { accountId } = caller;
   const now = deps.clock();
-  const ended = await inTransaction(deps.db, async (c) => {
+  const out = await inTransaction(deps.db, async (c) => {
     await ownerWriteGate(c, caller, now, { strong: false });
-    const { rows } = await c.query<{ member_account_id: string | null }>(
-      `update team_members set removed_at = $3, invite_hash = null
-        where id = $1 and account_id = $2 and removed_at is null returning member_account_id`,
-      [memberId, accountId, now],
-    );
-    const row = rows[0];
-    if (!row) throw new ApiError(404, 'not-found');
-    if (row.member_account_id !== null) await deleteMemberLogin(c, row.member_account_id);
-    const s = await c.query<{ id: string }>('update sessions set revoked_at = $2 where member_id = $1 and revoked_at is null returning id', [
-      memberId, now,
-    ]);
-    return s.rows.map((r) => r.id);
+    const found = await c.query('select 1 from team_members where id = $1 and account_id = $2 and removed_at is null', [memberId, accountId]);
+    if (found.rows.length === 0) throw new ApiError(404, 'not-found');
+    const staged = await gate(c);
+    if (staged !== null) return { staged, ended: [] as string[] };
+    return { staged: null, ended: await applyMemberRemoval(c, accountId, memberId, now) };
   });
-  for (const id of ended) deps.events.closeSession(accountId, id);
+  for (const id of out.ended) deps.events.closeSession(accountId, id);
+  return out.staged;
+}
+
+/**
+ * The removal write (the route's, or a waiting one applied when its 24 h are up): the row is
+ * marked removed, the invite code dies, the member's login account is deleted and every session
+ * of theirs is revoked. Returns those sessions (the caller closes their streams after commit).
+ * 404 `not-found` when the member was removed meanwhile (a waiting removal is then dropped).
+ */
+export async function applyMemberRemoval(c: Queryable, accountId: string, memberId: string, now: Date): Promise<string[]> {
+  const { rows } = await c.query<{ member_account_id: string | null }>(
+    `update team_members set removed_at = $3, invite_hash = null
+      where id = $1 and account_id = $2 and removed_at is null returning member_account_id`,
+    [memberId, accountId, now],
+  );
+  const row = rows[0];
+  if (!row) throw new ApiError(404, 'not-found');
+  if (row.member_account_id !== null) await deleteMemberLogin(c, row.member_account_id);
+  const s = await c.query<{ id: string }>('update sessions set revoked_at = $2 where member_id = $1 and revoked_at is null returning id', [memberId, now]);
+  return s.rows.map((r) => r.id);
 }
 
 /** Deletes a member's login account (only ever a `member` row); the cascade takes its login methods and `team_members` keeps a null. */
@@ -258,20 +278,44 @@ export async function setRoles(
   const now = deps.clock();
   const { row, sessions } = await inTransaction(deps.db, async (c) => {
     await ownerWriteGate(c, caller, now, { strong: true });
-    const { rows } = await c.query<MemberRow>(
-      `update team_members set roles = $3
-        where id = $1 and account_id = $4 and ${LIVE_MEMBER}
-        returning id, display_name, roles, member_account_id, joined_at, invite_expires_at, created_at`,
-      [memberId, now, roles, accountId],
-    );
-    const r = rows[0];
+    const r = await updateRoles(c, accountId, memberId, roles, now);
     if (!r) throw new ApiError(404, 'not-found');
-    const s = roles.includes('trades') ? [] : (await c.query<{ id: string }>('select id from sessions where member_id = $1', [memberId])).rows.map((x) => x.id);
-    return { row: r, sessions: s };
+    return r;
   });
   // After the commit: a member who lost Trades loses the live streams that carry trade events.
   for (const id of sessions) deps.events.closeSession(accountId, id);
   return toView(row);
+}
+
+/** The roles write (the route's, or a waiting one applied 24 h after a username-and-password session submitted it). Null for a member who is not live. */
+async function updateRoles(c: Queryable, accountId: string, memberId: string, roles: TeamRole[], now: Date): Promise<{ row: MemberRow; sessions: string[] } | null> {
+  const { rows } = await c.query<MemberRow>(
+    `update team_members set roles = $3
+      where id = $1 and account_id = $4 and ${LIVE_MEMBER}
+      returning id, display_name, roles, member_account_id, joined_at, invite_expires_at, created_at`,
+    [memberId, now, roles, accountId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const s = roles.includes('trades') ? [] : (await c.query<{ id: string }>('select id from sessions where member_id = $1', [memberId])).rows.map((x) => x.id);
+  return { row: r, sessions: s };
+}
+
+/**
+ * Hold model v3: a member's roles waiting from a username-and-password session, applied when their 24 h
+ * are up (hold.ts `applyChange`, account locked). Throws 404 `not-found` (the change is dropped)
+ * when the member is no longer live. Returns the member's sessions whose live streams must close.
+ */
+export async function applyRoles(c: Queryable, accountId: string, memberId: string, roles: TeamRole[], now: Date = new Date()): Promise<string[]> {
+  const r = await updateRoles(c, accountId, memberId, roles, now);
+  if (!r) throw new ApiError(404, 'not-found');
+  return r.sessions;
+}
+
+/** True when `memberId` is a live member (or open invite) of the account: a role change for it can be staged. */
+export async function liveMember(c: Queryable, accountId: string, memberId: string, now: Date): Promise<boolean> {
+  const { rows } = await c.query(`select 1 from team_members where id = $1 and account_id = $3 and ${LIVE_MEMBER}`, [memberId, now, accountId]);
+  return rows.length > 0;
 }
 
 /**

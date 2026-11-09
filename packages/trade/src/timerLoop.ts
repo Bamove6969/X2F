@@ -40,17 +40,21 @@ const reasonOf = (e: unknown): string => (e instanceof TradeRuleError ? e.code :
  *   would write nothing).
  * - A `lapsed` trade still holding funds whose lapse refund was not settled within
  *   `lapseCosignMin` (strictly after lapsedAt + 30 min) → `escalate` (P3-I6, OD-2).
+ * - A trade in `held` (the API: it has an open `held_trades` row, an account in a recovery-code
+ *   hold) is frozen until the hold ends or a moderator decides (owner G7, G33; lead review 8 Nov
+ *   C2): never resumed and never ticked. Maintenance still pauses it when it is not paused yet, and
+ *   a lapse refund that was already overdue still escalates to a moderator.
  * At most one event per trade per pass. A trade the state machine refuses is skipped and returned
  * in `skipped` with its rule code, and the pass goes on.
  */
-export function timerEvents(trades: readonly Trade[], maintenanceSince: Date | null, now: Date): TimerPass {
+export function timerEvents(trades: readonly Trade[], maintenanceSince: Date | null, now: Date, held: ReadonlySet<string> = new Set()): TimerPass {
   checkDate(now);
   if (maintenanceSince !== null) checkDate(maintenanceSince);
   const events: TimerEvent[] = [];
   const skipped: TimerPass['skipped'] = [];
   for (const t of trades) {
     try {
-      const e = decide(t, maintenanceSince, now);
+      const e = decide(t, maintenanceSince, now, held.has(t.code));
       if (e !== null) events.push(e);
     } catch (err) {
       skipped.push({ code: t.code, reason: reasonOf(err) });
@@ -59,21 +63,25 @@ export function timerEvents(trades: readonly Trade[], maintenanceSince: Date | n
   return { events, skipped };
 }
 
-function decide(t: Trade, maintenanceSince: Date | null, now: Date): TimerEvent | null {
+function decide(t: Trade, maintenanceSince: Date | null, now: Date, held: boolean): TimerEvent | null {
   if (maintenanceSince !== null) {
     // A closed trade has no timer, except a buyer's cancel waiting for the seller's Confirm cancel.
     if ((t.closedAt !== null && !awaitingCancelConfirm(t)) || t.pausedAt !== null) return null;
     const from = Math.max(maintenanceSince.getTime(), t.takenAt.getTime());
     return { code: t.code, event: { type: 'pause' }, at: new Date(Math.min(from, now.getTime())) };
   }
+  if (held) return t.pausedAt === null && t.state === 'lapsed' ? escalation(t, now) : null;
   if (t.pausedAt !== null) return { code: t.code, event: { type: 'resume' }, at: now };
-  if (t.state === 'lapsed') {
-    if (t.receivedAtomic > 0n && t.lapsedAt !== null && now.getTime() > addMin(t.lapsedAt, TIMERS.lapseCosignMin).getTime()) {
-      return { code: t.code, event: { type: 'escalate' }, at: now };
-    }
-    return null;
-  }
+  if (t.state === 'lapsed') return escalation(t, now);
   const due = nextDeadline(t);
   if (due === null || now.getTime() <= due.getTime()) return null;
   return apply(t, { type: 'tick' }, 'system', now) !== t ? { code: t.code, event: { type: 'tick' }, at: now } : null;
+}
+
+/** A lapsed trade still holding funds whose lapse refund was not settled in time: to a moderator. */
+function escalation(t: Trade, now: Date): TimerEvent | null {
+  if (t.receivedAtomic > 0n && t.lapsedAt !== null && now.getTime() > addMin(t.lapsedAt, TIMERS.lapseCosignMin).getTime()) {
+    return { code: t.code, event: { type: 'escalate' }, at: now };
+  }
+  return null;
 }

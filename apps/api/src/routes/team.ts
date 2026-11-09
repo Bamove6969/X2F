@@ -11,8 +11,11 @@
  *   sessions end at once.
  * - The three writes re-check the session is live (401) and, owner 2026-10-30, are refused during a
  *   24-hour hold (403 `recovery-hold` `{ holdUntil }`, before the confirm token is spent). Owner
- *   1 Nov 2026 (landing review I1): an invite or a role change needs a strong session, at any time
- *   (403 `weak-session`, before the confirm token is spent); a removal does not. Owner 2 Nov 2026:
+ *   1 Nov 2026 (landing review I1): an invite needs a strong session, at any time (403
+ *   `weak-session`, before the confirm token is spent); a removal does not. Hold model v3 (owner
+ *   2 Nov 2026): a role change by a username-and-password session is staged like the other changes of
+ *   such a session (202 `{ status: 'staged', changeId }`, applied 24 h after it is submitted;
+ *   hold.ts); inside the sign-up window it is still refused (403 `weak-session`). Owner 2 Nov 2026:
  *   team members are for vendor accounts only, so an invite or a role change by a trader account
  *   is 403 `not-vendor` (first, before the confirm token is spent; again under the lock).
  * - `GET /v1/team/audit?from&to&member` → the audit log, newest first.
@@ -40,14 +43,14 @@ import { assertTermsAccepted, openNames, sealNames } from '../accounts.js';
 import { ApiError } from '../errors.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { requireConfirm } from '../auth/confirm.js';
-import { requireNotHeld, settleOf, weakRefusal } from '../auth/hold.js';
+import { gateChange, requireNotHeld, settleOf, stagedReply, weakRefusal } from '../auth/hold.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
 import { checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge, PGP_BODY_LIMIT } from '../auth/pgp.js';
 import { requireSession, startSession } from '../auth/sessions.js';
 import { waits, type LoginStrength } from '../auth/strength.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, WEBAUTHN_TTL_MS } from '../auth/webauthn.js';
 import { listAudit } from '../team/audit.js';
-import { requireVendor } from './accountType.js';
+import { assertVendor, requireVendor } from './accountType.js';
 import {
   type Caller,
   checkMemberLoginName,
@@ -55,6 +58,7 @@ import {
   createInvite,
   finishMember,
   inviteView,
+  liveMember,
   listMembers,
   memberNames,
   openInvite,
@@ -186,15 +190,32 @@ export function teamRoutes(app: FastifyInstance): void {
 
   app.patch(
     '/v1/team/members/:id',
-    { preHandler: [owner, checkRoles, requireVendor, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
-    async (req) => setRoles({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), input(req).roles),
+    { preHandler: [owner, checkRoles, requireVendor, requireNotHeld, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
+    async (req, reply) => {
+      const deps = req.server.deps;
+      const { rows } = await deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
+      if (!waits(rows[0]?.strength)) return setRoles({ ...deps, events: req.server.events }, caller(req), idParam(req), input(req).roles);
+      // Hold model v3: staged under the account lock (`gateChange`), for a live member only, and
+      // (owner 2 Nov 2026) for a vendor account only, checked again under that lock.
+      const staged = await inTransaction(deps.db, async (c) => {
+        const g = await gateChange(c, req, { kind: 'team-roles', memberId: idParam(req), roles: input(req).roles });
+        if (g === null) throw weakRefusal();
+        await assertVendor(c, req.auth.accountId);
+        if (!(await liveMember(c, req.auth.accountId, idParam(req), deps.clock()))) throw new ApiError(404, 'not-found');
+        return g;
+      });
+      return reply.code(202).send(stagedReply(staged));
+    },
   );
 
   app.delete(
     '/v1/team/members/:id',
     { preHandler: [owner, checkId, requireNotHeld, requireConfirm((req) => ({ kind: 'team-remove', memberId: idParam(req) }))] },
     async (req, reply) => {
-      await removeMember({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req));
+      // Owner p5-7: from a username-and-password session the removal is staged (202) and waits 24 h.
+      const staged = await removeMember({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), (c) =>
+        gateChange(c, req, { kind: 'team-remove', memberId: idParam(req) }));
+      if (staged !== null) return reply.code(202).send(stagedReply(staged));
       return reply.code(204).send();
     },
   );

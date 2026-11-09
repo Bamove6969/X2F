@@ -6,8 +6,15 @@ const HEX64 = /^[0-9a-f]{64}$/;
 const ADDRESS_END = /^[1-9A-HJ-NP-Za-km-z]{1,6}$/; // base58, as Monero addresses are written
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-// Plan 2 Task 18: a team member's roles, in their fixed order.
-const TEAM_ROLES = /^(offers|trades|offers,trades)$/;
+// Plan 2 Task 18: a team member's roles, in their fixed order (owner p4-8 adds the hold rights).
+const ROLE_ORDER = ['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'];
+const TEAM_ROLES = {
+  test(v: string): boolean {
+    const parts = v.split(',');
+    const idx = parts.map((p) => ROLE_ORDER.indexOf(p));
+    return parts.length >= 1 && idx.every((i, k) => i >= 0 && (k === 0 || i > idx[k - 1]!));
+  },
+};
 // A member's name as typed (the display-name shape; the full rules run at the invite itself).
 const TEAM_NAME = /^[A-Za-z0-9._-]{1,20}$/;
 // 1 to MAX_WALLET_BATCH (10) address ends, comma-separated.

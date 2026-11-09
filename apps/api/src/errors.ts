@@ -30,6 +30,14 @@ export type ApiErrorCode =
   | 'confirm-invalid'
   | 'recovery-session'
   | 'recovery-hold'
+  // Hold model v3: a new device with nothing to approve it and no passkey, security key or PGP key,
+  // the staged changes are not the ones reviewed, too many changes, the trade partner's account has
+  // a temporary problem (never "hold" to the partner). No semicolon inside this type: the web's
+  // cantDoThat-lint reads the union up to the first one.
+  | 'approval-unavailable'
+  | 'changes-changed'
+  | 'too-many-changes'
+  | 'counterparty-unavailable'
   | 'method-not-allowed'
   | 'last-login-method'
   | 'webauthn-failed'

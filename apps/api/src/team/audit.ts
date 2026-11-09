@@ -9,7 +9,7 @@
  */
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
-import type { TeamRole } from './perms.js';
+import { hasRole, type TeamRole } from './perms.js';
 
 /** Every action the log records. */
 export type AuditAction =
@@ -32,7 +32,10 @@ export type AuditAction =
   | 'accept-cancel'
   | 'withdraw-cancel'
   | 'walk-away'
-  | 'confirm-cancel';
+  | 'confirm-cancel'
+  // Owner p4-8: the lead's waiting changes, by a member the lead gave hold rights.
+  | 'hold-changes-cancelled'
+  | 'hold-changes-approved';
 
 /** The role each action needs (the route's `requireSession({ member })`), checked again live by `auditMember`. */
 export const ACTION_ROLE: Readonly<Record<AuditAction, TeamRole>> = {
@@ -53,6 +56,8 @@ export const ACTION_ROLE: Readonly<Record<AuditAction, TeamRole>> = {
   'withdraw-cancel': 'trades',
   'walk-away': 'trades',
   'confirm-cancel': 'trades',
+  'hold-changes-cancelled': 'hold-cancel',
+  'hold-changes-approved': 'hold-end',
 };
 
 /** Who acted: the session's account and member (null for the account owner). */
@@ -102,7 +107,7 @@ export async function assertLiveMember(q: Queryable, actor: Actor, role: TeamRol
   );
   const live = rows[0];
   if (!live) throw new ApiError(401, 'not-authenticated');
-  if (!live.roles.includes(role)) throw new ApiError(403, 'forbidden');
+  if (!hasRole(live.roles, role)) throw new ApiError(403, 'forbidden');
 }
 
 export interface AuditEntry {

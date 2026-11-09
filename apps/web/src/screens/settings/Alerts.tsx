@@ -34,7 +34,58 @@ const KIND_WORDS: Record<string, string> = {
   // Plan 2 Task 17.
   'hold-started': 'A 24-hour hold started',
   'hold-ended': 'The 24-hour hold ended',
+  // Hold model v3 (COPY-UNSIGNED): a moderator moved the hold's end; a username-and-password
+  // login's changes submitted, cancelled, thrown away early or applied; the used recovery code replaced.
+  'hold-extended': 'A moderator changed when the 24-hour hold ends',
+  'hold-changes-submitted': 'Account changes were submitted',
+  'hold-changes-cancelled': 'Waiting account changes were cancelled',
+  'hold-changes-discarded': 'Waiting account changes were thrown away',
+  'hold-changes-applied': 'Waiting account changes took effect',
+  'recovery-code-renewed': 'You have a new recovery code',
+  // Plan 2 Task 18.
+  'team-member-joined': 'A team member joined',
+  'team-member-login': 'A team member logged in',
 };
+
+const count = (n: unknown, one: string, many: string): string | null =>
+  typeof n === 'number' && Number.isInteger(n) && n >= 0 ? `${n} ${n === 1 ? one : many}` : null;
+
+/**
+ * The line under a hold v3 alert, from its detail (never a secret or an address): how many changes,
+ * and when they take effect; why they were thrown away; what applied. Null for any other alert.
+ * COPY-UNSIGNED
+ */
+export function alertDetail(kind: string, detail: unknown): string | null {
+  const d = (detail !== null && typeof detail === 'object' ? detail : {}) as Record<string, unknown>;
+  switch (kind) {
+    case 'hold-changes-submitted': {
+      const n = count(d.count, 'change', 'changes');
+      const at = typeof d.takesEffectAt === 'string' && Number.isFinite(Date.parse(d.takesEffectAt)) ? utcDateTime(new Date(d.takesEffectAt)) : null;
+      if (n === null) return null;
+      return at === null ? `${n} waiting.` : `${n} waiting. They take effect on ${at} unless someone cancels them.`;
+    }
+    case 'hold-changes-cancelled': {
+      const n = count(d.count, 'change', 'changes');
+      return n === null ? null : `${n} cancelled. Nothing on your account changed.`;
+    }
+    case 'hold-changes-discarded': {
+      const n = count(d.count, 'change', 'changes');
+      if (n === null) return null;
+      return d.reason === 'owner-login' ? `${n} thrown away after a login with a passkey, a security key or a PGP key.` : `${n} thrown away.`;
+    }
+    case 'hold-changes-applied': {
+      const applied = Array.isArray(d.applied) ? d.applied.length : null;
+      const dropped = Array.isArray(d.dropped) ? d.dropped.length : 0;
+      const a = count(applied, 'change', 'changes');
+      if (a === null) return null;
+      return dropped > 0 ? `${a} applied. ${count(dropped, 'change', 'changes')} could not be applied and were dropped.` : `${a} applied.`;
+    }
+    case 'recovery-code-renewed':
+      return 'Your used recovery code was replaced. Write down the new one on the Security screen.';
+    default:
+      return null;
+  }
+}
 
 export function alertWords(kind: string): string {
   return Object.hasOwn(KIND_WORDS, kind) ? KIND_WORDS[kind]! : 'Security alert';
@@ -75,7 +126,17 @@ export function Alerts() {
       <ul className="x2f-list" data-part="alert-list">
         {(alerts ?? []).map((a) => (
           <li className="x2f-list__row" key={a.id} data-kind={a.kind} data-unseen={a.seenAt === null ? 'true' : 'false'}>
-            <span className="x2f-list__label">{alertWords(a.kind)}</span>
+            <span className="x2f-list__label">
+              {alertWords(a.kind)}
+              {alertDetail(a.kind, a.detail) !== null ? (
+                <>
+                  <br />
+                  <span className="x2f-list__time" data-part="alert-detail">
+                    {alertDetail(a.kind, a.detail)}
+                  </span>
+                </>
+              ) : null}
+            </span>
             <time className="x2f-list__time" dateTime={a.createdAt}>
               {utcDateTime(new Date(a.createdAt))}
             </time>

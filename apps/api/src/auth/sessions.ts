@@ -167,8 +167,8 @@ export interface NewSession {
   firstSession: boolean;
   holdUntil?: Date;
   /**
-   * Task 17: how strong the login was (`loginStrength`). Default: a passkey or security key alone
-   * is strong; anything else single waits (`pgp-single` for a PGP key, else `weak-single`). A
+   * Task 17: how strong the login was (`loginStrength`). Default: a passkey, security key or (Q81,
+   * owner 6 Nov 2026) PGP key alone is strong; anything else single waits (`weak-single`). A
    * password with its TOTP code passes 'strong'.
    */
   strength?: LoginStrength;
@@ -191,7 +191,7 @@ export async function openSession(
   a: NewSession,
 ): Promise<{ sessionId: string; after: () => void }> {
   const strength: LoginStrength =
-    a.strength ?? (a.method === 'passkey' || a.method === 'security-key' ? 'strong' : a.method === 'pgp' ? 'pgp-single' : 'weak-single');
+    a.strength ?? (a.method === 'passkey' || a.method === 'security-key' || a.method === 'pgp' ? 'strong' : 'weak-single');
   const now = deps.clock();
   const token = randomBytes(32).toString('base64url');
   const label = cleanLabel(a.deviceLabel);
@@ -210,6 +210,15 @@ export async function openSession(
   // that runs at the same time wait, so it then ends this session too.
   if (row.kind === 'member') {
     if (a.level !== 'full') throw new ApiError(401, 'not-authenticated');
+    // Hold model v3: the team account's lock first (the order of every account write; a
+    // recovery-code login logs the team out under it), then no member logs in while the team
+    // account is held (403 `recovery-hold`).
+    const team = await db.query<{ account_id: string }>('select account_id from team_members where member_account_id = $1', [a.accountId]);
+    if (team.rows[0]) {
+      await db.query('select 1 from accounts where id = $1 for no key update', [team.rows[0].account_id]);
+      const held = await db.query<{ hold_until: Date }>('select hold_until from account_holds where account_id = $1 and hold_until > $2', [team.rows[0].account_id, now]);
+      if (held.rows[0]) throw new ApiError(403, 'recovery-hold', { holdUntil: held.rows[0].hold_until.toISOString() });
+    }
     const tm = await db.query<{ id: string; account_id: string; display_name: string; kind: AccountKind; disabled_at: Date | null }>(
       `select tm.id, tm.account_id, tm.display_name, t.kind, t.disabled_at
          from team_members tm join accounts t on t.id = tm.account_id

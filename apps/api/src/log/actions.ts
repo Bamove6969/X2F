@@ -44,6 +44,7 @@ const TRADE: Record<`trade.${TradeEvent['type']}`, Schema> = {
   'trade.release-claimed': {},
   'trade.pause': {},
   'trade.resume': {},
+  'trade.system-cancel': {},
   'trade.tick': {},
   // Plan 3 Tasks 38-39 (cancel rules): counts only, no addresses.
   'trade.fund-started': {},
@@ -70,6 +71,9 @@ const BAN: Schema = { accountId: 'uuid', until: 'iso', reasonCode: 'id', permane
 
 export const LOG_ACTIONS = {
   ...TRADE,
+  // Hold model v3 (lead review 8 Nov I5): the partner's buyer-cancel on a held funded trade is
+  // recorded; `trade.buyer-cancel` is logged when it is carried out at the hold's end.
+  'trade.buyer-cancel-recorded': {},
   // Disputes and cases (Tasks 10–11).
   'dispute.opened': { reason: 'id', afterRefund: 'bool', seq: 'number' },
   // G37 (owner 7 Nov): taking a case is logged at once, who (the actor) and when (the entry's time).
@@ -104,6 +108,9 @@ export const LOG_ACTIONS = {
   // or a ruling's account action does (Task 12, which writes only `accountId`).
   'account.frozen': { accountId: 'uuid', side: 'id', reason: 'id' },
   'account.freeze-lifted': { accountId: 'uuid', side: 'id' },
+  // A recovery-code hold extended or ended by staff (lead hold v3 review; owner G35).
+  'hold.extended': { accountId: 'uuid', holdUntil: 'iso' },
+  'hold.ended': { accountId: 'uuid' },
   'account.trade-banned': BAN,
   'account.site-banned': BAN,
   'account.ban-lifted': { accountId: 'uuid', kind: 'id' },

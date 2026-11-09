@@ -6,6 +6,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
+import { HOLD_MS } from '../src/auth/hold.js';
+import { settleDueChanges } from '../src/auth/holdChanges.js';
 import { EventBus, type StreamSink } from '../src/events/bus.js';
 import { tradeEventPublisher } from '../src/events/tradePublisher.js';
 import { ACTION_ROLE, auditMember } from '../src/team/audit.js';
@@ -82,7 +84,7 @@ afterAll(async () => {
 });
 
 type Who = Awaited<ReturnType<typeof trader>>;
-type Role = 'offers' | 'trades';
+type Role = 'offers' | 'trades' | 'hold-see' | 'hold-cancel' | 'hold-end';
 
 async function addWallet(accountId: string): Promise<string> {
   const now = deps.clock();
@@ -252,7 +254,7 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     });
     expect(f2.statusCode, f2.body).toBe(201);
     // Landing review M1: the member just proved two factors, so their first session is strong (as
-    // every member login, login.ts), not the single PGP key's `pgp-single`.
+    // every member login, login.ts; a single PGP key is strong too since Q81).
     const first = await deps.db.query<{ strength: string }>('select strength from sessions where id = $1', [await sessionId(b)]);
     expect(first.rows[0]!.strength).toBe('strong');
     const me = (await b.get('/v1/account/me')).json() as { displayName: string; member: unknown; termsCurrent: boolean };
@@ -989,12 +991,13 @@ describe('team changes need a strong session (owner 1 Nov 2026; landing review I
     (await deps.db.query<{ display_name: string; roles: string[]; removed_at: Date | null }>(
       'select display_name, roles, removed_at from team_members where account_id = $1 order by created_at, id', [accountId],
     )).rows;
-  const weaken = async (b: Browser, strength: 'weak-single' | 'pgp-single') =>
+  const weaken = async (b: Browser, strength: 'weak-single') =>
     deps.db.query('update sessions set strength = $2 where id = $1', [await sessionId(b), strength]);
   const unspent = async (token: string) =>
     (await deps.db.query('select 1 from confirm_tokens where token_hash = sha256(convert_to($1, \'utf8\')) and used_at is null', [token])).rowCount;
 
-  for (const strength of ['weak-single', 'pgp-single'] as const) {
+  // Owner 6 Nov 2026 (Q81): a PGP key login is strong, so only a username-and-password session is weak here.
+  for (const strength of ['weak-single'] as const) {
     it(`a ${strength} session's invite gets weak-session, writes nothing and spends no confirm token`, async () => {
       const owner = await team();
       await weaken(owner.browser, strength);
@@ -1009,19 +1012,60 @@ describe('team changes need a strong session (owner 1 Nov 2026; landing review I
     });
   }
 
-  it("a weak session's role change gets weak-session (adding or dropping a role) and the roles stay", async () => {
+  it("hold model v3: a weak session's role change is staged (adding or dropping a role); the roles stay until 24 h after it is submitted", async () => {
     const owner = await team();
     const m = await member(owner.id, ['offers', 'trades']);
     await weaken(owner.browser, 'weak-single');
+    const ids: string[] = [];
     for (const roles of [['offers'], ['trades'], ['offers', 'trades']]) {
       const confirmToken = await confirmed(owner, { kind: 'team-roles', memberId: m.id, roles: roles.join(',') });
       const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { roles, confirmToken });
-      expect(err(res)).toEqual({ status: 403, error: 'weak-session' });
+      expect(res.statusCode, res.body).toBe(202);
+      expect(res.json()).toMatchObject({ status: 'staged' });
+      ids.push((res.json() as { changeId: string }).changeId);
     }
     expect((await teamOf(owner.id))[0]!.roles).toEqual(['offers', 'trades']);
+    // The first two submitted: 24 h later they apply in order (the third stays a draft).
+    expect((await owner.browser.post('/v1/account/hold/changes/submit', { ids: ids.slice(0, 2) })).statusCode).toBe(200);
+    const due = new Date(deps.clock().getTime() + HOLD_MS);
+    await settleDueChanges(deps.config, app.events).run(deps.db, new Date(due.getTime() - 1000));
+    expect((await teamOf(owner.id))[0]!.roles).toEqual(['offers', 'trades']);
+    await settleDueChanges(deps.config, app.events).run(deps.db, due);
+    expect((await teamOf(owner.id))[0]!.roles).toEqual(['trades']);
   });
 
-  it("a weak session may still remove a member outside a hold (it only takes access away)", async () => {
+  it('owner p5-7 (replacing G5): a weak session\'s removal is staged; the member keeps access until it applies 24 h after submission', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['trades']);
+    await weaken(owner.browser, 'weak-single');
+    const removal = async () => {
+      const confirmToken = await confirmed(owner, { kind: 'team-remove', memberId: m.id });
+      return app.inject({
+        method: 'DELETE', url: `/v1/team/members/${m.id}`, headers: { origin: 'https://x2f.test' }, cookies: owner.browser.cookies, payload: { confirmToken },
+      });
+    };
+    const res = await removal();
+    expect(res.statusCode, res.body).toBe(202);
+    expect(res.json()).toMatchObject({ status: 'staged' });
+    const changeId = (res.json() as { changeId: string }).changeId;
+    const login = async () => (await deps.db.query('select 1 from accounts where id = $1', [m.loginId])).rowCount;
+    // Nothing applies early: the member still works and their login stays.
+    expect((await m.browser.get('/v1/account/me')).statusCode).toBe(200);
+    expect((await teamOf(owner.id))[0]!.removed_at).toBeNull();
+    const sub = await owner.browser.post('/v1/account/hold/changes/submit', { ids: [changeId] });
+    expect(sub.statusCode, sub.body).toBe(200);
+    expect((await owner.browser.get('/v1/account/hold')).json()).toMatchObject({ changes: { items: [{ kind: 'team-remove', memberId: m.id }] } });
+    const due = new Date(deps.clock().getTime() + HOLD_MS);
+    await settleDueChanges(deps.config, app.events).run(deps.db, new Date(due.getTime() - 1000));
+    expect((await m.browser.get('/v1/account/me')).statusCode).toBe(200);
+    expect(await login()).toBe(1);
+    await settleDueChanges(deps.config, app.events).run(deps.db, due);
+    expect(err(await m.browser.get('/v1/account/me'))).toEqual({ status: 401, error: 'not-authenticated' });
+    expect((await teamOf(owner.id))[0]!.removed_at).not.toBeNull();
+    expect(await login()).toBe(0);
+  });
+
+  it('owner p5-7: a cancelled removal never applies; the member keeps their access', async () => {
     const owner = await team();
     const m = await member(owner.id, ['trades']);
     await weaken(owner.browser, 'weak-single');
@@ -1029,8 +1073,12 @@ describe('team changes need a strong session (owner 1 Nov 2026; landing review I
     const res = await app.inject({
       method: 'DELETE', url: `/v1/team/members/${m.id}`, headers: { origin: 'https://x2f.test' }, cookies: owner.browser.cookies, payload: { confirmToken },
     });
-    expect(res.statusCode, res.body).toBe(204);
-    expect(err(await m.browser.get('/v1/account/me'))).toEqual({ status: 401, error: 'not-authenticated' });
+    const changeId = (res.json() as { changeId: string }).changeId;
+    expect((await owner.browser.post('/v1/account/hold/changes/submit', { ids: [changeId] })).statusCode).toBe(200);
+    expect((await owner.browser.delete(`/v1/account/hold/changes/${changeId}`)).statusCode).toBe(204);
+    await settleDueChanges(deps.config, app.events).run(deps.db, new Date(deps.clock().getTime() + 2 * HOLD_MS));
+    expect((await m.browser.get('/v1/account/me')).statusCode).toBe(200);
+    expect((await teamOf(owner.id))[0]!.removed_at).toBeNull();
   });
 
   it('a strong session invites and changes roles as before', async () => {
@@ -1065,6 +1113,114 @@ describe('team changes need a strong session (owner 1 Nov 2026; landing review I
     expect(weakened).toBe(true);
     expect(err(res)).toEqual({ status: 403, error: 'weak-session' });
     expect(await teamOf(owner.id)).toEqual([]);
+  });
+});
+
+describe("owner p4-8: a member's hold rights over the lead's waiting changes (HoldMember board)", () => {
+  /** A weak lead with one submitted (waiting) role change, and a member holding `roles`. */
+  async function waiting(roles: Role[]) {
+    const owner = await team();
+    const m = await member(owner.id, roles);
+    const other = await member(owner.id, ['offers']);
+    await deps.db.query("update sessions set strength = 'weak-single' where id = $1", [await sessionId(owner.browser)]);
+    const confirmToken = await confirmed(owner, { kind: 'team-roles', memberId: other.id, roles: 'offers,trades' });
+    const staged = await owner.browser.patch(`/v1/team/members/${other.id}`, { roles: ['offers', 'trades'], confirmToken });
+    expect(staged.statusCode, staged.body).toBe(202);
+    const changeId = (staged.json() as { changeId: string }).changeId;
+    expect((await owner.browser.post('/v1/account/hold/changes/submit', { ids: [changeId] })).statusCode).toBe(200);
+    // The lead also has a draft of their own, which no member ever sees or cancels.
+    const c2 = await confirmed(owner, { kind: 'team-roles', memberId: other.id, roles: 'trades' });
+    const draft = ((await owner.browser.patch(`/v1/team/members/${other.id}`, { roles: ['trades'], confirmToken: c2 })).json() as { changeId: string }).changeId;
+    return { owner, m, other, changeId, draft };
+  }
+  const left = async (accountId: string) =>
+    (await deps.db.query<{ id: string }>('select id from hold_changes where account_id = $1 order by seq', [accountId])).rows.map((r) => r.id);
+
+  it('without a right (the default) a member sees only that a hold is on: the date, no count, no list; cancelling is forbidden', async () => {
+    const t = await waiting(['trades']);
+    const v = await t.m.browser.get('/v1/account/hold');
+    expect(v.statusCode, v.body).toBe(200);
+    const body = v.json() as { rights: string; lead: string; changes: { count: number; takesEffectAt: string | null; items: unknown[] }; drafts: unknown[] };
+    expect(body.rights).toBe('none');
+    expect(body.lead).toBe(t.owner.displayName);
+    expect(body.changes.takesEffectAt).not.toBeNull();
+    expect(body.changes.count).toBe(0);
+    expect(body.changes.items).toEqual([]);
+    expect(body.drafts).toEqual([]);
+    expect(((await t.m.browser.get('/v1/account/me')).json() as { teamHold: unknown }).teamHold).toEqual({ takesEffectAt: body.changes.takesEffectAt });
+    expect(err(await t.m.browser.delete('/v1/account/hold/changes'))).toEqual({ status: 403, error: 'forbidden' });
+    expect(err(await t.m.browser.post('/v1/account/hold/changes/approve', { ids: [t.changeId] }))).toEqual({ status: 403, error: 'forbidden' });
+    expect(await left(t.owner.id)).toEqual([t.changeId, t.draft]);
+  });
+
+  it('"See waiting changes" lists them read-only', async () => {
+    const t = await waiting(['trades', 'hold-see']);
+    const body = (await t.m.browser.get('/v1/account/hold')).json() as { rights: string; changes: { count: number; items: Array<{ id: string; kind: string; mine: boolean }> } };
+    expect(body.rights).toBe('see');
+    expect(body.changes.count).toBe(1);
+    expect(body.changes.items).toMatchObject([{ id: t.changeId, kind: 'team-roles', mine: false }]);
+    expect(err(await t.m.browser.delete(`/v1/account/hold/changes/${t.changeId}`))).toEqual({ status: 403, error: 'forbidden' });
+  });
+
+  it('"Untick or cancel waiting changes" cancels waiting ones, never the lead\'s drafts, and leaves an audit row', async () => {
+    const t = await waiting(['trades', 'hold-cancel']);
+    expect(((await t.m.browser.get('/v1/account/hold')).json() as { rights: string }).rights).toBe('cancel');
+    expect(err(await t.m.browser.delete(`/v1/account/hold/changes/${t.draft}`))).toEqual({ status: 404, error: 'not-found' });
+    expect((await t.m.browser.delete('/v1/account/hold/changes')).statusCode).toBe(204);
+    expect(await left(t.owner.id)).toEqual([t.draft]);
+    expect((await auditRows(t.owner.id)).map((r) => r.action)).toContain('hold-changes-cancelled');
+    const { rows } = await deps.db.query<{ detail: { member?: string } }>("select detail from alerts where account_id = $1 and kind = 'hold-changes-cancelled'", [t.owner.id]);
+    expect(rows.map((r) => r.detail.member)).toEqual([t.m.name]);
+    // Approving is not part of this right.
+    expect(err(await t.m.browser.post('/v1/account/hold/changes/approve', { ids: [t.changeId] }))).toEqual({ status: 403, error: 'forbidden' });
+  });
+
+  it('"End a hold" applies the waiting change now from the member\'s strong login', async () => {
+    const t = await waiting(['trades', 'hold-end']);
+    expect(((await t.m.browser.get('/v1/account/hold')).json() as { rights: string }).rights).toBe('end');
+    const r = await t.m.browser.post('/v1/account/hold/changes/approve', { ids: [t.changeId] });
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json()).toEqual({ status: 'applied', count: 1 });
+    const roles = await deps.db.query<{ roles: string[] }>('select roles from team_members where id = $1', [t.other.id]);
+    expect(roles.rows[0]!.roles).toEqual(['offers', 'trades']);
+    expect((await auditRows(t.owner.id)).map((r) => r.action)).toContain('hold-changes-approved');
+  });
+
+  it('lead review 8 Nov I3: a member never cancels or approves a waiting change that names them (their removal or roles)', async () => {
+    const t = await waiting(['trades', 'hold-end']);
+    // The weak lead removes the member and changes their roles: both wait 24 h.
+    const c1 = await confirmed(t.owner, { kind: 'team-remove', memberId: t.m.id });
+    const removal = await app.inject({
+      method: 'DELETE', url: `/v1/team/members/${t.m.id}`, headers: { origin: 'https://x2f.test' }, cookies: t.owner.browser.cookies, payload: { confirmToken: c1 },
+    });
+    expect(removal.statusCode, removal.body).toBe(202);
+    const removeId = (removal.json() as { changeId: string }).changeId;
+    expect((await t.owner.browser.post('/v1/account/hold/changes/submit', { ids: [removeId] })).statusCode).toBe(200);
+    expect(err(await t.m.browser.delete(`/v1/account/hold/changes/${removeId}`))).toEqual({ status: 403, error: 'forbidden' });
+    expect(err(await t.m.browser.post('/v1/account/hold/changes/approve', { ids: [removeId] }))).toEqual({ status: 403, error: 'forbidden' });
+    expect(err(await t.m.browser.post('/v1/account/hold/changes/approve', { ids: [t.changeId, removeId] }))).toEqual({ status: 403, error: 'forbidden' });
+    // Cancel all takes the other waiting change and leaves the one that names the member.
+    expect((await t.m.browser.delete('/v1/account/hold/changes')).statusCode).toBe(204);
+    expect(await left(t.owner.id)).toEqual([t.draft, removeId]);
+    // The lead still cancels it.
+    expect((await t.owner.browser.delete(`/v1/account/hold/changes/${removeId}`)).statusCode).toBe(204);
+  });
+
+  it("lead review 8 Nov minor 11: a member's list never carries the lead's device names", async () => {
+    const t = await waiting(['trades', 'hold-see']);
+    const items = ((await t.m.browser.get('/v1/account/hold')).json() as { changes: { items: Array<Record<string, unknown>> } }).changes.items;
+    expect(items).toHaveLength(1);
+    expect(items[0]!.by).toBeNull();
+    expect(((await t.owner.browser.get('/v1/account/hold')).json() as { changes: { items: Array<Record<string, unknown>> } }).changes.items[0]!.by).toEqual(expect.any(String));
+  });
+
+  it('the lead grants the rights like any role (stored in the fixed order; a confirm binds them)', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['trades']);
+    const confirmToken = await confirmed(owner, { kind: 'team-roles', memberId: m.id, roles: 'trades,hold-see,hold-cancel' });
+    const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { roles: ['hold-cancel', 'trades', 'hold-see'], confirmToken });
+    expect(res.statusCode, res.body).toBe(200);
+    expect((res.json() as { roles: string[] }).roles).toEqual(['trades', 'hold-see', 'hold-cancel']);
   });
 });
 

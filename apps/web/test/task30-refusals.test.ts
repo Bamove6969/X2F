@@ -28,10 +28,13 @@ describe('holdSentence', () => {
   it('names the local time the hold ends, what still works and what ends it (Plan 2 Task 17)', () => {
     const t = holdSentence('2026-10-27T15:00:00Z');
     expect(t).toContain(`wait until ${utcTime(new Date('2026-10-27T15:00:00Z'))}.`);
-    expect(t).toContain('Trades already open can still be finished.');
-    expect(t).toContain('a passkey, a security key, or your password and authenticator code');
-    // Owner 2026-10-29 14:12: a PGP key alone does not end the hold.
-    expect(t).not.toContain('PGP');
+    // Lead review 8 Nov: held trades are paused for the held account's own sessions too.
+    expect(t).not.toContain('can still be finished');
+    expect(t).toContain('Your open trades are paused until the hold ends or a moderator decides.');
+    // Hold model v3 (owner 2 Nov 2026) and Q81 (6 Nov): a passkey, security key or PGP key held
+    // before ends the hold; an authenticator code does not.
+    expect(t).toContain('a passkey, a security key or a PGP key you had before the hold ends it');
+    expect(t).not.toContain('authenticator');
   });
 
   it('without a time (or a broken one) says a day', () => {

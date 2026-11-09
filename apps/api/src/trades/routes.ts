@@ -2,6 +2,7 @@ import { addressEnd } from '@x2f/accounts';
 import { normalizeTradeCode } from '@x2f/core';
 import { CLIENT_EVENTS, TradeRuleError, UNLOCK_CONFIRMATIONS, type Trade, type TradeEvent } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { cancelWaiting, counterpartyProblem, refuseHeldTradeEvent } from './held.js';
 import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
@@ -10,6 +11,7 @@ import { assertMemberMaySend } from '../team/perms.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
+import { actorOfBy, appendLog } from '../log/append.js';
 import { roleOf, toTradeView, traderSummary, type TradeView } from './view.js';
 
 /** Task 3's `getProfile`; the default (until Task 3 is wired in) knows no profiles. */
@@ -101,6 +103,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       counterparty: await traderSummary(deps.db, other, now, me, other === t.sellerId ? 'seller' : 'buyer'),
       profile: profile(t.methodId) ?? null,
       sellerWalletApp: row.seller_wallet_app,
+      counterpartyProblem: await counterpartyProblem(deps.db, t.code, other),
+      cancelWaiting: await cancelWaiting(deps.db, t.code),
     });
   };
 
@@ -152,8 +156,18 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
         async (client, _prev, _next, now) => {
           await auditMember(client, req.auth, { action: e.type as AuditAction, tradeCode: row.code }, now);
         },
-        async (client, now) => {
+        async (client, now, prev) => {
           await requireLiveSessionInTx(client, req.auth, now);
+          // Hold model v3: a trade held by a recovery-code hold moves for nobody (trades/held.ts);
+          // the partner's buyer-cancel is only recorded while coins are in escrow (owner G7, I5).
+          // R-C1: the dry run is the caller's real side (`by`); a seller's buyer-cancel falls through to the machine (409 wrong-party).
+          const held = await refuseHeldTradeEvent(client, row.code, req.auth.accountId, e.type, { prev, now, by });
+          if (held === 'stop') {
+            await auditMember(client, req.auth, { action: e.type as AuditAction, tradeCode: row.code }, now);
+            // Recorded only; the cancel itself is logged as `trade.buyer-cancel` when the sync applies it (lead review 8 Nov I5).
+            await appendLog(client, { at: now, actor: actorOfBy(by), tradeCode: row.code, action: 'trade.buyer-cancel-recorded', detail: {} });
+          }
+          return held;
         },
       );
     } catch (err) {

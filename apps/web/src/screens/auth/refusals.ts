@@ -65,16 +65,6 @@ export function holdApproveSentence(holdUntil: string | null | undefined): strin
 }
 
 /**
- * A security change that answered 202 `held` (Plan 2 Task 17): nothing changed yet; it is kept and
- * made when the hold ends. An outcome the person chose, shown as a note. COPY-UNSIGNED
- */
-export function heldNote(holdUntil: string): string {
-  const at = new Date(holdUntil);
-  const when = Number.isNaN(at.getTime()) ? 'in a day' : `at ${utcTime(at)}`;
-  return `Saved. This change takes effect ${when}, because you logged in with only one way of proving it's you. Logging in with a passkey, a security key, or your password and authenticator code from before then cancels it.`;
-}
-
-/**
  * What a login, or a logged-in device's answer to a new login, shows in CantDoThat (Plan 2 Task 16,
  * Plan 5 Task 21): the hourly cap on approvals, the hold, a weak session. Null for anything else
  * (the caller words it inline as before). The device limit is never one: approving opens the

@@ -17,6 +17,8 @@ import { loadFxSettings } from './price/settings.js';
 import { priceSources } from './price/sources.js';
 import { startRetention } from './retention.js';
 import { settleDueHolds } from './auth/hold.js';
+import { settleDueChanges } from './auth/holdChanges.js';
+import { syncHeldTradesJob } from './trades/held.js';
 import { startDisputeTimers } from './disputes/timers.js';
 import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
@@ -91,8 +93,13 @@ const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 const monerod = monerodUrlFromEnv(process.env);
 const app = await buildApi(deps, monerod ? { txConfirmations: daemonConfirmations({ url: monerod }) } : {});
 onAlert = ownerAlertSink({ db, clock, push: app.push });
-// Plan 2 Task 17: holds whose 24 hours are up end every minute, and their waiting change applies.
-const stopHolds = startRetention(deps, [settleDueHolds(config, app.events, app.log)], 60_000);
+// Plan 2 Task 17, hold model v3: every minute, holds whose 24 hours are up end, changes whose 24
+// hours are up apply, and held trades are paused or resumed as their holds say.
+const stopHolds = startRetention(
+  deps,
+  [settleDueHolds(config, app.events, app.log), settleDueChanges(config, app.events, app.log, app.push), syncHeldTradesJob(app.tradePublish)],
+  60_000,
+);
 // Plan 4 Task 10: every 30 s, appeal windows close and maintenance shifts dispute deadlines (A7).
 const stopDisputeTimers = startDisputeTimers(deps, app.events);
 alertLog = app.log;
@@ -124,9 +131,10 @@ if (internal) {
 // Plan 4 Task 4: the staff API on its own origin and port (X2F_STAFF_ORIGIN, X2F_STAFF_PORT); unset: none.
 const staffListen = staffListenFromEnv(process.env);
 // Plan 4 Task 11: the moderation process's internal API (MOD_INTERNAL_SOCKET, MOD_INTERNAL_SECRET),
-// and the trader API's events (a moderator joining, a proof request, a moderator's message).
+// and the trader API's events (a moderator joining, a proof request, a moderator's message). Hold
+// model v3: the trade publisher, so a staff hold end's resumed trades reach the live views.
 const staff = staffListen
-  ? await startStaffApi(deps, staffListen, { moderation: moderationFromEnv(process.env, clock), traderEvents: app.events })
+  ? await startStaffApi(deps, staffListen, { moderation: moderationFromEnv(process.env, clock), traderEvents: app.events, tradePublish: app.tradePublish })
   : null;
 
 // Plan 3 Task 9: the timer loop (deadline ticks, lapse escalation, and maintenance pause/resume

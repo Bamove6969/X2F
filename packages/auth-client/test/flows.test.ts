@@ -10,12 +10,14 @@ import {
   addWebAuthnKey,
   confirmWithWebAuthn,
   createAuthApi,
+  isStaged,
   loginWithPasskey,
   loginWithSecurityKey,
   registerWithWebAuthn,
   shouldSendAway,
   withConfirm,
   type AuthApi,
+  type Staged,
 } from '../src/index.js';
 import { ROUTES, callSample, methodNames } from './helpers/routes.js';
 import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
@@ -127,9 +129,9 @@ async function registerPgp(j: Jar): Promise<{ username: string; key: Pair }> {
   return { username, key };
 }
 
-/** PGP login needs no name: the whole public key (`_username` is unused). */
-async function loginPgp(api: AuthApi, _username: string, key: Pair) {
-  const start = await api.loginPgpStart({ key: key.publicKey });
+/** PGP login: the login name with the whole public key (owner G6). */
+async function loginPgp(api: AuthApi, username: string, key: Pair) {
+  const start = await api.loginPgpStart({ loginName: username, key: key.publicKey });
   return api.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL });
 }
 
@@ -225,7 +227,8 @@ describe('confirm it\'s you (P2-C2)', () => {
     const prove = vi.fn(async (a: Parameters<typeof confirmWithWebAuthn>[1]) => (token = await confirmWithWebAuthn(fresh.api, a, ceremonyOf(soft))));
     const run = vi.fn((t?: string) => fresh.api.newRecoveryCodes({ confirmToken: t }));
     const result = await withConfirm({ kind: 'new-recovery-codes' }, run, prove);
-    expect(result.codes).toHaveLength(10);
+    // Hold model v3 (owner 2 Nov 2026): ONE recovery code.
+    expect(result.codes).toHaveLength(1);
     expect(prove).toHaveBeenCalledTimes(1);
     expect(prove).toHaveBeenCalledWith({ kind: 'new-recovery-codes' });
     expect(run).toHaveBeenCalledTimes(2);
@@ -255,7 +258,8 @@ describe('confirm it\'s you (P2-C2)', () => {
       return (await fresh.api.confirmPgpFinish({ challengeId: start.challengeId, code: codeOf(text) })).confirmToken;
     });
     const result = await withConfirm({ kind: 'new-recovery-codes' }, (t) => fresh.api.newRecoveryCodes({ confirmToken: t }), prove);
-    expect(result.codes).toHaveLength(10);
+    // Hold model v3 (owner 2 Nov 2026): ONE recovery code.
+    expect(result.codes).toHaveLength(1);
     expect(prove).toHaveBeenCalledTimes(1);
   });
 });
@@ -300,14 +304,20 @@ describe('a flood of bad passwords (Review Focus 2, P2-C1)', () => {
     // and the live session gets a confirm token by passkey and uses it.
     const token = await confirmWithWebAuthn(own.api, { kind: 'new-recovery-codes' }, ceremonyOf(soft));
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    // Plan 2 Task 17: that session logged in with the password alone, so the change waits out the
-    // 24-hour hold (it is not refused by the flood).
-    await expect(own.api.newRecoveryCodes({ confirmToken: token })).resolves.toMatchObject({ codes: expect.any(Array), status: 'held' });
+    // Hold model v3: that session logged in with a username and password, so the change is staged
+    // for review (it is not refused by the flood).
+    const first = await own.api.newRecoveryCodes({ confirmToken: token });
+    expect(first).toMatchObject({ codes: expect.any(Array), status: 'staged' });
+    expect(isStaged(first)).toBe(true);
     // So does a confirm by password from the trusted browser, still with no time passing; the next
-    // change is refused by the hold, not by the flood.
+    // change is staged too, not refused by the flood.
     const byPassword = await own.api.confirmPassword({ password: GOOD, action: { kind: 'new-recovery-codes' } });
     expect(byPassword.confirmToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(apiError(await failure(own.api.newRecoveryCodes({ confirmToken: byPassword.confirmToken }))).code).toBe('recovery-hold');
+    const second = await own.api.newRecoveryCodes({ confirmToken: byPassword.confirmToken });
+    expect(isStaged(second)).toBe(true);
+    const view = await own.api.holdView();
+    expect(view.changesWait).toBe(true);
+    expect(view.drafts.map((d) => d.id).sort()).toEqual([(first as Staged).changeId, (second as Staged).changeId].sort());
 
     // The flood is still in force for the stranger.
     expect(apiError(await failure(stranger.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL }))).code).toBe('credentials-invalid');
@@ -340,7 +350,7 @@ describe('a flood of bad passwords against a two-factor username (Review Focus 2
     }
     const browser: AuthApi = jar().api;
     expect(apiError(await failure(loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft))))).toMatchObject({ status: 401, code: 'webauthn-failed' });
-    const start = await browser.loginPgpStart({ key: key.publicKey });
+    const start = await browser.loginPgpStart({ loginName: username, key: key.publicKey });
     expect(apiError(await failure(browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL }))))
       .toMatchObject({ status: 401, code: 'code-invalid' });
     await expect(browser.listMethods()).rejects.toMatchObject({ status: 401 });
@@ -351,7 +361,7 @@ describe('a flood of bad passwords against a two-factor username (Review Focus 2
     const browser: AuthApi = jar().api;
     expect(apiError(await failure(browser.loginPassword({ loginName: username, password: WRONG, deviceLabel: LABEL }))).code).toBe('credentials-invalid');
     expect(apiError(await failure(loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft))))).toMatchObject({ status: 401, code: 'webauthn-failed' });
-    const start = await browser.loginPgpStart({ key: key.publicKey });
+    const start = await browser.loginPgpStart({ loginName: username, key: key.publicKey });
     expect(apiError(await failure(browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL }))))
       .toMatchObject({ status: 401, code: 'code-invalid' });
     await expect(browser.listMethods()).rejects.toMatchObject({ status: 401 });

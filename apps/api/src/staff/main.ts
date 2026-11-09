@@ -5,6 +5,7 @@ import { NO_MODERATION, socketModerationClient } from '../disputes/moderationCli
 import type { EventBus } from '../events/bus.js';
 import { buildStaffApi, type ModerationClient } from './app.js';
 import { ensureSetupCode, setupCodeLine } from './ownerSetup.js';
+import type { TradePublisher } from '../trades/store.js';
 import { startHoursSweeper } from './sweeper.js';
 
 /** The staff listener's settings; `null` when `X2F_STAFF_ORIGIN` is unset (no staff app on this host). */
@@ -65,6 +66,8 @@ export interface StartOptions {
   moderation?: ModerationClient;
   /** Plan 4 Task 11: the trader API's event bus, for moderator-joined, proof-requested and chat. */
   traderEvents?: Pick<EventBus, 'publish'>;
+  /** Hold model v3: the trader app's trade publisher, so a staff hold end's resumed trades reach the live views. */
+  tradePublish?: TradePublisher;
   /** Where the setup code line goes: stderr (default). Never the structured logger. */
   stderr?: (line: string) => void;
   /** The structured logger's destination (tests). */
@@ -87,6 +90,7 @@ export async function startStaffApi(deps: Deps, s: StaffListen, o: StartOptions 
       ...(s.webRoot ? { staffWebRoot: s.webRoot } : {}),
       moderation: o.moderation ?? NO_MODERATION,
       ...(o.traderEvents ? { traderEvents: o.traderEvents } : {}),
+      ...(o.tradePublish ? { tradePublish: o.tradePublish } : {}),
     },
     o.logStream ? { logStream: o.logStream } : {},
   );

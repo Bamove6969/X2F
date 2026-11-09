@@ -4,6 +4,7 @@ import type { Deps } from '../app.js';
 import { requireInside } from '../auth/frontDoor.js';
 import { requireSession } from '../auth/sessions.js';
 import { holdRefusal, holdUntil, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
+import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import type { AuthContext } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -103,7 +104,7 @@ export interface MyOffer {
    * the account's trading hold, a trade it has not rated yet (Plan 5 Task 3, P5-A4; review round 1
    * M3), or its method under legal review. Absent when the offer is listed or paused.
    */
-  hidden?: 'trading-paused' | 'trading-hold' | 'review-pending' | 'method-unavailable';
+  hidden?: 'trading-paused' | 'trading-hold' | 'recovery-hold' | 'review-pending' | 'method-unavailable';
   createdAt: string;
 }
 
@@ -189,12 +190,14 @@ const OFFER_COLUMNS = `o.id, o.account_id, o.side, o.method_id, o.currency, o.pr
   o.amount_unit, o.min_atomic, o.max_atomic, o.min_fiat_cents, o.max_fiat_cents, o.min_trades, o.terms, o.country, o.status`;
 
 /**
- * An offer anyone may see: live, its poster neither disabled nor on a trading hold, and the site not
+ * An offer anyone may see: live, its poster neither disabled nor on a trading hold nor in a
+ * recovery-code hold (owner 2026-10-31: hidden like a trading hold, no public notice), and the site not
  * in an emergency stop (`site_flags.trading_paused`; review M6: during a stop nothing is listed,
  * and only the poster can still open their own offer). No site_flags row counts as stopped.
  */
 const LISTED = `o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
+  and not ${recoveryHoldHidesSql('o.account_id')}
   and not coalesce((select f.trading_paused from site_flags f), true)`;
 
 /**
@@ -689,18 +692,23 @@ export function offerRoutes(app: FastifyInstance): void {
       [accountId],
     );
     // Why a live offer is not listed now (review M4), in LISTED's terms; no site_flags row is a stop.
-    const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean }>(
+    const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean; recovery: boolean }>(
       `select not coalesce((select f.trading_paused = false from site_flags f), false) as paused,
-              exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held`,
+              exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held,
+              ${recoveryHoldHidesSql('$1::uuid')} as recovery`,
       [accountId],
     );
+    // Hold model v3's recovery-code hold before main's pending review: the account-wide hold is the
+    // reason while it lasts (its sessions cannot rate a trade meanwhile anyway).
     const accountHidden = why[0]!.paused
       ? 'trading-paused'
       : why[0]!.held
         ? 'trading-hold'
-        : (await hasPendingReview(deps.db, accountId, deps.clock()))
-          ? 'review-pending'
-          : null;
+        : why[0]!.recovery
+          ? 'recovery-hold'
+          : (await hasPendingReview(deps.db, accountId, deps.clock()))
+            ? 'review-pending'
+            : null;
     return rows.map((r) => {
       const p = pricingOf(r);
       const rate = rateOf(r, deps.prices);

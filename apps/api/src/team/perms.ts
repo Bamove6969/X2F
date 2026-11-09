@@ -21,8 +21,24 @@ import type { TradeEvent } from '@x2f/trade';
 import type { FastifyRequest } from 'fastify';
 import { ApiError } from '../errors.js';
 
-export type TeamRole = 'offers' | 'trades';
-export const TEAM_ROLES: readonly TeamRole[] = ['offers', 'trades'];
+/**
+ * Owner p4-8 (7 Nov 2026): the "Holds and waiting changes" rights the lead grants, off by default
+ * (a member without them only sees that a hold is on): `hold-see` sees the waiting changes,
+ * `hold-cancel` also unticks or cancels them, `hold-end` also ends the wait (applies the ticked
+ * changes now, from a strong login). Each one includes the ones before it (`hasRole`).
+ */
+export type HoldRight = 'hold-see' | 'hold-cancel' | 'hold-end';
+export type TeamRole = 'offers' | 'trades' | HoldRight;
+export const TEAM_ROLES: readonly TeamRole[] = ['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'];
+export const HOLD_RIGHTS: readonly HoldRight[] = ['hold-see', 'hold-cancel', 'hold-end'];
+
+/** A member's hold right, as the waiting-changes view names it: `none` unless the lead granted one. */
+export function holdRightOf(roles: readonly string[]): 'none' | 'see' | 'cancel' | 'end' {
+  if (roles.includes('hold-end')) return 'end';
+  if (roles.includes('hold-cancel')) return 'cancel';
+  if (roles.includes('hold-see')) return 'see';
+  return 'none';
+}
 
 /** At most this many live members (open invites included) per account (owner, 2026-10-29c). */
 export const MAX_TEAM_MEMBERS = 3;
@@ -30,9 +46,11 @@ export const MAX_TEAM_MEMBERS = 3;
 /** What a route lets members do: `any` (a read every member may make) or one role. */
 export type MemberAccess = 'any' | TeamRole;
 
-/** True when `roles` grants `need`. */
+/** True when `roles` grants `need` (a stronger hold right grants the weaker ones: p4-8). */
 export function hasRole(roles: readonly string[], need: MemberAccess): boolean {
-  return need === 'any' || roles.includes(need);
+  if (need === 'any' || roles.includes(need)) return true;
+  const i = (HOLD_RIGHTS as readonly string[]).indexOf(need);
+  return i >= 0 && HOLD_RIGHTS.slice(i + 1).some((r) => roles.includes(r));
 }
 
 /**
