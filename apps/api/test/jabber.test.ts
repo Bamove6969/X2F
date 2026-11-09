@@ -8,6 +8,8 @@ import { startHold, withTx } from '../src/auth/hold.js';
 import { startDispute } from '../src/disputes/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { codeHash, maskJid, normalizeJid } from '../src/jabber/address.js';
+import { PENDING_RETENTION_MS, purgeJabberPending } from '../src/jabber/retention.js';
+import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { OUTBOX_ATTEMPTS, sendDueNotices } from '../src/jabber/outbox.js';
 import { CODE_TRIES, CODE_TTL_MS, RESEND_WAIT_S, TESTS_PER_DAY } from '../src/jabber/routes.js';
 import { ACCOUNT_CHANGE_TEXT, NOTICE_KINDS, SENDER_NAME, TRADE_ATTENTION_TEXT, messageText, type JabberMessage, type JabberSender } from '../src/jabber/sender.js';
@@ -303,4 +305,33 @@ describe('a dispute tells the payer (lead default 2026-11-08, same opt-in)', () 
       expect(sent).toEqual([{ to: buyer.jid, message: { kind: 'trade-attention' } }]);
     });
   }
+});
+
+describe('review L4: an unproven typed address is purged 24 hours after its test message', () => {
+  it('clears the pending address (deleting a row that holds nothing else); a proven address stays, and the purge is not a notice', async () => {
+    const typed = await trader();
+    advance(RESEND_WAIT_S * 1000 + 1);
+    expect((await typed.browser.post('/v1/account/jabber/test', { address: address() })).statusCode).toBe(202);
+    const changing = await withJabber();
+    advance(RESEND_WAIT_S * 1000 + 1);
+    expect((await changing.browser.post('/v1/account/jabber/test', { address: address() })).statusCode).toBe(202);
+    await deps.db.query('delete from jabber_outbox');
+    const row = async (id: string) =>
+      (await deps.db.query<{ jid: boolean; pending: boolean; enabled: boolean }>(
+        'select jid_sealed is not null as jid, pending_sealed is not null as pending, enabled from jabber_contacts where account_id = $1', [id],
+      )).rows[0] ?? null;
+
+    advance(PENDING_RETENTION_MS - 600_000);
+    await purgeJabberPending.run(deps.db, deps.clock());
+    expect(await row(typed.id)).toEqual({ jid: false, pending: true, enabled: false });
+    expect(await row(changing.id)).toEqual({ jid: true, pending: true, enabled: true });
+
+    advance(600_000);
+    expect(await purgeJabberPending.run(deps.db, deps.clock())).toBeGreaterThanOrEqual(2);
+    expect(await row(typed.id)).toBeNull();
+    expect(await row(changing.id)).toEqual({ jid: true, pending: false, enabled: true });
+    expect(await notices(changing.id)).toBe(0);
+    expect(PENDING_RETENTION_MS).toBe(24 * 3_600_000);
+    expect(RETENTION_JOBS).toContain(purgeJabberPending);
+  });
 });
