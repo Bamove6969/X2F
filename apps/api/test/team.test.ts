@@ -1126,6 +1126,34 @@ describe("owner p4-8: a member's hold rights over the lead's waiting changes (Ho
     expect((await auditRows(t.owner.id)).map((r) => r.action)).toContain('hold-changes-approved');
   });
 
+  it('lead review 8 Nov I3: a member never cancels or approves a waiting change that names them (their removal or roles)', async () => {
+    const t = await waiting(['trades', 'hold-end']);
+    // The weak lead removes the member and changes their roles: both wait 24 h.
+    const c1 = await confirmed(t.owner, { kind: 'team-remove', memberId: t.m.id });
+    const removal = await app.inject({
+      method: 'DELETE', url: `/v1/team/members/${t.m.id}`, headers: { origin: 'https://x2f.test' }, cookies: t.owner.browser.cookies, payload: { confirmToken: c1 },
+    });
+    expect(removal.statusCode, removal.body).toBe(202);
+    const removeId = (removal.json() as { changeId: string }).changeId;
+    expect((await t.owner.browser.post('/v1/account/hold/changes/submit', { ids: [removeId] })).statusCode).toBe(200);
+    expect(err(await t.m.browser.delete(`/v1/account/hold/changes/${removeId}`))).toEqual({ status: 403, error: 'forbidden' });
+    expect(err(await t.m.browser.post('/v1/account/hold/changes/approve', { ids: [removeId] }))).toEqual({ status: 403, error: 'forbidden' });
+    expect(err(await t.m.browser.post('/v1/account/hold/changes/approve', { ids: [t.changeId, removeId] }))).toEqual({ status: 403, error: 'forbidden' });
+    // Cancel all takes the other waiting change and leaves the one that names the member.
+    expect((await t.m.browser.delete('/v1/account/hold/changes')).statusCode).toBe(204);
+    expect(await left(t.owner.id)).toEqual([t.draft, removeId]);
+    // The lead still cancels it.
+    expect((await t.owner.browser.delete(`/v1/account/hold/changes/${removeId}`)).statusCode).toBe(204);
+  });
+
+  it("lead review 8 Nov minor 11: a member's list never carries the lead's device names", async () => {
+    const t = await waiting(['trades', 'hold-see']);
+    const items = ((await t.m.browser.get('/v1/account/hold')).json() as { changes: { items: Array<Record<string, unknown>> } }).changes.items;
+    expect(items).toHaveLength(1);
+    expect(items[0]!.by).toBeNull();
+    expect(((await t.owner.browser.get('/v1/account/hold')).json() as { changes: { items: Array<Record<string, unknown>> } }).changes.items[0]!.by).toEqual(expect.any(String));
+  });
+
   it('the lead grants the rights like any role (stored in the fixed order; a confirm binds them)', async () => {
     const owner = await team();
     const m = await member(owner.id, ['trades']);

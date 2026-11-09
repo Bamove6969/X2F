@@ -19,7 +19,8 @@
  * and `lead` (the team's name): without a right (`none`, the default) it says only that a hold is
  * on (`changes.takesEffectAt`, no count, no list); `see` lists the waiting changes; `cancel` also
  * unticks or cancels them (never the lead's drafts); `end` also approves them now, from a strong
- * login. Each member action writes a team audit row (G35). Submitting stays the lead's.
+ * login. A member never cancels or approves a change that names them (their removal or roles: 403
+ * `forbidden`, lead review 8 Nov I3), and never sees the lead's device names (`by` is null). Each member action writes a team audit row (G35). Submitting stays the lead's.
  *
  * Every write re-checks its session under the account lock (`requireLiveSessionInTx`,
  * `LIVE_SESSION_ROUTES`).
@@ -66,7 +67,8 @@ export function holdRoutes(app: FastifyInstance): void {
     const lead = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [accountId])).rows[0]?.display_name ?? '';
     const changes = rights === 'none'
       ? { count: 0, takesEffectAt: list.changes.takesEffectAt, items: [] }
-      : { ...list.changes, items: list.changes.items.map((i) => ({ ...i, mine: false })) };
+      // Lead review 8 Nov minor 11: never the lead's device names (`by`) to a member.
+      : { ...list.changes, items: list.changes.items.map((i) => ({ ...i, by: null, mine: false })) };
     return { accountHold, changes, drafts: [], changesWait: false, rights, lead };
   });
 
@@ -100,7 +102,7 @@ export function holdRoutes(app: FastifyInstance): void {
       if (weakOf(live, now)) throw weakRefusal();
       const hold = await holdInTx(db, settleOf(req), req.auth.accountId, now);
       if (hold !== null) throw holdRefusal(hold.holdUntil);
-      const settled = await approveChanges(db, settleOf(req), req.auth.accountId, ids, now);
+      const settled = await approveChanges(db, settleOf(req), req.auth.accountId, ids, now, req.auth.memberId !== null ? { memberId: req.auth.memberId } : {});
       await dailyCapInTx(db, holdActionsKey(req.auth.sessionId), HOLD_CHANGE_ACTIONS_PER_DAY, now);
       await auditMember(db, actor(req), { action: 'hold-changes-approved', detail: { count: settled } }, now);
       return settled;
@@ -119,7 +121,7 @@ export function holdRoutes(app: FastifyInstance): void {
     const n = await withTx(deps.db, async (db) => {
       await requireLiveSessionInTx(db, req.auth, now);
       await settleChangesInTx(db, settleOf(req), req.auth.accountId, now);
-      const member = req.auth.memberId !== null ? { member: req.auth.memberName ?? '' } : {};
+      const member = req.auth.memberId !== null ? { member: req.auth.memberName ?? '', memberId: req.auth.memberId } : {};
       const gone = await cancelChanges(db, req.auth.accountId, req.auth.sessionId, id, now, member);
       if (gone > 0) await audit(db, gone);
       return gone;

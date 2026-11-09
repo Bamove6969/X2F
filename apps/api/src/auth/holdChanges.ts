@@ -90,6 +90,19 @@ export function describeChange(c: PendingChange): ChangeSummary {
   }
 }
 
+/** SQL: the `hold_changes` row's change names team member `$5` (their removal or their roles). */
+const NAMES_MEMBER = "change->>'kind' in ('team-remove', 'team-roles') and change->>'memberId' = $5";
+
+/** 403 `forbidden` when one of `ids` is a change of the account that names team member `memberId` (lead review 8 Nov I3). */
+async function refuseNamingMember(db: Queryable, accountId: string, ids: string[], memberId: string): Promise<void> {
+  const { rows } = await db.query(
+    `select 1 from hold_changes where account_id = $1 and id = any($2::uuid[])
+        and change->>'kind' in ('team-remove', 'team-roles') and change->>'memberId' = $3 limit 1`,
+    [accountId, ids, memberId],
+  );
+  if (rows.length > 0) throw new ApiError(403, 'forbidden');
+}
+
 /** Inside `gateChange`'s transaction (account locked, session live): stores the change as a draft of the session. Returns its id. */
 export async function stageChange(db: Queryable, accountId: string, sessionId: string, change: PendingChange, now: Date): Promise<string> {
   const { rows: n } = await db.query<{ n: number }>('select count(*)::int as n from hold_changes where account_id = $1', [accountId]);
@@ -184,7 +197,8 @@ export async function submitChanges(db: Queryable, accountId: string, sessionId:
 
 /**
  * Inside a transaction with the account locked: cancels the account's waiting changes (all, or the
- * one `id`) and the calling session's own drafts among them. Cancelling all takes every other
+ * one `id`) and the calling session's own drafts among them. A team member (`o.memberId`) never
+ * cancels a change that names them (lead review 8 Nov I3). Cancelling all takes every other
  * session's drafts too (lead hold v3 review, minor: a thief's drafts must not wait to be submitted
  * after the owner cancelled everything). One other session's draft by id is not this session's to
  * cancel (404, as an unknown id). Alert `hold-changes-cancelled` `{ count, changes }` when a waiting
@@ -196,15 +210,19 @@ export async function cancelChanges(
   sessionId: string,
   id: string | null,
   now: Date,
-  o: { member?: string } = {},
+  o: { member?: string; memberId?: string } = {},
 ): Promise<number> {
+  // Lead review 8 Nov I3: a member never cancels a waiting change that names them (their removal or
+  // their roles): by id 403 `forbidden`; Cancel all leaves it.
+  if (o.memberId !== undefined && id !== null) await refuseNamingMember(db, accountId, [id], o.memberId);
   // Owner p4-8: a member with hold rights cancels waiting changes only, never the lead's drafts.
   const { rows } = await db.query<ChangeRow>(
     `delete from hold_changes
       where account_id = $1 and ($4::boolean is false or submitted_at is not null)
         and ($3::uuid is null or ((submitted_at is not null or session_id = $2) and id = $3))
+        and ($5::text is null or not (${NAMES_MEMBER}))
       returning *`,
-    [accountId, sessionId, id, o.member !== undefined],
+    [accountId, sessionId, id, o.member !== undefined, o.memberId ?? null],
   );
   const waiting = rows.filter((r) => r.submitted_at !== null).sort((a, b) => Number(a.seq) - Number(b.seq));
   if (waiting.length > 0) {
@@ -222,7 +240,9 @@ export async function cancelChanges(
  * `changes-changed`): they are due now, and `settleChangesInTx` applies them in order. Returns how
  * many settled.
  */
-export async function approveChanges(db: Queryable, s: SettleDeps, accountId: string, ids: string[], now: Date): Promise<number> {
+export async function approveChanges(db: Queryable, s: SettleDeps, accountId: string, ids: string[], now: Date, o: { memberId?: string } = {}): Promise<number> {
+  // Lead review 8 Nov I3: a member never approves a change that names them.
+  if (o.memberId !== undefined) await refuseNamingMember(db, accountId, ids, o.memberId);
   const { rows } = await db.query<{ id: string }>(
     'select id from hold_changes where account_id = $1 and submitted_at is not null and id = any($2::uuid[])',
     [accountId, ids],
