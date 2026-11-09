@@ -150,8 +150,8 @@ describe('DisputeSlot', () => {
 
 describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
   const refunded = (over: Partial<TradeView> = {}) => sellerView({ role: 'buyer', state: 'refunded', closedAt: at(-10 * 60 * MIN), ...over }) as TradeView;
-  // The Refunded screen names the seller (design session 2 Nov): the fixture's counterparty.
-  const S = sellerView().counterparty.displayName;
+  // "the seller", never the name, on refund and cancel results (owner 2026-10-29; lead 8 Nov).
+  const S = 'the seller';
 
   it('offers "Open dispute" within 48 hours of the refund (owner 2026-10-29), linking to the dispute page', () => {
     const { host } = render(
@@ -244,7 +244,10 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     expect(what.querySelector('ol')?.getAttribute('data-tone')).toBe('muted');
     expect(what.querySelectorAll('li .x2f-steps-line__mark[aria-hidden="true"]')).toHaveLength(facts.length);
     expect(keys.at(-1)).toBe(`Refund sent to ${S}`);
-    expect(host.textContent).not.toMatch(/the seller/i);
+    // The result never names them (the trade header's "Buying from …" is the room's title, not the result).
+    for (const part of ['refunded-hero', 'refunded-what', 'refunded-dispute']) {
+      expect(host.querySelector(`[data-part="${part}"]`)?.textContent, part).not.toContain(sellerView().counterparty.displayName);
+    }
     // Every time is the one format: "HH:MM UTC" under a dated head, or the full "D Mon YYYY, HH:MM UTC".
     for (const [k, val] of facts) expect(val, k!).toMatch(/^(\d+ \w{3} \d{4}, )?\d\d:\d\d UTC$/);
     const dispute = host.querySelector('[data-part="refunded-dispute"]')!;
@@ -302,9 +305,9 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     expect(chip.getAttribute('data-tone')).toBe('neutral');
     expect(chip.textContent).toBe('Cancelled');
     expect(host.querySelector('h1')?.textContent).toBe('You cancelled this trade');
-    // This screen names the seller (design session 2 Nov, review M6); trade-rules-p1's "the seller"
-    // for the old RefundedSlot is a lead question (listed in the READY note).
-    expect(host.querySelector('.x2f-hero__lead')?.textContent).toBe('You cancelled, so all the XMR went back to satoshi_ghost.');
+    // "the seller", never the name (owner 2026-10-29; lead 8 Nov).
+    expect(host.querySelector('.x2f-hero__lead')?.textContent).toBe('All 1.250000 XMR (about $412.50) went back to the seller. X2F took nothing from you.');
+    expect(host.querySelector('[data-part="refunded-hero"]')?.textContent).not.toContain('satoshi_ghost');
     expect(host.textContent).not.toContain('Refunded');
   });
 

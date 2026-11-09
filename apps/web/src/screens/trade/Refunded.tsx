@@ -10,8 +10,8 @@
  * The rules are Task 27's, unchanged: `disputeEntry` decides whether a dispute can still be opened,
  * the reasons are `refundReason`'s (dispute/rules.ts, the dispute page keeps using it), and a
  * buyer's cancel reads "Cancelling" until the seller confirms the XMR is back (Task 39). The seller
- * is named, passed in explicitly (design session 2 Nov, a design call the owner delegated; review M6).
- * Lines not on the board are COPY-UNSIGNED.
+ * is "the seller", never named, on refund and cancel results (owner 2026-10-29; lead 8 Nov: the
+ * owner's rule beats the design session of 2 Nov). Lines not on the board are COPY-UNSIGNED.
  */
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
@@ -41,14 +41,15 @@ interface Story {
   disputeTitle: string;
 }
 
+/** "the seller", never their name, on refund and cancel results (owner 2026-10-29; lead 8 Nov). */
+const N = 'the seller';
+
 /**
- * Why the XMR went back, as the board's chip, headline and lead, naming the seller (`seller` is
- * their public name, shown as a username; design session 2 Nov). `disputeOpen` adds the lead's
+ * Why the XMR went back, as the board's chip, headline and lead. `disputeOpen` adds the lead's
  * last sentence that points at the dispute card below.
  */
-export function refundStory(view: TradeView, seller: string, disputeOpen: boolean): Story {
+export function refundStory(view: TradeView, disputeOpen: boolean): Story {
   const trade = tradeFromView(view);
-  const N = <span data-username="">{seller}</span>;
   // A buyer's cancel is official only once the seller confirms the XMR is back (owner 2026-10-29).
   const cancelling = view.settling === 'buyer-cancel' && trade.dispute === null && view.cancelConfirmedAt === null && view.paidAt === null;
   // A cancel's refund that landed after "I've paid" is not "You cancelled": the buyer paid and keeps the dispute (review I1).
@@ -86,8 +87,8 @@ export function refundStory(view: TradeView, seller: string, disputeOpen: boolea
       return {
         chip: muted('Payment time ran out'),
         title: 'Payment time ran out',
-        // The owner's wording (Plan 3 Revision 2026-10-29, Decision 7; review M2), naming the seller,
-        // then the design session's ending (2 Nov). COPY-UNSIGNED
+        // The owner's wording (Plan 3 Revision 2026-10-29, Decision 7; review M2), then the design
+        // session's ending (2 Nov). COPY-UNSIGNED
         lead: (
           <>
             Payment time ran out, {N} cancelled; everything in escrow went back to the original owner. X2F took nothing from you.
@@ -98,7 +99,14 @@ export function refundStory(view: TradeView, seller: string, disputeOpen: boolea
       };
     case 'buyer-cancel':
       // Board Refunded variant=buyer-cancelled: a neutral CANCELLED chip, never "Refunded" (trade-rules-p1).
-      return { chip: { tone: 'neutral', icon: 'check', label: 'Cancelled' }, title: 'You cancelled this trade', lead: <>You cancelled, so all the XMR went back to {N}.</>, disputeTitle: paidQuestion };
+      // Board Refunded variant=buyer-cancelled. The trade amount, as on every other screen (not the
+      // escrow with a seller-poster's 1% fee in it). COPY-UNSIGNED (the board's words).
+      return {
+        chip: { tone: 'neutral', icon: 'check', label: 'Cancelled' },
+        title: 'You cancelled this trade',
+        lead: `All ${formatXmr(BigInt(view.amountAtomic))} XMR (about ${formatFiat(BigInt(view.fiatCents), view.lockedRate.currency)}) went back to the seller. X2F took nothing from you.`,
+        disputeTitle: paidQuestion,
+      };
     case 'mutual-cancel':
       return { chip: muted('Cancelled together'), title: 'You both cancelled this trade', lead: <>You and {N} agreed to cancel, so all the XMR went back to {N}.</>, disputeTitle: paidQuestion };
     case 'lapse-refund':
@@ -110,13 +118,12 @@ export function refundStory(view: TradeView, seller: string, disputeOpen: boolea
 }
 
 /** The "What happened" rows, from the times the trade view carries (a time it lacks is left out). */
-export function refundTimeline(view: TradeView, seller: string): { key: string; label: ReactNode; at: string }[] {
-  const N = <span data-username="">{seller}</span>;
+export function refundTimeline(view: TradeView): { key: string; label: ReactNode; at: string }[] {
   const rows: { key: string; label: ReactNode; at: string | null }[] = [];
   if (view.dispute !== null) {
     // COPY-UNSIGNED (the moderator variant's "You opened a dispute").
     const by = view.dispute.by;
-    rows.push({ key: 'opened', label: by === 'buyer' ? 'You opened a dispute' : by === 'seller' ? <>{N} opened a dispute</> : 'A dispute was opened', at: view.dispute.at });
+    rows.push({ key: 'opened', label: by === 'buyer' ? 'You opened a dispute' : by === 'seller' ? 'The seller opened a dispute' : 'A dispute was opened', at: view.dispute.at });
   } else if (view.settling === 'auto-refund') {
     // No final alert any more: the seller's cancel refunds at once (owner 8 Nov p6-1; lead review
     // 2026-11-08 R-I4). The view carries no time for the cancel itself, so that row is left out.
@@ -125,17 +132,16 @@ export function refundTimeline(view: TradeView, seller: string): { key: string; 
     rows.push({ key: 'fund-ended', label: 'Funding time ended', at: view.fundBy }); // COPY-UNSIGNED
   }
   if (view.state === 'refunded' && view.closedAt !== null) rows.push({ key: 'refund-sent', label: <>Refund sent to {N}</>, at: view.closedAt });
-  if (view.cancelConfirmedAt !== null) rows.push({ key: 'confirmed', label: <>{N} confirmed it arrived</>, at: view.cancelConfirmedAt }); // COPY-UNSIGNED
+  if (view.cancelConfirmedAt !== null) rows.push({ key: 'confirmed', label: 'The seller confirmed it arrived', at: view.cancelConfirmedAt }); // COPY-UNSIGNED
   return rows.filter((r): r is { key: string; label: ReactNode; at: string } => r.at !== null && Number.isFinite(Date.parse(r.at)));
 }
 
 export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
   const trade = tradeFromView(view);
   const method = methodOf(view);
-  const name = trade.counterparty;
   const entry = disputeEntry(trade, serverClock());
-  const story = refundStory(view, name, entry.kind === 'open');
-  const timeline = refundTimeline(view, name);
+  const story = refundStory(view, entry.kind === 'open');
+  const timeline = refundTimeline(view);
   // One day for every row: the day goes in the card's head and each row shows its time (the board).
   const days = new Set(timeline.map((r) => formatDate(r.at)));
   const oneDay = days.size === 1 ? [...days][0]! : null;
@@ -210,7 +216,7 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
             </h2>
             <p className="x2f-fine">
               {/* COPY-UNSIGNED: design's wording (7 Nov), owner still to sign (lead review 2026-11-06 m3). */}
-              Open a dispute and add your payment proof. If the money reached <span data-username="">{name}</span>, a moderator can rule that they owe you the{' '}
+              Open a dispute and add your payment proof. If the money reached the seller, a moderator can rule that they owe you the{' '}
               {/* not-a-refusal: explains what a ruling means for the other trader; nothing is refused to this user */}
               <Xmr value={formatXmr(BigInt(view.amountAtomic))} ink />. Until they pay it back, they can't trade.
             </p>

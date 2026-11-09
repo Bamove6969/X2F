@@ -46,13 +46,18 @@ export const LAUNCH_PROFILE_IDS = [
 
 /** The profile a method with none of its own uses at take: the Custom method's (24 h). */
 export const FALLBACK_PROFILE_ID = 'CUSTOM';
-/** The profile every gift card without one of its own uses (owner 2026-11-07 F9: instant, 90 min). */
+/** The profile every gift card without one of its own uses (owner G50: 45 minutes to check a card). */
 export const GIFT_CARD_PROFILE_ID = 'OTHER_GIFT_CARD';
 
 export const GIFT_CARD_GROUP = 'Gift cards & vouchers';
 
 /** The shortest confirm window: the instant types' 90 minutes (owner F9, 7 Nov; was 120). */
 export const MIN_CONFIRM_WINDOW_MIN = 90;
+/**
+ * The shortest for a gift card profile only (a catalog method in "Gift cards & vouchers"): owner
+ * G50, "the person holding the escrow has 45 minutes to check a card". Every other profile keeps 90.
+ */
+export const MIN_GIFT_CARD_CONFIRM_WINDOW_MIN = 45;
 
 const DATA = new URL('../../../../data/', import.meta.url);
 const ARRIVALS = ['instant', 'same-day', 'days'] as const;
@@ -103,13 +108,14 @@ export function loadProfiles(raw: unknown, methods: readonly CatalogMethod[]): M
     if (landsIn.toLowerCase().includes(method.name.toLowerCase())) throw bad(file, `${p.id}: landsIn must not name the method`);
     const arr = ARRIVALS.find((a) => a === arrival);
     if (!arr) throw bad(file, `${p.id}: arrival`);
+    const minWindow = method.giftCard ? MIN_GIFT_CARD_CONFIRM_WINDOW_MIN : MIN_CONFIRM_WINDOW_MIN;
     if (
       typeof confirmWindowMin !== 'number' ||
       !Number.isInteger(confirmWindowMin) ||
-      confirmWindowMin < MIN_CONFIRM_WINDOW_MIN ||
+      confirmWindowMin < minWindow ||
       confirmWindowMin > MAX_CONFIRM_WINDOW_MIN
     ) {
-      throw bad(file, `${p.id}: confirmWindowMin must be ${MIN_CONFIRM_WINDOW_MIN}-${MAX_CONFIRM_WINDOW_MIN}`);
+      throw bad(file, `${p.id}: confirmWindowMin must be ${minWindow}-${MAX_CONFIRM_WINDOW_MIN}`);
     }
     if (!Array.isArray(fields) || fields.length === 0) throw bad(file, `${p.id}: fields`);
     const outFields = fields.map((f: unknown) => {

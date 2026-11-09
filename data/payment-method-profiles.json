@@ -1,5 +1,5 @@
 {
- "note": "X2F payment method profiles (spec 2.6). Each profile drives all copy about its method: what it is, where the money lands (this fills every \"check your ...\" prompt, so it never names the method itself), the typical arrival time and the seller's confirmation window, which is also the buyer's wait before a dispute (owner F9, 7 Nov: 90 min for instant types, 24 h same or next day, 48 h to 4 days for slow types; per type from the approved F1 table) and the matching fields. Ids are catalog ids from data/payment-methods.json. Launch set (spec 11.5, Plan 3 Task 3); wording to be checked by the owner. The ten common types after Custom were added by owner 2026-11-07 F9 (F1 table).",
+ "note": "X2F payment method profiles (spec 2.6). Each profile drives all copy about its method: what it is, where the money lands (this fills every \"check your ...\" prompt, so it never names the method itself), the typical arrival time and the seller's confirmation window, which is also the buyer's wait before a dispute (owner F9, 7 Nov: 90 min for instant types, 45 min for gift cards (owner G50), 24 h same or next day, 48 h to 4 days for slow types; per type from the approved F1 table) and the matching fields. Ids are catalog ids from data/payment-methods.json. Launch set (spec 11.5, Plan 3 Task 3); wording to be checked by the owner. The ten common types after Custom were added by owner 2026-11-07 F9 (F1 table).",
  "profiles": [
   {
    "id": "ZELLE",
@@ -212,7 +212,7 @@
    "landsIn": "the card's code, checked on the issuer's website or app",
    "checkPrompt": "Check the card's balance on the issuer's website or app, or redeem it, before you release.",
    "arrival": "instant",
-   "confirmWindowMin": 90,
+   "confirmWindowMin": 45,
    "fields": [
     { "key": "card", "label": "Card brand and country you accept", "kind": "text" }
    ]

@@ -43,7 +43,7 @@ describe('method profiles', () => {
     expect(zelle.confirmWindowMin).toBe(90);
     expect(zelle.arrival).toBe('instant');
     for (const p of PROFILES) {
-      expect(p.confirmWindowMin, p.id).toBeGreaterThanOrEqual(90);
+      expect(p.confirmWindowMin, p.id).toBeGreaterThanOrEqual(isGiftCard(p.id) ? 45 : 90);
       expect(p.confirmWindowMin, p.id).toBeLessThanOrEqual(5760);
     }
   });
@@ -54,7 +54,9 @@ describe('method profiles', () => {
     const table: Record<string, number> = {
       // Instant: 90 minutes (owner F9, replacing the research's 30 min-1 h).
       ZELLE: 90, INTERAC_E_TRANSFER: 90, SEPA_INSTANT: 90, PAYPAL: 90, CASH_APP: 90,
-      VENMO: 90, REVOLUT: 90, PIX: 90, UPI: 90, OTHER_GIFT_CARD: 90,
+      VENMO: 90, REVOLUT: 90, PIX: 90, UPI: 90,
+      // Gift cards: 45 minutes to check a card (owner G50).
+      OTHER_GIFT_CARD: 45,
       FASTER_PAYMENTS: 3 * H,
       // Same or next day: 24 h.
       SEPA: D, DOMESTIC_WIRE_TRANSFER: D, TRANSFERWISE: D, CUSTOM: D,
@@ -77,9 +79,18 @@ describe('method profiles', () => {
     const load = (p: Record<string, unknown>) => () => loadProfiles({ profiles: [{ ...base, ...p }] }, catalog());
     expect(load({ confirmWindowMin: 5760 })).not.toThrow();
     expect(load({ confirmWindowMin: 90 })).not.toThrow();
-    for (const bad of [{ confirmWindowMin: 5761 }, { confirmWindowMin: 89 }, {}, { confirmWindowMin: 90.5 }]) {
+    for (const bad of [{ confirmWindowMin: 5761 }, { confirmWindowMin: 89 }, { confirmWindowMin: 45 }, {}, { confirmWindowMin: 90.5 }]) {
       expect(load(bad), JSON.stringify(bad)).toThrow(/confirmWindowMin/);
     }
+  });
+
+  it('a gift card profile may go down to 45 minutes (owner G50), and no lower; only gift cards (the rest keep 90)', () => {
+    const card = { id: 'OTHER_GIFT_CARD', whatItIs: 'x', landsIn: 'the card balance', checkPrompt: 'Check it.', arrival: 'instant', fields: [{ key: 'k', label: 'L', kind: 'text' }] };
+    const load = (p: Record<string, unknown>) => () => loadProfiles({ profiles: [{ ...card, ...p }] }, catalog());
+    expect(load({ confirmWindowMin: 45 })).not.toThrow();
+    expect(load({ confirmWindowMin: 44 })).toThrow(/confirmWindowMin must be 45-5760/);
+    expect(getProfile('OTHER_GIFT_CARD')!.confirmWindowMin).toBe(45);
+    for (const id of ['AMAZON_GIFT_CARD', 'STEAM_GIFT_CARD']) expect(tradeProfile(id).confirmWindowMin, id).toBe(45);
   });
 
   it('has no profile for an unknown method', () => {
