@@ -258,46 +258,21 @@
 
 
 
-/* The margin stepper: a 12 px surface-raised well inside the Your price card. */
-.post-margin {
+/* The margin's percentage box (owner F1, 7 Nov: typed, above or below): the "%" inside its right edge. */
+.post-margin-box input {
+  padding-right: 40px;
+}
+
+.post-margin-unit {
+  position: absolute;
+  top: 0;
+  right: 14px;
+  bottom: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
-  border-radius: var(--x2f-radius-md);
-  background: var(--x2f-surface-raised);
-}
-
-.post-margin .post-big {
-  font-size: 40px;
-  line-height: 44px;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-}
-
-.post-margin .post-muted {
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.post-margin-value {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.post-step {
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--x2f-radius-pill);
-  border: 1px solid var(--x2f-line);
-  background: transparent;
-  color: var(--x2f-ink);
-  font-size: 22px;
-  cursor: pointer;
+  font-family: var(--x2f-font-mono);
+  color: var(--x2f-ink-muted);
+  pointer-events: none;
 }
 
 .post-mono {
@@ -324,19 +299,6 @@
 
 .post-ink {
   color: var(--x2f-ink);
-}
-
-.post-caution {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--x2f-space-2);
-  font-size: 15px;
-  line-height: 20px;
-  color: var(--x2f-caution);
-}
-
-.post-caution svg {
-  flex-shrink: 0;
 }
 
 .post-giftcard {

@@ -132,7 +132,7 @@ export interface TakeRequest {
   walletId: string;
   /**
    * The quoted rate. It only detects a move: the server always locks its own rate now and refuses
-   * 409 `price-changed` when that differs from this by more than 0.5% (a fixed price: at all).
+   * 409 `price-changed` when that differs from this by more than 0.5%.
    */
   centsPerXmr: bigint;
   /** The quoted total, fiatCents(amountAtomic, centsPerXmr), as shown (OD-5). */

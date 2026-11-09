@@ -1,5 +1,6 @@
-// PostOffer (Task 21), board design/x2f-app/PostOffer.dc.html. Price is Market ± % (the default)
-// or Fixed price per XMR (spec 2.2 step 5); every price shows its US-dollar value in another
+// PostOffer (Task 21), board design/x2f-app/PostOffer.dc.html. Price is always the market ± %: the
+// vendor picks above or below and types the percentage, at most 50% (owner Q1, 6 Nov: no fixed-price
+// offers; F1, 7 Nov, over the board's ±10% stepper); every price shows its US-dollar value in another
 // currency (spec 11.6); the minimum completed trades is shown openly in the preview (spec 2.3).
 // The form is kept in sessionStorage, so a signed-out poster (sent to setup) or one with no
 // wallet (sent to Add a wallet by the API client) comes back to it filled in.
@@ -18,8 +19,8 @@ import { MY_OFFERS_PATH } from './myoffers/model.js';
 import {
   DEFAULT_FORM,
   FEE_SENTENCE,
-  FIXED_STALE_WARNING,
   GIFT_CARD_WARNING,
+  MARGIN_SIDES,
   METHODS_FAILED,
   MIN_TRADES_OPTIONS,
   POST_CURRENCIES,
@@ -27,13 +28,12 @@ import {
   UNIT_HELP,
   afterPostPath,
   clearDraft,
-  fixedPriceCheck,
   formatMoney,
   formatPrice,
   loadDraft,
+  marginBpsOf,
   marginText,
   marginWord,
-  parseAmount,
   parseRangeAmount,
   previewLine,
   priceWithMargin,
@@ -41,13 +41,11 @@ import {
   postCantDo,
   refusalText,
   saveDraft,
-  stepMargin,
   switchUnit,
   usdValue,
   validate,
   type FieldError,
   type FormState,
-  type PriceMode,
 } from './post/offerForm.js';
 import './post/PostOffer.css';
 import { accountTypeOf } from '../session/member.js';
@@ -61,10 +59,6 @@ const PRICE_REFRESH_MS = 60_000;
 const SIDES: readonly { id: Side; label: string }[] = [
   { id: 'sell', label: 'Sell XMR' },
   { id: 'buy', label: 'Buy XMR' },
-];
-const MODES: readonly { id: PriceMode; label: string }[] = [
-  { id: 'market', label: 'Market ± %' },
-  { id: 'fixed', label: 'Fixed price per XMR' },
 ];
 
 function storage(): Storage | null {
@@ -172,7 +166,7 @@ function PostOfferForm() {
     setRefusal(null);
     setCantDo(null);
   };
-  const text = (key: 'min' | 'max' | 'fixed' | 'terms') => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set(key, e.target.value);
+  const text = (key: 'min' | 'max' | 'marginPct' | 'terms') => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set(key, e.target.value);
   // One unit per offer (lead default, 8 Nov): either box's switch swaps both, converting what is typed
   // at your price, or clearing it with no price (review H1: a typed number never changes unit).
   const changeUnit = (u: FormState['unit']) => {
@@ -186,7 +180,7 @@ function PostOfferForm() {
   const otherLine = (raw: string) => {
     const v = parseRangeAmount(raw, form.unit);
     if (v === null || v === 0n || yourPrice === null) return null;
-    const at = form.priceMode === 'market' ? `at your price (${marginText(form.marginBps)})` : 'at your price';
+    const at = marginBps === null ? 'at your price' : `at your price (${marginText(marginBps)})`;
     return (
       <span className="post-muted post-other-unit" data-part="other-unit">
         {`${otherUnit(v, form.unit, form.currency, { currency: form.currency, centsPerXmr: yourPrice })} ${at}`}
@@ -195,16 +189,9 @@ function PostOfferForm() {
   };
 
   const market = quote ? quote.centsPerXmr : null;
-  const fixedCents = useMemo(() => {
-    const p = parseAmount(form.fixed);
-    return p !== null && p > 0n ? p : null;
-  }, [form.fixed]);
-  const yourPrice = useMemo(() => {
-    if (form.priceMode === 'fixed') return fixedCents;
-    return market === null ? null : priceWithMargin(market, form.marginBps);
-  }, [form.priceMode, fixedCents, form.marginBps, market]);
-  // The fixed price against the market: a caution line from 10% off; from 50% off, Post offer refuses it.
-  const sanity = form.priceMode === 'fixed' && fixedCents !== null && market !== null && market > 0n ? fixedPriceCheck(fixedCents, market, form.currency) : null;
+  // The typed margin in basis points, or null while the box is not a percentage from 0 to 50.
+  const marginBps = marginBpsOf(form);
+  const yourPrice = useMemo(() => (market === null || marginBps === null ? null : priceWithMargin(market, marginBps)), [marginBps, market]);
   const nonUsd = form.currency !== 'USD';
   const usd = (cents: bigint) => (quote && nonUsd ? formatPrice(usdValue(cents, quote), 'USD') : null);
 
@@ -219,7 +206,7 @@ function PostOfferForm() {
   const giftCard = method?.giftCard === true;
 
   async function submit(): Promise<void> {
-    const r = validate(form, { giftCard, market });
+    const r = validate(form, { giftCard });
     setErrors(r.errors);
     setRefusal(null);
     setCantDo(null);
@@ -349,33 +336,32 @@ function PostOfferForm() {
           <span className="x2f-section-title" id={`${ids}-price`}>
             Your price
           </span>
+          {/* Owner F1: above or below the market, then the percentage typed in, 0 to 50. */}
           <RadioChips
             label={{ by: `${ids}-price` }}
-            options={MODES}
-            value={form.priceMode}
-            onChange={(v) => set('priceMode', v)}
+            options={MARGIN_SIDES}
+            value={form.marginSide}
+            onChange={(v) => set('marginSide', v)}
             className="post-two post-choices post-choices--small"
           />
-          {form.priceMode === 'market' ? (
-            <div className="post-margin">
-              <button type="button" aria-label="Lower margin by 0.1%" className="post-step" onClick={() => set('marginBps', stepMargin(form.marginBps, -1))}>
-                −
-              </button>
-              <div className="post-margin-value">
-                <span className="post-mono post-big">{marginText(form.marginBps)}</span>
-                <span className="post-muted">{marginWord(form.marginBps)}</span>
+          {/* DESIGN: wording. COPY-UNSIGNED: "Percentage". */}
+          {field(
+            'margin',
+            'Percentage',
+            <>
+              <div className="post-amount post-margin-box">
+                <input id="margin" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.marginPct} onChange={text('marginPct')} {...invalid('margin')} />
+                <span className="post-margin-unit" aria-hidden="true">
+                  %
+                </span>
               </div>
-              <button type="button" aria-label="Raise margin by 0.1%" className="post-step" onClick={() => set('marginBps', stepMargin(form.marginBps, 1))}>
-                +
-              </button>
-            </div>
-          ) : (
-            field(
-              'fixed',
-              'Your price per XMR',
-              <input id="fixed" type="text" inputMode="decimal" autoComplete="off" value={form.fixed} onChange={text('fixed')} {...invalid('fixed')} />,
-              'fixed',
-            )
+              {marginBps !== null ? (
+                <span className="post-muted" data-part="margin-reads">
+                  <span className="post-mono post-ink">{marginText(marginBps)}</span> <span>{marginWord(marginBps)}</span>
+                </span>
+              ) : null}
+            </>,
+            'margin',
           )}
           {market === null || quote === undefined ? (
             <span className="post-note">{quote === undefined ? '' : PRICE_UNAVAILABLE}</span>
@@ -383,7 +369,7 @@ function PostOfferForm() {
             <span className="post-note">
               Market {formatPrice(market, form.currency)}
               {quote && nonUsd ? ` (about ${formatMoney(usdValue(market, quote), 'USD')})` : ''} right now.
-              {form.priceMode === 'market' && yourPrice !== null ? (
+              {yourPrice !== null ? (
                 <>
                   {' '}
                   Your price follows the market, so it's always <span className="post-ink">{formatPrice(yourPrice, form.currency)}</span> at today's rate.
@@ -394,18 +380,6 @@ function PostOfferForm() {
           {quote && marketUpdated(quote.at) !== null ? (
             <span className="post-note" data-part="market-updated">
               {marketUpdated(quote.at)}
-            </span>
-          ) : null}
-          {form.priceMode === 'fixed' ? (
-            <span className="post-caution">
-              <Icon name="alert" size={20} />
-              {FIXED_STALE_WARNING}
-            </span>
-          ) : null}
-          {sanity?.kind === 'caution' ? (
-            <span className="post-caution">
-              <Icon name="alert" size={20} />
-              {sanity.text}
             </span>
           ) : null}
         </section>
@@ -475,7 +449,8 @@ function PostOfferForm() {
             <span className="post-muted">{previewLine(form.side, method?.name ?? 'your method', form.currency, form.minTrades)}</span>
             <div className="post-preview-row">
               <span className="post-preview-price">
-                <span className="post-mono post-big">{yourPrice !== null ? formatPrice(yourPrice, form.currency) : form.priceMode === 'fixed' ? 'Set your price' : PRICE_UNAVAILABLE}</span>
+                {/* DESIGN: wording. COPY-UNSIGNED: "Set your percentage" (while the percentage box is not 0 to 50). */}
+                <span className="post-mono post-big">{yourPrice !== null ? formatPrice(yourPrice, form.currency) : marginBps === null ? 'Set your percentage' : PRICE_UNAVAILABLE}</span>
                 {yourPrice !== null && usd(yourPrice) ? <span className="post-muted">{`about ${usd(yourPrice)}`}</span> : null}
               </span>
               <span className="post-preview-range">

@@ -122,11 +122,12 @@ test.describe('/buy/:methodId (BuyOffers board)', () => {
     await expect.poll(() => seen.requests.some((r) => /\/v1\/offers\?.*sort=online/.test(r.url()))).toBe(true);
   });
 
-  test('a fixed-price offer shows its difference from the market price', async ({ page }) => {
+  test("an offer's markup is its percentage over the market (owner Q1: no fixed-price offers)", async ({ page }) => {
     await stub(page);
     await page.goto('/buy/ZELLE');
     const satoshi = page.locator('article', { has: page.locator('[data-username]', { hasText: 'satoshi_ghost' }) });
-    await expect(satoshi.locator('[data-part="markup"]')).toHaveText('+$0.10Vendor markup');
+    await expect(satoshi.locator('[data-part="markup"]')).toHaveText('+0.03%Vendor markup');
+    await expect(page.getByText(/fixed price/i)).toHaveCount(0);
   });
 
   test('starter limits on the buy side: greyed "Opens at …" cards, New from the API stage', async ({ page }) => {
