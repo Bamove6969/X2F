@@ -241,3 +241,148 @@ because `effectiveAbilities` filters them through `GRANTABLE`. That is acceptabl
   through the dispute chat, which stays owner-only (C-019). Recommend the catalogue `does` text
   says "see" until a member chat key path exists, or mark the box `waits-member-chat-key` for its
   reply half.
+
+## Re-verify port 89c11fa2 (wip/lead-team-perms-port, 2026-11-09)
+
+Reviewer: independent security re-verifier (read-only on code). Branch `wip/lead-team-perms-port`,
+worktree `.claude/worktrees/team-perms-port`, head `89c11fa2` = merge `09e41651` (f611f666 onto
+hold-v3-port f00a102a) + `06a8ca97` RED + `16e0f7b0` M1 fix + `6bad9061` M2 fix + `89c11fa2` minors
+m1-m4 (the four shas were rewritten committer-only after the builder's report; trees identical,
+`git diff 2144abbc 89c11fa2` empty). Tests through the serialised runner, single files, after the
+container restart (Docker back up).
+
+### Verdict
+
+**The security content of the port is right: approve M1, M2, m1-m4 and every conflict resolution.
+One merge-completeness blocker before landing (P1): the by-hand merge did not carry hold-v3's test
+suite and front-door contract over to the team-perms and signup-team routes.** `frontDoor.test.ts`
+fails 5/19 on head and passes 19/19 on f00a102a; five hold-v3 test files still insert the dropped
+`team_members.roles` column. No runtime hole: every unrecorded route is session-guarded by a box or
+is the already-reviewed signup tick, and the tests fail closed. The two offers.test.ts failures are
+pre-existing on f00a102a (reproduced on a clean export) and main's a3f00500 clears both.
+
+### Tests run (runner, one file at a time)
+
+| File | head 89c11fa2 | f00a102a (clean `git archive` export, same node_modules) |
+|---|---|---|
+| apps/api/test/teamAbilities.test.ts | 14/14 | |
+| apps/api/test/team.test.ts | 70/70 | |
+| apps/api/test/holdV3.test.ts | 45/45 | |
+| apps/api/test/schema.test.ts | 74/74 | |
+| packages/accounts/test/confirmAction.test.ts | 27/27 | |
+| `tsc -p apps/api --noEmit` | clean | |
+| apps/api/test/recovery.test.ts | 19/19 | |
+| apps/api/test/coolingOff.test.ts | 89/89 | |
+| apps/api/test/frontDoor.test.ts | **14/19, 5 failed** | 19/19 |
+| apps/api/test/offers.test.ts | 32/34, 2 failed | 32/34, the same 2 |
+| apps/api/test/vendor.test.ts | **13/15, 2 failed** (roles column) | not run |
+| apps/api/test/banList.test.ts | **20/26, 6 failed** | 21/26, 5 failed (same 5) |
+
+### The six checks
+
+1. **Conflict resolutions (`git show --remerge-diff 09e41651`): both sides' security behaviour kept.**
+   - `recovery.ts`: hold-v3's code is the one that ships; `git diff f00a102a HEAD` on it is comments
+     and the unused `TOTP_BACKUP_DAILY` only. `kind: 'totp'` is 403 `method-not-allowed` before any
+     lookup; the recovery code is spent inside `backupSession`'s transaction (hold-v3's signature with
+     `codeId`), `RECOVERY_CODE_COUNT = 1`. `recovery.test.ts` and `coolingOff.test.ts` at head are
+     byte-identical to f00a102a (team-perms' pre-v3 versions of the same tests, 10 codes and a 400,
+     were superseded, not weakened).
+   - `routes/team.ts`: invites keep `requireVendor` + `requireNotHeld` + `requireStrongSession` before
+     `requireConfirm` (weak login 403 before a token is spent); PATCH keeps `requireVendor`, no
+     `requireStrongSession`, and the v3 staging branch. `setAbilities` runs `ownerWriteGate(strong:
+     true)` under the account lock (strength, hold and vendor re-checked), so a strength flip between
+     the pre-read and the lock fails closed (403), never writes.
+   - `members.ts`: `openInvite`/`inviteView` never name the team (review 2026-11-08 F3, hold-v3's);
+     `updateAbilities` closes the member's streams on losing `trades-see-active`.
+   - `sessions.ts`: hold-v3's row (`prev_until`, `member_terms_version`) with `tm.abilities`;
+     `requireSession` still 401s a non-live member, 403 `account-disabled` a disabled member login,
+     403 `owner-only` when a route names no `member`, and `hasAbility` for the rest.
+   - `audit.ts`: `ACTION_ABILITY` carries hold-v3's two actions (`hold-cancel`, `hold-end`);
+     `final-alert-seen` and its route are gone (owner p6-1, hold-v3's); `assertLiveMember` re-checks
+     the box live in the action's transaction.
+   - `frontDoor.ts` is unchanged from f00a102a (the own-data lists hold-v3 added are intact); see P1
+     for what the merge did not add to them.
+   - `team.test.ts` resolutions: D-066 (member 403 `owner-only` on opening a dispute, the lead opens
+     it) kept together with hold-v3's confirm-window timing; the route scan drops
+     `final-alert-seen` and keeps `POST /v1/trades/:code/dispute`.
+2. **M1.** Migration 360 adds exactly `hold-see → {hold-see}`, `hold-cancel → {hold-see,hold-cancel}`,
+   `hold-end → {hold-see,hold-cancel,hold-end}` to the `array(... order by a)` update; nothing else
+   changes in the mapping, so nobody is widened (a hold-only member gets the closed set, never an
+   empty one; test at team.test.ts:1554 runs the real UPDATE on a stand-in table). `ROLE_ABILITIES`
+   agrees. `effectiveAbilities`: for a stored id `h = HOLD_RIGHTS.indexOf(id)`, adds
+   `HOLD_RIGHTS.slice(0, max(h, 0))`: `hold-see` adds nothing, `hold-cancel` adds `hold-see`,
+   `hold-end` adds both; a non-hold id adds nothing; a non-grantable id is skipped first. That is the
+   documented inclusion and nothing else; `hold-end` is only ever present when stored. It is in no
+   preset (rows 46-48 are 0/0/0 in offers/trades/start), not in `ROLE_ABILITIES` except for the
+   `hold-end` role itself, `risk: 'high'`, `grantable` (the review's Q4 recommendation; the owner's
+   re-confirm is p11-92). `parseRoles`/`TEAM_ROLES` and `actionInput`'s `TEAM_ROLES` validator share
+   one five-role order, so the `team-roles` confirm matches hold-v3's. PATCH: both body shapes are
+   reduced to `abilities` before the one strength branch, so a weak `{ abilities }` and a weak
+   `{ roles }` both stage `{ kind: 'team-abilities', abilities }` under `gateChange` (live session,
+   hold, onboarding, vendor and live member re-checked under the lock); inside the sign-up window
+   `gateChange` returns null → 403 `weak-session`. `applyAbilities` runs `parseAbilities` at apply
+   time: a box that became owner-only or unknown drops the change (alert `dropped`, member keeps
+   their set; tested). `NAMES_MEMBER`/`refuseNamingMember` include `team-abilities`. The old
+   `team-roles` PendingChange stays applicable via `rolesToAbilities` and is never staged again.
+   Hold routes: `GET /v1/account/hold` `member: 'any'` with `holdRightOf(memberAbilities)` (now
+   through `effectiveAbilities`); approve `member: 'hold-end'` plus `weakOf` under the lock; cancel
+   `member: 'hold-cancel'`. A member stored with `hold-end` alone passes see and cancel (tested).
+3. **m1/m2.** `POST /v1/trades/:code/events`: `assertMemberMaySend`, then `eventAbility(type)`
+   (400 `event-not-allowed` for an event with no box, no `!`, `EVENT_ABILITY` typed over
+   `Exclude<CLIENT_EVENTS, 'open-dispute'>` so a new client event cannot compile without one; pinned
+   at team.test.ts:728), then `assertMemberMay(TRADE_READ)`: a member with `trades-mark-paid` and no
+   read box is 403 with no audit row; with `trades-see-active` it works (tested).
+4. **m4.** `POST /v1/account/notes` counts and inserts inside one transaction after
+   `requireLiveSessionInTx`, which takes `select ... from accounts where id = $1 for no key update`
+   (`lockAccount`) first; two concurrent adds for one account serialise on that row, so the count
+   cannot pass 500. 409 `too-many-notes { max }` for the lead and for a `notes-add` member, no
+   audit row (tested).
+5. **team.test.ts by-hand merge: nothing weakened.** Every `it` of f00a102a is at head (three renamed
+   when the dispute test merged and "role" became "box"). Of f611f666's, two 403 `weak-session`
+   PATCH tests are replaced by hold-v3's 202 staging tests (owner 2 Nov 2026) and the new M1 tests,
+   which assert nothing is written until 24 h after submission; `pgp-single` left the `weaken`
+   helper because migration 016 made that strength `strong` (strength.ts: it no longer exists). The
+   invite tests still assert 403 `weak-session` with no token spent.
+6. **offers.test.ts: pre-existing and main clears it.** On a clean `git archive f00a102a` export the
+   same two tests fail (`minimum completed trades ...`: the front door answers an anonymous
+   `GET /v1/offers/:id` with 401, so `one.minTrades` is undefined; `only the poster can pause ...`:
+   that failure leaves an AUD offer unremoved and the next test's list has 2). `offers.test.ts` is
+   byte-identical between f00a102a and head; the branch's `offers/routes.ts` changes are the boxes
+   and the M2 audit detail only. Main 58f3d186's a3f00500 changes exactly that read to `viewer.get`
+   (a line head has unchanged, so no conflict), which fixes the first and, with it, the cascade.
+
+### Findings
+
+**P1 (Major, merge completeness; fix before landing).** Hold-v3's front-door contract (review
+2026-11-08 F2: every session-guarded route is behind `requireInside` or recorded in
+`OWN_DATA_READS`/`OWN_DATA_WRITES` with its reason; every unguarded route in `PUBLIC_ROUTES`) was
+not applied to the routes that arrived with the merge, and five hold-v3 tests still write the
+dropped `roles` column:
+- `frontDoor.test.ts` (5 failed on head, 19/19 on f00a102a): `POST /v1/register/name-check`
+  (signup-team's username tick) is not in `PUBLIC_ROUTES`; `GET /v1/account/notes/:displayName` and
+  `GET /v1/team/permissions` are not in `OWN_DATA_READS` (the writes assertion is masked by that one;
+  `POST /v1/account/notes` and `DELETE /v1/account/notes/:id` are not in `OWN_DATA_WRITES` either);
+  the `memberOn` helper inserts `roles`.
+- `vendor.test.ts` (2), `banList.test.ts` (1, owner G27 team ban), `accountInactivity.test.ts:77`,
+  `sessionLength.test.ts:431,554`: `insert into team_members (... roles ...)` → "column roles does
+  not exist". (`accountInactivity` and `sessionLength` not run; the SQL is the same.)
+Runtime: no hole. The notes routes are `member: 'notes-view'` / `'notes-add'` / owner-only delete,
+the catalogue is `member: 'any'` static data, `name-check` is the rate-limited tick reviewed on
+signup-team. The fix is test-side plus five entries with reasons in frontDoor.ts (engineering, no
+owner question). Recommend the lead also runs the whole `apps/api` project once before landing,
+since the team-perms review and this one ran single files and the breakage lives in files neither
+job named.
+
+**P2 (Note).** offers.test.ts: see check 6; pre-existing on f00a102a, cleared by main's a3f00500.
+
+**P3 (Note).** banList.test.ts has 5 pre-existing failures on f00a102a (the PGP subkey cases answer
+400 `bad-request`), unrelated to this branch; head adds one (P1).
+
+**P4 (Open, unchanged).** M3 (the PGP confirm text for a boxes change shows only a count) is still as
+reviewed; the staged-change view now names the boxes (`abilityLabels`), the confirm does not. Q4
+(`hold-end` grantable, high risk) is built as recommended and awaits the owner's re-confirm
+(page 11, p11-92/p11-93).
+
+**P5 (Nit, good).** `legacyRoles` now lists the hold rights, so a re-save through the old
+RolePicker's `{ roles }` keeps a member's hold boxes rather than dropping them; m3's `custom` flag
+covers the rest.
