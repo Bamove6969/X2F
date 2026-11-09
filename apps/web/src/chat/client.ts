@@ -2,6 +2,7 @@
  * The page's handle on the chat engine in the escrow worker (Task 20), and the two plain API calls
  * the page makes itself: opening a chat on an offer, and finding a trade's chat.
  */
+import type { PayDetailsPayload } from '@x2f/trade';
 import { api } from '../api/client.js';
 import { escrowWorker } from '../escrow/useEscrow.js';
 import type { ChatSnapshot } from './engine.js';
@@ -20,6 +21,8 @@ export class ChatFailed extends Error {
 export interface ChatClient {
   sync(chat: string): Promise<ChatSnapshot>;
   send(chat: string, text: string): Promise<ChatSnapshot>;
+  /** The payee's packaged payment details (J-08): sealed in the worker like any line. */
+  sendPay(chat: string, pay: PayDetailsPayload): Promise<ChatSnapshot>;
 }
 
 /** A ChatClient over a worker speaking serve.ts's protocol. */
@@ -44,6 +47,7 @@ export function workerChatClient(w: Pick<Worker, 'postMessage' | 'addEventListen
   return {
     sync: (chat) => ask({ t: 'chat-sync', chat }),
     send: (chat, text) => ask({ t: 'chat-send', chat, text } as Omit<ToChatWorker, 'id'>),
+    sendPay: (chat, pay) => ask({ t: 'chat-send-pay', chat, pay } as Omit<ToChatWorker, 'id'>),
   };
 }
 

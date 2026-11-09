@@ -97,6 +97,26 @@ export {
   type ChatRetentionFacts,
 } from './chat.js';
 export {
+  PAY_DETAILS_TITLE,
+  PAY_DETAILS_V,
+  PAY_FIELD_MAX_CHARS,
+  PAY_FIELDS,
+  PAY_FIELDS_FALLBACK,
+  PAY_POSTAL_MAX_LINES,
+  PayDetailsError,
+  checkPayDetails,
+  parsePayDetails,
+  payFieldsFor,
+  renderPayDetailsText,
+  type PayDetailField,
+  type PayDetailsErrorCode,
+  type PayDetailsPayload,
+  type PayFieldKind,
+  type PayFieldNeed,
+  type PayFieldSpec,
+  type PayFieldsSpec,
+} from './payFields.js';
+export {
   AMOUNT_UNITS,
   displayRate,
   rangeAllows,

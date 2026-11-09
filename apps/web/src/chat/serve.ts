@@ -3,11 +3,16 @@
  * and `chat-send`; the worker answers with a ChatSnapshot of verified plain lines, or an error code.
  * No key, ciphertext or ChatState ever crosses postMessage.
  */
+import { PayDetailsError, parsePayDetails } from '@x2f/trade';
 import { ChatSendFailed, type ChatEngine, type ChatSnapshot } from './engine.js';
 
-export type ToChatWorker = { t: 'chat-sync'; id: number; chat: string } | { t: 'chat-send'; id: number; chat: string; text: string };
+export type ToChatWorker =
+  | { t: 'chat-sync'; id: number; chat: string }
+  | { t: 'chat-send'; id: number; chat: string; text: string }
+  /** The payee's packaged payment details (J-08): the page sends the boxes, the worker seals them. */
+  | { t: 'chat-send-pay'; id: number; chat: string; pay: unknown };
 
-export type ChatFailure = 'not-ready' | 'bad-text' | 'too-large' | 'slow-down' | 'refused' | 'unavailable' | 'not-found';
+export type ChatFailure = 'not-ready' | 'bad-text' | 'bad-details' | 'too-large' | 'slow-down' | 'refused' | 'unavailable' | 'not-found';
 
 export type FromChatWorker = { t: 'chat'; id: number; ok: true; snapshot: ChatSnapshot } | { t: 'chat'; id: number; ok: false; error: ChatFailure };
 
@@ -20,6 +25,7 @@ const CODE = /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/;
 
 function failure(e: unknown): ChatFailure {
   if (e instanceof ChatSendFailed) return e.code;
+  if (e instanceof PayDetailsError) return 'bad-details';
   const status = (e as { status?: unknown })?.status;
   // 410 chat-purged (the engine has erased the device's copy) shows as the closed chat, like a 404.
   if (status === 404 || status === 410) return 'not-found';
@@ -60,7 +66,7 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
   let engine: Promise<ChatEngine> | null = make();
   port.addEventListener('message', (e) => {
     const m = e.data as Partial<ToChatWorker> | null;
-    if (typeof m !== 'object' || m === null || (m.t !== 'chat-sync' && m.t !== 'chat-send') || typeof m.id !== 'number') return;
+    if (typeof m !== 'object' || m === null || (m.t !== 'chat-sync' && m.t !== 'chat-send' && m.t !== 'chat-send-pay') || typeof m.id !== 'number') return;
     const id = m.id;
     void (async () => {
       try {
@@ -72,6 +78,9 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
         if (m.t === 'chat-send') {
           if (typeof m.text !== 'string') throw new ChatSendFailed('bad-text');
           snapshot = await eng.send(m.chat, m.text);
+        } else if (m.t === 'chat-send-pay') {
+          // Checked here so that nothing but a well-formed package reaches the engine.
+          snapshot = await eng.sendPay(m.chat, parsePayDetails(m.pay));
         } else {
           snapshot = await eng.sync(m.chat);
         }

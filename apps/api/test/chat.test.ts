@@ -22,7 +22,7 @@ import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
-import { seedTrade } from './helpers/trades.js';
+import { driveTo, seedTrade } from './helpers/trades.js';
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -222,7 +222,7 @@ describe('GET /v1/chats/:chat', () => {
     const res = await o.taker.b.get(`/v1/chats/${o.chat}`);
     expect(res.statusCode).toBe(200);
     const body = res.json() as Record<string, unknown>;
-    expect(body).toMatchObject({ chat: o.chat, role: 'buyer', offerId: o.offerId, tradeCode: null, disputeOpen: false, attested: false, mySignPublic: null });
+    expect(body).toMatchObject({ chat: o.chat, role: 'buyer', offerId: o.offerId, tradeCode: null, disputeOpen: false, tradeSecuredAt: null, attested: false, mySignPublic: null });
     expect((body.counterparty as { displayName: string }).displayName).toMatch(/^Dchl/);
     expect(JSON.stringify(body)).not.toContain(`"chl`);
     const stranger = await trader();
@@ -231,6 +231,27 @@ describe('GET /v1/chats/:chat', () => {
     const unknown = await stranger.b.get(`/v1/chats/${newTradeCode()}`);
     expect(unknown.statusCode).toBe(404);
     expect(miss.json()).toEqual(unknown.json());
+  });
+
+  it("review M8 (pay details): a chat linked to a secured trade carries that trade's secured_at, the same for both parties; a stranger still gets 404", async () => {
+    const o = await openChat();
+    const { trade } = await seedTrade(deps, { sellerId: o.poster.id, buyerId: o.taker.id, poster: 'seller', offerId: o.offerId });
+    expect((await o.taker.b.post(`/v1/trades/${trade.code}/chat`, {})).json()).toEqual({ chat: o.chat, role: 'buyer' });
+    // Linked, not yet secured: still null.
+    const linked = (await o.taker.b.get(`/v1/chats/${o.chat}`)).json() as { tradeCode: string; tradeSecuredAt: string | null };
+    expect(linked).toMatchObject({ tradeCode: trade.code, tradeSecuredAt: null });
+    await driveTo(deps, trade, 'secured');
+    const { rows } = await deps.db.query<{ secured_at: Date | null }>('select secured_at from trades where code = $1', [trade.code]);
+    const at = rows[0]!.secured_at!.toISOString();
+    expect(at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const buyer = (await o.taker.b.get(`/v1/chats/${o.chat}`)).json() as { tradeSecuredAt: string | null };
+    const seller = (await o.poster.b.get(`/v1/chats/${o.chat}`)).json() as { tradeSecuredAt: string | null };
+    expect(buyer.tradeSecuredAt).toBe(at);
+    expect(seller.tradeSecuredAt).toBe(at);
+    const stranger = await trader();
+    const miss = await stranger.b.get(`/v1/chats/${o.chat}`);
+    expect(miss.statusCode).toBe(404);
+    expect(miss.body).not.toContain(at.slice(0, 10));
   });
 
   it("hides the other side's online status from a trader they blocked (review M5: presence through the viewer-aware summary)", async () => {

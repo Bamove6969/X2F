@@ -23,11 +23,17 @@ const CHATS = 'chats';
 const KEYS = 'keys';
 const KEY_ID = 'wrap';
 
-/** One line this device accepted (its guard moved for it). No text: that is read again from the server. */
+/**
+ * One line this device accepted (its guard moved for it), or one envelope it refused for good
+ * (`refused`). No text: that is read again from the server.
+ */
 export interface StoredChatReceipt {
   /** The API's envelope id. */
   id: string;
-  /** The verified sender: the envelope's signature AND the server's record agree. */
+  /**
+   * The verified sender: the envelope's signature AND the server's record agree. For a `refused`
+   * receipt, the sender and seq the envelope's header claims (as served, not verified).
+   */
   from: Role;
   seq: number;
   /**
@@ -40,6 +46,19 @@ export interface StoredChatReceipt {
   at: string | null;
   /** This sender's seq skipped one or more messages before this one (review M5). */
   gapBefore: boolean;
+  /**
+   * A payee's package (J-08) taken before the trade's escrow was secured (owner Q12): the guard
+   * moved for it, so the sender's later lines flow, but it is not shown until the trade is secured,
+   * when it is decrypted again and shown in its place. Never set on a plain line.
+   */
+  heldPay?: true;
+  /**
+   * An envelope that can never become a line (pay-details review M1): a payload that is not a chat
+   * message, a package whose text is not the rendering of its boxes, a malformed or mod-signed
+   * package. The cursor passed it and a re-read never opens it again; the guard did not move for it
+   * (the sender may reuse the seq). Never a line, not even a placeholder. Never set with `heldPay`.
+   */
+  refused?: true;
 }
 
 export interface ChatRecord {

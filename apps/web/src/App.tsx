@@ -4,6 +4,7 @@ import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { useSite, type PlannedMaintenanceInfo, type SiteBannerInfo } from './api/site.js';
 import { TradeChatPanel } from './chat/ChatPanel.js';
+import { chatPaymentDetailsSource } from './chat/payDetailsFeed.js';
 import { emitChatLive } from './chat/live.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { Button } from './ui/Button.js';
@@ -51,13 +52,16 @@ import { DesktopRail, WideTop, wideFrameOf } from './ui/DesktopShell.js';
 import { useFoldAttribute, useFoldLayout } from './ui/fold.js';
 import './styles/fold.css';
 import { TradeRoom } from './screens/trade/TradeRoom.js';
-import { setTradeChat } from './screens/trade/paySeams.js';
+import { setPaymentDetailsSource, setTradeChat } from './screens/trade/paySeams.js';
 import { liveFanOut, setLiveSource } from './screens/trade/seams.js';
 import './screens/trade/screens.js';
 
 // Task 20's trade chat in Task 23's seam (BuyerPay's Chat sheet, the wide room's aside). A fixtures
 // build replaces it with the board's stand-in (fixtures/payChat.ts, installed after this module loads).
 setTradeChat(TradeChatPanel);
+// J-08 (S-090): the buyer's "Send exactly" card reads the seller's details from the newest package
+// in the trade's encrypted chat. A fixtures build replaces this too (fixtures/payChat.tsx).
+setPaymentDetailsSource(chatPaymentDetailsSource);
 
 /**
  * The app shell. Phones, foldables' panes and the flip cover screen get the phone frame (the bottom

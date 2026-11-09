@@ -8,8 +8,14 @@
  *
  * - The envelope's `trade` is the chat channel, `channelFor(chat, 'chat')`; it is covered by the
  *   signature, so an envelope cannot move to another chat or to a trade's signals/escrow channel.
- * - Inside, `type` must be 'chat.msg' and the payload exactly `{ text }`. Messages carry no
- *   names: the UI shows each role's display name (never a login name) from its own records.
+ * - Inside, `type` must be 'chat.msg' and the payload exactly `{ text }`, or `{ text, pay }` for
+ *   the payee's packaged payment details (J-08, S-090; packages/trade payFields.ts): `text` is the
+ *   plain rendering of the boxes, which any reader that knows only `text` shows as a line, and
+ *   `pay` the boxes for the card. A reader checks that the text IS the rendering of the boxes, so
+ *   the two can never say different things. Only a trader sends one; a mod-signed package is
+ *   refused, and so is any package while the reader's trade is not secured (`payAllowed`, owner
+ *   Q12), so no client can push details to the buyer early. Messages carry no names: the UI shows each role's display name (never a login name)
+ *   from its own records.
  * - Every message is sealed to buyer, seller and the chat's mod identity (spec 6.6: a moderator
  *   can read the chat once a dispute opens), including the sender, so it can re-read its own.
  * - Ordering and replay: `seq` is a per-chat counter on the sending device; each reader keeps a
@@ -38,9 +44,13 @@ import {
   CHAT_BODY_MAX_BYTES,
   CHAT_MSG_TYPE,
   CHAT_TEXT_MAX_BYTES,
+  PayDetailsError,
   channelFor,
   chatIdentityProofBytes,
   checkChatEnvelope,
+  parsePayDetails,
+  renderPayDetailsText,
+  type PayDetailsPayload,
 } from '@x2f/trade';
 
 export type ChatRole = 'buyer' | 'seller';
@@ -69,7 +79,10 @@ export interface ChatMessage {
   /** The verified sender role; the UI maps it to that side's display name. */
   from: Role;
   seq: number;
+  /** The plain line; for a package, the rendering of its boxes (`renderPayDetailsText`). */
   text: string;
+  /** The payee's packaged payment details (J-08), checked; absent on a plain line. */
+  pay?: PayDetailsPayload;
 }
 
 const ALL: readonly Role[] = ['buyer', 'seller', 'mod'];
@@ -162,7 +175,33 @@ export interface SealChatArgs {
  */
 export async function sealChatMessage(a: SealChatArgs): Promise<{ envelope: Envelope; state: ChatState }> {
   if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealChatMessage: role must be buyer or seller');
-  const text = checkChatText(a.text);
+  return sealInner(a, { text: checkChatText(a.text) });
+}
+
+export interface SealPayArgs {
+  role: ChatRole;
+  me: Identity;
+  participants: Participants;
+  state: ChatState;
+  /** The boxes as the composer packaged them; checked here again (parsePayDetails) before sealing. */
+  pay: PayDetailsPayload;
+}
+
+/**
+ * Seals the payee's packaged payment details (J-08): `{ text, pay }`, where `text` is the plain
+ * rendering of the boxes, under the same rules as sealChatMessage (text checks, size, seq). Throws
+ * PayDetailsError for a bad package (by box), ChatError 'bad-text' for hidden characters in a box
+ * or 'too-large'.
+ */
+export async function sealPayDetails(a: SealPayArgs): Promise<{ envelope: Envelope; state: ChatState }> {
+  if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealPayDetails: role must be buyer or seller');
+  const pay = parsePayDetails(a.pay);
+  const text = checkChatText(renderPayDetailsText(pay));
+  return sealInner(a, { text, pay });
+}
+
+async function sealInner(a: Omit<SealChatArgs, 'text'>, payload: { text: string; pay?: PayDetailsPayload }): Promise<{ envelope: Envelope; state: ChatState }> {
+  if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealChatMessage: role must be buyer or seller');
   const state = parseChatState(a.state, a.state.channel);
   // Never reuse a seq this device has already seen from itself (e.g. a counter restored from an
   // older copy): peers would drop the message as a replay.
@@ -174,7 +213,7 @@ export async function sealChatMessage(a: SealChatArgs): Promise<{ envelope: Enve
     from: a.role,
     seq,
     type: CHAT_MSG_TYPE,
-    payload: { text },
+    payload,
     to: ALL,
     me: a.me,
     participants: a.participants,
@@ -198,6 +237,13 @@ export interface OpenChatArgs {
    * guard does not move, so the same envelope opens once a dispute is open.
    */
   modMayPost?: boolean;
+  /**
+   * Accept a package (`{ text, pay }`). Default false: owner Q12, the seller's payment details
+   * reach the buyer only once the escrow is secured, so the engine sets it from the trade's
+   * `securedAt`. When false, a package is refused with ChatError('bad-message') and the guard does
+   * not move, so the same envelope opens once the trade is secured.
+   */
+  payAllowed?: boolean;
 }
 
 /**
@@ -207,10 +253,11 @@ export interface OpenChatArgs {
  * On success returns the message and the new state; persist the state before showing the
  * message. The input state is not changed, so a rejected envelope leaves no trace.
  *
- * Intended consequences of "no trace": an envelope refused with 'mod-not-allowed' or
- * 'bad-message' must not advance the panel's `GET …?after=` cursor (it is re-fetched and
- * re-tried, e.g. once a dispute opens), and a sender whose message was 'bad-message' may reuse
- * that seq, because this reader's guard did not move for it.
+ * Intended consequences of "no trace": an envelope refused with 'mod-not-allowed' (or a package
+ * refused only for `payAllowed`) must not advance the engine's `GET …?after=` cursor: it is
+ * re-fetched and re-tried once a dispute opens (or the trade is secured). Any other 'bad-message'
+ * is decided for good and the engine passes it (pay-details review M1); either way a sender whose
+ * message was 'bad-message' may reuse that seq, because this reader's guard did not move for it.
  */
 export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{ message: ChatMessage; state: ChatState }> {
   const state = parseChatState(a.state, a.state.channel);
@@ -228,21 +275,31 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
     throw new ChatError('mod-not-allowed', 'Moderator messages are shown only in a dispute');
   }
   const p = opened.payload;
-  if (
-    opened.type !== CHAT_MSG_TYPE ||
-    typeof p !== 'object' ||
-    p === null ||
-    Array.isArray(p) ||
-    Object.keys(p).length !== 1 ||
-    !Object.prototype.hasOwnProperty.call(p, 'text')
-  ) {
-    throw new ChatError('bad-message', 'Not a chat message');
-  }
+  const notChat = (): ChatError => new ChatError('bad-message', 'Not a chat message');
+  if (opened.type !== CHAT_MSG_TYPE || typeof p !== 'object' || p === null || Array.isArray(p) || !Object.prototype.hasOwnProperty.call(p, 'text')) throw notChat();
+  const keys = Object.keys(p);
+  const packaged = keys.length === 2 && Object.prototype.hasOwnProperty.call(p, 'pay');
+  if (!packaged && keys.length !== 1) throw notChat();
   let text: string;
   try {
     text = checkChatText((p as { text: unknown }).text);
   } catch {
-    throw new ChatError('bad-message', 'Not a chat message');
+    throw notChat();
   }
-  return { message: { from: opened.from, seq: env.seq, text }, state: { ...state, guard: guard.toJSON() } };
+  const message: ChatMessage = { from: opened.from, seq: env.seq, text };
+  if (packaged) {
+    // Only a trader has payment details to send, only once the escrow is secured (owner Q12), and
+    // the text must be exactly the rendering of the boxes.
+    if (opened.from === 'mod' || a.payAllowed !== true) throw notChat();
+    let pay: PayDetailsPayload;
+    try {
+      pay = parsePayDetails((p as { pay: unknown }).pay);
+    } catch (e) {
+      if (e instanceof PayDetailsError) throw notChat();
+      throw e;
+    }
+    if (renderPayDetailsText(pay) !== text) throw notChat();
+    message.pay = pay;
+  }
+  return { message, state: { ...state, guard: guard.toJSON() } };
 }
