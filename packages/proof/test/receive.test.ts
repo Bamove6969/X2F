@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   ProofReceiveError,
   RECEIVE_MAX_BYTES,
+  RECEIVE_MAX_RENDER_BYTES,
   RECEIVE_MAX_SIDE,
   type ReceiveBitmap,
   type ReceiveDeclared,
@@ -464,20 +465,24 @@ describe('receiveProof: refusals around the decode and the redraw', () => {
     }
   });
 
-  it('a fresh copy over RECEIVE_MAX_BYTES is render-failed before it is walked; one of exactly the cap is accepted', async () => {
+  it('a fresh copy over RECEIVE_MAX_RENDER_BYTES is render-failed before it is walked; one of exactly the cap is accepted', async () => {
+    // 28 MiB: above the largest decodable proof (2600 x 2600 as an uncompressed RGBA PNG, about 27 MB),
+    // below Firefox's 32 MB data: URL limit. A real proof's copy is never refused on size.
+    expect(RECEIVE_MAX_RENDER_BYTES).toBe(28 * 1024 * 1024);
+    expect(RECEIVE_MAX_RENDER_BYTES).toBeGreaterThan(RECEIVE_MAX_SIDE * RECEIVE_MAX_SIDE * 4 + RECEIVE_MAX_SIDE + 1024);
     // A sound PNG of the right size whose bulk is one text chunk: the only thing wrong is its byte count.
     const padded = (total: number): Uint8Array => {
       const base = png(PNG_W, PNG_H, pngRaw());
       return png(PNG_W, PNG_H, pngRaw(), pngChunk('tEXt', new Uint8Array(total - base.length - 12)));
     };
-    const over = padded(RECEIVE_MAX_BYTES + 1);
-    expect(over.length).toBe(RECEIVE_MAX_BYTES + 1);
+    const over = padded(RECEIVE_MAX_RENDER_BYTES + 1);
+    expect(over.length).toBe(RECEIVE_MAX_RENDER_BYTES + 1);
     const { d, close } = deps();
     expect(await code(receiveProof(cleanPng(), PNG_DECL, { decode: d.decode, render: async () => over }))).toBe('render-failed');
     expect(close).toHaveBeenCalledTimes(1);
 
-    const exact = padded(RECEIVE_MAX_BYTES);
-    expect(exact.length).toBe(RECEIVE_MAX_BYTES);
+    const exact = padded(RECEIVE_MAX_RENDER_BYTES);
+    expect(exact.length).toBe(RECEIVE_MAX_RENDER_BYTES);
     const out = await receiveProof(cleanPng(), PNG_DECL, { decode: deps().d.decode, render: async () => exact });
     expect(readImageHeader(out.png)).toEqual({ mime: 'image/png', width: PNG_W, height: PNG_H });
     expect(out.png.length).toBeLessThan(RECEIVE_MAX_BYTES);

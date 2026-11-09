@@ -41,6 +41,7 @@ export {
   type ReceivedProof,
   ProofReceiveError,
   RECEIVE_MAX_BYTES,
+  RECEIVE_MAX_RENDER_BYTES,
   RECEIVE_MAX_SIDE,
   RECEIVE_MIMES,
   readImageHeader,

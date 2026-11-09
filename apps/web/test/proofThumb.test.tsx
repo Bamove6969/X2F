@@ -6,7 +6,7 @@
 import { act } from 'react';
 import { crc32, deflateSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
-import { RECEIVE_MAX_BYTES, type ReceiveDeclared, type ReceiveDeps, readImageHeader } from '@x2f/proof';
+import { RECEIVE_MAX_RENDER_BYTES, type ReceiveDeclared, type ReceiveDeps, readImageHeader } from '@x2f/proof';
 import { showableProof } from '../src/proof/receive.js';
 import { PROOF_REFUSED_BODY, PROOF_REFUSED_TITLE, ProofThumb } from '../src/screens/proof/ProofThumb.js';
 import { render } from './render.js';
@@ -38,8 +38,8 @@ function png(w: number, h: number, rgb: [number, number, number], ...extra: Uint
 
 const RECEIVED = png(4, 3, [10, 20, 30], chunk('tEXt', latin1('Comment\0<script>alert(1)</script>')));
 const REDRAWN = png(4, 3, [10, 20, 30]);
-/** A sound redrawn copy one byte over the cap: too big to become a data: URL. */
-const REDRAWN_HUGE = png(4, 3, [10, 20, 30], chunk('tEXt', new Uint8Array(RECEIVE_MAX_BYTES + 1 - REDRAWN.length - 12)));
+/** A sound redrawn copy one byte over the 28 MiB cap: too big to become a data: URL. */
+const REDRAWN_HUGE = png(4, 3, [10, 20, 30], chunk('tEXt', new Uint8Array(RECEIVE_MAX_RENDER_BYTES + 1 - REDRAWN.length - 12)));
 
 function deps(over: Partial<ReceiveDeps> = {}): ReceiveDeps & { decode: ReturnType<typeof vi.fn> } {
   const decode = vi.fn(async (bytes: Uint8Array) => ({ ...readImageHeader(bytes), close: () => undefined }));
