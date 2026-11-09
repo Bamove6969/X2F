@@ -217,7 +217,8 @@ async function pendingKey(config: Config, armored: string, fingerprint: string, 
 function readPendingKey(payload: Record<string, unknown>, field: string): PendingKey {
   const v = payload[field] as Partial<PendingKey> | undefined;
   if (!v || typeof v.fingerprint !== 'string' || typeof v.keyEnc !== 'string') throw new Error('challenge payload is malformed');
-  return { fingerprint: v.fingerprint, keyEnc: v.keyEnc };
+  const recipient = typeof v.recipient === 'string' || v.recipient === null ? { recipient: v.recipient } : {};
+  return { fingerprint: v.fingerprint, keyEnc: v.keyEnc, ...recipient };
 }
 
 /** `{ proved }` for insertPgpKey from a pending key that names its recipient; empty for an older payload. */
@@ -706,6 +707,8 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
   // M-2: the challenge goes to the subkey the *pasted* key picks; it must still be valid in the
   // merged copy, else the decoy (also to the pasted key, so the message looks the same).
   const recipientOk = await pastedRecipientStillValid(merged.pasted, merged.key, now);
+  // I1: the subkey the challenge goes to, which a code proves; worked out for an unknown key too (M-1).
+  const recipient = await challengeRecipient(merged.pasted, now);
   const { pending } = await pendingKey(deps.config, merged.armored, fingerprint, now);
   // The pending-step lookup runs whenever a pendingId is given, known key or not.
   const pendingRow = pendingId !== undefined ? await pendingFirstFactor(deps, pendingId, account?.id ?? NIL_UUID, device, now, realmOf(req).app) : undefined;
@@ -715,7 +718,7 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
 
   if (!account || !mergedOk || !recipientOk || !pendingOk) return decoyPgpChallenge(deps, req, { toKey: pasted, payload: startPayload });
   const payload: Record<string, unknown> = {
-    ...startPayload, refreshed: pending, fingerprints: [fingerprint], recipient: await challengeRecipient(merged.pasted, now),
+    ...startPayload, refreshed: pending, fingerprints: [fingerprint], recipient,
   };
   if (pendingId !== undefined) payload.pendingId = pendingId;
   // Always to exactly the one key the person pasted, so a code proves that key (staff pairs compare

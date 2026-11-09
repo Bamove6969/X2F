@@ -364,6 +364,9 @@ describe('security review 8 Nov I1: a ban covers only what the banned account co
       // Mallory signs up before Vera's key is on file (afterwards, a bound copy is refused: below).
       const m = await register(combined, mallory.privateKey);
       expect(m.finish.statusCode, m.finish.body).toBe(201);
+      // The sign-up proved Mallory's own encryption subkey (the challenge's recipient), not Vera's key.
+      const mine = (await openpgp.readKey({ armoredKey: mallory.publicKey })).getSubkeys()[0]!.getFingerprint();
+      expect((await deps.db.query('select proved_subkeys from pgp_keys where account_id = $1', [m.id])).rows).toEqual([{ proved_subkeys: [mine] }]);
       await insertPgpKey(deps.db, deps.config, { accountId: v.id, fingerprint: v.key.fingerprint, armored: v.key.publicKey, now: deps.clock() });
       await recordBan(deps, m.id!);
       await expect(assertKeyNotBanned(deps.db, deps.config, v.key.publicKey)).resolves.toBeUndefined();
