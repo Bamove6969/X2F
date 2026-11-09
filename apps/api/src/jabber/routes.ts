@@ -39,8 +39,12 @@ export { JABBER_WRITE_ROUTES } from './routeList.js';
 export interface JabberStatus {
   /** False until the deployment has X2F_JABBER_KEYS and a sending account (GAP: not set up yet). */
   available: boolean;
-  /** `off`: no proven address; `on` / `paused`: proven, switch on / off. */
-  state: 'off' | 'on' | 'paused';
+  /**
+   * `off`: no proven address; `on` / `paused`: proven, switch on / off; `broken`: proven, but sealed
+   * under a key X2F_JABBER_KEYS no longer holds, so no notice can go to it (review M4): it needs
+   * setting up again.
+   */
+  state: 'off' | 'on' | 'paused' | 'broken';
   address: string | null;
   /** A new address waiting for its code. */
   pendingAddress: string | null;
@@ -94,10 +98,11 @@ function statusOf(app: FastifyInstance, accountId: string, c: ContactRow | null)
       return null;
     }
   };
+  const address = shown(c?.jid_sealed ?? null);
   return {
     available: available(app),
-    state: c?.jid_sealed ? (c.enabled ? 'on' : 'paused') : 'off',
-    address: shown(c?.jid_sealed ?? null),
+    state: c?.jid_sealed ? (ring !== null && address === null ? 'broken' : c.enabled ? 'on' : 'paused') : 'off',
+    address,
     pendingAddress: shown(c?.pending_sealed ?? null),
     lastSentAt: c?.last_sent_at?.toISOString() ?? null,
   };

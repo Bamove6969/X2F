@@ -32,15 +32,15 @@ function box(ring: Keyring): SecretBox {
 }
 
 /** Bound to the account, so a blob cannot be moved to another account's row. */
-const context = (accountId: string) => `x2f/jabber-address/${accountId}`;
+export const addressContext = (accountId: string) => `x2f/jabber-address/${accountId}`;
 
 export function sealJid(ring: Keyring, accountId: string, jid: string): Buffer {
-  return box(ring).seal(new TextEncoder().encode(jid), context(accountId));
+  return box(ring).seal(new TextEncoder().encode(jid), addressContext(accountId));
 }
 
 /** Throws if the blob does not open (a removed key, another account's blob, tampering). */
 export function openJid(ring: Keyring, accountId: string, sealed: Buffer): string {
-  const jid = new TextDecoder().decode(box(ring).open(sealed, context(accountId)));
+  const jid = new TextDecoder().decode(box(ring).open(sealed, addressContext(accountId)));
   if (!BARE_JID.test(jid)) throw new Error('jabber: sealed address is malformed');
   return jid;
 }

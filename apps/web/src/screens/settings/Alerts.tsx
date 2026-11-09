@@ -113,7 +113,8 @@ export function JabberAlerts() {
   }, []);
 
   if (s === null || !s.available) return null;
-  const setUp = s.state !== 'off';
+  // `broken` (review M4): no notice can reach the address, so there is no switch to show.
+  const setUp = s.state === 'on' || s.state === 'paused';
   const on = s.state === 'on';
   const toggle = async () => {
     if (busy) return;
@@ -147,9 +148,9 @@ export function JabberAlerts() {
           {error}
         </p>
       ) : null}
-      <Link className="x2f-list__row" to="/settings/jabber" aria-label={J.rowLabel(s.address)} data-part="jabber-address-row">
+      <Link className="x2f-list__row" to="/settings/jabber" aria-label={s.state === 'broken' ? J.brokenRowLabel : J.rowLabel(s.address)} data-part="jabber-address-row">
         <span className="x2f-list__label">{J.addressLabel}</span>
-        <span>{s.address ?? J.notSetUp}</span>
+        <span>{s.state === 'broken' ? J.needsSetUpAgain : (s.address ?? J.notSetUp)}</span>
       </Link>
       {setUp && s.lastSentAt !== null ? (
         <p className="x2f-note" data-part="jabber-last">

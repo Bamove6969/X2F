@@ -43,7 +43,7 @@ export function JabberSetup() {
       (s) => {
         if (!live) return;
         setStatus(s);
-        if (s.state !== 'off') setStep('done');
+        if (s.state === 'on' || s.state === 'paused') setStep('done');
       },
       (e: unknown) => live && setError(jabberErrorText(e)),
     );
@@ -105,6 +105,8 @@ export function JabberSetup() {
         </p>
       ) : null}
       {unavailable ? <p className="x2f-note" data-part="jabber-unavailable">{C.unavailable}</p> : null}
+
+      {step === 'address' && status?.state === 'broken' ? <p className="x2f-note" data-part="jabber-broken">{C.needsSetUpAgain}</p> : null}
 
       {step === 'address' ? (
         <section className="x2f-card x2f-field" data-part="jabber-address" aria-labelledby="js-addr-l">

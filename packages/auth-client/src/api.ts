@@ -300,7 +300,8 @@ export interface LogoutTimer {
 export interface JabberStatus {
   /** False until the deployment has a sending account (`jabber-unavailable` on every write). */
   available: boolean;
-  state: 'off' | 'on' | 'paused';
+  /** `broken`: proven, but sealed under a key the server no longer holds; it needs setting up again. */
+  state: 'off' | 'on' | 'paused' | 'broken';
   address: string | null;
   pendingAddress: string | null;
   lastSentAt: string | null;

@@ -1,15 +1,17 @@
 // Owner rule p5-7, boards JabberSetup and Alerts: the Jabber set-up routes, the outbox worker and
 // the fixed message texts, against real Postgres with a fake sender.
-import { createHmac, hkdfSync } from 'node:crypto';
+import { createHmac, hkdfSync, randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { startHold, withTx } from '../src/auth/hold.js';
 import { startDispute } from '../src/disputes/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
-import { codeHash, maskJid, normalizeJid } from '../src/jabber/address.js';
+import { codeHash, maskJid, normalizeJid, openJid, sealJid } from '../src/jabber/address.js';
+import { rewrapJabberSecrets } from '../src/jabber/rewrap.js';
 import { PENDING_RETENTION_MS, purgeJabberPending } from '../src/jabber/retention.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
+import type { Keyring } from '../src/config.js';
 import { OUTBOX_ATTEMPTS, sendDueNotices } from '../src/jabber/outbox.js';
 import { CODE_TRIES, CODE_TTL_MS, RESEND_WAIT_S, TESTS_PER_DAY } from '../src/jabber/routes.js';
 import { ACCOUNT_CHANGE_TEXT, NOTICE_KINDS, SENDER_NAME, TRADE_ATTENTION_TEXT, messageText, type JabberMessage, type JabberSender } from '../src/jabber/sender.js';
@@ -333,5 +335,50 @@ describe('review L4: an unproven typed address is purged 24 hours after its test
     expect(await notices(changing.id)).toBe(0);
     expect(PENDING_RETENTION_MS).toBe(24 * 3_600_000);
     expect(RETENTION_JOBS).toContain(purgeJabberPending);
+  });
+});
+
+describe('review M4: a key removed from X2F_JABBER_KEYS', () => {
+  const ringOf = (entries: Array<[number, Uint8Array]>, current: number): Keyring => ({ current, keys: new Map(entries) });
+
+  it('an address sealed under a key the ring no longer holds shows as broken (needs setting up again), not on', async () => {
+    const t = await withJabber();
+    const gone = ringOf([[77, new Uint8Array(randomBytes(32))]], 77);
+    await deps.db.query('update jabber_contacts set jid_sealed = $2 where account_id = $1', [t.id, sealJid(gone, t.id, t.jid)]);
+    await deps.db.query('delete from jabber_outbox');
+    expect((await t.browser.get('/v1/account/jabber')).json()).toMatchObject({ state: 'broken', address: null });
+    await deps.db.query('delete from jabber_contacts where account_id = $1', [t.id]);
+    await deps.db.query('delete from jabber_outbox');
+  });
+
+  it('rewrapJabberSecrets reseals addresses, pending addresses and queued notices under the current key, queueing no notice; a re-run finds nothing', async () => {
+    const t = await withJabber();
+    advance(RESEND_WAIT_S * 1000 + 1);
+    expect((await t.browser.post('/v1/account/jabber/test', { address: address() })).statusCode).toBe(202);
+    expect((await t.browser.put('/v1/account/security/logout-timer', { idleHours: 6 })).statusCode).toBe(200);
+    expect(await notices(t.id)).toBe(1);
+    const old = deps.config.jabberKeys!;
+    const fresh = new Uint8Array(randomBytes(32));
+    const both = ringOf([[old.current + 1, fresh], ...old.keys], old.current + 1);
+    const onlyNew = ringOf([[old.current + 1, fresh]], old.current + 1);
+
+    const first = await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } });
+    expect(first.failed).toBe(0);
+    expect(first.rewrapped).toBeGreaterThanOrEqual(3);
+    expect(await notices(t.id)).toBe(1); // the rewrap itself is not an account change
+    const { rows } = await deps.db.query<{ jid_sealed: Buffer; pending_sealed: Buffer }>('select jid_sealed, pending_sealed from jabber_contacts where account_id = $1', [t.id]);
+    expect(openJid(onlyNew, t.id, rows[0]!.jid_sealed)).toBe(t.jid);
+    expect(openJid(onlyNew, t.id, rows[0]!.pending_sealed)).toMatch(/@xmpp\.example\.org$/);
+    const queued = await deps.db.query<{ jid_sealed: Buffer }>('select jid_sealed from jabber_outbox where account_id = $1', [t.id]);
+    expect(openJid(onlyNew, t.id, queued.rows[0]!.jid_sealed)).toBe(t.jid);
+    expect(await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } })).toEqual({ rewrapped: 0, failed: 0 });
+
+    // A blob under a key neither ring holds is counted, left as it is, and never opens.
+    const stray = ringOf([[90, new Uint8Array(randomBytes(32))]], 90);
+    await deps.db.query('update jabber_contacts set jid_sealed = $2 where account_id = $1', [t.id, sealJid(stray, t.id, t.jid)]);
+    await deps.db.query('delete from jabber_outbox');
+    expect(await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } })).toEqual({ rewrapped: 0, failed: 1 });
+    await deps.db.query('delete from jabber_contacts where account_id = $1', [t.id]);
+    await deps.db.query('delete from jabber_outbox');
   });
 });

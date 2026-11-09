@@ -117,3 +117,25 @@ describe('the Alerts section', () => {
     expect(part(host, 'jabber-switch')!.getAttribute('aria-checked')).toBe('false');
   });
 });
+
+describe('review M4: an address sealed under a removed key', () => {
+  const BROKEN: JabberStatus = { available: true, state: 'broken', address: null, pendingAddress: null, lastSentAt: '2026-11-07T15:00:00.000Z' };
+
+  it('Alerts says it needs setting up again, with no switch', async () => {
+    api.getJabber.mockResolvedValue(BROKEN);
+    const { host } = render(<MemoryRouter><JabberAlerts /></MemoryRouter>);
+    await flush();
+    expect(part(host, 'jabber-address-row')!.textContent).toContain('Needs setting up again');
+    expect(part(host, 'jabber-address-row')!.textContent).not.toContain('Not set up');
+    expect(part(host, 'jabber-switch')).toBeNull();
+  });
+
+  it('the set-up opens at the address step and says so, never "alerts are on"', async () => {
+    api.getJabber.mockResolvedValue(BROKEN);
+    const { host } = render(<MemoryRouter><JabberSetup /></MemoryRouter>);
+    await flush();
+    expect(host.querySelector('[data-step]')!.getAttribute('data-step')).toBe('address');
+    expect(part(host, 'jabber-broken')!.textContent).toBe('Needs setting up again');
+    expect(host.textContent).not.toContain('Jabber alerts are on');
+  });
+});

@@ -44,4 +44,7 @@ export const JABBER_COPY = {
   codeEnded: 'That code has ended. Send a new test message.',
   waitSeconds: (s: number) => `You can send another test message in ${s} seconds.`,
   failed: "That didn't work. Try again.",
+  /** Review M4: the address is sealed under a key the server no longer holds. */
+  needsSetUpAgain: 'Needs setting up again',
+  brokenRowLabel: 'Jabber address needs setting up again, set it up',
 } as const;
