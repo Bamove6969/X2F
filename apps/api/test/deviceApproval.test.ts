@@ -17,6 +17,7 @@ import { accountIdByLoginName, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
+import { rolesToAbilities } from '../src/team/abilities.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-17T12:00:00Z');
@@ -532,9 +533,9 @@ describe('team members (Plan 2 Task 18, at its landing: was NEEDS_TASKS_16_17_ME
     const name = unique('mem');
     const loginId = await seedAccount(deps, { loginName: name, displayName: `m-${name}-placeholder`, kind: 'member' });
     const { rows } = await deps.db.query<{ id: string }>(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
-       values ($1, $2, $3, '{offers,trades}', $4, $5, $4, $4) returning id`,
-      [teamId, `M${name}`, `m${name}`.toLowerCase(), now, loginId],
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, $2, $3, $6, $4, $5, $4, $4) returning id`,
+      [teamId, `M${name}`, `m${name}`.toLowerCase(), now, loginId, rolesToAbilities(['offers', 'trades'])],
     );
     return { id: rows[0]!.id, loginId };
   }

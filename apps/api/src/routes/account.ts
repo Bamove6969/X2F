@@ -7,7 +7,8 @@ import type { Queryable } from '../db/pool.js';
 import { tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
-import type { TeamRole } from '../team/perms.js';
+import { abilitiesView } from '../team/members.js';
+import type { PresetId, TeamRole } from '../team/abilities.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
 import { gateChange, heldReply, holdUntil, pushHoldStarted, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
@@ -47,6 +48,10 @@ export interface AccountOverview {
 export interface MemberOverview {
   /** The member's name, as chat labels show it. */
   name: string;
+  /** The member's ticked boxes (team/abilities.ts; `GET /v1/team/permissions` names them). */
+  abilities: string[];
+  preset: PresetId | null;
+  /** The old roles the boxes read as (the web's Post offer tab and room still read these). */
   roles: TeamRole[];
 }
 
@@ -160,7 +165,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
   if (!row) throw new ApiError(401, 'not-authenticated');
   const counts = await methodCounts(deps.db, methodsOf);
   const now = deps.clock();
-  const member = req.auth.memberId !== null ? { name: req.auth.memberName ?? '', roles: [...req.auth.memberRoles] } : null;
+  const member = req.auth.memberId !== null ? { name: req.auth.memberName ?? '', ...abilitiesView(req.auth.memberAbilities) } : null;
   const held = row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime();
   return {
     displayName: row.display_name,

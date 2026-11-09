@@ -8,11 +8,12 @@ import type { Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { EventBus, type StreamSink } from '../src/events/bus.js';
 import { tradeEventPublisher } from '../src/events/tradePublisher.js';
-import { ACTION_ROLE, auditMember } from '../src/team/audit.js';
+import { ACTION_ABILITY, auditMember } from '../src/team/audit.js';
+import { HARD_OWNER_ONLY, legacyRoles, ROLE_ABILITIES, rolesToAbilities } from '../src/team/abilities.js';
 import { memberAccessOf } from '../src/auth/sessions.js';
 import { purgeTeamLeftovers } from '../src/team/members.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
-import { MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '../src/team/perms.js';
+import { EVENT_ABILITY, MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '../src/team/perms.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
 import { openEvents, until, type SseStream } from './helpers/sse.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
@@ -99,17 +100,19 @@ async function team(): Promise<Who & { wallet: string }> {
 }
 
 /**
- * A joined member of `teamId` with `roles`, logged in (its login account is seeded directly; the
- * real sign-up is tested below).
+ * A joined member of `teamId` with the boxes of the old `roles` (each role's ROLE_ABILITIES), or
+ * the given `{ abilities }`, logged in (its login account is seeded directly; the real sign-up is
+ * tested below).
  */
-async function member(teamId: string, roles: Role[]): Promise<{ id: string; loginId: string; name: string; browser: Browser }> {
+async function member(teamId: string, roles: Role[] | { abilities: string[] }): Promise<{ id: string; loginId: string; name: string; browser: Browser }> {
+  const abilities = Array.isArray(roles) ? rolesToAbilities(roles) : roles.abilities;
   const name = `Member${String(++n).padStart(4, '0')}`;
   const loginId = await seedAccount(deps, { loginName: `mlogin${n}x`, displayName: `m-${n}-placeholder`, kind: 'member' });
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+    `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
      values ($1, $2, $3, $4, $5, $6, $5, $5) returning id`,
-    [teamId, name, name.toLowerCase(), roles, now, loginId],
+    [teamId, name, name.toLowerCase(), abilities, now, loginId],
   );
   const browser = new Browser(app);
   const res = await browser.post('/t/login', { accountId: loginId });
@@ -235,7 +238,8 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect(first.rows[0]!.strength).toBe('strong');
     const me = (await b.get('/v1/account/me')).json() as { displayName: string; member: unknown };
     expect(me.displayName).toBe(owner.displayName);
-    expect(me.member).toEqual({ name: `Joiner${n}x`, roles: ['trades'] });
+    // Job 1c: the member's boxes (the old Trades role's), their preset (none: Custom) and the old roles they read as.
+    expect(me.member).toEqual({ name: `Joiner${n}x`, abilities: rolesToAbilities(['trades']), preset: null, roles: ['trades'] });
     const alerts = (await owner.browser.get('/v1/account/alerts')).json() as { kind: string }[];
     expect(alerts.map((a) => a.kind)).toContain('team-member-joined');
     expect(((await owner.browser.get('/v1/team')).json() as { members: { status: string }[] }).members[0]!.status).toBe('active');
@@ -586,7 +590,7 @@ describe('role changes and removal reach a member in flight', () => {
   it('a role drop that commits after the gate refuses the action and rolls it back (review M1)', async () => {
     const owner = await team();
     const m = await member(owner.id, ['offers', 'trades']);
-    const res = await racing(m.id, () => m.browser.post('/v1/offers', OFFER), `update team_members set roles = '{trades}' where id = $1`);
+    const res = await racing(m.id, () => m.browser.post('/v1/offers', OFFER), `update team_members set abilities = '{${ROLE_ABILITIES.trades.join(',')}}' where id = $1`);
     expect(err(res)).toEqual({ status: 403, error: 'forbidden' });
     expect((await deps.db.query('select 1 from offers where account_id = $1', [owner.id])).rowCount).toBe(0);
   });
@@ -619,7 +623,7 @@ describe('role changes and removal reach a member in flight', () => {
     const owner = await team();
     const m = await member(owner.id, ['offers', 'trades']);
     const code = await refundedCancel(owner);
-    const res = await racing(m.id, () => m.browser.get(`/v1/trades/${code}/confirmations`), `update team_members set roles = '{offers}' where id = $1`);
+    const res = await racing(m.id, () => m.browser.get(`/v1/trades/${code}/confirmations`), `update team_members set abilities = '{${ROLE_ABILITIES.offers.join(',')}}' where id = $1`);
     expect(err(res)).toEqual({ status: 403, error: 'forbidden' });
     expect((await loadTrade(deps.db, code))!.cancelConfirmableAt).toBeNull();
     // A live member's Confirm cancel still goes through, and records the 48 h start with it.
@@ -632,25 +636,31 @@ describe('role changes and removal reach a member in flight', () => {
     expect((await auditRows(owner.id)).map((r) => [r.action, r.member_id])).toEqual([['confirm-cancel', m2.id]]);
   });
 
-  it('every trade event a member may send has an audit action and its role (a new client event fails here)', () => {
+  it('every trade event a member may send has an audit action and its box, the same the route checks (a new client event fails here)', () => {
     const sendable = CLIENT_EVENTS.filter((e) => !MEMBER_SIGNING_EVENTS.has(e) && e !== 'open-dispute');
-    for (const e of sendable) expect(ACTION_ROLE[e as keyof typeof ACTION_ROLE], e).toBe('trades');
+    for (const e of sendable) {
+      expect(ACTION_ABILITY[e as keyof typeof ACTION_ABILITY], e).toMatch(/^trades-/);
+      expect(EVENT_ABILITY[e], e).toBe(ACTION_ABILITY[e as keyof typeof ACTION_ABILITY]);
+    }
+    // The signing events map to boxes no member holds today (release: never, p10-2).
+    expect(EVENT_ABILITY['release-started']).toBe('trades-release');
+    expect(HARD_OWNER_ONLY.has('trades-release')).toBe(true);
   });
 
-  it('auditMember checks every action against the role it needs', async () => {
+  it('auditMember checks every action against the box it needs', async () => {
     const owner = await team();
     const m = await member(owner.id, ['trades']);
     const actor = { accountId: owner.id, memberId: m.id };
     await expect(auditMember(deps.db, actor, { action: 'offer-posted' }, deps.clock())).rejects.toMatchObject({ status: 403, code: 'forbidden' });
     await auditMember(deps.db, actor, { action: 'mark-paid', tradeCode: null }, deps.clock());
-    expect(Object.entries(ACTION_ROLE).filter(([a]) => a.startsWith('offer-')).every(([, r]) => r === 'offers')).toBe(true);
+    expect(Object.entries(ACTION_ABILITY).filter(([a]) => a.startsWith('offer-')).every(([, r]) => r.startsWith('offers-'))).toBe(true);
     // Another team's account id with this member: refused as gone.
     await expect(auditMember(deps.db, { accountId: (await team()).id, memberId: m.id }, { action: 'mark-paid' }, deps.clock())).rejects.toMatchObject({ status: 401, code: 'not-authenticated' });
   });
 });
 
 describe('the audit log covers every member action (review M3)', () => {
-  it('trade-taken and trade-wallet-set are refused before anything is written (I2), final-alert-seen, dispute and appeal write one row each', async () => {
+  it('trade-taken and trade-wallet-set are refused before anything is written (I2); opening a dispute is the lead\'s (D-066); final-alert-seen and appeal write one row each', async () => {
     const owner = await team();
     const other = await team();
     const m = await member(owner.id, ['trades']);
@@ -667,7 +677,9 @@ describe('the audit log covers every member action (review M3)', () => {
     // A dispute on a secured trade (the owner is the buyer), then an appeal of its ruling.
     const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
     await driveTo(deps, d.trade, 'secured');
-    const opened = await m.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'a private note' });
+    // Owner D-066 (p7-7): only trade parties open disputes; the member is refused and the lead opens it.
+    expect(err(await m.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'a private note' }))).toEqual({ status: 403, error: 'owner-only' });
+    const opened = await owner.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'a private note' });
     expect(opened.statusCode, opened.body).toBe(200);
     // A moderator's round-1 ruling, through the dispute machine (Plan 4 Task 12 is not built yet).
     await publishRuling(deps, d.code, { outcome: 'release-to-buyer' });
@@ -695,7 +707,6 @@ describe('the audit log covers every member action (review M3)', () => {
 
     const rows = await auditRows(owner.id);
     expect(rows.map((r) => [r.action, r.trade_code])).toEqual([
-      ['dispute-opened', d.code],
       ['appeal-filed', d.code],
       ['final-alert-seen', f.code],
     ]);
@@ -750,9 +761,12 @@ describe('the audit log covers every member action (review M3)', () => {
     for (const r of found) expect([...live], r).toContain(r);
     // The scan sees the routes it must (so a refactor that hides them fails here, not silently).
     for (const r of ['POST /v1/offers', 'PATCH /v1/offers/:id', 'POST /v1/account/offers/status', 'POST /v1/offers/:id/take', 'POST /v1/trades/:code/wallet',
-      'POST /v1/trades/:code/events', 'POST /v1/trades/:code/final-alert-seen', 'POST /v1/trades/:code/dispute', 'POST /v1/trades/:code/appeal', ...Object.keys(EXEMPT)]) {
+      'POST /v1/trades/:code/events', 'POST /v1/trades/:code/final-alert-seen', 'POST /v1/trades/:code/appeal', ...Object.keys(EXEMPT)]) {
       expect(found, r).toContain(r);
     }
+    // D-066: opening a dispute lets no member through (the scan and the hook agree).
+    expect(found).not.toContain('POST /v1/trades/:code/dispute');
+    expect([...live]).not.toContain('POST /v1/trades/:code/dispute');
   });
 });
 
@@ -800,8 +814,8 @@ describe('purgeTeamLeftovers (review M6)', () => {
     const stale = await seedAccount(deps, { loginName: `stalelogin${++n}`, displayName: `m-${n}-stale`, kind: 'member' });
     const past = new Date(deps.clock().getTime() - DAY);
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, created_at)
-       values ($1, $2, $3, '{trades}', $4, $5, $4)`,
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, created_at)
+       values ($1, $2, $3, '{trades-see-active}', $4, $5, $4)`,
       [owner.id, `Stale${n}xx`, `stale${n}xx`, past, stale],
     );
     // A member login whose team row is gone (as after the team account is deleted).
@@ -845,9 +859,9 @@ describe('team changes during a 24-hour hold (owner 2026-10-30)', () => {
   const timeUp = (accountId: string) =>
     deps.db.query('update account_holds set hold_until = $2 where account_id = $1', [accountId, new Date(deps.clock().getTime() - 1000)]);
   const teamOf = async (accountId: string) =>
-    (await deps.db.query<{ display_name: string; roles: string[]; removed_at: Date | null }>(
-      'select display_name, roles, removed_at from team_members where account_id = $1 order by created_at, id', [accountId],
-    )).rows;
+    (await deps.db.query<{ display_name: string; abilities: string[]; removed_at: Date | null }>(
+      'select display_name, abilities, removed_at from team_members where account_id = $1 order by created_at, id', [accountId],
+    )).rows.map(({ abilities, ...r }) => ({ ...r, roles: legacyRoles(abilities) }));
 
   it('an invite is refused with recovery-hold, writes nothing and spends no confirm token; after the hold the same request goes through', async () => {
     const owner = await team();
@@ -926,9 +940,9 @@ describe('team changes during a 24-hour hold (owner 2026-10-30)', () => {
 
 describe('team changes need a strong session (owner 1 Nov 2026; landing review I1)', () => {
   const teamOf = async (accountId: string) =>
-    (await deps.db.query<{ display_name: string; roles: string[]; removed_at: Date | null }>(
-      'select display_name, roles, removed_at from team_members where account_id = $1 order by created_at, id', [accountId],
-    )).rows;
+    (await deps.db.query<{ display_name: string; abilities: string[]; removed_at: Date | null }>(
+      'select display_name, abilities, removed_at from team_members where account_id = $1 order by created_at, id', [accountId],
+    )).rows.map(({ abilities, ...r }) => ({ ...r, roles: legacyRoles(abilities) }));
   const weaken = async (b: Browser, strength: 'weak-single' | 'pgp-single') =>
     deps.db.query('update sessions set strength = $2 where id = $1', [await sessionId(b), strength]);
   const unspent = async (token: string) =>
@@ -1155,6 +1169,33 @@ describe('the owner\'s hard rules no box can grant (J-10)', () => {
 });
 
 describe('the abilities catalogue on the API (J-10)', () => {
+  it('every member-allowed route names only boxes from the catalogue, never a hard owner-only one', async () => {
+    const { GRANTABLE } = await import('../src/team/abilities.js');
+    const named = new Map<string, string[]>();
+    for (const r of registered) {
+      for (const h of [r.onRequest, r.preParsing, r.preValidation, r.preHandler].flat().filter(Boolean)) {
+        const need = memberAccessOf(h);
+        if (need === undefined || need === 'any') continue;
+        named.set(`${[r.method].flat().join(',')} ${r.url}`, typeof need === 'string' ? [need] : [...need]);
+      }
+    }
+    expect(named.size).toBeGreaterThan(10);
+    for (const [route, needs] of named) {
+      for (const id of needs) {
+        expect(GRANTABLE.has(id), `${route} names ${id}, not a box`).toBe(true);
+        expect(HARD_OWNER_ONLY.has(id), `${route} names ${id}, an owner-only rule`).toBe(false);
+      }
+    }
+  });
+
+  it('migration 360 moved the old roles to exactly ROLE_ABILITIES and refuses exactly HARD_OWNER_ONLY', () => {
+    const sql = readFileSync(`${ROOT}apps/api/migrations/360_team_abilities.sql`, 'utf8');
+    const lists = [...sql.matchAll(/'\{([a-z,-]+)\}'::text\[\]/g)].map((m) => m[1]!.split(','));
+    expect(lists[0]).toEqual([...ROLE_ABILITIES.offers]);
+    expect(lists[1]).toEqual([...ROLE_ABILITIES.trades]);
+    expect(new Set(lists[2])).toEqual(HARD_OWNER_ONLY);
+  });
+
   it('GET /v1/team/permissions lists the groups, every ability with its risk, rule and preset defaults, and the presets', async () => {
     const owner = await team();
     const res = await owner.browser.get('/v1/team/permissions');
@@ -1202,7 +1243,11 @@ describe('notes on traders (S-094, p7-8)', () => {
     // No member deletes a note (owner-only), and the database refuses to change a note's text.
     expect(err(await m.browser.delete(`/v1/account/notes/${notes[0]!.id}`))).toEqual({ status: 403, error: 'owner-only' });
     await expect(deps.db.query(`update trader_notes set text = 'x' where id = $1`, [notes[0]!.id])).rejects.toThrow();
-    // Another account never sees them.
-    expect(((await subject.browser.get(`/v1/account/notes/${subjectName}`)).json() as unknown[]).length).toBe(0);
+    // Another account never sees them, and nobody notes their own account.
+    const third = await team();
+    const theirs = await third.browser.get(`/v1/account/notes/${subjectName}`);
+    expect(theirs.statusCode).toBe(200);
+    expect(theirs.json()).toEqual([]);
+    expect(err(await subject.browser.post('/v1/account/notes', { about: subjectName, text: 'me' }))).toEqual({ status: 400, error: 'bad-request' });
   });
 });

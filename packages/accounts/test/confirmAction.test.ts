@@ -13,6 +13,9 @@ describe('describeAction', () => {
     [{ kind: 'set-password' }, 'set a new password'],
     [{ kind: 'new-recovery-codes' }, 'make new recovery codes'],
     [{ kind: 'add-device-key', signPublicHash: 'cd34' }, 'add a trade signing key'],
+    // Job 1c (J-10): the granular team boxes.
+    [{ kind: 'team-invite-abilities', name: 'Ann01', abilities: 'offers-see' }, 'invite Ann01 as a team member (1 ability)'],
+    [{ kind: 'team-abilities', memberId: 'm1', abilities: 'offers-see,offers-pause,notes-view' }, "change a team member's abilities (3 abilities)"],
   ])('%j', (a, expected) => {
     expect(describeAction(a)).toBe(expected);
   });

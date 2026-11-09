@@ -7,6 +7,7 @@ import type { AuthContext } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
+import { assertMemberMay } from '../team/perms.js';
 import { getMethod, isAvailable } from '../methods/profiles.js';
 import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
@@ -370,15 +371,19 @@ async function inTransaction<T>(db: Deps['db'], fn: (client: Queryable) => Promi
   }
 }
 
-// Posting, pausing, relisting and removing: the account owner, or a team member with Offers (Task 18).
-const requireTrader = requireSession({ kinds: ['trader'], member: 'offers' });
+// Posting: the account owner, or a team member with the Post a new offer box (Task 18, Job 1c).
+const requireTrader = requireSession({ kinds: ['trader'], member: 'offers-post' });
 /**
  * Turning offers off, and reading my own offers, work on a stale Terms version too (lead decision
  * 2026-10-29 on R10: shutting things off never waits for new Terms). Anything that puts an offer
  * live still needs the current Terms (`assertTermsCurrent`); removing one is shutting off too
- * (round-2 review m1, lead decision 2026-10-29). A team member with Offers may do these too (Task 18).
+ * (round-2 review m1, lead decision 2026-10-29). A team member may do these too with the box for
+ * each (Task 18, Job 1c): See offers reads, Pause or resume turns offers off and on, Delete an offer
+ * removes one (`PATCH` checks the exact box for the status asked).
  */
-const requireTraderStaleOk = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers' });
+const requireSeeOffers = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers-see' });
+const requirePauseOffers = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers-pause' });
+const requireSetStatus = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: ['offers-pause', 'offers-delete'] });
 
 /** 403 `terms-required` `{ version }`, as requireSession answers, for a trader on a stale Terms version. */
 async function assertTermsCurrent(deps: Deps, accountId: string): Promise<void> {
@@ -480,13 +485,15 @@ export function offerRoutes(app: FastifyInstance): void {
     return reply.code(201).send({ id });
   });
 
-  app.patch('/v1/offers/:id', { preHandler: requireTraderStaleOk }, async (req) => {
+  app.patch('/v1/offers/:id', { preHandler: requireSetStatus }, async (req) => {
     const deps = req.server.deps;
     const id = (req.params as { id: string }).id;
     const body = req.body;
     if (!isObject(body) || Object.keys(body).length !== 1) throw bad();
     const status = body.status;
     if (typeof status !== 'string' || !(STATUSES as readonly string[]).includes(status)) throw bad();
+    // Job 1c: removing needs Delete an offer; pausing and relisting need Pause or resume.
+    assertMemberMay(req.auth, status === 'removed' ? 'offers-delete' : 'offers-pause');
     // Pausing and removing work on stale Terms (R10 lead decisions 2026-10-29: shutting off never
     // waits for new Terms); relisting does not.
     if (status === 'live') await assertTermsCurrent(deps, req.auth!.accountId);
@@ -597,7 +604,7 @@ export function offerRoutes(app: FastifyInstance): void {
   /**
    * Task 36, My offers: every live and paused offer of mine, newest first. Removed offers are gone.
    */
-  app.get('/v1/account/offers', { preHandler: requireTraderStaleOk }, async (req): Promise<MyOffer[]> => {
+  app.get('/v1/account/offers', { preHandler: requireSeeOffers }, async (req): Promise<MyOffer[]> => {
     const deps = req.server.deps;
     const accountId = req.auth!.accountId;
     const { rows } = await deps.db.query<OfferRow & { created_at: Date }>(
@@ -657,7 +664,7 @@ export function offerRoutes(app: FastifyInstance): void {
    * take of the account run one at a time), then site_flags `for share` (turning on only), then the
    * account's offer rows `for update`.
    */
-  app.post('/v1/account/offers/status', { preHandler: requireTraderStaleOk }, async (req) => {
+  app.post('/v1/account/offers/status', { preHandler: requirePauseOffers }, async (req) => {
     const deps = req.server.deps;
     const body = req.body;
     if (!isObject(body) || Object.keys(body).sort().join(',') !== 'ids,status') throw bad();
