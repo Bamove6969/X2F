@@ -7,6 +7,7 @@ export {
   shouldSendAway,
   type AccountOverview,
   type AlertEntry,
+  type JabberStatus,
   type ApiErrorCode,
   type ApprovalDecision,
   type ApprovalPoll,

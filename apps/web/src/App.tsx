@@ -24,6 +24,7 @@ import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js'
 import { MemberInvite } from './screens/auth/MemberInvite.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
+import { JabberSetup } from './screens/settings/JabberSetup.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
 import { Security } from './screens/settings/Security.js';
 import { Team } from './screens/settings/Team.js';
@@ -188,6 +189,7 @@ export function App() {
           <Route path="/settings/security" element={<Security />} />
           <Route path="/settings/devices" element={<DevicesRoute />} />
           <Route path="/settings/blocked" element={<Blocked />} />
+          <Route path="/settings/jabber" element={<JabberSetup />} />
           <Route path="/settings/team" element={<Team />} />
           <Route path="/team/join" element={<MemberInvite />} />
           <Route path="/news" element={<News />} />

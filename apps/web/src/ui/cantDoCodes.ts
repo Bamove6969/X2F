@@ -123,6 +123,9 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'wallet-exists': 'an input check (already linked)',
   'terms-not-accepted': 'sends the person to the Terms',
   'terms-required': 'sends the person to the Terms',
+  // Owner rule p5-7: the Jabber set-up.
+  'jabber-unavailable': 'the deployment has no Jabber sending account yet (a missing feature, not a rule)',
+  'jabber-address-invalid': 'an input check on a typed Jabber address',
   'price-unavailable': 'the price feed is down (a fault)',
   'price-changed': 'the market moved (re-quote)',
   'method-unavailable': 'a catalog fact (the method is off the list); Suggest a method covers it',

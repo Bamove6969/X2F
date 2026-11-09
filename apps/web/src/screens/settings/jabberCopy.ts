@@ -1,0 +1,47 @@
+/**
+ * Words for secure Jabber account-change alerts (owner rule p5-7), word for word from Claude
+ * Design's JabberSetup and Alerts boards (wip/design-brief). COPY-UNSIGNED: design's draft, not
+ * signed off by the owner. The error lines at the bottom are the builder's (no board shows them).
+ */
+export const JABBER_COPY = {
+  // Alerts section.
+  sectionTitle: 'Secure Jabber (XMPP)',
+  rowTitle: 'Account change alerts',
+  rowNote: 'Get one short message for every change to your account, with no details in it. Needs a Jabber account; OMEMO encryption recommended.',
+  addressLabel: 'Address',
+  notSetUp: 'Not set up',
+  lastMessage: 'Last message',
+  rowLabel: (masked: string | null) => (masked ? `Jabber address ${masked}, change it` : 'Jabber address not set up, set it up'),
+
+  // JabberSetup.
+  kicker: 'Settings',
+  title: 'Secure Jabber alerts',
+  lead: 'One short message to your Jabber address every time your account changes.',
+  back: 'Back to alerts',
+  yourAddress: 'Your Jabber address',
+  placeholder: 'name@xmpp.example.org',
+  anyServer: 'Any XMPP server works. We never send details, only that a change happened.',
+  /** GAP: X2F's own sending address is not set up yet; the board's is an example. */
+  addContact: "Add X2F's alert address to your contacts so the message isn't filtered.",
+  sendTest: 'Send a test message',
+  enterCode: 'Enter the code from the test message',
+  sentTo: (masked: string) => `Sent to ${masked}. It can take a minute to arrive.`,
+  resend: 'Resend',
+  sentAgain: 'Sent again',
+  turnOn: 'Turn on',
+  doneTitle: 'Jabber alerts are on',
+  doneNote: (masked: string) => `Every account change now sends one short message to ${masked}.`,
+  previewTitle: "What you'll receive",
+  previewFrom: 'X2F alerts',
+  previewText: 'An account change was made on your X2F account.',
+  done: 'Done',
+  turnOff: 'Turn off',
+
+  // Builder's lines (COPY-UNSIGNED; no board).
+  unavailable: 'Jabber alerts are coming to X2F soon.',
+  badAddress: "That isn't a Jabber address. It looks like name@server.org.",
+  wrongCode: "That code isn't right. Check the test message and try again.",
+  codeEnded: 'That code has ended. Send a new test message.',
+  waitSeconds: (s: number) => `You can send another test message in ${s} seconds.`,
+  failed: "That didn't work. Try again.",
+} as const;

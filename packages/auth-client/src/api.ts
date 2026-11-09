@@ -293,6 +293,19 @@ export interface LogoutTimer {
   adjustable: boolean;
 }
 
+/**
+ * Owner rule p5-7: secure Jabber account-change alerts (`GET /v1/account/jabber`). Addresses come
+ * back masked only (`mira…@xmpp.example.org`).
+ */
+export interface JabberStatus {
+  /** False until the deployment has a sending account (`jabber-unavailable` on every write). */
+  available: boolean;
+  state: 'off' | 'on' | 'paused';
+  address: string | null;
+  pendingAddress: string | null;
+  lastSentAt: string | null;
+}
+
 // ---------------------------------------------------------------------------------------------
 // The client
 
@@ -380,6 +393,15 @@ export interface AuthApi {
   endSession(id: string): Promise<void>;
   listAlerts(): Promise<AlertEntry[]>;
   markAlertSeen(id: string): Promise<void>;
+
+  // Owner rule p5-7: secure Jabber account-change alerts (boards JabberSetup, Alerts).
+  getJabber(): Promise<JabberStatus>;
+  /** Sends the test code; 429 `slow-down` `{ retryAfterSeconds }`, 400 `jabber-address-invalid`, 503 `jabber-unavailable`. */
+  sendJabberTest(b: { address: string }): Promise<{ pendingAddress: string; resendAfterSeconds: number }>;
+  /** 400 `code-invalid`, 409 `challenge-expired` (send a new code). */
+  verifyJabber(b: { code: string }): Promise<JabberStatus>;
+  setJabberEnabled(b: { on: boolean }): Promise<JabberStatus>;
+  turnOffJabber(): Promise<void>;
 
   // New-device approval (Task 16): full trader sessions only.
   /** `GET /v1/account/approvals`: the logins waiting for this account's approval. */
@@ -553,6 +575,11 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     endSession: (id) => done(call('DELETE', `/v1/account/sessions/${seg(id)}`)),
     listAlerts: () => get('/v1/account/alerts'),
     markAlertSeen: (id) => done(post(`/v1/account/alerts/${seg(id)}/seen`)),
+    getJabber: () => get('/v1/account/jabber'),
+    sendJabberTest: (b) => post('/v1/account/jabber/test', b),
+    verifyJabber: (b) => post('/v1/account/jabber/verify', b),
+    setJabberEnabled: (b) => call('PUT', '/v1/account/jabber/enabled', b),
+    turnOffJabber: () => done(call('DELETE', '/v1/account/jabber')),
     listApprovals: () => get('/v1/account/approvals'),
     getApproval: (id) => get(`/v1/account/approvals/${seg(id)}`),
     decideApproval: (id, b) => post(`/v1/account/approvals/${seg(id)}`, b),
