@@ -55,9 +55,22 @@ export function knownDeviceRule(deps: Pick<Deps, 'db' | 'clock'>): (accountId: s
 }
 
 /**
+ * Owner G3 (7 Nov): "two of the three" means two different methods, so two PGP keys (one method,
+ * usually one keyring on one laptop) are no pair for a moderator or senior moderator. Helpers keep
+ * the two-PGP pair until the owner says otherwise.
+ */
+export function pgpPairRule(deps: Pick<Deps, 'db'>): (accountId: string) => Promise<boolean> {
+  return async (accountId) => {
+    const s = await loadStaff(deps.db, accountId);
+    return s !== null && THREE_METHOD_ROLES.includes(s.role);
+  };
+}
+
+/**
  * The staff login, logout and `me` routes:
  * - `POST /staff/v1/login/security-key/{start,finish}` and `POST /staff/v1/login/pgp/{start,finish}`
- *   (Plan 2's plugins, kinds staff and owner, always two factors); a security key whose AAGUID is no
+ *   (Plan 2's plugins, kinds staff and owner, two factors but for owner G3's known device, never two
+ *   PGP keys for a moderator); a security key whose AAGUID is no
  *   longer on the current allowlist is not offered and is refused (`recheckAllowlist`, Plan 4 M1);
  * - `POST /staff/v1/logout` (never 401, clears the staff cookie);
  * - `GET /staff/v1/me` → `{ displayName, role, nav, sessionEndsAt }`, where `sessionEndsAt` is the
@@ -66,11 +79,12 @@ export function knownDeviceRule(deps: Pick<Deps, 'db' | 'clock'>): (accountId: s
 export async function staffLoginRoutes(app: FastifyInstance): Promise<void> {
   const afterAuthenticate = staffLoginCheck(app.deps);
   const oneFactorOnKnownDevice = knownDeviceRule(app.deps);
+  const pgpPairRefused = pgpPairRule(app.deps);
   const kinds = ['staff', 'owner'] as const;
   await app.register(securityKeyLoginRoutes, {
-    prefix: '/staff/v1/login/security-key', kinds: [...kinds], realm: 'staff', afterAuthenticate, oneFactorOnKnownDevice, routeConfig: PUBLIC_LOGIN, recheckAllowlist: true,
+    prefix: '/staff/v1/login/security-key', kinds: [...kinds], realm: 'staff', afterAuthenticate, oneFactorOnKnownDevice, pgpPairRefused, routeConfig: PUBLIC_LOGIN, recheckAllowlist: true,
   });
-  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...kinds], afterAuthenticate, oneFactorOnKnownDevice, routeConfig: PUBLIC_LOGIN }), {
+  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...kinds], afterAuthenticate, oneFactorOnKnownDevice, pgpPairRefused, routeConfig: PUBLIC_LOGIN }), {
     prefix: '/staff/v1/login/pgp',
   });
   logoutRoute(app, '/staff/v1/logout', PUBLIC_LOGIN);

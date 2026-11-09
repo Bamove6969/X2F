@@ -38,7 +38,8 @@ export const PAIR_TTL_MS = SECOND_FACTOR_TTL_MS;
  * The one way every PGP and WebAuthn login finish ends: runs `afterAuthenticate` (it may throw an
  * `ApiError` before anything is created), refuses a disabled account, then:
  * - a trader: a full session (a `pendingId` → 400 `challenge-expired`: traders have no pending login);
- * - staff and the owner always need two factors (R1). Without `pendingId`: a `challenges` row
+ * - staff and the owner need two factors (R1; the one exception is owner G3's known device, through
+ *   `oneFactorOnKnownDevice`, and `pgpPairRefused` takes two PGP keys out of a moderator's pairs). Without `pendingId`: a `challenges` row
  *   (purpose `second-factor`, method `pair`, the account, this device, `payload.first` = the
  *   factor, 5 minutes) and `{ status: 'second-factor', pendingId, needs }`, no session (a first
  *   factor that can be in no pair → 403 `method-not-allowed`). With `pendingId`: that row is used up
@@ -63,6 +64,11 @@ export async function completeLogin(
      * that is one of their pair methods, before any pending login is made.
      */
     oneFactorOnKnownDevice?: (accountId: string, device: Buffer) => Promise<boolean>;
+    /**
+     * Owner G3: whether two PGP keys are refused as this staff account's pair (the staff app: a
+     * moderator or senior moderator). `needs` then never offers PGP after PGP, and the pair is refused.
+     */
+    pgpPairRefused?: (accountId: string) => Promise<boolean>;
   },
 ): Promise<LoginResult> {
   if (a.afterAuthenticate) await a.afterAuthenticate(a.account.id);
@@ -78,8 +84,10 @@ export async function completeLogin(
       accountId: a.account.id, method: a.factor.method, deviceLabel: a.deviceLabel, factors: [a.factor.method],
       proven: a.factor.method === 'pgp' ? { kind: 'pgp', fingerprints: a.factor.fingerprints } : { kind: 'webauthn', credentialId: a.factor.credentialId },
     });
-  } else if (a.pendingId === undefined) {
-    const needs = needsAfter(a.account.kind, a.factor);
+  }
+  const pairOptions = a.account.kind === 'staff' && a.pgpPairRefused && (await a.pgpPairRefused(a.account.id)) ? { pgpPair: false } : {};
+  if (a.pendingId === undefined) {
+    const needs = needsAfter(a.account.kind, a.factor, pairOptions);
     if (needs.length === 0) throw new ApiError(403, 'method-not-allowed');
     if (device === null) throw new ApiError(400, 'challenge-expired'); // never: every login route sets the device cookie
     if (a.oneFactorOnKnownDevice && (await a.oneFactorOnKnownDevice(a.account.id, device))) {
@@ -106,7 +114,7 @@ export async function completeLogin(
     const pending = rows[0];
     if (!pending) throw new ApiError(400, 'challenge-expired');
     const first = parseFactor(pending.payload.first);
-    if (first === null || !pairAllowed(a.account.kind, first, a.factor)) throw new ApiError(403, 'method-not-allowed');
+    if (first === null || !pairAllowed(a.account.kind, first, a.factor, pairOptions)) throw new ApiError(403, 'method-not-allowed');
     // A member's login (Task 18) is a session of the team account (a trader), so its strength
     // counts there (the hold, the device limit's weak-first order). Members always log in with two
     // factors (`pairAllowed`), so their logins are strong (lead's Task 18 landing rule, 2026-10-30;

@@ -613,6 +613,8 @@ interface LoginRouteOptions {
   kinds: AccountKind[];
   /** Owner G3: one factor is enough on a known device for this account (the staff app decides). */
   oneFactorOnKnownDevice?: (accountId: string, device: Buffer) => Promise<boolean>;
+  /** Owner G3: two PGP keys are no pair for this staff account (the staff app decides: moderators). */
+  pgpPairRefused?: (accountId: string) => Promise<boolean>;
   /** The site these routes serve; 'trader' when absent. The staff app passes 'staff'. */
   realm?: LoginRealm;
   afterAuthenticate?: (accountId: string) => Promise<void>;
@@ -757,6 +759,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       deviceLabel,
       ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}),
       ...(opts.oneFactorOnKnownDevice ? { oneFactorOnKnownDevice: opts.oneFactorOnKnownDevice } : {}),
+      ...(opts.pgpPairRefused ? { pgpPairRefused: opts.pgpPairRefused } : {}),
     });
     const retag = ch.payload.retag as { from?: unknown; tag?: unknown } | undefined;
     if (ch.payload.mode === 'login-name' && typeof retag?.from === 'number' && typeof retag.tag === 'string') {

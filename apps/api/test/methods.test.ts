@@ -249,12 +249,19 @@ describe('policy', () => {
     expect(pairAllowed('owner', pgp('a'), pk)).toBe(false);
   });
 
-  it('pairAllowed: staff need two of PGP, an attested key and a passkey (owner G3), or two PGP keys with no fingerprint in common', () => {
+  it('pairAllowed: staff need two of PGP, an attested key and a passkey (owner G3); a helper may use two PGP keys with no fingerprint in common, a moderator never', () => {
     expect(pairAllowed('staff', pgp('a'), sk())).toBe(true);
     expect(pairAllowed('staff', sk(), pgp('a'))).toBe(true);
     expect(pairAllowed('staff', pgp('a'), pk)).toBe(true);
     expect(pairAllowed('staff', pk, pgp('a'))).toBe(true);
-    expect(pairAllowed('staff', pgp('a'), pgp('b'))).toBe(true);
+    // Owner G3 (review P-I2): two PGP keys are one method, never a moderator's pair; a helper keeps
+    // them until the owner says otherwise (the staff app sets `pgpPair: false` by role).
+    expect(pairAllowed('staff', pgp('a'), pgp('b'), { pgpPair: false })).toBe(false);
+    expect(pairAllowed('staff', pgp('a'), sk(), { pgpPair: false })).toBe(true);
+    expect(pairAllowed('staff', pgp('a'), pk, { pgpPair: false })).toBe(true);
+    expect(pairAllowed('staff', sk(), pk, { pgpPair: false })).toBe(true);
+    expect(pairAllowed('staff', pgp('a'), pgp('b'))).toBe(true); // a helper
+    expect(pairAllowed('member', pgp('a'), pgp('b'), { pgpPair: false })).toBe(true); // team members are not staff roles
     expect(pairAllowed('staff', pgp('a'), pgp('a'))).toBe(false);
     expect(pairAllowed('staff', pgp('a', 'b'), pgp('b'))).toBe(false); // the first proved "a or b"
     expect(pairAllowed('staff', pgp('a'), pgp('c', 'a'))).toBe(false);
@@ -276,6 +283,9 @@ describe('policy', () => {
     expect(needsAfter('owner', sk(false))).toEqual([]);
     expect(needsAfter('owner', pk)).toEqual([]);
     expect(needsAfter('staff', pgp('a'))).toEqual(['pgp', 'security-key', 'passkey']);
+    // Owner G3 (review P-I2): a moderator is never offered a second PGP key.
+    expect(needsAfter('staff', pgp('a'), { pgpPair: false })).toEqual(['security-key', 'passkey']);
+    expect(needsAfter('staff', sk(), { pgpPair: false })).toEqual(['pgp', 'passkey']);
     expect(needsAfter('staff', sk())).toEqual(['pgp', 'passkey']);
     expect(needsAfter('staff', pk)).toEqual(['pgp', 'security-key']);
     expect(needsAfter('member', sk())).toEqual(['pgp']);
