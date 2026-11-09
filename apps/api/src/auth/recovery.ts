@@ -16,8 +16,12 @@
  *   key, bound to the account (FU-C, ASVS 2.6.2), its key id in `key_id`. Sets made before FU-C are
  *   plain SHA-256 with `key_id` null; they cannot be converted (only the hash is kept) and keep
  *   working, one use per code, until used up or regenerated.
- * - A backup login opens a `recovery` session, never a full one, held for 24 hours (a TOTP code or
- *   a recovery code alone is one weak way; owner 2026-10-29): `requireSession` refuses it with 403
+ * - The backup login is a recovery code only (design build gaps Job 1, board Login-Backup: "Your
+ *   recovery code is your only backup"; owner G32: the recovery code is the emergency way in). An
+ *   authenticator (TOTP) code is no longer a backup way in: `kind: 'totp'` is 403
+ *   `method-not-allowed` before any lookup (hold model v3). TOTP stays a normal login step (password + authenticator code, login.ts).
+ * - A backup login opens a `recovery` session, never a full one, held for 24 hours (a recovery
+ *   code alone is one weak way; owner 2026-10-29): `requireSession` refuses it with 403
  *   `recovery-hold` on every route that does not set `allowHeld`, so it cannot add a primary method
  *   early. The account's hold (Task 17, hold.ts) starts in the same transaction. Any full session
  *   of the account can end a recovery session; a strong one ends the hold it started too.
@@ -45,8 +49,6 @@ import { loginStrength, waits } from './strength.js';
 import type { Queryable } from '../db/pool.js';
 
 export const RECOVERY_HOLD_MS = 24 * 3_600_000;
-/** Backup TOTP attempts per account (or unknown name) per UTC day, right or wrong. */
-export const TOTP_BACKUP_DAILY = 5;
 /** Hold model v3 (owner 2 Nov 2026): one code, required at sign-up, replaced after use. */
 export const RECOVERY_CODE_COUNT = 1;
 
@@ -136,8 +138,9 @@ export async function applyRecoveryCodes(db: Queryable, accountId: string, keyId
 type Who = { id: string } | { nameTag: string };
 
 /**
- * `POST /v1/login/backup { loginName, kind, code, deviceLabel }`. Unknown login names, accounts of
- * other kinds (R2) and accounts without the method take the same path and fail the same way: 401
+ * `POST /v1/login/backup { loginName, kind: 'recovery-code', code, deviceLabel }`. `kind: 'totp'` is
+ * 403 `method-not-allowed` and any other `kind` 400 `bad-request`, before any lookup. Unknown login names, accounts of other
+ * kinds (R2) and accounts without recovery codes take the same path and fail the same way: 401
  * `credentials-invalid`. A disabled account is named only after a correct code, and its code stays
  * unused.
  */
@@ -157,7 +160,7 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
       [name.candidates.ids, name.candidates.tags],
     )
   ).rows[0];
-  // R2: an account whose kind may not hold this method (staff and the owner hold neither) takes the
+  // R2: an account whose kind may not hold recovery codes (staff and the owner) takes the
   // unknown-name path.
   const accountId = found && allowedMethods(found.kind).includes('recovery-codes') ? found.id : null;
   const who: Who = accountId !== null ? { id: accountId } : { nameTag: name.tag };

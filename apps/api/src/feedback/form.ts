@@ -172,8 +172,8 @@ export function feedbackFormRoutes(app: FastifyInstance): void {
   // A trader refused for a hold, a backup session or old Terms is exactly who may want to say so.
   // allowHeld is a recorded exception to requireSession's rule (see its comment). touch: false: the
   // send is not counted as activity, so it leaves no fresh last_seen_at beside an anonymous row.
-  // A team member refused something may say so too (Plan 2 Task 18): `member: 'any'`.
-  const trader = requireSession({ kinds: ['trader'], allowRecovery: true, allowHeld: true, allowStaleTerms: true, touch: false, member: 'any' });
+  // A team member refused something may say so too (Plan 2 Task 18), with the Send X2F feedback box (Job 1c; Q69: per member).
+  const trader = requireSession({ kinds: ['trader'], allowRecovery: true, allowHeld: true, allowStaleTerms: true, touch: false, member: 'feedback-send' });
   app.post('/v1/feedback/form', { preHandler: trader }, async (req, reply) => {
     const f = parseBody(req.body);
     const now = req.server.deps.clock();

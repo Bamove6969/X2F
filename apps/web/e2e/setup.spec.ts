@@ -95,6 +95,12 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
     return json(sessionInfo(s))(r);
   });
   await page.route('**/v1/terms', json({ version: TERMS_VERSION }));
+  // The private username's live tick: every name is free unless it starts with "taken".
+  await page.route('**/v1/register/name-check', (r) => {
+    record('name-check', r);
+    const b = JSON.parse(r.request().postData() ?? '{}') as { loginName: string };
+    return json({ available: !b.loginName.startsWith('taken') })(r);
+  });
   await page.route('**/v1/register/pgp/start', (r) => {
     record('pgp-start', r);
     return json({ challengeId: 'c1', encryptedMessage: BOARD_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z', fingerprint: '3F2A9C417B0ED5A261C80E4B92D71F6AC3B80D15' })(r);
@@ -114,6 +120,11 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
     s.displayName = b.displayName;
     s.methods = ['password'];
     return json({ displayName: b.displayName }, 201)(r);
+  });
+  await page.route('**/v1/account/recovery-codes', (r) => {
+    record('recovery-codes', r);
+    s.methods = [...s.methods, 'recovery-codes'];
+    return json({ codes: Array.from({ length: 10 }, (_, i) => `ABCD-EFGH-JKMN-PQR${i}`) })(r);
   });
   await page.route('**/v1/account/totp/start', (r) => {
     record('totp-start', r);
@@ -174,10 +185,14 @@ async function acceptTerms(page: Page): Promise<void> {
   await page.click('[data-part="terms-accept"]');
 }
 
+/** Step 1: the private username (with its tick), then the public display name on its own screen. */
 async function pickNames(page: Page, display: string, login: string): Promise<void> {
-  await page.fill('#uname', display);
-  await page.fill('#login-name', login);
+  await page.fill('#uname', login);
+  await expect(page.locator('[data-part="name-status"]')).toHaveText(`${login} is available`);
   await page.click('[data-part="names-continue"]');
+  await expect(page.locator('[data-screen="setup-display-name"]')).toBeVisible();
+  await page.fill('#display-name', display);
+  await page.click('[data-part="display-continue"]');
 }
 
 for (const v of PHONES) {
@@ -220,10 +235,12 @@ for (const v of PHONES) {
     // The URL changes before the router commits the new screen: wait for the screen itself.
     await expect(page.locator('[data-screen="setup-backup"]')).toBeVisible();
     await expectParity(page, 'SetupBackup', { viewport: v });
+    // Design build gaps Job 1: no authenticator app as a backup; recovery codes are first and picked.
+    await expect(page.locator('[data-backup="totp"]')).toHaveCount(0);
+    await expect(page.locator('[data-backup="recovery-codes"]')).toHaveAttribute('aria-checked', 'true');
     await page.click('[data-part="backup-add"]');
-    await page.click('[data-part="totp-start"]');
-    await page.fill('#totp-code', '123456');
-    await page.click('[data-part="totp-finish"]');
+    await page.click('[data-part="recovery-make"]');
+    await page.click('[data-part="recovery-done"]');
 
     await expect(page).toHaveURL(/\/setup\/wallet\?/);
     // The URL changes before the router commits the new screen: wait for the screen itself.
@@ -362,26 +379,39 @@ test('Mira.K_ shows exactly as typed after setup (password path, backup skipped)
   expect(stored).not.toContain('mira-signin');
 });
 
-test('the display name and login name are checked before going on (5-20, allowed characters, different)', async ({ page }) => {
-  await stubApi(page);
+test('the username and display name are checked before going on (5-20, allowed characters, free, different)', async ({ page }) => {
+  const s = await stubApi(page);
   await page.goto('/setup');
   await acceptTerms(page);
   const go = page.locator('[data-part="names-continue"]');
 
+  // Step 1 is one private field: no second name on this screen.
+  await expect(page.locator('[data-screen="setup-name"] input')).toHaveCount(1);
   await page.fill('#uname', 'abcd');
-  await page.fill('#login-name', 'login-name-1');
   await go.click();
   await expect(page.locator('[data-part="names-error"]')).toHaveText('Your username needs 5 to 20 characters.');
   await page.fill('#uname', 'Mira K');
   await go.click();
   await expect(page.locator('[data-part="names-error"]')).toHaveText('Your username can use only letters, numbers, dots, dashes and underscores.');
-  await page.fill('#uname', 'login-NAME-1');
+  // Wrong shapes are never sent to the live check.
+  expect(s.bodies['name-check'] ?? []).toEqual([]);
+  await page.fill('#uname', 'taken.name');
+  await expect(page.locator('[data-part="name-status"]')).toHaveText('taken.name is taken. Try another.');
   await go.click();
-  await expect(page.locator('[data-part="names-error"]')).toHaveText('Your login name must be different from your username.');
+  await expect(page.locator('[data-part="names-error"]')).toHaveText('That username is taken. Pick another.');
   await expect(page).toHaveURL(/\/setup\/name/);
+
+  await page.fill('#uname', 'login-name-1');
+  await expect(page.locator('[data-part="name-status"]')).toHaveText('login-name-1 is available');
+  await go.click();
+  await expect(page.locator('[data-screen="setup-display-name"]')).toBeVisible();
+  await page.fill('#display-name', 'login-NAME-1');
+  await page.click('[data-part="display-continue"]');
+  await expect(page.locator('[data-part="display-error"]')).toHaveText('Your display name must be different from your username.');
+  await expect(page).toHaveURL(/\/setup\/display-name/);
 });
 
-test('a taken username at register sends the person back to change it', async ({ page }) => {
+test('a taken display name at register sends the person back to change their names, both kept', async ({ page }) => {
   await stubApi(page);
   await page.unroute('**/v1/register/password');
   await page.route('**/v1/register/password', json({ error: 'display-name-taken' }, 409));
@@ -393,10 +423,12 @@ test('a taken username at register sends the person back to change it', async ({
   await page.fill('#pw', 'Quiet-harbour-58');
   await page.fill('#pw2', 'Quiet-harbour-58');
   await page.click('[data-part="password-set"]');
-  await expect(page.locator('[data-part="register-error"]')).toContainText('That username is taken.');
+  await expect(page.locator('[data-part="register-error"]')).toContainText('That display name is taken.');
   await page.click('[data-part="change-names"]');
   await expect(page).toHaveURL(/\/setup\/name\?/);
-  await expect(page.locator('#uname')).toHaveValue('lumen.k');
+  await expect(page.locator('#uname')).toHaveValue('lumen-login-7');
+  await page.click('[data-part="names-continue"]');
+  await expect(page.locator('#display-name')).toHaveValue('lumen.k');
 });
 
 test('a step opened without the earlier ones goes back to the Terms', async ({ page }) => {
@@ -442,7 +474,11 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   await at('setup-terms');
   await acceptTerms(page);
   await at('setup-name');
-  await pickNames(page, 'lumen.k', 'lumen-login-7');
+  await page.fill('#uname', 'lumen-login-7');
+  await page.click('[data-part="names-continue"]');
+  await at('setup-display-name');
+  await page.fill('#display-name', 'lumen.k');
+  await page.click('[data-part="display-continue"]');
   await at('setup-login');
   await page.click('[data-part="method-continue"]');
   await at('setup-pgp-key');
@@ -478,11 +514,13 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
   expect(takes).toEqual([]);
 
   // No more screens than the Setup boards (SetupPassword is the other branch of the login step),
-  // plus G25's Log in and session length.
-  const SETUP_BOARDS = ['SetupTerms', 'SetupUsername', 'SetupLogin', 'SetupPgpKey', 'SetupPgpChallenge', 'SetupPassword', 'SetupBackup', 'SetupWallet', 'SetupWelcome'];
+  // plus G25's Log in and session length. The display name has its own screen after SetupUsername
+  // (design real-app review item 6: the board's one private username, then the second name on its
+  // own step; its fields are on SignupSecurity's "Your names" card), so it counts as one more board.
+  const SETUP_BOARDS = ['SetupTerms', 'SetupUsername', 'display name', 'SetupLogin', 'SetupPgpKey', 'SetupPgpChallenge', 'SetupPassword', 'SetupBackup', 'SetupWallet', 'SetupWelcome'];
   const G25 = ['Login', 'SessionLength'];
   expect(seen.length).toBeLessThanOrEqual(SETUP_BOARDS.length - 1 + G25.length);
-  expect(seen).toEqual(['setup-terms', 'setup-name', 'setup-login', 'setup-pgp-key', 'setup-pgp-code', 'setup-backup', 'setup-wallet', 'setup-welcome', 'login', 'session-length']);
+  expect(seen).toEqual(['setup-terms', 'setup-name', 'setup-display-name', 'setup-login', 'setup-pgp-key', 'setup-pgp-code', 'setup-backup', 'setup-wallet', 'setup-welcome', 'login', 'session-length']);
   expect(s.requests).toContain('POST /v1/logout');
   expect(s.bodies['session-length']).toEqual([{ hours: 4 }]);
   expect(s.registered).toBe(true);

@@ -2,7 +2,8 @@
  * Getting started (Plan 3 Task 28, spec 6.1). The first time someone taps Trade or posts an ad, a
  * short setup runs while the trade waits, in the canvas's board order:
  *
- *   0 Terms (`/setup`)  1 names (`name`)  2 login method (`login`)  3 PGP key and code
+ *   0 Terms (`/setup`)  1 the private username (`name`, with the live "is available" tick), then
+ *   the public display name (`display-name`)  2 login method (`login`)  3 PGP key and code
  *   (`pgp-key`, `pgp-code`) or a password (`password`), or a passkey / security key straight from
  *   step 2  4 backup login (`backup`, "Skip for now")  5 first payout wallet (`wallet`)  then
  *   Welcome (`welcome`) with Start trading back to `returnTo`.
@@ -21,6 +22,7 @@ import { returnToFrom } from '../../api/client.js';
 import { useSession } from '../../session/useSession.js';
 import { authApi } from '../auth/authApi.js';
 import { Backup } from './Backup.js';
+import { DisplayName } from './DisplayName.js';
 import { INITIAL, SetupContext, stepPath, useSetup, type SetupState, type Step } from './kit.js';
 import { Login } from './Login.js';
 import { Password } from './Password.js';
@@ -52,6 +54,7 @@ export function SetupFlow() {
       <Routes>
         <Route index element={<SetupStart />} />
         <Route path="name" element={before(state.terms !== null, <Username />)} />
+        <Route path="display-name" element={before(state.terms !== null && state.loginName !== '', <DisplayName />)} />
         <Route path="login" element={before(named, <Login />)} />
         <Route path="pgp-key" element={before(named, <PgpKey />)} />
         <Route path="pgp-code" element={need(state.challenge !== null, <PgpChallenge />)} />

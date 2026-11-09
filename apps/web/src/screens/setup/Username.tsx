@@ -1,28 +1,38 @@
 /**
- * Setup step 1 (board SetupUsername; spec 6.1, owner 2026-10-23): the public username (the spec's
- * "display name": offers, profiles, chat), shown exactly as typed, and the private login name, never
- * shown to anyone. Both 5-20 letters, numbers, dots, dashes and underscores; they must differ.
+ * Setup step 1 (board SetupUsername; design real-app review item 6; owner Q54: "Your username is
+ * never shown to anybody and is as confidential as your password"): ONE field, the private
+ * username, which is the login name. A live tick says whether it is free (availability.ts; the
+ * server paces it). The public display name follows on its own screen (DisplayName.tsx; owner G6:
+ * "a unique username and also a unique display name"). 5-20 letters, numbers, dots, dashes and
+ * underscores.
  */
 import { useState } from 'react';
 import { Button } from '../../ui/Button.js';
-import { SetupFrame, SetupIntro, useSetup } from './kit.js';
 import { Icon } from '../../ui/icons.js';
-import { checkDisplayName, checkNames, namesProblem } from './names.js';
+import { availabilityLine, useNameAvailability, type NameChecker } from './availability.js';
+import { SetupFrame, SetupIntro, useSetup } from './kit.js';
+import { checkLoginName, nameShapeProblem } from './names.js';
 
-export function Username() {
+export function Username({ check }: { check?: NameChecker } = {}) {
   const { state, update, go, path } = useSetup();
-  const [displayName, setDisplayName] = useState(state.displayName);
   const [loginName, setLoginName] = useState(state.loginName);
   const [error, setError] = useState<string | null>(null);
+  const availability = useNameAvailability(loginName, check);
+  const line = availabilityLine(availability);
 
   const next = () => {
-    const r = checkNames(displayName, loginName);
+    const r = checkLoginName(loginName);
     if (!r.ok) {
-      setError(namesProblem(r));
+      // A login name has no reserved words (only a display name does), so any refusal is its shape.
+      setError(nameShapeProblem('Your username', r.reason === 'length' ? 'length' : 'characters'));
       return;
     }
-    update({ displayName: r.display.name, loginName: r.login.name, challenge: null });
-    go('login');
+    if (availability.state === 'taken') {
+      setError('That username is taken. Pick another.');
+      return;
+    }
+    update({ loginName: r.name, challenge: null });
+    go('display-name');
   };
 
   return (
@@ -36,7 +46,9 @@ export function Username() {
         </Button>
       }
     >
-      <SetupIntro title="Pick a username">This is how traders see you. No email or phone number needed, now or ever.</SetupIntro>
+      <SetupIntro title="Pick a username">
+        You type this to log in. Only you see it. Nobody can work it out from your display name. Nothing else to give us, now or ever.
+      </SetupIntro>
       <div className="x2f-field">
         <label className="x2f-label" htmlFor="uname">
           Username
@@ -45,47 +57,28 @@ export function Username() {
           className="x2f-input x2f-start__name"
           id="uname"
           type="text"
-          autoComplete="off"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          maxLength={64}
-          aria-describedby="uname-help"
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-        />
-        {checkDisplayName(displayName).ok ? (
-          <span className="x2f-start__status x2f-start__preview" data-tone="escrow" data-part="name-preview">
-            <Icon name="check" size={18} stroke={2} />
-            <span>
-              Traders will see <span data-username="">{displayName}</span>
-            </span>
-          </span>
-        ) : null}
-        <p className="x2f-start__help" id="uname-help">
-          5 to 20 characters: letters, numbers, dots, dashes and underscores. It shows exactly as you type it. Pick something that isn't your real
-          name or used elsewhere.
-        </p>
-      </div>
-      <div className="x2f-field">
-        <label className="x2f-label" htmlFor="login-name">
-          Login name
-        </label>
-        <input
-          className="x2f-input x2f-start__name"
-          id="login-name"
-          type="text"
           autoComplete="username"
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
           maxLength={64}
-          aria-describedby="login-name-help"
+          aria-describedby="uname-status uname-help"
           value={loginName}
-          onChange={(e) => setLoginName(e.target.value)}
+          onChange={(e) => {
+            setLoginName(e.target.value);
+            setError(null);
+          }}
         />
-        <p className="x2f-start__help" id="login-name-help">
-          Private: nobody else ever sees it. You use it to log in with a password or a security key, so make it different from your username.
+        <span id="uname-status" aria-live="polite">
+          {line !== null ? (
+            <span className="x2f-start__status" data-tone={line.tone} data-part="name-status">
+              {line.tone === 'escrow' ? <Icon name="check" size={18} stroke={2} /> : null}
+              <span>{line.text}</span>
+            </span>
+          ) : null}
+        </span>
+        <p className="x2f-start__help" id="uname-help">
+          5 to 20 characters: letters, numbers, dots, dashes and underscores. Pick something that isn't your real name or used elsewhere.
         </p>
       </div>
       {error !== null ? (

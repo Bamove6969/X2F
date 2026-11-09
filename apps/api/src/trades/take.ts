@@ -229,7 +229,8 @@ function raceRefusal(e: unknown): ApiError | null {
 
 // The account owner; a team member with Trades passes the gate but `ownerDeviceOnly` then refuses
 // them (403 member-cannot-sign) until Plan 3 Task 42 (Plan 2 Task 18 review I2).
-const requireTrader = [requireSession({ kinds: ['trader'], member: 'trades' }), ownerDeviceOnly];
+// Job 1c: the Take and Accept boxes wait for member keys (`ownerDeviceOnly` refuses every member).
+const requireTrader = [requireSession({ kinds: ['trader'], member: ['trades-take', 'trades-accept'] }), ownerDeviceOnly];
 
 export function takeRoutes(app: FastifyInstance): void {
   app.post('/v1/offers/:id/take', { preHandler: [...requireTrader, requireNotHeld] }, async (req) => {

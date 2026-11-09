@@ -63,7 +63,7 @@ export function holdRoutes(app: FastifyInstance): void {
     const accountHold = hold === null ? null : { until: hold.holdUntil.toISOString(), reason: hold.reason };
     const list = await listChanges(deps.db, accountId, sessionId);
     if (memberId === null) return { accountHold, ...list, changesWait: await changesWait(req) };
-    const rights = holdRightOf(req.auth.memberRoles);
+    const rights = holdRightOf(req.auth.memberAbilities);
     const lead = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [accountId])).rows[0]?.display_name ?? '';
     const changes = rights === 'none'
       ? { count: 0, takesEffectAt: list.changes.takesEffectAt, items: [] }

@@ -4,6 +4,7 @@ import type pg from 'pg';
 import type { Config } from './config.js';
 import { methodRoutes } from './auth/methods.js';
 import { originHook } from './auth/origin.js';
+import { nameCheckRoutes } from './auth/nameCheck.js';
 import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { holdRoutes } from './auth/holdRoutes.js';
@@ -35,6 +36,7 @@ import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { teamRoutes } from './routes/team.js';
 import { accountTypeRoutes } from './routes/accountType.js';
+import { noteRoutes } from './team/notes.js';
 import { tradeIdentityRoutes } from './trades/identity.js';
 import { chatRoutes } from './chat/routes.js';
 import { newBudgets, type Budgets } from './limits.js';
@@ -281,6 +283,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   siteRoutes(app);
   logoutRoute(app);
   passwordRoutes(app);
+  // The sign-up's live "is available" tick for the private username (limits in nameCheck.ts).
+  nameCheckRoutes(app);
   await pgpRoutes(app);
   totpRoutes(app);
   recoveryRoutes(app);
@@ -342,6 +346,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   pastRepRoutes(app);
   // Plan 2, Task 18: team members (invites, the member's sign-up, roles, the owner's audit log).
   teamRoutes(app);
+  // Job 1c (J-10, S-094): notes on traders.
+  noteRoutes(app);
   // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.
   feedbackRoutes(app);
 

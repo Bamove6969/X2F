@@ -10,6 +10,7 @@ const RESPONSE = { id: 'x', rawId: 'x', type: 'public-key', response: {}, client
 export const SAMPLE_CALLS: { [K in keyof AuthApi]: Parameters<AuthApi[K]> } = {
   getTerms: [],
   getPgpSigningKey: [],
+  nameAvailable: [{ loginName: 'sample.login' }],
   registerPassword: [{ displayName: 'Sample01', loginName: 'sample.login', password: 'x', deviceLabel: 'B', acceptedTerms: 'v' }],
   loginPassword: [{ loginName: 'sample.login', password: 'x', deviceLabel: 'B' }],
   loginSecondFactor: [{ pendingId: UUID, code: '000000' }],
@@ -89,6 +90,7 @@ export const SAMPLE_CALLS: { [K in keyof AuthApi]: Parameters<AuthApi[K]> } = {
 export const ROUTES: { [K in keyof AuthApi]: `${'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'} /v1/${string}` } = {
   getTerms: 'GET /v1/terms',
   getPgpSigningKey: 'GET /v1/pgp/signing-key',
+  nameAvailable: 'POST /v1/register/name-check',
   registerPassword: 'POST /v1/register/password',
   loginPassword: 'POST /v1/login/password',
   loginSecondFactor: 'POST /v1/login/second-factor',

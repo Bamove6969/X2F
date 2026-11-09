@@ -28,6 +28,13 @@ export type ConfirmAction =
   | { kind: 'team-invite'; name: string; roles: string }
   /** Changes one member's roles to exactly `roles`. */
   | { kind: 'team-roles'; memberId: string; roles: string }
+  /**
+   * Job 1c (J-10): an invite with granular boxes: `abilities`, the ability ids comma-separated in
+   * the catalogue's order (apps/api/src/team/abilities.ts).
+   */
+  | { kind: 'team-invite-abilities'; name: string; abilities: string }
+  /** Sets one member's boxes to exactly `abilities` (comma-separated, catalogue order). */
+  | { kind: 'team-abilities'; memberId: string; abilities: string }
   /** Removes one member (or cancels an invite). */
   | { kind: 'team-remove'; memberId: string }
   /** "Stay logged in?" (owner, 2 Nov 2026): extend this session by its length. Bound to the session by the token. */
@@ -93,6 +100,12 @@ export function describeAction(a: ConfirmAction): string {
       return `invite ${a.name} as a team member (${teamRoleWords(a.roles)})`;
     case 'team-roles':
       return `change a team member's roles to ${teamRoleWords(a.roles)}`;
+    case 'team-invite-abilities':
+      // COPY-UNSIGNED
+      return `invite ${a.name} as a team member (${boxCount(a.abilities)})`;
+    case 'team-abilities':
+      // COPY-UNSIGNED
+      return `change a team member's abilities (${boxCount(a.abilities)})`;
     case 'team-remove':
       return 'remove a team member';
     case 'extend-session':
@@ -110,6 +123,12 @@ const ROLE_WORDS: Readonly<Record<string, string>> = {
   'hold-cancel': 'Untick or cancel waiting changes',
   'hold-end': 'End a hold',
 };
+
+/** "1 ability" or "N abilities" from a comma-separated abilities list. COPY-UNSIGNED */
+function boxCount(abilities: string): string {
+  const n = abilities === '' ? 0 : abilities.split(',').length;
+  return n === 1 ? '1 ability' : `${n} abilities`;
+}
 
 /** "Offers", "Trades", "Offers and Trades" or a longer list ("Offers, Trades and End a hold") from a comma-separated roles list. */
 function teamRoleWords(roles: string): string {

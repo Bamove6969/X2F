@@ -6,7 +6,8 @@ import { addAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
 import type { EventBus } from '../events/bus.js';
 import { ApiError } from '../errors.js';
-import { hasRole, type MemberAccess, type TeamRole } from '../team/perms.js';
+import { hasAbility } from '../team/abilities.js';
+import type { MemberAccess } from '../team/perms.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, trustDevice } from './device.js';
 import type { LoginStrength } from './strength.js';
 
@@ -73,8 +74,8 @@ export interface AuthContext {
    * to it; only routes that pass `member` to `requireSession` let it through.
    */
   memberId: string | null;
-  /** The member's roles (empty for the account owner, who has every permission). */
-  memberRoles: readonly TeamRole[];
+  /** The member's ticked boxes (team/abilities.ts; empty for the account owner, who has every permission). */
+  memberAbilities: readonly string[];
   /** The member's name as the chat label shows it; null for the account owner. */
   memberName: string | null;
 }
@@ -327,7 +328,7 @@ interface SessionRow {
   hold_until: Date | null;
   member_id: string | null;
   member_live: boolean | null;
-  member_roles: TeamRole[] | null;
+  member_abilities: string[] | null;
   member_name: string | null;
   member_disabled: boolean | null;
   member_terms_version: string | null;
@@ -373,7 +374,8 @@ export function requireSession(
     /**
      * Plan 2 Task 18: which team members may pass. Left out, a member's session gets 403
      * `owner-only` (fail closed: a route is the account owner's until it says otherwise); `any`
-     * lets every member through; a role lets through members holding it (others 403 `forbidden`).
+     * lets every member through; an ability (or a list: any one of them) lets through members
+     * holding it (others 403 `forbidden`). Job 1c: team/abilities.ts.
      */
     member?: MemberAccess;
   } = {},
@@ -386,7 +388,7 @@ export function requireSession(
       `select s.id, s.account_id, s.level, s.onboarding_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
               s.hold_until, a.kind, a.disabled_at, a.terms_version, s.member_id,
               (tm.removed_at is null and tm.joined_at is not null and tm.account_id = s.account_id) as member_live,
-              tm.roles as member_roles, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
+              tm.abilities as member_abilities, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
               ma.terms_version as member_terms_version, s.app,
               case when s.token_hash = $1 then null else s.prev_token_until end as prev_until
          from sessions s join accounts a on a.id = s.account_id
@@ -420,7 +422,7 @@ export function requireSession(
     if (row.disabled_at !== null || row.member_disabled === true) throw new ApiError(403, 'account-disabled');
     if (row.member_id !== null) {
       if (opts.member === undefined) throw new ApiError(403, 'owner-only');
-      if (!hasRole(row.member_roles ?? [], opts.member)) throw new ApiError(403, 'forbidden');
+      if (!hasAbility(row.member_abilities ?? [], opts.member)) throw new ApiError(403, 'forbidden');
     }
     if (row.level === 'recovery' && !opts.allowRecovery) throw new ApiError(403, 'recovery-session');
     if (row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime() && !opts.allowHeld) {
@@ -458,7 +460,7 @@ export function requireSession(
       // The deadline as the row had it (an untouched request did not move it).
       expiresAt: policy === null ? row.expires_at : new Date(Math.min(row.expires_at.getTime(), row.last_seen_at.getTime() + policy.idleMs)),
       memberId: row.member_id,
-      memberRoles: row.member_id !== null ? (row.member_roles ?? []) : [],
+      memberAbilities: row.member_id !== null ? (row.member_abilities ?? []) : [],
       memberName: row.member_id !== null ? row.member_name : null,
     };
   };

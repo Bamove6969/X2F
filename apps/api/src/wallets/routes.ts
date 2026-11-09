@@ -411,7 +411,8 @@ export function walletRoutes(app: FastifyInstance): void {
   // trade's payout wallet); adding and removing wallets stay the account owner's (owner-only).
   // Review M7: a member gets each address's last 6 characters only (`addressEnd`), never `address`, the whole
   // address: their device never runs the escrow, so it never needs one.
-  const pickWallet = requireSession({ kinds: ['trader'], member: 'trades' });
+  // Job 1c: the wallet list (names and address endings) is the See wallet names box.
+  const pickWallet = requireSession({ kinds: ['trader'], member: 'wallets-see' });
   app.get('/v1/wallets/rule', { preHandler: session }, async (req) => walletRule(req.server.deps.db, req.auth.accountId));
   app.get('/v1/wallets', { preHandler: pickWallet }, async (req) => {
     const deps = req.server.deps;

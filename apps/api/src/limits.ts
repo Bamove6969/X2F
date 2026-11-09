@@ -83,6 +83,18 @@ export const SECURITY_CHANGE_BUCKET: BucketSize = { capacity: 10, perMinute: 5 }
  */
 export const APPROVAL_DECISION_BUCKET: BucketSize = { capacity: 10, perMinute: 5 };
 
+/**
+ * `POST /v1/register/name-check` (the sign-up's live "is available" tick, lead job 2026-11-08), site
+ * wide. The tick answers whether a private login name exists, so this budget is what bounds
+ * enumeration: at most 30 at once and 10 a minute (14,400 a day) for the whole site, however many
+ * device cookies a script throws away. A person typing a few names uses a handful. When a script
+ * drains it, the tick falls back to "checked when you finish" for everyone; sign-up itself is not
+ * affected (`createAccount` checks again and answers only `names-unavailable`).
+ */
+export const NAME_CHECK_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
+/** The same route per device cookie (checked first, so a device over its pace never spends the site budget). */
+export const NAME_CHECK_DEVICE_BUCKET: BucketSize = { capacity: 10, perMinute: 2 };
+
 /** `POST /v1/method-suggestions` (Plan 3 Task 3): rows carry no account, so one budget for everyone. */
 export const SUGGEST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 
@@ -161,6 +173,10 @@ export interface Budgets {
   register: TokenBucket;
   start: TokenBucket;
   suggest: TokenBucket;
+  /** Site wide: `POST /v1/register/name-check`. */
+  nameCheck: TokenBucket;
+  /** Per device cookie: `POST /v1/register/name-check`. */
+  nameCheckDevice: KeyedBuckets;
   /** Per session: `PUT /v1/account/password` (review round 3 R3-I1). */
   securityChange: KeyedBuckets;
   /** Per session: `POST /v1/account/approvals/:id` (review round 4 R4-I1). */
@@ -181,6 +197,8 @@ export function newBudgets(clock: () => Date): Budgets {
     register: new TokenBucket(REGISTER_BUCKET.capacity, REGISTER_BUCKET.perMinute, clock),
     start: new TokenBucket(START_BUCKET.capacity, START_BUCKET.perMinute, clock),
     suggest: new TokenBucket(SUGGEST_BUCKET.capacity, SUGGEST_BUCKET.perMinute, clock),
+    nameCheck: new TokenBucket(NAME_CHECK_BUCKET.capacity, NAME_CHECK_BUCKET.perMinute, clock),
+    nameCheckDevice: new KeyedBuckets(NAME_CHECK_DEVICE_BUCKET, clock),
     securityChange: new KeyedBuckets(SECURITY_CHANGE_BUCKET, clock),
     approvalDecision: new KeyedBuckets(APPROVAL_DECISION_BUCKET, clock),
     chatOpen: new KeyedBuckets(CHAT_OPEN_BUCKET, clock),

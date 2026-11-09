@@ -6,8 +6,8 @@ import { cancelWaiting, counterpartyProblem, refuseHeldTradeEvent } from './held
 import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
-import { assertLiveMember, auditMember, type AuditAction } from '../team/audit.js';
-import { assertMemberMaySend } from '../team/perms.js';
+import { assertLiveMember, auditLead, auditMember, type AuditAction } from '../team/audit.js';
+import { assertMemberMay, assertMemberMaySend, EVENT_ABILITY, MEMBER_EVENT_ABILITIES, TRADE_READ } from '../team/perms.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
@@ -74,8 +74,11 @@ export const FINISH_OPEN_TRADES = { kinds: ['trader'], allowRecovery: true, allo
  * participants only: anyone else gets the same 404 as for an unknown code.
  */
 export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}): void {
-  // The account owner, or a team member with Trades (Plan 2 Task 18).
-  const session = requireSession({ ...FINISH_OPEN_TRADES, member: 'trades' });
+  // The account owner, or a team member with a box that covers the step (Plan 2 Task 18, Job 1c):
+  // reading a trade (active or past), the trade events (each
+  // event's own box, checked again in the handler: EVENT_ABILITY).
+  const readTrade = requireSession({ ...FINISH_OPEN_TRADES, member: TRADE_READ });
+  const sendEvent = requireSession({ ...FINISH_OPEN_TRADES, member: MEMBER_EVENT_ABILITIES });
   const hook = opts.publish ?? noPublish;
   const profile = opts.profile ?? (() => null);
   const txConfirmations = opts.txConfirmations ?? noConfirmations;
@@ -108,7 +111,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     });
   };
 
-  app.get('/v1/trades/:code', { preHandler: session }, async (req) => {
+  app.get('/v1/trades/:code', { preHandler: readTrade }, async (req) => {
     const row = await tradeFor(req);
     const t = rowToTrade(row);
     if (roleOf(t, req.auth.accountId) === null) throw new ApiError(404, 'not-found');
@@ -118,10 +121,12 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
   // `POST /v1/trades/:code/final-alert-seen` is gone with the final alert (owner 8 Nov, p6-1): an
   // old client's receipt now gets the router's 404.
 
-  app.post('/v1/trades/:code/events', { preHandler: session }, async (req) => {
+  app.post('/v1/trades/:code/events', { preHandler: sendEvent }, async (req) => {
     const e = clientEvent(req.body);
-    // Task 18 (R44): no team member signs escrow until a per-member key scheme exists.
+    // Task 18 (R44): no team member signs escrow until a per-member key scheme exists, and never
+    // releases on the lead's sell trades (p10-2); then the event's own box (Job 1c).
     assertMemberMaySend(req.auth.memberId, e.type);
+    assertMemberMay(req.auth, EVENT_ABILITY[e.type]!);
     const row = await tradeFor(req);
     // `by` is the session's side in this trade (P3-C2); the two sides never change after take.
     const by = roleOf(rowToTrade(row), req.auth.accountId);
@@ -141,7 +146,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       // The first full count also starts the 48 hours, if the watcher has not yet (cancelReturn.ts).
       // A member's request records it only while still a live Trades member: the check runs in the
       // record's transaction, as auditMember's does for the event (Task 18 review round 2, n2).
-      await recordReturnConfirmed({ db: deps.db, clock: deps.clock, publish }, row, n, (client) => assertLiveMember(client, req.auth, 'trades'));
+      await recordReturnConfirmed({ db: deps.db, clock: deps.clock, publish }, row, n, (client) => assertLiveMember(client, req.auth, EVENT_ABILITY['confirm-cancel']!));
     }
     let next: Trade;
     try {
@@ -155,6 +160,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
         by,
         async (client, _prev, _next, now) => {
           await auditMember(client, req.auth, { action: e.type as AuditAction, tradeCode: row.code }, now);
+          // T-076 (p7-1): on a team account the lead's release is in the team log too, with the amount.
+          if (e.type === 'release-started') await auditLead(client, req.auth, { action: 'release-started', tradeCode: row.code }, now);
         },
         async (client, now, prev) => {
           await requireLiveSessionInTx(client, req.auth, now);
@@ -197,7 +204,7 @@ export interface ConfirmationsView {
  * address ending; nobody gets an address, an amount or the tx hash.
  */
 export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations = noConfirmations, hook: TradePublisher = noPublish): void {
-  const session = requireSession({ ...FINISH_OPEN_TRADES, member: 'trades' });
+  const session = requireSession({ ...FINISH_OPEN_TRADES, member: TRADE_READ });
   // A recorded `return-confirmed` (Task 39) is delivered after the response, as tradeRoutes does.
   const publish: TradePublisher = async (t, e, by) => {
     setImmediate(() => {
@@ -220,9 +227,9 @@ export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations
       req.log.warn({ err }, 'confirmations lookup failed');
     }
     // A buyer's cancel: the first full count makes the seller's Confirm cancel available (owner 2026-10-29).
-    // A member's read records it only while still a live Trades member (Task 18 review round 2, n2).
+    // A member's read records it only while still a live member who may read the trade (Task 18 review round 2, n2).
     await recordReturnConfirmed({ db: req.server.deps.db, clock: req.server.deps.clock, publish }, row, confirmations, (client) =>
-      assertLiveMember(client, req.auth, 'trades'),
+      assertLiveMember(client, req.auth, TRADE_READ),
     );
     const out: ConfirmationsView = { confirmations, target: UNLOCK_CONFIRMATIONS };
     if (role === 'buyer' && t.state === 'released' && row.buyer_payout !== null) out.payoutEnd = addressEnd(row.buyer_payout);

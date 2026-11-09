@@ -626,6 +626,10 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   // caller's own claim rows only (a moderator approves before anything shows).
   'POST /v1/account/past-rep/start': "writes only a past-rep challenge bound to the caller's account; its finish re-checks it",
   'DELETE /v1/account/past-rep/:id': "sets the caller's own past-rep claim to removed",
+  // Job 1c (J-10, S-094): notes on traders. Social, as blocks: a note row only (the add also re-checks
+  // the session under the account lock and a member's boxes live, in its transaction).
+  'POST /v1/account/notes': 'social: a private note row on another trader only; no account, session, approval or security state, no obligation',
+  'DELETE /v1/account/notes/:id': "social: removes one of the account's own note rows (the account owner only); no account, session or security state",
 };
 
 /**

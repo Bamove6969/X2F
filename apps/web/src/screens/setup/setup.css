@@ -493,6 +493,16 @@
   color: var(--x2f-escrow);
 }
 
+/* The username's live check (SetupUsername): taken, or not checked right now. */
+.x2f-start__status[data-tone='danger'] {
+  color: var(--x2f-danger);
+}
+
+.x2f-start__status[data-tone='neutral'] {
+  color: var(--x2f-ink-muted);
+  font-weight: 400;
+}
+
 /* Password rules (SetupPassword). */
 .x2f-start__rules {
   display: flex;
