@@ -762,3 +762,23 @@ The owner asked design to treat his 12 comments as a brief for the whole app and
 - (3) Moderator key from the first message: the trader wording "If a dispute is opened, a moderator can read this conversation" stays. It depends on the dispute-only read rule; please add that rule to the spec and the separation-check.
 - Compromised-server caveat: agreed for the written spec. No trader-facing copy for it.
 - Security list: noted what is scheduled and what went to the owner on page 11. Nothing from design is waiting on it.
+
+## 9 Nov 2026: owner page 11 drawn (p11-15, p11-16, p11-9) — READY, COPY-UNSIGNED
+- **p11-15 SetupTerms (signature):**
+  - The intro now reads: "Read to the end. If you agree to X2F's rules and terms, tick the box, sign your name and start creating your account. You agree once, here, never again on a trade."
+  - The pad reads: "Sign your name here with your finger or mouse. A scribble or an X is fine."
+  - The button "I accept" is now **"Start creating my account"**.
+  - FRAME_H: empty/drawn 1415 → 1509, typed 1319 → 1413. $preview 2406.
+- **p11-16 BuyerPay, new tweak `dispute: none|opened`** (with escrow secured). The other trader opened a dispute before "I've paid":
+  - "I've paid" is greyed and disabled. Under it, in danger colour: "Paused: satoshi_ghost opened a dispute. Don't send any payment." (APP_H +22.)
+  - An alert sheet opens at once:
+    - eyebrow "DISPUTE OPENED";
+    - title "Don't send any payment";
+    - body: "satoshi_ghost opened a dispute and a moderator has been called in. Don't send money to satoshi_ghost by Zelle or any other way. "I've paid" is paused until the moderator tells you what happens next.";
+    - buttons: "Go to the dispute" → DisputeRoom, and "Got it, I won't pay".
+  - Build: the payer gets this whoever opened it. The method name comes from the trade. Also send it by Jabber if alerts are on.
+- **p11-9 Terms (SetupTerms):**
+  - Section 6 reads: "Completed trades, chat included, are erased for good on day 30 after they end. Disputed trades are kept for up to 90 days after the dispute closes, with private details removed by our privacy tool, and used to train our moderators while X2F grows."
+  - The key points become two: "Completed trades are erased on day 30." and "Disputed trades are kept up to 90 days, cleaned by our privacy tool, to train our moderators."
+  - SelfDestruct(+W): "blurred automatically" → "removed by our privacy tool".
+- Canvas v161. Not drawn yet: p11-4 (approve a new device from a logged-in device, plus a Jabber notice). LoginApprove already covers it, so I'll check the board against his words next.

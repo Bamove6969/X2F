@@ -151,6 +151,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </main>
 
   <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+<sc-if value="{{paused}}" hint-placeholder-val="{{false}}"><button type="button" disabled aria-describedby="pay-paused" style="height: 56px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">I've paid</button><span id="pay-paused" style="padding: 4px 8px 0; font-size: 13px; line-height: 18px; color: var(--danger); text-align: center;">Paused: satoshi_ghost opened a dispute. Don&#39;t send any payment.</span></sc-if>
 <sc-if value="{{payLive}}" hint-placeholder-val="{{false}}">    <button type="button" onClick="{{openPaid}}" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">I've paid</button></sc-if>
     <sc-if value="{{securing}}" hint-placeholder-val="{{true}}"><button type="button" disabled aria-describedby="pay-when" style="height: 56px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">I've paid</button><span id="pay-when" style="padding: 4px 8px 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">Opens once the escrow is secured.</span></sc-if>
     <div style="display: flex; justify-content: space-between;">
@@ -159,6 +160,20 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </div>
   </footer>
 
+  <sc-if value="{{disputeOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+      <section role="alertdialog" aria-modal="true" aria-labelledby="dispute-title" aria-describedby="dispute-body" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 2px solid var(--danger); display: flex; flex-direction: column; gap: 16px;">
+        <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+        <div style="display: flex; gap: 10px; align-items: center; color: var(--danger);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg><span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;">Dispute opened</span></div>
+        <h2 id="dispute-title" style="margin: 0; text-wrap: balance; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Don&#39;t send any payment</h2>
+        <p id="dispute-body" style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink);">satoshi_ghost opened a dispute and a moderator has been called in. Don&#39;t send money to satoshi_ghost by Zelle or any other way. &quot;I&#39;ve paid&quot; is paused until the moderator tells you what happens next.</p>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <a href="DisputeRoom.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Go to the dispute</a>
+          <button type="button" onClick="{{closeDispute}}" style="width: 100%; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Got it, I won&#39;t pay</button>
+        </div>
+      </section>
+    </div>
+  </sc-if>
   <sc-if value="{{noproofOpen}}" hint-placeholder-val="{{false}}">
     <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
       <section role="dialog" aria-modal="true" aria-labelledby="noproof-title" aria-describedby="noproof-body" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
@@ -215,7 +230,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"escrow":{"editor":"enum","options":["securing","secured"],"default":"securing"},"window":{"editor":"enum","options":["open","expired"],"default":"open"},"confirm":{"editor":"enum","options":["closed","open","noproof"],"default":"closed"},"$preview":{"width":390,"height":3317}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"escrow":{"editor":"enum","options":["securing","secured"],"default":"securing"},"window":{"editor":"enum","options":["open","expired"],"default":"open"},"confirm":{"editor":"enum","options":["closed","open","noproof"],"default":"closed"},"dispute":{"editor":"enum","options":["none","opened"],"default":"none"},"$preview":{"width":390,"height":3317}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -231,7 +246,7 @@ class Component extends DCLogic {
     const expired = this.props.window === 'expired';
     const secured = expired || this.props.escrow === 'secured';
     // Measured (night, fonts loaded): app screen per escrow state; design notes 2009 under it.
-    const APP_H = expired ? 1880 : secured ? 1364 : 1308;
+    const APP_H = (expired ? 1880 : secured ? 1364 : 1308) + (secured && this.props.dispute === 'opened' ? 22 : 0);
     const H = APP_H + 2009;
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const tip = this.state.tip;
@@ -252,9 +267,12 @@ class Component extends DCLogic {
     const confirmOpen = sheet === 'open';
     const noproofOpen = sheet === 'noproof';
     const hasProof = false;
+    // dispute tweak (owner, 8 Nov, p11-16): the other trader opened a dispute before I've paid. I've paid greys out and a warning sheet opens.
+    const disputed = secured && this.props.dispute === 'opened';
+    const disputeOpen = disputed && !(this.state.dkey === 'opened' && this.state.dclosed);
     return { rootStyle, steps, confs,
-      securing: !secured, secured, expired, payLive: secured, windowOpen: secured && !expired, appH: APP_H + 'px', payMin: expired ? '0' : secured ? '89' : '90', confNow: secured ? '10' : '3',
-      confirmOpen, noproofOpen,
+      securing: !secured, secured, expired, payLive: secured && !disputed, paused: disputed, disputeOpen, closeDispute: () => this.setState({ dclosed: true, dkey: 'opened' }), windowOpen: secured && !expired, appH: APP_H + 'px', payMin: expired ? '0' : secured ? '89' : '90', confNow: secured ? '10' : '3',
+      confirmOpen: confirmOpen && !disputed, noproofOpen: noproofOpen && !disputed,
       confirmName: sheet,
       skip: this.state.skip,
       askP72: !this.state.skip,
