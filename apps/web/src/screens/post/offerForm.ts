@@ -2,7 +2,18 @@
 // bigint minor units; the form takes only two-decimal currencies until formatFiat takes the
 // currency's exponent (Revision 2026-10-20).
 import { CANT_DO_TITLE, isCantDoCode, postCantDoText, type CantDoCode } from '../../ui/cantDoCodes.js';
-import { MAX_BANDS, MAX_CURRENCIES, MAX_METHODS, checkBands, currencyChoices, type AmountUnit, type CurrencyChoice } from '@x2f/trade';
+import {
+  ADJUST_MAX_BPS,
+  ADJUST_MIN_BPS,
+  ADJUST_STEP_BPS,
+  MAX_BANDS,
+  MAX_CURRENCIES,
+  MAX_METHODS,
+  checkBands,
+  currencyChoices,
+  type AmountUnit,
+  type CurrencyChoice,
+} from '@x2f/trade';
 import { CURRENCIES } from '../browse/api.js';
 import type { PostOfferBody, PriceQuote, Side } from './api.js';
 import { isCountryCode } from './countries.js';
@@ -323,10 +334,8 @@ export const MIN_OVER_MAX = "The smallest trade can't be more than the largest."
 
 export { MAX_BANDS, MAX_CURRENCIES, MAX_METHODS };
 
-/** A method's price change on the board: steps of 0.5%, from −5% to +10% (within the API's ±20%, MAX_ADJUST_BPS). */
-export const ADJUST_STEP_BPS = 50;
-export const ADJUST_MIN_BPS = -500;
-export const ADJUST_MAX_BPS = 1000;
+/** A method's price change: steps of 0.5%, from −5% to +10%. The numbers are @x2f/trade's, which the API and the database enforce (review I4). */
+export { ADJUST_MAX_BPS, ADJUST_MIN_BPS, ADJUST_STEP_BPS };
 
 /** The form's words for J-16. COPY-UNSIGNED: all of them (board FlexOffer-Post's where it has them, else the lead's). */
 export const POST_COPY = {

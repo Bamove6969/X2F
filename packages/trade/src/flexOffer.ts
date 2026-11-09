@@ -29,9 +29,10 @@ import type { AmountUnit, OfferRange } from './offerRange.js';
  *   on covers every total up to just below that next unit; otherwise it ends at its own max exactly
  *   (owner 2 Nov evening: 200-500 covers 200.00-500.99 when a band starts at 501; 800 ends at 800.00).
  * - A method carries an optional price adjustment, a percent of the market (owner via design,
- *   29 Oct b: percent only). The final price is the chosen currency's market + the band's margin +
- *   the method's adjustment, rounded once, half up (`rateFor` of their sum). The API refuses an offer
- *   where any margin + adjustment passes ±MAX_MARGIN_BPS.
+ *   29 Oct b: percent only), from −5% to +10% in 0.5% steps (`adjustAllowed`). The final price is the
+ *   chosen currency's market + the band's margin + the method's adjustment, rounded once, half up
+ *   (`rateFor` of their sum). The API refuses an offer where any margin + adjustment passes
+ *   ±MAX_MARGIN_BPS.
  * - When several bands hold an amount (they differ by a condition), a take is priced from the best
  *   one for the taker among those whose rule the taker meets (`pickTier`): LEAD DEFAULT, owner to
  *   confirm with p11-60.
@@ -43,8 +44,19 @@ export const MAX_BANDS = 3;
 export const MAX_METHODS = 5;
 /** At most this many currencies on one offer (owner 2 Nov 2026, Q8). */
 export const MAX_CURRENCIES = 5;
-/** A method's price adjustment: at most ±20% (lead default 29 Oct; the owner's example is +2%). */
-export const MAX_ADJUST_BPS = 2_000;
+/**
+ * A method's price adjustment (owner via design, 29 Oct b, as the web form has kept it): from −5% to
+ * +10% in steps of 0.5%, i.e. ADJUST_MIN_BPS..ADJUST_MAX_BPS, a multiple of ADJUST_STEP_BPS. The API
+ * and the database (490) refuse anything else (flex-offers review I4); `adjustAllowed` is the rule.
+ */
+export const ADJUST_MIN_BPS = -500;
+export const ADJUST_MAX_BPS = 1_000;
+export const ADJUST_STEP_BPS = 50;
+
+/** Whether `bps` is a price adjustment a method may carry: an integer from −5% to +10% on a 0.5% step. */
+export function adjustAllowed(bps: unknown): bps is number {
+  return typeof bps === 'number' && Number.isSafeInteger(bps) && bps >= ADJUST_MIN_BPS && bps <= ADJUST_MAX_BPS && bps % ADJUST_STEP_BPS === 0;
+}
 /** "Minimum completed trades" choices (owner 8 Nov: "5, 10, 25, 50"); null is no minimum. */
 export const BAND_MIN_TRADES = [5, 10, 25, 50] as const;
 export type MinTrades = (typeof BAND_MIN_TRADES)[number] | null;

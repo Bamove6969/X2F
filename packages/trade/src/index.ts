@@ -102,12 +102,15 @@ export {
   type RangeCheck,
 } from './offerRange.js';
 export {
+  ADJUST_MAX_BPS,
+  ADJUST_MIN_BPS,
+  ADJUST_STEP_BPS,
   BAND_DIFFER_DEFAULT,
   BAND_MIN_TRADES,
-  MAX_ADJUST_BPS,
   MAX_BANDS,
   MAX_CURRENCIES,
   MAX_METHODS,
+  adjustAllowed,
   bandsDiffer,
   bandsToTiers,
   checkBands,

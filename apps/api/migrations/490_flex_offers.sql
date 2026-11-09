@@ -50,14 +50,15 @@ create table offer_tiers (
 
 -- Methods, in the poster's order (`position`): each with its shared instructions (the payment details,
 -- shown only to the poster and, once the escrow is secured, to the trade's two traders) and a price
--- adjustment, a percent of the market in basis points (owner via design, 29 Oct b). The API keeps
+-- adjustment, a percent of the market in basis points (owner via design, 29 Oct b): from -5% to +10%
+-- in steps of 0.5% (@x2f/trade adjustAllowed; flex-offers review I4), checked here too. The API keeps
 -- every margin + adjustment within ±50% (rateFor's range) and at most 5 methods (owner Q23).
 create table offer_methods (
   offer_id uuid not null references offers (id) on delete cascade,
   position smallint not null check (position between 0 and 9),
   method_id text not null check (char_length(method_id) between 1 and 64),
   instructions text not null check (char_length(instructions) <= 1000),
-  adjust_bps integer not null check (adjust_bps between -2000 and 2000),
+  adjust_bps integer not null check (adjust_bps between -500 and 1000 and adjust_bps % 50 = 0),
   primary key (offer_id, method_id),
   unique (offer_id, position)
 );

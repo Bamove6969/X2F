@@ -1,9 +1,9 @@
 import {
   BAND_DIFFER_DEFAULT,
-  MAX_ADJUST_BPS,
   MAX_CURRENCIES,
   MAX_MARGIN_BPS,
   MAX_METHODS,
+  adjustAllowed,
   atomicForFiat,
   bandsToTiers,
   checkBands,
@@ -527,14 +527,12 @@ function cleanText(v: unknown, max: number): string {
   return clean;
 }
 
-function bpsWithin(v: unknown, max: number): v is number {
-  return typeof v === 'number' && Number.isSafeInteger(v) && Math.abs(v) <= max;
-}
-
 /**
  * `methods`: 1 to MAX_METHODS distinct methods (owner Q23: 5), each `{ methodId, adjustBps,
- * instructions, currencies?, instructionsByCurrency? }`; `currencies` (absent: every offer currency)
- * names offer currencies only, and `instructionsByCurrency` only the method's own currencies.
+ * instructions, currencies?, instructionsByCurrency? }`; `adjustBps` is the owner's price change,
+ * −5% to +10% in 0.5% steps (@x2f/trade `adjustAllowed`; review I4); `currencies` (absent: every
+ * offer currency) names offer currencies only, and `instructionsByCurrency` only the method's own
+ * currencies.
  */
 function parseMethods(v: unknown, offerCurrencies: readonly string[]): FlexMethod[] {
   if (!Array.isArray(v) || v.length === 0 || v.length > MAX_METHODS) throw bad();
@@ -544,7 +542,7 @@ function parseMethods(v: unknown, offerCurrencies: readonly string[]): FlexMetho
     const { methodId, adjustBps } = m;
     if (typeof methodId !== 'string' || methodId.length === 0 || methodId.length > 64 || seen.has(methodId)) throw bad();
     seen.add(methodId);
-    if (!bpsWithin(adjustBps, MAX_ADJUST_BPS)) throw bad();
+    if (!adjustAllowed(adjustBps)) throw bad();
     let currencies: string[];
     if (m.currencies === undefined) {
       currencies = [...offerCurrencies];
