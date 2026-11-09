@@ -3,7 +3,7 @@ import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BuyerCancelling, BuyerPay, SellerWaiting, TASK23_SLOTS } from '../src/screens/trade/BuyerPay.js';
-import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
+import { GIFT_CARD_WARNING, setProofSource, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
 import { resetWarned } from '../src/screens/trade/warned.js';
@@ -273,6 +273,52 @@ describe('BuyerPay (BuyerPay board), phone', () => {
   });
 });
 
+// Build spec j31a section 4 (T-079; owner's words kept, docs/to-lead.md 9 Nov): I've paid with no
+// proof attached asks first, every time. The proof slot is Plan 5's: until it can hold a proof
+// (setProofSource), there is nothing to warn about and I've paid goes straight to the confirm sheet.
+describe("I've paid with no proof attached (T-079)", () => {
+  afterEach(() => setProofSource(null));
+
+  it('asks "Mark paid without proof?" first, in the owner\'s words; Add proof closes it and sends nothing', async () => {
+    setProofSource(() => 'none');
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    expect(dialog()!.querySelector('h2')?.textContent).toBe('Mark paid without proof?');
+    expect(dialog()!.textContent).toContain(
+      "You haven't added a payment screenshot. If this trade ever goes to a dispute, proof is usually what decides which side wins. It's your choice.",
+    );
+    expect(dialog()!.textContent).not.toContain('Mark this trade as paid?');
+    // No "don't show again": it shows whenever proof is missing.
+    expect(dialog()!.querySelector('input[type="checkbox"]')).toBeNull();
+    await click(byText('Add proof', 'button'));
+    expect(dialog()).toBeNull();
+    expect(calls).toEqual([]);
+    await click(byText("I've paid", 'button'));
+    expect(dialog()!.querySelector('h2')?.textContent).toBe('Mark paid without proof?');
+  });
+
+  it('"Mark paid without proof" goes on to the confirm sheet, which still asks', async () => {
+    setProofSource(() => 'none');
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    await click(byText('Mark paid without proof', 'button'));
+    expect(dialog()!.textContent).toContain('Mark this trade as paid?');
+    expect(calls).toEqual([]);
+  });
+
+  it('with a proof attached, or no proof slot yet, I\'ve paid opens the confirm sheet straight away', async () => {
+    setProofSource(() => 'attached');
+    const a = mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    expect(dialog()!.textContent).toContain('Mark this trade as paid?');
+    a.unmount();
+    setProofSource(null);
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    expect(dialog()!.textContent).toContain('Mark this trade as paid?');
+  });
+});
+
 describe("I've paid and PaidConfirmSheet", () => {
   it('opens the sheet with the exact sentence; unticked, Yes does nothing', async () => {
     const p = props({ view: tradeView(SECURED) });
@@ -509,15 +555,21 @@ describe('buyer cancel (spec 2.3; owner G56, g67)', () => {
   const sheet = () => document.body.querySelector<HTMLElement>('[data-sheet="cancel-final"]');
   const inSheet = (label: string) => [...(sheet()?.querySelectorAll<HTMLElement>('button') ?? [])].find((b) => (b.textContent ?? '').trim() === label)!;
 
-  it('Cancel trade opens "Cancelling is final" first and sends nothing; Keep trading closes it', async () => {
+  it('Cancel trade opens "Cancelling is likely final" first and sends nothing; Keep trading closes it (T-049)', async () => {
     mount(props({ view: tradeView(SECURED) }));
     expect(sheet()).toBeNull();
     await click(byText('Cancel trade', 'button'));
     expect(sheet()).not.toBeNull();
-    expect(dialog()!.textContent).toContain('Cancelling is final');
+    expect(dialog()!.querySelector('h2')?.textContent).toBe('Cancelling is likely final');
     expect(sheet()!.textContent).toContain(
-      "The 1.250000 XMR goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap I've paid instead.",
+      "The 1.250000 XMR in escrow is returned and this trade closes. Be sure before you cancel. Don't send any money after you cancel. Already paid? Don't cancel: tap I've paid instead.",
     );
+    // T-049 (owner p5-2): the body never names the seller.
+    expect(sheet()!.textContent).not.toContain('satoshi_ghost');
+    expect(sheet()!.querySelector('[data-username]')).toBeNull();
+    // The board's emphasis: the amount in mono, XMR and "I've paid" in 600.
+    expect(sheet()!.querySelector('.x2f-mono')?.textContent).toBe('1.250000');
+    expect([...sheet()!.querySelectorAll('strong')].map((b) => b.textContent)).toEqual(['XMR', "I've paid"]);
     // The safe action has focus; the warning describes the dialog.
     expect(document.activeElement?.textContent).toBe('Keep trading');
     expect(document.getElementById(dialog()!.getAttribute('aria-describedby')!)?.textContent).toContain("Don't send any money after you cancel.");

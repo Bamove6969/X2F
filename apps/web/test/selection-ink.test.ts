@@ -75,6 +75,7 @@ const ORANGE_ALLOWED = [
   'ui/ui.css .x2f-amount__unit',
   'ui/kit.css .x2f-recipient__unit',
   'screens/quote/quote.css .x2f-quote__xmr-unit',
+  'screens/trade/warn.css .x2f-warn__xmr',
   // Logo D's dot (docs/brand/svg on wip/design-brief: the dot is #ff6600 in every colour variant).
   'ui/ui.css .x2f-logo__dot',
   // The ad card's range rows (BuyOffers / SellOffers boards v142).

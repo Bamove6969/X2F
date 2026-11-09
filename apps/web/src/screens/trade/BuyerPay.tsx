@@ -13,7 +13,7 @@
  *   that the button is closed and the details are a locked card (board Warn-IvePaid, Task 38's
  *   pay warning, is superseded by Q12 and gone).
  * - Cancel trade (buyer, spec 2.3; owner G56 and g67): before "I've paid" it opens the
- *   "Cancelling is final" sheet (CancelFinalSheet.tsx), whose Cancel trade posts `buyer-cancel`,
+ *   "Cancelling is likely final" sheet (CancelFinalSheet.tsx), whose Cancel trade posts `buyer-cancel`,
  *   then `escrow.buyerCancel()`, which sends `trade.cancel`. After "I've paid" there is no cancel
  *   at all (owner, Revision 2026-10-29b; Task 39): the link is gone and the API refuses it.
  * - The seller never cancels alone: Propose cancel / Withdraw (mutual cancel); the buyer gets an
@@ -491,7 +491,7 @@ export function BuyerPay(p: TradeScreenProps) {
   const finishOk = finishBlocked === null;
   // Owner Q12: no "I've paid" before the escrow is secured (`not-secured`), so no warning in front of it.
   const payWhenId = useId();
-  // Owner G56: the buyer's cancel asks once, "Cancelling is final".
+  // Owner G56: the buyer's cancel asks once, "Cancelling is likely final" (T-049).
   const [cancelSheet, setCancelSheet] = useState(false);
   const onIvePaid = () => {
     if (block !== null) return;

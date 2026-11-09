@@ -452,6 +452,22 @@
   font-size: 14px;
 }
 
+/* T-079 (BuyerPay board, confirm=noproof): the caution icon beside the body, 15/22. */
+.x2f-paid__noproof {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.x2f-paid__noproof > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--x2f-caution);
+}
+
 .x2f-paid__actions {
   display: flex;
   flex-direction: column;

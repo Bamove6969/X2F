@@ -14,7 +14,8 @@ import { Button } from '../../ui/Button.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { PaidConfirmSheet, type YesResult } from './PaidConfirmSheet.js';
 import { payBlock, type PayBlock } from './payModel.js';
-import { payMethodOf, postPayEvent } from './paySeams.js';
+import { payMethodOf, postPayEvent, proofStateOf } from './paySeams.js';
+import { NoProofSheet } from './NoProofSheet.js';
 import type { TradeEscrow, TradeView } from './payTypes.js';
 import { errorSentence } from './SetupStatus.js';
 
@@ -104,10 +105,13 @@ export interface PaidFlowSheetProps {
 
 export function PaidFlowSheet({ view, escrow, refresh, open, onClose }: PaidFlowSheetProps) {
   const [grew, setGrew] = useState(false);
+  // T-079: past "Mark paid without proof?" for this opening of the step; asked again next time.
+  const [withoutProof, setWithoutProof] = useState(false);
   const total = deviceTotal(view, escrow);
   const block = payBlock(view, escrow);
   const close = () => {
     setGrew(false);
+    setWithoutProof(false);
     onClose();
   };
 
@@ -157,6 +161,9 @@ export function PaidFlowSheet({ view, escrow, refresh, open, onClose }: PaidFlow
         </div>
       </Sheet>
     );
+  }
+  if (open && total !== null && !withoutProof && proofStateOf(view.code) === 'none') {
+    return <NoProofSheet onAddProof={close} onWithoutProof={() => setWithoutProof(true)} />;
   }
   return (
     <PaidConfirmSheet

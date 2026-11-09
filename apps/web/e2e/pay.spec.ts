@@ -109,10 +109,10 @@ test.describe('parity', () => {
     await expectParity(page, 'BuyerPay');
   });
 
-  test('CancelRequest board at 390x844: "Cancelling is final" over the secured pay step (owner G56)', async ({ page }) => {
+  test('CancelRequest board at 390x844: "Cancelling is likely final" over the secured pay step (owner G56, T-049)', async ({ page }) => {
     await open(page, PAY_SECURED);
     await page.getByRole('button', { name: 'Cancel trade' }).click();
-    await expect(page.getByRole('dialog', { name: 'Cancelling is final' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Cancelling is likely final' })).toBeVisible();
     await expectParity(page, 'CancelRequest');
   });
 
@@ -207,14 +207,14 @@ test.describe("I've paid", () => {
 });
 
 test.describe('cancel', () => {
-  test("before I've paid, Cancel trade asks once (Cancelling is final), then buyer-cancel and the escrow's refund with trade.cancel", async ({ page }) => {
+  test("before I've paid, Cancel trade asks once (Cancelling is likely final), then buyer-cancel and the escrow's refund with trade.cancel", async ({ page }) => {
     const s = await open(page, PAY_SECURED);
     await page.getByRole('button', { name: 'Cancel trade' }).click();
     // Owner G56 / g67: the one warning, before anything is sent.
-    const final = page.getByRole('dialog', { name: 'Cancelling is final' });
+    const final = page.getByRole('dialog', { name: 'Cancelling is likely final' });
     await expect(final).toBeVisible();
     await expect(final).toContainText(
-      "The 1.250000 XMR goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap I've paid instead.",
+      "The 1.250000 XMR in escrow is returned and this trade closes. Be sure before you cancel. Don't send any money after you cancel. Already paid? Don't cancel: tap I've paid instead.",
     );
     await expect(final.getByRole('button', { name: 'Keep trading' })).toBeFocused();
     expect(s.posts).toEqual([]);
@@ -392,7 +392,7 @@ test.describe('phone sizes', () => {
       await expect(page.locator('[data-pay-block="not-secured"]')).toBeVisible();
       await expectFitsPhone(page);
       await page.getByRole('button', { name: 'Cancel trade' }).tap();
-      const final = page.getByRole('dialog', { name: 'Cancelling is final' });
+      const final = page.getByRole('dialog', { name: 'Cancelling is likely final' });
       await expect(final).toBeVisible();
       await expectFitsPhone(page);
       await expect(final.getByRole('button', { name: 'Cancel trade' })).toBeInViewport({ ratio: 1 });
