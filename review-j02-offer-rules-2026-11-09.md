@@ -13,7 +13,7 @@
 
 - `apps/api/test/take.test.ts`: 42/42 passed.
 - `apps/api/test/offers.test.ts`: 36/36 passed.
-- `apps/web/test/postOffer.test.ts`: see the report to the lead. The first try was stopped by the background time limit before the runner's lock came free, and it was queued again.
+- `apps/web/test/postOffer.test.ts`: 35/35 passed. The first try was stopped by the background time limit while it waited for the runner's lock, before it started; the second try ran.
 - Not run by me: offerMigrations, offersBulk, chat, blocks, offerUnits, the web browse/quote/myOffers tests, `@x2f/trade` money/offerRange, and Playwright. The builder's commits say they ran.
 
 ## Fixed-price paths, one by one
