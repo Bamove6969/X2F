@@ -1,5 +1,6 @@
 import fastifyStatic from '@fastify/static';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import nodePath from 'node:path';
 import { isApiOrFilePath } from '../static/serve.js';
 import { PUBLIC_LOGIN } from './login.js';
 
@@ -14,6 +15,7 @@ import { PUBLIC_LOGIN } from './login.js';
 export async function serveStaffWeb(app: FastifyInstance, root: string): Promise<void> {
   // `serve: false`: no routes of its own (each staff route must declare a perm); only sendFile.
   await app.register(fastifyStatic, { root, serve: false, index: false, serveDotFiles: false });
+  // nosemgrep: javascript.express.security.audit.express-res-sendfile.express-res-sendfile -- literal file name under `root`, no request input
   const page = (_req: FastifyRequest, reply: FastifyReply) => reply.sendFile('index.html');
   app.get('/', { config: PUBLIC_LOGIN }, page);
   app.get('/*', { config: PUBLIC_LOGIN }, (req, reply) => {
@@ -22,8 +24,32 @@ export async function serveStaffWeb(app: FastifyInstance, root: string): Promise
     if (isApiOrFilePath(req.url, 'staff')) {
       const segments = path.split('/').filter((s) => s !== '');
       if (segments[0]?.toLowerCase() === 'staff' || segments.some((s) => s.startsWith('.'))) return reply.code(404).send({ error: 'not-found' });
-      return reply.sendFile(decodeURIComponent(path.slice(1)));
+      const file = fileUnderRoot(root, path);
+      if (file === null) return reply.code(404).send({ error: 'not-found' });
+      // nosemgrep: javascript.express.security.audit.express-res-sendfile.express-res-sendfile -- `file` is canonicalised by fileUnderRoot and proven to sit under `root`; @fastify/send roots it again
+      return reply.sendFile(file);
     }
     return page(req, reply);
   });
+}
+
+/**
+ * The request path as a file path relative to `root`, or null when it does not name a file
+ * strictly inside `root`: undecodable percent-escapes, `..` or `.` segments, an empty name, a
+ * NUL byte, or anything that resolves to `root` itself or outside it.
+ */
+export function fileUnderRoot(root: string, requestPath: string): string | null {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(requestPath);
+  } catch {
+    return null;
+  }
+  if (decoded.includes('\0')) return null;
+  const segments = decoded.split('/').filter((s) => s !== '');
+  if (segments.length === 0 || segments.some((s) => s === '.' || s === '..' || s.includes('\\'))) return null;
+  const rootAbs = nodePath.resolve(root);
+  const fileAbs = nodePath.resolve(rootAbs, ...segments);
+  if (!fileAbs.startsWith(rootAbs + nodePath.sep)) return null;
+  return nodePath.relative(rootAbs, fileAbs);
 }
