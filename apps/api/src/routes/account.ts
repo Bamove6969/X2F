@@ -401,6 +401,9 @@ export function accountRoutes(app: FastifyInstance): void {
         // extend sets the length, so an unchosen session's period is still its login.
         const firstChoice = old.length_hours === null && now.getTime() < old.period_started_at.getTime() + SESSION_CHOICE_WINDOW_MS;
         if (end.getTime() > old.expires_at.getTime() && !firstChoice) throw new ApiError(403, 'confirm-required', { action: 'extend-session' });
+        // TODO(team working hours, p7-11; review S-m4, owner G9): when a team lead sets working
+        // hours, a member's session must not get a later end outside them ("they won't be able to
+        // extend the session anyway"). Refuse a later end here, for req.auth.memberId !== null, before any write.
         const { rows } = await db.query<{ length_hours: number | null; expires_at: Date }>(
           `update sessions set period_started_at = $3, expires_at = $4, length_hours = $2 where id = $1
         returning length_hours, expires_at`,
@@ -443,6 +446,9 @@ export function accountRoutes(app: FastifyInstance): void {
       const hours = (req.body as { hours?: number }).hours ?? null;
       const { info, setCookie } = await withTx(d.db, async (db) => {
         await requireLiveSessionInTx(db, req.auth, now);
+        // TODO(team working hours, p7-11; review S-m4, owner G9): when a team lead sets working
+        // hours, a member's session must not get a later end outside them ("they won't be able to
+        // extend the session anyway"). Refuse here, for req.auth.memberId !== null, before any write.
         const cur = await db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1 for update', [req.auth.sessionId]);
         // Review S-m1: a new token, the one before it valid only to this old end.
         const setCookie = await rotateSessionToken(db, req, reply, req.auth.sessionId, cur.rows[0]!.expires_at);
