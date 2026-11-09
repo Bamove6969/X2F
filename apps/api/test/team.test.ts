@@ -1043,3 +1043,166 @@ describe('Task 18 seams', () => {
     expect(existsSync(`${ROOT}apps/api/migrations/701_trade_purge.sql`), 'Plan 7 purge landed: decide the team log retention and roles').toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Job 1c (J-10): the granular abilities and the owner's hard rules (S-087, S-092, S-094, S-097,
+// T-076, D-066, C-019). Every hard rule below is the owner's: no box and no preset grants it.
+
+describe('the owner\'s hard rules no box can grant (J-10)', () => {
+  it('D-066 (p7-7): a member never opens a dispute, whatever their boxes; the trade party (the lead) still does', async () => {
+    const owner = await team();
+    const other = await team();
+    const m = await member(owner.id, ['offers', 'trades']);
+    const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    await driveTo(deps, d.trade, 'secured');
+    expect(err(await m.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'x' }))).toEqual({ status: 403, error: 'owner-only' });
+    expect((await deps.db.query('select 1 from disputes where code = $1', [d.code])).rowCount).toBe(0);
+    expect(await auditRows(owner.id)).toEqual([]);
+    const opened = await owner.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'x' });
+    expect(opened.statusCode, opened.body).toBe(200);
+    // The disputes box: the member sees the whole dispute.
+    const seen = await m.browser.get(`/v1/trades/${d.code}/dispute`);
+    expect(seen.statusCode, seen.body).toBe(200);
+  });
+
+  it('p10-2 (T-076): with every box ticked a member still never releases, funds or confirms payment on the lead\'s sell trade', async () => {
+    const owner = await team();
+    const buyer = await team();
+    const m = await member(owner.id, ['offers', 'trades']);
+    const t = await seedTrade(deps, { sellerId: owner.id, buyerId: buyer.id, poster: 'seller' });
+    await driveTo(deps, t.trade, 'paid');
+    for (const type of ['release-started', 'fund-started']) {
+      expect(err(await m.browser.post(`/v1/trades/${t.code}/events`, { type })), type).toEqual({ status: 403, error: 'member-cannot-sign' });
+    }
+    expect((await loadTrade(deps.db, t.code))!.state).toBe('paid');
+    expect(await auditRows(owner.id)).toEqual([]);
+  });
+
+  it('no box can be stored that grants a hard owner-only ability: the API refuses it and so does the database', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['trades']);
+    for (const bad of ['trades-release', 'trades-confirm-received', 'disputes-open', 'wallets-manage', 'team-invite', 'team-remove', 'team-change-abilities', 'account-security', 'sessions-end-others', 'devices-approve', 'account-delete']) {
+      const abilities = ['offers-see', bad];
+      const confirmToken = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: abilities.join(',') } as never);
+      expect(err(await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities, confirmToken })), bad).toEqual({ status: 400, error: 'bad-request' });
+      await expect(deps.db.query('update team_members set abilities = $2 where id = $1', [m.id, abilities]), bad).rejects.toThrow();
+    }
+    // A good set is stored as a set and applies at the next request.
+    const abilities = ['offers-see', 'offers-post'];
+    const confirmToken = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: abilities.join(',') } as never);
+    const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities, confirmToken });
+    expect(res.statusCode, res.body).toBe(200);
+    expect((res.json() as { abilities: string[] }).abilities).toEqual(['offers-see', 'offers-post']);
+    expect((await m.browser.post('/v1/offers', OFFER)).statusCode).toBe(201);
+    expect(err(await m.browser.get('/v1/wallets'))).toEqual({ status: 403, error: 'forbidden' });
+  });
+
+  it('payout wallets, members, the team log and security settings stay owner-only for a member with every box', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers', 'trades']);
+    const refused = [
+      await m.browser.post('/v1/wallets', { app: 'cake', label: 'Mine', address: fakeAddress() }),
+      await m.browser.delete(`/v1/wallets/${owner.wallet}`),
+      await m.browser.post('/v1/team/invites', { displayName: 'Sneaky02', abilities: ['offers-see'] }),
+      await m.browser.patch(`/v1/team/members/${m.id}`, { abilities: ['offers-see'] }),
+      await m.browser.delete(`/v1/team/members/${m.id}`),
+      await m.browser.put('/v1/account/security/logout-timer', { idleHours: 12 }),
+      await m.browser.get('/v1/account/sessions'),
+    ];
+    for (const r of refused) expect(err(r)).toEqual({ status: 403, error: 'owner-only' });
+  });
+
+  it('every effectful member action is logged with the member\'s name and, on a trade, its amount', async () => {
+    const owner = await team();
+    const other = await team();
+    const m = await member(owner.id, ['trades']);
+    const t = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    const secured = await driveTo(deps, t.trade, 'secured');
+    expect((await m.browser.post(`/v1/trades/${t.code}/events`, { type: 'mark-paid', fiatCents: secured.fiatCents.toString() })).statusCode).toBe(200);
+    const list = (await owner.browser.get('/v1/team/audit')).json() as { action: string; memberName: string; detail: Record<string, unknown> }[];
+    expect(list[0]).toMatchObject({ action: 'mark-paid', memberName: m.name });
+    expect(list[0]!.detail).toMatchObject({ amountAtomic: secured.amountAtomic.toString(), fiatCents: secured.fiatCents.toString(), currency: 'USD' });
+  });
+
+  it('T-076: on a team account every release is logged with the name (the lead\'s) and the amount', async () => {
+    const owner = await team();
+    const buyer = await team();
+    await member(owner.id, ['trades']);
+    const t = await seedTrade(deps, { sellerId: owner.id, buyerId: buyer.id, poster: 'seller' });
+    const paid = await driveTo(deps, t.trade, 'paid');
+    const rel = await owner.browser.post(`/v1/trades/${t.code}/events`, { type: 'release-started' });
+    expect(rel.statusCode, rel.body).toBe(200);
+    const list = (await owner.browser.get('/v1/team/audit')).json() as { action: string; memberId: string | null; memberName: string | null; byLead: boolean; detail: Record<string, unknown> }[];
+    expect(list[0]).toMatchObject({ action: 'release-started', memberId: null, byLead: true, tradeCode: t.code });
+    expect(list[0]!.detail).toMatchObject({ amountAtomic: paid.amountAtomic.toString(), fiatCents: paid.fiatCents.toString() });
+  });
+
+  it('C-019: team chat stays hidden until a member chat key exists: a member gets owner-only on every chat route, whatever their boxes', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers', 'trades']);
+    const fake = '00000000-0000-4000-8000-000000000000';
+    for (const r of [
+      await m.browser.get('/v1/chats'),
+      await m.browser.post('/v1/chats', { offerId: fake }),
+      await m.browser.get(`/v1/chats/${fake}`),
+      await m.browser.get(`/v1/chats/${fake}/envelopes`),
+      await m.browser.post(`/v1/chats/${fake}/envelopes`, {}),
+      await m.browser.post('/v1/trades/AAAA-BBBB-CCCC-DDDD/chat', {}),
+    ]) {
+      expect(err(r)).toEqual({ status: 403, error: 'owner-only' });
+    }
+  });
+});
+
+describe('the abilities catalogue on the API (J-10)', () => {
+  it('GET /v1/team/permissions lists the groups, every ability with its risk, rule and preset defaults, and the presets', async () => {
+    const owner = await team();
+    const res = await owner.browser.get('/v1/team/permissions');
+    expect(res.statusCode, res.body).toBe(200);
+    const c = res.json() as {
+      groups: { id: string; abilities: { id: string; no: number; risk: string; availability: string; presets: string[] }[] }[];
+      presets: { id: string; abilities: string[] }[];
+    };
+    expect(c.groups).toHaveLength(9);
+    const all = c.groups.flatMap((g) => g.abilities);
+    expect(all).toHaveLength(66);
+    expect(all.find((a) => a.id === 'trades-release')).toMatchObject({ availability: 'owner-only', presets: [] });
+    expect(c.presets.map((p) => p.id)).toEqual(['offers', 'trades', 'manager', 'start']);
+    // A member may read it too (what they may and may not do).
+    const m = await member(owner.id, ['trades']);
+    expect((await m.browser.get('/v1/team/permissions')).statusCode).toBe(200);
+  });
+});
+
+describe('notes on traders (S-094, p7-8)', () => {
+  it('a member with "view notes" reads, with "add notes" adds (logged, signed with name and time), and no member deletes', async () => {
+    const owner = await team();
+    const subject = await team();
+    const subjectName = ((await subject.browser.get('/v1/account/me')).json() as { displayName: string }).displayName;
+    const m = await member(owner.id, ['trades']);
+    // Without the boxes: refused.
+    expect(err(await m.browser.get(`/v1/account/notes/${subjectName}`))).toEqual({ status: 403, error: 'forbidden' });
+    expect(err(await m.browser.post('/v1/account/notes', { about: subjectName, text: 'Pays fast.' }))).toEqual({ status: 403, error: 'forbidden' });
+    // The lead adds one.
+    const lead = await owner.browser.post('/v1/account/notes', { about: subjectName, text: 'Pays fast.' });
+    expect(lead.statusCode, lead.body).toBe(201);
+    const confirmToken = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: 'notes-view,notes-add' } as never);
+    expect((await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities: ['notes-view', 'notes-add'], confirmToken })).statusCode).toBe(200);
+    const added = await m.browser.post('/v1/account/notes', { about: subjectName, text: 'Asked for more time once.' });
+    expect(added.statusCode, added.body).toBe(201);
+    const list = await m.browser.get(`/v1/account/notes/${subjectName}`);
+    expect(list.statusCode).toBe(200);
+    const notes = list.json() as { id: string; text: string; by: string | null; byLead: boolean; at: string }[];
+    expect(notes.map((x) => [x.text, x.by, x.byLead])).toEqual([['Asked for more time once.', m.name, false], ['Pays fast.', null, true]]);
+    // Logged without the text.
+    const rows = await auditRows(owner.id);
+    expect(rows.map((r) => r.action)).toEqual(['note-added']);
+    const { rows: detail } = await deps.db.query<{ detail: unknown }>('select detail from team_audit where account_id = $1', [owner.id]);
+    expect(JSON.stringify(detail)).not.toContain('more time');
+    // No member deletes a note (owner-only), and the database refuses to change a note's text.
+    expect(err(await m.browser.delete(`/v1/account/notes/${notes[0]!.id}`))).toEqual({ status: 403, error: 'owner-only' });
+    await expect(deps.db.query(`update trader_notes set text = 'x' where id = $1`, [notes[0]!.id])).rejects.toThrow();
+    // Another account never sees them.
+    expect(((await subject.browser.get(`/v1/account/notes/${subjectName}`)).json() as unknown[]).length).toBe(0);
+  });
+});
