@@ -53,6 +53,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/blocks': 'the traders I blocked',
   'GET /v1/account/hold': "my own account's hold, waiting changes and my session's drafts (hold model v3; a team member only by the hold rights, never the lead's device names)",
   'GET /v1/account/methods': 'my own login methods',
+  'GET /v1/account/notes/:displayName': "my own account's private notes on a trader (the account owner, or a member with the notes-view box); the notes themselves, never the trader's data",
   'GET /v1/account/nudges': 'my own nudge setting',
   'GET /v1/account/offers': 'my own offers (read on stale Terms too, to turn them off)',
   'GET /v1/account/past-rep': 'my own imported past reputation',
@@ -68,6 +69,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/reviews/pending': 'reviews I still owe for my own trades',
   'GET /v1/team': "my own team's members (account owner only)",
   'GET /v1/team/audit': "my own team's audit log (account owner only)",
+  'GET /v1/team/permissions': 'the static abilities catalogue (groups, boxes, presets, hard rules): no account data; read on stale Terms too, so a member sees what their boxes mean before agreeing',
   'GET /v1/trades/:code': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/attestation': 'one of my own trades (participants only)',
   'GET /v1/trades/:code/confirmations': 'one of my own trades (participants only)',
@@ -127,6 +129,8 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'PUT /v1/account/nudges': 'my own nudge setting',
   'POST /v1/account/blocks': 'a block row of mine; no data back (404 for a name that is not a trader)',
   'DELETE /v1/account/blocks/:displayName': 'removes a block row of mine; no data back',
+  'POST /v1/account/notes': "a private note row of my own account on a trader (the account owner, or a member with the notes-add box); answers that note",
+  'DELETE /v1/account/notes/:id': "removes one of my own account's note rows (account owner only); no data back",
   'PUT /v1/account/profile/traded-total': 'my own traded-total display setting',
   'POST /v1/account/past-rep/start': 'a past-rep challenge for my own claim',
   'POST /v1/account/past-rep/finish': 'my own past-rep claim',
@@ -156,7 +160,7 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/chats/:chat/envelopes': 'an encrypted line in one of my own chats',
   // My own team (account owner only).
   'POST /v1/team/invites': 'an invite to my own team; answers its id, code and deadline',
-  'PATCH /v1/team/members/:id': "changes a member's roles in my own team",
+  'PATCH /v1/team/members/:id': "changes a member's boxes (abilities) in my own team",
   'DELETE /v1/team/members/:id': 'removes a member from my own team',
 };
 
@@ -172,6 +176,7 @@ export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
   'POST /v1/logout': 'ends whatever session the cookie names; no data back',
   'GET /v1/terms': 'the Terms and Privacy text and version, read before agreeing at sign-up',
   'GET /v1/pgp/signing-key': "X2F's own public signing key, to check the signed sign-up and login challenges",
+  'POST /v1/register/name-check': 'create an account: the live "is available" tick for the login name (rate limited per device and site wide, auth/nameCheck.ts); answers { available } only',
   'POST /v1/register/password': 'create an account (password)',
   'POST /v1/register/pgp/start': 'create an account (PGP)',
   'POST /v1/register/pgp/finish': 'create an account (PGP)',
