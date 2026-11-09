@@ -69,12 +69,12 @@ export function DisputeSlot({ code, view, refresh, serverClock }: TradeScreenPro
   const shown = screen.kind === 'room' ? screen.dispute : null;
   if (shown === null) return null;
   const room = <DisputeRoom trade={trade} methodName={methodName} dispute={shown} serverClock={serverClock} backTo={listFor(trade.role)} />;
-  // Owner p11-16: a dispute before "I've paid": the buyer's "I've paid" greyed out, with the pop-up.
+  // Owner p11-16 (design ea2a9ca8): a dispute before "I've paid": the payer's "I've paid" paused, with the alert sheet.
   if (!mustNotPay(view)) return room;
   return (
     <>
       {room}
-      <DoNotPay />
+      <DoNotPay view={view} />
 
     </>
   );

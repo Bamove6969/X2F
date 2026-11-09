@@ -6,7 +6,7 @@ import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { serverClock } from '../src/api/client.js';
-import type { TradeView } from '../src/api/trade.js';
+import { methodOf, type TradeView } from '../src/api/trade.js';
 import { DisputeSlot, RefundedSlot } from '../src/screens/dispute/DisputeSlot.js';
 import { DO_NOT_PAY, mustNotPay } from '../src/screens/dispute/DoNotPay.js';
 import { PENDING_ESCROW } from '../src/screens/trade/seams.js';
@@ -102,21 +102,32 @@ describe('DisputeSlot', () => {
       </MemoryRouter>,
     );
     await settle();
+    const name = v.counterparty.displayName;
     const paid = [...host.querySelectorAll('button')].find((b) => b.textContent === "I've paid");
     expect(paid?.disabled).toBe(true);
-    const dialog = document.body.querySelector('[role="dialog"]');
-    expect(dialog?.textContent).toContain(DO_NOT_PAY.title);
-    expect(dialog?.textContent).toContain('Do not send funds by any payment method to the seller');
-    expect(dialog?.textContent).toContain('a moderator has been called in');
+    // Design's words (ea2a9ca8), COPY-UNSIGNED.
+    expect(host.textContent).toContain(`Paused: ${name} opened a dispute. Don't send any payment.`);
+    const dialog = document.body.querySelector('[role="alertdialog"]');
+    expect(dialog?.textContent).toContain('DISPUTE OPENED');
+    expect(dialog?.textContent).toContain("Don't send any payment");
+    expect(dialog?.textContent).toContain(
+      `${name} opened a dispute and a moderator has been called in. Don't send money to ${name} by ${methodOf(v).name} or any other way. "I've paid" is paused until the moderator tells you what happens next.`,
+    );
+    expect(dialog?.querySelector(`a[href="/trade/${v.code}/dispute"]`)?.textContent).toBe(DO_NOT_PAY.toDispute);
+    const gotIt = [...dialog!.querySelectorAll('button')].find((b) => b.textContent === "Got it, I won't pay")!;
+    act(() => gotIt.click());
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
+    // The greyed button and its line stay.
+    expect(host.textContent).toContain('Paused:');
   });
 
-  it("p11-16: no pop-up for the seller, for a buyer who already tapped I've paid, or for the buyer's own dispute", () => {
+  it('p11-16: the payer gets it whoever opened the dispute; never the seller, never after I\'ve paid', () => {
     const base = { paidAt: null, dispute: { by: 'seller' as const, at: at(-1 * MIN) } };
     expect(mustNotPay(disputedView({ ...base, role: 'seller' }))).toBe(false);
     expect(mustNotPay(disputedView({ ...base, role: 'buyer', paidAt: at(-30 * MIN) }))).toBe(false);
-    expect(mustNotPay(disputedView({ ...base, role: 'buyer', dispute: { by: 'buyer', at: at(-1 * MIN) } }))).toBe(false);
-    // X2F's own escalation counts as the other side's: the buyer must not pay either.
+    expect(mustNotPay(disputedView({ ...base, role: 'buyer', dispute: { by: 'buyer', at: at(-1 * MIN) } }))).toBe(true);
     expect(mustNotPay(disputedView({ ...base, role: 'buyer', dispute: { by: 'system', at: at(-1 * MIN) } }))).toBe(true);
+    expect(DO_NOT_PAY.paused('X2F')).toBe("Paused: X2F opened a dispute. Don't send any payment.");
   });
 
   it('a disputed trade with no dispute record yet still shows the room, never the open form', async () => {
