@@ -101,7 +101,8 @@ const sampleEvent: Record<TradeEvent['type'], TradeEvent> = {
 
 describe('constants', () => {
   test('TIMERS', () => {
-    expect(TIMERS).toEqual({ setupMin: 15, fundMin: 30, payMin: 90, extendMin: 30, maxExtensions: 2, settleMin: 15, lapseCosignMin: 30, disputeAfterRefundHours: 48 });
+    // Owner Q11 (6 Nov): the poster has 60 minutes to answer a trade request before it closes by itself.
+    expect(TIMERS).toEqual({ setupMin: 60, fundMin: 30, payMin: 90, extendMin: 30, maxExtensions: 2, settleMin: 15, lapseCosignMin: 30, disputeAfterRefundHours: 48 });
   });
 
   test('every event type is exactly one of system or client', () => {
@@ -126,11 +127,11 @@ describe('system-only events (P3-C2)', () => {
 });
 
 describe('take, setup and funding', () => {
-  test('take → setup with setupBy = takenAt + 15 min; amounts and rate fixed at take', () => {
+  test('take → setup with setupBy = takenAt + 60 min (owner Q11); amounts and rate fixed at take', () => {
     const t = taken();
     expect(t.state).toBe('setup');
     expect(t.takenAt).toEqual(T0);
-    expect(t.setupBy).toEqual(at(15));
+    expect(t.setupBy).toEqual(at(60));
     expect(t.feeAtomic).toBe(12_500_000_000n);
     expect(t.sellerFundsAtomic).toBe(FUNDS);
     expect(t.fiatCents).toBe(41250n);
@@ -158,10 +159,12 @@ describe('take, setup and funding', () => {
   });
 
   test('tick past setupBy → cancelled, no penalty', () => {
-    const t = apply(taken(), { type: 'tick' }, 'system', at(15, 1));
+    const t = apply(taken(), { type: 'tick' }, 'system', at(60, 1));
     expect(t.state).toBe('cancelled');
-    expect(t.closedAt).toEqual(at(15, 1));
-    expect(apply(taken(), { type: 'tick' }, 'system', at(15)).state).toBe('setup');
+    expect(t.closedAt).toEqual(at(60, 1));
+    expect(apply(taken(), { type: 'tick' }, 'system', at(60)).state).toBe('setup');
+    // Still open at 15 min (the old window): the poster's hour is not over (owner Q11).
+    expect(apply(taken(), { type: 'tick' }, 'system', at(15, 1)).state).toBe('setup');
   });
 
   test('setup-done → funding, fundBy = now + 30 min', () => {
@@ -1060,18 +1063,20 @@ describe('pause and resume (P3-I19)', () => {
   });
 
   test('past deadlines do not move', () => {
-    const f = funding(); // setupBy 15 (passed by minute 20), fundBy 31
-    const r = apply(apply(f, { type: 'pause' }, 'system', at(20)), { type: 'resume' }, 'system', at(30));
-    expect(r.setupBy).toEqual(at(15));
-    expect(r.fundBy).toEqual(at(41));
+    // Setup done at minute 50: setupBy 60 (passed by minute 65), fundBy 80.
+    const f = run([[{ type: 'setup-done', escrowAddress: '4Escrow' }, 'system', 50]]);
+    const r = apply(apply(f, { type: 'pause' }, 'system', at(65)), { type: 'resume' }, 'system', at(75));
+    expect(r.setupBy).toEqual(at(60));
+    expect(r.fundBy).toEqual(at(90));
   });
 
   test('a paused setup does not time out', () => {
-    const p = apply(taken(), { type: 'pause' }, 'system', at(10));
-    expect(apply(p, { type: 'tick' }, 'system', at(20)).state).toBe('setup');
+    const p = apply(taken(), { type: 'pause' }, 'system', at(10)); // setupBy 60
+    expect(apply(p, { type: 'tick' }, 'system', at(70)).state).toBe('setup');
     const r = apply(p, { type: 'resume' }, 'system', at(20));
-    expect(r.setupBy).toEqual(at(25));
-    expect(apply(r, { type: 'tick' }, 'system', at(24)).state).toBe('setup');
+    expect(r.setupBy).toEqual(at(70));
+    expect(apply(r, { type: 'tick' }, 'system', at(69)).state).toBe('setup');
+    expect(apply(r, { type: 'tick' }, 'system', at(70, 1)).state).toBe('cancelled');
   });
 
   test("a pause during the seller's cancel moves its signing window and nothing reverts it", () => {
@@ -1191,7 +1196,7 @@ describe('purity', () => {
 describe('nextDeadline and releasableEta', () => {
   test('nextDeadline follows the state', () => {
     const cases: [Trade, Date | null][] = [
-      [taken(), at(15)],
+      [taken(), at(60)],
       [funding(), at(31)],
       [securing(), null],
       [secured(), at(120)],
