@@ -4,6 +4,7 @@ import { Icon } from '../../ui/icons.js';
 import { Logo } from '../../ui/Logo.js';
 import { ApiShapeError, CURRENCIES, adSide, currencyFrom, fetchMethods, formatMinor, type MethodLists, type MethodRow, type MethodSort, type Side } from './api.js';
 import { MethodPicker, methodShown } from './MethodPicker.js';
+import { methodUpToLine } from './methodTime.js';
 import { RadioChips } from './RadioChips.js';
 import type { BrowseCopy } from './SellCopy.js';
 import { SuggestMethodSheet } from './SuggestMethodSheet.js';
@@ -95,6 +96,8 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
 
   const sub = (m: MethodRow) =>
     m.offers > 0 ? copy.liveRow(m.offers, currency, m.bestRate === null ? null : formatMinor(m.bestRate, currency)) : copy.emptyRow(currency);
+  // Owner p9-4: how long the method can take, up front where it is picked.
+  const upTo = (m: MethodRow) => (m.upToMin === null ? null : methodUpToLine(m.upToMin));
   const withCurrency = (path: string) => `${path}?currency=${currency}`;
   const total = load.kind === 'ready' ? load.lists.all.length : null;
   const current = load.kind === 'ready' && load.side === side && load.currency === currency;
@@ -173,6 +176,7 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
                 onChange={setPicked}
                 title={sec.title}
                 sub={sub}
+                upTo={upTo}
                 href={(m) => withCurrency(`/${side}/${encodeURIComponent(m.id)}`)}
               />
             ) : null}
@@ -201,6 +205,12 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
                       </span>
                       {/* Opened, the folded rows drop the line the toggle already said once. */}
                       {sec.collapsed ? null : <span className="x2f-method__sub">{sub(m)}</span>}
+                      {/* Owner p9-4: how long the method can take, where it is picked. */}
+                      {upTo(m) === null ? null : (
+                        <span className="x2f-method__sub" data-part="up-to">
+                          {upTo(m)}
+                        </span>
+                      )}
                     </span>
                     <Icon name="chevron-right" size={18} />
                   </Link>

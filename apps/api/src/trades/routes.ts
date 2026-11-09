@@ -62,8 +62,7 @@ export async function tradeFor(req: FastifyRequest): Promise<TradeRow> {
 /**
  * Plan 2 Task 17 and R42: trades already open can be finished during the 24-hour hold, from a
  * backup (recovery) session too, held or not: reading the trade, every trade event (mark paid,
- * release started and its signals, the buyer's cancel), the final alert's receipt, the
- * confirmations, and opening a dispute (disputes/routes.ts). Starting a trade stays refused
+ * release started and its signals, the buyer's cancel), the confirmations, and opening a dispute (disputes/routes.ts). Starting a trade stays refused
  * (`take` checks the hold and takes full sessions only).
  */
 export const FINISH_OPEN_TRADES = { kinds: ['trader'], allowRecovery: true, allowHeld: true } as const satisfies Parameters<typeof requireSession>[0];
@@ -78,7 +77,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
   const hook = opts.publish ?? noPublish;
   const profile = opts.profile ?? (() => null);
   const txConfirmations = opts.txConfirmations ?? noConfirmations;
-  // Delivery (Task 19: streams, pushes, the final alert) runs after the actor's request, as the
+  // Delivery (Task 19: streams, pushes) runs after the actor's request, as the
   // nudge routes' `deliver` does: the store calls this after its commit, and setImmediate keeps
   // it out of the response, so the actor's response time says nothing about the counterparty's
   // subscriptions or open streams, and a slow push service never stalls the actor (review M8).
@@ -102,7 +101,6 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       counterparty: await traderSummary(deps.db, other, now, me, other === t.sellerId ? 'seller' : 'buyer'),
       profile: profile(t.methodId) ?? null,
       sellerWalletApp: row.seller_wallet_app,
-      finalAlertSeenAt: row.final_alert_seen_at,
       paymentInstructions: row.method_instructions,
     });
   };
@@ -114,57 +112,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     return view(req, t, row);
   });
 
-  /**
-   * `POST /v1/trades/:code/final-alert-seen` → 204: the buyer's device has shown the final alert
-   * (Task 25's FinalAlert, once per finalAlertAt, only while the alert is on screen; the service
-   * worker posts nothing, since a notification in the tray is not proof it was read). The only way
-   * `final_alert_delivered` becomes true; a stream being open or a push service answering 201
-   * never does (P3-I13). `final_alert_seen_at` keeps the first receipt's time (Task 10 counts the
-   * buyer's 15 minutes from it). Idempotent. An unknown code and someone else's trade get the same
-   * 404; the seller gets 409 `wrong-party`; before a refund is requested, 409 `wrong-state`.
-   */
-  app.post('/v1/trades/:code/final-alert-seen', { preHandler: session }, async (req, reply) => {
-    const t = rowToTrade(await tradeFor(req));
-    const role = roleOf(t, req.auth.accountId);
-    if (role === null) throw new ApiError(404, 'not-found');
-    if (role !== 'buyer') throw new ApiError(409, 'wrong-party');
-    // The state conditions live in the UPDATE, not only in the read above: a mark-paid that
-    // commits between the two leaves the (now paid) trade unflagged, and the answer comes from
-    // the row count (review 2026-10-27, minor 5).
-    const { db, clock } = req.server.deps;
-    const now = clock();
-    const client = await db.connect();
-    try {
-      await client.query('begin');
-      try {
-        // Task 18 review M9(b), lead 2026-10-30: a team member seeing the alert is not the account
-        // owner seeing it, so a member's receipt never sets `final_alert_delivered` or starts the
-        // buyer's 15 minutes for the account: it is only checked against the same state and
-        // written to the owner's audit log (the owner still gets the alert's push, review I1).
-        const r =
-          req.auth.memberId === null
-            ? await client.query(
-                `update trades set final_alert_delivered = true, final_alert_seen_at = coalesce(final_alert_seen_at, $3)
-                  where code = $1 and buyer_account_id = $2 and state = 'refund_requested' and final_alert_at is not null`,
-                [t.code, req.auth.accountId, now],
-              )
-            : await client.query(
-                `select 1 from trades
-                  where code = $1 and buyer_account_id = $2 and state = 'refund_requested' and final_alert_at is not null for share`,
-                [t.code, req.auth.accountId],
-              );
-        if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
-        await auditMember(client, req.auth, { action: 'final-alert-seen', tradeCode: t.code }, now);
-        await client.query('commit');
-      } catch (e) {
-        await client.query('rollback');
-        throw e;
-      }
-    } finally {
-      client.release();
-    }
-    return reply.code(204).send();
-  });
+  // `POST /v1/trades/:code/final-alert-seen` is gone with the final alert (owner 8 Nov, p6-1): an
+  // old client's receipt now gets the router's 404.
 
   app.post('/v1/trades/:code/events', { preHandler: session }, async (req) => {
     const e = clientEvent(req.body);

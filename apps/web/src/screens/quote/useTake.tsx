@@ -108,11 +108,15 @@ export function useTake(
           }
           updateQuote(offerId, { busy: false });
           dropIfLeft(offerId);
+          // The deal's fiat maximum: the band's limits at the rate that locked (J-16: an XMR band's
+          // maximum moves with the rate; review 2, I1), clamped to the growth ceiling the take fixed
+          // (the launch cap, launch-rules review F1). Never above what this person saw at that rate: a
+          // higher one keeps the device's figure, and the attested deal then fails to match
+          // (deal-mismatch) instead of letting the trade grow more.
           const at = { currency: confirmed.deal.currency, centsPerXmr: taken.centsPerXmr };
-          const locked: ConfirmedTrade = {
-            ...confirmed,
-            deal: { ...confirmed.deal, centsPerXmr: taken.centsPerXmr, maxFiatCents: tradeFiatLimits(a.range, at).maxFiatCents },
-          };
+          const seenMax = tradeFiatLimits(a.range, at).maxFiatCents;
+          const maxFiatCents = taken.maxFiatCents < seenMax ? taken.maxFiatCents : seenMax;
+          const locked: ConfirmedTrade = { ...confirmed, deal: { ...confirmed.deal, centsPerXmr: taken.centsPerXmr, maxFiatCents } };
           storeConfirmed(taken.code, locked);
           void navigate(`/trade/${encodeURIComponent(taken.code)}`, { state: { confirmed: locked } });
         },

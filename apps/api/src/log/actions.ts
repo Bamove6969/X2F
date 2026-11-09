@@ -75,6 +75,9 @@ export const LOG_ACTIONS = {
   'dispute.assigned': { staffId: 'uuid' },
   // A switched-off or removed member's open case goes back to the queue (Task 7 x Task 10).
   'dispute.unassigned': { staffId: 'uuid' },
+  // Re-verify 43fbbb2f, R-I1: the seller's cancel refund landed on a dispute already past `open`
+  // (an escrow ruling proposed or published); the case is raised for staff to re-rule.
+  'dispute.refund-after-ruling': { seq: 'number', status: 'id' },
   'case.opened': {},
   'chat.read': {},
   'chat.message-sent': {},

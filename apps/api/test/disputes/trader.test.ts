@@ -56,9 +56,16 @@ async function tradeIn(state: Parameters<typeof driveTo>[2], from = START) {
   return { seller, buyer, t };
 }
 
-/** A secured trade the buyer disputed at `from`. */
+/**
+ * A trade the buyer disputed at `from`: marked paid at the seller's confirm window (120 min in
+ * seedTrade) before `from`, since the buyer can't dispute before "I've paid" nor before the
+ * window ends (design proto review P1, 8 Nov).
+ */
 async function disputed(from = START) {
-  const x = await tradeIn('secured', from);
+  const x = await tradeIn('paid', new Date(from.getTime() - 120 * MIN));
+  expect(x.t.confirmBy).toEqual(from);
+  setNow(from);
+  await relogin(x.seller, x.buyer);
   const res = await x.buyer.browser.post(dispute(x.t.code), { reason: 'paid', note: '' });
   expect(res.statusCode, res.body).toBe(200);
   return x;

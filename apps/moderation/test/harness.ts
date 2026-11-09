@@ -27,6 +27,7 @@ export const API = 'http://api-internal.test';
 export const RELAY = 'http://relay-admin.test';
 export const TERMS: AttestedTerms = {
   deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000' },
+  payWindowMin: 90,
   buyerPayout: '4'.padEnd(95, 'B'),
   sellerRefund: '8'.padEnd(95, 'S'),
 };
@@ -73,10 +74,7 @@ export function fakeNetwork(ctx: Ctx) {
   const net = {
     work: [] as WorkItem[],
     states: new Map<string, string>(),
-    seen: new Map<string, Date>(),
     paused: new Set<string>(),
-    /** The API's own (pause-shifted) final alert per trade (Task 10 review I1). */
-    alerts: new Map<string, Date>(),
     /** settleKindFor at the API, per trade (default null). */
     settleKinds: new Map<string, string>(),
     reports: [] as Report[],
@@ -103,8 +101,6 @@ export function fakeNetwork(ctx: Ctx) {
             state,
             settleKind: net.settleKinds.get(trade) ?? null,
             paused: net.paused.has(trade),
-            finalAlertSeenAt: net.seen.get(trade)?.toISOString() ?? null,
-            finalAlertAt: net.alerts.get(trade)?.toISOString() ?? null,
           })),
         });
       }

@@ -7,7 +7,6 @@ export type TradeState =
   | 'securing'
   | 'secured'
   | 'paid'
-  | 'refund_requested'
   | 'settling'
   | 'released'
   | 'refunded'
@@ -21,7 +20,6 @@ export const TRADE_STATES: readonly TradeState[] = [
   'securing',
   'secured',
   'paid',
-  'refund_requested',
   'settling',
   'released',
   'refunded',
@@ -97,11 +95,10 @@ export interface TradeView {
   fundStartedAt: string | null;
   securedAt: string | null;
   payBy: string | null;
+  /** The buyer's time to pay in minutes, the payment method's, fixed at take (owner p9-6); missing from an older API (90). */
+  payWindowMin?: number;
   paidAt: string | null;
   confirmBy: string | null;
-  finalAlertAt: string | null;
-  /** When the buyer's device posted the final-alert seen-receipt (Task 25's FinalAlert); sent to the buyer only, null for the seller. */
-  finalAlertSeenAt: string | null;
   settleBy: string | null;
   /**
    * When a trader's side of the settlement was reported done (Task 9 I/O, lead decision b): the
@@ -116,8 +113,8 @@ export interface TradeView {
   /** When the seller's Confirm cancel became available; the trade closes by itself 48 h later (owner 2026-10-29). */
   cancelConfirmableAt: string | null;
   /**
-   * When the seller first nudged the buyer after the escrow was secured (owner G2, g66); null =
-   * not yet. The seller's "Cancel and get refund" stays locked until it is set and the 90 minutes are over.
+   * When the seller first nudged the buyer after the escrow was secured; null = not yet. A record
+   * only: nudges are optional (owner 8 Nov, p6-1), the seller's cancel needs none.
    */
   sellerNudgedAt: string | null;
   nextDeadline: string | null;

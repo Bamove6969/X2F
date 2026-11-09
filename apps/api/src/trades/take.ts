@@ -1,5 +1,18 @@
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
-import { fiatCents, newTrade, pickTier, posterRole, rangeAllows, tierRange, tierRate, tradeFiatLimits, type Price, type Side, type Tier } from '@x2f/trade';
+import {
+  LAUNCH_TRADE_CAP_USD_CENTS,
+  fiatCents,
+  newTrade,
+  pickTier,
+  posterRole,
+  rangeAllows,
+  tierRange,
+  tierRate,
+  tradeFiatLimits,
+  type Price,
+  type Side,
+  type Tier,
+} from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
@@ -10,12 +23,13 @@ import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
 import { ownerDeviceOnly } from '../team/perms.js';
 import { acceptedEvent } from '../events/publicName.js';
-import { getProfile, isAvailable } from '../methods/profiles.js';
+import { isAvailable, profileOrFallback } from '../methods/profiles.js';
 import { assertNoPendingReview, hasPendingReview } from '../reviews/gate.js';
-import type { MarketPrices } from '../price/market.js';
+import type { MarketPrices, MarketQuote } from '../price/market.js';
 import { assertNotBlocked } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, tradeCap, usdCentsOf, type TradeCap } from '../traders/stage.js';
 import { usableWallets, type Wallet } from '../wallets/routes.js';
+import { assertWithinLaunchCap } from './launchCap.js';
 import { insertTrade, loadTradeRow, rowToTrade, type TradeSides } from './store.js';
 import { roleOf } from './view.js';
 import { MARKET_PRICED, instructionsFor, loadFlex, tiersOf, type FlexMethod } from '../offers/routes.js';
@@ -24,8 +38,9 @@ import { MARKET_PRICED, instructionsFor, loadFlex, tiersOf, type FlexMethod } fr
  * Plan 3 Task 5: taking an offer, and the poster's side of the new trade.
  *
  * - `POST /v1/offers/:id/take { amountAtomic, walletId, centsPerXmr, fiatCents, methodId, currency }`
- *   (`requireTrader`) → `{ code, centsPerXmr, fiatCents }`. The amount, the rates and the totals are
- *   decimal strings, the rates and totals in `currency`.
+ *   (`requireTrader`) → `{ code, centsPerXmr, fiatCents, maxFiatCents }` (`maxFiatCents`: the trade's
+ *   growth ceiling, `growthCeiling`, the band's maximum clamped to the launch cap). The amount, the
+ *   rates and the totals are decimal strings, the rates and totals in `currency`.
  *   Flexible offers (J-16, from claude2's Task 34): `currency` is one of the offer's currencies and
  *   `methodId` one of its methods offered in that currency (400 otherwise; owner: the buyer picks
  *   one, locked in). The band is chosen by @x2f/trade `pickTier`: that currency's bands holding the
@@ -35,7 +50,8 @@ import { MARKET_PRICED, instructionsFor, loadFlex, tiersOf, type FlexMethod } fr
  *   and method's final rate now (the currency's market + band margin + method adjustment), and the
  *   size must fit the band at that rate (409 `out-of-range`). The trade records the chosen currency
  *   and method, that method's instructions for that currency (`method_instructions`) and the band's
- *   fiat limits.
+ *   fiat limits (the maximum clamped to the launch cap, owner p11-6: the trade's USD value, the
+ *   larger of its total and its XMR at the market, is at most $5,000 for every stage).
  *   The client's rate and total are the ones the taker's quote showed; they are never locked (lead
  *   decision 2026-10-29, Task 5 review I2). The take always locks the server's own rate now
  *   (`offerRate`: the market plus the offer's margin) and that rate's total (OD-5), and answers
@@ -61,8 +77,6 @@ const PRICE = /^[1-9][0-9]{0,19}$/;
 const CENTS = /^[1-9][0-9]{0,17}$/;
 /** The largest move of a market offer's rate between the quote and the take: 0.5% (5 per mille). */
 const TOLERANCE_PER_MILLE = 5n;
-/** The confirm window for a method without a profile of its own: the Custom method's. */
-const FALLBACK_PROFILE = 'CUSTOM';
 
 const bad = (): ApiError => new ApiError(400, 'bad-request');
 const notFound = (): ApiError => new ApiError(404, 'not-found');
@@ -149,15 +163,49 @@ function lockRate(currency: string, tier: Tier, method: FlexMethod, quoted: bigi
  * XMR amount valued at the live market price (lead decision 2026-10-29, Task 5 review M5), so an
  * offer priced below the market (down to −50%) cannot move more XMR inside a cap. Both convert with `usdCentsOf`
  * at the market quote, exactly as Task 4's `opensAt` converts an offer's minimum (Task 4 review
- * M8). Null when there is no quote to value the XMR with.
+ * M8), at the market quote `q` (the take has none to value the XMR with: no value, fails closed).
  */
-function usdCents(currency: string, amountAtomic: bigint, cents: bigint, prices: MarketPrices): bigint | null {
-  const q = prices.quote(currency);
-  if (q === null) return null;
+function usdValue(currency: string, q: MarketQuote, amountAtomic: bigint, cents: bigint): bigint {
   const usd = (c: bigint): bigint => (currency === 'USD' ? c : usdCentsOf(c, { centsPerXmr: q.price.centsPerXmr, usdCentsPerXmr: q.usdCentsPerXmr }));
   const total = usd(cents);
   const market = usd(fiatCents(amountAtomic, q.price));
   return total > market ? total : market;
+}
+
+/**
+ * The trade's growth ceiling, its `maxFiatCents` (launch-rules review F1): the largest fiat total,
+ * at the locked rate, that extra XMR sent before "I've paid" may grow the trade to (machine.ts
+ * `grow`, and both devices' `deviceAmount`). It is the lower of the offer's maximum and the
+ * largest total whose every amount is within the launch cap by the take's own rule (`usdValue`:
+ * the larger of the fiat total and the XMR at the market price, at the take's quote, rounded up).
+ * So growth never takes a trade past $5,000 at the take's prices, however the offer was posted
+ * (before the cap, relisted, a non-USD band after a rate move, a margin far below market).
+ *
+ * Worked out on amounts: `atCap` is the largest XMR amount within the cap (the value only rises
+ * with the amount), and the ceiling is the largest total that no larger amount reaches. Never below
+ * the take's own total, which the take has already checked against the cap: only when the next
+ * amount past `atCap` rounds to that same total (a rate far below market) can that floor
+ * apply, and it then lets the trade grow by less than one cent at the locked rate.
+ */
+function growthCeiling(
+  currency: string,
+  q: MarketQuote,
+  rate: Price,
+  a: { amountAtomic: bigint; totalCents: bigint; offerMaxCents: bigint },
+): bigint {
+  const within = (x: bigint): boolean => usdValue(currency, q, x, fiatCents(x, rate)) <= LAUNCH_TRADE_CAP_USD_CENTS;
+  // The take amount is within the cap; find an amount above it, then the last one within.
+  let lo = a.amountAtomic;
+  let hi = lo * 2n;
+  while (within(hi)) [lo, hi] = [hi, hi * 2n];
+  while (hi - lo > 1n) {
+    const mid = (lo + hi) / 2n;
+    if (within(mid)) lo = mid;
+    else hi = mid;
+  }
+  const atCap = fiatCents(lo + 1n, rate) - 1n;
+  const ceiling = atCap < a.offerMaxCents ? atCap : a.offerMaxCents;
+  return ceiling < a.totalCents ? a.totalCents : ceiling;
 }
 
 async function openTrades(db: Queryable, accountId: string): Promise<number> {
@@ -316,12 +364,22 @@ export function takeRoutes(app: FastifyInstance): void {
       // The fiat limits the trade keeps (an XMR range's at the locked rate), for its growth cap.
       const limits = tradeFiatLimits(range, rate);
       // The trade's USD value, counted against the caps and kept (301) to weigh its reviews (Plan 5 Task 3).
-      const usd = usdCents(b.currency, b.amountAtomic, total, deps.prices);
+      // One quote (the chosen currency's) for the value and the growth ceiling below, so both judge
+      // the cap at the same price. lockRate already failed closed without one.
+      const q = deps.prices.quote(b.currency);
+      const usd = q === null ? null : usdValue(b.currency, q, b.amountAtomic, total);
       await checkStarterLimits(c, { takerId, posterId, usd: () => usd, now });
+      // The launch cap (owner p11-6) for every stage, Graduated too: the same USD value, and no
+      // price to count it with fails closed. After the starter caps, which are lower and say more.
+      assertWithinLaunchCap(usd);
+      // How far extra XMR may grow it before "I've paid": the band's maximum, clamped to the cap (F1).
+      const maxFiatCents = growthCeiling(b.currency, q!, rate, {
+        amountAtomic: b.amountAtomic, totalCents: total, offerMaxCents: limits.maxFiatCents,
+      });
 
       const poster = posterRole(r.side);
-      const profile = getProfile(method.methodId) ?? getProfile(FALLBACK_PROFILE);
-      if (profile === null) throw new Error('no fallback method profile');
+      // The chosen method's confirm window and time to pay, fixed on the trade here (owner p9-4, p9-6).
+      const profile = profileOrFallback(method.methodId);
       const t = newTrade(
         {
           code: newTradeCode(),
@@ -333,8 +391,9 @@ export function takeRoutes(app: FastifyInstance): void {
           amountAtomic: b.amountAtomic,
           lockedRate: rate,
           confirmWindowMin: profile.confirmWindowMin,
+          payWindowMin: profile.payWindowMin,
           minFiatCents: limits.minFiatCents,
-          maxFiatCents: limits.maxFiatCents,
+          maxFiatCents,
         },
         now,
       );
@@ -368,7 +427,10 @@ export function takeRoutes(app: FastifyInstance): void {
         if (app.events.publish(posterId, ev) === 0) await app.push.send(posterId, 'trade');
       })().catch((err: unknown) => app.log.error({ err }, 'accepted publish failed'));
     });
-    return { code: trade.code, centsPerXmr: trade.lockedRate.centsPerXmr.toString(), fiatCents: trade.fiatCents.toString() };
+    return {
+      code: trade.code, centsPerXmr: trade.lockedRate.centsPerXmr.toString(), fiatCents: trade.fiatCents.toString(),
+      maxFiatCents: trade.maxFiatCents.toString(),
+    };
   });
 
   app.post('/v1/trades/:code/wallet', { preHandler: requireTrader }, async (req, reply) => {

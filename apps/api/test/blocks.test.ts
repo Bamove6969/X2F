@@ -15,7 +15,11 @@ import { flexBody } from './helpers/offers.js';
 
 const DAY = 86_400_000;
 
-/** USD at $330.00 per XMR; every other currency at 3,300,000 minor units (offers are market ± %, owner Q1). */
+/**
+ * USD at $330.00 per XMR; every other currency at 3,300,000 minor units (offers are market ± %, owner
+ * Q1). Every currency has a price: posting converts each band's top edge to US dollars and fails
+ * closed without a price (the launch cap, owner p11-6).
+ */
 function quote(currency: string): MarketQuote | null {
   return {
     price: { currency, centsPerXmr: currency === 'USD' ? 33_000n : 3_300_000n }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,

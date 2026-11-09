@@ -107,8 +107,6 @@ function RouterBridge() {
  * "<name> accepted your offer" sheet over whatever screen is showing, then goes to the trade, and
  * each `trade` event goes on to the trade room (Task 22, seams.ts liveFanOut) and each `chat`
  * event to the open chat panels (Task 20, chat/live.ts).
- * Nothing here is a seen-receipt: a `refund_requested` event reaching a tab (hidden, minimised, on
- * another device) is not the buyer seeing the final alert. Task 25's `FinalAlert` posts that.
  */
 function LiveAccepted({ member }: { member: boolean }) {
   const navigate = useNavigate();

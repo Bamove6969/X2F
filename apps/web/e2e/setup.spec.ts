@@ -420,7 +420,7 @@ test('a visitor who taps Trade comes back to the same quote, amount kept, throug
   await page.route('**/v1/offers/*/take', (r) => {
     const body = r.request().postDataJSON() as { centsPerXmr: string; fiatCents: string };
     takes.push(body);
-    return json({ code: B.code, centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents })(r);
+    return json({ code: B.code, centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: B.offer.maxFiatCents })(r);
   });
 
   const quote = `/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`;

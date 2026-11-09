@@ -6,8 +6,9 @@ import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { serverClock } from '../src/api/client.js';
-import type { TradeView } from '../src/api/trade.js';
+import { methodOf, type TradeView } from '../src/api/trade.js';
 import { DisputeSlot, RefundedSlot } from '../src/screens/dispute/DisputeSlot.js';
+import { DO_NOT_PAY, mustNotPay } from '../src/screens/dispute/DoNotPay.js';
 import { PENDING_ESCROW } from '../src/screens/trade/seams.js';
 import '../src/screens/trade/screens.js';
 import { screenFor, type TradeScreenProps } from '../src/screens/trade/TradeRoom.js';
@@ -89,6 +90,44 @@ describe('DisputeSlot', () => {
     expect(urls.some((u) => /\/dispute$/.test(u))).toBe(true);
     // The room's back link goes to the trader's list, not back to the room itself.
     expect(host.querySelector('a[href="/sell"]')).not.toBeNull();
+  });
+
+  it("p11-16: the seller's dispute before \"I've paid\": the buyer's I've paid is greyed out and a pop-up says not to send money", async () => {
+    disputeAnswer = () => jsonResponse(openDispute({ openedBy: 'seller' }));
+    const v = disputedView({ role: 'buyer', paidAt: null, dispute: { by: 'seller', at: at(-1 * MIN) } });
+    expect(mustNotPay(v)).toBe(true);
+    const { host } = render(
+      <MemoryRouter>
+        <DisputeSlot {...props(v)} />
+      </MemoryRouter>,
+    );
+    await settle();
+    const name = v.counterparty.displayName;
+    const paid = [...host.querySelectorAll('button')].find((b) => b.textContent === "I've paid");
+    expect(paid?.disabled).toBe(true);
+    // Design's words (ea2a9ca8), COPY-UNSIGNED.
+    expect(host.textContent).toContain(`Paused: ${name} opened a dispute. Don't send any payment.`);
+    const dialog = document.body.querySelector('[role="alertdialog"]');
+    expect(dialog?.textContent).toContain('DISPUTE OPENED');
+    expect(dialog?.textContent).toContain("Don't send any payment");
+    expect(dialog?.textContent).toContain(
+      `${name} opened a dispute and a moderator has been called in. Don't send money to ${name} by ${methodOf(v).name} or any other way. "I've paid" is paused until the moderator tells you what happens next.`,
+    );
+    expect(dialog?.querySelector(`a[href="/trade/${v.code}/dispute"]`)?.textContent).toBe(DO_NOT_PAY.toDispute);
+    const gotIt = [...dialog!.querySelectorAll('button')].find((b) => b.textContent === "Got it, I won't pay")!;
+    act(() => gotIt.click());
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
+    // The greyed button and its line stay.
+    expect(host.textContent).toContain('Paused:');
+  });
+
+  it('p11-16: the payer gets it whoever opened the dispute; never the seller, never after I\'ve paid', () => {
+    const base = { paidAt: null, dispute: { by: 'seller' as const, at: at(-1 * MIN) } };
+    expect(mustNotPay(disputedView({ ...base, role: 'seller' }))).toBe(false);
+    expect(mustNotPay(disputedView({ ...base, role: 'buyer', paidAt: at(-30 * MIN) }))).toBe(false);
+    expect(mustNotPay(disputedView({ ...base, role: 'buyer', dispute: { by: 'buyer', at: at(-1 * MIN) } }))).toBe(true);
+    expect(mustNotPay(disputedView({ ...base, role: 'buyer', dispute: { by: 'system', at: at(-1 * MIN) } }))).toBe(true);
+    expect(DO_NOT_PAY.paused('X2F')).toBe("Paused: X2F opened a dispute. Don't send any payment.");
   });
 
   it('a disputed trade with no dispute record yet still shows the room, never the open form', async () => {
@@ -195,6 +234,23 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
       const cancel = over.dispute === undefined && (over.settling === 'buyer-cancel' || over.settling === 'mutual-cancel');
       expect(host.textContent.includes('you can still open a dispute')).toBe(over.dispute === undefined && !cancel);
     }
+  });
+
+  it('the buyer\'s own cancel, done: board Refunded variant=buyer-cancelled (a neutral CANCELLED chip, "You cancelled this trade"), never "Refunded"', () => {
+    const counterparty = { ...sellerView().counterparty, displayName: 'satoshi_ghost' };
+    const { host } = render(
+      <MemoryRouter>
+        <RefundedSlot {...props(refunded({ settling: 'buyer-cancel', cancelConfirmedAt: at(-9 * DAY), counterparty }))} />
+      </MemoryRouter>,
+    );
+    const chip = host.querySelector('.x2f-chip')!;
+    expect(chip.getAttribute('data-tone')).toBe('neutral');
+    expect(chip.textContent).toBe('Cancelled');
+    expect(host.querySelector('h1')?.textContent).toBe('You cancelled this trade');
+    // "the seller", never the name (owner 2026-10-29; lead 8 Nov).
+    expect(host.querySelector('.dispute-lead')?.textContent).toBe('All 1.250000 XMR (about $412.50) went back to the seller. X2F took nothing from you.');
+    expect(host.querySelector('[aria-label="Trade status"]')?.textContent).not.toContain('satoshi_ghost');
+    expect(host.textContent).not.toContain('Refunded');
   });
 
   it("review I1: a cancel's refund that landed after I've paid keeps the dispute and is not called a cancel", () => {

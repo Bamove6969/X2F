@@ -158,10 +158,18 @@ export interface Taken {
   code: string;
   centsPerXmr: bigint;
   fiatCents: bigint;
+  /**
+   * The trade's growth ceiling: the offer's maximum, clamped at take so extra XMR never grows the
+   * trade past the launch cap (launch-rules review F1). It is the deal's `maxFiatCents`.
+   */
+  maxFiatCents: bigint;
 }
 
-/** `POST /v1/offers/:id/take` (Task 5) → the new trade's code and the rate and total that locked. */
+/** `POST /v1/offers/:id/take` (Task 5) → the new trade's code, the rate and total that locked, and its growth ceiling. */
 export async function takeOffer(offerId: string, body: TakeRequest): Promise<Taken> {
   const o = obj(await api(`/v1/offers/${encodeURIComponent(offerId)}/take`, { method: 'POST', body }), 'take');
-  return { code: str(o, 'code', 'take'), centsPerXmr: big(o, 'centsPerXmr', 'take'), fiatCents: big(o, 'fiatCents', 'take') };
+  return {
+    code: str(o, 'code', 'take'), centsPerXmr: big(o, 'centsPerXmr', 'take'), fiatCents: big(o, 'fiatCents', 'take'),
+    maxFiatCents: big(o, 'maxFiatCents', 'take'),
+  };
 }

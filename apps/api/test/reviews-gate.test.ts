@@ -72,7 +72,8 @@ async function released(who: Who, role: 'buyer' | 'seller' = 'buyer'): Promise<s
 
 const OFFER = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: null, terms: 'Zelle only.',
+  // At most $5,000 (the launch cap, owner p11-6), in USD and in EUR (€4,500 is $5,000 here).
+  minFiatCents: '1000', maxFiatCents: '450000', minTrades: null, terms: 'Zelle only.',
 };
 
 async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<string> {

@@ -19,6 +19,8 @@ export interface PickMethod {
   id: string;
   name: string;
   giftCard: boolean;
+  /** How long the method's money can take to arrive, in minutes (owner p9-4); null from an older API. */
+  upToMin: number | null;
 }
 
 export type Side = 'sell' | 'buy';
@@ -66,7 +68,8 @@ export function parseMethods(raw: unknown): PickMethod[] {
   if (!isRecord(raw) || !Array.isArray(raw.all)) throw shape('methods');
   return raw.all.map((m: unknown) => {
     if (!isRecord(m) || typeof m.id !== 'string' || typeof m.name !== 'string' || typeof m.giftCard !== 'boolean') throw shape('methods');
-    return { id: m.id, name: m.name, giftCard: m.giftCard };
+    if (m.upToMin !== undefined && (typeof m.upToMin !== 'number' || !Number.isInteger(m.upToMin) || m.upToMin <= 0)) throw shape('methods');
+    return { id: m.id, name: m.name, giftCard: m.giftCard, upToMin: typeof m.upToMin === 'number' ? m.upToMin : null };
   });
 }
 

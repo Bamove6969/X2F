@@ -29,10 +29,11 @@ import type { AuthContext } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
-import { getMethod, isAvailable } from '../methods/profiles.js';
+import { getMethod, isAvailable, profileOrFallback } from '../methods/profiles.js';
 import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
 import type { MarketPrices } from '../price/market.js';
+import { offerLaunchCapRefusal, throwLaunchCapRefusal } from '../trades/launchCap.js';
 import { blockedEitherWaySql } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
 import { hasPendingReview, pendingReviewSql } from '../reviews/gate.js';
@@ -159,6 +160,8 @@ export interface MyOffer {
   methods: MyOfferMethod[];
   country?: string;
   status: 'live' | 'paused';
+  /** The buyer's time to pay with the offer's first method, in minutes (owner p9-6), as a take fixes it; each method's own is in `methods`. */
+  payWindowMin: number;
   /**
    * A live offer that nobody can see right now, and why (review M4): the site's emergency stop,
    * the account's trading hold, a trade it has not rated yet (Plan 5 Task 3, P5-A4), every one of its
@@ -185,14 +188,18 @@ export interface MyOfferMethod {
   instructions: string;
   currencies: string[];
   instructionsByCurrency: Record<string, string>;
+  /** The buyer's time to pay with this method, in minutes (owner p9-6), as a take fixes it. */
+  payWindowMin: number;
 }
 
 /**
  * Why one offer was not switched by `POST /v1/account/offers/status`: the posting guards of
- * relisting (`not-vendor`, `trading-paused`, `trading-hold`, `no-wallet`, `too-many-offers`, `method-unavailable`),
- * or `not-found` for an id that is not one of my live or paused offers.
+ * relisting (`not-vendor`, `trading-paused`, `trading-hold`, `no-wallet`, `too-many-offers`, `method-unavailable`,
+ * and the launch cap's `launch-cap`, or `price-unavailable` when none of the offer's currencies has
+ * a price to count its bands with), or `not-found` for an id that is not one of my live or paused offers.
  */
-export type OfferSwitchRefusal = 'not-vendor' | 'trading-paused' | 'trading-hold' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'not-found';
+export type OfferSwitchRefusal =
+  | 'not-vendor' | 'trading-paused' | 'trading-hold' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'launch-cap' | 'price-unavailable' | 'not-found';
 
 /** One offer's outcome: its status after the call, and why it was not switched when it was refused. */
 export interface OfferSwitchResult {
@@ -832,6 +839,10 @@ export function offerRoutes(app: FastifyInstance): void {
     const now = deps.clock();
     const id = await inTransaction(deps.db, async (client) => {
       await assertMayPost(client, req.auth!, now, o.side, null);
+      // The launch cap (owner p11-6): every band's top edge in every currency of the offer, in US
+      // dollars at that currency's market rate now (trades/launchCap.ts); a currency with no price
+      // now fails closed (409 price-unavailable). The take checks the trade itself again.
+      throwLaunchCapRefusal(offerLaunchCapRefusal(o.unit, o.currencies, deps.prices, false));
       const { rows } = await client.query<{ id: string }>(
         `insert into offers (account_id, side, price_mode, amount_unit, terms, country, status, created_at, updated_at)
          values ($1, $2, 'market', $3, $4, $5, 'live', $6, $6) returning id`,
@@ -903,13 +914,19 @@ export function offerRoutes(app: FastifyInstance): void {
       // in one transaction with the write (review M1).
       for (const m of row.methods) assertMethodAvailable(m);
       await inTransaction(deps.db, async (client) => {
-        const cur = await client.query<{ side: Side }>(
-          `select side from offers o where id = $1 and account_id = $2 and status <> 'removed' and ${MARKET_PRICED}`,
+        const cur = await client.query<{ side: Side; amount_unit: AmountUnit }>(
+          `select side, amount_unit from offers o where id = $1 and account_id = $2 and status <> 'removed' and ${MARKET_PRICED}`,
           [id, accountId],
         );
         const m = cur.rows[0];
         if (!m) throw new ApiError(404, 'not-found');
         await assertMayPost(client, req.auth!, now, m.side, id);
+        // The launch cap, as posting checks it (launch-rules review F1): an offer from before the
+        // cap, or a band whose currency's rate has since moved it above $5,000, does not go live
+        // again. A currency with no price now is skipped and stays hidden until its rate returns
+        // (OWNER QUESTION p11-95, the lead's default; trades/launchCap.ts `offerLaunchCapRefusal`).
+        const flex = (await loadFlex(client, [id])).get(id)!;
+        throwLaunchCapRefusal(offerLaunchCapRefusal(m.amount_unit, flex.currencies, deps.prices, true));
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
         await auditMember(client, req.auth, { action: 'offer-relisted', detail: { offerId: id } }, now);
       });
@@ -1083,8 +1100,12 @@ export function offerRoutes(app: FastifyInstance): void {
         ...amountsOf(r.amount_unit, head.tiers, head.currency, head.rate),
         tiers: head.tiers.map(copyTier),
         currencies: priced.map((c) => ({ currency: c.currency, rate: c.rate === null ? null : c.rate.toString(), tiers: c.tiers.map(copyTier) })),
-        methods: f.methods.map((m) => ({ methodId: m.methodId, methodName: getMethod(m.methodId)?.name ?? m.methodId, adjustBps: m.adjustBps, instructions: m.instructions, currencies: [...m.currencies], instructionsByCurrency: { ...m.byCurrency } })),
+        methods: f.methods.map((m) => ({
+          methodId: m.methodId, methodName: getMethod(m.methodId)?.name ?? m.methodId, adjustBps: m.adjustBps, instructions: m.instructions,
+          currencies: [...m.currencies], instructionsByCurrency: { ...m.byCurrency }, payWindowMin: profileOrFallback(m.methodId).payWindowMin,
+        })),
         status: r.status as 'live' | 'paused',
+        payWindowMin: profileOrFallback(first.methodId).payWindowMin,
         createdAt: r.created_at.toISOString(),
       };
       if (r.country !== null) out.country = r.country;
@@ -1109,7 +1130,8 @@ export function offerRoutes(app: FastifyInstance): void {
    * all-or-nothing. Every offer that may switch does, every one that may not stays as it was and is
    * named with its reason; the reply is 200 even when every offer was refused. Turning on runs the
    * relist guards for each offer (paused site, trading hold, no usable wallet, the caps counted as
-   * relisting counts them, its methods' availability), in PATCH's order: methods, account, caps.
+   * relisting counts them, its methods' availability, the launch cap over every band of every
+   * currency), in PATCH's order: methods, account, caps, launch cap.
    * Turning off has no guard: it always succeeds, under a hold, during an emergency stop and on a
    * stale Terms version too (R10 lead decision 2026-10-29); turning on needs the current Terms
    * (403 `terms-required` for the whole call). The web always sends explicit ids (review M1) in
@@ -1149,13 +1171,15 @@ export function offerRoutes(app: FastifyInstance): void {
       const caps = status === 'live' ? await loadOfferCaps(client) : null;
       // Every live or paused offer of mine (the caps count them all), newest first as on the list.
       // An offer's methods are in offer_methods, written once at post (never changed).
-      const { rows: mine } = await client.query<{ id: string; side: Side; methods: string[]; status: 'live' | 'paused'; market: boolean }>(
-        `select o.id, o.side, o.status, ${MARKET_PRICED} as market,
+      const { rows: mine } = await client.query<{ id: string; side: Side; amount_unit: AmountUnit; methods: string[]; status: 'live' | 'paused'; market: boolean }>(
+        `select o.id, o.side, o.amount_unit, o.status, ${MARKET_PRICED} as market,
                 array(select m.method_id from offer_methods m where m.offer_id = o.id order by m.position) as methods
            from offers o where o.account_id = $1 and o.status <> 'removed'
           order by o.created_at desc, o.id for update of o`,
         [accountId],
       );
+      // Their currencies and bands, for the launch cap (turning on only; written once at post).
+      const flex = status === 'live' ? await loadFlex(client, mine.map((o) => o.id)) : null;
       // A row stored as fixed (MARKET_PRICED) is never switched: not-found, as PATCH answers. The caps
       // still count it, as assertMayPost does (J-02 leaves the caps alone).
       const byId = new Map(mine.filter((o) => o.market).map((o) => [o.id, o]));
@@ -1182,6 +1206,9 @@ export function offerRoutes(app: FastifyInstance): void {
             for (const x of mine) if (x.id !== id && x.side === o.side) same++;
             if (same >= caps![o.side]) refused = 'too-many-offers';
           }
+          // Then the launch cap, as relisting checks it (launch-rules review F1): every band of every
+          // currency; an unpriced currency is skipped and stays hidden (OWNER QUESTION p11-95).
+          if (refused === null) refused = offerLaunchCapRefusal(o.amount_unit, flex!.get(id)!.currencies, deps.prices, true);
           if (refused !== null) {
             out.push({ id, status: o.status, refused });
             continue;

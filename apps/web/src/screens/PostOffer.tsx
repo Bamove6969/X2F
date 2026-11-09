@@ -18,6 +18,7 @@ import { fetchCurrencies, fetchMethods, fetchPrice, postOffer, type PickMethod, 
 import { COUNTRIES } from './post/countries.js';
 import { UnitSwitch } from './post/UnitSwitch.js';
 import { marketUpdated, otherUnit, rowsAt } from './browse/offerAmounts.js';
+import { methodUpToLine } from './browse/methodTime.js';
 import { MY_OFFERS_PATH } from './myoffers/model.js';
 import {
   DEFAULT_FORM,
@@ -520,6 +521,7 @@ function PostOfferForm() {
           {form.methods.map((m) => {
             const name = nameOf(m.methodId);
             const mid = (part: string) => `method-${m.methodId}-${part}`;
+            const upToMin = list?.find((x) => x.id === m.methodId)?.upToMin ?? null;
             return (
               <div key={m.methodId} className="post-method" data-part="method" data-method={m.methodId}>
                 <div className="post-band-head">
@@ -528,6 +530,12 @@ function PostOfferForm() {
                     {POST_COPY.removeMethod}
                   </Button>
                 </div>
+                {/* Owner p9-4: how long this method can take, up front where it is picked. */}
+                {upToMin !== null ? (
+                  <span className="post-note" data-part="method-up-to">
+                    {methodUpToLine(upToMin)}
+                  </span>
+                ) : null}
                 <span className="post-label" id={`${ids}-${mid('adjust')}`}>
                   {POST_COPY.priceChange}
                 </span>

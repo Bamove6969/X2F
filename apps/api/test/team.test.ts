@@ -22,7 +22,7 @@ import { testDb } from './helpers/db.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { Browser, ORIGIN } from './helpers/totp.js';
 import { publishRuling } from './helpers/disputes.js';
-import { driveTo, fakeAddress, markSellerNudged, seedTrade } from './helpers/trades.js';
+import { driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { flexBody } from './helpers/offers.js';
 
@@ -144,7 +144,8 @@ async function invite(owner: Who, displayName: string, roles: Role[]) {
 
 const OFFER = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: null, terms: 'Zelle only.',
+  // At most $5,000 (the launch cap, owner p11-6).
+  minFiatCents: '1000', maxFiatCents: '500000', minTrades: null, terms: 'Zelle only.',
 };
 
 function takeBody(walletId: string, amountAtomic = XMR / 10n): Record<string, unknown> {
@@ -690,7 +691,7 @@ describe('role changes and removal reach a member in flight', () => {
 });
 
 describe('the audit log covers every member action (review M3)', () => {
-  it('trade-taken and trade-wallet-set are refused before anything is written (I2), final-alert-seen, dispute and appeal write one row each', async () => {
+  it('trade-taken and trade-wallet-set are refused before anything is written (I2), dispute and appeal write one row each', async () => {
     const owner = await team();
     const other = await team();
     const m = await member(owner.id, ['trades']);
@@ -704,9 +705,14 @@ describe('the audit log covers every member action (review M3)', () => {
     expect(err(await m.browser.post(`/v1/offers/${offer.id}/take`, takeBody(owner.wallet)))).toEqual({ status: 403, error: 'member-cannot-sign' });
     expect(await auditRows(owner.id)).toEqual([]);
 
-    // A dispute on a secured trade (the owner is the buyer), then an appeal of its ruling.
+    // A dispute on a paid trade once the seller's confirm window is over (the owner is the buyer;
+    // never before "I've paid", design proto review P1), then an appeal of its ruling.
     const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
-    await driveTo(deps, d.trade, 'secured');
+    const dp = await driveTo(deps, d.trade, 'paid');
+    setNow(dp.confirmBy!);
+    // The seeded trade's 2-hour confirm window is exactly the length of a session with no choice
+    // made (UNCHOSEN_SESSION_HOURS, owner 2 Nov): the member's login has just ended, so they log in again.
+    expect((await m.browser.post('/t/login', { accountId: m.loginId })).statusCode).toBe(200);
     const opened = await m.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'a private note' });
     expect(opened.statusCode, opened.body).toBe(200);
     // A moderator's round-1 ruling, through the dispute machine (Plan 4 Task 12 is not built yet).
@@ -714,30 +720,10 @@ describe('the audit log covers every member action (review M3)', () => {
     const appealed = await m.browser.post(`/v1/trades/${d.code}/appeal`, { why: 'The moderator missed my bank statement.' });
     expect(appealed.statusCode, appealed.body).toBe(200);
 
-    // The final alert on a trade where the owner is the buyer: a member's receipt is logged but does
-    // not count as the owner seeing it (review M9(b)).
-    const f = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
-    const fs = await driveTo(deps, f.trade, 'secured');
-    await markSellerNudged(deps, f.code);
-    const base = deps.clock();
-    try {
-      setNow(new Date(fs.payBy!.getTime() + 60_000));
-      expect((await other.browser.post(`/v1/trades/${f.code}/events`, { type: 'request-refund' })).statusCode).toBe(200);
-      const seen = await m.browser.post(`/v1/trades/${f.code}/final-alert-seen`, {});
-      expect(seen.statusCode, seen.body).toBe(204);
-      const { rows } = await deps.db.query<{ d: boolean | null; at: Date | null }>(
-        'select final_alert_delivered as d, final_alert_seen_at as at from trades where code = $1', [f.code],
-      );
-      expect(rows[0]).toEqual({ d: null, at: null });
-    } finally {
-      setNow(base);
-    }
-
     const rows = await auditRows(owner.id);
     expect(rows.map((r) => [r.action, r.trade_code])).toEqual([
       ['dispute-opened', d.code],
       ['appeal-filed', d.code],
-      ['final-alert-seen', f.code],
     ]);
     const { rows: detail } = await deps.db.query<{ detail: unknown }>('select detail from team_audit where account_id = $1 order by id', [owner.id]);
     expect(JSON.stringify(detail)).not.toContain('private note');
@@ -799,7 +785,7 @@ describe('the audit log covers every member action (review M3)', () => {
     for (const r of found) expect([...live], r).toContain(r);
     // The scan sees the routes it must (so a refactor that hides them fails here, not silently).
     for (const r of ['POST /v1/offers', 'PATCH /v1/offers/:id', 'POST /v1/account/offers/status', 'POST /v1/offers/:id/take', 'POST /v1/trades/:code/wallet',
-      'POST /v1/trades/:code/events', 'POST /v1/trades/:code/final-alert-seen', 'POST /v1/trades/:code/dispute', 'POST /v1/trades/:code/appeal', ...Object.keys(EXEMPT)]) {
+      'POST /v1/trades/:code/events', 'POST /v1/trades/:code/dispute', 'POST /v1/trades/:code/appeal', ...Object.keys(EXEMPT)]) {
       expect(found, r).toContain(r);
     }
   });

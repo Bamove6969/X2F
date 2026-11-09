@@ -2,10 +2,13 @@
 export const TIMERS = {
   setupMin: 15,
   fundMin: 30,
+  /**
+   * The shortest time to pay, the instant methods' (owner F9). Each trade has its own, the
+   * payment method's, fixed at take (`Trade.payWindowMin`, owner p9-6); this is its default.
+   */
   payMin: 90,
   extendMin: 30,
   maxExtensions: 2,
-  finalAlertMin: 15,
   settleMin: 15,
   lapseCosignMin: 30,
   /** Owner 2026-10-29: the buyer may dispute a refund (to prove they paid) for 48 hours after it lands (was 90 days). */

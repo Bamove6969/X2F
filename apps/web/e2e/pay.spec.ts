@@ -188,7 +188,7 @@ test.describe("I've paid", () => {
     await page.evaluate(() => window.__x2fSetFixtureEscrow!({ amountAtomic: '1312500000000', fiatCents: '43313' }));
     await expect(sheet(page)).toContainText('Trade grew to 1.312500 XMR, you now pay $433.13');
     await expect(sheet(page)).toContainText(SENTENCE('$433.13'));
-    await expect(sheet(page).getByRole('checkbox')).not.toBeChecked();
+    await expect(sheet(page).getByRole('checkbox', { name: /^I sent exactly/ })).not.toBeChecked();
     expect(s.posts).toEqual([{ type: 'mark-paid', fiatCents: '41250' }]);
     expect(await escrowCalls(page)).toEqual([]);
     await expect(room(page)).toHaveAttribute('data-trade-state', 'secured');
@@ -237,16 +237,15 @@ test.describe('cancel', () => {
     expect(s.posts).toEqual([]);
   });
 
-  test("the seller's funded room has no cancel-alone control; Propose cancel gives the buyer an accept card", async ({ page }) => {
+  test("the seller's funded room has no cancel of any kind (no Propose cancel, proto review P2); a standing proposal still gives the buyer an accept card", async ({ page }) => {
     const seller: TradeView = { ...PAY_SECURED, role: 'seller', counterparty: { ...PAY_SECURED.counterparty, displayName: 'mira.k' } };
     const s = await open(page, seller);
     await expect(page.getByText('Waiting for mira.k to pay')).toBeVisible();
     await expect(page.getByRole('button', { name: /^Cancel/ })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Propose cancel' }).click();
-    await expect(page.getByText('You proposed cancelling. Waiting for mira.k.')).toBeVisible();
-    expect(s.posts).toEqual([{ type: 'propose-cancel' }]);
+    await expect(page.getByRole('button', { name: 'Propose cancel' })).toHaveCount(0);
+    expect(s.posts).toEqual([]);
     expect(await escrowCalls(page)).toEqual([]);
-    // The buyer's side of the same proposal.
+    // The buyer's side of a proposal made before this change.
     s.view = { ...PAY_SECURED, cancelProposedBy: 'seller' };
     await page.reload();
     await expect(page.getByText('satoshi_ghost proposed cancelling this trade.')).toBeVisible();
@@ -401,9 +400,7 @@ test.describe('phone sizes', () => {
       await page.reload();
       await expect(page.getByText('Waiting for mira.k to pay')).toBeVisible();
       await expectFitsPhone(page);
-      await page.getByRole('button', { name: 'Propose cancel' }).tap();
-      await expect(page.getByText('You proposed cancelling. Waiting for mira.k.')).toBeVisible();
-      await expectFitsPhone(page);
+      await expect(page.getByRole('button', { name: 'Propose cancel' })).toHaveCount(0);
     });
   }
 });

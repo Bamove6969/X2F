@@ -8,7 +8,7 @@ import { testDb } from './helpers/db.js';
 import { makeVendor } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
-import { flexBody, renameOfferMethod } from './helpers/offers.js';
+import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
 
 // Plan 3 Task 36: My offers. GET /v1/account/offers and POST /v1/account/offers/status (turn some
 // or all of my offers on or off). Real Postgres, one database for the file; each test uses its own
@@ -16,9 +16,12 @@ import { flexBody, renameOfferMethod } from './helpers/offers.js';
 
 const DAY = 86_400_000;
 
-/** USD at $330.00 per XMR, EUR at €297.00; no other currency has a market. */
+/**
+ * USD at $330.00 per XMR; every other currency at 297.00 of its units (0.9 per US dollar, as EUR).
+ * Every currency has a price: posting converts every band's top edge to US dollars and fails closed
+ * without a price (the launch cap, owner p11-6).
+ */
 function quote(currency: string): MarketQuote | null {
-  if (currency !== 'USD' && currency !== 'EUR') return null;
   return {
     price: { currency, centsPerXmr: currency === 'USD' ? 33_000n : 29_700n }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
     usdCentsPerXmr: 33_000n, fx: null,
@@ -129,11 +132,12 @@ describe('GET /v1/account/offers', () => {
       id: b, side: 'buy', methodId: 'REVOLUT', methodName: expect.any(String), currency: 'EUR', rate: '26730',
       pricing: { mode: 'market', marginBps: -1000 }, amountUnit: 'fiat', minAtomic: '187055742611', maxAtomic: '7482229704451',
       minFiatCents: '5000', maxFiatCents: '200000', minTrades: null,
-      // J-16: the first currency's bands, every currency priced, every method with its instructions.
+      // J-16: the first currency's bands, every currency priced, every method with its instructions
+      // and its time to pay (owner p9-6; the offer's own is its first method's).
       tiers: [{ min: '5000', max: '200000', marginBps: -1000, minTrades: null, methodIds: null }],
       currencies: [{ currency: 'EUR', rate: '26730', tiers: [{ min: '5000', max: '200000', marginBps: -1000, minTrades: null, methodIds: null }] }],
-      methods: [{ methodId: 'REVOLUT', methodName: expect.any(String), adjustBps: 0, instructions: '', currencies: ['EUR'], instructionsByCurrency: {} }],
-      status: 'paused', createdAt: expect.any(String),
+      methods: [{ methodId: 'REVOLUT', methodName: expect.any(String), adjustBps: 0, instructions: '', currencies: ['EUR'], instructionsByCurrency: {}, payWindowMin: 90 }],
+      status: 'paused', payWindowMin: 90, createdAt: expect.any(String),
     });
     expect(list[1]).toMatchObject({ id: a, methodId: 'ZELLE', methodName: 'Zelle', rate: '33165', status: 'live', pricing: { mode: 'market', marginBps: 50 } });
     // J-16: every method carries the catalog's name, so My offers can list them all.
@@ -216,6 +220,25 @@ describe('POST /v1/account/offers/status', () => {
     // Off needs no wallet.
     await deps.db.query(`update offers set status = 'live' where id = $1`, [a]);
     expect(await setStatus(p, [a], 'paused')).toEqual([{ id: a, status: 'paused' }]);
+  });
+
+  it('the launch cap is checked per offer as relisting checks it (launch-rules review F1)', async () => {
+    const p = await poster();
+    // An offer from before the cap, paused, with a 20,000.00 band: $22,222 at 0.9 (J-16: bands are
+    // written once, so it is inserted as migration 490 would have moved it).
+    const a = await insertOffer(deps.db, { accountId: p.id, side: 'sell', methodId: 'ZELLE', currency: 'SEK', min: 5000, max: 2_000_000, status: 'paused', at: deps.clock() });
+    const b = await post(p, { currency: 'NOK' });
+    await setStatus(p, 'all', 'paused');
+    expect(await setStatus(p, [a, b], 'live')).toEqual([
+      { id: a, status: 'paused', refused: 'launch-cap' },
+      { id: b, status: 'live' },
+    ]);
+    expect(await statuses(p.id)).toEqual({ [a]: 'paused', [b]: 'live' });
+    // The same answer as the single relist route.
+    expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'launch-cap', capUsdCents: '500000' });
+    // At $5,000 exactly (4,500.00 at 0.9) it goes on.
+    const c = await insertOffer(deps.db, { accountId: p.id, side: 'buy', methodId: 'ZELLE', currency: 'SEK', min: 5000, max: 450_000, status: 'paused', at: deps.clock() });
+    expect(await setStatus(p, [c], 'live')).toEqual([{ id: c, status: 'live' }]);
   });
 
   it('caps are checked per offer as relisting checks them; the others still switch (per-offer results)', async () => {

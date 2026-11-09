@@ -6,7 +6,7 @@
 // GET /v1/trades/:code/dispute, again whenever the room hands it a fresh view. A Plan 4 mod-built
 // co-sign runs through the room's `escrow` handle and rulingAllowsCosign (NEEDS_PLAN_4_MOD_COSIGN).
 import { useEffect, useState } from 'react';
-import { TIMERS } from '@x2f/trade';
+import { TIMERS, formatFiat, formatXmr } from '@x2f/trade';
 import { methodOf } from '../../api/trade.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
@@ -16,6 +16,7 @@ import { DisputeEntry } from './DisputeEntry.js';
 import { TradeTitle } from './DisputeOpen.js';
 import { DisputeRoom } from './DisputeRoom.js';
 import { DisputeRuling } from './DisputeRuling.js';
+import { DoNotPay, mustNotPay } from './DoNotPay.js';
 import { disputeScreenFor } from './DisputeScreen.js';
 import { disputeEntry, refundReason } from './rules.js';
 import './dispute.css';
@@ -67,7 +68,16 @@ export function DisputeSlot({ code, view, refresh, serverClock }: TradeScreenPro
   // A disputed trade is never offered the open form (disputeScreenFor); 'open' cannot happen here.
   const shown = screen.kind === 'room' ? screen.dispute : null;
   if (shown === null) return null;
-  return <DisputeRoom trade={trade} methodName={methodName} dispute={shown} serverClock={serverClock} backTo={listFor(trade.role)} />;
+  const room = <DisputeRoom trade={trade} methodName={methodName} dispute={shown} serverClock={serverClock} backTo={listFor(trade.role)} />;
+  // Owner p11-16 (design ea2a9ca8): a dispute before "I've paid": the payer's "I've paid" paused, with the alert sheet.
+  if (!mustNotPay(view)) return room;
+  return (
+    <>
+      {room}
+      <DoNotPay view={view} />
+
+    </>
+  );
 }
 
 /**
@@ -94,6 +104,8 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
   const cancelling = view.settling === 'buyer-cancel' && trade.dispute === null && view.cancelConfirmedAt === null && view.paidAt === null;
   // A cancel's refund that landed after "I've paid" is not "You cancelled": the buyer paid and keeps the dispute (review I1).
   const paidThenRefunded = trade.dispute === null && view.paidAt !== null && (view.settling === 'buyer-cancel' || view.settling === 'mutual-cancel');
+  // The buyer's own cancel, done (the seller confirmed, or it closed by itself): "You cancelled this trade", a neutral chip.
+  const ownCancel = !cancelling && trade.dispute === null && view.paidAt === null && view.settling === 'buyer-cancel';
   const reason = paidThenRefunded
     ? {
         title: 'The XMR went back to the seller after you paid',
@@ -106,6 +118,15 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
         // COPY-UNSIGNED
         text: 'You cancelled, so all the XMR is going back to the seller. The trade is cancelled once the seller confirms it has arrived.',
       }
+    : ownCancel
+    ? {
+        // Board Refunded variant=buyer-cancelled. The trade amount, as on every other screen (not
+        // the escrow with a seller-poster's 1% fee in it); "in escrow" left out for that reason.
+        // "the seller", never the name, on refund and cancel results (owner 2026-10-29 beats the board; lead 8 Nov).
+        // COPY-UNSIGNED (the board's words; the owner's P4 wording page has not signed it off).
+        title: 'You cancelled this trade',
+        text: `All ${formatXmr(BigInt(view.amountAtomic))} XMR (about ${formatFiat(BigInt(view.fiatCents), view.lockedRate.currency)}) went back to the seller. X2F took nothing from you.`,
+      }
     : refundReason(view.settling, trade.dispute);
   const entry = disputeEntry(trade, now);
   return (
@@ -113,7 +134,13 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
       <TradeHeader title={<TradeTitle trade={trade} />} code={trade.code} method={{ name: method.name, whatItIs: trade.whatItIs }} backTo="/buy" />
       <div className="dispute-main">
         <section className="dispute-stack-4" aria-label="Trade status">
-          {cancelling ? <StatusChip tone="caution" icon="clock" label="Cancelling" /> : <StatusChip tone="escrow" icon="check" label="Refunded" />}
+          {cancelling ? (
+            <StatusChip tone="caution" icon="clock" label="Cancelling" />
+          ) : ownCancel ? (
+            <StatusChip tone="neutral" icon="check" label="Cancelled" />
+          ) : (
+            <StatusChip tone="escrow" icon="check" label="Refunded" />
+          )}
           <h1 className="dispute-title">{reason.title}</h1>
           <p className="dispute-lead">{reason.text}</p>
           {entry.kind === 'open' ? (

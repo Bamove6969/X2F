@@ -19,19 +19,24 @@ const DAY = 86_400_000;
 /**
  * The market the app sees: USD at `usdCentsPerXmr`, and a few currencies at a fixed number of their
  * minor units per US cent (EUR 0.9, GBP 0.8, BRL 5, SEK 10, MXN 18, THB 35), or nothing while down.
- * CAD and SAR have no market; every other currency the feed knows is 1:1 with USD (J-16: owner Q5,
- * a currency with no market price lists no offers, so the tests that list in a currency of their
- * own need it priced). Offers are market ± % only (owner Q1), so a test that needs
- * two different rates uses two margins over one of these.
+ * Every other currency the feed knows is 1:1 with USD: posting converts every band's top edge to US
+ * dollars and fails closed without a price (the launch cap, owner p11-6), and J-16 (owner Q5) lists
+ * no offers in a currency without a price. A test that needs a currency with no price adds it to
+ * `unpriced` after posting and takes it out again; one that needs a rate move sets `fx` for it.
+ * Offers are market ± % only (owner Q1), so a test that needs two different rates uses two margins
+ * over one of these.
  */
 const market = { usdCentsPerXmr: 33_000n as bigint | null };
-const NO_MARKET = new Set(['CAD', 'SAR']);
 const PER_USD: Record<string, [bigint, bigint]> = { USD: [1n, 1n], EUR: [9n, 10n], GBP: [8n, 10n], BRL: [5n, 1n], SEK: [10n, 1n], MXN: [18n, 1n], THB: [35n, 1n] };
+/** Currencies with no price in the fake feed right now (see above). */
+const unpriced = new Set<string>();
+/** A currency's minor units per US cent right now where a test moved it off PER_USD (a rate move). */
+const fx: Record<string, [bigint, bigint]> = {};
 
 function quote(currency: string): MarketQuote | null {
   const usd = market.usdCentsPerXmr;
-  if (usd === null) return null;
-  const ratio = PER_USD[currency] ?? (currencyExponent(currency) !== null && !NO_MARKET.has(currency) ? ([1n, 1n] as [bigint, bigint]) : undefined);
+  if (usd === null || unpriced.has(currency)) return null;
+  const ratio = fx[currency] ?? PER_USD[currency] ?? (currencyExponent(currency) !== null ? ([1n, 1n] as [bigint, bigint]) : undefined);
   if (ratio === undefined) return null;
   const local = (usd * ratio[0]) / ratio[1];
   return {
@@ -64,6 +69,8 @@ afterAll(async () => {
 });
 beforeEach(() => {
   market.usdCentsPerXmr = 33_000n;
+  unpriced.clear();
+  for (const k of Object.keys(fx)) delete fx[k];
 });
 
 type Who = Awaited<ReturnType<typeof trader>>;
@@ -122,8 +129,9 @@ describe('POST /v1/offers and GET /v1/offers', () => {
   it('posts an offer and lists it to a logged-out browser, in the shape the web parses (P3-M9)', async () => {
     const p = await poster();
     const id = await post(p, { currency: 'CAD' });
-    // CAD has no market in the fake feed: no list shows the offer in CAD (owner Q5, 2 Nov: hidden
-    // for that currency only), and the single-offer route shows it with no rate now.
+    // Once posted, CAD loses its market in the fake feed: no list shows the offer in CAD (owner Q5,
+    // 2 Nov: hidden for that currency only), and the single-offer route shows it with no rate now.
+    unpriced.add('CAD');
     expect(await list('side=sell&method=ZELLE&currency=CAD&sort=best')).toEqual([]);
     const cards = [(await anon.get(`/v1/offers/${id}`)).json() as Record<string, unknown>];
     expect(cards).toEqual([
@@ -385,6 +393,33 @@ describe('PATCH /v1/offers/:id', () => {
     // Pausing and removing stay allowed under a hold.
     expect((await p.browser.patch(`/v1/offers/${id}`, { status: 'paused' })).statusCode).toBe(200);
   });
+
+  it('relisting checks the launch cap as posting does: an offer from before the cap, or one a rate move put above it, stays off (launch-rules review F1)', async () => {
+    const p = await poster();
+    const CAP = { error: 'launch-cap', capUsdCents: '500000' };
+    // An offer from before the cap, paused, with a $20,000 band (J-16: bands are written once, so it
+    // is inserted as migration 490 would have moved it).
+    const old = await insertOffer(deps.db, { accountId: p.id, side: 'buy', methodId: 'ZELLE', currency: 'USD', min: 5000, max: 2_000_000, status: 'paused', at: deps.clock() });
+    const refused = await p.browser.patch(`/v1/offers/${old}`, { status: 'live' });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toEqual(CAP);
+    expect((await deps.db.query<{ status: string }>('select status from offers where id = $1', [old])).rows[0]!.status).toBe('paused');
+    // A euro band is counted in US dollars at the price now: €4,500 is $5,000 at 0.9 and posts; after
+    // the euro moves to 0.8 it is $5,625 and the offer does not go live again.
+    const eur = await post(p, { currency: 'EUR', maxFiatCents: '450000' });
+    await p.browser.patch(`/v1/offers/${eur}`, { status: 'paused' });
+    fx.EUR = [8n, 10n];
+    expect((await p.browser.patch(`/v1/offers/${eur}`, { status: 'live' })).json()).toEqual(CAP);
+    delete fx.EUR;
+    // No price to count its only currency with fails closed, as posting does.
+    unpriced.add('EUR');
+    expect((await p.browser.patch(`/v1/offers/${eur}`, { status: 'live' })).json()).toEqual({ error: 'price-unavailable' });
+    unpriced.delete('EUR');
+    // Within the cap it relists as before.
+    expect((await p.browser.patch(`/v1/offers/${eur}`, { status: 'live' })).json()).toEqual({ id: eur, status: 'live' });
+    // Off the shared euro list again.
+    await p.browser.patch(`/v1/offers/${eur}`, { status: 'removed' });
+  });
 });
 
 describe('who is listed', () => {
@@ -609,13 +644,15 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
   it("M7: the poster's own offers never carry opensAt; another viewer's single-offer answer does", async () => {
     const p = await poster(); // Starter, cap $200
     const id = await post(p, { currency: 'SAR', minFiatCents: '50000', maxFiatCents: '90000' });
-    // SAR has no market in the fake feed, so use USD for the converted cap.
+    // Once posted, SAR loses its market in the fake feed (no opensAt for it), so use USD for the converted cap.
+    unpriced.add('SAR');
     const usd = await post(p, { currency: 'USD', side: 'sell', methodId: 'APPLE_CASH', minFiatCents: '50000', maxFiatCents: '90000' });
     expect((await list('side=sell&method=APPLE_CASH&currency=USD', p.browser)).find((c) => c.id === usd)!.opensAt).toBeUndefined();
     expect((await p.browser.get(`/v1/offers/${usd}`)).json()).not.toHaveProperty('opensAt');
     const other = await trader();
     expect((await other.browser.get(`/v1/offers/${usd}`)).json()).toMatchObject({ opensAt: 'building' });
     expect((await other.browser.get(`/v1/offers/${id}`)).json()).not.toHaveProperty('opensAt');
+    unpriced.delete('SAR');
   });
 
   it('M11: the single-offer route hides held and disabled posters and methods under legal review', async () => {

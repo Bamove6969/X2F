@@ -1,4 +1,5 @@
-// SellerRefund and FinalAlert (Task 25, board SellerRefund.dc.html) in Task 22's trade room at
+// SellerRefund and SellerCancelled (Task 25, board SellerRefund.dc.html; owner 8 Nov: no final
+// alert, the seller's cancel starts the refund at once) in Task 22's trade room at
 // /trade/:code, on a fixtures-mode build of the app (e2e/fixtures-serve.ts) served with the real
 // CSP. The API is stubbed per test with page.route in Task 6's shapes; the escrow is the fixture
 // build's recorder (src/fixtures/index.ts: window.__x2fEscrowCalls names the actions the room's
@@ -15,7 +16,7 @@ import { PAY_SECURED } from '../src/fixtures/payBoard.js';
 import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
-import { BOARD, SERVER_NOW, buyerAlertView, sellerNudgedView, sellerView } from './refundViews.js';
+import { BOARD, SERVER_NOW, buyerCancelledView, sellerNudgedView, sellerRefundedView, sellerView } from './refundViews.js';
 
 type RefundView = TradeView;
 const PORT = 4319;
@@ -42,25 +43,20 @@ const later = (iso: string, min: number) => new Date(Date.parse(iso) + min * MIN
  * request-refund the way the machine does (the unit tests check the screens against the real
  * machine; here only the wire matters). Returns the event bodies posted.
  */
-async function stubTrade(page: Page, view: RefundView): Promise<{ trade: { view: RefundView }; posted: unknown[]; seen: number[] }> {
+async function stubTrade(page: Page, view: RefundView): Promise<{ trade: { view: RefundView }; posted: unknown[] }> {
   const trade = { view };
   const posted: unknown[] = [];
-  const seen: number[] = [];
   await page.route(`**/v1/trades/${CODE}`, (r) => json(trade.view)(r));
   await page.route(`**/v1/trades/${CODE}/events`, (r) => {
     const body = r.request().postDataJSON() as { type: string };
     posted.push(body);
     const v = trade.view;
     if (body.type === 'extend') trade.view = { ...v, extensions: v.extensions + 1, payBy: later(v.serverNow, 30), nextDeadline: later(v.serverNow, 30) };
-    if (body.type === 'request-refund') trade.view = { ...v, state: 'refund_requested', finalAlertAt: v.serverNow, nextDeadline: later(v.serverNow, 15) };
+    if (body.type === 'request-refund') trade.view = { ...v, state: 'settling', settling: 'auto-refund', settleBy: later(v.serverNow, 15), nextDeadline: null };
     return json(trade.view)(r);
   });
-  await page.route(`**/v1/trades/${CODE}/final-alert-seen`, (r) => {
-    seen.push(1);
-    return r.fulfill({ status: 204 });
-  });
   await page.route('**/v1/nudges', json({}, 202));
-  return { trade, posted, seen };
+  return { trade, posted };
 }
 
 /**
@@ -73,7 +69,6 @@ async function open(page: Page, o: { fail?: boolean } = {}): Promise<void> {
     ({ amountAtomic, fiatCents, fail }) => {
       window.__x2fFixtureEscrow = { phase: 'ready', amountAtomic, fiatCents };
       window.__x2fEscrowFail = fail;
-      window.__x2fFixturePaidSheet = true;
     },
     { amountAtomic: board.amountAtomic, fiatCents: board.fiatCents, fail: o.fail === true },
   );
@@ -92,7 +87,7 @@ test('parity with SellerRefund at 390x844', async ({ page }) => {
   // The board's header "Chat" link is rendered (it points at the room's chat anchor until Task
   // 20's chat screen lands; lead decision 2026-10-27).
   test.skip(!existsSync(REF), 'design/x2f-app/refs/SellerRefund.png is absent');
-  // The G2 board's default is the locked state: 90 min passed, no nudge yet (owner G2).
+  // The board's trade: 90 min passed, no nudge (owner 8 Nov: Cancel is available at once).
   await stubTrade(page, sellerView());
   await open(page);
   await parity(page, 'SellerRefund');
@@ -142,48 +137,36 @@ test('the board copy, the warning before the tap, one primary and no CSP violati
   await expect(page.getByRole('heading', { name: "mira.k didn't mark the payment in time" })).toBeVisible();
   for (const t of [
     'Payment window ended',
-    'Your 1.250000 XMR is still safe in escrow. You can take it back, or give mira.k more time.',
+    "Your 1.250000 XMR is still safe in escrow. You can cancel now and get it back, or give mira.k more time. Until you cancel, mira.k can still pay and tap I've paid.",
     'If mira.k paid after all',
     "Check your bank account first. If mira.k's Zelle payment did arrive, release instead of cancelling.",
-    'You can nudge again every 15 min, as often as you need. You can cancel now and get your 1.250000 XMR back.',
+    'No word from mira.k? A nudge before you cancel often saves starting a new trade with someone else. You can nudge every 15 min, as often as you need. Cancelling starts your refund at once.',
   ]) {
     await expect(page.getByText(t, { exact: true })).toBeVisible();
   }
-  // Owner G2: the final-alert steps are gone from this screen.
+  // No final alert (owner 8 Nov).
   await expect(page.getByText('mira.k gets a final alert and 15 minutes to say they already paid.')).toHaveCount(0);
   const warning = page.getByText(/^Even after your refund, mira\.k can still open a dispute/);
   await expect(warning).toBeVisible();
   await expect(page.locator('[data-primary]')).toHaveCount(1);
   await expect(page.locator('[data-primary]')).toHaveText('Cancel and get refund');
   await expect(button(page, 'Give 30 more min')).toBeVisible();
-  await expect(button(page, 'Nudge again')).toBeVisible();
+  await expect(button(page, 'Nudge mira.k')).toBeVisible();
   const transforms = await page.locator('[data-username]').evaluateAll((els) => els.map((e) => getComputedStyle(e).textTransform));
   expect(transforms.length).toBeGreaterThan(0);
   for (const t of transforms) expect(t).toBe('none');
   expect(csp).toEqual([]);
 });
 
-test('owner G2: before any nudge Cancel is locked and Nudge is the one primary; the nudge unlocks it', async ({ page }) => {
+test('owner 8 Nov: with no nudge Cancel is the one primary; a nudge is offered, sent, and changes nothing', async ({ page }) => {
   const s = await stubTrade(page, sellerView());
-  // The API records the seller's nudge on the trade (sellerNudgedAt); the room's re-read sees it.
-  await page.route('**/v1/nudges', async (r) => {
-    s.trade.view = { ...s.trade.view, sellerNudgedAt: SERVER_NOW };
-    await r.fulfill({ status: 202, json: {} });
-  });
   await open(page);
-  await expect(page.getByText('Your 1.250000 XMR is still safe in escrow. Nudge mira.k, or give them more time.', { exact: true })).toBeVisible();
-  await expect(
-    page.getByText('No word from mira.k? After 90 min and at least one nudge, you can cancel and get your 1.250000 XMR back.', { exact: true }),
-  ).toBeVisible();
   await expect(page.locator('[data-primary]')).toHaveCount(1);
-  await expect(page.locator('[data-primary]')).toHaveText('Nudge mira.k');
-  await expect(button(page, 'Cancel and get refund')).toHaveCount(0);
-  await expect(button(page, 'Give 30 more min')).toBeVisible();
+  await expect(page.locator('[data-primary]')).toHaveText('Cancel and get refund');
+  await expect(button(page, 'Cancel and get refund')).toBeEnabled();
   await button(page, 'Nudge mira.k').click();
   await expect(page.getByRole('status')).toHaveText('Nudge sent.');
   await expect(page.locator('[data-primary]')).toHaveText('Cancel and get refund');
-  await expect(button(page, 'Cancel and get refund')).toBeEnabled();
-  await expect(button(page, 'Nudge again')).toBeVisible();
   expect(s.posted).toEqual([]);
 });
 
@@ -204,7 +187,7 @@ test('Give 30 more min twice, then it is gone', async ({ page }) => {
     await expect(button(page, 'Cancel and get refund')).toBeEnabled();
   }
   await expect(button(page, 'Give 30 more min')).toHaveCount(0);
-  await expect(button(page, 'Nudge again')).toBeVisible();
+  await expect(button(page, 'Nudge mira.k')).toBeVisible();
   expect(s.posted).toEqual([{ type: 'extend' }, { type: 'extend' }]);
 });
 
@@ -216,23 +199,24 @@ test('each extension sends the extend signal once', async ({ page }) => {
   expect(await escrowCalls(page)).toEqual(['signal:trade.extend']);
 });
 
-test('Cancel & get refund sends exactly one event, one signal and one tx set', async ({ page }) => {
-  const s = await stubTrade(page, sellerNudgedView());
+test('Cancel & get refund sends exactly one event, one signal and one tx set; the refund is in progress at once, no countdown', async ({ page }) => {
+  const s = await stubTrade(page, sellerView());
   await open(page);
   await button(page, 'Cancel and get refund').dblclick();
-  await expect(page.getByText('Final alert sent', { exact: true })).toBeVisible();
-  await expect(page.getByRole('timer')).toHaveText(/^1[45] min \d{1,2} s$/);
+  await expect(page.getByText('Refund in progress', { exact: true })).toBeVisible();
+  await expect(page.getByText('You cancelled after the time to pay.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('timer')).toHaveCount(0);
   expect(s.posted).toEqual([{ type: 'request-refund' }]);
   expect(await escrowCalls(page)).toEqual(['signal:trade.refund-request', 'build-refund']);
 });
 
-test('the relay is down at the tap: the final-alert view resumes the run, Retry finishes the tx set once the relay is back (review I1)', async ({ page }) => {
+test('the relay is down at the tap: the refund view resumes the run, Retry finishes the tx set once the relay is back (review I1)', async ({ page }) => {
   const s = await stubTrade(page, sellerNudgedView());
   await open(page, { fail: true });
   await button(page, 'Cancel and get refund').click();
-  // The API accepted request-refund, so the seller sees the final alert running; the signal failed
+  // The API accepted request-refund, so the seller sees the refund in progress; the signal failed
   // and the resume failed again, so the seller is told and offered Retry. No tx set was built.
-  await expect(page.getByText('Final alert sent', { exact: true })).toBeVisible();
+  await expect(page.getByText('Refund in progress', { exact: true })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveText('That did not work. Try again.');
   await expect(button(page, 'Retry')).toBeVisible();
   expect(s.posted).toEqual([{ type: 'request-refund' }]);
@@ -244,7 +228,6 @@ test('the relay is down at the tap: the final-alert view resumes the run, Retry 
   await button(page, 'Retry').click();
   await expect(button(page, 'Retry')).toHaveCount(0);
   await expect(page.getByRole('alert')).toHaveCount(0);
-  await expect(page.getByRole('timer')).toHaveText(/^1[45] min \d{1,2} s$/);
   expect(s.posted).toEqual([{ type: 'request-refund' }]);
   expect(await escrowCalls(page)).toEqual(['signal:trade.refund-request', 'signal:trade.refund-request', 'signal:trade.refund-request', 'build-refund']);
 });
@@ -283,29 +266,27 @@ test('Nudge mira.k nudges by public name with the trade as context', async ({ pa
   await expect(page.getByRole('status')).toHaveText('Nudge sent.');
 });
 
-test('the buyer sees FinalAlert with the server-clock countdown, the device clock 10 min ahead', async ({ page }) => {
-  await page.clock.install({ time: new Date(Date.parse(SERVER_NOW) + 10 * MIN) });
-  const s = await stubTrade(page, buyerAlertView());
+test("the buyer sees the seller's cancel: no I've paid, no countdown, Open dispute at once (p9-2)", async ({ page }) => {
+  await stubTrade(page, buyerCancelledView());
   await open(page);
-  await expect(page.getByText("The seller is cancelling. If you already paid, tap I've paid now.", { exact: true })).toBeVisible();
-  await expect(page.getByRole('timer')).toHaveText('15 min 0 s');
+  await expect(page.getByRole('heading', { name: 'satoshi_ghost cancelled the trade' })).toBeVisible();
+  await expect(page.getByText('Cancelled by the seller', { exact: true })).toBeVisible();
+  await expect(page.getByRole('timer')).toHaveCount(0);
+  await expect(button(page, "I've paid")).toHaveCount(0);
   await expect(page.locator('[data-primary]')).toHaveCount(1);
-  await expect(page.locator('[data-primary]')).toHaveText("I've paid");
-  await page.clock.runFor(61_000);
-  await expect(page.getByRole('timer')).toHaveText('13 min 59 s');
-  await expect.poll(() => s.seen.length).toBe(1);
-  await button(page, "I've paid").click();
-  await expect(page.getByRole('dialog', { name: 'Paid sheet stand-in' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open dispute', exact: true })).toHaveAttribute('href', `/trade/${CODE}/dispute`);
 });
 
-test("after 15 minutes I've paid is closed", async ({ page }) => {
-  await page.clock.install({ time: new Date(Date.parse(SERVER_NOW) + 14 * MIN + 58_000) });
-  await stubTrade(page, buyerAlertView({ serverNow: later(SERVER_NOW, 14) }));
+test('the seller sees the refund confirm; the trade is complete at 10 confirmations', async ({ page }) => {
+  await stubTrade(page, sellerRefundedView());
+  let n = 4;
+  await page.route(`**/v1/trades/${CODE}/confirmations`, (r) => json({ confirmations: n, target: 10 })(r));
   await open(page);
-  await expect(button(page, "I've paid")).toBeEnabled();
-  await page.clock.runFor(63_000);
-  await expect(button(page, "I've paid")).toBeDisabled();
-  await expect(page.getByText('The 15 minutes have passed.', { exact: true })).toBeVisible();
+  await expect(page.getByText('4 of 10 confirmations. The trade is complete at 10.', { exact: true })).toBeVisible();
+  n = 10;
+  await page.reload();
+  await expect(page.getByText('10 of 10 confirmations. The trade is complete.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Trade complete', { exact: true })).toBeVisible();
 });
 
 // Phone sizes (spec "Mobile ready at launch", owner 2026-10-25): a small Android, the boards'
@@ -316,10 +297,10 @@ for (const [width, height] of [
   [390, 844],
   [430, 932],
 ] as const) {
-  for (const which of ['seller-refund', 'final-alert'] as const) {
+  for (const which of ['seller-refund', 'seller-cancelled'] as const) {
     test(`${which} fits a ${width}x${height} phone`, async ({ page }) => {
       await page.setViewportSize({ width, height });
-      await stubTrade(page, which === 'seller-refund' ? sellerView() : buyerAlertView());
+      await stubTrade(page, which === 'seller-refund' ? sellerView() : buyerCancelledView());
       await open(page);
       const primary = page.locator('[data-primary]');
       await expect(primary).toHaveCount(1);
@@ -335,7 +316,9 @@ for (const [width, height] of [
         const lead = await page.locator('.x2f-refund__lead').evaluate((e) => parseFloat(getComputedStyle(e).fontSize));
         expect(lead).toBeGreaterThanOrEqual(16);
       } else {
-        await expect(page.getByRole('timer')).toBeInViewport();
+        const dispute = page.getByRole('link', { name: 'Open dispute', exact: true });
+        await dispute.scrollIntoViewIfNeeded();
+        await expect(dispute).toBeInViewport();
       }
       const scroll = await page.evaluate(() => ({ wide: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
       expect(scroll.wide).toBeLessThanOrEqual(scroll.view);
@@ -350,7 +333,8 @@ for (const [width, height] of [
 // the network with no countdown, even past settleBy (the settle window no longer reverts it).
 for (const viewport of PHONE_VIEWPORTS) {
   test(`a claimed refund waits for the network, no timer past settleBy; unclaimed counts down (${viewport})`, async ({ page }) => {
-    const settling = { state: 'settling' as const, settling: 'auto-refund' as const, finalAlertAt: later(SERVER_NOW, -20) };
+    // A lapse refund settling (the seller's own cancel, auto-refund, has its own screen and never reverts).
+    const settling = { state: 'settling' as const, settling: 'lapse-refund' as const };
     const s = await stubTrade(page, sellerView({ ...settling, settleBy: later(SERVER_NOW, -30), releaseClaimedAt: later(SERVER_NOW, -40), nextDeadline: null }));
     await open(page);
     await setPhone(page, viewport);
