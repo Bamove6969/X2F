@@ -193,3 +193,8 @@ Owner's words: owner-answers-page11-2026-11-08.md (second half). Where a line sa
 - Where the demo lives (p11-38): code on GitHub, run in a Claude cloud session environment while it is being tested, reachable from claude.ai or the Android app. Who: lead.
 - What was better about the previous demo (p11-39): the Claude integration: being able to comment to Claude while reviewing the prototype. He wants that on the working demo. Who: lead (comment tool on the demo).
 - Raw transcripts (p11-40): no archive; the full snapshot was only to migrate the lead to the cloud. Carry on as usual. Who: lead.
+
+### page 11, answers 41-43 (9 Nov)
+- p11-41 **Authenticator app is a login method only, never a backup way in.** Recovery code is the only back way in. Matches the signup-rules build (wip/lead-signup-rules). SetupWelcome lists "Recovery codes", not "Authenticator app".
+- p11-42 **Terms line about names approved; bump the Terms version.** Built on wip/lead-terms-signature 2428e51e.
+- p11-43 **Open: owner asked for a fuller explanation**; question rewritten on page 11 with three choices (stall with Log out / keep trading on old Terms / open trades continue, nothing new until the owner accepts: lead's recommendation). Until he picks, front-door's current behaviour stands.

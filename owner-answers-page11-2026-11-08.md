@@ -167,3 +167,16 @@ I miss the integration with Claude. I miss having that integration with Claude w
 ## p11-40: Should the raw chat transcripts of the lead's sessions be archived in the private repository?
 
 The only reason I did that was to help migrate the lead from the computer to the cloud. So that's why I had to take a full snapshot and feed it to them. But otherwise, we do things whatever way we normally do them.
+
+## p11-41: Should an authenticator app still count as a backup way in, or only the recovery code?
+
+(9 Nov 04:41 UTC) The authenticator app is not a back way in. It is just another authentication method for logging in, not for in case you lose your methods of logging in. It's not a recovery code.
+
+## p11-42: Approve the Terms line about names, and a new Terms version?
+
+(9 Nov 04:42 UTC) Chose: Yes: use that line and bump the Terms version.
+
+## p11-43: A team member has accepted the new Terms but the account owner hasn't. What should the member see?
+
+(9 Nov 04:45 UTC) I don't fully grasp what's happening with this question. Explain it to me in much more detail.
+(Lead: the question's note on page 11 was rewritten with the full background and a third choice, the lead's recommendation. Awaiting his pick.)
