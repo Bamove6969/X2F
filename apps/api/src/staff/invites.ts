@@ -11,6 +11,7 @@ import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import type { StaffDeps } from './app.js';
 import { requireStaff } from './guard.js';
+import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
 import { consumeKeyTap } from './keyTap.js';
 import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type InvitableRole } from './members.js';
 
@@ -238,7 +239,7 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     const now = deps.clock();
     await withTx(deps.db, async (c) => {
       await lockInvite(c, req, accountId);
-      await insertPgpKey(c, deps.config, { accountId, fingerprint: proved.fingerprint, armored: proved.armored, now });
+      await insertPgpKey(c, deps.config, { accountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved });
     });
     return reply.code(201).send({ ok: true });
   });
@@ -261,6 +262,8 @@ export function staffInviteRoutes(app: FastifyInstance): void {
       const { webauthn, pgp } = rows[0]!;
       if ((i.role === 'mod' || i.role === 'senior') && keys === 0) throw new ApiError(409, 'security-key-required');
       if (!((pgp >= 1 && webauthn >= 1) || pgp >= 2)) throw new ApiError(409, 'two-factors-required');
+      // Owner G3 (7 Nov): a moderator holds all three: a security key, a PGP key and a passkey.
+      if (THREE_METHOD_ROLES.includes(i.role) && !(await holdsAllThree(c, accountId))) throw new ApiError(409, 'all-three-methods-required');
       await c.query('update staff_invites set used_at = $2 where id = $1', [i.id, now]);
       await c.query('update accounts set disabled_at = null where id = $1', [accountId]);
       await c.query(

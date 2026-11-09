@@ -419,3 +419,54 @@
     margin: 0;
   }
 }
+
+/* Wide (Job 3; SellQuote-Wide): two columns, 560 and 360, 24 apart, under the header. The amount,
+   what you get and the notes are the first column; Trade and its fine print open the second, so
+   Trade is in view without scrolling (design review 8 Nov 2026, item 2). No pinned footer and no
+   full-height screen: the rail frame scrolls the page. */
+[data-shell='desktop'] .x2f-quote {
+  display: grid;
+  grid-template-columns: minmax(0, 560px) minmax(280px, 360px);
+  column-gap: var(--x2f-space-6);
+  align-content: start;
+  align-items: start;
+  min-height: 0;
+  background: transparent;
+}
+
+[data-shell='desktop'] .x2f-quote > :not(.x2f-quote__main, .x2f-quote__footer) {
+  grid-column: 1 / -1;
+}
+
+[data-shell='desktop'] .x2f-quote__header {
+  padding: 0 0 var(--x2f-space-6);
+}
+
+[data-shell='desktop'] .x2f-quote__main {
+  grid-column: 1;
+  padding: 0;
+  gap: var(--x2f-space-6);
+}
+
+[data-shell='desktop'] .x2f-quote__footer {
+  grid-column: 2;
+  position: sticky;
+  top: 32px;
+  padding: 0;
+  gap: var(--x2f-space-2);
+  border-top: 0;
+  background: transparent;
+}
+
+/* Review I1: the rail plus 944 px of columns needs 1280 px; below 1232 px of window the quote
+   is one column and Trade follows the notes. */
+@media (max-width: 1231px) {
+  [data-shell='desktop'] .x2f-quote {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-shell='desktop'] .x2f-quote__footer {
+    grid-column: 1;
+    position: static;
+  }
+}

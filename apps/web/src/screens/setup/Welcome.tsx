@@ -4,9 +4,16 @@
  * (OD-7, P3-M4) and one button, **Start trading**, back to `returnTo` (the take or the post that
  * started setup). Someone with no usable payout wallet is sent to Add a wallet first (spec 6.4),
  * which then carries on to `returnTo`.
+ *
+ * Owner G25 (6 Nov 2026): right after sign-up, Start trading ends the sign-up session and opens Log
+ * in, as though the person were not logged in, so they test the login they just set up; the login
+ * then asks for the session length (`afterLogin`) and goes on. Every setup step before this one
+ * (backup, first wallet) still runs in the sign-up session and its 30-minute window. Someone
+ * already logged in, who opened setup only to add a wallet, stays logged in.
  */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { safeReturnTo } from '../../api/client.js';
 import type { MethodType, Wallet as WalletEntry } from '@x2f/auth-client';
 import { displayNameOf, refreshSession, useSession, type Me } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
@@ -53,6 +60,16 @@ export function summarize(me: Pick<Me, 'methods'>, wallets: readonly WalletEntry
   };
 }
 
+/**
+ * Where Start trading goes (owner G25). `registered`: this setup made the account, so the sign-up
+ * session ends (`logOut`) and Log in comes next with the destination as its `returnTo`.
+ */
+export function startTradingPath(o: { registered: boolean; usable: boolean; returnTo: string }): { logOut: boolean; to: string } {
+  // Trading and posting need a usable payout wallet (spec 6.4): Add a wallet first, then on.
+  const next = o.usable ? o.returnTo : `/wallets?add=1&returnTo=${encodeURIComponent(o.returnTo)}`;
+  return o.registered ? { logOut: true, to: `/login?returnTo=${encodeURIComponent(safeReturnTo(next))}` } : { logOut: false, to: next };
+}
+
 export function Welcome() {
   const navigate = useNavigate();
   const { state, returnTo } = useSetup();
@@ -77,9 +94,17 @@ export function Welcome() {
   const ready = me !== null && wallets !== null;
   const usable = wallets?.some((w) => w.usable) ?? false;
 
-  const start = () => {
-    // Trading and posting need a usable payout wallet (spec 6.4): Add a wallet first, then on.
-    void navigate(usable ? returnTo : `/wallets?add=1&returnTo=${encodeURIComponent(returnTo)}`);
+  const [leaving, setLeaving] = useState(false);
+  const start = async () => {
+    const { logOut, to } = startTradingPath({ registered: state.registered, usable, returnTo });
+    if (logOut) {
+      setLeaving(true);
+      // Should the logout call fail, Log in still comes next: a login revokes the session this
+      // browser's cookie names (`openSession`), so the sign-up session ends then.
+      await authApi.logout().catch(() => undefined);
+      refreshSession();
+    }
+    void navigate(to);
   };
 
   if (!ready) {
@@ -136,12 +161,17 @@ export function Welcome() {
           </li>
         </ul>
         <p className="x2f-start__help">You can change any of these later in Settings.</p>
+        {state.registered ? (
+          <p className="x2f-start__help" data-part="login-next">
+            Next, log in with what you just set up, to check it works.
+          </p>
+        ) : null}
         <p className="x2f-start__help" data-part="fee">
           {FEE_SENTENCE}
         </p>
       </main>
       <footer className="x2f-start__foot">
-        <Button variant="primary" onClick={start} data-part="start-trading">
+        <Button variant="primary" disabled={leaving} onClick={() => void start()} data-part="start-trading">
           Start trading
         </Button>
       </footer>

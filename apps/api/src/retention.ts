@@ -2,7 +2,11 @@ import type pg from 'pg';
 import type { Deps } from './app.js';
 
 /** A purge job: deletes or nulls what has outlived its retention and returns the rows touched. */
-export type RetentionJob = { name: string; run(db: pg.Pool, now: Date): Promise<number> };
+export type RetentionJob = {
+  name: string;
+  /** `deps` is the scheduler's own (with `config` when it has one; the 60-day close needs it for its keyed tags). */
+  run(db: pg.Pool, now: Date, deps?: Partial<Pick<Deps, 'config'>>): Promise<number>;
+};
 
 /** The only things the scheduler ever logs: a job name and a row count, or that it failed. */
 export type RetentionLog = { job: string; rows: number } | { job: string; failed: true };
@@ -17,7 +21,7 @@ const jsonLine = (e: RetentionLog) => process.stdout.write(`${JSON.stringify(e)}
  * caller can then close the pool.
  */
 export function startRetention(
-  deps: Pick<Deps, 'db' | 'clock'>,
+  deps: Pick<Deps, 'db' | 'clock'> & Partial<Pick<Deps, 'config'>>,
   jobs: RetentionJob[],
   everyMs = 600_000,
   log: (e: RetentionLog) => void = jsonLine,
@@ -28,7 +32,7 @@ export function startRetention(
     for (const job of jobs) {
       if (stopped) return;
       try {
-        const rows = await job.run(deps.db, deps.clock());
+        const rows = await job.run(deps.db, deps.clock(), deps);
         log({ job: job.name, rows });
       } catch {
         log({ job: job.name, failed: true });

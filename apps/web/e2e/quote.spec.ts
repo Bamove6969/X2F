@@ -100,6 +100,39 @@ test.describe('BuyQuote', () => {
     await expectParity(page, 'BuyQuote');
   });
 
+  // Job 3 (design review 8 Nov 2026, item 2; SellQuote-Wide): beside the rail the quote is two
+  // columns, 560 and 360, and Trade is in view without scrolling, never a 1300 px wide field.
+  test('at 1440x900 the quote is two columns beside the rail and Trade is above the fold', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await stubApi(page, base);
+    await page.goto(`${BUY}&amount=${B.amount}`);
+    await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+    await expect(card(page)).toContainText('1.250000 XMR');
+    await expect(page.locator('nav.x2f-rail .x2f-rail__page')).toHaveText('Your quote');
+    const main = (await page.locator('.x2f-quote__main').boundingBox())!;
+    const amount = (await page.locator('.x2f-quote__box').boundingBox())!;
+    const button = (await trade(page).boundingBox())!;
+    expect([main.x, main.width]).toEqual([240 + 48, 560]);
+    expect(amount.width).toBeLessThanOrEqual(560);
+    expect(button.x).toBe(240 + 48 + 560 + 24);
+    expect(button.width).toBe(360);
+    expect(button.y + button.height).toBeLessThanOrEqual(900);
+    expect(await page.evaluate(() => [window.scrollY, document.documentElement.scrollWidth])).toEqual([0, 1440]);
+  });
+
+  // Review I1 (8 Nov 2026): wide starts at 1000 px but the rail plus two columns needs 1280.
+  test('at 1024x768 the quote does not scroll sideways and Trade is there', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await stubApi(page, base);
+    await page.goto(`${BUY}&amount=${B.amount}`);
+    await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+    await expect(card(page)).toContainText('1.250000 XMR');
+    await expect(trade(page)).toBeVisible();
+    const button = (await trade(page).boundingBox())!;
+    expect(button.x + button.width).toBeLessThanOrEqual(1024);
+    expect(await page.evaluate(() => document.scrollingElement!.scrollWidth)).toBe(1024);
+  });
+
   test("a taker's quote never contains an X2F fee line or 1%, and has no Deposit row", async ({ page }) => {
     await stubApi(page, base);
     await page.goto(`${BUY}&amount=${B.amount}`);

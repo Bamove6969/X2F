@@ -1,5 +1,8 @@
-import { checkLoginName, isIdleHours, type AccountKind, type ConfirmAction, type IdleHours, type MethodType } from '@x2f/accounts';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import {
+  SESSION_CHOICE_WINDOW_MS, UNCHOSEN_SESSION_HOURS, checkLoginName, isIdleReminderMinutes, isSessionHours, sessionHoursFor, type AccountKind, type ConfirmAction,
+  type MethodType, type SessionAccountType,
+} from '@x2f/accounts';
+import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import { lockNames, loginNameTaken, loginTags, setLoginName } from '../accounts.js';
 import type { Config } from '../config.js';
@@ -11,7 +14,7 @@ import type { TeamRole } from '../team/perms.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
 import { gateChange, heldReply, holdUntil, pushHoldStarted, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
-import { STAFF_IDLE_HOURS, deadline, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
+import { personAccountId, requireSession, rotateSessionToken, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
 
@@ -33,34 +36,77 @@ export interface AccountOverview {
   methods: MethodType[];
   hasBackup: boolean;
   suggestions: Suggestion[];
-  logoutTimer: LogoutTimer;
   termsCurrent: boolean;
   /** Task 17: the end of the account's 24-hour hold while one runs (any session of the account), else null. */
   accountHoldUntil: string | null;
+  /**
+   * Owner 2 Nov 2026: 'trader' (takes offers) or 'vendor' (posts offers, may have team members,
+   * pays the 1% fee). For a team member, the type of the account they work for.
+   */
+  accountType: 'trader' | 'vendor';
   /**
    * Plan 2 Task 18: set when the caller is a team member (the overview is then of the account
    * they work for, with their own login methods); null for the account owner.
    */
   member: MemberOverview | null;
+  /**
+   * The calling session's length (owner, 2 Nov 2026): set for a full trader session (a team
+   * member's included), null for staff, owner and backup (recovery) sessions, which keep their
+   * fixed rules.
+   */
+  session: SessionInfo | null;
+  /**
+   * The person's idle reminder (owner, Q75, 6 Nov 2026): minutes without activity before the app
+   * reminds them, or null when off (the default). A team member's is their own (their login
+   * account's), never the account owner's. Null for staff and owner accounts, which have none.
+   */
+  idleReminderMinutes: number | null;
+}
+
+/** A full trader session's length, as `GET /v1/account/me` and the session routes return it. */
+export interface SessionInfo {
+  /** The hours chosen for this session, or null until its person chooses (it then lasts `UNCHOSEN_SESSION_HOURS`). */
+  lengthHours: number | null;
+  /** What this account may choose, shortest first (from the account type). */
+  choices: number[];
+  /** When the session ends unless "Stay logged in" extends it. */
+  expiresAt: string;
+  /**
+   * True for every full trader session: the person (a team member too, owner Q73, 6 Nov 2026)
+   * extends it by re-proving one of their own login methods. Kept as a field so a later rule can
+   * turn it off for some sessions.
+   */
+  canExtend: boolean;
+  /** The server's time as it answered, for the prompt's countdown (`serverClock`). */
+  serverNow: string;
+}
+
+/**
+ * Which session lengths an account gets (owner G23, 7 Nov 2026; review M7): its
+ * `accounts.account_type` ('trader' | 'vendor', Settings > Account type). The column comes with the
+ * vendor work (wip/lead-vendor's 198_account_type); read through `to_jsonb` so this works before and
+ * after it lands, and anything but 'vendor' (no column, no row) answers 'trader'. A team member's
+ * session is a session of the team account (`accountId`), so it gets the team account's choices.
+ */
+export async function sessionAccountType(db: Queryable, accountId: string): Promise<SessionAccountType> {
+  const { rows } = await db.query<{ account_type: string | null }>(`select to_jsonb(a) ->> 'account_type' as account_type from accounts a where a.id = $1`, [accountId]);
+  return rows[0]?.account_type === 'vendor' ? 'vendor' : 'trader';
+}
+
+function sessionInfo(type: SessionAccountType, row: { length_hours: number | null; expires_at: Date }, now: Date): SessionInfo {
+  return {
+    lengthHours: row.length_hours,
+    choices: [...sessionHoursFor(type)],
+    expiresAt: row.expires_at.toISOString(),
+    canExtend: true,
+    serverNow: now.toISOString(),
+  };
 }
 
 export interface MemberOverview {
   /** The member's name, as chat labels show it. */
   name: string;
   roles: TeamRole[];
-}
-
-/**
- * The logout timer (owner, 2026-10-23): how many idle hours end a session. A trader chooses 2, 4,
- * 6, 8, 10 or 12 (`adjustable`); staff and owner accounts are fixed at 2 hours.
- */
-export interface LogoutTimer {
-  idleHours: number;
-  adjustable: boolean;
-}
-
-export function logoutTimerOf(kind: AccountKind, idleHours: IdleHours): LogoutTimer {
-  return kind === 'trader' ? { idleHours, adjustable: true } : { idleHours: STAFF_IDLE_HOURS, adjustable: false };
 }
 
 /** How many of each login method an account holds (read straight from the method tables). */
@@ -133,25 +179,38 @@ function idParam(req: FastifyRequest): string {
   return id;
 }
 
+async function idleReminderOf(db: Queryable, personId: string): Promise<number | null> {
+  const { rows } = await db.query<{ m: number | null }>('select idle_reminder_minutes as m from accounts where id = $1', [personId]);
+  return rows[0]?.m ?? null;
+}
+
+/**
+ * Checks `hours` of `POST /v1/account/session/extend` before `requireConfirm`, so a bad choice never
+ * uses up the confirm token (as R17 asks of the wallet route). Absent: the session's own length.
+ */
+const extendHoursValid: preHandlerAsyncHookHandler = async function (req) {
+  const body = req.body;
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
+  const hours = (body as { hours?: unknown }).hours;
+  if (hours !== undefined && !isSessionHours(await sessionAccountType(req.server.deps.db, req.auth.accountId), hours)) throw new ApiError(400, 'bad-request');
+};
+
 async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOverview> {
   const { accountId, sessionId } = req.auth;
   // A member's own login methods (its own login account); the account owner's are not theirs to see.
-  let methodsOf = accountId;
-  if (req.auth.memberId !== null) {
-    const m = await deps.db.query<{ member_account_id: string }>('select member_account_id from team_members where id = $1', [req.auth.memberId]);
-    if (!m.rows[0]) throw new ApiError(401, 'not-authenticated');
-    methodsOf = m.rows[0].member_account_id;
-  }
+  const methodsOf = await personAccountId(deps.db, req.auth);
   const { rows } = await deps.db.query<{
     display_name: string;
     legacy_login_name: boolean;
     kind: AccountKind;
-    idle_hours: IdleHours;
     terms_version: string | null;
     level: SessionLevel;
     hold_until: Date | null;
+    length_hours: number | null;
+    expires_at: Date;
+    account_type: 'trader' | 'vendor';
   }>(
-    `select a.display_name, a.legacy_login_name, a.kind, a.idle_hours, a.terms_version, s.level, s.hold_until
+    `select a.display_name, a.legacy_login_name, a.kind, a.terms_version, s.level, s.hold_until, s.length_hours, s.expires_at, a.account_type
        from accounts a join sessions s on s.account_id = a.id
       where a.id = $1 and s.id = $2`,
     [accountId, sessionId],
@@ -170,14 +229,19 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     holdUntil: held ? row.hold_until!.toISOString() : null,
     stage: row.kind === 'trader' ? (await tradeCap(deps.db, accountId, now)).stage : null,
     methods: methodTypes(counts),
-    // A member logs in with two factors by the staff rule: nothing to suggest, and only the account owner sets the timer.
+    // A member logs in with two factors by the staff rule: nothing to suggest.
     hasBackup: member !== null ? true : hasBackup(counts),
     suggestions: member !== null ? [] : suggestionsFor(counts),
-    logoutTimer: member !== null ? { idleHours: row.idle_hours, adjustable: false } : logoutTimerOf(row.kind, row.idle_hours),
     // Staff and owner accounts carry no Terms version (R10).
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
+    accountType: row.account_type,
     member,
+    // The end this request's token has (review S-m1: the token before an extend keeps the old end).
+    session: row.kind === 'trader' && row.level === 'full'
+      ? sessionInfo(await sessionAccountType(deps.db, accountId), { ...row, expires_at: new Date(Math.min(row.expires_at.getTime(), req.auth.expiresAt.getTime())) }, now)
+      : null,
+    idleReminderMinutes: row.kind === 'trader' ? await idleReminderOf(deps.db, methodsOf) : null,
   };
 }
 
@@ -307,52 +371,131 @@ export function accountRoutes(app: FastifyInstance): void {
     overview(deps(), req),
   );
 
-  const LOGOUT_TIMER = '/v1/account/security/logout-timer';
-
-  // Reading changes nothing: any session, even a held recovery one, may see the timer.
-  app.get(LOGOUT_TIMER, { preHandler: requireSession({ ...readAny, allowStaleTerms: true }) }, async (req) => {
-    const { rows } = await deps().db.query<{ kind: AccountKind; idle_hours: IdleHours }>(
-      'select kind, idle_hours from accounts where id = $1',
-      [req.auth.accountId],
-    );
-    return logoutTimerOf(rows[0]!.kind, rows[0]!.idle_hours);
-  });
+  /**
+   * Session length (owner, 2 Nov 2026; boards SessionLength, Devices). `PUT /v1/account/session/length
+   * { hours }` sets the calling session's own length, this session only (owner F18): full trader
+   * sessions only, a team member's included (its own login); 400 `bad-request` unless `hours` is one
+   * of the account type's choices (owner G23). The new length starts now (owner G24): the session
+   * ends `now + hours`, never in the past (review M3).
+   * - A shorter end, or the first choice within SESSION_CHOICE_WINDOW_MS of the login (the question
+   *   after every login), applies at once.
+   * - A later end otherwise needs a login method (lead decision 6 Nov 2026: a stolen cookie must not
+   *   stretch a session): 403 `confirm-required` `{ action: 'extend-session' }`, nothing changed;
+   *   the app then confirms it's them and calls `POST /v1/account/session/extend` with `hours`.
+   * A shortened session's live streams are ended (review M1); the app reconnects with the new end.
+   * Not a held change: it only ends this session sooner, or sets its length at the login itself.
+   */
+  app.put(
+    '/v1/account/session/length',
+    { preHandler: requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'any' }) },
+    async (req) => {
+      const d = deps();
+      const body = req.body;
+      if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
+      const hours = (body as { hours?: unknown }).hours;
+      if (!isSessionHours(await sessionAccountType(d.db, req.auth.accountId), hours)) throw new ApiError(400, 'bad-request');
+      const now = d.clock();
+      const { info, shortened } = await withTx(d.db, async (db) => {
+        // Tasks 16-17: the calling session must still be live where it writes.
+        await requireLiveSessionInTx(db, req.auth, now);
+        const cur = await db.query<{ length_hours: number | null; expires_at: Date; period_started_at: Date }>(
+          'select length_hours, expires_at, period_started_at from sessions where id = $1 for update',
+          [req.auth.sessionId],
+        );
+        const old = cur.rows[0]!;
+        const end = new Date(now.getTime() + hours * 3_600_000);
+        // The free first choice: the length was never chosen and the login was a moment ago. An
+        // extend sets the length, so an unchosen session's period is still its login.
+        const firstChoice = old.length_hours === null && now.getTime() < old.period_started_at.getTime() + SESSION_CHOICE_WINDOW_MS;
+        if (end.getTime() > old.expires_at.getTime() && !firstChoice) throw new ApiError(403, 'confirm-required', { action: 'extend-session' });
+        // TODO(team working hours, p7-11; review S-m4, owner G9): when a team lead sets working
+        // hours, a member's session must not get a later end outside them ("they won't be able to
+        // extend the session anyway"). Refuse a later end here, for req.auth.memberId !== null, before any write.
+        const { rows } = await db.query<{ length_hours: number | null; expires_at: Date }>(
+          `update sessions set period_started_at = $3, expires_at = $4, length_hours = $2 where id = $1
+        returning length_hours, expires_at`,
+          [req.auth.sessionId, hours, now, end],
+        );
+        return { info: sessionInfo(await sessionAccountType(db, req.auth.accountId), rows[0]!, now), shortened: end.getTime() < old.expires_at.getTime() };
+      });
+      // Review M1: a stream opened before keeps the old end as its lifetime; end it now.
+      if (shortened) req.server.events.closeSession(req.auth.accountId, req.auth.sessionId);
+      return info;
+    },
+  );
 
   /**
-   * `PUT /v1/account/security/logout-timer { idleHours }`: full trader sessions only (a recovery
-   * session, held or not, gets 403 `recovery-session`; staff and owner 403 `wrong-account-kind`).
-   * The new timer applies at once: every live full session of the account gets its idle deadline
-   * moved to `last_seen_at + idleHours` (capped by the 30-day absolute limit); a session already
-   * idle that long is refused at its next request by `requireSession`.
+   * `POST /v1/account/session/extend { confirmToken, hours? }`: "Stay logged in?" (owner, 2 Nov
+   * 2026, board SessionExtend; Q73, 6 Nov), and a longer length chosen partway (owner G24). The
+   * person re-proves one of their own login methods on the server (a confirm token for
+   * `extend-session` from a confirm route: passkey, security key, PGP key, or the password, alone
+   * even when the account has an authenticator code, owner G10; a team member with their own PGP
+   * key, passkey or security key), and the session lasts `hours` from now (one of the account
+   * type's choices; absent, its own length, or the shortest choice if none was chosen). That time
+   * becomes the session's length (review M4). No fixed maximum. Each extend issues a new session
+   * token (review S-m1, `rotateSessionToken`): the cookie is set to it with a fresh lifetime, and the
+   * token before it works only until the session's old end, so a copied cookie dies there. An account in a 24-hour hold may extend (owner G8), and extending raises no alert
+   * (owner G9). Full trader sessions only, a team member's included; recovery sessions are refused
+   * (`recovery-session`). Bad `hours` → 400 `bad-request` before the token is spent.
    */
-  app.put(LOGOUT_TIMER, { preHandler: [requireSession({ kinds: ['trader'] }), requireNotHeld] }, async (req, reply) => {
-    const d = deps();
-    const body = req.body;
-    if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
-    const idleHours = (body as { idleHours?: unknown }).idleHours;
-    if (!isIdleHours(idleHours)) throw new ApiError(400, 'bad-request');
-    const client = await d.db.connect();
-    let held: { holdUntil: Date } | null = null;
-    try {
-      await client.query('begin');
-      try {
-        // Task 17 (review M2): the logout timer is a Settings -> Security change.
-        held = await gateChange(client, req, { kind: 'logout-timer', idleHours });
-        if (held === null) await applyLogoutTimer(client, req.auth.accountId, idleHours, d.clock());
-        await client.query('commit');
-      } catch (e) {
-        await client.query('rollback');
-        throw e;
-      }
-    } finally {
-      client.release();
-    }
-    if (held !== null) {
-      pushHoldStarted(req, req.auth.accountId);
-      return reply.code(202).send(heldReply(held));
-    }
-    return logoutTimerOf('trader', idleHours);
-  });
+  app.post(
+    '/v1/account/session/extend',
+    {
+      preHandler: [
+        requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'any' }),
+        extendHoursValid,
+        requireConfirm({ kind: 'extend-session' }),
+      ],
+    },
+    async (req, reply) => {
+      const d = deps();
+      const now = d.clock();
+      const hours = (req.body as { hours?: number }).hours ?? null;
+      const { info, setCookie } = await withTx(d.db, async (db) => {
+        await requireLiveSessionInTx(db, req.auth, now);
+        // TODO(team working hours, p7-11; review S-m4, owner G9): when a team lead sets working
+        // hours, a member's session must not get a later end outside them ("they won't be able to
+        // extend the session anyway"). Refuse here, for req.auth.memberId !== null, before any write.
+        const cur = await db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1 for update', [req.auth.sessionId]);
+        // Review S-m1: a new token, the one before it valid only to this old end.
+        const setCookie = await rotateSessionToken(db, req, reply, req.auth.sessionId, cur.rows[0]!.expires_at);
+        const { rows } = await db.query<{ length_hours: number | null; expires_at: Date }>(
+          `update sessions
+              set period_started_at = $2,
+                  length_hours = coalesce($4::smallint, length_hours, $3),
+                  expires_at = $2::timestamptz + coalesce($4::smallint, length_hours, $3) * interval '1 hour'
+            where id = $1
+        returning length_hours, expires_at`,
+          [req.auth.sessionId, now, UNCHOSEN_SESSION_HOURS, hours],
+        );
+        return { info: sessionInfo(await sessionAccountType(db, req.auth.accountId), rows[0]!, now), setCookie };
+      });
+      setCookie();
+      return info;
+    },
+  );
+
+  /**
+   * `PUT /v1/account/idle-reminder { minutes }` (owner, Q75, 6 Nov 2026): the person's own idle
+   * reminder, one of IDLE_REMINDER_MINUTES, or null to turn it off (the default). A reminder only:
+   * it never logs anyone out and never moves a session's end. It is the person's: a team member's
+   * is stored on their own login account, never the account owner's. Trader sessions only (a team
+   * member's included); not a held change (it touches no login, session or security state).
+   */
+  app.put(
+    '/v1/account/idle-reminder',
+    { preHandler: requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'any' }) },
+    async (req) => {
+      const d = deps();
+      const body = req.body;
+      if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
+      const minutes = (body as { minutes?: unknown }).minutes;
+      if (minutes !== null && !isIdleReminderMinutes(minutes)) throw new ApiError(400, 'bad-request');
+      const person = await personAccountId(d.db, req.auth);
+      await d.db.query('update accounts set idle_reminder_minutes = $2 where id = $1', [person, minutes]);
+      return { idleReminderMinutes: minutes };
+    },
+  );
 
   const DEVICES = '/v1/account/security/devices';
 
@@ -514,25 +657,6 @@ export async function applyLoginName(db: Queryable, config: Config, accountId: s
   );
   if ((updated.rowCount ?? 0) === 0) throw new ApiError(409, 'login-name-set');
   await addAlert(db, accountId, 'login-name-set', {}, now);
-}
-
-/**
- * The write of a logout timer (the route's, or a pending one when the hold ends by time): every
- * live full session of the account gets its idle deadline moved to `last_seen_at + idleHours`
- * (capped by the 30-day absolute limit).
- */
-export async function applyLogoutTimer(db: Queryable, accountId: string, idleHours: IdleHours, now: Date): Promise<void> {
-  const policy = sessionPolicy('trader', 'full', idleHours);
-  await db.query('update accounts set idle_hours = $2 where id = $1', [accountId, idleHours]);
-  const { rows } = await db.query<{ id: string; created_at: Date; last_seen_at: Date }>(
-    `select id, created_at, last_seen_at from sessions
-      where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2
-      for update`,
-    [accountId, now],
-  );
-  for (const s of rows) {
-    await db.query('update sessions set expires_at = $2 where id = $1', [s.id, deadline(s.created_at, s.last_seen_at, policy)]);
-  }
 }
 
 /** The write of "One device at a time" (the route's, or a pending one when the hold ends by time): alert `one-device-set { on }`. */

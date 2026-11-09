@@ -49,7 +49,7 @@ async function trader(): Promise<{ id: string; b: Browser }> {
 async function seedOffer(accountId: string, side: 'sell' | 'buy' = 'sell', status = 'live'): Promise<string> {
   const { rows } = await deps.db.query<{ id: string }>(
     `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-     values ($1, $2, 'zelle', 'USD', 'market', 100, 1000, 100000, 0, '', $3, $4, $4) returning id`,
+     values ($1, $2, 'zelle', 'USD', 'market', 100, 1000, 100000, null, '', $3, $4, $4) returning id`,
     [accountId, side, status, now],
   );
   return rows[0]!.id;

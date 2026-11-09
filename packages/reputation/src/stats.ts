@@ -76,6 +76,16 @@ export function typicalMinutes(samples: readonly number[]): number | null {
   return recent.length < TYPICAL_MIN_SAMPLES ? null : median(recent);
 }
 
+/**
+ * Fast ("usually pays or releases within 10 min") and the role-less typical time, over both of a
+ * trader's lists (review 2, I2): the median of the last 20 payment times and the last 20 release
+ * times together, so one quick side can't hide a slow one. `samples` is exactly what the median saw.
+ */
+export function bothRolesTypical(pay: readonly number[], release: readonly number[]): { minutes: number | null; samples: number } {
+  const seen = [...pay.slice(-TYPICAL_WINDOW), ...release.slice(-TYPICAL_WINDOW)];
+  return { minutes: seen.length < TYPICAL_MIN_SAMPLES ? null : median(seen), samples: seen.length };
+}
+
 /** Whole minutes from `from` to `to`, rounded down, never below 0 (a buyer who paid before secured). */
 export function actionMinutes(from: Date, to: Date): number {
   return Math.max(0, Math.floor((to.getTime() - from.getTime()) / 60_000));

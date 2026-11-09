@@ -107,7 +107,8 @@ describe('staff login with login hours', () => {
     const b = new StaffBrowser(app);
     const first = await keyFirstStep(b, s.loginName, key);
     expect(first.statusCode).toBe(200);
-    expect(first.json()).toMatchObject({ status: 'second-factor', needs: ['pgp'] });
+    // Owner G3: after a security key, PGP or a passkey completes the pair.
+    expect(first.json()).toMatchObject({ status: 'second-factor', needs: ['pgp', 'passkey'] });
     const res = await fullLogin(b, s.id, s.loginName, key);
     expect(res.json()).toEqual({ status: 'ok' });
     expect(b.cookies[STAFF_SESSION_COOKIE]).toBeDefined();
@@ -269,6 +270,46 @@ describe('staff login with login hours', () => {
     const bare = await seedAccount(deps, { loginName: name, kind: 'staff' });
     const bareKey = await addKey(bare);
     expect(errorOf(await keyFirstStep(new StaffBrowser(app), name, bareKey))).toBe('account-disabled');
+  });
+});
+
+describe('owner G3: two PGP keys are not a moderator\'s pair (review P-I2)', () => {
+  /** A PGP login step on the staff site with `key` (the second step when `pendingId` is given). */
+  async function pgpStep(b: StaffBrowser, key: Awaited<ReturnType<typeof genKey>>, pendingId?: string) {
+    const start = await b.post('/staff/v1/login/pgp/start', { key: key.publicKey, ...(pendingId ? { pendingId } : {}) });
+    expect(start.statusCode, start.body).toBe(200);
+    const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey, undefined, deps.clock()));
+    return b.post('/staff/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Desk', ...(pendingId ? { pendingId } : {}) });
+  }
+  async function withTwoPgpKeys(role: 'mod' | 'senior' | 'helper') {
+    const s = await seedStaff(deps, { role });
+    const keys = [await genKey(), await genKey()];
+    for (const k of keys) await insertPgpKey(deps.db, deps.config, { accountId: s.id, fingerprint: k.fingerprint, armored: k.publicKey, now: deps.clock() });
+    return { s, keys };
+  }
+
+  for (const role of ['mod', 'senior'] as const) {
+    it(`a ${role === 'mod' ? 'moderator' : 'senior moderator'}: PGP first offers no PGP second step, and a second PGP key is refused`, async () => {
+      const { s, keys } = await withTwoPgpKeys(role);
+      const b = new StaffBrowser(app);
+      const first = await pgpStep(b, keys[0]!);
+      expect(first.json()).toEqual({ status: 'second-factor', pendingId: expect.any(String), needs: ['security-key', 'passkey'] });
+      const second = await pgpStep(b, keys[1]!, first.json().pendingId);
+      expect([second.statusCode, errorOf(second)]).toEqual([403, 'method-not-allowed']);
+      expect(b.cookies[STAFF_SESSION_COOKIE]).toBeUndefined();
+      const { rows } = await deps.db.query('select 1 from sessions where account_id = $1', [s.id]);
+      expect(rows).toEqual([]);
+    });
+  }
+
+  it('a helper still logs in with two different PGP keys (until the owner says otherwise)', async () => {
+    const { keys } = await withTwoPgpKeys('helper');
+    const b = new StaffBrowser(app);
+    const first = await pgpStep(b, keys[0]!);
+    expect(first.json()).toMatchObject({ status: 'second-factor', needs: ['pgp', 'security-key', 'passkey'] });
+    const second = await pgpStep(b, keys[1]!, first.json().pendingId);
+    expect(second.json()).toEqual({ status: 'ok' });
+    expect(b.cookies[STAFF_SESSION_COOKIE]).toBeDefined();
   });
 });
 

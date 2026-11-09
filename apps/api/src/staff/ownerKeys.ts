@@ -6,7 +6,7 @@ import { lockAccount, withTx } from '../auth/hold.js';
 import { WEBAUTHN_TTL_MS, verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions } from '../auth/webauthn.js';
 import { ApiError } from '../errors.js';
 import { requireStaff } from './guard.js';
-import { consumeKeyTap } from './keyTap.js';
+import { consumeKeyTap, consumeSecondOwnerTap } from './keyTap.js';
 import { body, log, tapIdOf } from './members.js';
 
 // Plan 4 Task 7: the owner's security keys (perm `self`, the owner only: anyone else 403 `forbidden`).
@@ -15,10 +15,10 @@ import { body, log, tapIdOf } from './members.js';
 //   (the attested security keys; `id` is what DELETE takes).
 // - `POST /staff/v1/owner/keys/start` → `{ challengeId, options }` (an attested security key on the
 //   owner's allowlist; 5 minutes).
-// - `POST /staff/v1/owner/keys/finish { challengeId, response, tapId, label? }` → 201
+// - `POST /staff/v1/owner/keys/finish { challengeId, response, tapId, secondTapId, label? }` → 201
 //   `{ id, keyCheckCode }`: the registration is verified, then, in one transaction with the owner's
-//   account row locked, the challenge is used, a tap `add-owner-key` by one of the owner's existing
-//   keys is consumed (`credentialId` = the new key's base64url id, `publicKeySha256` = hex SHA-256 of
+//   account row locked, the challenge is used, two taps `add-owner-key` by two different existing
+//   owner keys are consumed (owner G4: both keys; 409 `both-owner-keys-required`) (`credentialId` = the new key's base64url id, `publicKeySha256` = hex SHA-256 of
 //   its COSE public key), the key is stored and `owner.key-added` logged. A refused tap rolls all
 //   of it back, so the person can tap again.
 // - Removing a key: `DELETE /staff/v1/account/methods/security-key/:id` (staff/account.ts), with a
@@ -84,7 +84,10 @@ export function ownerKeyRoutes(app: FastifyInstance): void {
       await lockAccount(c, owner);
       const ch = await consumeChallenge(c, challengeId, now);
       if (!ch || ch.purpose !== PURPOSE || ch.account_id !== owner) throw new ApiError(400, 'challenge-expired');
-      await consumeKeyTap(c, tapIdOf(b), owner, { kind: 'add-owner-key', credentialId: cred.credentialId, publicKeySha256 }, now, { sessionId: req.auth.sessionId });
+      const intent = { kind: 'add-owner-key' as const, credentialId: cred.credentialId, publicKeySha256 };
+      const first = await consumeKeyTap(c, tapIdOf(b), owner, intent, now, { sessionId: req.auth.sessionId });
+      // Owner G4: both of the owner's keys.
+      await consumeSecondOwnerTap(c, b.secondTapId, first, intent, now, { sessionId: req.auth.sessionId });
       const rowId = await cred.store(c);
       await log(c, req, 'owner.key-added', { credentialId: rowId });
       return rowId;

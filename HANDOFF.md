@@ -74,7 +74,7 @@ Editing the canvas: publish changed `.dc.html` files to the X2F App URL with the
 ### Badges (milestones)
 - **New** is a safety badge: always shown, can't be hidden, until the account graduates from starter limits.
 - **Starter limits** (owner, 2026-10-24; spec 2.3): $200 per trade for 0–4 trades; $1,000 for 5–19 trades and 7+ days; no platform cap from 20 trades and 30 days. Owner can change the numbers. Replaces "no limits for new accounts" (2026-10-17).
-- **Milestones:** 10, 50, 100, 500 and 1,000 trades; Veteran at 1, 3 and 5 years; Trusted (100+ trades, 98%+ positive); Fast; Clean record.
+- **Milestones:** 10, 50, 100, 500 and 1,000 trades; Veteran at 1, 3 and 5 years; Trusted (200+ trades, 98%+ positive); Fast; Clean record.
 - **Security honours:** PGP verified and Security key verified.
 - **Past reputation** (owner, 2026-10-17; spec 5.5, Plan 5): a separate badge for trades on other sites, proven by signing with the PGP key shown on an archived old profile, approved by a moderator. Screenshots alone don't count. It never adds to the X2F trade count, rating or milestones.
 - **No volume badges**, for privacy.

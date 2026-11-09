@@ -992,7 +992,7 @@ Revision 2026-10-29 (lead decision, Task 5 review I2; supersedes "locks exactly 
 **Boards:** `SetupLogin` and `SetupBackup` (reused); everything else from design-system parts.
 
 **Files:**
-- Create: `apps/web/src/screens/auth/{Login,BackupLogin,ConfirmSheet}.tsx`, `apps/web/src/screens/settings/{Security,Methods,Totp,RecoveryCodes,LogoutTimer,Devices,Alerts}.tsx` (LogoutTimer replaces the retired PayoutWait screen, owner 2026-10-23: `GET`/`PUT /v1/account/security/logout-timer` `{ idleHours }`, choices 2-12 hours, read-only for staff and owner)
+- Create: `apps/web/src/screens/auth/{Login,BackupLogin,ConfirmSheet}.tsx`, `apps/web/src/screens/settings/{Security,Methods,Totp,RecoveryCodes,LogoutTimer,Devices,Alerts}.tsx` (LogoutTimer replaces the retired PayoutWait screen, owner 2026-10-23: `GET`/`PUT /v1/account/security/logout-timer` `{ idleHours }`, choices 2-12 hours, read-only for staff and owner) *(Retired 2 Nov 2026 by the owner's session length: the length is chosen at each login and on Devices, `PUT /v1/account/session/length`, and "Stay logged in?" extends it with a fresh proof, `POST /v1/account/session/extend`; wip/lead-sessions.)*
 - Test: `apps/web/e2e/login.spec.ts`, `apps/web/e2e/security.spec.ts`
 
 **Interfaces:**

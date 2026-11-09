@@ -1,6 +1,8 @@
 // Getting started (Plan 3 Task 28): Terms first, then names, login method, PGP key and code or a
 // password, a backup login (or Skip for now), the first payout wallet, and Welcome with Start
-// trading back to `returnTo`. Every Setup board is checked with the parity harness at the board's
+// trading back to `returnTo`. Owner G25 (6 Nov 2026): right after sign-up, Start trading ends the
+// sign-up session and goes to Log in (keeping `returnTo`); the login asks the session length, then
+// goes on. Every Setup board is checked with the parity harness at the board's
 // phone size (390x844) and at a small Android size (360x800) (owner 2026-10-25: mobile ready at
 // launch). The API is stubbed per test with page.route, in FU-A's shapes (display name + private
 // login name), as FU-A's API defines them (on the main line since 2026-10-28).
@@ -29,6 +31,9 @@ test.beforeAll(async () => {
 
 interface Stub {
   registered: boolean;
+  /** Logged in again after sign-up (G25): `me` then carries the session with its length question. */
+  loggedIn: boolean;
+  lengthHours: number | null;
   displayName: string;
   methods: string[];
   wallets: Record<string, unknown>[];
@@ -41,6 +46,8 @@ interface Stub {
 async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; wallets?: Record<string, unknown>[] } = {}): Promise<Stub> {
   const s: Stub = {
     registered: o.signedIn ?? false,
+    loggedIn: false,
+    lengthHours: null,
     displayName: 'nightowl',
     methods: o.methods ?? [],
     wallets: o.wallets ?? [],
@@ -66,11 +73,27 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
           methods: s.methods,
           hasBackup: s.methods.length > 1,
           suggestions: [],
-          logoutTimer: { idleHours: 12, adjustable: true },
           termsCurrent: s.termsCurrent,
+          ...(s.loggedIn ? { session: sessionInfo(s) } : {}),
         })(r)
       : json({ error: 'not-authenticated' }, 401)(r),
   );
+  // G25: Start trading after sign-up logs out; the person then logs in with what they set up.
+  await page.route('**/v1/logout', (r) => {
+    s.registered = false;
+    return json({ ok: true })(r);
+  });
+  await page.route('**/v1/login/password', (r) => {
+    record('login-password', r);
+    s.registered = true;
+    s.loggedIn = true;
+    return json({ status: 'ok' })(r);
+  });
+  await page.route('**/v1/account/session/length', (r) => {
+    record('session-length', r);
+    s.lengthHours = (JSON.parse(r.request().postData() ?? '{}') as { hours: number }).hours;
+    return json(sessionInfo(s))(r);
+  });
   await page.route('**/v1/terms', json({ version: TERMS_VERSION }));
   await page.route('**/v1/register/pgp/start', (r) => {
     record('pgp-start', r);
@@ -121,6 +144,17 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
   return s;
 }
 
+function sessionInfo(s: Stub) {
+  const now = Date.now();
+  return {
+    lengthHours: s.lengthHours,
+    choices: [2, 4, 8, 12],
+    expiresAt: new Date(now + (s.lengthHours ?? 2) * 3_600_000).toISOString(),
+    canExtend: true,
+    serverNow: new Date(now).toISOString(),
+  };
+}
+
 async function setViewport(page: Page, v: ParityViewport): Promise<void> {
   const [width, height] = v.split('x').map(Number) as [number, number];
   await page.setViewportSize({ width, height });
@@ -147,7 +181,7 @@ async function pickNames(page: Page, display: string, login: string): Promise<vo
 }
 
 for (const v of PHONES) {
-  test(`the PGP path matches every Setup board at ${v} and Start trading resumes the take`, async ({ page }) => {
+  test(`the PGP path matches every Setup board at ${v} and Start trading goes to Log in, keeping the take (G25)`, async ({ page }) => {
     await setViewport(page, v);
     const s = await stubApi(page);
 
@@ -202,7 +236,10 @@ for (const v of PHONES) {
     await expect(page.locator('h1')).toHaveText('Welcome to X2F, lumen.k');
     await expectParity(page, 'SetupWelcome', { viewport: v });
     await page.click('[data-part="start-trading"]');
-    await expect(page).toHaveURL(new RegExp(`${TAKE.replace(/[?]/g, '\\?')}$`));
+    // Owner G25: the sign-up session ends and Log in comes next, carrying the take on.
+    await expect(page).toHaveURL(`/login?returnTo=${encodeURIComponent(TAKE)}`);
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Log in');
+    expect(s.requests).toContain('POST /v1/logout');
 
     // The register calls carry both names (FU-A) and the accepted Terms version.
     expect(s.bodies['pgp-start']).toEqual([{ displayName: 'lumen.k', loginName: 'lumen-login-7', publicKey: realKey.trim() }]);
@@ -314,7 +351,9 @@ test('Mira.K_ shows exactly as typed after setup (password path, backup skipped)
   expect(s.bodies.password?.[0]).toMatchObject({ displayName: 'Mira.K_', loginName: 'mira-signin-01' });
 
   await page.click('[data-part="start-trading"]');
-  await expect(page).toHaveURL(/\/post$/);
+  // Owner G25: Log in next, then on to the post.
+  await expect(page).toHaveURL(/\/login\?returnTo=%2Fpost$/);
+  expect(s.requests).toContain('POST /v1/logout');
 
   // No secret in any URL or in browser storage.
   for (const u of urls) expect(u).not.toContain('harbour');
@@ -369,9 +408,10 @@ test('a step opened without the earlier ones goes back to the Terms', async ({ p
 
 // Plan 3 Revision 2026-10-28 (no guest buying): a visitor's Trade tap must stay a short trip. From
 // the quote, the shortest route (Terms, names, a login method, the first wallet) comes back to the
-// same quote with the amount kept, through no more screens than the Setup boards, each one reached
-// by a single tap of its own button (no dead end). Any step added later must keep this green.
-test('a visitor who taps Trade comes back to the same quote, amount kept, through no more than the Setup boards', async ({ page }) => {
+// same quote with the amount kept, through no more screens than the Setup boards plus the login
+// owner G25 asks for after sign-up (Log in, then the session length), each one reached by a single
+// tap of its own button (no dead end). Any step added later must keep this green.
+test('a visitor who taps Trade comes back to the same quote, amount kept, through the Setup boards and one login', async ({ page }) => {
   const s = await stubApi(page);
   const takes: unknown[] = [];
   await page.route('**/v1/methods?*', json({ live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] }));
@@ -415,6 +455,15 @@ test('a visitor who taps Trade comes back to the same quote, amount kept, throug
   await page.click('[data-part="wallet-finish"]');
   await at('setup-welcome');
   await page.click('[data-part="start-trading"]');
+  // Owner G25: log in with what was just set up, choose the session length, then on.
+  await at('login');
+  await page.click('[data-method="password"]');
+  await page.fill('#login-name', 'lumen-login-7');
+  await page.fill('#login-password', 'Quiet-harbour-58');
+  await page.click('[data-part="password-login"]');
+  await at('session-length');
+  await page.selectOption('[data-part="session-length-select"]', '4');
+  await page.click('[data-part="session-length-continue"]');
 
   // Back on the same quote in this tab, the amount kept, asking for a fresh tap; nothing taken yet.
   await expect(page.locator('[data-screen="quote"]')).toBeVisible();
@@ -424,10 +473,14 @@ test('a visitor who taps Trade comes back to the same quote, amount kept, throug
   await expect(page.getByRole('status')).toHaveText("You're back. Check the total, then tap Trade.");
   expect(takes).toEqual([]);
 
-  // No more screens than the Setup boards (SetupPassword is the other branch of the login step).
+  // No more screens than the Setup boards (SetupPassword is the other branch of the login step),
+  // plus G25's Log in and session length.
   const SETUP_BOARDS = ['SetupTerms', 'SetupUsername', 'SetupLogin', 'SetupPgpKey', 'SetupPgpChallenge', 'SetupPassword', 'SetupBackup', 'SetupWallet', 'SetupWelcome'];
-  expect(seen.length).toBeLessThanOrEqual(SETUP_BOARDS.length - 1);
-  expect(seen).toEqual(['setup-terms', 'setup-name', 'setup-login', 'setup-pgp-key', 'setup-pgp-code', 'setup-backup', 'setup-wallet', 'setup-welcome']);
+  const G25 = ['Login', 'SessionLength'];
+  expect(seen.length).toBeLessThanOrEqual(SETUP_BOARDS.length - 1 + G25.length);
+  expect(seen).toEqual(['setup-terms', 'setup-name', 'setup-login', 'setup-pgp-key', 'setup-pgp-code', 'setup-backup', 'setup-wallet', 'setup-welcome', 'login', 'session-length']);
+  expect(s.requests).toContain('POST /v1/logout');
+  expect(s.bodies['session-length']).toEqual([{ hours: 4 }]);
   expect(s.registered).toBe(true);
 });
 
@@ -447,7 +500,7 @@ test('raising the Terms version sends a logged-in trader to /terms and back to t
   await page.route('**/v1/account/me', (r) =>
     accepted === null
       ? json({ error: 'terms-required', version: TERMS_VERSION }, 403)(r)
-      : json({ displayName: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: ['pgp'], hasBackup: false, suggestions: [], logoutTimer: { idleHours: 12, adjustable: true }, termsCurrent: true })(r),
+      : json({ displayName: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: ['pgp'], hasBackup: false, suggestions: [], termsCurrent: true })(r),
   );
   await page.route('**/v1/account/terms', (r) => {
     accepted = JSON.parse(r.request().postData() ?? 'null');

@@ -458,8 +458,12 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (loaded) {
         this.rec = loaded;
         // A deal mismatch kept by a record from before the fix of 2026-10-26 (one bad view or
-        // trade.terms stopped the device for good) is dropped: it is checked again below.
-        if (loaded.failed === 'deal-mismatch') loaded.failed = null;
+        // trade.terms stopped the device for good) is dropped: it is checked again below. Saved at
+        // once, so the stored record never says stopped while the device runs.
+        if (loaded.failed === 'deal-mismatch') {
+          loaded.failed = null;
+          await this.persist();
+        }
         if (loaded.failed) return this.fail(loaded.failed, { integrity: true }); // stopped for good before: stays stopped
       }
       else {
