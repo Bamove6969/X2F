@@ -13,8 +13,11 @@ Source: docs/copy-unsigned-by-screen.md on origin/wip/design-brief (8 Nov 2026).
 | wording/batch-07 | 8 screens: Appeal-Notice, Lien-Notice, Ban-Notice, HoldChange, Maintenance, Settings, Devices, Wallet | 128 |
 | wording/batch-08 | 8 screens: Alerts, Profile, ProfileVisibility, BadgeSettings, Feedback, Team, MemberPermissions, TeamRefusal | 78 |
 | wording/batch-09 | 8 screens: TeamChat, ModQueue, ModCase, StaffLog, StaffPerformance, StaffSettings, Support, FAQ | 94 |
+| wording/batch-10 | 18 screens: TradeChat, SetupPassword, SetupBackup, FlexOffer-Post, MyOffers, BuyOffers, BuyQuote, DisputeRoom, SetupTerms, CancelRequest, BuyerPay, AccountFrozen, HoldChange, HoldMember, RecoveryCode, Alerts, Team, CantDoThat | 108 |
 
-Total: 780 questions across 9 batches.
+Total: 888 questions across 10 batches.
+
+Batch 10's source is not the design-brief file: it is the COPY-UNSIGNED strings on the helper branches pay-details (J-08 chat payment-detail boxes), signup-rules (password meter, recovery codes), flex-offers (bands, currencies, no rate), trade-copy (trade room drop-ins, AccountFrozen, courtesy sheet), hold-v3-port (hold notices) and revenue-ledger (fee sweep alerts), as of 9 Nov 2026, less the strings already on batches 1 to 9.
 
 ## Published 9 Nov 2026 (owner's links; answers in each page's db, collection `answers`, ids w0N-k)
 - batch 1: https://claude.ai/artifact/VrpbfX9muKFJGvVvUSVnV8 (59)
@@ -26,3 +29,4 @@ Total: 780 questions across 9 batches.
 - batch 7: https://claude.ai/artifact/WXX8NZbSjD83kv4kiuuL9i (127)
 - batch 8: https://claude.ai/artifact/88sBS68UYjAFJHfn31XxXn (78)
 - batch 9: https://claude.ai/artifact/NjwNvrNWCgJtmbAWS4ex24 (94)
+- batch 10: https://claude.ai/artifact/DCEgkieSJHfgXPfKjyQDAL (108)
