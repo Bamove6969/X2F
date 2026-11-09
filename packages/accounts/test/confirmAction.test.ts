@@ -13,6 +13,13 @@ describe('describeAction', () => {
     [{ kind: 'set-password' }, 'set a new password'],
     [{ kind: 'new-recovery-codes' }, 'make new recovery codes'],
     [{ kind: 'add-device-key', signPublicHash: 'cd34' }, 'add a trade signing key'],
+    [{ kind: 'team-roles', memberId: 'm1', roles: 'offers,trades' }, "change a team member's roles to Offers and Trades"],
+    // Owner p4-8: the hold rights by name.
+    [{ kind: 'team-roles', memberId: 'm1', roles: 'trades,hold-see,hold-end' }, "change a team member's roles to Trades, See waiting changes and End a hold"],
+    [{ kind: 'team-invite', name: 'desk_ana', roles: 'hold-cancel' }, 'invite desk_ana as a team member (Untick or cancel waiting changes)'],
+    // Job 1c (J-10): the granular team boxes.
+    [{ kind: 'team-invite-abilities', name: 'Ann01', abilities: 'offers-see' }, 'invite Ann01 as a team member (1 ability)'],
+    [{ kind: 'team-abilities', memberId: 'm1', abilities: 'offers-see,offers-pause,notes-view' }, "change a team member's abilities (3 abilities)"],
   ])('%j', (a, expected) => {
     expect(describeAction(a)).toBe(expected);
   });

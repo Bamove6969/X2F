@@ -423,14 +423,14 @@ describe('who has a session length', () => {
     expect(errorOf(await b.post('/v1/account/session/extend', {}))).toBe('recovery-session');
   });
 
-  async function member(roles: string[] = ['trades']) {
+  async function member(abilities: string[] = ['trades-see-active']) {
     const { id: teamId } = await trader();
     const loginId = await seedAccount(deps, { loginName: `mlen${++n}x`, displayName: `m-len-${n}`, kind: 'member' });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
-      [teamId, `Member${n}`, `member${n}`, roles, now, loginId],
+      [teamId, `Member${n}`, `member${n}`, abilities, now, loginId],
     );
     return { teamId, loginId, m: await loggedIn(loginId) };
   }
@@ -551,9 +551,9 @@ describe('the idle reminder (owner, Q75): a reminder in personal settings, never
     const loginId = await seedAccount(deps, { loginName: `midle${++n}x`, displayName: `m-idle-${n}`, kind: 'member' });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
-      [teamId, `Member${n}`, `member${n}`, ['offers'], now, loginId],
+      [teamId, `Member${n}`, `member${n}`, ['offers-see'], now, loginId],
     );
     const m = await loggedIn(loginId);
     expect((await setReminder(m, 60)).statusCode).toBe(200);

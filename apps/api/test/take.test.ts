@@ -515,6 +515,19 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     await taken(buyer, offer, body(buyer, tenth));
   });
 
+  it('a poster in a recovery-code hold starts no new trade: its offer is read under the account lock and hidden (404; lead hold v3 review, minor)', async () => {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const buyer = await person();
+    await deps.db.query(
+      `insert into account_holds (account_id, started_at, hold_until, reason, started_methods) values ($1, $2, $3, 'recovery-code', '{}')`,
+      [seller.id, deps.clock(), new Date(deps.clock().getTime() + 86_400_000)],
+    );
+    expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 404, error: 'not-found' });
+    await deps.db.query('delete from account_holds where account_id = $1', [seller.id]);
+    await taken(buyer, offer, body(buyer, tenth));
+  });
+
   it("a Starter poster's open-trade count holds under a race, and the taker learns nothing of it (offer-busy, review M6)", async () => {
     // Probabilistic on its own (review M2): released together, the racers reach the count read at
     // slightly different times. Three rounds make a missing lock show; the next test is the

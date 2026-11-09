@@ -8,6 +8,7 @@ import { ApiError } from '../src/errors.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
+import { rolesToAbilities } from '../src/team/abilities.js';
 
 const T0 = new Date('2026-10-29T15:30:00Z');
 const SECRET = 'the starter limit stopped my trade with zebra-quokka-71';
@@ -247,9 +248,9 @@ describe('POST /v1/feedback/form', () => {
       const loginId = await seedAccount(deps, { loginName: `fbmember${i}x`, displayName: `fb-m-${i}`, kind: 'member' });
       const name = `FbMember${i}`;
       await deps.db.query(
-        `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+        `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
          values ($1, $2, $3, $4, $5, $6, $5, $5)`,
-        [teamId, name, name.toLowerCase(), ['offers'], deps.clock(), loginId],
+        [teamId, name, name.toLowerCase(), rolesToAbilities(['offers']), deps.clock(), loginId],
       );
       const b = new Browser(app);
       expect((await b.post('/t/login', { accountId: loginId })).statusCode).toBe(200);

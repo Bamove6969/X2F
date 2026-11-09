@@ -18,11 +18,12 @@
  * one; S-019 says long or about 5 words). The type-back works for either.
  */
 import { useState } from 'react';
-import { addWebAuthnKey, normalizeRecoveryCode, withConfirm, type PgpChallenge } from '@x2f/auth-client';
+import { addWebAuthnKey, isStaged, normalizeRecoveryCode, withConfirm, type PgpChallenge } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { heldNote, refusalText } from '../auth/refusals.js';
+import { refusalText } from '../auth/refusals.js';
+import { HOLD_COPY } from '../settings/holdCopy.js';
 import { SetupFrame, SetupIntro, radioProps, useSetup, type BackupChoice } from './kit.js';
 import { errorCode, setupError } from './register.js';
 
@@ -151,7 +152,7 @@ export function RecoveryCodeStep({ prove, onDone }: { prove: Prove; onDone: () =
   const primary = usePrimaryVariant();
   const [codes, setCodes] = useState<string[] | null>(null);
   const [asked, setAsked] = useState(0);
-  // Plan 2 Task 17: codes made from a login with one way of proving it's you work once the hold ends.
+  // Hold model v3: codes made by a weak login are a staged change (HOLD_COPY.staged) until the hold ends.
   const [held, setHeld] = useState<string | null>(null);
   const [written, setWritten] = useState(false);
   const [typed, setTyped] = useState('');
@@ -165,7 +166,8 @@ export function RecoveryCodeStep({ prove, onDone }: { prove: Prove; onDone: () =
       const result = await withConfirm({ kind: 'new-recovery-codes' }, (t) => authApi.newRecoveryCodes(t !== undefined ? { confirmToken: t } : {}), prove);
       setCodes(result.codes);
       setAsked(pickIndex(result.codes.length));
-      setHeld(result.status === 'held' && result.holdUntil !== undefined ? heldNote(result.holdUntil) : null);
+      // Hold model v3 (team-perms-port, batch 4): a weak login's codes are a staged draft; the hold copy says so.
+      setHeld(isStaged(result) ? HOLD_COPY.staged : null);
     } catch (e) {
       if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not make recovery codes. Try again.'));
     } finally {

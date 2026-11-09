@@ -1,5 +1,15 @@
 /**
- * Recovery codes, the backup login and its 24-hour hold (Task 9, P2-I1).
+ * The recovery code, the backup login and its 24-hour hold (Task 9, P2-I1; hold model v3, owner
+ * 1-2 Nov 2026, see hold.ts).
+ *
+ * - Hold model v3: ONE 16-character code (`RECOVERY_CODE_COUNT`). A recovery-code login logs
+ *   everyone on the account out, holds the account 24 h (reason `recovery-code`), holds its open
+ *   trades (trades/held.ts) and keeps the waiting changes (owner G32: they still wait their 24 h and
+ *   the recovery session may cancel them), all in the login's transaction; the code
+ *   used is replaced there by a new one, sealed in `recovery_code_reveals` until a full session of
+ *   the account owner opened after it shows it once (`POST /v1/account/recovery-code/reveal`;
+ *   `GET /v1/account` `recoveryCodeToShow` is the reminder). An authenticator code alone is no
+ *   backup login any more (owner: TOTP-only login is not allowed): 403 `method-not-allowed`.
  *
  * - Recovery codes come only from `newRecoveryCode()` (80 bits from `getRandomValues`, bias-free)
  *   and are stored only as `recoveryCodeHash`: HMAC-SHA-256 under the current `X2F_RECOVERY_CODE_KEYS`
@@ -8,8 +18,8 @@
  *   working, one use per code, until used up or regenerated.
  * - The backup login is a recovery code only (design build gaps Job 1, board Login-Backup: "Your
  *   recovery code is your only backup"; owner G32: the recovery code is the emergency way in). An
- *   authenticator (TOTP) code is no longer a backup way in: `kind: 'totp'` is 400 `bad-request`
- *   before any lookup. TOTP stays a normal login step (password + authenticator code, login.ts).
+ *   authenticator (TOTP) code is no longer a backup way in: `kind: 'totp'` is 403
+ *   `method-not-allowed` before any lookup (hold model v3). TOTP stays a normal login step (password + authenticator code, login.ts).
  * - A backup login opens a `recovery` session, never a full one, held for 24 hours (a recovery
  *   code alone is one weak way; owner 2026-10-29): `requireSession` refuses it with 403
  *   `recovery-hold` on every route that does not set `allowHeld`, so it cannot add a primary method
@@ -31,13 +41,16 @@ import { loginNameLookup, loginTagMatch, retagLoginName } from '../accounts.js';
 import { assertNotDisabled, openSession, requireSession } from './sessions.js';
 import { throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
 import {
-  endHoldOfSession, gateChange, heldReply, holdInTx, lockAccount, pushHoldStarted, requireLiveSessionInTx, requireNotHeld, startHold, weakOf, weakRefusal, withTx,
+  endHoldOfSession, gateChange, stagedReply, holdInTx, lockAccount, requireLiveSessionInTx, requireNotHeld, settleOf, startHold, weakOf, weakRefusal, withTx,
 } from './hold.js';
+import { totpBox } from './totp.js';
+import { holdTrades, syncHeldTrades } from '../trades/held.js';
 import { loginStrength, waits } from './strength.js';
 import type { Queryable } from '../db/pool.js';
 
 export const RECOVERY_HOLD_MS = 24 * 3_600_000;
-export const RECOVERY_CODE_COUNT = 10;
+/** Hold model v3 (owner 2 Nov 2026): one code, required at sign-up, replaced after use. */
+export const RECOVERY_CODE_COUNT = 1;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A pre-FU-C code's stored form (`key_id` null): plain SHA-256 of the normalized code. */
@@ -80,9 +93,9 @@ function strings<K extends string>(body: unknown, keys: readonly K[]): Record<K,
 }
 
 /**
- * 10 new codes replacing every earlier one (used or not), in one transaction. A waiting login's new
- * codes start the hold (Task 17): they are shown now and work once the hold ends by time; until
- * then the earlier codes stay.
+ * A new code (`RECOVERY_CODE_COUNT`, one) replacing every earlier one (used or not), in one
+ * transaction. A waiting login's new code is staged (hold model v3): it is shown now and works 24 h
+ * after it is submitted; until then the earlier code stays.
  */
 async function newCodes(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
@@ -93,7 +106,7 @@ async function newCodes(req: FastifyRequest, reply: FastifyReply) {
   const keyId = deps.config.recoveryCodeKeys.current;
   const hashes = list.map((c) => recoveryCodeHash(deps.config, keyId, req.auth.accountId, normalized(c)));
   const client = await deps.db.connect();
-  let held: { holdUntil: Date } | null = null;
+  let held: { changeId: string } | null = null;
   try {
     await client.query('begin');
     try {
@@ -108,24 +121,25 @@ async function newCodes(req: FastifyRequest, reply: FastifyReply) {
     client.release();
   }
   if (held !== null) {
-    pushHoldStarted(req, req.auth.accountId);
-    return reply.code(202).send({ ...heldReply(held), codes: list });
+    return reply.code(202).send({ ...stagedReply(held), codes: list });
   }
   return { codes: list };
 }
 
 /** The write of new recovery codes (the route's, or a pending one when the hold ends by time). */
-export async function applyRecoveryCodes(db: Queryable, accountId: string, keyId: number, hashes: Buffer[], now: Date): Promise<void> {
+export async function applyRecoveryCodes(db: Queryable, accountId: string, keyId: number, hashes: Buffer[], now: Date, o: { alert: boolean } = { alert: true }): Promise<void> {
   await db.query('delete from recovery_codes where account_id = $1', [accountId]);
   await db.query('insert into recovery_codes (account_id, code_hash, key_id) select $1, unnest($2::bytea[]), $3', [accountId, hashes, keyId]);
-  await addAlert(db, accountId, 'login-method-added', { method: 'recovery-codes' }, now);
+  // A code set by the owner (not the one that replaced a used code) also ends a code still waiting to be shown.
+  if (o.alert) await db.query('delete from recovery_code_reveals where account_id = $1', [accountId]);
+  if (o.alert) await addAlert(db, accountId, 'login-method-added', { method: 'recovery-codes' }, now);
 }
 
 type Who = { id: string } | { nameTag: string };
 
 /**
- * `POST /v1/login/backup { loginName, kind: 'recovery-code', code, deviceLabel }`. Any other `kind`
- * (`totp` included) is 400 `bad-request` before any lookup. Unknown login names, accounts of other
+ * `POST /v1/login/backup { loginName, kind: 'recovery-code', code, deviceLabel }`. `kind: 'totp'` is
+ * 403 `method-not-allowed` and any other `kind` 400 `bad-request`, before any lookup. Unknown login names, accounts of other
  * kinds (R2) and accounts without recovery codes take the same path and fail the same way: 401
  * `credentials-invalid`. A disabled account is named only after a correct code, and its code stays
  * unused.
@@ -135,7 +149,9 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
   ensureDeviceCookie(req, reply);
   req.server.budgets.start.take();
   const { loginName, kind, code, deviceLabel } = strings(req.body, ['loginName', 'kind', 'code', 'deviceLabel'] as const);
-  if (kind !== 'recovery-code') throw new ApiError(400, 'bad-request');
+  if (kind !== 'totp' && kind !== 'recovery-code') throw new ApiError(400, 'bad-request');
+  // Hold model v3 (owner, 2 Nov 2026): an authenticator code alone never logs in.
+  if (kind === 'totp') throw new ApiError(403, 'method-not-allowed');
   const name = loginNameLookup(deps.config, loginName);
   // Always one lookup under every key of the ring (FU-D): a malformed name's tags match no account (I-1).
   const found = (
@@ -153,59 +169,135 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
     throw new ApiError(401, 'credentials-invalid');
   };
 
-  const key = await throttleKey(deps, req, 'recovery-code', who);
-  await throttleCheck(deps, key);
-  const normalized = normalizeRecoveryCode(code.slice(0, 64));
-  // Always one lookup with the same hashing work; a malformed code or a missing account simply
-  // matches nothing. A row matches only under its own scheme: its key's HMAC, or SHA-256 if legacy.
-  const { ids, hashes } = candidates(deps.config, accountId ?? '', normalized ?? '');
-  const { rows } = await deps.db.query<{ id: string }>(
-    `select id from recovery_codes
-      where account_id = $1 and used_at is null
-        and (coalesce(key_id, 0), code_hash) in (select * from unnest($2::int[], $3::bytea[]))`,
-    [accountId, ids, hashes],
-  );
-  const codeId = rows[0]?.id;
-  if (accountId === null || normalized === null || codeId === undefined) return refuse(key);
-  await assertNotDisabled(deps.db, accountId);
-  const used = await deps.db.query('update recovery_codes set used_at = $2 where id = $1 and used_at is null', [codeId, deps.clock()]);
-  if ((used.rowCount ?? 0) === 0) return refuse(key);
-  await throttleReset(deps, key);
-  await retagLoginName(deps, found!, name.candidates.current);
-  // Task 17 (owner, 2026-10-29): a recovery code alone is one weak way: the session is held, and
-  // the account's hold starts with it.
-  const holdUntil = new Date(deps.clock().getTime() + RECOVERY_HOLD_MS);
-  await backupSession(req, reply, accountId, deviceLabel, holdUntil);
-  return { status: 'ok' as const, level: 'recovery' as const, holdUntil: holdUntil.toISOString() };
+  if (kind === 'recovery-code') {
+    const key = await throttleKey(deps, req, 'recovery-code', who);
+    await throttleCheck(deps, key);
+    const normalized = normalizeRecoveryCode(code.slice(0, 64));
+    // Always one lookup with the same hashing work; a malformed code or a missing account simply
+    // matches nothing. A row matches only under its own scheme: its key's HMAC, or SHA-256 if legacy.
+    const { ids, hashes } = candidates(deps.config, accountId ?? '', normalized ?? '');
+    const { rows } = await deps.db.query<{ id: string }>(
+      `select id from recovery_codes
+        where account_id = $1 and used_at is null
+          and (coalesce(key_id, 0), code_hash) in (select * from unnest($2::int[], $3::bytea[]))`,
+      [accountId, ids, hashes],
+    );
+    const codeId = rows[0]?.id;
+    if (accountId === null || normalized === null || codeId === undefined) return refuse(key);
+    await assertNotDisabled(deps.db, accountId);
+    // Hold model v3: the account's 24-hour hold starts with the session (`backupSession`). The code
+    // is spent in that same transaction, so a failure there leaves the account's one code unused.
+    const holdUntil = new Date(deps.clock().getTime() + RECOVERY_HOLD_MS);
+    if (!(await backupSession(req, reply, accountId, codeId, deviceLabel, holdUntil))) return refuse(key);
+    await throttleReset(deps, key);
+    await retagLoginName(deps, found!, name.candidates.current);
+    return { status: 'ok' as const, level: 'recovery' as const, holdUntil: holdUntil.toISOString() };
+  }
+  throw new ApiError(400, 'bad-request');
 }
 
 /**
- * A backup login's held recovery session and the account's hold (Task 17, reason
- * `weak-backup-login`), in one transaction: neither exists without the other. `openSession`
- * writes the `recovery-login` alert { method, holdUntil }.
+ * A recovery-code login (hold model v3), in one transaction with the account locked: the code is
+ * spent (false when a parallel use spent it first: nothing else happens); a hold whose time is up
+ * settles first; every session of the account (the owner's and the team members') is
+ * logged out (alert `sessions-ended` `{ count, reason: 'recovery-code' }`) and every open login
+ * approval expires; the drafts die with their sessions, the waiting (submitted) changes keep their
+ * date (owner G32, 7 Nov: a recovery code is only a way in; it overrides neither the password nor
+ * the 24-hour wait of password-only changes; the recovery session may cancel them); the held recovery
+ * session opens (`openSession` writes alert `recovery-login`); the account's hold starts (reason
+ * `recovery-code`) or a running one extends; its open trades are held; the code used is replaced by
+ * a new one (`renewRecoveryCode`). After the commit the ended sessions' streams close and the held
+ * trades are paused (`syncHeldTrades`).
  */
-async function backupSession(
-  req: FastifyRequest,
-  reply: FastifyReply,
-  accountId: string,
-  deviceLabel: string,
-  holdUntil: Date,
-): Promise<void> {
-  const method = 'recovery-code';
+async function backupSession(req: FastifyRequest, reply: FastifyReply, accountId: string, codeId: string, deviceLabel: string, holdUntil: Date): Promise<boolean> {
   const deps = req.server.deps;
   const now = deps.clock();
   const opened = await withTx(deps.db, async (db) => {
     await lockAccount(db, accountId);
-    // A hold whose time is up settles first (its pending change may end sessions); then the
-    // session opens and this hold starts, or a running one extends.
-    await holdInTx(db, { config: deps.config, events: req.server.events }, accountId, now);
+    // The code is spent here, under the account lock: of two parallel uses only one finds it unused.
+    const used = await db.query('update recovery_codes set used_at = $2 where id = $1 and used_at is null', [codeId, now]);
+    if ((used.rowCount ?? 0) === 0) return null;
+    await holdInTx(db, settleOf(req), accountId, now);
+    const ended = await db.query<{ id: string }>('update sessions set revoked_at = $2 where account_id = $1 and revoked_at is null returning id', [accountId, now]);
+    await db.query(
+      `update login_approvals set outcome = 'expired', decided_at = coalesce(decided_at, $2)
+        where account_id = $1 and (outcome is null or (outcome = 'approved' and used_at is null))`,
+      [accountId, now],
+    );
+    if (ended.rows.length > 0) await addAlert(db, accountId, 'sessions-ended', { count: ended.rows.length, reason: 'recovery-code' }, now);
+    // Lead hold v3 review, Critical 1: device trust is a cookie a thief can copy (as at the
+    // owner's proof, hold.ts): after a recovery-code login every browser needs an approval again.
+    await db.query('delete from trusted_devices where account_id = $1', [accountId]);
     const s = await openSession(db, deps, req, reply, {
-      accountId, level: 'recovery', deviceLabel, method, firstSession: false, holdUntil, strength: loginStrength([method]),
+      accountId, level: 'recovery', deviceLabel, method: 'recovery-code', firstSession: false, holdUntil, strength: loginStrength(['recovery-code']),
     });
-    await startHold(db, accountId, now, { reason: 'weak-backup-login', startedBy: s.sessionId });
+    await startHold(db, accountId, now, { reason: 'recovery-code', startedBy: s.sessionId });
+    await holdTrades(db, accountId, now);
+    await renewRecoveryCode(db, deps.config, accountId, now);
     return s;
   });
+  if (opened === null) return false;
   opened.after();
+  req.server.events.closeAccount(accountId, opened.sessionId);
+  await syncHeldTrades({ db: deps.db, clock: deps.clock, publish: req.server.tradePublish }, accountId);
+  return true;
+}
+
+const revealContext = (accountId: string) => `x2f/recovery-code-reveal/${accountId}`;
+
+/**
+ * Inside the recovery-code login's transaction: the account's one code is replaced by a new one
+ * (its hash under the current key), and the new code is sealed for the owner's next login to show
+ * once (`recovery_code_reveals`; sealed by the TOTP key store under its own context). Alert
+ * `recovery-code-renewed`.
+ */
+async function renewRecoveryCode(db: Queryable, config: Config, accountId: string, now: Date): Promise<void> {
+  const code = newRecoveryCode();
+  const keyId = config.recoveryCodeKeys.current;
+  await applyRecoveryCodes(db, accountId, keyId, [recoveryCodeHash(config, keyId, accountId, normalized(code))], now, { alert: false });
+  const sealed = totpBox(config).seal(Buffer.from(code, 'utf8'), revealContext(accountId));
+  await db.query(
+    `insert into recovery_code_reveals (account_id, code_enc, created_at) values ($1, $2, $3)
+     on conflict (account_id) do update set code_enc = excluded.code_enc, created_at = excluded.created_at`,
+    [accountId, sealed, now],
+  );
+  await addAlert(db, accountId, 'recovery-code-renewed', {}, now);
+}
+
+/**
+ * True when a replaced recovery code waits to be shown and this session may show it (lead hold v3
+ * review, Critical 1): the account owner's session, opened with or after the code was replaced,
+ * and either a strong full login or the recovery session itself once its 24 hours are over. A
+ * username-and-password session never may: a password thief on a once-trusted device must not
+ * read the new code.
+ */
+export async function revealDue(db: Queryable, accountId: string, sessionId: string, now: Date): Promise<boolean> {
+  const { rows } = await db.query(
+    `select 1 from recovery_code_reveals r join sessions s on s.account_id = r.account_id
+      where r.account_id = $1 and s.id = $2 and s.member_id is null and s.revoked_at is null and s.created_at >= r.created_at
+        and ((s.level = 'full' and s.strength = 'strong') or (s.level = 'recovery' and s.hold_until is not null and s.hold_until <= $3))`,
+    [accountId, sessionId, now],
+  );
+  return rows.length > 0;
+}
+
+/**
+ * `POST /v1/account/recovery-code/reveal` (a session `revealDue` allows: a strong full login or the
+ * waited recovery session, opened with or after the code
+ * was replaced): `{ code }`, once; the sealed copy is deleted in the same transaction. 404 when
+ * there is none for this session. The session must still be live under the account lock.
+ */
+async function revealCode(req: FastifyRequest) {
+  const deps = req.server.deps;
+  const now = deps.clock();
+  const { accountId } = req.auth;
+  const sealed = await withTx(deps.db, async (db) => {
+    await requireLiveSessionInTx(db, req.auth, now);
+    if (!(await revealDue(db, accountId, req.auth.sessionId, now))) throw new ApiError(404, 'not-found');
+    const { rows } = await db.query<{ code_enc: Buffer }>('delete from recovery_code_reveals where account_id = $1 returning code_enc', [accountId]);
+    return rows[0]!.code_enc;
+  });
+  return { code: Buffer.from(totpBox(deps.config).open(sealed, revealContext(accountId))).toString('utf8') };
 }
 
 /**
@@ -250,5 +342,7 @@ export function recoveryRoutes(app: FastifyInstance): void {
     newCodes,
   );
   app.post('/v1/login/backup', backupLogin);
+  // A recovery session may reveal once its hold is over (a held one is 403 recovery-hold).
+  app.post('/v1/account/recovery-code/reveal', { preHandler: requireSession({ allowRecovery: true }) }, revealCode);
   app.delete('/v1/account/recovery-sessions/:id', { preHandler: requireSession() }, cancelRecovery);
 }

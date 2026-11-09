@@ -79,7 +79,7 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
   {
     table: 'team_members', accountColumn: 'account_id', ops: ALL,
     changes: [
-      'id', 'account_id', 'display_name', 'display_key', 'roles', 'invite_hash', 'invite_expires_at', 'member_account_id',
+      'id', 'account_id', 'display_name', 'display_key', 'abilities', 'invite_hash', 'invite_expires_at', 'member_account_id',
       'joined_at', 'created_at', 'removed_at',
     ],
     bookkeeping: {},
@@ -156,6 +156,12 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'staff_invites.account_id': 'staff records',
   'key_taps.account_id': 'a staff security-key tap',
   // Batch 4 (lead default, owner p11-119): silent.
+  // Hold model v3 and team abilities (team-perms-port; lead default pending the owner, p11-119 extension): silent.
+  'hold_changes.account_id': 'a draft or waiting change (hold v3); the change notifies when it applies, through the table it writes',
+  'held_trades.account_id': 'the trades a hold pauses, kept by the hold job; the hold itself notifies (account_holds)',
+  'recovery_code_reveals.account_id': 'a one-time reveal of the new recovery code after a recovery-code login (a login step)',
+  'trader_notes.account_id': "the account's own private notes on traders (staff-like records of its own)",
+  'trader_notes.about_account_id': 'the trader a note is about: never told (private notes)',
   'account_action_minutes.account_id': 'pay and release timings kept by finished trades (the Fast badge), not the account',
   'closed_account_keys.account_id': "a closed account's identifier tags kept for the ban scope, written by the close itself (closed_at notifies)",
   'feedback_form.account_id': 'feedback sent to X2F',

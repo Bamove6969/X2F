@@ -62,7 +62,7 @@ describe('F1: the request budgets are global (Important; open until the Plan 6 p
     })).statusCode).toBe(201);
 
     const b = new Browser(app);
-    const start = await b.post('/v1/login/pgp/start', { key: k.publicKey });
+    const start = await b.post('/v1/login/pgp/start', { key: k.publicKey, loginName: 'busy.fin.login' });
     expect(start.statusCode).toBe(200);
     // Someone else empties the start budget.
     for (let i = 0; ; i++) {
@@ -80,7 +80,7 @@ describe('F1: the request budgets are global (Important; open until the Plan 6 p
     setNow(new Date('2026-10-17T16:00:00Z'));
     const k = await genKey();
     const b = new Browser(app);
-    const start = await b.post('/v1/login/pgp/start', { key: k.publicKey }); // a decoy: still an open challenge of this device
+    const start = await b.post('/v1/login/pgp/start', { key: k.publicKey, loginName: 'nobody-here0' }); // a decoy: still an open challenge of this device
     expect(start.statusCode).toBe(200);
     for (let i = 0; ; i++) {
       const r = await app.inject({ method: 'POST', url: '/v1/login/webauthn/start', headers: { origin: ORIGIN }, payload: { loginName: `flood${i}yy` } });
@@ -104,7 +104,7 @@ describe('F1: the request budgets are global (Important; open until the Plan 6 p
     setNow(new Date('2026-10-17T17:00:00Z'));
     const k = await genKey();
     const b = new Browser(app);
-    const start = await b.post('/v1/login/pgp/start', { key: k.publicKey });
+    const start = await b.post('/v1/login/pgp/start', { key: k.publicKey, loginName: 'nobody-here0' });
     for (let i = 0; ; i++) {
       const r = await app.inject({ method: 'POST', url: '/v1/login/webauthn/start', headers: { origin: ORIGIN }, payload: { loginName: `flood${i}zz` } });
       if (r.statusCode === 503) break;

@@ -65,3 +65,17 @@ describe('parseConfirmAction: add-wallets (owner, 2026-10-24)', () => {
     refused({ kind: 'add-wallets', addressesHash: HASH, addressEnds: 1 });
   });
 });
+
+describe('parseConfirmAction: team roles (owner p4-8 adds the hold rights)', () => {
+  const ID = '11111111-1111-4111-8111-111111111111';
+  it('accepts any non-empty set of roles in the fixed order', () => {
+    for (const roles of ['offers', 'trades', 'offers,trades', 'hold-see', 'trades,hold-cancel', 'offers,trades,hold-see,hold-cancel,hold-end']) {
+      expect(parseConfirmAction({ kind: 'team-roles', memberId: ID, roles })).toMatchObject({ roles });
+      expect(parseConfirmAction({ kind: 'team-invite', name: 'desk_ana', roles })).toMatchObject({ roles });
+    }
+  });
+
+  it('refuses unknown roles, repeats, the wrong order and an empty list', () => {
+    for (const roles of ['', 'admin', 'trades,offers', 'offers,offers', 'hold-end,hold-see', 'offers,', ',offers']) refused({ kind: 'team-roles', memberId: ID, roles });
+  });
+});

@@ -234,10 +234,10 @@ export async function lockNames(db: Queryable): Promise<void> {
  * equals it (review I1 A), and no other account holds its tag under any key of the ring. With
  * `displayKey`, also that no account's login tag is that display name's (review I1 B: a display
  * name may never be someone's private login name). A login name waiting out an account's 24-hour
- * hold (`account_holds.pending_change` of kind `login-name`, its tag under its key id) counts as
- * taken in both namespaces too (review round 2 N-M1), and so does a name on the ban list (owner 2
- * Nov 2026, bans.ts: a banned display or login name, in either namespace). One query; the tags
- * are computed by the caller.
+ * hold (`account_holds.pending_change`) or among the changes waiting their 24 h (`hold_changes`, hold
+ * model v3), of kind `login-name`, its tag under its key id, counts as taken in both namespaces too
+ * (review round 2 N-M1), and so does a name on the ban list (owner 2 Nov 2026, bans.ts: a banned
+ * display or login name, in either namespace). One query; the tags are computed by the caller.
  */
 /** Every banned name is out of both namespaces (owner 2 Nov 2026, the ban list; bans.ts). */
 const BANNED_NAMES = ['display-name', 'login-name'] as const;
@@ -249,9 +249,10 @@ async function namesTaken(
 ): Promise<boolean> {
   if (o.lock) await lockNames(db);
   const pending = (ids: number) =>
-    `exists (select 1 from account_holds h
-              where h.pending_change->>'kind' = 'login-name' and h.account_id is distinct from $4
-                and ((h.pending_change->>'keyId')::smallint, decode(h.pending_change->>'tag', 'base64'))
+    `exists (select 1 from (select account_id, pending_change as c from account_holds
+                            union all select account_id, change from hold_changes) h
+              where h.c->>'kind' = 'login-name' and h.account_id is distinct from $4
+                and ((h.c->>'keyId')::smallint, decode(h.c->>'tag', 'base64'))
                     in (select * from unnest($${ids}::smallint[], $${ids + 1}::bytea[])))`;
   const { rows } = await db.query<{ taken: boolean }>(
     `select exists (select 1 from accounts where display_key = $1)

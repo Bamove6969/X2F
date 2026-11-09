@@ -218,8 +218,8 @@ describe('PUT /v1/account/type (switch to vendor)', () => {
     const loginId = await seedAccount(deps, { loginName: 'vendormember1', displayName: 'vm-1-placeholder', kind: 'member' });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
-       values ($1, 'Vm1', 'vm1', '{offers}', $2, $3, $2, $2)`,
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, 'Vm1', 'vm1', '{offers-see}', $2, $3, $2, $2)`,
       [t.id, now, loginId],
     );
     const mb = new Browser(app);
@@ -255,7 +255,7 @@ describe('migration 198: existing accounts', () => {
       }
       if (o.team) {
         await deps.db.query(
-          `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, created_at) values ($1, 'Mx', 'mx', '{offers}', $2, $2)`,
+          `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mx', 'mx', '{offers-see}', $2, $2)`,
           [id, now],
         );
       }

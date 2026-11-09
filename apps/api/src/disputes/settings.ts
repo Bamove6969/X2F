@@ -1,5 +1,6 @@
 import type { Queryable } from '../db/pool.js';
-import { SETTINGS_DEFAULTS, getSettings } from '../staff/settings.js';
+import { getSettings } from '../staff/settings.js';
+import { SETTINGS_DEFAULTS } from '../staff/settingsDefaults.js';
 
 /**
  * The owner's settings a dispute reads (Plan 4 Task 8's `settings` row): the large-trade limit

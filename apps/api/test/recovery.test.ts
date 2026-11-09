@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import { normalizeRecoveryCode } from '@x2f/accounts';
+import { newRecoveryCode, normalizeRecoveryCode } from '@x2f/accounts';
 import type { FastifyInstance } from 'fastify';
 import { Secret } from 'otpauth';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,7 +14,7 @@ import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { genKey, type Pair } from './helpers/pgpKeys.js';
 import { spySql } from './helpers/sqlSpy.js';
-import { Browser, addTestLogin, codeAt } from './helpers/totp.js';
+import { Browser, STEP_MS, addTestLogin, codeAt, wrongCodeAt } from './helpers/totp.js';
 
 const T0 = new Date('2026-10-17T06:00:00Z'); // a step boundary, early in the UTC day
 const HOUR = 3600_000;
@@ -140,11 +140,10 @@ async function racing<T>(prefix: string, n: number, run: () => Promise<T>): Prom
 }
 
 describe('POST /v1/account/recovery-codes', () => {
-  it('returns 10 distinct codes in the trade-code format, stored only as hashes', async () => {
+  it('returns one code (hold model v3) in the trade-code format, stored only as its hash', async () => {
     const { id } = await account();
     const codes = await newCodes(await loggedIn(id));
-    expect(codes).toHaveLength(10);
-    expect(new Set(codes).size).toBe(10);
+    expect(codes).toHaveLength(1);
     for (const c of codes) expect(c).toMatch(CODE);
     const { rows } = await deps.db.query<{ code_hash: Buffer; key_id: number | null }>(
       'select code_hash, key_id from recovery_codes where account_id = $1', [id],
@@ -235,12 +234,14 @@ describe('recovery-code keys (FU-C, ASVS 2.6.2)', () => {
 });
 
 describe('backup login with a recovery code', () => {
-  // Plan 2 Task 17 (owner, 2026-10-29): a recovery code alone is one weak
-  // way, so it is now held for 24 hours like a TOTP backup login (it used to have no hold).
-  it('logs in once as a recovery session held 24 hours; regenerating invalidates the old set', async () => {
+  // Hold model v3 (owner 1-2 Nov 2026): the recovery-code login logs everyone out and holds the
+  // account 24 hours (holdV3.test.ts covers the rest of it).
+  it('logs in once as a recovery session held 24 hours and logs the account out; regenerating invalidates the old code', async () => {
     const { id, username } = await account();
     const owner = await loggedIn(id);
+    const [old] = await newCodes(owner);
     const codes = await newCodes(owner);
+    expect((await backup(new Browser(app), username, 'recovery-code', old!)).json()).toEqual({ error: 'credentials-invalid' });
 
     const b = new Browser(app);
     // Typed in lower case without dashes still works.
@@ -252,15 +253,11 @@ describe('backup login with a recovery code', () => {
     expect(row.level).toBe('recovery');
     expect(row.hold_until).toEqual(holdUntil);
     expect(await alerts(id, 'recovery-login')).toEqual([{ method: 'recovery-code', deviceLabel: 'Backup browser', holdUntil: holdUntil.toISOString() }]);
+    expect((await owner.get('/v1/account/me')).statusCode).toBe(401);
 
     const again = await backup(new Browser(app), username, 'recovery-code', codes[0]!);
     expect(again.statusCode).toBe(401);
     expect(again.json()).toEqual({ error: 'credentials-invalid' });
-
-    await endHold(id);
-    await newCodes(owner);
-    const old = await backup(new Browser(app), username, 'recovery-code', codes[1]!);
-    expect(old.json()).toEqual({ error: 'credentials-invalid' });
   });
 
   it('a recovery session is refused on full-only routes and cannot confirm', async () => {
@@ -315,10 +312,9 @@ describe('backup login with a recovery code', () => {
     }
     const { rows } = await deps.db.query('select used_at from recovery_codes where account_id = $1', [staffId]);
     expect(rows[0]!.used_at).toBeNull();
-    // An authenticator code is no backup for anyone: the same 400 for a staff name as for any name.
+    // An authenticator code alone is no backup login for anyone (hold model v3): the same answer for every name.
     for (const u of [staffName, username, 'nobody-at-all']) {
-      const res = await backup(new Browser(app), u, 'totp', '123456');
-      expect(res.json()).toEqual({ error: 'bad-request' });
+      expect((await backup(new Browser(app), u, 'totp', '123456')).json()).toEqual({ error: 'method-not-allowed' });
     }
   });
 
@@ -343,31 +339,23 @@ describe('backup login with a recovery code', () => {
   });
 });
 
-describe('an authenticator code is not a backup way in (design build gaps Job 1, board Login-Backup)', () => {
-  it('kind totp is refused before any lookup, even with a correct code: no session, no hold, nothing counted', async () => {
+describe('the recovery session and its hold (P2-I1)', () => {
+  it('an authenticator code alone is no backup login any more (hold model v3): 403 method-not-allowed, right code or wrong, nothing checked', async () => {
     const { id, username } = await account();
     const secret = await withTotp(id);
-    const b = new Browser(app);
-    const spy = spySql(deps.db);
-    let res: Awaited<ReturnType<typeof backup>>;
-    try {
-      res = await backup(b, username, 'totp', codeAt(secret, now));
-      // Only the site-wide maintenance gate reads (every request); nothing about any account.
-      expect(spy.sql().filter((s) => /accounts|totp|login_throttle|recovery_codes|sessions|account_holds/.test(s))).toEqual([]);
-    } finally {
-      spy.restore();
+    const verify = vi.spyOn(deps.db, 'query');
+    for (const code of [codeAt(secret, now), wrongCodeAt(secret, now)]) {
+      const b = new Browser(app);
+      const res = await backup(b, username, 'totp', code);
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ error: 'method-not-allowed' });
+      expect(b.cookies[SESSION_COOKIE]).toBeUndefined();
     }
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: 'bad-request' });
-    expect(b.cookies[SESSION_COOKIE]).toBeUndefined();
-    expect((await deps.db.query('select 1 from account_holds where account_id = $1', [id])).rows).toEqual([]);
-    expect((await deps.db.query("select 1 from login_throttle where key like 'totp:%' or key like 'backup-totp:%'")).rows).toEqual([]);
+    expect(verify.mock.calls.some(([q]) => String(q).includes('from totp'))).toBe(false);
+    verify.mockRestore();
     expect(await alerts(id, 'recovery-login')).toEqual([]);
-    // Only the backup offer went: password + authenticator code stays a login (totp.test.ts).
   });
-});
 
-describe('the held recovery session of a backup login (P2-I1, Task 17)', () => {
   it('opens a held recovery session that may add a key only after 24 hours', async () => {
     const { id, username } = await account();
     const codes = await newCodes(await loggedIn(id));
@@ -377,12 +365,6 @@ describe('the held recovery session of a backup login (P2-I1, Task 17)', () => {
     expect(res.statusCode).toBe(200);
     const holdUntil = new Date(start.getTime() + RECOVERY_HOLD_MS);
     expect(res.json()).toEqual({ status: 'ok', level: 'recovery', holdUntil: holdUntil.toISOString() });
-    const row = await sessionRow(b);
-    expect(row.level).toBe('recovery');
-    expect(row.hold_until).toEqual(holdUntil);
-    expect(await alerts(id, 'recovery-login')).toEqual([
-      { method: 'recovery-code', deviceLabel: 'Backup browser', holdUntil: holdUntil.toISOString() },
-    ]);
 
     setNow(new Date(holdUntil.getTime() - 1000)); // +23:59:59
     const early = await b.post('/v1/account/pgp/start', { publicKey: key.publicKey });
@@ -395,50 +377,28 @@ describe('the held recovery session of a backup login (P2-I1, Task 17)', () => {
     expect((await b.get('/t/held-ok')).statusCode).toBe(200);
     expect((await b.post('/v1/account/pgp/finish', { challengeId: '00000000-0000-0000-0000-000000000000', code: 'x' })).json())
       .toEqual({ error: 'recovery-hold', holdUntil: holdUntil.toISOString() });
+    for (const kind of ['passkey', 'security-key'] as const) {
+      const w = await b.post('/v1/account/webauthn/start', { kind });
+      expect(w.statusCode).toBe(403);
+      expect(w.json()).toEqual({ error: 'recovery-hold', holdUntil: holdUntil.toISOString() });
+    }
     setNow(holdUntil); // +24:00:00
     expect((await b.get('/t/recovery-ok')).statusCode).toBe(200);
     const later = await b.post('/v1/account/pgp/start', { publicKey: key.publicKey });
     expect(later.statusCode).toBe(200);
     expect(later.json()).toMatchObject({ challengeId: expect.any(String) });
+    for (const kind of ['passkey', 'security-key'] as const) {
+      const w = await b.post('/v1/account/webauthn/start', { kind });
+      expect(w.statusCode).toBe(200);
+      expect(w.json()).toMatchObject({ challengeId: expect.any(String), options: expect.any(Object) });
+    }
   });
 
-  it('the hold covers adding a passkey or security key too', async () => {
+  it('a full session of the account opened after it can cancel it; a stranger or the recovery session cannot', async () => {
     const { id, username } = await account();
     const codes = await newCodes(await loggedIn(id));
     const b = new Browser(app);
-    const start = now;
     expect((await backup(b, username, 'recovery-code', codes[0]!)).statusCode).toBe(200);
-    const holdUntil = new Date(start.getTime() + RECOVERY_HOLD_MS);
-
-    setNow(new Date(holdUntil.getTime() - 1000)); // +23:59:59
-    for (const kind of ['passkey', 'security-key'] as const) {
-      const early = await b.post('/v1/account/webauthn/start', { kind });
-      expect(early.statusCode).toBe(403);
-      expect(early.json()).toEqual({ error: 'recovery-hold', holdUntil: holdUntil.toISOString() });
-    }
-    setNow(holdUntil); // +24:00:00
-    for (const kind of ['passkey', 'security-key'] as const) {
-      const later = await b.post('/v1/account/webauthn/start', { kind });
-      expect(later.statusCode).toBe(200);
-      expect(later.json()).toMatchObject({ challengeId: expect.any(String), options: expect.any(Object) });
-    }
-  });
-
-  it('a recovery-code session is held too (Task 17)', async () => {
-    const { id, username } = await account();
-    const codes = await newCodes(await loggedIn(id));
-    const b = new Browser(app);
-    await backup(b, username, 'recovery-code', codes[0]!);
-    const res = await b.post('/v1/account/pgp/start', { publicKey: key.publicKey });
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toMatchObject({ error: 'recovery-hold' });
-  });
-
-  it('any full session of the account can end it', async () => {
-    const { id, username } = await account();
-    const codes = await newCodes(await loggedIn(id));
-    const b = new Browser(app);
-    await backup(b, username, 'recovery-code', codes[0]!);
     const { id: recoveryId } = await sessionRow(b);
 
     const stranger = await loggedIn((await account()).id);
@@ -447,6 +407,7 @@ describe('the held recovery session of a backup login (P2-I1, Task 17)', () => {
     // A recovery session cannot cancel itself or another (full sessions only).
     expect((await b.delete(`/v1/account/recovery-sessions/${recoveryId}`)).json()).toEqual({ error: 'recovery-session' });
 
+    // The recovery-code login logged every session out; a full one started after it (here directly) may cancel it.
     const owner = await loggedIn(id, false);
     const ok = await owner.delete(`/v1/account/recovery-sessions/${recoveryId}`);
     expect(ok.statusCode).toBe(200);
@@ -544,13 +505,14 @@ describe('I-1: backup login costs the same queries for a known and an unknown lo
     return JSON.stringify(sql);
   };
 
-  // A recovery code is the only backup way in (an authenticator code is refused before any lookup).
+  // An authenticator code alone is refused before any lookup (hold model v3), so only the recovery code is checked here.
   for (const kind of ['recovery-code'] as const) {
     it(`${kind}: with and without a device cookie, and on the miss that reaches the lock`, async () => {
       const { id, username } = await account();
-      await withTotp(id);
+      const secret = await withTotp(id);
       await newCodes(await loggedIn(id));
       const ghost = name('ghost');
+      void secret;
       const wrong = 'ABCD-EFGH-JKMN-PQRT';
       const method = kind;
       const browser = (withCookie: boolean) => {
@@ -588,16 +550,16 @@ describe('I-1: backup login costs the same queries for a known and an unknown lo
 
 describe('no patterns in recovery codes (R9)', () => {
   it('10,000 codes are distinct with an even spread at every position', async () => {
+    // Hold model v3: the route makes one code at a time, each from `newRecoveryCode` (checked once through it here).
     const { id } = await account();
-    const b = await loggedIn(id);
+    expect((await newCodes(await loggedIn(id)))[0]).toMatch(CODE);
     const all = new Set<string>();
     const counts = Array.from({ length: 16 }, () => new Array<number>(32).fill(0));
     const alphabet = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-    for (let i = 0; i < 1000; i++) {
-      for (const c of await newCodes(b)) {
-        all.add(c);
-        [...c.replaceAll('-', '')].forEach((ch, pos) => counts[pos]![alphabet.indexOf(ch)]!++);
-      }
+    for (let i = 0; i < 10_000; i++) {
+      const c = newRecoveryCode();
+      all.add(c);
+      [...c.replaceAll('-', '')].forEach((ch, pos) => counts[pos]![alphabet.indexOf(ch)]!++);
     }
     expect(all.size).toBe(10_000);
     for (const position of counts) {
@@ -606,5 +568,5 @@ describe('no patterns in recovery codes (R9)', () => {
       // 31 degrees of freedom; with the TOTP check, about one false alarm in 3,000 runs (R9).
       expect(chi).toBeLessThan(76);
     }
-  }, 120_000);
+  });
 });

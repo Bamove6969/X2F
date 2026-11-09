@@ -6,6 +6,7 @@ import { SESSION_COOKIE, STAFF_SESSION_COOKIE } from '../../src/auth/sessions.js
 import { buildStaffApi, type ModerationClient } from '../../src/staff/app.js';
 import type { PushTransport } from '../../src/push/send.js';
 import { NO_MODERATION } from '../../src/disputes/moderationClient.js';
+import type { TradePublisher } from '../../src/trades/store.js';
 import { seedAccount } from './accounts.js';
 import { testApp } from './app.js';
 import { captureLogs } from './logs.js';
@@ -19,6 +20,7 @@ export const MODERATION_STUB: ModerationClient = NO_MODERATION;
 export async function staffApps(
   overrides: Partial<Deps> = {},
   staffOptions: { pushTransport?: PushTransport; webRoot?: string } = {},
+  staffDeps: { tradePublish?: TradePublisher } = {},
 ): Promise<{
   app: FastifyInstance;
   trader: FastifyInstance;
@@ -31,7 +33,7 @@ export async function staffApps(
   const { stream, logs } = captureLogs();
   const { webRoot, ...options } = staffOptions;
   const app = await buildStaffApi(
-    { ...t.deps, staffOrigin: STAFF_ORIGIN, moderation: MODERATION_STUB, ...(webRoot !== undefined ? { staffWebRoot: webRoot } : {}) },
+    { ...t.deps, staffOrigin: STAFF_ORIGIN, moderation: MODERATION_STUB, ...(webRoot !== undefined ? { staffWebRoot: webRoot } : {}), ...staffDeps },
     { logStream: stream, ...options },
   );
   return {

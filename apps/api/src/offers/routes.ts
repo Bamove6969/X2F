@@ -4,10 +4,12 @@ import type { Deps } from '../app.js';
 import { requireInside } from '../auth/frontDoor.js';
 import { requireSession } from '../auth/sessions.js';
 import { holdRefusal, holdUntil, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
+import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import type { AuthContext } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
+import { assertMemberMay } from '../team/perms.js';
 import { getMethod, isAvailable } from '../methods/profiles.js';
 import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
@@ -104,7 +106,7 @@ export interface MyOffer {
    * the account's trading hold, a trade it has not rated yet (Plan 5 Task 3, P5-A4; review round 1
    * M3), or its method under legal review. Absent when the offer is listed or paused.
    */
-  hidden?: 'trading-paused' | 'trading-hold' | 'review-pending' | 'method-unavailable';
+  hidden?: 'trading-paused' | 'trading-hold' | 'recovery-hold' | 'review-pending' | 'method-unavailable';
   createdAt: string;
 }
 
@@ -201,6 +203,7 @@ export const MARKET_PRICED = `o.price_mode = 'market'`;
  */
 const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
+  and not ${recoveryHoldHidesSql('o.account_id')}
   and not coalesce((select f.trading_paused from site_flags f), true)`;
 
 /**
@@ -470,15 +473,19 @@ async function inTransaction<T>(db: Deps['db'], fn: (client: Queryable) => Promi
   }
 }
 
-// Posting, pausing, relisting and removing: the account owner, or a team member with Offers (Task 18).
-const requireTrader = requireSession({ kinds: ['trader'], member: 'offers' });
+// Posting: the account owner, or a team member with the Post a new offer box (Task 18, Job 1c).
+const requireTrader = requireSession({ kinds: ['trader'], member: 'offers-post' });
 /**
  * Turning offers off, and reading my own offers, work on a stale Terms version too (lead decision
  * 2026-10-29 on R10: shutting things off never waits for new Terms). Anything that puts an offer
  * live still needs the current Terms (`assertTermsCurrent`); removing one is shutting off too
- * (round-2 review m1, lead decision 2026-10-29). A team member with Offers may do these too (Task 18).
+ * (round-2 review m1, lead decision 2026-10-29). A team member may do these too with the box for
+ * each (Task 18, Job 1c): See offers reads, Pause or resume turns offers off and on, Delete an offer
+ * removes one (`PATCH` checks the exact box for the status asked).
  */
-const requireTraderStaleOk = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers' });
+const requireSeeOffers = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers-see' });
+const requirePauseOffers = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers-pause' });
+const requireSetStatus = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: ['offers-pause', 'offers-delete'] });
 
 /** 403 `terms-required` `{ version }`, as requireSession answers, for a trader on a stale Terms version. */
 async function assertTermsCurrent(deps: Deps, auth: { accountId: string; memberId: string | null }): Promise<void> {
@@ -573,19 +580,21 @@ export function offerRoutes(app: FastifyInstance): void {
       ],
       );
       // Task 18: a team member's post is in the account owner's audit log, in this transaction.
-      await auditMember(client, req.auth, { action: 'offer-posted', detail: { offerId: rows[0]!.id } }, now);
+      await auditMember(client, req.auth, { action: 'offer-posted', offerId: rows[0]!.id }, now);
       return rows[0]!.id;
     });
     return reply.code(201).send({ id });
   });
 
-  app.patch('/v1/offers/:id', { preHandler: requireTraderStaleOk }, async (req) => {
+  app.patch('/v1/offers/:id', { preHandler: requireSetStatus }, async (req) => {
     const deps = req.server.deps;
     const id = (req.params as { id: string }).id;
     const body = req.body;
     if (!isObject(body) || Object.keys(body).length !== 1) throw bad();
     const status = body.status;
     if (typeof status !== 'string' || !(STATUSES as readonly string[]).includes(status)) throw bad();
+    // Job 1c: removing needs Delete an offer; pausing and relisting need Pause or resume.
+    assertMemberMay(req.auth, status === 'removed' ? 'offers-delete' : 'offers-pause');
     // Pausing and removing work on stale Terms (R10 lead decisions 2026-10-29: shutting off never
     // waits for new Terms); relisting does not.
     if (status === 'live') await assertTermsCurrent(deps, req.auth!);
@@ -617,14 +626,14 @@ export function offerRoutes(app: FastifyInstance): void {
         if (!m) throw new ApiError(404, 'not-found');
         await assertMayPost(client, req.auth!, now, m.side, id);
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
-        await auditMember(client, req.auth, { action: 'offer-relisted', detail: { offerId: id } }, now);
+        await auditMember(client, req.auth, { action: 'offer-relisted', offerId: id }, now);
       });
     } else {
       // Pausing or removing: no guard but a live session (review round 5 M2), under the account lock.
       await inTransaction(deps.db, async (client) => {
         await lockAccountLive(client, req.auth!, now);
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
-        await auditMember(client, req.auth, { action: status === 'paused' ? 'offer-paused' : 'offer-removed', detail: { offerId: id } }, now);
+        await auditMember(client, req.auth, { action: status === 'paused' ? 'offer-paused' : 'offer-removed', offerId: id }, now);
       });
     }
     return { id, status };
@@ -699,7 +708,7 @@ export function offerRoutes(app: FastifyInstance): void {
   /**
    * Task 36, My offers: every live and paused offer of mine, newest first. Removed offers are gone.
    */
-  app.get('/v1/account/offers', { preHandler: requireTraderStaleOk }, async (req): Promise<MyOffer[]> => {
+  app.get('/v1/account/offers', { preHandler: requireSeeOffers }, async (req): Promise<MyOffer[]> => {
     const deps = req.server.deps;
     const accountId = req.auth!.accountId;
     const { rows } = await deps.db.query<OfferRow & { created_at: Date }>(
@@ -708,18 +717,23 @@ export function offerRoutes(app: FastifyInstance): void {
       [accountId],
     );
     // Why a live offer is not listed now (review M4), in LISTED's terms; no site_flags row is a stop.
-    const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean }>(
+    const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean; recovery: boolean }>(
       `select not coalesce((select f.trading_paused = false from site_flags f), false) as paused,
-              exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held`,
+              exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held,
+              ${recoveryHoldHidesSql('$1::uuid')} as recovery`,
       [accountId],
     );
+    // Hold model v3's recovery-code hold before main's pending review: the account-wide hold is the
+    // reason while it lasts (its sessions cannot rate a trade meanwhile anyway).
     const accountHidden = why[0]!.paused
       ? 'trading-paused'
       : why[0]!.held
         ? 'trading-hold'
-        : (await hasPendingReview(deps.db, accountId, deps.clock()))
-          ? 'review-pending'
-          : null;
+        : why[0]!.recovery
+          ? 'recovery-hold'
+          : (await hasPendingReview(deps.db, accountId, deps.clock()))
+            ? 'review-pending'
+            : null;
     return rows.map((r) => {
       const p = pricingOf(r);
       const rate = rateOf(r, deps.prices);
@@ -759,7 +773,7 @@ export function offerRoutes(app: FastifyInstance): void {
    * take of the account run one at a time), then site_flags `for share` (turning on only), then the
    * account's offer rows `for update`.
    */
-  app.post('/v1/account/offers/status', { preHandler: requireTraderStaleOk }, async (req) => {
+  app.post('/v1/account/offers/status', { preHandler: requirePauseOffers }, async (req) => {
     const deps = req.server.deps;
     const body = req.body;
     if (!isObject(body) || Object.keys(body).sort().join(',') !== 'ids,status') throw bad();
@@ -831,7 +845,7 @@ export function offerRoutes(app: FastifyInstance): void {
         ]);
         // Task 18: one audit row per offer a team member switched, in this transaction.
         for (const id of switched) {
-          await auditMember(client, req.auth!, { action: status === 'paused' ? 'offer-paused' : 'offer-relisted', detail: { offerId: id } }, now);
+          await auditMember(client, req.auth!, { action: status === 'paused' ? 'offer-paused' : 'offer-relisted', offerId: id }, now);
         }
       }
       return out;

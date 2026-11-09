@@ -15,7 +15,8 @@ import type { Keyring } from '../src/config.js';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { ApiError } from '../src/errors.js';
-import { accountIdByLoginName, currentLoginTag, seedAccount } from './helpers/accounts.js';
+import { accountIdByLoginName, currentLoginTag, seedAccount, trustedDevice } from './helpers/accounts.js';
+import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { testApp, testConfig } from './helpers/app.js';
 import { emptyDb } from './helpers/db.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
@@ -177,9 +178,9 @@ describe('rotation', () => {
   it('password: a name under the old key still logs in, then the row is re-tagged under the current key', async () => {
     const { id, loginName } = await passwordAccount(1);
     deps.config.loginNameKeys = rotated();
-    // One browser: a password alone on a new device starts the 24-hour hold, during which only a
-    // browser already logged in may log in again (Task 17 review round 2 N-C1).
+    // One trusted browser: with nothing logged in, a password alone gets in only on a trusted device (hold model v3).
     const b = new Browser(app);
+    b.cookies[DEVICE_COOKIE] = await trustedDevice(deps, id);
     expect((await login(loginName, GOOD, b)).statusCode).toBe(200);
     const row = await tagRow(id);
     expect(row.login_tag_key_id).toBe(2);
@@ -238,8 +239,9 @@ describe('the re-tag is best-effort (review M1)', () => {
   it('password: a failing re-tag still logs in; the row stays under the old key and the next login moves it', async () => {
     const { id, loginName } = await passwordAccount(1);
     deps.config.loginNameKeys = rotated();
-    // One browser (the hold of a password alone on a new device: Task 17 review round 2 N-C1).
+    // One trusted browser (hold model v3: with nothing logged in, a password alone gets in only there).
     const b = new Browser(app);
+    b.cookies[DEVICE_COOKIE] = await trustedDevice(deps, id);
     const res = await retagFails(() => login(loginName, GOOD, b));
     expect(res.statusCode).toBe(200);
     expect(res.headers['set-cookie']).toBeDefined();

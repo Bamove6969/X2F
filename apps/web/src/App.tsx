@@ -36,6 +36,7 @@ import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
 import { JabberSetup } from './screens/settings/JabberSetup.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
+import { AccountChangesScreen, ChangesBanner, ChangesCapPopup } from './screens/settings/HoldChanges.js';
 import { Security } from './screens/settings/Security.js';
 import { Team } from './screens/settings/Team.js';
 import { AccountType } from './screens/settings/AccountType.js';
@@ -92,8 +93,11 @@ function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: 
         {/* J-04 (owner G19): a planned maintenance announced ahead, in the big bright banner, on every layout, the front door's too (lead default, owner p11-120). */}
         <PlannedMaintenanceBanner plan={planned} />
         <SiteBanner banner={banner} />
+        {/* Hold model v3: waiting changes and a new recovery code, on every screen (HoldChange board). */}
+        <ChangesBanner />
         <Outlet />
       </div>
+      <ChangesCapPopup />
       {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} /> : null}
     </div>
   );
@@ -234,6 +238,7 @@ export function App() {
             <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
             <Route path="/wallets" element={<Wallets />} />
             <Route path="/settings/security" element={<Security />} />
+            <Route path="/settings/changes" element={<AccountChangesScreen />} />
             <Route path="/settings/devices" element={<DevicesRoute />} />
             <Route path="/settings/blocked" element={<Blocked />} />
             <Route path="/settings/jabber" element={<JabberSetup />} />

@@ -1,5 +1,6 @@
 import type { FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
+import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { deviceHash, isTrusted } from './device.js';
 
@@ -128,6 +129,25 @@ export async function dailyCap(deps: Pick<Deps, 'db' | 'clock'>, key: string, li
     [key, day],
   );
   if ((rows[0]?.count ?? 0) <= limit) return;
+  const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.ceil((midnight - now.getTime()) / 1000) });
+}
+
+/**
+ * Inside the caller's transaction, after the action it limits has succeeded: counts it for the UTC
+ * day, or throws 429 `slow-down` with the seconds until 00:00 UTC when `limit` were already counted
+ * (the throw rolls the action back). Only successes are counted: a refused or failed action rolls
+ * its count back with it (lead hold v3 review 8 Nov C1).
+ */
+export async function dailyCapInTx(db: Queryable, key: string, limit: number, now: Date): Promise<void> {
+  const day = now.toISOString().slice(0, 10);
+  const { rows } = await db.query<{ count: number }>(
+    `insert into daily_counts (key, day, count) values ($1, $2, 1)
+     on conflict (key, day) do update set count = daily_counts.count + 1 where daily_counts.count < $3
+     returning count`,
+    [key, day, limit],
+  );
+  if (rows.length > 0 && limit > 0) return;
   const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
   throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.ceil((midnight - now.getTime()) / 1000) });
 }

@@ -4,7 +4,7 @@ import type pg from 'pg';
 import { addAlert } from '../alerts.js';
 import { STRONG_CONFIRM_METHODS, redeemConfirm, type ConfirmMethod } from '../auth/confirm.js';
 import { requireSession } from '../auth/sessions.js';
-import { gateChange, heldReply, pushHoldStarted, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
+import { gateChange, stagedReply, requireLiveSessionInTx, requireNotHeld, withTx } from '../auth/hold.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
@@ -257,7 +257,7 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
   const now = deps.clock();
   const client = await deps.db.connect();
   let wallets: Wallet[] = [];
-  let held: { holdUntil: Date } | null = null;
+  let held: { changeId: string } | null = null;
   try {
     await client.query('begin');
     try {
@@ -279,9 +279,10 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
       }
       req.confirmedAction = input.action;
       // Plan 2 Task 17 review round 2 N-I4 (lead decision 2026-10-30, the owner's 14:12 ruling over
-      // the wallet rule of 10-24): a session whose login waits (PGP alone included) adds no wallet
-      // at once, whatever it confirmed with: the add waits out the account's 24-hour hold like any
-      // security change (`gateChange`; 202 `held`). The sign-up's first 30 minutes are exempt there.
+      // the wallet rule of 10-24): a session whose login waits (a username and password; a PGP key login is strong since Q81) adds no wallet
+      // at once, whatever it confirmed with: hold model v3, the add is staged like any security
+      // change and applies 24 h after it is submitted (`gateChange`; 202 `staged`). The sign-up's
+      // first 30 minutes are exempt there.
       held = await gateChange(client, req, { kind: 'wallets', items: input.items, method });
       if (held === null) {
         // Owner, 2026-10-23 and 2026-10-24: an account's first wallets (it has never had one) are
@@ -304,8 +305,7 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
     client.release();
   }
   if (held !== null) {
-    pushHoldStarted(req, req.auth.accountId);
-    return reply.code(202).send(heldReply(held));
+    return reply.code(202).send(stagedReply(held));
   }
   return reply.code(201).send(input.batch ? wallets.map(toJson) : toJson(wallets[0]!));
 }
@@ -355,40 +355,48 @@ export async function walletRule(db: Queryable, accountId: string): Promise<Wall
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Removal cannot redirect money, so it needs no confirm; it also cancels a wallet still waiting.
- * It always writes a `wallet-removed` alert (owner, 2026-10-23), in the same transaction, carrying
- * display details only: the app, the label and the end of the address, never all of it.
+ * The removal write (the route's, or a waiting one applied 24 h after a username-and-password
+ * session submitted it): the wallet is marked removed (a wallet still waiting to be usable is
+ * cancelled with it) and alert `wallet-removed` carries display details only: the app, the label
+ * and the end of the address, never all of it (owner, 2026-10-23). 404 when the wallet is gone
+ * already (a waiting removal is then dropped).
+ */
+export async function applyWalletRemoval(db: Queryable, accountId: string, walletId: string, now: Date): Promise<void> {
+  const { rows } = await db.query<{ app: WalletApp; label: string; address: string }>(
+    `update wallets set removed_at = $3 where id = $1 and account_id = $2 and removed_at is null
+     returning app, label, address`,
+    [walletId, accountId, now],
+  );
+  const removed = rows[0];
+  if (!removed) throw new ApiError(404, 'not-found');
+  await addAlert(db, accountId, 'wallet-removed', { app: removed.app, label: removed.label, addressEnd: addressEnd(removed.address) }, now);
+}
+
+/**
+ * `DELETE /v1/wallets/:id`. Removal cannot redirect money, so it needs no confirm. Owner p5-7 (7
+ * Nov 2026, replacing G5): from a session whose login waits (just a username and password) it is
+ * staged like every other change (`gateChange`; 202 `staged`) and the wallet stays usable until
+ * the change applies; otherwise it applies at once (`applyWalletRemoval`).
  */
 async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const { id } = req.params as { id: string };
   if (!UUID.test(id)) throw new ApiError(404, 'not-found');
   const now = deps.clock();
-  const client = await deps.db.connect();
-  try {
-    await client.query('begin');
-    try {
-      // Review round 4: the removing session must still be live where it writes.
-      await requireLiveSessionInTx(client, req.auth, now);
-      const { rows } = await client.query<{ app: WalletApp; label: string; address: string }>(
-        `update wallets set removed_at = $3 where id = $1 and account_id = $2 and removed_at is null
-         returning app, label, address`,
-        [id, req.auth.accountId, now],
-      );
-      const removed = rows[0];
-      if (!removed) throw new ApiError(404, 'not-found');
-      await addAlert(
-        client, req.auth.accountId, 'wallet-removed',
-        { app: removed.app, label: removed.label, addressEnd: addressEnd(removed.address) }, now,
-      );
-      await client.query('commit');
-    } catch (e) {
-      await client.query('rollback');
-      throw e;
-    }
-  } finally {
-    client.release();
-  }
+  const held = await withTx(deps.db, async (client) => {
+    // Review round 4: the removing session must still be live where it writes.
+    await requireLiveSessionInTx(client, req.auth, now);
+    const { rows } = await client.query<{ label: string; address: string }>(
+      'select label, address from wallets where id = $1 and account_id = $2 and removed_at is null',
+      [id, req.auth.accountId],
+    );
+    const w = rows[0];
+    if (!w) throw new ApiError(404, 'not-found');
+    const g = await gateChange(client, req, { kind: 'remove-wallet', walletId: id, label: w.label, addressEnd: addressEnd(w.address) });
+    if (g === null) await applyWalletRemoval(client, req.auth.accountId, id, now);
+    return g;
+  });
+  if (held !== null) return reply.code(202).send(stagedReply(held));
   return reply.code(204).send();
 }
 
@@ -403,7 +411,8 @@ export function walletRoutes(app: FastifyInstance): void {
   // trade's payout wallet); adding and removing wallets stay the account owner's (owner-only).
   // Review M7: a member gets each address's last 6 characters only (`addressEnd`), never `address`, the whole
   // address: their device never runs the escrow, so it never needs one.
-  const pickWallet = requireSession({ kinds: ['trader'], member: 'trades' });
+  // Job 1c: the wallet list (names and address endings) is the See wallet names box.
+  const pickWallet = requireSession({ kinds: ['trader'], member: 'wallets-see' });
   app.get('/v1/wallets/rule', { preHandler: session }, async (req) => walletRule(req.server.deps.db, req.auth.accountId));
   app.get('/v1/wallets', { preHandler: pickWallet }, async (req) => {
     const deps = req.server.deps;

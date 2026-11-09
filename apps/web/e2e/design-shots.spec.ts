@@ -232,15 +232,15 @@ test('12 a held backup session: the hold banner on Security', async ({ page }) =
   await shot(page, '12-security-hold-banner');
 });
 
-test('13 a change from a one-proof login is held: "takes effect at"', async ({ page }) => {
-  // The logout timer that used to be this shot's held change is retired (session length, owner
-  // 2 Nov 2026): One device at a time on Devices is the held change now.
+test('13 a change from a username-and-password login is staged: "Saved as a draft"', async ({ page }) => {
+  // The logout timer that used to be this shot's staged change is retired (session length, owner
+  // 2 Nov 2026): One device at a time on Devices is the staged change now.
   await securityApi(page);
-  await page.route('**/v1/account/security/one-device', json({ status: 'held', holdUntil: HOLD_UNTIL }, 202));
+  await page.route('**/v1/account/security/one-device', json({ status: 'staged', changeId: '55555555-5555-4555-8555-555555555555' }, 202));
   await page.goto('/settings/devices');
   await page.locator('[data-part="one-device-toggle"]').click();
-  await expect(page.locator('[data-part="held-note"]')).toContainText('This change takes effect at');
-  await shot(page, '13-devices-held-change', { scrollTo: page.locator('[data-part="held-note"]') });
+  await expect(page.locator('[data-part="staged-note"]')).toContainText('Saved as a draft');
+  await shot(page, '13-devices-staged-change', { scrollTo: page.locator('[data-part="staged-note"]') });
 });
 
 // ---- 14-28 Team members (Plan 2 Task 18) ----------------------------------------------------------

@@ -21,6 +21,7 @@ import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { KEY_DATE } from './helpers/pgpKeys.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
+import { rolesToAbilities } from '../src/team/abilities.js';
 
 const T0 = new Date('2026-11-01T12:00:00Z');
 const URL_OK = 'https://web.archive.org/web/2023/https://localmonero.co/user/olduser';
@@ -958,9 +959,9 @@ describe('members and sessions', () => {
     const owner = await login();
     const loginId = await seedAccount(deps, { loginName: 'pmember1x', displayName: 'pm-placeholder', kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, 'PastMember', 'pastmember', $2, $3, $4, $3, $3)`,
-      [owner.id, ['offers', 'trades'], T0, loginId],
+      [owner.id, rolesToAbilities(['offers', 'trades']), T0, loginId],
     );
     const mb = new Browser(app);
     expect((await mb.post('/t/login', { accountId: loginId })).statusCode).toBe(200);

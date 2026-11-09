@@ -28,7 +28,7 @@ import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { assertMethodAllowed } from './methods.js';
 import { realmOf, requireSession, startSession } from './sessions.js';
-import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
+import { gateChange, requireNotHeld, stagedReply } from './hold.js';
 
 export type CredentialKind = 'passkey' | 'security-key';
 
@@ -940,7 +940,7 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   const clean = cleanLabel(label, kind);
   const now = deps.clock();
   const client = await deps.db.connect();
-  let held: { holdUntil: Date } | null = null;
+  let held: { changeId: string } | null = null;
   try {
     await client.query('begin');
     try {
@@ -958,8 +958,7 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
     client.release();
   }
   if (held !== null) {
-    pushHoldStarted(req, req.auth.accountId);
-    return reply.code(202).send(heldReply(held));
+    return reply.code(202).send(stagedReply(held));
   }
   return reply.code(201).send({ ok: true });
 }

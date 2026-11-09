@@ -7,13 +7,14 @@ import { withConfirm, type ConfirmAction } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { heldNote, refusalText } from '../auth/refusals.js';
+import { refusalText } from '../auth/refusals.js';
+import { StagedNote, reportChangesCap } from './HoldChanges.js';
 
 export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => Promise<string>; onDone: () => void }) {
   const primary = usePrimaryVariant();
   const [codes, setCodes] = useState<string[] | null>(null);
-  // Plan 2 Task 17: new codes made from a login with one way of proving it's you work once the hold ends.
-  const [held, setHeld] = useState<string | null>(null);
+  // Hold model v3: a new code made from a username-and-password login is a draft; it works once submitted and applied.
+  const [staged, setStaged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,9 +24,9 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
     try {
       const result = await withConfirm({ kind: 'new-recovery-codes' }, (t) => authApi.newRecoveryCodes(t !== undefined ? { confirmToken: t } : {}), prove);
       setCodes(result.codes);
-      setHeld(result.status === 'held' && result.holdUntil !== undefined ? heldNote(result.holdUntil) : null);
+      setStaged(result.status === 'staged');
     } catch (e) {
-      if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not make recovery codes. Try again.'));
+      if (!isConfirmAbort(e) && !reportChangesCap(e)) setError(refusalText(e, 'Could not make recovery codes. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -35,11 +36,7 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
     return (
       <div className="x2f-field" data-part="recovery-codes">
         <p className="x2f-note">Save these now. Each works once, and you will not see them again.</p>
-        {held !== null ? (
-          <p className="x2f-note" role="status" data-part="held-note">
-            {held}
-          </p>
-        ) : null}
+        {staged ? <StagedNote /> : null}
         <ul className="x2f-codes" data-part="code-list">
           {codes.map((c) => (
             <li className="x2f-codes__item" key={c}>

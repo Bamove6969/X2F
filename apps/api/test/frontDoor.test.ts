@@ -163,6 +163,7 @@ describe('marketplace reads are behind the front door', () => {
 
   it('a logged-out offer list never reaches the database answer: the same 401 for a real offer as for none', async () => {
     const p = await trader();
+    await makeVendor(deps, p.id); // batch 2 (owner 2 Nov 2026): only a vendor account posts offers
     await deps.db.query(
       `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Main', $2, $3, $3)`,
       [p.id, `addr-${Math.random()}`, new Date(deps.clock().getTime() - 86_400_000)],
@@ -195,9 +196,9 @@ describe('a team member signs the Terms themselves', () => {
     const loginId = await seedAccount(deps, { loginName: `ml${tag}`, displayName: `m-${tag}-placeholder`, kind: 'member', termsVersion: terms });
     const now = deps.clock();
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
        values ($1, $2, $3, $4, $5, $6, $5, $5)`,
-      [owner.id, `Mem${tag}`, `mem${tag}`, ['offers', 'trades'], now, loginId],
+      [owner.id, `Mem${tag}`, `mem${tag}`, ['offers-see', 'trades-see-active'], now, loginId],
     );
     const browser = new Browser(app);
     expect((await browser.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
@@ -215,7 +216,7 @@ describe('a team member signs the Terms themselves', () => {
       const me = (await m.browser.get('/v1/account/me')).json() as { termsCurrent: boolean };
       expect(me.termsCurrent).toBe(false);
       // The site view is the outside one.
-      expect((await m.browser.get('/v1/site')).json()).toEqual({ maintenance: null });
+      expect((await m.browser.get('/v1/site')).json()).toEqual({ maintenance: null, plannedMaintenance: null });
     }
   });
 
@@ -266,12 +267,12 @@ describe('GET /v1/site on both sides of the door', () => {
     try {
       const anon = await app.inject({ method: 'GET', url: '/v1/site' });
       expect(anon.statusCode).toBe(200);
-      expect(anon.json()).toEqual({ maintenance: null });
-      expect((await (await staleTermsBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null });
-      expect((await (await recoveryBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null });
+      expect(anon.json()).toEqual({ maintenance: null, plannedMaintenance: null });
+      expect((await (await staleTermsBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null, plannedMaintenance: null });
+      expect((await (await recoveryBrowser()).get('/v1/site')).json()).toEqual({ maintenance: null, plannedMaintenance: null });
 
       const t = await trader();
-      expect((await t.browser.get('/v1/site')).json()).toEqual({ banner: { text: 'Upgrade at noon', kind: 'info' }, tradingPaused: true, maintenance: null });
+      expect((await t.browser.get('/v1/site')).json()).toEqual({ banner: { text: 'Upgrade at noon', kind: 'info' }, tradingPaused: true, maintenance: null, plannedMaintenance: null });
     } finally {
       await deps.db.query(`update site_flags set banner_text = null, banner_kind = null, trading_paused = false`);
     }
@@ -281,7 +282,7 @@ describe('GET /v1/site on both sides of the door', () => {
     await deps.db.query(`update site_flags set maintenance_since = now(), maintenance_message = 'Back at 15:00 UTC', maintenance_kind = 'planned'`);
     try {
       const anon = await app.inject({ method: 'GET', url: '/v1/site' });
-      expect(anon.json()).toEqual({ maintenance: { kind: 'planned' } });
+      expect(anon.json()).toEqual({ maintenance: { kind: 'planned' }, plannedMaintenance: null });
       expect(anon.body).not.toContain('15:00');
       const t = await trader();
       expect((await t.browser.get('/v1/site')).json()).toMatchObject({ maintenance: { kind: 'planned', message: 'Back at 15:00 UTC' } });

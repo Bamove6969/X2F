@@ -76,8 +76,8 @@ const FIXTURES: Record<string, { insert: string; change: string; bookkeeping?: s
     where: 'account_id = $1',
   },
   team_members: {
-    insert: `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, created_at) values ($1, 'Mate', 'mate', '{offers}', now(), now())`,
-    change: `update team_members set roles = '{offers,trades}' where account_id = $1`,
+    insert: `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at) values ($1, 'Mate', 'mate', '{offers-see}', now(), now())`,
+    change: `update team_members set abilities = '{offers-see,offers-pause}' where account_id = $1`,
     where: 'account_id = $1',
   },
   account_holds: {
@@ -239,8 +239,8 @@ describe('each change path queues exactly one notice per transaction', () => {
     const team = await account();
     const member = await account('member');
     await db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
-       values ($1, 'Mate', 'mate', '{offers}', now(), $2, now(), now())`,
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, 'Mate', 'mate', '{offers-see}', now(), $2, now(), now())`,
       [team, member],
     );
     await withJabber(team);

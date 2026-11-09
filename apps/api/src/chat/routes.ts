@@ -38,6 +38,7 @@
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
 import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -97,10 +98,11 @@ const CHAT_LIST_LIMIT = 200;
 /**
  * An offer anyone may see (Task 4's LISTED): market-priced (an offer stored as fixed before the
  * owner's market-only rule is not found, offers/routes.ts MARKET_PRICED), live, and its poster
- * neither disabled nor on hold.
+ * neither disabled nor on hold (a trading hold or a recovery-code hold).
  */
 const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
-  and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)`;
+  and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
+  and not ${recoveryHoldHidesSql('o.account_id')}`;
 
 interface ChatRow {
   code: string;

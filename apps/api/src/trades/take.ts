@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
+import { recoveryHoldHidesSql } from '../auth/holdSql.js';
 import { linkChatToTrade } from '../chat/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -113,14 +114,15 @@ interface OfferRow {
   /** Null: no minimum (migration 315). */
   min_trades: number | null;
   status: 'live' | 'paused' | 'removed';
-  /** The poster may be seen: a trader, not disabled, with no trading hold (Task 4's LISTED). */
+  /** The poster may be seen: a trader, not disabled, with no trading hold and no recovery-code hold (Task 4's LISTED). */
   poster_ok: boolean;
 }
 
 const OFFER_SQL = `select o.account_id, o.side, o.method_id, o.currency, o.margin_bps,
     o.amount_unit, o.min_atomic, o.max_atomic, o.min_fiat_cents, o.max_fiat_cents, o.min_trades, o.status,
     (a.kind = 'trader' and a.disabled_at is null
-      and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)) as poster_ok
+      and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
+      and not ${recoveryHoldHidesSql('o.account_id')}) as poster_ok
   from offers o join accounts a on a.id = o.account_id where o.id = $1 and ${MARKET_PRICED}`;
 
 function pricingOf(r: OfferRow): Pricing {
@@ -225,7 +227,8 @@ function raceRefusal(e: unknown): ApiError | null {
 
 // The account owner; a team member with Trades passes the gate but `ownerDeviceOnly` then refuses
 // them (403 member-cannot-sign) until Plan 3 Task 42 (Plan 2 Task 18 review I2).
-const requireTrader = [requireSession({ kinds: ['trader'], member: 'trades' }), ownerDeviceOnly];
+// Job 1c: the Take and Accept boxes wait for member keys (`ownerDeviceOnly` refuses every member).
+const requireTrader = [requireSession({ kinds: ['trader'], member: ['trades-take', 'trades-accept'] }), ownerDeviceOnly];
 
 export function takeRoutes(app: FastifyInstance): void {
   app.post('/v1/offers/:id/take', { preHandler: [...requireTrader, requireNotHeld] }, async (req) => {
