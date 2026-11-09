@@ -28,9 +28,9 @@ create unique index trading_holds_one_freeze on trading_holds (account_id, dispu
   where lifted_at is null and dispute_code is not null;
 
 -- The moderation process's own login role (Plan 6 deploys it as a login role that is a member of
--- this one) reads only what its internal API checks before it opens a chat or a proof: the log
--- entry the API wrote for the read (`activity_log`), the trade's current dispute (`disputes`), the
--- trade's chat and its ciphertext envelopes. It writes nothing here.
+-- this one) reads only what its internal API checks before it seals a moderator's message or reads
+-- a proof: the log entry the API wrote for it (`activity_log`), the trade's current dispute
+-- (`disputes`) and the trade's chat. It writes nothing here.
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'x2f_mod_reader') then
@@ -42,7 +42,8 @@ $$;
 grant select (id, at, action, trade_code) on activity_log to x2f_mod_reader;
 grant select (code, seq, status) on disputes to x2f_mod_reader;
 grant select (code, trade_code) on chats to x2f_mod_reader;
-grant select (id, chat, sender_role, envelope, created_at) on chat_envelopes to x2f_mod_reader;
+-- NEEDS_P4_CHAT_MEMBERSHIP: no grant on chat_envelopes. The moderator's chat read waits for the
+-- per-trade key-membership design (owner p11-2); its migration grants what that design needs.
 
 -- G37 (owner 7 Nov): every dispute has an incident ID, shown to both traders at the top of the trade
 -- and to the moderator. Nine characters of Crockford base32 (no I, L, O or U): eight random

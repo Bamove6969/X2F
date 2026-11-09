@@ -1,5 +1,7 @@
-// Plan 4 Task 11: the moderator's queue and case view, logged chat access, messages to the
-// parties, the unblurred-proof request, and the freeze. Owner 2026-11-02 (binding): a dispute
+// Plan 4 Task 11: the moderator's queue and case view, messages to the parties, the
+// unblurred-proof request, and the freeze. The moderator's chat READ is not built: the chat key
+// design (design-chat-membership-keys-2026-11-08, build task 9) replaces the plan's plaintext read
+// through the API, so no staff route returns chat text (NEEDS_P4_CHAT_MEMBERSHIP below). Owner 2026-11-02 (binding): a dispute
 // alone never blocks trading; a moderator freezes an account only as a separate later action, when
 // a party ignores the dispute (~48 h with no reply) or ignores a ruling, and the freeze has no end
 // time: a moderator lifts it once the person has done what the dispute asks.
@@ -13,7 +15,7 @@ import sodium from 'libsodium-wrappers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { isIncidentId } from '@x2f/staff';
-import { ModerationError, NO_MODERATION, type ModChatMessage } from '../../src/disputes/moderationClient.js';
+import { ModerationError, NO_MODERATION } from '../../src/disputes/moderationClient.js';
 import { loadDispute } from '../../src/disputes/store.js';
 import { buildStaffApi, type ModerationClient } from '../../src/staff/app.js';
 import { appealDirect, publishRuling } from '../helpers/disputes.js';
@@ -57,7 +59,6 @@ interface ChatSetup {
 class FakeModeration implements ModerationClient {
   readonly name = 'moderation' as const;
   calls: Array<{ op: string; code: string; logEntryId: string }> = [];
-  messages: ModChatMessage[] = [{ from: 'buyer', at: START.toISOString(), text: 'I paid on Monday.', type: 'chat.msg' }];
   proof: { mime: string; bytes: Uint8Array } | null = null;
   chats = new Map<string, ChatSetup>();
   constructor(private readonly db: Deps['db']) {}
@@ -65,12 +66,6 @@ class FakeModeration implements ModerationClient {
   private async logged(id: string, action: string, code: string): Promise<void> {
     const { rows } = await this.db.query<{ action: string; trade_code: string }>('select action, trade_code from activity_log where id = $1', [id]);
     if (rows[0]?.action !== action || rows[0]?.trade_code !== code) throw new ModerationError(403, 'log-entry-invalid');
-  }
-
-  async chatRead(a: { code: string; logEntryId: string }) {
-    await this.logged(a.logEntryId, 'chat.read', a.code);
-    this.calls.push({ op: 'read', ...a });
-    return { messages: this.messages };
   }
 
   async chatSend(a: { code: string; logEntryId: string; text: string }) {
@@ -224,11 +219,28 @@ describe('the queue', () => {
     expect((await mod.b.post(url('0000-0000-0000-0000', '/take'), {})).statusCode).toBe(404);
   });
 
+  it('NEEDS_P4_CASE_ASSIGNEE: a taken case counts as the member\'s open case; switching them off puts it back in the queue for another moderator', async () => {
+    const owner = await staff('owner');
+    const mod = await staff('mod');
+    const other = await staff('mod');
+    const { code } = await disputed();
+    for (const s of [owner, mod, other]) await s.fresh();
+    expect((await mod.b.post(url(code, '/take'), {})).statusCode).toBe(200);
+    const members = async () => ((await owner.b.get('/staff/v1/members')).json() as { members: Array<{ accountId: string | null; openCases: number }> }).members;
+    expect((await members()).find((m) => m.accountId === mod.id)!.openCases).toBe(1);
+    expect((await owner.b.post(`/staff/v1/members/${mod.id}/switch-off`, {})).statusCode).toBe(200);
+    expect((await members()).find((m) => m.accountId === mod.id)!.openCases).toBe(0);
+    const free = (await other.b.get('/staff/v1/disputes?filter=free')).json() as { rows: Array<{ code: string; assignee: string | null }> };
+    expect(free.rows.find((r) => r.code === code)).toMatchObject({ assignee: null });
+    expect((await other.b.post(url(code, '/take'), {})).statusCode).toBe(200);
+    expect((await loadDispute(deps.db, code))!.assignee).toBe(other.id);
+  });
+
   it('a dispute alone places no hold and no freeze: both traders can still trade', async () => {
     const mod = await staff('mod');
     const { seller, buyer, code } = await disputed();
     await mod.b.post(url(code, '/take'), {});
-    await mod.b.post(url(code, '/chat'), {});
+    await mod.b.post(url(code, '/messages'), { text: 'Hello' });
     expect(await activeFreezes(seller.id)).toEqual([]);
     expect(await activeFreezes(buyer.id)).toEqual([]);
   });
@@ -248,46 +260,29 @@ describe('the case view', () => {
       freezes: { buyer: false, seller: false },
     });
     expect((v.traders as { seller: { displayName: string } }).seller.displayName).toBe(seller.displayName);
-    expect(JSON.stringify(v)).not.toMatch(/messages|I paid on Monday/);
+    expect(JSON.stringify(v)).not.toMatch(/messages|envelope/);
     await mod.b.get(url(code));
     expect((await logOf(code)).filter((e) => e.action === 'case.opened').map((e) => e.actor_id)).toEqual([mod.id]);
     expect((await loadDispute(deps.db, code))!.seen).toContain(mod.id);
   });
 });
 
-describe('chat access', () => {
-  it('an unassigned mod gets forbidden-case; the assignee and a senior read it', async () => {
+describe('who works a case', () => {
+  it('an unassigned mod gets forbidden-case; the assignee and a senior may write', async () => {
     const mod = await staff('mod');
     const stranger = await staff('mod');
     const senior = await staff('senior');
     const { code } = await disputed();
     await mod.b.post(url(code, '/take'), {});
-    for (const route of ['/chat', '/messages', '/proof-request', '/proof', '/freeze']) {
+    for (const route of ['/messages', '/proof-request', '/proof', '/freeze']) {
       const res = await stranger.b.post(url(code, route), route === '/messages' ? { text: 'Hello' } : route === '/proof-request' ? { side: 'buyer' } : route === '/freeze' ? { side: 'seller', on: true, reason: 'no-reply' } : {});
       expect({ route, status: res.statusCode, error: errorOf(res) }).toEqual({ route, status: 403, error: 'forbidden-case' });
     }
-    expect((await mod.b.post(url(code, '/chat'), {})).statusCode).toBe(200);
-    expect((await senior.b.post(url(code, '/chat'), {})).statusCode).toBe(200);
+    expect((await mod.b.post(url(code, '/messages'), { text: 'One.' })).statusCode).toBe(201);
+    expect((await senior.b.post(url(code, '/messages'), { text: 'Two.' })).statusCode).toBe(201);
   });
 
-  it('reads are logged: two reads write two chat.read entries, each before any text is returned', async () => {
-    const mod = await staff('mod');
-    const { code } = await disputed();
-    await mod.b.post(url(code, '/take'), {});
-    const before = moderation.calls.length;
-    for (let i = 0; i < 2; i++) {
-      const res = await mod.b.post(url(code, '/chat'), {});
-      expect(res.statusCode, res.body).toBe(200);
-      expect((res.json() as { messages: ModChatMessage[] }).messages).toEqual(moderation.messages);
-    }
-    const reads = (await logOf(code)).filter((e) => e.action === 'chat.read');
-    expect(reads).toHaveLength(2);
-    expect(reads.every((e) => e.actor_id === mod.id)).toBe(true);
-    // Each read named its own entry (the fake refuses one the API had not committed).
-    expect(moderation.calls.slice(before).map((c) => c.logEntryId)).toEqual(reads.map((e) => e.id));
-  });
-
-  it('with logging failing, no chat text is returned and the moderation process is never asked', async () => {
+  it('with logging failing, no message is sealed and the moderation process is never asked', async () => {
     const broken = await buildStaffApi({
       ...deps, staffOrigin: STAFF_ORIGIN, moderation, traderEvents: trader.events,
       appendLog: async () => {
@@ -300,48 +295,71 @@ describe('chat access', () => {
       // Assign directly: the take route logs too.
       await deps.db.query('update disputes set assignee = $2 where code = $1', [code, mod.id]);
       const before = moderation.calls.length;
-      const res = await mod.b.post(url(code, '/chat'), {});
+      const res = await mod.b.post(url(code, '/messages'), { text: 'Hello' });
       expect(res.statusCode).toBe(500);
-      expect(res.body).not.toContain('I paid on Monday');
       expect(moderation.calls.length).toBe(before);
     } finally {
       await broken.close();
     }
   });
 
-  it('the first read tells both traders once: moderator-joined on the trade stream and the moderator in the dispute view', async () => {
+  it('the first message by each moderator tells both traders once: moderator-joined and the moderator in the dispute view', async () => {
     const mod = await staff('mod');
+    const senior = await staff('senior');
     const { code, buyer, seller } = await disputed();
     await mod.b.post(url(code, '/take'), {});
     const sb = stream(buyer.id);
     const ss = stream(seller.id);
     try {
-      await mod.b.post(url(code, '/chat'), {});
-      await mod.b.post(url(code, '/chat'), {});
+      await mod.b.post(url(code, '/messages'), { text: 'One.' });
+      await mod.b.post(url(code, '/messages'), { text: 'Two.' });
       for (const s of [sb, ss]) expect(eventsOf(s.frames, 'moderator-joined')).toEqual([{ type: 'moderator-joined', code, username: mod.name }]);
+      await senior.b.post(url(code, '/messages'), { text: 'Three.' });
+      await senior.b.post(url(code, '/messages'), { text: 'Four.' });
+      expect(eventsOf(sb.frames, 'moderator-joined')).toEqual([
+        { type: 'moderator-joined', code, username: mod.name },
+        { type: 'moderator-joined', code, username: senior.name },
+      ]);
     } finally {
       sb.stop();
       ss.stop();
     }
     const view = (await buyer.browser.get(`/v1/trades/${code}/dispute`)).json() as { moderator: { name: string } | null };
-    expect(view.moderator?.name).toBe(mod.name);
+    expect(view.moderator?.name).toBe(senior.name);
   });
 
-  it('round 2: a moderator involved in round 1 gets forbidden-case on chat, even as a senior', async () => {
+  it('round 2: a moderator involved in round 1 gets forbidden-case, even as a senior', async () => {
     const senior = await staff('senior');
     const { code } = await disputed();
     await senior.b.post(url(code, '/take'), {});
-    await senior.b.post(url(code, '/chat'), {});
+    await senior.b.get(url(code));
     await deps.db.query('update disputes set assignee = null where code = $1', [code]);
     await publishRuling(deps, code, { outcome: 'release-to-buyer', staffId: senior.id });
-    // The appeal makes everyone seen on round 1 involved (R37): the senior took and read it.
+    // The appeal makes everyone seen on round 1 involved (R37): the senior took and opened it.
     await appealDirect(deps, code, 'seller');
     expect((await loadDispute(deps.db, code))!.round1!.involved).toContain(senior.id);
-    const res = await senior.b.post(url(code, '/chat'), {});
+    const res = await senior.b.post(url(code, '/messages'), { text: 'Hello' });
     expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 403, error: 'forbidden-case' });
     const fresh = await staff('senior');
-    expect((await fresh.b.post(url(code, '/chat'), {})).statusCode).toBe(200);
+    expect((await fresh.b.post(url(code, '/messages'), { text: 'Hello' })).statusCode).toBe(201);
   });
+
+  it('NEEDS_P4_CHAT_MEMBERSHIP: no staff route reads the chat (design build task 9)', async () => {
+    // The plan's `POST /staff/v1/disputes/:code/chat` (one logged chat.read per read, plaintext from
+    // the moderation process through the API) is NOT registered: a compromised API could read every
+    // disputed chat. Build task 9 of design-chat-membership-keys-2026-11-08 replaces it with a grant
+    // to certified staff device keys; build that, then replace this test and the it.todo below.
+    const mod = await staff('mod');
+    const { code } = await disputed();
+    await mod.b.post(url(code, '/take'), {});
+    const res = await mod.b.post(url(code, '/chat'), {});
+    expect(res.statusCode).toBe(404);
+    expect((await logOf(code)).filter((e) => e.action === 'chat.read')).toEqual([]);
+    const routes = staffApp.printRoutes({ commonPrefix: false });
+    expect(routes).not.toMatch(/chat\b/);
+  });
+
+  it.todo('NEEDS_P4_CHAT_MEMBERSHIP: reads are logged, one chat.read per read before any key is granted; with logging failing nothing is granted');
 });
 
 describe('messages to the parties', () => {
@@ -524,7 +542,7 @@ describe('helpers', () => {
     const { code } = await disputed();
     const routes: Array<[string, string]> = [
       ['GET', '/staff/v1/disputes'], ['POST', '/staff/v1/disputes/next'], ['POST', url(code, '/take')], ['GET', url(code)],
-      ['POST', url(code, '/chat')], ['POST', url(code, '/messages')], ['POST', url(code, '/proof-request')], ['POST', url(code, '/proof')],
+      ['POST', url(code, '/messages')], ['POST', url(code, '/proof-request')], ['POST', url(code, '/proof')],
       ['POST', url(code, '/freeze')],
     ];
     for (const [m, u] of routes) {
@@ -612,28 +630,7 @@ describe('the proof request in the trader view', () => {
   });
 });
 
-describe('more on chat and the queue', () => {
-  it('a second moderator reading the chat is announced too, with their name', async () => {
-    const mod = await staff('mod');
-    const senior = await staff('senior');
-    const { code, buyer } = await disputed();
-    await mod.fresh();
-    await senior.fresh();
-    await mod.b.post(url(code, '/take'), {});
-    const sb = stream(buyer.id);
-    try {
-      await mod.b.post(url(code, '/chat'), {});
-      await senior.b.post(url(code, '/chat'), {});
-      await senior.b.post(url(code, '/chat'), {});
-      expect(eventsOf(sb.frames, 'moderator-joined')).toEqual([
-        { type: 'moderator-joined', code, username: mod.name },
-        { type: 'moderator-joined', code, username: senior.name },
-      ]);
-    } finally {
-      sb.stop();
-    }
-  });
-
+describe('more on messages and the queue', () => {
   it('a moderator is never handed an appeal by next; a senior who was not involved is', async () => {
     const { code } = await disputed();
     await publishRuling(deps, code, { outcome: 'release-to-buyer' });
@@ -654,15 +651,16 @@ describe('more on chat and the queue', () => {
     expect((await loadDispute(deps.db, code))!.assignee).toBe(senior.id);
   });
 
-  it('without a moderation process the read is refused 503 (logged, no text)', async () => {
+  it('without a moderation process a message is refused 503 (logged, nothing stored)', async () => {
     const none = await buildStaffApi({ ...deps, staffOrigin: STAFF_ORIGIN, moderation: NO_MODERATION, traderEvents: trader.events });
     try {
       const mod = await staff('mod', none);
       const { code } = await disputed();
       await mod.fresh();
       await mod.b.post(url(code, '/take'), {});
-      const res = await mod.b.post(url(code, '/chat'), {});
+      const res = await mod.b.post(url(code, '/messages'), { text: 'Hello' });
       expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 503, error: 'moderation-unavailable' });
+      expect((await logOf(code)).filter((e) => e.action === 'chat.message-sent')).toHaveLength(1);
     } finally {
       await none.close();
     }

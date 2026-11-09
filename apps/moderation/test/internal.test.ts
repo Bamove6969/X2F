@@ -1,15 +1,17 @@
 // Plan 4 Task 11: the moderation process's internal API. It listens only on a Unix socket; every
 // request carries an HMAC over method, path, body and time (30 s); every call names the activity-log
 // entry the API wrote for it, which must match, be fresh (60 s), be unused, and belong to a trade
-// whose current dispute is not closed. Chat text and the unblurred proof leave this process only
-// through those calls.
+// whose current dispute is not closed. The unblurred proof leaves this process only through those
+// calls. NEEDS_P4_CHAT_MEMBERSHIP: there is no chat read here (no `/internal/chat/read`): the
+// moderator's read path waits for the per-trade key-membership design (owner p11-2,
+// design-chat-membership-keys-2026-11-08), which replaces handing plaintext to the API.
 import { createHmac, randomBytes } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newTradeCode } from '@x2f/core';
-import { generateIdentity, open, ReplayGuard, seal, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { generateIdentity, open, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { channelFor, MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_TS_HEADER } from '@x2f/trade';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest';
@@ -51,7 +53,6 @@ class FakeApi implements ApiView {
   log = new Map<string, { id: string; at: Date; action: string; tradeCode: string | null }>();
   disputes = new Map<string, string>();
   chats = new Map<string, string>();
-  env = new Map<string, Array<{ id: string; senderRole: string; envelope: unknown; at: Date }>>();
   // One counter for the file: the moderation database (and its used entries) is shared by every test.
   private static next = 1;
   entry(action: string, code: string | null, at = NOW): string {
@@ -67,9 +68,6 @@ class FakeApi implements ApiView {
   }
   async chatOf(code: string) {
     return this.chats.get(code) ?? null;
-  }
-  async envelopes(chat: string) {
-    return this.env.get(chat) ?? [];
   }
 }
 
@@ -97,15 +95,13 @@ async function disputedCase(api: FakeApi, status = 'open'): Promise<Case> {
   return { code, chat, channel, ids, participants };
 }
 
-async function say(api: FakeApi, c: Case, from: 'buyer' | 'seller', seq: number, text: string, at: Date): Promise<void> {
-  const envelope = await seal({ trade: c.channel, from, seq, type: 'chat.msg', payload: { text }, to: ['buyer', 'seller', 'mod'], me: c.ids[from], participants: c.participants });
-  const list = api.env.get(c.chat) ?? [];
-  list.push({ id: String(list.length + 1), senderRole: from, envelope, at });
-  api.env.set(c.chat, list);
-}
+/** A proof source that has a proof for every trade, so an accepted proof read answers 200. */
+const PROOFS = { unblurred: async () => ({ mime: 'image/png' as const, bytes: new Uint8Array([1, 2, 3]) }) };
+const PROOF = '/internal/proof/read';
+const OPENED = 'proof.unblurred-opened';
 
 function deps(api: ApiView, o: Partial<InternalDeps> = {}): InternalDeps {
-  return { secret: SECRET, api, db, keystoreKey, now: () => NOW, ...o };
+  return { secret: SECRET, api, db, keystoreKey, now: () => NOW, proofs: PROOFS, ...o };
 }
 
 const mac = (secret: Uint8Array, method: string, path: string, body: string, ts: string) =>
@@ -162,22 +158,40 @@ describe('authentication', () => {
   it('refuses a missing or wrong HMAC, a changed body, and a time more than 30 s off, with 401', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
-    const body = () => ({ code: c.code, logEntryId: api.entry('chat.read', c.code) });
+    const body = () => ({ code: c.code, logEntryId: api.entry(OPENED, c.code) });
     const d = deps(api);
     for (const o of [{ noMac: true }, { secret: new Uint8Array(randomBytes(32)) }, { tamper: true }, { ts: NOW.getTime() - 31_000 }, { ts: NOW.getTime() + 31_000 }]) {
-      const res = await call(d, '/internal/chat/read', body(), o);
+      const res = await call(d, PROOF, body(), o);
       expect({ o, status: res.status, error: res.json().error }).toEqual({ o, status: 401, error: 'unauthorized' });
     }
-    expect((await call(d, '/internal/chat/read', body(), { ts: NOW.getTime() - 29_000 })).status).toBe(200);
+    expect((await call(d, PROOF, body(), { ts: NOW.getTime() - 29_000 })).status).toBe(200);
   });
 
-  it('answers only its three POST paths', async () => {
+  it('answers only its two POST paths', async () => {
     const api = new FakeApi();
     const d = deps(api);
-    expect((await call(d, '/internal/chat/read', {}, { method: 'GET' })).status).toBe(404);
+    expect((await call(d, PROOF, {}, { method: 'GET' })).status).toBe(404);
     expect((await call(d, '/internal/nothing', {})).status).toBe(404);
-    expect((await call(d, '/internal/chat/read', { code: 'nope', logEntryId: '1' })).status).toBe(400);
-    expect((await call(d, '/internal/chat/read', { code: newTradeCode(), logEntryId: '1', extra: 1 })).status).toBe(400);
+    expect((await call(d, PROOF, { code: 'nope', logEntryId: '1' })).status).toBe(400);
+    expect((await call(d, PROOF, { code: newTradeCode(), logEntryId: '1', extra: 1 })).status).toBe(400);
+  });
+
+  it('NEEDS_P4_CHAT_MEMBERSHIP: has no chat read, even for a signed call naming a fresh chat.read entry', async () => {
+    // The moderator's chat read is NOT built: the key-membership design (owner p11-2) replaces
+    // this process opening the chat and handing plaintext to the API. Build it from that design
+    // (design-chat-membership-keys-2026-11-08 in the comms folder), then replace this test.
+    const api = new FakeApi();
+    const c = await disputedCase(api);
+    const d = deps(api);
+    const id = api.entry('chat.read', c.code);
+    const res = await call(d, '/internal/chat/read', { code: c.code, logEntryId: id });
+    expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'not-found' });
+    // Nothing was used up.
+    expect((await db.query('select 1 from used_log_entries where id = $1', [id])).rows).toEqual([]);
+    const src = await readFile(new URL('../src/internal/server.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/'\/internal\/chat\/read'|readChat|envelopes\(/);
+    const chatSrc = await readFile(new URL('../src/internal/chat.ts', import.meta.url), 'utf8');
+    expect(chatSrc).not.toMatch(/\bopen\(/);
   });
 
   it('listens on a Unix socket only, readable by its owner only', async () => {
@@ -200,26 +214,28 @@ describe('the log entry each call names', () => {
     const c = await disputedCase(api);
     const other = await disputedCase(api);
     const d = deps(api);
-    const used = api.entry('chat.read', c.code);
-    expect((await call(d, '/internal/chat/read', { code: c.code, logEntryId: used })).status).toBe(200);
+    const used = api.entry(OPENED, c.code);
+    expect((await call(d, PROOF, { code: c.code, logEntryId: used })).status).toBe(200);
     const cases = {
       used,
-      old: api.entry('chat.read', c.code, new Date(NOW.getTime() - 61_000)),
-      otherTrade: api.entry('chat.read', other.code),
+      old: api.entry(OPENED, c.code, new Date(NOW.getTime() - 61_000)),
+      otherTrade: api.entry(OPENED, other.code),
       otherAction: api.entry('chat.message-sent', c.code),
-      noTrade: api.entry('chat.read', null),
+      chatRead: api.entry('chat.read', c.code),
+      noTrade: api.entry(OPENED, null),
       unknown: '999999',
     };
     for (const [why, id] of Object.entries(cases)) {
-      const res = await call(d, '/internal/chat/read', { code: c.code, logEntryId: id });
+      const res = await call(d, PROOF, { code: c.code, logEntryId: id });
       expect({ why, status: res.status, error: res.json().error }).toEqual({ why, status: 403, error: 'log-entry-invalid' });
     }
     // 59 s old is still fresh.
-    expect((await call(d, '/internal/chat/read', { code: c.code, logEntryId: api.entry('chat.read', c.code, new Date(NOW.getTime() - 59_000)) })).status).toBe(200);
+    expect((await call(d, PROOF, { code: c.code, logEntryId: api.entry(OPENED, c.code, new Date(NOW.getTime() - 59_000)) })).status).toBe(200);
     // Each path takes its own action only.
-    const res = await call(d, '/internal/chat/send', { code: c.code, logEntryId: api.entry('chat.read', c.code), text: 'Hi' });
-    expect(res.json().error).toBe('log-entry-invalid');
-    expect((await call(d, '/internal/proof/read', { code: c.code, logEntryId: api.entry('chat.read', c.code) })).json().error).toBe('log-entry-invalid');
+    for (const action of [OPENED, 'chat.read']) {
+      const res = await call(d, '/internal/chat/send', { code: c.code, logEntryId: api.entry(action, c.code), text: 'Hi' });
+      expect(res.json().error).toBe('log-entry-invalid');
+    }
   });
 
   it('refuses a fresh entry when the trade has no dispute, or its dispute is closed', async () => {
@@ -227,14 +243,14 @@ describe('the log entry each call names', () => {
     const c = await disputedCase(api);
     const d = deps(api);
     api.disputes.delete(c.code);
-    let res = await call(d, '/internal/chat/read', { code: c.code, logEntryId: api.entry('chat.read', c.code) });
+    let res = await call(d, PROOF, { code: c.code, logEntryId: api.entry(OPENED, c.code) });
     expect({ status: res.status, error: res.json().error }).toEqual({ status: 403, error: 'log-entry-invalid' });
     api.disputes.set(c.code, 'closed');
-    res = await call(d, '/internal/chat/read', { code: c.code, logEntryId: api.entry('chat.read', c.code) });
+    res = await call(d, PROOF, { code: c.code, logEntryId: api.entry(OPENED, c.code) });
     expect({ status: res.status, error: res.json().error }).toEqual({ status: 403, error: 'log-entry-invalid' });
     for (const s of ['open', 'awaiting-approval', 'published', 'appealed', 'final', 'complying']) {
       api.disputes.set(c.code, s);
-      expect((await call(d, '/internal/chat/read', { code: c.code, logEntryId: api.entry('chat.read', c.code) })).status, s).toBe(200);
+      expect((await call(d, PROOF, { code: c.code, logEntryId: api.entry(OPENED, c.code) })).status, s).toBe(200);
     }
   });
 
@@ -243,35 +259,14 @@ describe('the log entry each call names', () => {
     const c = await disputedCase(api);
     api.chats.delete(c.code);
     const d = deps(api);
-    const id = api.entry('chat.read', c.code);
-    const res = await call(d, '/internal/chat/read', { code: c.code, logEntryId: id });
+    const id = api.entry('chat.message-sent', c.code);
+    const res = await call(d, '/internal/chat/send', { code: c.code, logEntryId: id, text: 'Hi' });
     expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'no-chat' });
-    expect((await call(d, '/internal/chat/read', { code: c.code, logEntryId: id })).json().error).toBe('log-entry-invalid');
+    expect((await call(d, '/internal/chat/send', { code: c.code, logEntryId: id, text: 'Hi' })).json().error).toBe('log-entry-invalid');
   });
 });
 
-describe('chat', () => {
-  it('reads the trade chat in order: the traders\' messages and the moderator\'s own', async () => {
-    const api = new FakeApi();
-    const c = await disputedCase(api);
-    const d = deps(api);
-    await say(api, c, 'buyer', 0, 'I paid on Monday.', new Date(NOW.getTime() - 3_000));
-    await say(api, c, 'seller', 0, 'Nothing arrived.', new Date(NOW.getTime() - 2_000));
-    const sent = await call(d, '/internal/chat/send', { code: c.code, logEntryId: api.entry('chat.message-sent', c.code), text: 'Please upload the statement.' });
-    expect(sent.status).toBe(200);
-    api.env.get(c.chat)!.push({ id: '3', senderRole: 'mod', envelope: sent.json().envelope, at: new Date(NOW.getTime() - 1_000) });
-    // An envelope this process cannot open is shown as unreadable, never dropped silently.
-    api.env.get(c.chat)!.push({ id: '4', senderRole: 'buyer', envelope: { garbage: true }, at: NOW });
-    const res = await call(d, '/internal/chat/read', { code: c.code, logEntryId: api.entry('chat.read', c.code) });
-    expect(res.status).toBe(200);
-    expect(res.json().messages).toEqual([
-      { from: 'buyer', at: new Date(NOW.getTime() - 3_000).toISOString(), text: 'I paid on Monday.', type: 'text' },
-      { from: 'seller', at: new Date(NOW.getTime() - 2_000).toISOString(), text: 'Nothing arrived.', type: 'text' },
-      { from: 'mod', at: new Date(NOW.getTime() - 1_000).toISOString(), text: 'Please upload the statement.', type: 'moderator' },
-      { from: 'buyer', at: NOW.toISOString(), text: '', type: 'unreadable' },
-    ]);
-  });
-
+describe('the moderator\'s message', () => {
   it('sends as the moderator: one envelope that opens for buyer and seller, with a rising seq', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
@@ -313,10 +308,10 @@ describe('chat', () => {
 describe('the unblurred proof', () => {
   // NEEDS_P5_PROOF_ENVELOPE: the proof package (Plan 5: `proof.unblurred` sealed to the mod only,
   // PROOF_RECIPIENTS / sealProofEnvelope) is not on this branch; the reader is a seam until then.
-  it('answers no-proof without a proof source, and the bytes with their type from one', async () => {
+  it('answers no-proof when the source has none, and the bytes with their type from one', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
-    let res = await call(deps(api), '/internal/proof/read', { code: c.code, logEntryId: api.entry('proof.unblurred-opened', c.code) });
+    let res = await call(deps(api, { proofs: { unblurred: async () => null } }), '/internal/proof/read', { code: c.code, logEntryId: api.entry('proof.unblurred-opened', c.code) });
     expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'no-proof' });
     const proofs = { unblurred: async (code: string) => (code === c.code ? { mime: 'image/png' as const, bytes: new Uint8Array([1, 2, 3]) } : null) };
     res = await call(deps(api, { proofs }), '/internal/proof/read', { code: c.code, logEntryId: api.entry('proof.unblurred-opened', c.code) });
@@ -327,7 +322,7 @@ describe('the unblurred proof', () => {
 });
 
 describe('pgApiView on the API schema (x2f_mod_reader only)', () => {
-  it('reads the log entry, the current dispute, the trade chat and its envelopes', async () => {
+  it('reads the log entry, the current dispute and the trade chat, and never an envelope', async () => {
     // The API's real schema: its migrations, in name order, as `migrate()` applies them.
     const name = await newDb();
     const owner = new pg.Pool({ connectionString: `${admin}/${name}`, max: 1 });
@@ -379,9 +374,8 @@ describe('pgApiView on the API schema (x2f_mod_reader only)', () => {
       expect(await view.disputeStatus(newTradeCode())).toBeNull();
       expect(await view.chatOf(code)).toBe(chat);
       expect(await view.chatOf(newTradeCode())).toBeNull();
-      const envs = await view.envelopes(chat);
-      expect(envs.map((e) => [e.senderRole, e.envelope, e.at.toISOString()])).toEqual([['buyer', { a: 1 }, at], ['mod', { b: 2 }, at]]);
-      expect(await view.envelopes(newTradeCode())).toEqual([]);
+      // NEEDS_P4_CHAT_MEMBERSHIP: no chat read yet, so the reader cannot read a chat's envelopes.
+      await expect(reader.query('select envelope from chat_envelopes')).rejects.toMatchObject({ code: '42501' });
       // Nothing else is readable to the reader role.
       await expect(reader.query('select * from accounts')).rejects.toMatchObject({ code: '42501' });
       await expect(reader.query('select detail from activity_log')).rejects.toMatchObject({ code: '42501' });

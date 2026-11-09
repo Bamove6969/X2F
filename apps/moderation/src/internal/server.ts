@@ -6,16 +6,20 @@ import type { Participants } from '@x2f/protocol';
 import { channelFor, MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_MAX_SKEW_MS, MOD_INTERNAL_TS_HEADER, modInternalMacInput } from '@x2f/trade';
 import { loadChatIdentity, type Queryable } from '../keystore.js';
 import type { ApiView } from './apiView.js';
-import { ChatTextError, checkModText, readChat, sealModMessage } from './chat.js';
+import { ChatTextError, checkModText, sealModMessage } from './chat.js';
 
 export type { ApiView } from './apiView.js';
 
 /**
  * The moderation process's internal API (Plan 4 Task 11). It listens ONLY on a Unix socket
- * (`MOD_INTERNAL_SOCKET`, mode 0600); there is no TCP listener. The API calls it to read a disputed
- * trade's chat, to send the moderator's message, and to read the unblurred proof:
+ * (`MOD_INTERNAL_SOCKET`, mode 0600); there is no TCP listener. The API calls it to send the
+ * moderator's message and to read the unblurred proof:
  *
- * - `POST /internal/chat/read {code, logEntryId}` → `{ messages: { from, at, text, type }[] }`
+ * - NEEDS_P4_CHAT_MEMBERSHIP: there is NO chat read (the plan's `POST /internal/chat/read`, which
+ *   opened the chat here and handed plaintext to the API). The moderator's read waits for the
+ *   per-trade key-membership design (owner p11-2; design-chat-membership-keys-2026-11-08, build task 9:
+ *   `/internal/chat/grant` replaces it, no plaintext to the API), and the
+ *   API reader role cannot read envelopes until then (migration 208).
  * - `POST /internal/chat/send {code, logEntryId, text}` → `{ envelope }`: sealed by the chat's
  *   moderator identity to buyer, seller and the moderator; the API stores it.
  * - `POST /internal/proof/read {code, logEntryId}` → the unblurred image bytes.
@@ -25,8 +29,8 @@ export type { ApiView } from './apiView.js';
  * Then each call is refused (403 `log-entry-invalid`) unless the API activity-log entry it names,
  * read from the API's database (never taken from the request), has this path's action and this
  * trade, was written within the last 60 s, has never been used, and the trade's current dispute
- * exists and is not closed. The entry is marked used only once all of that holds, so the chat is
- * opened only for a read the log already holds.
+ * exists and is not closed. The entry is marked used only once all of that holds, so a message is
+ * sealed, or the proof read, only for an act the log already holds.
  */
 export interface ProofSource {
   /** The trade's unblurred proof image, or null when there is none. */
@@ -57,7 +61,6 @@ const TS = /^[0-9]{1,16}$/;
 const MAC = /^[0-9a-f]{64}$/;
 
 const ROUTES = {
-  '/internal/chat/read': { action: 'chat.read', keys: ['code', 'logEntryId'] },
   '/internal/chat/send': { action: 'chat.message-sent', keys: ['code', 'logEntryId', 'text'] },
   '/internal/proof/read': { action: 'proof.unblurred-opened', keys: ['code', 'logEntryId'] },
 } as const;
@@ -181,11 +184,6 @@ async function handle(d: InternalDeps, req: IncomingMessage, res: ServerResponse
     return;
   }
   const c = await attestedChat(d, b.code);
-  if (path === '/internal/chat/read') {
-    const rows = await d.api.envelopes(c.chat);
-    answer(res, 200, { messages: await readChat({ channel: c.channel, mod: c.mod, participants: c.participants, rows }) });
-    return;
-  }
   // A seq is taken before sealing and never reused (a message the API failed to store is a gap).
   const { rows } = await d.db.query<{ seq: string }>(
     `insert into mod_chat_seq (chat, next_seq) values ($1, 1)

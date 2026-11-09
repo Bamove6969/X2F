@@ -4,26 +4,20 @@ import { MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_TS_HEADER, modInternalMacInput } 
 
 /**
  * Plan 4 Task 11: the API's client of the moderation process's internal API. The moderation
- * process holds the chat's moderator identity, so only it can open a disputed trade's chat, seal
- * the moderator's message, or read the unblurred proof. It listens on a Unix socket only
+ * process holds the chat's moderator identity, so only it can seal the moderator's message or read
+ * the unblurred proof.
+ *
+ * NEEDS_P4_CHAT_MEMBERSHIP: there is NO chat read here (the plan's `chatRead`, plaintext from the
+ * moderation process through the API, was removed: a compromised API could read every disputed
+ * chat). Build task 9 of design-chat-membership-keys-2026-11-08 (`/internal/chat/grant`, keys
+ * wrapped to certified staff device keys) replaces it. It listens on a Unix socket only
  * (`MOD_INTERNAL_SOCKET`); every request carries an HMAC (`MOD_INTERNAL_SECRET`) over the method,
  * the path, the exact body and the time, and names the activity-log entry the API committed for
  * it, which the moderation process checks in the API's database before it does anything.
  */
 
-/** One chat message as the moderation process opened it. */
-export interface ModChatMessage {
-  from: 'buyer' | 'seller' | 'mod';
-  at: string;
-  text: string;
-  /** `text` from a trader, `moderator` from the moderator, `unreadable` when it does not open. */
-  type: string;
-}
-
 export interface ModerationClient {
   readonly name: 'moderation';
-  /** `POST /internal/chat/read`: the trade's chat, opened. */
-  chatRead(a: { code: string; logEntryId: string }): Promise<{ messages: ModChatMessage[] }>;
   /** `POST /internal/chat/send`: the moderator's message sealed to both traders; the API stores it. */
   chatSend(a: { code: string; logEntryId: string; text: string }): Promise<{ envelope: unknown }>;
   /** `POST /internal/proof/read`: the unblurred proof's bytes and type. */
@@ -41,9 +35,6 @@ export class ModerationError extends Error {
 /** Stands in where no moderation process is configured: every call is `moderation-unavailable`. */
 export const NO_MODERATION: ModerationClient = {
   name: 'moderation',
-  chatRead: async () => {
-    throw new ModerationError(503, 'moderation-unavailable');
-  },
   chatSend: async () => {
     throw new ModerationError(503, 'moderation-unavailable');
   },
@@ -144,20 +135,6 @@ export function socketModerationClient(o: SocketModerationOptions): ModerationCl
 
   return {
     name: 'moderation',
-    async chatRead(a) {
-      const v = json(await call('/internal/chat/read', { code: a.code, logEntryId: a.logEntryId }));
-      if (!Array.isArray(v.messages)) throw new ModerationError(502, 'moderation-unavailable');
-      const messages: ModChatMessage[] = [];
-      for (const m of v.messages as unknown[]) {
-        const r = m as Record<string, unknown> | null;
-        if (r === null || typeof r !== 'object' || (r.from !== 'buyer' && r.from !== 'seller' && r.from !== 'mod')
-          || typeof r.at !== 'string' || typeof r.text !== 'string' || typeof r.type !== 'string') {
-          throw new ModerationError(502, 'moderation-unavailable');
-        }
-        messages.push({ from: r.from, at: r.at, text: r.text, type: r.type });
-      }
-      return { messages };
-    },
     async chatSend(a) {
       const v = json(await call('/internal/chat/send', { code: a.code, logEntryId: a.logEntryId, text: a.text }));
       if (v.envelope === undefined) throw new ModerationError(502, 'moderation-unavailable');

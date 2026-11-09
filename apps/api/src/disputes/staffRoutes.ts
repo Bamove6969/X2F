@@ -15,14 +15,19 @@ import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
 
 /**
- * Plan 4 Task 11: the moderator's queue and case view, logged chat access, messages to both
- * traders, the unblurred-proof request, and the freeze. Every route needs `disputes.handle`.
+ * Plan 4 Task 11: the moderator's queue and case view, messages to both traders, the
+ * unblurred-proof request, and the freeze. Every route needs `disputes.handle`.
  *
- * - Nothing the moderator reads or sends leaves the moderation process unless the API has first
- *   COMMITTED an activity-log entry for it (`chat.read` per read, `chat.message-sent`,
- *   `proof.unblurred-opened`) and named it in the call; the moderation process checks that entry in
- *   the database itself. A log that cannot be written means no chat text.
- * - Chat, messages, the proof and the freeze are the assignee's, or a senior moderator's or the
+ * - NEEDS_P4_CHAT_MEMBERSHIP: the moderator's chat READ is not built and its route is not
+ *   registered. The plan's `POST /staff/v1/disputes/:code/chat` had the moderation process open the
+ *   chat and hand plaintext to this API, so a compromised API could read every disputed chat. Build
+ *   task 9 of design-chat-membership-keys-2026-11-08 (a grant to certified staff device keys,
+ *   staff-web decrypts) replaces it; nothing here returns chat text.
+ * - Nothing the moderator sends or opens leaves the moderation process unless the API has first
+ *   COMMITTED an activity-log entry for it (`chat.message-sent`, `proof.unblurred-opened`) and
+ *   named it in the call; the moderation process checks that entry in the database itself. A log
+ *   that cannot be written means no message and no proof.
+ * - Messages, the proof and the freeze are the assignee's, or a senior moderator's or the
  *   owner's (else 403 `forbidden-case`). In an appealed case nobody involved in round 1 takes any
  *   part (R37), a senior included.
  * - Every moderator action on a case is logged (owner G35) and adds the person to `seen` (R37).
@@ -171,7 +176,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
   async function logged(
     req: FastifyRequest,
     code: string,
-    action: 'chat.read' | 'chat.message-sent' | 'proof.unblurred-requested' | 'proof.unblurred-opened',
+    action: 'chat.message-sent' | 'proof.unblurred-requested' | 'proof.unblurred-opened',
     detail: object,
     check: (d: Dispute) => void,
   ): Promise<string> {
@@ -188,7 +193,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     return id;
   }
 
-  /** The case for chat, messages and proof: it exists, is not closed, and this person may work it. */
+  /** The case for messages and proof: it exists, is not closed, and this person may work it. */
   const workable = (req: FastifyRequest) => (d: Dispute) => {
     if (!mayWork(d, req)) throw new ApiError(403, 'forbidden-case');
     if (d.status === 'closed') throw new ApiError(409, 'wrong-state');
@@ -409,21 +414,16 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     };
   });
 
-  // The chat, opened by the moderation process under a committed `chat.read` entry (one per read).
-  app.post('/staff/v1/disputes/:code/chat', { preHandler: guard, config: cfg }, async (req) => {
-    body(req, []);
+  // NEEDS_P4_CHAT_MEMBERSHIP: no `POST /staff/v1/disputes/:code/chat` here on purpose (see the top
+  // of this file; design-chat-membership-keys-2026-11-08, build task 9).
+
+  /**
+   * The first time each moderator writes to the traders, both are told who joined (a system card
+   * from server records only, and the live event); later messages tell nobody. Until the chat read
+   * is built (build task 9) writing is the moderator's first visible act on the chat.
+   */
+  async function announce(req: FastifyRequest, code: string, t: CaseTrade): Promise<void> {
     const deps = req.server.deps;
-    const code = await codeOf(deps.db, req);
-    const t = await caseTrade(deps.db, code);
-    const logEntryId = await logged(req, code, 'chat.read', {}, workable(req));
-    let messages;
-    try {
-      ({ messages } = await o.moderation.chatRead({ code, logEntryId }));
-    } catch (err) {
-      moderationError(err);
-    }
-    // The first read by this moderator tells both traders who joined (a system card from server
-    // records only, and the live event); reading again tells nobody.
     const name = req.staff.displayName;
     const { rowCount } = await deps.db.query(
       `update disputes set moderator_name = $2, moderator_joined_at = $3
@@ -434,8 +434,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       publish([t.buyer, t.seller], { type: 'moderator-joined', code, username: name });
       publish([t.buyer, t.seller], { type: 'trade', code, state: t.state });
     }
-    return { messages };
-  });
+  }
 
   // A message to both traders: logged, sealed by the moderation process, stored as the chat's mod
   // envelope, and the dispute's reply (the first one stops the first-reply clock).
@@ -476,6 +475,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     } catch (err) {
       ruleError(err);
     }
+    await announce(req, code, t);
     publish([t.buyer, t.seller], { type: 'chat', chat });
     return reply.code(201).send({ id });
   });
