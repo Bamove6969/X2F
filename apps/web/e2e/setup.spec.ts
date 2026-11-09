@@ -368,11 +368,12 @@ test('a step opened without the earlier ones goes back to the Terms', async ({ p
 });
 
 // Plan 3 Revision 2026-10-28 (no guest buying), with the front door (owner, 8 Nov 2026): a visitor
-// sent a quote link sees the login, not the quote. From there, Create an account and the shortest
+// sent a quote link sees the Landing board (design review 2026-11-08 item 1), not the quote. From
+// there, Create account and the shortest
 // route (Terms, names, a login method, the first wallet) come back to the same quote with the amount
 // kept, through no more screens than the Setup boards, each one reached by a single tap of its own
 // button (no dead end). Any step added later must keep this green.
-test('a visitor with a quote link comes back to the same quote, amount kept, through the login and no more than the Setup boards', async ({ page }) => {
+test('a visitor with a quote link comes back to the same quote, amount kept, through the Landing board and no more than the Setup boards', async ({ page }) => {
   const s = await stubApi(page);
   const takes: unknown[] = [];
   await page.route('**/v1/methods?*', json({ live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] }));
@@ -386,11 +387,11 @@ test('a visitor with a quote link comes back to the same quote, amount kept, thr
 
   const quote = `/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`;
   await page.goto(quote);
-  // Outside the door: the login, keeping the quote (and its amount) to come back to.
-  await expect(page.locator('[data-screen="login"]')).toBeVisible();
+  // Outside the door: the Landing board, keeping the quote (and its amount) to come back to.
+  await expect(page.locator('[data-screen="landing"]')).toBeVisible();
   expect(new URL(page.url()).searchParams.get('returnTo')).toBe(quote);
   await expect(page.locator('#quote-amount')).toHaveCount(0);
-  await page.click('[data-part="create-account"]');
+  await page.click('[data-part="landing-create"]');
 
   // Every screen on the way, in order: one tap of its primary action moves on.
   const seen: string[] = [];

@@ -45,6 +45,8 @@ test('newest first with dates, all new, then seen on the next visit', async ({ p
   await page.route('**/v1/account/me', json({ displayName: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], termsCurrent: true }));
   await page.goto('/news');
   await expect(page.getByRole('heading', { level: 1, name: 'News' })).toBeVisible();
+  // The heading shows before the list loads (failed once under load): wait for the items.
+  await expect(page.locator('[data-part="news-item"]')).toHaveCount(3);
   expect(await titles(page)).toEqual(['Upgrade done', 'Planned upgrade', 'Welcome']);
   expect(await newTitles(page)).toEqual(['Upgrade done', 'Planned upgrade', 'Welcome']);
   expect(await page.locator('[data-part="news-date"] time').evaluateAll((ts) => ts.map((t) => t.getAttribute('datetime')))).toEqual(
