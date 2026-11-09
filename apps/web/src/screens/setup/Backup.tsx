@@ -1,19 +1,28 @@
 /**
- * Setup step 4 (board SetupBackup; spec 6.1 step 4, 6.2 "Backup method"): an optional, strongly
- * recommended backup way to log in: printed recovery codes, a security key or a second PGP key.
- * An authenticator app is no longer offered here (design build gaps Job 1, board Login-Backup:
- * the recovery code is the only backup login; an authenticator code alone no longer opens a
- * backup login, so offering it as a backup would leave a PGP account with no way back in). It
- * stays in Settings as a login step with a password. "Skip for now" goes straight on to the wallet. While the account's
- * sign-up window is open the server needs no confirm-it's-you for these; the confirm sheet is wired
- * in anyway, so a person who comes back later is asked to confirm rather than refused.
+ * Setup step 4 (board SetupBackup; spec 6.1 step 4, 6.2 "Backup method").
+ *
+ * Owner 1 Nov 2026 (register S-017; lead job J-09): the recovery codes are REQUIRED at sign-up.
+ * The step first makes them (`RecoveryCodeStep`): they are shown once, the person ticks "I've
+ * written it down" and types back (or pastes) one of them, picked at random, before going on.
+ * There is no "Skip for now" until then. After that, a security key or a second PGP key is an
+ * optional extra backup, and "Skip for now" goes on to the wallet. A recovery code is the
+ * emergency way in only (owner G32): a backup login opens a held recovery session (recovery.ts).
+ *
+ * An authenticator app is not offered here (design build gaps Job 1, board Login-Backup: an
+ * authenticator code alone no longer opens a backup login). It stays in Settings as a login step
+ * with a password. While the account's sign-up window is open the server needs no confirm-it's-you
+ * for these; the confirm sheet is wired in anyway, so a person who comes back later is asked to
+ * confirm rather than refused.
+ *
+ * Not decided here (owner, section 5): the code's format (today ten 16-character codes, S-018 says
+ * one; S-019 says long or about 5 words). The type-back works for either.
  */
 import { useState } from 'react';
-import { addWebAuthnKey, withConfirm, type PgpChallenge } from '@x2f/auth-client';
+import { addWebAuthnKey, normalizeRecoveryCode, withConfirm, type PgpChallenge } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { RecoveryCodes } from '../settings/RecoveryCodes.js';
+import { heldNote, refusalText } from '../auth/refusals.js';
 import { SetupFrame, SetupIntro, radioProps, useSetup, type BackupChoice } from './kit.js';
 import { errorCode, setupError } from './register.js';
 
@@ -26,17 +35,48 @@ export const BACKUPS: { id: BackupChoice; name: string; short: string; desc: str
   { id: 'pgp', name: 'Second PGP key', short: 'second PGP key', desc: 'A spare PGP key stored separately from your main one.' },
 ];
 
-export function Backup() {
-  const { update, go } = useSetup();
-  const { prove, confirmUi, open } = useConfirm();
-  const [pick, setPick] = useState<BackupChoice>('recovery-codes');
-  const [adding, setAdding] = useState<BackupChoice | null>(null);
-  const choice = BACKUPS.find((b) => b.id === pick)!;
+/** The optional backups offered once the recovery codes are saved. */
+const EXTRAS = BACKUPS.filter((b) => b.id !== 'recovery-codes');
 
-  const done = (b: BackupChoice) => {
+export function Backup() {
+  const { state, update, go } = useSetup();
+  const { prove, confirmUi, open } = useConfirm();
+  // A reload comes back here with the flow's memory gone, so the codes are made and checked again
+  // (the server keeps no "saved" flag; a new set replaces the old one).
+  const [saved, setSaved] = useState(state.backup !== null);
+  const [pick, setPick] = useState<BackupChoice>(EXTRAS[0]!.id);
+  const [adding, setAdding] = useState<BackupChoice | null>(null);
+  const choice = EXTRAS.find((b) => b.id === pick)!;
+
+  const extra = (b: BackupChoice) => {
     update({ backup: b });
     go('wallet');
   };
+
+  if (!saved) {
+    return (
+      <ConfirmOpenProvider value={open}>
+        <SetupFrame screen="setup-backup" step={4} footer={null}>
+          {/* COPY-UNSIGNED */}
+          <SetupIntro title="Save your recovery codes">
+            X2F has no email address or phone number for you, so if you lose your key or forget your password, a recovery code is your emergency
+            way back in.
+          </SetupIntro>
+          <p className="x2f-start__panel">
+            Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.
+          </p>
+          <RecoveryCodeStep
+            prove={prove}
+            onDone={() => {
+              update({ backup: 'recovery-codes' });
+              setSaved(true);
+            }}
+          />
+          {confirmUi}
+        </SetupFrame>
+      </ConfirmOpenProvider>
+    );
+  }
 
   return (
     <ConfirmOpenProvider value={open}>
@@ -56,21 +96,18 @@ export function Backup() {
           </div>
         }
       >
-        <SetupIntro title="Add a backup way to log in">
-          We recommend it. X2F has no email address or phone number for you, so if you lose your key or forget your password, we have no way to let
-          you back in.
+        {/* COPY-UNSIGNED */}
+        <SetupIntro title="Add another backup (optional)">
+          A security key or a second PGP key also gets you back in. You can add one later in Settings.
         </SetupIntro>
-        <p className="x2f-start__panel">
-          Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.
-        </p>
         {adding === null ? (
           <div className="x2f-start__options" role="radiogroup" aria-label="Backup method">
-            {BACKUPS.map((b, i) => (
+            {EXTRAS.map((b, i) => (
               <button
                 key={b.id}
                 type="button"
                 {...radioProps(
-                  BACKUPS.map((x) => x.id),
+                  EXTRAS.map((x) => x.id),
                   pick,
                   setPick,
                   i,
@@ -88,14 +125,120 @@ export function Backup() {
           </div>
         ) : (
           <section className="x2f-stack" aria-label={BACKUPS.find((b) => b.id === adding)!.name} data-part="backup-adding">
-            {adding === 'recovery-codes' ? <RecoveryCodes prove={prove} onDone={() => done('recovery-codes')} /> : null}
-            {adding === 'security-key' ? <SecurityKeyBackup prove={prove} onDone={() => done('security-key')} onCancel={() => setAdding(null)} /> : null}
-            {adding === 'pgp' ? <SecondPgpKey prove={prove} onDone={() => done('pgp')} onCancel={() => setAdding(null)} /> : null}
+            {adding === 'security-key' ? <SecurityKeyBackup prove={prove} onDone={() => extra('security-key')} onCancel={() => setAdding(null)} /> : null}
+            {adding === 'pgp' ? <SecondPgpKey prove={prove} onDone={() => extra('pgp')} onCancel={() => setAdding(null)} /> : null}
           </section>
         )}
         {confirmUi}
       </SetupFrame>
     </ConfirmOpenProvider>
+  );
+}
+
+/** A random index into `n` codes, from the browser's CSPRNG. */
+function pickIndex(n: number): number {
+  const b = new Uint32Array(1);
+  globalThis.crypto.getRandomValues(b);
+  return b[0]! % n;
+}
+
+/**
+ * S-017: makes the recovery codes (shown once), then asks for the tick and one code typed back (or
+ * pasted). The typed code is compared in the normalized form the server uses (case, dashes and
+ * spaces do not matter). Nothing is sent for the check: it only proves the person has the codes.
+ */
+export function RecoveryCodeStep({ prove, onDone }: { prove: Prove; onDone: () => void }) {
+  const primary = usePrimaryVariant();
+  const [codes, setCodes] = useState<string[] | null>(null);
+  const [asked, setAsked] = useState(0);
+  // Plan 2 Task 17: codes made from a login with one way of proving it's you work once the hold ends.
+  const [held, setHeld] = useState<string | null>(null);
+  const [written, setWritten] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const make = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await withConfirm({ kind: 'new-recovery-codes' }, (t) => authApi.newRecoveryCodes(t !== undefined ? { confirmToken: t } : {}), prove);
+      setCodes(result.codes);
+      setAsked(pickIndex(result.codes.length));
+      setHeld(result.status === 'held' && result.holdUntil !== undefined ? heldNote(result.holdUntil) : null);
+    } catch (e) {
+      if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not make recovery codes. Try again.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (codes === null) {
+    return (
+      <div className="x2f-field" data-part="recovery-codes">
+        <ErrorLine error={error} />
+        <Button variant={primary} disabled={busy} onClick={() => void make()} data-part="recovery-make">
+          Show my recovery codes
+        </Button>
+      </div>
+    );
+  }
+
+  const number = asked + 1;
+  const want = normalizeRecoveryCode(codes[asked]!);
+  const got = normalizeRecoveryCode(typed);
+  const matches = got !== null && got === want;
+  const ready = written && matches;
+
+  return (
+    <div className="x2f-field" data-part="recovery-codes">
+      <p className="x2f-note">Save these now. Each works once, and you will not see them again.</p>
+      {held !== null ? (
+        <p className="x2f-note" role="status" data-part="held-note">
+          {held}
+        </p>
+      ) : null}
+      <ol className="x2f-codes" data-part="code-list">
+        {codes.map((c) => (
+          <li className="x2f-codes__item" key={c}>
+            {c}
+          </li>
+        ))}
+      </ol>
+      <label className="x2f-check">
+        <input type="checkbox" checked={written} onChange={(e) => setWritten(e.target.checked)} data-part="recovery-written" />
+        {/* COPY-UNSIGNED (owner's words, S-017) */}
+        <span>I've written it down</span>
+      </label>
+      <div className="x2f-field">
+        {/* COPY-UNSIGNED */}
+        <label className="x2f-label" htmlFor="recovery-typeback">
+          Type or paste code {number} from your list
+        </label>
+        <input
+          className="x2f-input"
+          id="recovery-typeback"
+          autoComplete="off"
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
+          maxLength={64}
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          data-part="recovery-typeback"
+          data-code-number={number}
+        />
+        {got !== null && !matches ? (
+          // COPY-UNSIGNED
+          <p className="x2f-error" role="alert" data-part="recovery-mismatch">
+            That is not code {number}. Check what you wrote down.
+          </p>
+        ) : null}
+      </div>
+      <Button variant={primary} disabled={!ready} onClick={onDone} data-part="recovery-continue">
+        Continue
+      </Button>
+    </div>
   );
 }
 

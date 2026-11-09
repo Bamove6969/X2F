@@ -5,7 +5,8 @@
  *   0 Terms (`/setup`)  1 the private username (`name`, with the live "is available" tick), then
  *   the public display name (`display-name`)  2 login method (`login`)  3 PGP key and code
  *   (`pgp-key`, `pgp-code`) or a password (`password`), or a passkey / security key straight from
- *   step 2  4 backup login (`backup`, "Skip for now")  5 first payout wallet (`wallet`)  then
+ *   step 2  4 backup login (`backup`: the recovery codes first, required (owner S-017), then an
+ *   optional security key or second PGP key, "Skip for now")  5 first payout wallet (`wallet`)  then
  *   Welcome (`welcome`) with Start trading back to `returnTo`.
  *
  * What the person has entered lives only in this component's memory: nothing goes to the URL,
@@ -33,6 +34,15 @@ import { Username } from './Username.js';
 import { Wallet } from './Wallet.js';
 import { Welcome } from './Welcome.js';
 
+/**
+ * Owner S-017: once this flow has made the account, the wallet and Welcome steps wait until the
+ * recovery codes are saved (typed back). Someone already signed in who only comes to link a wallet
+ * did not sign up here, so it does not apply to them.
+ */
+export function needsBackup(state: Pick<SetupState, 'registered' | 'backup'>): boolean {
+  return state.registered && state.backup === null;
+}
+
 export function SetupFlow() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -48,6 +58,7 @@ export function SetupFlow() {
   // Once the account exists, the steps that create it are closed (review I2): Back, or a stale tab,
   // lands on the backup step instead of a second sign-up that would read "That username is taken".
   const before = (ok: boolean, el: ReactNode) => (state.registered ? <Navigate to={path('backup')} replace /> : need(ok, el));
+  const after = (el: ReactNode) => (needsBackup(state) ? <Navigate to={path('backup')} replace /> : el);
 
   return (
     <SetupContext.Provider value={api}>
@@ -60,8 +71,8 @@ export function SetupFlow() {
         <Route path="pgp-code" element={need(state.challenge !== null, <PgpChallenge />)} />
         <Route path="password" element={before(named, <Password />)} />
         <Route path="backup" element={<Backup />} />
-        <Route path="wallet" element={<Wallet />} />
-        <Route path="welcome" element={<Welcome />} />
+        <Route path="wallet" element={after(<Wallet />)} />
+        <Route path="welcome" element={after(<Welcome />)} />
         <Route path="*" element={<Navigate to={path('')} replace />} />
       </Routes>
     </SetupContext.Provider>
