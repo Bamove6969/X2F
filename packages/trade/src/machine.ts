@@ -514,10 +514,17 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
       // the moderator nearly always handed it out before the dispute, so it completes anyway. The
       // trade stays `disputed` and open with the tx on record, the same shape as a buyer's dispute
       // opened after the refund landed; the API marks the dispute after-refund in the same
-      // transaction. The same tx reported again changes nothing.
+      // transaction. The same tx reported again changes nothing; a different tx is refused (the
+      // escrow paid out once; re-verify 43fbbb2f, R-M1), never a close as `refunded` with the
+      // dispute still open.
+      // NEEDS_PLAN_4_RULING_PAYOUT (R-M2): on this shape any sweep is counted as `auto-refund`
+      // (settleKindFor). Before ruling payouts are executed, they must report their own kind
+      // (`RulingKind` in payouts.ts), checked ahead of this branch, so a ruling's escrow payout is
+      // never recorded as the cancel refund (nor flips the dispute to after-refund in the API).
       if (s === 'disputed' && t.settling === 'auto-refund' && e.kind === 'auto-refund') {
         if (t.txHash === e.txHash) return t;
         if (t.txHash === null) return { ...t, settleBy: null, txHash: e.txHash };
+        return fail('wrong-state');
       }
       const state = e.kind === 'release' ? 'released' : 'refunded';
       return { ...t, state, settling: e.kind, settleBy: null, txHash: e.txHash, closedAt: now };

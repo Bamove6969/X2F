@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { buildInternalListener } from '../src/internal/routes.js';
 import { loadDispute, startDispute } from '../src/disputes/store.js';
+import { runDisputeTimers } from '../src/disputes/timers.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { publishRuling } from './helpers/disputes.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -269,16 +270,59 @@ describe('POST /internal/v1/reports: watcher reports', () => {
     expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', txHash, closedAt: null });
   });
 
-  it("a dispute on any other settlement is not touched by a refund that lands (only the seller's cancel)", async () => {
+  it("a refund held back until an escrow ruling is published: the case goes to staff, never closes with nothing owed (re-verify 43fbbb2f, R-I1)", async () => {
+    const owner = (await deps.db.query<{ id: string }>("select id from accounts where kind = 'owner' and disabled_at is null")).rows[0]?.id
+      ?? (await seedAccount(deps, { loginName: 'wrowner1', kind: 'owner' }));
     const t = await trade();
-    await driveTo(deps, t, 'paid');
-    const opened = { db: deps.db, clock: () => new Date(deps.clock().getTime() + 10 * 86_400_000) };
-    await applyEvent(opened, t.code, { type: 'open-dispute' }, 'seller', async (client, prev, _next, now) => {
-      await startDispute(client, prev, { openedBy: 'seller', reason: 'other', note: '', afterRefund: false, now, prices: null });
+    const secured = await driveTo(deps, t, 'secured');
+    const later = (ms: number) => ({ db: deps.db, clock: () => new Date(secured.payBy!.getTime() + ms) });
+    await applyEvent(later(60_000), t.code, { type: 'request-refund' }, 'seller');
+    await applyEvent(later(90_000), t.code, { type: 'open-dispute' }, 'buyer', async (client, prev, _next, now) => {
+      await startDispute(client, prev, { openedBy: 'buyer', reason: 'paid', note: '', afterRefund: prev.state === 'refunded', now, prices: null });
     });
-    const res = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind: 'auto-refund' });
-    expect(res.statusCode).toBe(409);
-    expect(res.json()).toEqual({ error: 'settle-kind-unknown' });
+    // The seller's device stalls the refund build; the moderator rules from the escrow first.
+    const ruled = await publishRuling(deps, t.code, { outcome: 'release-to-buyer' });
+    expect(ruled).toMatchObject({ status: 'published', afterRefund: false });
+    // Then the seller sends the set: the refund lands and the watcher reports it.
+    const txHash = randomBytes(32).toString('hex');
+    const res = await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'auto-refund' });
+    expect(res.statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', settling: 'auto-refund', txHash, closedAt: null });
+    // The ruling is not quietly turned into an after-refund one...
+    expect(await loadDispute(deps.db, t.code)).toMatchObject({ afterRefund: false, status: 'published' });
+    // ...the case is raised for staff to re-rule (the seller sends the XMR): logged and the owner alerted.
+    const logged = await deps.db.query<{ detail: string }>(
+      `select detail from activity_log where trade_code = $1 and action = 'dispute.refund-after-ruling'`,
+      [t.code],
+    );
+    expect(logged.rows.map((r) => JSON.parse(r.detail))).toEqual([{ seq: ruled.seq, status: 'published' }]);
+    const alerts = await deps.db.query<{ detail: Record<string, unknown> }>(
+      `select detail from alerts where account_id = $1 and kind = 'dispute-refund-after-ruling'`,
+      [owner],
+    );
+    expect(alerts.rows.map((r) => r.detail)).toEqual([{ trade: t.code, seq: ruled.seq }]);
+    // The appeal window ends: the case is final and waits for a person, it does not close.
+    const afterWindow = new Date(ruled.appealEndsAt!.getTime() + 1);
+    await runDisputeTimers({ db: deps.db, clock: () => afterWindow });
+    expect(await loadDispute(deps.db, t.code)).toMatchObject({ status: 'final', afterRefund: false });
+    expect((await deps.db.query('select closed_at from disputes where code = $1', [t.code])).rows).toEqual([{ closed_at: null }]);
+    // The same report again raises nothing new.
+    expect((await report({ kind: 'settled', trade: t.code, txHash, settleKind: 'auto-refund' })).statusCode).toBe(201);
+    expect((await deps.db.query(`select 1 from activity_log where trade_code = $1 and action = 'dispute.refund-after-ruling'`, [t.code])).rows).toHaveLength(1);
+  });
+
+  it("a dispute on any other settlement is not touched by a refund that lands (only the seller's cancel)", async () => {
+    // A release whose spend the moderator never saw: escalated from settling, `settling` stays 'release'.
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    expect((await report({ kind: 'spend-unshown', trade: t.code })).statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', settling: 'release' });
+    for (const settleKind of ['auto-refund', 'release'] as const) {
+      const res = await report({ kind: 'settled', trade: t.code, txHash: randomBytes(32).toString('hex'), settleKind });
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toEqual({ error: 'settle-kind-unknown' });
+    }
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', settling: 'release', txHash: null });
     expect(await loadDispute(deps.db, t.code)).toMatchObject({ afterRefund: false });
   });
 

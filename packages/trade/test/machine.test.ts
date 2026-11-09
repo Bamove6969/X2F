@@ -884,6 +884,9 @@ describe('open-dispute', () => {
     expect(landed).toMatchObject({ state: 'disputed', settling: 'auto-refund', txHash: 'ee'.repeat(32), settleBy: null, closedAt: null, dispute: { by: 'buyer', at: at(121) } });
     // The same report again changes nothing (the watcher or the desk may repeat it).
     expect(apply(landed, { type: 'settled', kind: 'auto-refund', txHash: 'ee'.repeat(32) }, 'system', at(131))).toBe(landed);
+    // A different tx on that shape is refused, never a close as `refunded` with the dispute open
+    // (re-verify 43fbbb2f, R-M1): the escrow paid out once.
+    expect(rule(() => apply(landed, { type: 'settled', kind: 'auto-refund', txHash: 'ff'.repeat(32) }, 'system', at(132)))).toBe('wrong-state');
     // The seller's own dispute on their cancel (past settleBy) is the same once the refund lands.
     const bySeller = apply(c, { type: 'open-dispute' }, 'seller', at(137));
     expect(apply(bySeller, { type: 'settled', kind: 'auto-refund', txHash: 'ee'.repeat(32) }, 'system', at(140))).toMatchObject({ state: 'disputed', txHash: 'ee'.repeat(32), closedAt: null });
