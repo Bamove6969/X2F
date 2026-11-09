@@ -93,6 +93,8 @@ export async function staffLoginRoutes(app: FastifyInstance): Promise<void> {
     const now = req.server.deps.clock();
     const { rows } = await req.server.deps.db.query<{ created_at: Date }>('select created_at from sessions where id = $1', [req.auth.sessionId]);
     const policy = sessionPolicy(req.auth.kind, req.auth.level);
+    // Only a full trader session has no fixed policy; a staff or owner session always has one.
+    if (policy === null) throw new ApiError(401, 'not-authenticated');
     // This request touched the session, so the idle limit runs from now.
     const ends = [now.getTime() + policy.idleMs, rows[0]!.created_at.getTime() + policy.absoluteMs];
     const windowEnd = req.staff.role === 'owner' ? null : windowEndsAt(req.staff.hours, now);

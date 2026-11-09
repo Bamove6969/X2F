@@ -18,12 +18,12 @@ export {
   type Held,
   type DeviceSettings,
   type LoginResult,
-  type LogoutTimer,
   type MethodEntry,
   type PasswordLoginResult,
   type PgpChallenge,
   type RegistrationChallenge,
   type SessionEntry,
+  type SessionInfo,
   type TeamAuditEntry,
   type TeamInviteView,
   type TeamMember,
@@ -46,5 +46,7 @@ export {
 } from './webauthn.js';
 export { defaultDeviceLabel, teamInviteAction, teamRemoveAction, teamRolesAction, walletAction, walletsAction, withConfirm } from './confirm.js';
 export { checkDisplayName, checkLoginName, checkNames, checkPassword, describeAction, inspectPublicKey, normalizeLoginCode, normalizeRecoveryCode } from '@x2f/accounts';
-export type { ConfirmAction, IdleHours, MethodType } from '@x2f/accounts';
-export { DEFAULT_IDLE_HOURS, IDLE_HOURS, MAX_WALLET_BATCH } from '@x2f/accounts';
+export type { ConfirmAction, MethodType, SessionAccountType } from '@x2f/accounts';
+export {
+  IDLE_REMINDER_MINUTES, MAX_WALLET_BATCH, SESSION_PROMPT_MS, UNCHOSEN_SESSION_HOURS, isIdleReminderMinutes, isSessionHours, sessionHoursFor,
+} from '@x2f/accounts';

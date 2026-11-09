@@ -272,7 +272,7 @@ describe('adding a wallet later (P2-C2, R17)', () => {
 
   it('refuses a body that is not a JSON object with 400 bad-request (M7)', async () => {
     const { b } = await trader();
-    for (const [method, url] of [['POST', '/v1/wallets'], ['PUT', '/v1/account/security/logout-timer']] as const) {
+    for (const [method, url] of [['POST', '/v1/wallets'], ['PUT', '/v1/account/session/length']] as const) {
       for (const payload of ['[]', '"x"', '7', 'null']) {
         const res = await app.inject({
           method, url, headers: { origin: ORIGIN, 'content-type': 'application/json' }, cookies: b.cookies, payload,

@@ -22,6 +22,13 @@ import { BackupLogin } from './screens/auth/BackupLogin.js';
 import { Login } from './screens/auth/Login.js';
 import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js';
 import { MemberInvite } from './screens/auth/MemberInvite.js';
+import { SESSION_LENGTH_PATH, SessionLengthScreen } from './screens/auth/SessionLength.js';
+import { SessionPrompt } from './screens/auth/SessionPrompt.js';
+import { publishSessionWatch } from './session/sessionWatch.js';
+import { IdleReminder } from './session/IdleReminder.js';
+import { publishIdleReminder } from './session/idleReminderWatch.js';
+import { IDLE_REMINDER_PATH } from './screens/auth/sessionCopy.js';
+import { IdleReminderScreen } from './screens/settings/IdleReminderSettings.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
@@ -155,14 +162,32 @@ function isTrader(session: ReturnType<typeof useSession>): boolean {
   return m.kind === 'trader' && m.level === 'full' && m.termsCurrent !== false;
 }
 
+/**
+ * Session length (owner, 2 Nov 2026): on page load the signed-in session's length and end are
+ * handed to "Stay logged in?" (`SessionPrompt`). After a login, the length question does it.
+ */
+function useWatchSession(session: ReturnType<typeof useSession>): void {
+  useEffect(() => {
+    if (session.status === 'signed-out') publishIdleReminder(null);
+    if (session.status !== 'signed-in') return;
+    const me = session.me;
+    if (me.session != null) publishSessionWatch({ info: me.session, methods: me.methods });
+    // Owner Q75: the person's own idle reminder (off unless they turned it on).
+    publishIdleReminder(me.idleReminderMinutes ?? null);
+  }, [session]);
+}
+
 export function App() {
   const session = useSession();
+  useWatchSession(session);
   // Plan 4 Task 8: the banner, and maintenance, which replaces the whole app with the owner's message.
   const { site, refresh } = useSite();
   if (site.maintenance !== null) return <Maintenance maintenance={site.maintenance} onRetry={refresh} />;
   return (
     <>
       <RouterBridge />
+      <SessionPrompt />
+      <IdleReminder />
       {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
       <Routes>
         <Route element={<Layout nav banner={site.banner} />}>
@@ -184,9 +209,11 @@ export function App() {
           <Route path="/setup/*" element={<SetupFlow />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/login" element={<Login />} />
+          <Route path={SESSION_LENGTH_PATH} element={<SessionLengthScreen />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />
           <Route path="/settings/devices" element={<DevicesRoute />} />
+          <Route path={IDLE_REMINDER_PATH} element={<IdleReminderScreen />} />
           <Route path="/settings/blocked" element={<Blocked />} />
           <Route path="/settings/team" element={<Team />} />
           <Route path="/team/join" element={<MemberInvite />} />

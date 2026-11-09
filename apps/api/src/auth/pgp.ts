@@ -26,7 +26,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
-import { issueConfirmToken, requireConfirm } from './confirm.js';
+import { confirmerOf, issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
@@ -735,7 +735,9 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
 async function confirmStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const action: ConfirmAction = parseConfirmAction(body(req).action);
-  const stored = await storedKeys(deps, req.auth.accountId);
+  // A team member proves it's them with their own keys, and only for MEMBER_CONFIRM_ACTIONS (Q73).
+  const confirmer = await confirmerOf(deps.db, req.auth, action);
+  const stored = await storedKeys(deps, confirmer.accountId);
   if (stored.length === 0) throw new ApiError(403, 'method-not-allowed');
   const keys = await usableKeys(stored, deps.clock());
   return issuePgpChallenge(deps, req, {
@@ -752,6 +754,7 @@ async function confirmFinish(req: FastifyRequest) {
   });
   const action = parseConfirmAction(row.payload.action);
   if ((await actionHash(action)) !== row.payload.actionHash) throw new ApiError(400, 'challenge-expired');
+  await confirmerOf(deps.db, req.auth, action);
   const confirmToken = await issueConfirmToken(deps, { sessionId: req.auth.sessionId, accountId: req.auth.accountId, action, method: 'pgp' });
   return { confirmToken };
 }
@@ -932,8 +935,10 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
 
   await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...TRADER_LOGIN_KINDS] }), { prefix: '/v1/login/pgp' });
 
-  app.post('/v1/confirm/pgp/start', { preHandler: requireSession() }, confirmStart);
-  app.post('/v1/confirm/pgp/finish', { preHandler: requireSession() }, confirmFinish);
+  // Members reach these only for MEMBER_CONFIRM_ACTIONS ("Stay logged in", owner Q73): `confirmerOf`.
+  // Review M5: on old Terms only "Stay logged in" (`staleTermsOnlyToExtend`).
+  app.post('/v1/confirm/pgp/start', { preHandler: [requireSession({ member: 'any', allowStaleTerms: true }), staleTermsOnlyToExtend] }, confirmStart);
+  app.post('/v1/confirm/pgp/finish', { preHandler: requireSession({ member: 'any', allowStaleTerms: true }) }, confirmFinish);
 
   app.post(
     '/v1/account/pgp/start',

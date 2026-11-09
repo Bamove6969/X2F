@@ -29,7 +29,9 @@ export type ConfirmAction =
   /** Changes one member's roles to exactly `roles`. */
   | { kind: 'team-roles'; memberId: string; roles: string }
   /** Removes one member (or cancels an invite). */
-  | { kind: 'team-remove'; memberId: string };
+  | { kind: 'team-remove'; memberId: string }
+  /** "Stay logged in?" (owner, 2 Nov 2026): extend this session by its length. Bound to the session by the token. */
+  | { kind: 'extend-session' };
 
 /** Canonical JSON of a flat object of strings: keys sorted, no whitespace. */
 function canonical(a: ConfirmAction): string {
@@ -78,6 +80,8 @@ export function describeAction(a: ConfirmAction): string {
       return `change a team member's roles to ${teamRoleWords(a.roles)}`;
     case 'team-remove':
       return 'remove a team member';
+    case 'extend-session':
+      return 'stay logged in';
   }
 }
 

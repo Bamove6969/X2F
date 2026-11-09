@@ -22,7 +22,7 @@ import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { hasCertificateChain, isUnknownAuthenticator } from './attestation.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
-import { issueConfirmToken, requireConfirm } from './confirm.js';
+import { confirmerOf, issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { assertMethodAllowed } from './methods.js';
@@ -871,7 +871,9 @@ async function confirmStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const body = record(req.body);
   const action = parseConfirmAction(body.action);
-  const creds = (await credentialsOf(deps.db, req.auth.accountId)).filter((c) => allowed(req.auth.kind, c));
+  // A team member proves it's them with their own credentials, and only for MEMBER_CONFIRM_ACTIONS (Q73).
+  const confirmer = await confirmerOf(deps.db, req.auth, action);
+  const creds = (await credentialsOf(deps.db, confirmer.accountId)).filter((c) => allowed(confirmer.kind ?? req.auth.kind, c));
   if (creds.length === 0) throw new ApiError(403, 'method-not-allowed');
   const options = await buildAssertionOptions(deps, creds);
   const challengeId = await storeChallenge(deps, req, {
@@ -886,11 +888,12 @@ async function confirmFinish(req: FastifyRequest) {
   const body = record(req.body);
   const ch = await consumeChallenge(deps.db, str(body, 'challengeId'), deps.clock());
   if (!ch || ch.method !== 'webauthn' || !sameSession(ch, req, 'confirm')) throw expired();
-  const row = await verifyAssertion(deps, { accountId: req.auth.accountId, response: body.response, expectedChallenge: ch.webauthn_challenge! });
-  assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });
-  assertListed(ch, row);
   const action: ConfirmAction = parseConfirmAction(ch.payload.action);
   if ((await actionHash(action)) !== ch.payload.actionHash) throw expired();
+  const confirmer = await confirmerOf(deps.db, req.auth, action);
+  const row = await verifyAssertion(deps, { accountId: confirmer.accountId, response: body.response, expectedChallenge: ch.webauthn_challenge! });
+  assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });
+  assertListed(ch, row);
   // The method is the kind of the stored credential that just verified, never anything the client sent.
   const confirmToken = await issueConfirmToken(deps, {
     sessionId: req.auth.sessionId, accountId: req.auth.accountId, action, method: row.kind,
@@ -986,8 +989,10 @@ export async function applyCredential(db: Queryable, accountId: string, c: Store
 export function webauthnRoutes(app: FastifyInstance): void {
   app.post('/v1/register/webauthn/start', registerStart);
   app.post('/v1/register/webauthn/finish', registerFinish);
-  app.post('/v1/confirm/webauthn/start', { preHandler: requireSession() }, confirmStart);
-  app.post('/v1/confirm/webauthn/finish', { preHandler: requireSession() }, confirmFinish);
+  // Members reach these only for MEMBER_CONFIRM_ACTIONS ("Stay logged in", owner Q73): `confirmerOf`.
+  // Review M5: on old Terms only "Stay logged in" (`staleTermsOnlyToExtend`).
+  app.post('/v1/confirm/webauthn/start', { preHandler: [requireSession({ member: 'any', allowStaleTerms: true }), staleTermsOnlyToExtend] }, confirmStart);
+  app.post('/v1/confirm/webauthn/finish', { preHandler: requireSession({ member: 'any', allowStaleTerms: true }) }, confirmFinish);
   app.post(
     '/v1/account/webauthn/start',
     {

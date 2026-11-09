@@ -93,8 +93,37 @@ export function ConfirmSheet({
   onToken: (token: string) => void;
   onCancel: () => void;
 }) {
+  const walletAdd = action.kind === 'add-wallet' || action.kind === 'add-wallets';
+  return (
+    <Sheet open title="Confirm it's you" onClose={onCancel}>
+      <p className="x2f-sheet__body" data-part="action">
+        To {describeAction(action)}, confirm it's you.
+      </p>
+      {walletAdd ? <WalletWaitNote batch={action.kind === 'add-wallets'} /> : null}
+      <ConfirmMethods action={action} methods={methods} onToken={onToken} />
+    </Sheet>
+  );
+}
+
+/**
+ * The account's own login methods for one action-bound confirm, with their errors: the body of
+ * `ConfirmSheet`, and of "Stay logged in?" (`SessionPrompt`, owner 2 Nov 2026), which names the
+ * password's button `submitLabel`. `onToken` gets the single-use token.
+ */
+export function ConfirmMethods({
+  action,
+  methods,
+  onToken,
+  submitLabel = 'Confirm',
+}: {
+  action: ConfirmAction;
+  methods: MethodType[];
+  onToken: (token: string) => void | Promise<void>;
+  submitLabel?: string;
+}) {
   const hasPassword = methods.includes('password');
-  const hasTotp = methods.includes('totp');
+  // Owner G10 (7 Nov 2026): the password alone keeps you logged in, authenticator app or not.
+  const hasTotp = methods.includes('totp') && action.kind !== 'extend-session';
   const [busy, setBusy] = useState<MethodType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [password, setPassword] = useState('');
@@ -108,7 +137,7 @@ export function ConfirmSheet({
       setBusy(method);
       setError(null);
       try {
-        onToken(await fn());
+        await onToken(await fn());
       } catch (e) {
         // A held backup session or too many tries says so; a plain miss reads `wrong`.
         setError(refusalText(e, wrong));
@@ -154,15 +183,9 @@ export function ConfirmSheet({
 
   // Exactly one primary in the sheet: the PGP Confirm while a PGP challenge is up, else the password Confirm.
   const pgpPrimary = pgp !== null;
-  const walletAdd = action.kind === 'add-wallet' || action.kind === 'add-wallets';
 
   return (
-    <Sheet open title="Confirm it's you" onClose={onCancel}>
-      <p className="x2f-sheet__body" data-part="action">
-        To {describeAction(action)}, confirm it's you.
-      </p>
-      {walletAdd ? <WalletWaitNote batch={action.kind === 'add-wallets'} /> : null}
-
+    <>
       {error !== null ? (
         <p className="x2f-error" role="alert">
           {error}
@@ -233,13 +256,18 @@ export function ConfirmSheet({
                 />
               </>
             ) : null}
-            <Button variant={pgpPrimary ? 'secondary' : 'primary'} disabled={busy !== null || !passwordReady} onClick={finishPassword}>
-              Confirm
+            <Button
+              variant={pgpPrimary ? 'secondary' : 'primary'}
+              disabled={busy !== null || !passwordReady}
+              onClick={finishPassword}
+              data-part="confirm-password"
+            >
+              {submitLabel}
             </Button>
           </div>
         ) : null}
       </div>
-    </Sheet>
+    </>
   );
 }
 
