@@ -472,11 +472,13 @@ describe('internalFromEnv', () => {
     }
   });
 
-  it('NEEDS_P4_MOD_COUNTERSIGN: X2F_DEV_MOD_CHAT=1 turns the message route on, and is refused when NODE_ENV=production', async () => {
+  it('NEEDS_P4_MOD_COUNTERSIGN: X2F_DEV_MOD_CHAT=1 turns the message route on, and only when NODE_ENV is exactly development or test', async () => {
     const { internalFromEnv } = await import('../src/main.js');
     const base = { MOD_INTERNAL_SOCKET: '/run/x2f-mod/mod.sock', MOD_INTERNAL_SOCKET_GID: '991', MOD_INTERNAL_SECRET: Buffer.from(SECRET).toString('base64'), MOD_API_READER_DATABASE_URL: 'x' };
-    expect(internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '1' })?.devModChat).toBe(true);
+    expect(internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '1', NODE_ENV: 'test' })?.devModChat).toBe(true);
     expect(internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '1', NODE_ENV: 'development' })?.devModChat).toBe(true);
+    // R-1 (re-verify 8 Nov): unset or any other NODE_ENV refuses the flag
+    for (const ne of [undefined, '', 'staging', 'Development', 'prod']) expect(() => internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '1', NODE_ENV: ne }), String(ne)).toThrow('X2F_DEV_MOD_CHAT');
     expect(internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '' })?.devModChat).toBe(false);
     expect(internalFromEnv({ ...base, NODE_ENV: 'production' })?.devModChat).toBe(false);
     expect(() => internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '1', NODE_ENV: 'production' })).toThrow('X2F_DEV_MOD_CHAT');

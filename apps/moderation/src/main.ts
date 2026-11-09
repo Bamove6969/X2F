@@ -514,8 +514,8 @@ function envString(env: Record<string, string | undefined>, name: string): strin
  * dedicated group the API's user is in, never 0; review 8 Nov I-3), `MOD_INTERNAL_SECRET` (base64 of
  * 32 bytes, shared with the API only) and `MOD_API_READER_DATABASE_URL` (the API's database as a
  * member of the read-only role `x2f_mod_reader`, migration 208). NEEDS_P4_MOD_COUNTERSIGN:
- * `X2F_DEV_MOD_CHAT=1` turns on the moderator's message route (dev only; refused with
- * NODE_ENV=production, review 8 Nov I-2). Errors name the variable, never the value.
+ * `X2F_DEV_MOD_CHAT=1` turns on the moderator's message route (dev only; accepted only with
+ * NODE_ENV=development or test, any other value or unset refuses it; review 8 Nov I-2, R-1). Errors name the variable, never the value.
  */
 export function internalFromEnv(
   env: Record<string, string | undefined>,
@@ -527,7 +527,7 @@ export function internalFromEnv(
   if (!/^[1-9][0-9]{0,9}$/.test(gidText)) throw new Error('moderation: MOD_INTERNAL_SOCKET_GID is malformed (the dedicated group\'s numeric id, not 0)');
   const dev = env.X2F_DEV_MOD_CHAT ?? '';
   if (dev !== '' && dev !== '1') throw new Error('moderation: X2F_DEV_MOD_CHAT is malformed (1 or unset)');
-  if (dev === '1' && env.NODE_ENV === 'production') throw new Error('moderation: X2F_DEV_MOD_CHAT is refused with NODE_ENV=production (review 8 Nov I-2)');
+  if (dev === '1' && env.NODE_ENV !== 'development' && env.NODE_ENV !== 'test') throw new Error('moderation: X2F_DEV_MOD_CHAT is accepted only with NODE_ENV=development or test (review 8 Nov I-2, R-1)');
   return {
     socketPath,
     gid: Number(gidText),
