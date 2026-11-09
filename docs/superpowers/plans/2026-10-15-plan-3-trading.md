@@ -10,6 +10,7 @@ Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's a
 - **Bands and methods (owner Q23, 6 Nov):** Task 34 limits are 3 bands per currency and 5 payment types per offer (the code has 5 and 10: change to 3 and 5).
 - **Price sources (owner Q7, 6 Nov):** Task 3 maximum source gap is 3% (`maxSpreadBps` 300); fourth source off by default.
 - **Disputed trades are kept 90 days from the dispute closing (owner p11-11),** not from the dispute button; the older lines below carry a struck-through note.
+- **Trades erased 30 days after they end (owner p11-17, unchanged); window to file a dispute after a trade closes: 72 h per owner p11-17, pending confirmation of which window (p11-51).** The owner said 72 h in place of 48 h but did not say which window; the only one built is the buyer's dispute within 48 h of a no-show refund (`TIMERS.disputeAfterRefundHours = 48`). The number in code and in the older text stays 48 until the lead confirms.
 
 ## Revision 2026-10-29 (Task 10 as built, second, `wip/second-p3-task10`; not reviewed yet)
 
