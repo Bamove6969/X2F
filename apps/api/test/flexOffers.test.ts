@@ -4,12 +4,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { currencyExponent } from '../src/price/currencies.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { loadTrade, loadTradeRow } from '../src/trades/store.js';
+import { applyEvent, loadTrade, loadTradeRow } from '../src/trades/store.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { flexBody } from './helpers/offers.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
-import { XMR, driveTo, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
+import { XMR, fakeAddress, happyPath, seedReviews, seedTrade } from './helpers/trades.js';
 
 // J-16, Plan 3 Tasks 34/35 rebuilt with the owner's numbers: at most 3 bands per currency and 5
 // payment types per offer (Q23), bands in whole units following on one unit later (2 Nov), a second
@@ -376,9 +376,12 @@ describe('review M1: the band the taker gets, the instructions once secured, the
     const code = (res.json() as { code: string }).code;
     const shown = async (who: Who) => ((await who.browser.get(`/v1/trades/${code}`)).json() as { paymentInstructions: unknown }).paymentInstructions;
     expect([await shown(t), await shown(p)]).toEqual([null, null]);
-    await driveTo(deps, (await loadTrade(deps.db, code))!, 'funding');
-    expect([await shown(t), await shown(p)]).toEqual([null, null]);
-    await driveTo(deps, (await loadTrade(deps.db, code))!, 'secured');
+    // The happy path step by step: still hidden through funding and securing, shown from secured on.
+    for (const step of happyPath((await loadTrade(deps.db, code))!, fakeAddress())) {
+      await applyEvent(deps, code, step.e, step.by);
+      if (step.to === 'secured') break;
+      expect([await shown(t), await shown(p)], step.to).toEqual([null, null]);
+    }
     expect([await shown(t), await shown(p)]).toEqual(['Zelle to pay@example.test', 'Zelle to pay@example.test']);
   });
 
