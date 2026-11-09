@@ -49,7 +49,8 @@ export interface OfferCard {
   poster: TraderSummary;
   /** The offer's price per XMR now (`offerRate`); null for a market offer while the feed is down. */
   rate: string | null;
-  pricing: { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: string };
+  /** Always the market price moved by the margin (owner Q1, F1: there are no fixed-price offers). */
+  pricing: { mode: 'market'; marginBps: number };
   /** The unit the poster set the range in; that pair is exact, the other is converted (see above). */
   amountUnit: AmountUnit;
   minAtomic: string | null;
@@ -136,7 +137,6 @@ const STATUSES = ['live', 'paused', 'removed'] as const;
 export const TERMS_MAX = 4000;
 /** Fiat amounts: at most 14 digits of minor units (the web form takes 12 whole digits and 2 decimals). */
 const FIAT = /^\d{1,14}$/;
-const PRICE = /^\d{1,20}$/;
 /** XMR amounts: atomic units, at most 20 digits (100 million XMR, far above the supply). */
 const ATOMIC = /^\d{1,20}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -165,9 +165,7 @@ interface OfferRow {
   side: Side;
   method_id: string;
   currency: string;
-  price_mode: 'market' | 'fixed';
-  margin_bps: number | null;
-  fixed_cents_per_xmr: string | null;
+  margin_bps: number;
   amount_unit: AmountUnit;
   min_atomic: string | null;
   max_atomic: string | null;
@@ -179,15 +177,23 @@ interface OfferRow {
   status: OfferStatus;
 }
 
-const OFFER_COLUMNS = `o.id, o.account_id, o.side, o.method_id, o.currency, o.price_mode, o.margin_bps, o.fixed_cents_per_xmr,
+const OFFER_COLUMNS = `o.id, o.account_id, o.side, o.method_id, o.currency, o.margin_bps,
   o.amount_unit, o.min_atomic, o.max_atomic, o.min_fiat_cents, o.max_fiat_cents, o.min_trades, o.terms, o.country, o.status`;
 
 /**
- * An offer anyone may see: live, its poster neither disabled nor on a trading hold, and the site not
+ * Offers are market ± % only (owner Q1, 6 Nov 2026; F1, 7 Nov). A row stored as fixed before that
+ * rule (migration 345 refuses new ones) is kept as data until the owner decides what happens to it
+ * (J-02), but the API treats it as an offer that does not exist: it is never listed or counted,
+ * shown (to its poster neither), switched on or off, relisted or taken (trades/take.ts).
+ */
+export const MARKET_PRICED = `o.price_mode = 'market'`;
+
+/**
+ * An offer anyone may see: market-priced (MARKET_PRICED), live, its poster neither disabled nor on a trading hold, and the site not
  * in an emergency stop (`site_flags.trading_paused`; review M6: during a stop nothing is listed,
  * and only the poster can still open their own offer). No site_flags row counts as stopped.
  */
-const LISTED = `o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
+const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
   and not coalesce((select f.trading_paused from site_flags f), true)`;
 
@@ -207,13 +213,12 @@ const posterRated = (now: string): string => `not ${pendingReviewSql('o.account_
  * Exported for the parity test.
  */
 export function rateSql(param: string): string {
-  return `(case when o.price_mode = 'fixed' then o.fixed_cents_per_xmr
-    when ${param}::numeric is null then null
+  return `(case when ${param}::numeric is null then null
     else div(${param}::numeric * (10000 + o.margin_bps) * 2 + 10000, 20000) end)`;
 }
 
-function pricingOf(r: OfferRow): Pricing {
-  return r.price_mode === 'fixed' ? { mode: 'fixed', centsPerXmr: BigInt(r.fixed_cents_per_xmr!) } : { mode: 'market', marginBps: r.margin_bps! };
+function pricingOf(r: Pick<OfferRow, 'margin_bps'>): Pricing {
+  return { mode: 'market', marginBps: r.margin_bps };
 }
 
 function rateOf(r: OfferRow, prices: MarketPrices): bigint | null {
@@ -257,7 +262,7 @@ function toCard(r: OfferRow, poster: TraderSummary, rate: bigint | null): OfferC
     id: r.id,
     poster,
     rate: rate === null ? null : rate.toString(),
-    pricing: p.mode === 'fixed' ? { mode: 'fixed', centsPerXmr: p.centsPerXmr.toString() } : { mode: 'market', marginBps: p.marginBps },
+    pricing: { mode: 'market', marginBps: p.marginBps },
     ...amountsOf(r, rate),
     minTrades: r.min_trades,
   };
@@ -288,20 +293,16 @@ interface NewOffer {
   country: string | null;
 }
 
+/**
+ * `{ mode: 'market', marginBps }`, a whole number of basis points at most 50% above or below the
+ * market (owner F1, 7 Nov: ±5000). Anything else is 400, a fixed price included (owner Q1: there
+ * are no fixed-price offers).
+ */
 function parsePricing(v: unknown): Pricing {
-  if (!isObject(v)) throw bad();
-  const keys = Object.keys(v).sort().join(',');
-  if (v.mode === 'market' && keys === 'marginBps,mode') {
-    const m = v.marginBps;
-    if (typeof m !== 'number' || !Number.isSafeInteger(m) || Math.abs(m) > MAX_MARGIN_BPS) throw bad();
-    return { mode: 'market', marginBps: m };
-  }
-  if (v.mode === 'fixed' && keys === 'centsPerXmr,mode') {
-    const c = v.centsPerXmr;
-    if (typeof c !== 'string' || !PRICE.test(c) || BigInt(c) <= 0n) throw bad();
-    return { mode: 'fixed', centsPerXmr: BigInt(c) };
-  }
-  throw bad();
+  if (!isObject(v) || v.mode !== 'market' || Object.keys(v).sort().join(',') !== 'marginBps,mode') throw bad();
+  const m = v.marginBps;
+  if (typeof m !== 'number' || !Number.isSafeInteger(m) || Math.abs(m) > MAX_MARGIN_BPS) throw bad();
+  return { mode: 'market', marginBps: m };
 }
 
 /** A positive whole amount as a decimal string matching `re`. */
@@ -548,12 +549,11 @@ export function offerRoutes(app: FastifyInstance): void {
     const id = await inTransaction(deps.db, async (client) => {
       await assertMayPost(client, req.auth!, now, o, null);
       const { rows } = await client.query<{ id: string }>(
-      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, fixed_cents_per_xmr,
+      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps,
                            amount_unit, min_atomic, max_atomic, min_fiat_cents, max_fiat_cents, min_trades, terms, country, status, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'live', $16, $16) returning id`,
+       values ($1, $2, $3, $4, 'market', $5, $6, $7, $8, $9, $10, $11, $12, $13, 'live', $14, $14) returning id`,
       [
-        accountId, o.side, o.methodId, o.currency, p.mode, p.mode === 'market' ? p.marginBps : null,
-        p.mode === 'fixed' ? p.centsPerXmr.toString() : null, o.range.unit,
+        accountId, o.side, o.methodId, o.currency, p.marginBps, o.range.unit,
         o.range.unit === 'xmr' ? o.range.min.toString() : null, o.range.unit === 'xmr' ? o.range.max.toString() : null,
         o.range.unit === 'fiat' ? o.range.min.toString() : null, o.range.unit === 'fiat' ? o.range.max.toString() : null,
         o.minTrades, o.terms, o.country, now,
@@ -578,7 +578,7 @@ export function offerRoutes(app: FastifyInstance): void {
     if (status === 'live') await assertTermsCurrent(deps, req.auth!.accountId);
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
     const { rows } = await deps.db.query<{ account_id: string; status: OfferStatus; method_id: string }>(
-      'select account_id, status, method_id from offers where id = $1',
+      `select account_id, status, method_id from offers o where id = $1 and ${MARKET_PRICED}`,
       [id],
     );
     const row = rows[0];
@@ -597,7 +597,7 @@ export function offerRoutes(app: FastifyInstance): void {
       assertMethodAvailable(row.method_id);
       await inTransaction(deps.db, async (client) => {
         const cur = await client.query<{ side: Side; method_id: string; currency: string }>(
-          `select side, method_id, currency from offers where id = $1 and account_id = $2 and status <> 'removed'`,
+          `select side, method_id, currency from offers o where id = $1 and account_id = $2 and status <> 'removed' and ${MARKET_PRICED}`,
           [id, accountId],
         );
         const m = cur.rows[0];
@@ -667,7 +667,7 @@ export function offerRoutes(app: FastifyInstance): void {
     const viewerId = await viewer(app, req, reply);
     const { rows } = await deps.db.query<OfferRow & { listed: boolean; blocked: boolean }>(
       `select ${OFFER_COLUMNS}, (${LISTED} and ${posterRated('$3::timestamptz')}) as listed, ${blockedEitherWaySql('o.account_id', '$2::uuid')} as blocked
-         from offers o join accounts a on a.id = o.account_id where o.id = $1`,
+         from offers o join accounts a on a.id = o.account_id where o.id = $1 and ${MARKET_PRICED}`,
       [id, viewerId, deps.clock()],
     );
     const r = rows[0];
@@ -690,7 +690,7 @@ export function offerRoutes(app: FastifyInstance): void {
     const accountId = req.auth!.accountId;
     const { rows } = await deps.db.query<OfferRow & { created_at: Date }>(
       `select ${OFFER_COLUMNS}, o.created_at from offers o
-        where o.account_id = $1 and o.status <> 'removed' order by o.created_at desc, o.id`,
+        where o.account_id = $1 and o.status <> 'removed' and ${MARKET_PRICED} order by o.created_at desc, o.id`,
       [accountId],
     );
     // Why a live offer is not listed now (review M4), in LISTED's terms; no site_flags row is a stop.
@@ -712,7 +712,7 @@ export function offerRoutes(app: FastifyInstance): void {
       const out: MyOffer = {
         id: r.id, side: r.side, methodId: r.method_id, methodName: getMethod(r.method_id)?.name ?? r.method_id,
         currency: r.currency, rate: rate === null ? null : rate.toString(),
-        pricing: p.mode === 'fixed' ? { mode: 'fixed', centsPerXmr: p.centsPerXmr.toString() } : { mode: 'market', marginBps: p.marginBps },
+        pricing: { mode: 'market', marginBps: p.marginBps },
         ...amountsOf(r, rate),
         minTrades: r.min_trades, status: r.status as 'live' | 'paused',
         createdAt: r.created_at.toISOString(),
@@ -773,13 +773,15 @@ export function offerRoutes(app: FastifyInstance): void {
       const refusedAll = status === 'live' ? await accountRefusal(client, accountId, now) : null;
       const caps = status === 'live' ? await loadOfferCaps(client) : null;
       // Every live or paused offer of mine (the caps count them all), newest first as on the list.
-      const { rows: mine } = await client.query<{ id: string; side: Side; method_id: string; currency: string; status: 'live' | 'paused' }>(
-        `select id, side, method_id, currency, status from offers where account_id = $1 and status <> 'removed'
+      const { rows: mine } = await client.query<{ id: string; side: Side; method_id: string; currency: string; status: 'live' | 'paused'; market: boolean }>(
+        `select id, side, method_id, currency, status, ${MARKET_PRICED} as market from offers o where account_id = $1 and status <> 'removed'
           order by created_at desc, id for update`,
         [accountId],
       );
-      const byId = new Map(mine.map((o) => [o.id, o]));
-      const targets = wanted === 'all' ? mine.map((o) => o.id) : wanted;
+      // A row stored as fixed (MARKET_PRICED) is never switched: not-found, as PATCH answers. The caps
+      // still count it, as assertMayPost does (J-02 leaves the caps alone).
+      const byId = new Map(mine.filter((o) => o.market).map((o) => [o.id, o]));
+      const targets = wanted === 'all' ? [...byId.keys()] : wanted;
       const out: OfferSwitchResult[] = [];
       const switched: string[] = [];
       for (const id of targets) {

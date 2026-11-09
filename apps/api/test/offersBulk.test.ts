@@ -15,10 +15,11 @@ import { tradeApp } from './helpers/tradeApp.js';
 
 const DAY = 86_400_000;
 
+/** USD at $330.00 per XMR, EUR at €297.00; no other currency has a market. */
 function quote(currency: string): MarketQuote | null {
-  if (currency !== 'USD') return null;
+  if (currency !== 'USD' && currency !== 'EUR') return null;
   return {
-    price: { currency, centsPerXmr: 33_000n }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
+    price: { currency, centsPerXmr: currency === 'USD' ? 33_000n : 29_700n }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
     usdCentsPerXmr: 33_000n, fx: null,
   };
 }
@@ -111,7 +112,7 @@ describe('GET /v1/account/offers', () => {
     const other = await poster();
     const a = await post(p);
     setNow(new Date(deps.clock().getTime() + 1000));
-    const b = await post(p, { side: 'buy', methodId: 'REVOLUT', currency: 'EUR', pricing: { mode: 'fixed', centsPerXmr: '30000' } });
+    const b = await post(p, { side: 'buy', methodId: 'REVOLUT', currency: 'EUR', pricing: { mode: 'market', marginBps: -1000 } });
     setNow(new Date(deps.clock().getTime() + 1000));
     const c = await post(p);
     await post(other);
@@ -123,8 +124,9 @@ describe('GET /v1/account/offers', () => {
     const list = res.json() as Record<string, unknown>[];
     expect(list.map((o) => o.id)).toEqual([b, a]);
     expect(list[0]).toEqual({
-      id: b, side: 'buy', methodId: 'REVOLUT', methodName: expect.any(String), currency: 'EUR', rate: '30000',
-      pricing: { mode: 'fixed', centsPerXmr: '30000' }, amountUnit: 'fiat', minAtomic: '166666666666', maxAtomic: '6666666666666',
+      // €297.00 −10% = €267.30.
+      id: b, side: 'buy', methodId: 'REVOLUT', methodName: expect.any(String), currency: 'EUR', rate: '26730',
+      pricing: { mode: 'market', marginBps: -1000 }, amountUnit: 'fiat', minAtomic: '187055742611', maxAtomic: '7482229704451',
       minFiatCents: '5000', maxFiatCents: '200000', minTrades: null,
       status: 'paused', createdAt: expect.any(String),
     });
@@ -397,11 +399,11 @@ describe('review fixes (Task 36 review 2026-10-29)', () => {
   });
 
   it('round-2 m3: a take racing the poster\'s and the taker\'s pause-all neither deadlocks nor takes a paused offer (real Postgres)', async () => {
-    const amount = 100_000_000_000n; // 0.1 XMR at the fixed $330.00: $33.00, under any starter cap
+    const amount = 100_000_000_000n; // 0.1 XMR at the market's $330.00 (0%): $33.00, under any starter cap
     for (let round = 0; round < 3; round++) {
       const poster_ = await poster();
       const taker = await poster();
-      const offer = await post(poster_, { pricing: { mode: 'fixed', centsPerXmr: '33000' }, minFiatCents: '1000' });
+      const offer = await post(poster_, { pricing: { mode: 'market', marginBps: 0 }, minFiatCents: '1000' });
       await post(taker, { side: 'buy' });
       const { rows: w } = await deps.db.query<{ id: string }>('select id from wallets where account_id = $1', [taker.id]);
       const takeBody = {

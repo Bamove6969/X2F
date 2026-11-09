@@ -4,15 +4,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { loadTradeRow } from '../src/trades/store.js';
-import { seedAccount } from './helpers/accounts.js';
+import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
 
 // Owner, 8 Nov 2026 ("Offer amounts in XMR or fiat"): an offer stores its trade size in the unit its
 // poster chose (`amountUnit`), the lists show both units at the offer's rate now, and the take
-// checks the size in the poster's unit at the rate it locks (the market plus the margin, or the
-// fixed price). Real Postgres (one database per file), a fake market so each test moves the price.
+// checks the size in the poster's unit at the rate it locks (the market plus the margin; there is
+// no fixed price, owner Q1). Real Postgres (one database per file), a fake market so each test moves the price.
 
 const DAY = 86_400_000;
 const market = { usdCentsPerXmr: 33_000n as bigint | null };
@@ -62,6 +62,8 @@ async function person(): Promise<Who> {
     [t.id, fakeAddress(), new Date(now.getTime() - 2 * DAY), new Date(now.getTime() - DAY)],
   );
   await deps.db.query('update accounts set created_at = $2 where id = $1', [t.id, new Date(now.getTime() - 40 * DAY)]);
+  // Owner 2 Nov 2026: only vendors post (403 not-vendor); every person here may post.
+  await makeVendor(deps, t.id);
   for (let i = 0; i < 2; i++) {
     const other = await seedAccount(deps, { loginName: `cp${Math.random().toString(36).slice(2, 12)}` });
     const { code } = await seedTrade(deps, { sellerId: t.id, buyerId: other, poster: 'seller' });
@@ -127,13 +129,14 @@ describe('posting and listing in the poster\'s unit', () => {
     expect(await card(await post(await person(), old))).toMatchObject({ amountUnit: 'fiat', minFiatCents: '50000' });
   });
 
-  it('while the feed is down the converted pair is null for a market offer; a fixed price still converts', async () => {
+  it('while the feed is down the converted pair is null for every offer, at any margin (no fixed price, owner Q1)', async () => {
     const mkt = await post(await person(), XMR_OFFER);
-    const fixed = await post(await person(), { ...XMR_OFFER, pricing: { mode: 'fixed', centsPerXmr: '35000' } });
+    const below = await post(await person(), { ...XMR_OFFER, pricing: { mode: 'market', marginBps: -5000 } });
     const fiat = await post(await person(), FIAT_OFFER);
+    expect(await card(below)).toMatchObject({ rate: '16500', minFiatCents: '16500', maxFiatCents: '82500' });
     market.usdCentsPerXmr = null;
     expect(await card(mkt)).toMatchObject({ rate: null, amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: null, maxFiatCents: null });
-    expect(await card(fixed)).toMatchObject({ rate: '35000', minFiatCents: '35000', maxFiatCents: '175000' });
+    expect(await card(below)).toMatchObject({ rate: null, amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: null, maxFiatCents: null });
     expect(await card(fiat)).toMatchObject({ rate: null, minFiatCents: '50000', minAtomic: null, maxAtomic: null });
   });
 

@@ -235,18 +235,43 @@ describe('POST /v1/offers/:id/take', () => {
     expect(rowToTrade((await loadTradeRow(deps.db, code2))!)).toMatchObject({ lockedRate: { centsPerXmr: 33_000n }, fiatCents: 33_000n });
   });
 
-  it('a fixed-price offer compares exactly, and can be taken while the feed is down; a market offer cannot', async () => {
+  it('while the feed is down no offer can be taken, at any margin: there is no fixed price to fall back on (owner Q1)', async () => {
     const seller = await person();
     const buyer = await person();
-    const fixed = await postOffer(seller, { pricing: { mode: 'fixed', centsPerXmr: '34000' } });
-    expect(refusal(await take(buyer, fixed, body(buyer, tenth, 33_999n)))).toEqual({ status: 409, error: 'price-changed' });
-    market.usdCentsPerXmr = null;
-    const code = await taken(buyer, fixed, body(buyer, tenth, 34_000n));
-    expect(rowToTrade((await loadTradeRow(deps.db, code))!).lockedRate.centsPerXmr).toBe(34_000n);
-
-    const other = await person();
+    // −50%, the lowest an offer can go (owner F1): $165.00 at the $330.00 market.
+    const below = await postOffer(seller, { pricing: { mode: 'market', marginBps: -5000 } });
     const floating = await postOffer(seller);
-    expect(refusal(await take(other, floating, body(other, tenth, 33_000n)))).toEqual({ status: 409, error: 'price-unavailable' });
+    market.usdCentsPerXmr = null;
+    for (const [offer, rate] of [[below, 16_500n], [floating, 33_000n]] as const) {
+      expect(refusal(await take(buyer, offer, body(buyer, tenth, rate)))).toEqual({ status: 409, error: 'price-unavailable' });
+    }
+    expect((await deps.db.query('select 1 from trades where offer_id = any($1)', [[below, floating]])).rowCount).toBe(0);
+    market.usdCentsPerXmr = 33_000n;
+    expect(refusal(await take(buyer, below, body(buyer, tenth, 16_400n)))).toEqual({ status: 409, error: 'price-changed' });
+    const code = await taken(buyer, below, body(buyer, tenth, 16_500n));
+    expect(rowToTrade((await loadTradeRow(deps.db, code))!).lockedRate.centsPerXmr).toBe(16_500n);
+  });
+
+  it('an offer stored as fixed before the market-only rule (owner Q1) is not found, with or without the feed; its row is kept', async () => {
+    const seller = await person();
+    const buyer = await person();
+    // Migration 345 refuses new fixed rows; lift it for this one insert, as a row from before the rule.
+    await deps.db.query('alter table offers drop constraint if exists offers_market_only');
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into offers (account_id, side, method_id, currency, price_mode, fixed_cents_per_xmr, min_fiat_cents, max_fiat_cents,
+                           min_trades, terms, status, created_at, updated_at)
+       values ($1, 'sell', 'ZELLE', 'USD', 'fixed', 34000, 1000, 1000000, null, '', 'live', $2, $2) returning id`,
+      [seller.id, deps.clock()],
+    );
+    await deps.db.query(
+      `alter table offers add constraint offers_market_only check (price_mode = 'market' and margin_bps is not null and fixed_cents_per_xmr is null) not valid`,
+    );
+    const legacy = rows[0]!.id;
+    expect(refusal(await take(buyer, legacy, body(buyer, tenth, 34_000n)))).toEqual({ status: 404, error: 'not-found' });
+    market.usdCentsPerXmr = null;
+    expect(refusal(await take(buyer, legacy, body(buyer, tenth, 34_000n)))).toEqual({ status: 404, error: 'not-found' });
+    expect((await deps.db.query('select 1 from trades where offer_id = $1', [legacy])).rowCount).toBe(0);
+    expect((await deps.db.query(`select price_mode, status from offers where id = $1`, [legacy])).rows).toEqual([{ price_mode: 'fixed', status: 'live' }]);
   });
 
   it('refuses a total that is not the quoted amount at the quoted rate, and malformed bodies', async () => {
@@ -447,7 +472,8 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     const seller = await person();
     const buyer = await person('starter');
     // EUR at 0.9 USD: €210 is $233.34, above the Starter cap; €180 is $200.
-    const offer = await postOffer(seller, { currency: 'EUR', pricing: { mode: 'fixed', centsPerXmr: '29700' } });
+    // At the market, 0%: €297.00.
+    const offer = await postOffer(seller, { currency: 'EUR', pricing: { mode: 'market', marginBps: 0 } });
     const eur = (amount: bigint) => ({
       amountAtomic: amount.toString(), walletId: buyer.wallet, centsPerXmr: '29700',
       fiatCents: fiatCents(amount, { currency: 'EUR', centsPerXmr: 29_700n }).toString(),
@@ -550,16 +576,16 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 409, error: 'offer-busy' });
   });
 
-  it('the cap counts the XMR at the market price too, so a fixed price far below market moves no more XMR (review M5)', async () => {
+  it('the cap counts the XMR at the market price too, so an offer below the market moves no more XMR (review M5)', async () => {
     const seller = await person();
     const buyer = await person('starter');
-    // Fixed at $3.30 per XMR, 1% of the $330 market.
-    const offer = await postOffer(seller, { pricing: { mode: 'fixed', centsPerXmr: '330' }, minFiatCents: '100' });
-    const fixedBody = (amount: bigint) => body(buyer, amount, 330n);
-    // 50 XMR is $165.00 at the offer's price but $16,500 at market: refused at the Starter cap.
-    expect(refusal(await take(buyer, offer, fixedBody(50n * XMR)))).toEqual({ status: 409, error: 'starter-limit', stage: 'starter', capUsdCents: '20000' });
-    // 0.6 XMR is $1.98 at the offer's price and $198 at market: within the cap.
-    await taken(buyer, offer, fixedBody((XMR * 6n) / 10n));
+    // 50% below the $330 market, the lowest an offer can go (owner F1): $165.00 per XMR.
+    const offer = await postOffer(seller, { pricing: { mode: 'market', marginBps: -5000 }, minFiatCents: '100' });
+    const belowBody = (amount: bigint) => body(buyer, amount, 16_500n);
+    // 1 XMR is $165.00 at the offer's price but $330 at market: refused at the Starter cap.
+    expect(refusal(await take(buyer, offer, belowBody(XMR)))).toEqual({ status: 409, error: 'starter-limit', stage: 'starter', capUsdCents: '20000' });
+    // 0.6 XMR is $99.00 at the offer's price and $198 at market: within the cap.
+    await taken(buyer, offer, belowBody((XMR * 6n) / 10n));
   });
 
   it('a blocked pair cannot take each other\'s offers, either way: 404 as if the offer did not exist (review M3, Task 37)', async () => {
