@@ -1,4 +1,5 @@
 import { startRegistration } from '@simplewebauthn/browser';
+import type { TermsSignature } from '@x2f/auth-client';
 import type { LoginHours } from '@x2f/staff';
 import { useEffect, useId, useState } from 'react';
 import { useParams } from 'react-router';
@@ -7,6 +8,7 @@ import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
 import { Button, CantDoThat, Icon, Notice } from '../ui/kit.js';
 import { PgpProof } from '../ui/PgpProof.js';
 import { ROLE_LABELS } from '../ui/RoleChip.js';
+import { TermsStep } from '../ui/TermsStep.js';
 import '../ui/staff.css';
 
 // Every sentence on this screen is draft copy (no board: DESIGNER-REVIEW). COPY-UNSIGNED
@@ -23,7 +25,7 @@ export function hoursText(h: LoginHours): string {
   return `${h.days.join(', ')}, ${h.start} to ${h.end} (${h.tz})`;
 }
 
-type Step = 'loading' | 'gone' | 'name' | 'keys' | 'done';
+type Step = 'loading' | 'gone' | 'terms' | 'name' | 'keys' | 'done';
 interface Added {
   /** Attested security keys (the ones a ruling and a moderator's login can use). */
   keys: number;
@@ -43,7 +45,12 @@ export function canFinish(role: InviteView['role'], a: Added): boolean {
 
 /**
  * Invite acceptance at `/invite/:token` (Plan 4 Task 16, the API is Task 7's): the invite's role
- * and hours, a username and a private login name, then the login keys, then finish. Moderators
+ * and hours, the Terms with the signature pad (owner 9 Nov 2026, p11-14: everyone who gets a login
+ * signs, staff too; TermsStep), a username and a private login name, then the login keys, then
+ * finish. The accepted Terms version and the signature go with the names (`acceptedTerms`,
+ * `termsSignature`); a 400 `terms-not-accepted` there (the Terms changed meanwhile) shows the Terms
+ * again, empty, with the names kept. A return visit (the account is made, so the Terms are signed)
+ * carries on at the keys. Moderators
  * and senior moderators hold all three methods (owner G3): an attested hardware security key, a
  * passkey on another device and a PGP key. Everyone else logs in with two factors (R1): a PGP key
  * and a key, or two PGP keys. The passkey row is shown for every role. The result shows the first security key's check code
@@ -57,6 +64,10 @@ export function Invite() {
   const [invite, setInvite] = useState<InviteView | null>(null);
   const [username, setUsername] = useState('');
   const [loginName, setLoginName] = useState('');
+  /** The Terms version accepted and the signature given on the Terms step; null until then. */
+  const [terms, setTerms] = useState<{ version: string; signature: TermsSignature } | null>(null);
+  /** The API refused the last names call with `terms-not-accepted`: the Terms step says so. */
+  const [termsChanged, setTermsChanged] = useState(false);
   const [added, setAdded] = useState<Added>({ keys: 0, passkeys: 0, pgp: 0 });
   const [checkCode, setCheckCode] = useState<string | null>(null);
   const [addingPgp, setAddingPgp] = useState(false);
@@ -71,7 +82,7 @@ export function Invite() {
         if (!live) return;
         setInvite(v);
         if (v.resume === null) {
-          setStep('name');
+          setStep('terms');
           return;
         }
         // A return visit: the names were picked before; carry on at the keys with what is in.
@@ -114,13 +125,26 @@ export function Invite() {
 
   const createAccount = () =>
     run(async () => {
+      if (terms === null) {
+        // Not reachable from the page (the names come after the Terms); the Terms step is the answer.
+        setStep('terms');
+        return;
+      }
       if (username.trim() === '' || loginName.trim() === '') {
         setFault('Fill in both names first.');
         return;
       }
       try {
-        await inviteAccount(token, { displayName: username.trim(), loginName: loginName.trim() });
+        await inviteAccount(token, { displayName: username.trim(), loginName: loginName.trim(), acceptedTerms: terms.version, termsSignature: terms.signature });
       } catch (e) {
+        if (codeOf(e) === 'terms-not-accepted') {
+          // The Terms changed between reading and accepting (the trader's review M3): read and sign
+          // the new version first. The names stay typed.
+          setTerms(null);
+          setTermsChanged(true);
+          setStep('terms');
+          return;
+        }
         // The account was made on an earlier visit to this link: carry on with the keys.
         if (codeOf(e) !== 'wrong-state') throw e;
       }
@@ -166,7 +190,7 @@ export function Invite() {
           <p className="x2f-staff-step__text">Ask the owner for a new invite link.</p>
         </>
       ) : null}
-      {invite !== null && (step === 'name' || step === 'keys') ? (
+      {invite !== null && (step === 'terms' || step === 'name' || step === 'keys') ? (
         <>
           <h1 className="x2f-staff-solo__title">Join the X2F staff</h1>
           <p className="x2f-staff-step__text" data-part="invite-role">
@@ -174,10 +198,22 @@ export function Invite() {
           </p>
         </>
       ) : null}
+      {step === 'terms' ? (
+        <TermsStep
+          // The step numbers follow the Terms coming first (no board: DESIGNER-REVIEW). COPY-UNSIGNED
+          heading="1. Terms of Service"
+          changed={termsChanged}
+          onAccept={(version, signature) => {
+            setTerms({ version, signature });
+            setFault(null);
+            setStep('name');
+          }}
+        />
+      ) : null}
       {step === 'name' ? (
         <section className="x2f-staff-step" aria-labelledby={`${userId}-h`}>
           <h2 id={`${userId}-h`} className="x2f-staff-step__title">
-            1. Your names
+            2. Your names
           </h2>
           <div className="x2f-field">
             <label className="x2f-label" htmlFor={userId}>
@@ -201,7 +237,7 @@ export function Invite() {
       {step === 'keys' ? (
         <section className="x2f-staff-step" aria-labelledby={`${loginId}-k`}>
           <h2 id={`${loginId}-k`} className="x2f-staff-step__title">
-            2. Your login keys
+            3. Your login keys
           </h2>
           <p className="x2f-staff-step__text">
             {moderator

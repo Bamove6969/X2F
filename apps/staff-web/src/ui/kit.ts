@@ -19,3 +19,7 @@ export { Sheet } from '../../../web/src/ui/Sheet.js';
 export { Switch } from '../../../web/src/ui/Switch.js';
 // The News page's message card (apps/web, Plan 4 Task 28): NewsEditor's preview is the reader's card.
 export { NewsMessage, type NewsItem } from '../../../web/src/screens/NewsMessage.js';
+// The Terms (owner 9 Nov 2026, p11-14: staff sign too): the trader app's Terms text and its version,
+// never a copy, and its signature pad (design 9 Nov, p11-15, canvas ea2a9ca8), for the invite's Terms step.
+export { SignaturePad } from '../../../web/src/screens/setup/SignaturePad.js';
+export { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from '../../../web/src/screens/setup/termsText.js';

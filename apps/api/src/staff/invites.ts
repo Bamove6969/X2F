@@ -32,6 +32,7 @@ import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type In
 // The invitee's side (perm `public-invite`, no session; every step checks that the token's invite
 // is unused, not cancelled and not expired, else 404 `invite-invalid`; only then does it spend the
 // process-wide start or register budget, so made-up tokens cannot drain it for a real invitee):
+// - `GET /staff/v1/terms` → `{ version }`: the Terms version to accept (the trader API's `GET /v1/terms`);
 // - `GET /staff/v1/invites/accept/:token` → `{ role, hours, expiresAt }`;
 // - `POST …/:token/account { displayName, loginName, acceptedTerms, termsSignature }` → 201: the
 //   public name and the private login name (FU-D), once (409 `wrong-state` after that), with the
@@ -185,10 +186,16 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     return { role: i.role, hours: i.hours, expiresAt: i.expires_at.toISOString(), resume };
   });
 
-  // NEEDS_P4_TASK16: the staff web's invite page (wip/third-p4-task16, apps/staff-web/src/screens/
-  // Invite.tsx, not on main yet) posts `{ displayName, loginName }` only. Before it lands it needs
-  // the Terms step (the web app's TermsScreen and SignaturePad, or the same parts) and must send
-  // `acceptedTerms` and `termsSignature` here (tripwire in test/staff/members.test.ts).
+  // The Terms version an invitee must accept (owner 9 Nov 2026, p11-14: everyone who gets a login
+  // signs): the staff origin's answer to the trader API's `GET /v1/terms`, the same
+  // `X2F_TERMS_VERSION`, so the staff web's Terms step (apps/staff-web, Plan 4 Task 16) checks its
+  // bundled text against it the way the trader app's Terms screen does. Public: it is read before
+  // any account exists, and it names nothing but the version.
+  app.get('/staff/v1/terms', pub, async (req) => ({ version: req.server.deps.config.termsVersion }));
+
+  // The staff web's invite page (apps/staff-web/src/screens/Invite.tsx) shows the Terms with the
+  // signature pad first and sends `acceptedTerms` and `termsSignature` with the names (tripwire in
+  // test/staff/members.test.ts).
   app.post('/staff/v1/invites/accept/:token/account', { ...pub, bodyLimit: SIGNED_BODY_LIMIT }, async (req, reply) => {
     const deps = req.server.deps;
     const open = await openInvite(deps.db, tokenOf(req), deps.clock());

@@ -9,7 +9,8 @@ import { StaffApiError } from '../src/api.js';
 import { STAFF_REFUSALS, refusalOf } from '../src/refusals.js';
 import { canFinish, INVITE_GONE, keyCheckLine } from '../src/screens/Invite.js';
 import { LOCKED_TITLE } from '../src/screens/OwnerSetup.js';
-import { button, click, fakeApi, field, refused, render, settle, typeInto } from './helpers.js';
+import { TERMS_TEXT_VERSION } from '../src/ui/kit.js';
+import { button, click, fakeApi, field, refused, render, settle, tick, typeInto } from './helpers.js';
 
 const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistration: vi.fn() }));
 vi.mock('@simplewebauthn/browser', () => webauthn);
@@ -121,6 +122,16 @@ describe('Login', () => {
 
 describe('Invite', () => {
   const view = { role: 'mod', hours: { days: ['Mon', 'Tue'], start: '09:00', end: '17:00', tz: 'UTC' }, expiresAt: new Date().toISOString(), resume: null };
+  /** The Terms version the step checks its text against (inviteTerms.test.tsx has the step itself). */
+  const TERMS_ROUTE = { 'GET /staff/v1/terms': { body: { version: TERMS_TEXT_VERSION } } };
+  /** Owner 9 Nov 2026 (p11-14): the Terms come first; tick, sign with a typed name, Continue. */
+  async function signTerms(name = 'Dmitri K') {
+    await tick(document.querySelector('[data-part="terms-tick"]'));
+    await click(document.querySelector('[data-part="signature-type"]'));
+    typeInto(document.querySelector('[data-part="signature-name"]'), name);
+    await settle();
+    await click(document.querySelector('[data-part="terms-accept"]'));
+  }
 
   it('a return visit carries on at the keys, counting what was added on the earlier visit', async () => {
     const api = fakeApi({
@@ -140,6 +151,7 @@ describe('Invite', () => {
 
   it('username, then all three of a security key, a PGP key and a passkey (owner G3), then finish shows the key check code', async () => {
     const api = fakeApi({
+      ...TERMS_ROUTE,
       'GET /staff/v1/invites/accept/:token': { body: view },
       'POST /staff/v1/invites/accept/:token/account': { status: 201, body: { ok: true } },
       'POST /staff/v1/invites/accept/:token/key/start': { body: { options: { challenge: 'r' } } },
@@ -150,11 +162,15 @@ describe('Invite', () => {
     });
     await open('/invite/tok_1');
     expect(document.querySelector('[data-part="invite-role"]')?.textContent).toBe("You're invited as Moderator. You can log in Mon, Tue, 09:00 to 17:00 (UTC).");
+    await signTerms();
     typeInto(field('Username'), 'dmitri_k');
     typeInto(field('Login name'), 'dk-login');
     await click(button('Continue'));
     // Owner Q54: the public name goes as displayName (the API refuses a field named username).
-    expect(api.calls.find((c) => c.path.endsWith('/account'))?.body).toEqual({ displayName: 'dmitri_k', loginName: 'dk-login' });
+    // Owner 9 Nov 2026 (p11-14): the Terms version and the signature go with the names.
+    expect(api.calls.find((c) => c.path.endsWith('/account'))?.body).toEqual({
+      displayName: 'dmitri_k', loginName: 'dk-login', acceptedTerms: TERMS_TEXT_VERSION, termsSignature: { kind: 'typed', name: 'Dmitri K' },
+    });
     // Owner G3 (review 8 Nov I-4): a moderator holds all three methods, so the passkey row is shown
     // and finish waits for every one of them.
     expect(document.body.textContent).toContain('Moderators log in with three keys: a hardware security key, such as a YubiKey, a passkey on another device, and a PGP key.');
@@ -185,6 +201,7 @@ describe('Invite', () => {
   it('an invite link opened twice: the second visit shows "This invite has already been used or has expired."', async () => {
     let used = false;
     fakeApi({
+      ...TERMS_ROUTE,
       'GET /staff/v1/invites/accept/:token': () => (used ? refused(404, 'invite-invalid') : { body: { ...view, role: 'helper', hours: 'any' } }),
     });
     await open('/invite/tok_2');
