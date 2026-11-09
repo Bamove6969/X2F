@@ -28,6 +28,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <main style="flex-grow: 1; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 24px;">
     <sc-if value="{{isNew}}" hint-placeholder-val="{{true}}">
       <p style="margin: -8px 0 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">An X2F staff member will answer you here. X2F staff can&#39;t see dispute evidence or decide disputes, so for a problem with a live trade, open a dispute from the trade instead.</p>
+      <sc-if value="{{reachedNew}}" hint-placeholder-val="{{false}}">
+        <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink);">You&#39;ve opened <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> tickets today</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink);">To stop spam, you can open up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> tickets a day. On a team, everyone shares the same <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span>. You can open more tomorrow.</span>
+          </div>
+        </div>
+      </sc-if>
       <section aria-labelledby="sup-cat" style="display: flex; flex-direction: column; gap: 8px;">
         <h2 id="sup-cat" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">What&#39;s it about?</h2>
         <div role="radiogroup" aria-labelledby="sup-cat" style="display: flex; flex-direction: column; gap: 8px;">
@@ -87,18 +96,27 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <textarea id="sup-reply" rows="3" value="{{draft}}" onChange="{{onDraft}}" placeholder="Write a reply" style="box-sizing: border-box; width: 100%; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: vertical;"></textarea>
       </div>
     </sc-if>
+    <sc-if value="{{reachedThread}}" hint-placeholder-val="{{false}}">
+      <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+        <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink);">You&#39;ve opened <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> tickets today</span>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink);">To stop spam, you can open up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> tickets a day. On a team, everyone shares the same <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span>. You can open more tomorrow.</span>
+        </div>
+      </div>
+    </sc-if>
   </main>
   <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
-    <sc-if value="{{isNew}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{send}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Send to the team</button></sc-if>
+    <sc-if value="{{isNew}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{send}}" disabled="{{reached}}" style="{{sendNewStyle}}">Send to the team</button></sc-if>
     <sc-if value="{{isThread}}" hint-placeholder-val="{{false}}">
       <button type="button" onClick="{{reply}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Send reply</button>
-      <button type="button" onClick="{{newTicket}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Ask something new</button>
+      <button type="button" onClick="{{newTicket}}" disabled="{{reached}}" style="{{askNewStyle}}">Ask something new</button>
     </sc-if>
   </footer>
-  <section aria-label="Design notes" style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px; padding-top: 24px; border-top: 1px solid var(--line); margin: 0 16px; padding-bottom: 24px;"><h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><li>Craft pass, 7 Nov: each topic is a row with a 40 icon tile, the name, and the radio mark trailing; the picked row keeps the 2px ink ring on surface-raised.</li><li>X2F staff are not a vendor's team: a 32 neutral X2F avatar in ink and the neutral "X2F team" tag. The ticket card leads with a 40 tile.</li><li>Copy, 8 Nov (p5-4): the headline "Ask an X2F staff member" is decided by the owner (was "Ask a team member"). COPY-UNSIGNED, changed to match: "An X2F staff member will answer you here. X2F staff can't see dispute evidence or decide disputes…" and the caution line "X2F staff will never ask for them." The neutral "X2F team" tag and avatar are unchanged.</li></ul></section>
+  <section aria-label="Design notes" style="display: flex; flex-direction: column; gap: 12px; margin-top: 8px; padding-top: 24px; border-top: 1px solid var(--line); margin: 0 16px; padding-bottom: 24px;"><h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><li>Craft pass, 7 Nov: each topic is a row with a 40 icon tile, the name, and the radio mark trailing; the picked row keeps the 2px ink ring on surface-raised.</li><li>X2F staff are not a vendor's team: a 32 neutral X2F avatar in ink and the neutral "X2F team" tag. The ticket card leads with a 40 tile.</li><li>Copy, 8 Nov (p5-4): the headline "Ask an X2F staff member" is decided by the owner (was "Ask a team member"). COPY-UNSIGNED, changed to match: "An X2F staff member will answer you here. X2F staff can't see dispute evidence or decide disputes…" and the caution line "X2F staff will never ask for them." The neutral "X2F team" tag and avatar are unchanged.</li><li>Decided · owner, 6 Nov (Q67, Q69): <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span> new tickets a day, shared by a team. The limit tweak shows the callout; new tickets are off, replies still work. COPY-UNSIGNED: the callout.</li></ul></section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["new", "thread"], "default": "new"}, "$preview": {"width": 390, "height": 1732}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["new", "thread"], "default": "new"}, "limit": {"editor": "enum", "options": ["ok", "reached"], "default": "ok"}, "$preview": {"width": 390, "height": 1810}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { cat: 'trades', stage: null, draft: '', sent: [] }; }
   componentDidUpdate(prev) { if (prev.view !== this.props.view) this.setState({ stage: null }); }
@@ -124,17 +142,23 @@ class Component extends DCLogic {
       style: 'display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 14px; box-sizing: border-box; border-radius: 12px; color: var(--ink); font-family: inherit; font-size: 16px; text-align: left; cursor: pointer; ' + (this.state.cat === id ? 'background: var(--surface-raised); border: 2px solid var(--ink); font-weight: 600;' : 'background: var(--surface); border: 2px solid transparent;'),
       pick: () => this.setState({ cat: id })
     }));
+    // Decided · owner, 6 Nov (Q67, Q69): up to 10 new tickets a day, shared across a vendor's team (feedback stays per member).
+    // At the limit: caution callout (as Feedback), and opening a new ticket is off. Replies to open tickets still work.
+    const reached = this.props.limit === 'reached';
     return {
-      rootStyle, cats,
+      rootStyle, cats, reached,
+      reachedNew: reached && stage === 'new', reachedThread: reached && stage === 'thread',
+      sendNewStyle: reached ? 'display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;' : 'display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;',
+      askNewStyle: reached ? 'display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--line); font-family: inherit; font-size: 15px; font-weight: 600; cursor: not-allowed;' : 'display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;',
       isNew: stage === 'new',
       isThread: stage === 'thread',
-      send: () => this.setState({ stage: 'thread' }),
+      send: () => { if (!reached) this.setState({ stage: 'thread' }); },
       draft: this.state.draft,
       onDraft: (e) => this.setState({ draft: e.target.value }),
       sent: this.state.sent,
       reply: () => { const t = this.state.draft.trim(); if (t) this.setState({ sent: this.state.sent.concat([{ text: t }]), draft: '' }); },
       title: stage === 'thread' ? 'Your ticket' : 'Ask an X2F staff member',
-      newTicket: () => this.setState({ stage: 'new' })
+      newTicket: () => { if (!reached) this.setState({ stage: 'new' }); }
     };
   }
 }

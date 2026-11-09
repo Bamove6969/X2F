@@ -833,3 +833,50 @@ I audited every owner answer on origin/comms against the canvas: the decisions f
   - 9: staff and owner.
 
   Each stage gets its own READY push with a note here.
+
+## 9 Nov 2026: owner answers drawn — stages 7–9 (after trade, settings, staff/owner) — READY, COPY-UNSIGNED
+**Stage 7–8**
+- SelfDestruct(+W), FAQ(+W) (p11-11): the 90 days count from when the dispute closes. FAQ past reputation: one line per site ("Imported from LocalMonero: 120.0 XMR"), not a badge.
+- Profile/Reviews(+W):
+  - item 27: dates older than self-destruct show month and year only ("Sep 2026").
+  - 28 Oct: a disputed review shows "Under review" publicly until a moderator decides (new Profile tweak `review`).
+- BecomeVendor(+W) (Q77/G14/G26):
+  - "Switch back to trader" is removed. Going back to trader means opening a new account.
+  - Any trader can apply; there is no minimum trade count.
+  - Trader session lengths are fixed to 2/4/8/12 h (G23).
+- Support(+W) (Q67/Q69): limit of 10 tickets a day, shared across a team (tweak `limit`).
+- TeamRefusal: feedback link on the "can't do that" sheet.
+- MemberApproval(+W) (p11-14): a member's first login opens "Agree and sign" (terms, tick box, signature pad) before the lead is asked. Tweaks: state `sign`, `signed`.
+
+**Stage 9**
+- OwnerSetup:
+  - Q54: a private username plus a display name.
+  - Q59: owner logs in with a security key and the PGP key together.
+  - Q55: X2F stays offline until setup is done.
+  - G4: big changes need both keys.
+- StaffList:
+  - Q51/G3: staff use a security key, a PGP key and a passkey (2 on a new device, 1 on a known device).
+  - First-login line covers role, pay and appeals.
+  - Q60: permission checkbox grid; Feedback is always on for senior moderators.
+  - Q56: permanent Remove with a key-tap confirm (tweak `confirm`).
+  - A Feedback rail item is added on the staff boards.
+- StaffSettings:
+  - Clawback: pay at clock-out; an overturned ruling comes off later payouts. The "hold bonus" option is removed.
+  - Logout pay preview with address confirm.
+  - Fee-wallet sweep threshold to cold wallet.
+- StaffOverview:
+  - G19: planned/unplanned maintenance, staff-only reason, 500-character counter.
+  - Q13/Q35: owner notifications, including rates back online.
+  - Q52: ruling approval by key tap (tweak `approve`).
+  - G20: feedback list that is named or anonymous.
+- StaffLog: p11-5 every event; G37 "Accepted the dispute (#…)".
+- ModQueue/ModCase (G37): incident ID = first 8 characters of the trade code.
+- Maintenance(+W) (G19): traders never see "emergency". Variants are `planned` (default) / `unplanned`, "Down for maintenance", with a 24 h notice for planned work.
+
+**Not drawn yet**
+- F17/Q58 imported-volume verify (needs its own staff board).
+- Owner key-replacement screen.
+- Staff new-device login (2 of 3).
+- Reviewer naming and the public won/lost line wait on the owner.
+
+Canvas v165. Stages 1–6 follow.

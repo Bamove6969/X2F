@@ -154,7 +154,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <sc-if value="{{r.isDisputed}}" hint-placeholder-val="{{false}}">
               <div style="display: flex; flex-direction: column; gap: 8px; margin: 4px 0 14px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--mod) 8%, var(--surface-raised));">
                 <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--mod) 16%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mod);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Under review</span>
-                <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">A moderator will check this review against the trade. It stays up unless it breaks the rules.</p>
+                <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Everyone sees &ldquo;Under review&rdquo; on it until a moderator decides: keep it, trim the comment or remove it.</p>
               </div>
             </sc-if>
           </article>
@@ -191,10 +191,14 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
       <span style="font-weight: 600;">A review shows as soon as the trade is marked complete. There is no blind-reveal wait. Skip review posts nothing, and nobody sees that you skipped.</span>
     </aside>
+    <aside aria-label="Decided by the owner: dates and disputed reviews" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 1 Nov (item 27), 28 Oct</span>
+      <span>After the trade self-destructs, a review shows month and year only ("Sep 2026"). A disputed review shows "Under review" to everyone until a moderator decides. COPY-UNSIGNED: the Under review line.</span>
+    </aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"view":{"editor":"enum","options":["write","profile"],"default":"write"},"$preview":{"width":390,"height":1714}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"view":{"editor":"enum","options":["write","profile"],"default":"write"},"$preview":{"width":390,"height":1842}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -217,8 +221,8 @@ class Component extends DCLogic {
     const max = 5;
     const s = this.state;
     // App area height (measured, min 844), plus the design-notes strip below it.
-    const appH = view === 'profile' ? 1385 : (s.submitted ? 844 : 1509);
-    const NOTES = 205;
+    const appH = view === 'profile' ? 1405 : (s.submitted ? 844 : 1509);
+    const NOTES = 333;
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (appH + NOTES) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + appH + 'px; display: flex; flex-direction: column; overflow: hidden;';
     const NAV_ON = 'display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-weight: 600; text-decoration: none;';
@@ -289,8 +293,8 @@ class Component extends DCLogic {
     };
     const reviewData = [
       { id: 'r1', init: 'SG', trusted: true, online: true, from: 'satoshi_ghost', when: '2 days ago', method: 'Zelle', v5: 5, phrases: 'Fast release · Clear instructions', bad: false, badges: ['Smooth trade', 'Exact amount and memo'], note: 'Released in five minutes, everything as described.' },
-      { id: 'r2', init: 'NO', trusted: false, online: false, from: 'nightowl_44', when: '1 week ago', method: 'Cash by mail', v5: 5, phrases: 'Would trade again · Friendly', bad: false, badges: ['Great communication'], note: '' },
-      { id: 'r3', init: 'QF', trusted: false, online: false, from: 'quickflip_22', when: '3 weeks ago', method: 'Zelle', v5: 2, phrases: 'Went quiet · Slow', bad: true, badges: [], note: 'Took ages to release.' }
+      { id: 'r3', init: 'QF', trusted: false, online: false, from: 'quickflip_22', when: '3 weeks ago', method: 'Zelle', v5: 2, phrases: 'Went quiet · Slow', bad: true, badges: [], note: 'Took ages to release.' },
+      { id: 'r2', init: 'NO', trusted: false, online: false, from: 'nightowl_44', when: 'Sep 2026', method: 'Cash by mail', v5: 5, phrases: 'Would trade again · Friendly', bad: false, badges: ['Great communication'], note: '' }
     ];
     const reviews = reviewData.map((r) => {
       const v = r.v5;

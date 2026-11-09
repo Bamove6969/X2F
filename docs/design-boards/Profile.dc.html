@@ -59,14 +59,22 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: var(--escrow);">Fast payment · Clear instructions</span>
         <p style="margin: 0; font-size: 15px; line-height: 22px;">Paid in five minutes, memo exactly as asked.</p>
       </article>
-      <article style="display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 12px; background: var(--surface-raised);">
-        <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px; line-height: 18px;"><span style="color: var(--caution); letter-spacing: 0.08em;" aria-label="5 stars">★★★★★</span><span style="color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">26 Oct 2026</span> · Cash by mail</span></div>
-        <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: var(--escrow);">Would trade again · Friendly</span>
-      </article>
+      <sc-if value="{{reviewNormal}}" hint-placeholder-val="{{true}}">
       <article style="display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 12px; background: var(--surface-raised);">
         <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px; line-height: 18px;"><span style="color: var(--caution); letter-spacing: 0.08em;" aria-label="3 stars">★★★<span style="color: var(--line);">★★</span></span><span style="color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12 Oct 2026</span> · Zelle</span></div>
         <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: var(--danger);">Slow</span>
         <p style="margin: 0; font-size: 15px; line-height: 22px;">Took an hour to pay but communicated.</p>
+      </article>
+      </sc-if>
+      <sc-if value="{{reviewHeld}}" hint-placeholder-val="{{false}}">
+      <article aria-label="Review under review" style="display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 12px; background: color-mix(in srgb, var(--mod) 8%, var(--surface-raised));">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; line-height: 18px;"><span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--mod) 16%, transparent); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mod);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Under review</span><span style="color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12 Oct 2026</span> · Zelle</span></div>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">A moderator is checking this review.</p>
+      </article>
+      </sc-if>
+      <article style="display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 12px; background: var(--surface-raised);">
+        <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 13px; line-height: 18px;"><span style="color: var(--caution); letter-spacing: 0.08em;" aria-label="5 stars">★★★★★</span><span style="color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">Sep 2026</span> · Cash by mail</span></div>
+        <span style="font-size: 13px; line-height: 18px; font-weight: 600; color: var(--escrow);">Would trade again · Friendly</span>
       </article>
     </section>
 
@@ -104,12 +112,20 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <li><strong>Q64.</strong> Volume imported from other sites is one line per site ("Imported from LocalMonero: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">120.0</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span>"). This profile shows no imported volume, so no such line is drawn.</li>
       </ul>
     </aside>
+    <aside aria-label="Decided by the owner: review dates and disputed reviews" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 1 Nov (item 27), 28 Oct</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px;">
+        <li><strong>Item 27.</strong> After the trade self-destructs, its review shows month and year only ("Sep 2026").</li>
+        <li><strong>28 Oct.</strong> A review its trader disputes shows "Under review" at once, until a moderator decides (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">review</span> tweak). Hiding its stars and text meanwhile is a design reading.</li>
+        <li>COPY-UNSIGNED: "Under review", "A moderator is checking this review."</li>
+      </ul>
+    </aside>
     <p style="margin: 0; font-size: 14px; line-height: 20px;"><strong>Badges.</strong> The seal list from the Badges board: a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">40</span> px seal per badge (family tone: reputation teal, speed amber, security and milestones ink), its name, what it means and when it was earned. The header avatar uses the same 48 px treatment as offers: teal ring: mira.k holds Trusted (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">212</span> trades · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">99%</span>, rule <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">200</span>+), teal online dot. Badge meanings and dates are COPY-UNSIGNED (draft).</p>
     <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Names, stats, review dates and reviews are examples. Badge dates are examples.</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"volumeLine":{"editor":"enum","options":["on","off"],"default":"on"},"$preview":{"width":390,"height":2251}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"volumeLine":{"editor":"enum","options":["on","off"],"default":"on"},"review":{"editor":"enum","options":["normal","under-review"],"default":"normal"},"$preview":{"width":390,"height":2467}}'>
 class Component extends DCLogic {
   volumeShown(total) {
     // Owner (6 Nov, Q63): XMR traded to date, buying + selling. Rounded down to 1 decimal (design call).
@@ -126,7 +142,8 @@ class Component extends DCLogic {
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; min-height: 844px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const volumeShown = this.volumeShown(41.738201);
     const showVolume = this.props.volumeLine !== 'off' && volumeShown !== null;
-    return { rootStyle, showVolume, volumeShown };
+    const reviewHeld = this.props.review === 'under-review';
+    return { rootStyle, showVolume, volumeShown, reviewHeld, reviewNormal: !reviewHeld };
   }
 }
 </script>

@@ -193,7 +193,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <sc-if value="{{q.keeps.open}}" hint-placeholder-val="{{false}}">
         <div id="faq-keeps" role="region" aria-labelledby="faq-keeps-b" class="ans">
           <p style="margin: 0;">No IP addresses, and no name, phone number or email address.</p>
-          <p style="margin: 0;">Chats are deleted after <span class="mono">30</span> days and disputes after <span class="mono">90</span> days.</p>
+          <p style="margin: 0;">Chats are deleted after <span class="mono">30</span> days. Disputes are deleted <span class="mono">90</span> days after the dispute closes.</p>
           <p style="margin: 0;">During a trade X2F keeps an encrypted original copy of your payment proof that only a moderator can open, and only if there is a dispute. It is deleted when the trade is over.</p>
         </div>
         </sc-if>
@@ -236,7 +236,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <sc-if value="{{q.past.open}}" hint-placeholder-val="{{false}}">
         <div id="faq-past" role="region" aria-labelledby="faq-past-b" class="ans">
           <p style="margin: 0;">If you traded on LocalMonero or a similar site, you can prove it with the PGP key you used there. A moderator checks an archived copy of your old profile against a message you sign now.</p>
-          <p style="margin: 0;">It becomes a separate badge. It is never added to your X2F trade count or rating.</p>
+          <p style="margin: 0;">It shows as its own line on your profile, one line per site, for example &ldquo;Imported from LocalMonero: <span class="mono">120.0</span> XMR&rdquo;. It is never added to your X2F totals or rating.</p>
         </div>
         </sc-if>
       </li>
@@ -286,6 +286,7 @@ class Component extends DCLogic {
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     // Height = content (min 800): one question is open at a time, so the root grows with the open answer.
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
+    // Decided · owner, 8 Nov (p11-11): disputes are deleted 90 days after the dispute closes. Decided · owner, 6 Nov (Q64) + C3 Q10: past reputation is one line per site naming the site, not a badge. COPY-UNSIGNED: both answers.
     const IDS = ["escrow", "trade", "fee", "noshow", "cancel", "dispute", "pgp", "pgpapps", "sign", "passkey", "lost", "hold", "wallets", "keeps", "proofs", "police", "badges", "past"];
     // One open question at a time. The open tweak picks the first one; tapping the open question closes it.
     const open = this.state.open === undefined ? (IDS.indexOf(this.props.open) >= 0 ? this.props.open : 'escrow') : this.state.open;

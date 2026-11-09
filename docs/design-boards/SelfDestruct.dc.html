@@ -77,7 +77,7 @@ h1,h2,h3{text-wrap:balance}
       <section aria-labelledby="pv-sd" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
         <h2 id="pv-sd" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Every trade self-destructs</h2>
         <p style="margin: 0; font-size: 16px; line-height: 24px;">A trade self-destructs 30 days after it ends. Its chat, payment proofs and details are deleted for good, for both traders and for X2F.</p>
-        <p style="margin: 0; font-size: 16px; line-height: 24px;">If someone presses the dispute button, the trade self-destructs 90 days after that moment instead. That leaves time for the moderator&#39;s decision and any appeal.</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">If there&#39;s a dispute, the trade is kept until 90 days after the dispute closes. That leaves time for any appeal.</p>
         <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">You don&#39;t need to do anything, and there&#39;s nothing to choose. The date is shown at the top of every trade.</p>
         <div aria-hidden="true" style="border-radius: 12px; background: var(--surface-raised); padding: 16px; display: flex; flex-direction: column; gap: 16px;">
           <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -85,14 +85,14 @@ h1,h2,h3{text-wrap:balance}
             <div style="display: flex; align-items: center;"><span style="width: 12px; height: 12px; border-radius: 999px; background: var(--ink);"></span><span style="flex-grow: 1; height: 2px; background: var(--line);"></span><span style="width: 12px; height: 12px; box-sizing: border-box; border-radius: 999px; border: 2px solid var(--ink);"></span></div>
           </div>
           <div style="display: flex; flex-direction: column; gap: 8px;">
-            <div style="display: flex; justify-content: space-between; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span>Dispute button</span><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">90</span> days</span><span>Deleted</span></div>
+            <div style="display: flex; justify-content: space-between; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span>Dispute closes</span><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">90</span> days</span><span>Deleted</span></div>
             <div style="display: flex; align-items: center;"><span style="width: 12px; height: 12px; border-radius: 999px; background: var(--caution);"></span><span style="flex-grow: 1; height: 2px; background: var(--line);"></span><span style="width: 12px; height: 12px; box-sizing: border-box; border-radius: 999px; border: 2px solid var(--ink);"></span></div>
           </div>
         </div>
       </section>
       <section aria-labelledby="pv-train" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
         <h2 id="pv-train" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Moderator training</h2>
-        <p style="margin: 0; font-size: 16px; line-height: 24px;">Moderators learn from past disputes. A dispute record is kept for 90 days and used to train moderators. Private details like names, bank details and wallet addresses are removed by our privacy tool. After 90 days it&#39;s deleted. No other copy is kept.</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">Moderators learn from past disputes. A dispute record is kept until 90 days after the dispute closes and used to train moderators. Private details like names, bank details and wallet addresses are removed by our privacy tool. After 90 days it&#39;s deleted. No other copy is kept.</p>
       </section>
       <section aria-labelledby="pv-never" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
         <h2 id="pv-never" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What we never keep</h2>
@@ -118,6 +118,7 @@ class Component extends DCLogic {
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const stage = this.state.stage || (this.props.view === 'privacy' ? 'privacy' : 'trade');
+    // Decided · owner, 8 Nov (p11-11): the 90 days for a disputed trade count from the day the dispute closes, not from the dispute button. COPY-UNSIGNED: privacy paragraph, 'Dispute closes' timeline label, the disputed 'why' line, 'Dispute closed' row.
     const disputed = this.props.trade === 'disputed';
     // Tone: a completed trade is --escrow; a dispute decided by a moderator is --mod.
     const tone = disputed ? 'var(--mod)' : 'var(--escrow)';
@@ -132,11 +133,11 @@ class Component extends DCLogic {
       back: () => this.setState({ stage: 'trade' }),
       date: disputed ? '26 Jan 2027' : '28 Nov 2026',
       why: disputed
-        ? "That's 90 days after the dispute button was pressed on 28 Oct 2026. Then the chat, proofs and dispute evidence are deleted for everyone, moderators included."
+        ? "That's 90 days after the dispute closed on 28 Oct 2026. Then the chat, proofs and dispute evidence are deleted for everyone, moderators included."
         : "That's 30 days after it ended. Then the chat, payment proofs and trade details are deleted for both of you and for X2F.",
       status: disputed ? 'Dispute decided' : 'Completed',
-      endLabel: disputed ? 'Dispute opened' : 'Finished',
-      endDate: disputed ? '28 Oct 2026, 09:40 UTC' : '29 Oct 2026, 14:05 UTC',
+      endLabel: disputed ? 'Dispute closed' : 'Finished',
+      endDate: disputed ? '28 Oct 2026, 16:20 UTC' : '29 Oct 2026, 14:05 UTC',
       lastEvent: disputed ? 'The moderator decided the dispute. XMR released to you.' : 'satoshi_ghost released 1.250000 XMR to you.'
     };
   }

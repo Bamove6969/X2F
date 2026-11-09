@@ -80,7 +80,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </tr>
           <tr>
             <th scope="row" style="padding: 12px 8px 12px 0; border-top: 1px solid var(--surface-raised); text-align: left; vertical-align: top; font-weight: 600;">Session length</th>
-            <td style="{{tdTrader}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> or <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</span></td>
+            <td style="{{tdTrader}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">8</span> or <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</span></td>
             <td style="{{tdVendor}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> or <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</span></td>
           </tr>
           <tr>
@@ -116,11 +116,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </section>
 
     <section aria-labelledby="bv-back-h" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
-      <h2 id="bv-back-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Switching back</h2>
+      <h2 id="bv-back-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Going back to trader</h2>
       <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">{{backText}}</p>
-      <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}">
-        <button type="button" onClick="{{askBack}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Switch back to trader</button>
-      </sc-if>
     </section>
   </main>
 
@@ -147,6 +144,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <li style="padding: 10px 0;">You can post offers and add team members.</li>
           <li style="padding: 10px 0; border-top: 1px solid var(--surface);">You pay the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span>% fee on completed trades.</li>
           <li style="padding: 10px 0; border-top: 1px solid var(--surface);">Session length: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h.</li>
+          <li style="padding: 10px 0; border-top: 1px solid var(--surface);">You can&#39;t switch back. To be a trader again, open a new account.</li>
         </ul>
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <button type="button" onClick="{{confirmSwitch}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Switch to vendor</button>
@@ -156,33 +154,6 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </div>
   </sc-if>
 
-  <sc-if value="{{askingBack}}" hint-placeholder-val="{{false}}">
-    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
-      <section role="dialog" aria-modal="true" aria-labelledby="bv-bk-t" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
-        <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
-        <h2 id="bv-bk-t" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">{{backTitle}}</h2>
-        <sc-if value="{{backBlocked}}" hint-placeholder-val="{{false}}">
-          <p style="margin: 0; font-size: 16px; line-height: 24px;">You have <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> live offers. Pause or remove them, then switch back.</p>
-        </sc-if>
-        <sc-if value="{{backAllowed}}" hint-placeholder-val="{{true}}">
-          <ul style="margin: 0; padding: 4px 14px; list-style: none; border-radius: 12px; background: var(--surface-raised); display: flex; flex-direction: column; font-size: 15px; line-height: 22px;">
-            <li style="padding: 10px 0;">Your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> live offers {{offerFate}}</li>
-            <li style="padding: 10px 0; border-top: 1px solid var(--surface);">You can&#39;t post offers until you switch again.</li>
-            <li style="padding: 10px 0; border-top: 1px solid var(--surface);">Session length: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h.</li>
-          </ul>
-        </sc-if>
-        <div style="display: flex; flex-direction: column; gap: 8px;">
-          <sc-if value="{{backBlocked}}" hint-placeholder-val="{{false}}">
-            <a href="MyOffers.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; box-sizing: border-box; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Go to my offers</a>
-          </sc-if>
-          <sc-if value="{{backAllowed}}" hint-placeholder-val="{{true}}">
-            <button type="button" onClick="{{confirmBack}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Switch back to trader</button>
-          </sc-if>
-          <button type="button" onClick="{{cancel}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Cancel</button>
-        </div>
-      </section>
-    </div>
-  </sc-if>
   </div>
 
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
@@ -192,15 +163,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-weight: 600;">Team members are only for vendor accounts</span>
       <span style="color: var(--ink-muted);">Owner: &quot;team members are only part of vendors&quot;. A trader account has no team.</span>
     </aside>
-    <aside aria-label="Open for the owner: other requirements" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
-      <span style="font-weight: 600;">Any other requirements, e.g. a number of completed trades?</span>
-      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>No: a passkey, security key or PGP key is enough</li>
-        <li>Yes: also a number of completed trades (example shown: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span>)</li>
-        <li>Something else (owner to name)</li>
-      </ul>
-      <span style="color: var(--ink-muted);">Preview with the extraReq tweak. Showing: {{extraName}}</span>
+    <aside aria-label="Decided by the owner: requirements" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G26)</span>
+      <span style="font-weight: 600;">A passkey, security key or PGP key is the only requirement.</span>
+      <span style="color: var(--ink-muted);">Any trader can apply, even a beginner. No minimum number of trades.</span>
     </aside>
     <aside aria-label="Open for the owner: weaker logins" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
@@ -211,21 +177,16 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <li>Yes: the account goes back to trader</li>
       </ul>
     </aside>
-    <aside aria-label="Open for the owner: switching back with live offers" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
-      <span style="font-weight: 600;">Can a vendor switch back while offers are live, and what happens to their offers?</span>
-      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>Not while offers are live: pause or remove them first</li>
-        <li>Yes: live offers are paused</li>
-        <li>Yes: live offers are removed</li>
-      </ul>
-      <span style="color: var(--ink-muted);">Also not decided: what happens to team members when a vendor switches back. Example uses <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> live offers.</span>
-      <span style="color: var(--ink-muted);">Preview with the switchBack tweak, then tap Switch back to trader. Showing: {{switchBackName}}</span>
+    <aside aria-label="Decided by the owner: no switching back" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q77), 7 Nov (G14)</span>
+      <span style="font-weight: 600;">A vendor can&#39;t switch back. To trade as a trader again, they open a new account.</span>
+      <span style="color: var(--ink-muted);">The Switch back button and its sheet are gone. G14: a new account can reuse the person&#39;s passkey, security key or PGP key, but needs a new username and display name.</span>
+      <span style="color: var(--ink-muted);">COPY-UNSIGNED: the Going back to trader text and the new line in the switch sheet.</span>
     </aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"state":{"editor":"enum","options":["not-met","met","switched"],"default":"not-met"},"extraReq":{"editor":"enum","options":["strong-login-only","plus-completed-trades"],"default":"strong-login-only"},"switchBack":{"editor":"enum","options":["blocked-while-live","pause-offers","remove-offers"],"default":"blocked-while-live"},"$preview":{"width":390,"height":2269}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"state":{"editor":"enum","options":["not-met","met","switched"],"default":"not-met"},"$preview":{"width":390,"height":2141}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { mode: null, ask: null, note: '' }; }
   renderVals() {
@@ -242,18 +203,13 @@ class Component extends DCLogic {
     const mode = s.mode || (STATES.indexOf(this.props.state) >= 0 ? this.props.state : 'not-met');
     const vendor = mode === 'switched';
     const strong = mode !== 'not-met';
-    const extra = this.props.extraReq === 'plus-completed-trades';
-    const tradesDone = mode === 'not-met' ? 4 : 12;
+    // Decided · owner, 7 Nov (G26): no other requirement. Any trader can apply, even a beginner.
 
     const reqs = [{
       title: 'A passkey, security key or PGP key', met: strong, hasAction: !strong,
       pre: strong ? 'A passkey is set up for the owner.' : 'The owner needs one. A username and password alone isn’t enough.',
       n1: '', mid: '', n2: '', post: ''
     }];
-    if (extra) reqs.push({
-      title: 'Completed trades (example)', met: tradesDone >= 10, hasAction: false,
-      pre: '', n1: String(tradesDone), mid: ' done, ', n2: '10', post: ' needed.'
-    });
     const allMet = reqs.every((r) => r.met);
     // v2 list row: toned 40px icon tile + status chip (escrow when met, caution when not).
     const reqRows = reqs.map((r, i) => ({
@@ -269,10 +225,7 @@ class Component extends DCLogic {
     const cell = (cur) => 'padding: 12px 8px; border-top: 1px solid var(--surface-raised); vertical-align: top; color: var(--ink);' + (cur ? ' background: var(--surface-raised);' : '');
     const head = (cur) => 'padding: 10px 8px; text-align: left; vertical-align: top; font-size: 15px; font-weight: 600; color: var(--ink);' + (cur ? ' background: var(--surface-raised); border-top: 2px solid var(--ink); border-radius: 6px 6px 0 0;' : '');
 
-    // OPEN: switching back while offers are live. Each option previews in the dialog.
-    const SB = { 'blocked-while-live': 'not while offers are live', 'pause-offers': 'allowed, live offers are paused', 'remove-offers': 'allowed, live offers are removed' };
-    const sb = SB[this.props.switchBack] ? this.props.switchBack : 'blocked-while-live';
-    const blocked = sb === 'blocked-while-live';
+    // Decided · owner, 6 Nov (Q77): no switching back. To trade as a trader again, open a new account.
 
     let footNote = '';
     if (vendor) footNote = 'Your offers are listed under My offers.';
@@ -281,8 +234,8 @@ class Component extends DCLogic {
 
     const hasNote = s.note !== '' || (vendor && s.mode === null);
     // Board = phone screen (measured per state) + the design-notes block under it (measured).
-    const APP = { 'not-met': 1458, 'met': 1364, 'switched': 1556 }[mode] + (extra ? 111 : 0) + (hasNote && !vendor ? 62 : 0);
-    const NOTES_H = 811 + (extra ? 18 : 0);
+    const APP = { 'not-met': 1458, 'met': 1364, 'switched': 1496 }[mode] + (hasNote && !vendor ? 62 : 0);
+    const NOTES_H = 683;
     const H = APP + NOTES_H;
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
@@ -303,18 +256,11 @@ class Component extends DCLogic {
       hasNote, note: s.note !== '' ? s.note : 'You’re a vendor. You can post offers.',
       thTrader: head(!vendor), thVendor: head(vendor), tdTrader: cell(!vendor), tdVendor: cell(vendor),
       reqs: reqRows,
-      extraName: extra ? 'A passkey, security key or PGP key, and 10 completed trades (example)' : 'A passkey, security key or PGP key only',
-      backText: vendor ? 'You can go back to a trader account. You’ll stop posting offers.' : 'After you switch, you can go back to a trader account here.',
-      switchBackName: SB[sb],
+      backText: vendor ? 'A vendor account can’t switch back. To trade as a trader again, open a new account.' : 'Once you switch, you can’t switch back. To trade as a trader again, you’d open a new account.',
       canSwitch: !vendor && allMet, cantSwitch: !vendor && !allMet, footNote,
       askSwitch: () => { if (allMet) this.setState({ ask: 'switch' }); },
-      askBack: () => this.setState({ ask: 'back' }),
-      askingSwitch: s.ask === 'switch', askingBack: s.ask === 'back',
+      askingSwitch: s.ask === 'switch',
       confirmSwitch: () => this.setState({ mode: 'switched', ask: null, note: 'You’re a vendor. You can post offers.' }),
-      backTitle: blocked ? 'Pause your offers first' : 'Switch back to trader?',
-      backBlocked: blocked, backAllowed: !blocked,
-      offerFate: sb === 'remove-offers' ? 'are removed.' : 'are paused.',
-      confirmBack: () => this.setState({ mode: 'met', ask: null, note: 'You’re a trader again.' }),
       cancel: () => this.setState({ ask: null })
     };
   }
