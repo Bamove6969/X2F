@@ -2,13 +2,13 @@
  * Sends the queued account-change notices (owner rule p5-7). The change itself only inserted a row
  * in `jabber_outbox` (migration 331's triggers), so a slow or broken Jabber server never delays or
  * fails it: this worker runs on its own timer, after commit. Each notice is the fixed sentence and
- * nothing else. A failed send is retried a few times with a growing wait and then dropped. Logs
+ * nothing else (`NOTICE_TEXT`: the account-change sentence, or the trade-attention one for a dispute). A failed send is retried a few times with a growing wait and then dropped. Logs
  * carry counts only: never an address, an account id or an error message (which could quote one).
  */
 import type pg from 'pg';
 import type { Config } from '../config.js';
 import { openJid } from './address.js';
-import type { JabberSender } from './sender.js';
+import type { JabberSender, NoticeKind } from './sender.js';
 
 /** Tries per notice, and the wait before each retry. */
 export const OUTBOX_ATTEMPTS = 4;
@@ -50,10 +50,10 @@ export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
   const ring = deps.config.jabberKeys;
   if (ring === null) return out;
   const now = deps.clock();
-  const { rows } = await deps.db.query<{ account_id: string; jid_sealed: Buffer; txid: string; attempts: number }>(
+  const { rows } = await deps.db.query<{ account_id: string; jid_sealed: Buffer; txid: string; kind: NoticeKind; attempts: number }>(
     `delete from jabber_outbox where id in (
        select id from jabber_outbox where next_at is null or next_at <= $1 order by id limit $2 for update skip locked)
-     returning account_id, jid_sealed, txid, attempts`,
+     returning account_id, jid_sealed, txid, kind, attempts`,
     [now, OUTBOX_BATCH],
   );
   for (const row of rows) {
@@ -65,7 +65,7 @@ export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
       continue;
     }
     try {
-      await withTimeout(deps.sender.send(jid, { kind: 'account-change' }), SEND_TIMEOUT_MS);
+      await withTimeout(deps.sender.send(jid, { kind: row.kind }), SEND_TIMEOUT_MS);
       out.sent++;
       await deps.db.query('update jabber_contacts set last_sent_at = $2 where account_id = $1', [row.account_id, deps.clock()]);
     } catch {
@@ -76,9 +76,9 @@ export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
       }
       out.retried++;
       await deps.db.query(
-        `insert into jabber_outbox (account_id, jid_sealed, txid, attempts, next_at) values ($1, $2, $3, $4, $5)
-         on conflict (account_id, txid) do nothing`,
-        [row.account_id, row.jid_sealed, row.txid, attempts, new Date(deps.clock().getTime() + RETRY_WAIT_MS[attempts - 1]!)],
+        `insert into jabber_outbox (account_id, jid_sealed, txid, kind, attempts, next_at) values ($1, $2, $3, $4, $5, $6)
+         on conflict (account_id, txid, kind) do nothing`,
+        [row.account_id, row.jid_sealed, row.txid, row.kind, attempts, new Date(deps.clock().getTime() + RETRY_WAIT_MS[attempts - 1]!)],
       );
     }
   }

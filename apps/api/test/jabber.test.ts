@@ -3,11 +3,13 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { startHold } from '../src/auth/hold.js';
+import { startHold, withTx } from '../src/auth/hold.js';
+import { startDispute } from '../src/disputes/store.js';
+import { driveTo, seedTrade } from './helpers/trades.js';
 import { maskJid, normalizeJid } from '../src/jabber/address.js';
 import { OUTBOX_ATTEMPTS, sendDueNotices } from '../src/jabber/outbox.js';
 import { CODE_TRIES, CODE_TTL_MS, RESEND_WAIT_S, TESTS_PER_DAY } from '../src/jabber/routes.js';
-import { ACCOUNT_CHANGE_TEXT, SENDER_NAME, messageText, type JabberMessage, type JabberSender } from '../src/jabber/sender.js';
+import { ACCOUNT_CHANGE_TEXT, NOTICE_KINDS, SENDER_NAME, TRADE_ATTENTION_TEXT, messageText, type JabberMessage, type JabberSender } from '../src/jabber/sender.js';
 import { seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -71,6 +73,11 @@ describe('the fixed texts', () => {
     expect(messageText({ kind: 'account-change' })).toBe(ACCOUNT_CHANGE_TEXT);
     expect(messageText({ kind: 'test-code', code: '012345' })).toBe('Your X2F test code is 012345.');
     expect(() => messageText({ kind: 'test-code', code: 'wallet changed' })).toThrow();
+    // Lead default 2026-11-08: the dispute notice to the payer, the second and last notice kind.
+    expect(NOTICE_KINDS).toEqual(['account-change', 'trade-attention']);
+    expect(messageText({ kind: 'trade-attention' })).toBe(TRADE_ATTENTION_TEXT);
+    expect(TRADE_ATTENTION_TEXT).toBe('A trade on your X2F account needs your attention.');
+    expect(() => messageText({ kind: 'wallet-added' } as never)).toThrow();
   });
 
   it('addresses: bare, lower-cased, no resource or markup; masked as on the board', () => {
@@ -240,7 +247,7 @@ describe('who may change it', () => {
     ]) expect(err(r)).toEqual({ status: 403, error: 'weak-session' });
 
     const h = await withJabber();
-    await startHold(deps.db, h.id, deps.clock(), { reason: 'weak-change', startedBy: null, pending: null });
+    await startHold(deps.db, h.id, deps.clock(), { reason: 'weak-change', startedBy: null });
     expect(err(await h.browser.delete('/v1/account/jabber'))).toMatchObject({ status: 403, error: 'recovery-hold' });
     expect((await h.browser.get('/v1/account/jabber')).json()).toMatchObject({ state: 'on' });
   });
@@ -262,4 +269,21 @@ describe('who may change it', () => {
     await deps.db.query("update accounts set display_name = 'jm-renamed', display_key = 'jm-renamed' where id = $1", [loginId]);
     expect(await notices(owner.id)).toBe(2);
   });
+});
+
+describe('a dispute tells the payer (lead default 2026-11-08, same opt-in)', () => {
+  for (const openedBy of ['buyer', 'seller', 'system'] as const) {
+    it(`opened by the ${openedBy}: the buyer gets the trade-attention sentence; the seller gets nothing`, async () => {
+      const buyer = await withJabber();
+      const seller = await withJabber();
+      const t = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+      const trade = await driveTo(deps, t.trade, 'paid');
+      await deps.db.query('delete from jabber_outbox');
+      await withTx(deps.db, (c) => startDispute(c, trade, { openedBy, reason: openedBy === 'system' ? 'escalated' : 'other', note: '', afterRefund: false, now: deps.clock(), prices: null }));
+      const { rows } = await deps.db.query<{ account_id: string; kind: string }>('select account_id, kind from jabber_outbox');
+      expect(rows).toEqual([{ account_id: buyer.id, kind: 'trade-attention' }]);
+      await sendAll();
+      expect(sent).toEqual([{ to: buyer.jid, message: { kind: 'trade-attention' } }]);
+    });
+  }
 });

@@ -36,7 +36,7 @@ create table jabber_contacts (
   check ((pending_sealed is null) = (pending_expires_at is null))
 );
 
--- Notices waiting to be sent by the worker (jabber/outbox.ts). One per (account, transaction): a
+-- Notices waiting to be sent by the worker (jabber/outbox.ts). One per (account, transaction, kind): a
 -- change that writes several rows sends one message. No foreign key: a notice queued by the
 -- deletion of an account must not make that deletion fail. Rows hold no detail of the change.
 create table jabber_outbox (
@@ -44,15 +44,18 @@ create table jabber_outbox (
   account_id uuid not null,
   jid_sealed bytea not null,
   txid bigint not null,
+  -- Which fixed sentence (jabber/sender.ts `NOTICE_TEXT`): an account change, or (lead default,
+  -- 2026-11-08) a dispute opened on one of the account's trades, to the payer.
+  kind text not null default 'account-change' check (kind in ('account-change', 'trade-attention')),
   attempts smallint not null default 0,
   -- Null: due now. Set (server clock) only for a retry after a failed send.
   next_at timestamptz,
-  unique (account_id, txid)
+  unique (account_id, txid, kind)
 );
 
-create function jabber_queue(acct uuid, sealed bytea) returns void language sql as $$
-  insert into jabber_outbox (account_id, jid_sealed, txid) values (acct, sealed, txid_current())
-  on conflict (account_id, txid) do nothing
+create function jabber_queue(acct uuid, sealed bytea, k text default 'account-change') returns void language sql as $$
+  insert into jabber_outbox (account_id, jid_sealed, txid, kind) values (acct, sealed, txid_current(), k)
+  on conflict (account_id, txid, kind) do nothing
 $$;
 
 -- Row trigger. tg_argv[0]: the column naming the account; tg_argv[1..]: columns whose writes alone
@@ -130,3 +133,23 @@ create trigger jabber_note_change after insert or update or delete on account_bl
   execute function jabber_note_change('account_id');
 create trigger jabber_note_change after insert or update or delete on past_reputation for each row
   execute function jabber_note_change('account_id');
+
+-- Lead default (2026-11-08), behind the same opt-in: a dispute opened on a trade (by either trader
+-- or by the system) tells the payer, the trade's buyer, that a trade of theirs needs attention.
+-- The sentence names no trade, amount, person or reason.
+create function jabber_dispute_opened() returns trigger language plpgsql as $$
+declare
+  r record;
+begin
+  for r in
+    select c.account_id, c.jid_sealed from trades t join jabber_contacts c on c.account_id = t.buyer_account_id
+     where t.code = new.code and c.enabled
+  loop
+    perform jabber_queue(r.account_id, r.jid_sealed, 'trade-attention');
+  end loop;
+  return null;
+end
+$$;
+
+create trigger jabber_dispute_opened after insert on disputes
+  for each row execute function jabber_dispute_opened();
