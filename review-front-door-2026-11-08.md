@@ -198,3 +198,42 @@ Nothing in the diff touches `public/`, `sw.js` (it still caches nothing), `index
 - **Q1 (F5):** what should a team member see when they have accepted the current Terms but the account owner has not? Recommendation: a short screen, "Your account owner needs to accept the updated Terms before you can continue", with Log out. No vendor name is needed, since the member is already a member. Today they see "The Terms of Service have changed... accept them to keep trading" again and again.
 - **Q2 (wording, unsigned):** "You are invited to a team as Aurora, for Trades." and "Before you join, read the Terms of Service to the end and accept them. The key points first:". Both are marked unsigned.
 - **Q3 (what an invite holder sees before signing):** today the invite holder sees their given name, roles and expiry **before** the Terms screen. Under "no free tours", is that all right? Recommendation: yes. The invite is the account owner's own secret, single-use, 24-hour message to this person, and it contains nothing from the marketplace.
+
+## Re-verify 6a5949a6 -> eb2a86bb (F4, F6, F8, F9, F2b; cloud lead reviewer, 9 Nov)
+
+- **Scope:** `git diff 6a5949a6 eb2a86bb`, five commits: `b9995705` F4, `3487ba0d` F6, `6afbf57e` F8, `5668f36b` F9, `eb2a86bb` F2b. Worktree /home/user/X2F/.claude/worktrees/front-door, clean. Read-only.
+- **Tests (serialised runner):**
+  - api `test/frontDoor.test.ts`: **19/19 pass**. This was F7's "did not run" in the review above; it ran now that Docker works.
+  - web `test/client.test.ts`: **72/72 pass**.
+  - Not run (not in this brief): api `team.test.ts` (it holds the new F6 assertion at team.test.ts:206), `offers`, `news` and `site`, and Playwright. F7 stays open for those.
+
+### Verdict: APPROVED
+
+F4, F6, F8, F9 and F2b are closed. I accept the F4 scope decision. The F2b list has no write route that should be behind the front door and is not. F5 (the member lockout, owner Q1) and F7 (the rest of the test runs) are still open, as before.
+
+### F4: closed; the path-only scope is right
+- **Change:** apps/web/src/api/client.ts:76 refuses `%2f`, `%5c`, `%00`-`%1f` and `%7f` (any case) in the part of the raw value before the first `?` or `#`. Tests: client.test.ts:118-130 (path cases), :135 (arriving double-encoded through `?returnTo=`), :142 (allowed cases).
+- **Why an encoded slash in the query or fragment cannot change the origin, even after a sink decodes the value once:**
+  1. What `safeReturnTo` returns always starts with `url.pathname` (client.ts:84). That is one `/` and not `//` (client.ts:83), and after this fix it holds no encoded `/`, `\` or control character. So one decode leaves the path starting with exactly one `/`, followed by a character that is none of `/`, `\`, tab or newline.
+  2. Whether a URL is network-path (`//host`), has a scheme, or is backslash-confused is decided only by its first characters. Decoding `%2F` in the query or fragment changes characters after a `?` or `#` that is already there. It cannot make the start become `//`, and it cannot add a scheme.
+  3. A decoded `%3F` or `%23` in the path (not refused) only cuts the path shorter, for example `/%3F//evil.com` -> `/?//evil.com`, which is path `/` on the same origin. It cannot create a `//` at the start either.
+  4. The query has to keep encoded slashes: a nested `returnTo` (`/wallets?add=1&returnTo=%2Fsell`) needs them. Every screen that follows a nested value runs it through `safeReturnTo` again: Wallets.tsx:250, Landing.tsx:70, and `returnToFrom` in Login, BackupLogin, News, SetupFlow and Terms. The only navigation sinks that leave react-router are `browserGo` (client.ts:43, fed only by `redirect`, which builds the value from `safeReturnTo`) and Login.tsx:404 (a fixed `AWAY_URL`). There is no `decodeURIComponent` anywhere in apps/web/src.
+- **Residual (Info, no action):** a value encoded twice in the path, such as `/%252F%252Fevil.com`, passes. Only a sink that decodes twice would turn it into `//evil.com`. No such sink exists. The finding I raised was about a single decode, so this is outside it.
+
+### F6: closed
+- `openInvite` now selects `tm.id, tm.account_id, tm.display_name, tm.roles, tm.invite_expires_at` (apps/api/src/team/members.ts:332), and `InviteRow.team` is gone. The join to `accounts t` stays only for the live-account check.
+- team.test.ts:206 checks the row's keys and that the vendor's name is not among the values. It was not run here.
+
+### F8: closed
+The comments at app.ts:272, :291 and :313 now say that browsing, News and the full site view are behind `requireInside`. They match the code.
+
+### F9: closed
+`COPY-UNSIGNED` is now above `JOIN_COPY.termsIntro` (teamCopy.ts:96-97). The wording is still for the owner's copy page (Q2).
+
+### F2b: closed; the list is sound
+- **Test:** apps/api/test/frontDoor.test.ts:106-132 now classifies every method except HEAD. A session-guarded non-GET must be in `OWN_DATA_WRITES` (frontDoor.ts:87). A `requireInside` route must be a GET in READS, so a write behind `requireInside` also fails. No route may be in two lists, and each list holds only the methods it should.
+- **Checked every one of the 55 entries for a write that should be gated but is classified own-data.** None is. The front door forbids four kinds of caller from seeing marketplace data: an outsider, a recovery session, a session on old Terms, and a member without a role. Only routes whose guard is weaker than `requireInside` could leak to them:
+  - The trade-making routes (`POST /v1/offers` at offers/routes.ts:438, `POST /v1/offers/:id/take` at take.ts:228, `POST /v1/chats` at chat/routes.ts:231, `POST /v1/nudges` and `POST /v1/account/blocks` at nudge/routes.ts:341-345) use `requireSession({kinds:['trader']})`, with no `allowRecovery` and no `allowStaleTerms`. That is at least as strict as `requireInside`: they refuse recovery sessions and old Terms, and a member needs a role or is `owner-only`. The only difference from `requireInside` is `touch`.
+  - The routes that let recovery sessions or old Terms through are these: the add-method routes (webauthn.ts:974-981, pgp.ts:937-946, password.ts:405, methods.ts:433), `POST /v1/account/terms` (account.ts:297), `POST /v1/feedback/form` (form.ts:176), `POST /v1/account/offers/status` and `PATCH /v1/offers/:id` (stale Terms only; turning on and relisting still check the Terms, offers/routes.ts:382, :665), and the FINISH_OPEN_TRADES trade routes (trades/routes.ts:69, participants only). Each one writes to the caller's own account or trade and answers only with that result.
+  - `POST /v1/account/blocks` answers 404 for a name that is not a trader. That tells the caller whether a display name exists, but only to a full trader session on current Terms. So it is inside the door and is not a front-door issue. It is the same oracle that sign-up already has (F4 in the first review above).
+- **Residual (Info):** the test proves that every write is *classified*, not that a reason is *true*. A future write added to `OWN_DATA_WRITES` with a weak guard and a marketplace answer would still pass, so the reviewer has to read the reason. The reads have the same limit, and that is acceptable.
