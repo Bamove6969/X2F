@@ -12,10 +12,11 @@
 -- - planned_start / planned_end / planned_message: a planned maintenance announced ahead ("we will
 --   plan it and try and give 24-hour notice"), shown to every visitor with its start and end until
 --   it ends or is switched on. The message has the maintenance message's 500 characters.
+alter table site_flags drop constraint site_flags_maintenance_kind_check;
+
+-- The old check allows only planned and emergency, so it goes first.
 update site_flags set maintenance_kind = 'unplanned'
   where maintenance_kind = 'emergency' or (maintenance_since is not null and maintenance_kind is null);
-
-alter table site_flags drop constraint site_flags_maintenance_kind_check;
 
 alter table site_flags
   add constraint site_flags_maintenance_kind_check check (maintenance_kind in ('planned', 'unplanned')),

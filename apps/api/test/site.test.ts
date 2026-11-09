@@ -295,7 +295,7 @@ describe('maintenance', () => {
     expect((await site()).plannedMaintenance).toEqual({ startsAt, endsAt, message });
     // Announcing it does not start it: the trader API still answers.
     expect((await app.inject({ method: 'GET', url: '/v1/news' })).statusCode).toBe(200);
-    expect((await logEntries(deps, 'site.maintenance-planned')).at(-1)!.detail).toBe(JSON.stringify({ startsAt, endsAt }));
+    expect(JSON.parse((await logEntries(deps, 'site.maintenance-planned')).at(-1)!.detail)).toEqual({ startsAt, endsAt });
 
     // Without a message is fine; a new plan replaces the old one.
     const startsAt2 = new Date(T0.getTime() + 48 * 60 * MIN).toISOString();
