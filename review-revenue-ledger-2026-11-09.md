@@ -172,3 +172,6 @@ Lock sets: the owner's PUT (`/staff/v1/fee-sweep` or `/staff/v1/settings`, one `
 ### Owner or lead questions
 - p11-77 (F1) is unchanged: how a held (pending or failed) sweep resumes. Recommendation stands: a separate tapped "resume after checking the wallet" action that names the attempt.
 - R1: hold the share lock across the send, or accept the seconds-long window and say so. Recommendation: accept and fix the comment.
+
+## Lead note, 22:50 UTC
+R1-R3 applied on wip/lead-revenue-ledger: 6ebb94d0 (R1 comments: window accepted), f7ec96b5 (R2: any settings save after the pass starts stops the send, via fee_sweep_set_at), 02762a02 (R3: wallet balance read before the share lock). feeSweep 24/24, revenue 29/29, tsc clean. Head 02762a02 pushed; lands in batch 4. p11-77 (F1) still open.

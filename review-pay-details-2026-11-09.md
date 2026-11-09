@@ -4,7 +4,7 @@
 - **Worktree:** /home/user/X2F/.claude/worktrees/pay-details, branch `wip/lead-pay-details` at `873b891e`. Tree clean.
 - **Commits reviewed:** `529934b4` (packages/trade payFields table), `27ed9f97` (web: boxes, package, payDetailsFeed), `873b891e` (owner Q12 gate, API `tradeSecuredAt`, heldPay).
 - **Rules read:** owner p7-3 and Q12 (comms owner-decisions-2026-11-06.md:10,137), R1-R44 (docs/superpowers/rulings-and-lessons.md), the two prior chat reviews (review-chat-shred-2026-11-08.md, review-chat-retention-2026-11-08.md), the research pack Part 2 (worktree `research`, research/research-pack-2026-11-09.md:32-66).
-- **Tests run (through the serialised runner; see "Tests" at the end):** TESTS_PLACEHOLDER
+- **Tests run (through the serialised runner; see "Tests" at the end):** all green. `@x2f/web` chatPay + chatCrypto + chatEngine + chatPanel + payDetailsFeed as one vitest run: 5 files, 116 passed; `@x2f/trade` payFields.test.ts: 11 passed; `@x2f/api` chat.test.ts: 52 passed; `tsc --noEmit` for apps/web and apps/api: exit 0.
 
 ## Verdict
 
@@ -79,4 +79,13 @@ No Critical. No Important.
 
 ## Tests
 
-TESTS_SECTION_PLACEHOLDER
+All through `scratchpad/run-tests.sh` from the worktree root, single files only, no whole project run (helper brief). Logs in the lead's scratchpad `logs/` as named.
+
+| Run | Command | Result | Log |
+|---|---|---|---|
+| web chat (one vitest run) | `npx vitest run --project @x2f/web apps/web/test/chatPay.test.ts apps/web/test/chatCrypto.test.ts apps/web/test/chatEngine.test.ts apps/web/test/chatPanel.test.tsx apps/web/test/payDetailsFeed.test.tsx` | 5 files passed, **116 passed**, 0 failed | `sec-web-pay-222116.log` |
+| trade payFields | `npx vitest run --project @x2f/trade packages/trade/test/payFields.test.ts` | 1 file, **11 passed** | `sec-trade-payFields-222916.log` |
+| api chat | `npx vitest run --project @x2f/api apps/api/test/chat.test.ts` | 1 file, **52 passed** | `sec-api-chat-222929.log` |
+| typecheck | `npx tsc -p apps/web --noEmit`; `npx tsc -p apps/api --noEmit` | both exit 0 | `sec-tsc-web.log`, `sec-tsc-api.log` |
+
+Not run: Playwright, any whole project, the escrow/regtest suites (not in scope). The attack tests I relied on are real: a lying package, six malformed shapes, a mod-signed package and an early package are each refused with the guard untouched (`chatPay.test.ts:105-145`); the engine's held-then-shown test checks the store never holds a box (`chatEngine.test.ts`, "held while the trade is not secured"); the wire probes use characters base64 and hex never produce. Nothing in the three commits weakens or removes an existing assertion (the only changed expectations add the new `tradeSecuredAt`/`paySecured` fields).
