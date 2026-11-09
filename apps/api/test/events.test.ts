@@ -440,6 +440,20 @@ describe('a session revoked between requireTrader and attach (security review ME
     expect(app.events.size).toBe(0);
   });
 
+  it('a session shortened in that window ends the stream at the new, earlier end (review S-m2)', async () => {
+    const t = await trader();
+    // `PUT session/length` shortened the session (its closeSession found nothing to close yet): the
+    // stream must not live on to the old end that requireTrader read.
+    afterAttach = async () => {
+      await deps.db.query('update sessions set expires_at = $2 where account_id = $1', [t.id, new Date(deps.clock().getTime() + 200)]);
+    };
+    const s = await stream(t.b);
+    expect(s.status).toBe(200);
+    const started = Date.now();
+    await Promise.race([s.ended, new Promise((_, fail) => setTimeout(() => fail(new Error('stream outlived the shortened session')), 2000))]);
+    expect(Date.now() - started).toBeLessThan(1500);
+  });
+
   it('an event published before the headers go out is delivered after them, in order', async () => {
     const t = await trader();
     afterAttach = async () => {
