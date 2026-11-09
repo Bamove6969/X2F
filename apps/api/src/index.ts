@@ -54,7 +54,7 @@ export {
   HOLD_BLOCKED_ROUTES, HOLD_MS, SECURITY_CHANGE_ROUTES, holdUntil, requireNotHeld, settleDueHolds, type Hold, type HoldReason, type PendingChange,
 } from './auth/hold.js';
 export { STRONG_COMBOS, loginStrength, type LoginFactorKind, type LoginStrength } from './auth/strength.js';
-export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, TOTP_BACKUP_DAILY, recoveryCodeHash, recoveryRoutes } from './auth/recovery.js';
+export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, recoveryCodeHash, recoveryRoutes } from './auth/recovery.js';
 export { keyringBox, type SecretBox } from './auth/keystore.js';
 export { SECURITY_HEADERS, addSecurityHeaders, clientErrorHandler, cspFor, frameworkErrors, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';
 export { fileAttestationPolicy, hasCertificateChain, parseAllowlist } from './auth/attestation.js';

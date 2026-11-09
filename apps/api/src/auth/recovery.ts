@@ -6,8 +6,12 @@
  *   key, bound to the account (FU-C, ASVS 2.6.2), its key id in `key_id`. Sets made before FU-C are
  *   plain SHA-256 with `key_id` null; they cannot be converted (only the hash is kept) and keep
  *   working, one use per code, until used up or regenerated.
- * - A backup login opens a `recovery` session, never a full one, held for 24 hours (a TOTP code or
- *   a recovery code alone is one weak way; owner 2026-10-29): `requireSession` refuses it with 403
+ * - The backup login is a recovery code only (design build gaps Job 1, board Login-Backup: "Your
+ *   recovery code is your only backup"; owner G32: the recovery code is the emergency way in). An
+ *   authenticator (TOTP) code is no longer a backup way in: `kind: 'totp'` is 400 `bad-request`
+ *   before any lookup. TOTP stays a normal login step (password + authenticator code, login.ts).
+ * - A backup login opens a `recovery` session, never a full one, held for 24 hours (a recovery
+ *   code alone is one weak way; owner 2026-10-29): `requireSession` refuses it with 403
  *   `recovery-hold` on every route that does not set `allowHeld`, so it cannot add a primary method
  *   early. The account's hold (Task 17, hold.ts) starts in the same transaction. Any full session
  *   of the account can end a recovery session; a strong one ends the hold it started too.
@@ -25,17 +29,14 @@ import { ensureDeviceCookie } from './device.js';
 import { allowedMethods, methodAllowed } from './methods.js';
 import { loginNameLookup, loginTagMatch, retagLoginName } from '../accounts.js';
 import { assertNotDisabled, openSession, requireSession } from './sessions.js';
-import { NIL_UUID, dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
+import { throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
 import {
   endHoldOfSession, gateChange, heldReply, holdInTx, lockAccount, pushHoldStarted, requireLiveSessionInTx, requireNotHeld, startHold, weakOf, weakRefusal, withTx,
 } from './hold.js';
 import { loginStrength, waits } from './strength.js';
 import type { Queryable } from '../db/pool.js';
-import { verifyTotp } from './totp.js';
 
 export const RECOVERY_HOLD_MS = 24 * 3_600_000;
-/** Backup TOTP attempts per account (or unknown name) per UTC day, right or wrong. */
-export const TOTP_BACKUP_DAILY = 5;
 export const RECOVERY_CODE_COUNT = 10;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -123,8 +124,9 @@ export async function applyRecoveryCodes(db: Queryable, accountId: string, keyId
 type Who = { id: string } | { nameTag: string };
 
 /**
- * `POST /v1/login/backup { loginName, kind, code, deviceLabel }`. Unknown login names, accounts of
- * other kinds (R2) and accounts without the method take the same path and fail the same way: 401
+ * `POST /v1/login/backup { loginName, kind: 'recovery-code', code, deviceLabel }`. Any other `kind`
+ * (`totp` included) is 400 `bad-request` before any lookup. Unknown login names, accounts of other
+ * kinds (R2) and accounts without recovery codes take the same path and fail the same way: 401
  * `credentials-invalid`. A disabled account is named only after a correct code, and its code stays
  * unused.
  */
@@ -133,7 +135,7 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
   ensureDeviceCookie(req, reply);
   req.server.budgets.start.take();
   const { loginName, kind, code, deviceLabel } = strings(req.body, ['loginName', 'kind', 'code', 'deviceLabel'] as const);
-  if (kind !== 'totp' && kind !== 'recovery-code') throw new ApiError(400, 'bad-request');
+  if (kind !== 'recovery-code') throw new ApiError(400, 'bad-request');
   const name = loginNameLookup(deps.config, loginName);
   // Always one lookup under every key of the ring (FU-D): a malformed name's tags match no account (I-1).
   const found = (
@@ -142,54 +144,38 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
       [name.candidates.ids, name.candidates.tags],
     )
   ).rows[0];
-  // R2: an account whose kind may not hold this method (staff and the owner hold neither) takes the
+  // R2: an account whose kind may not hold recovery codes (staff and the owner) takes the
   // unknown-name path.
-  const accountId = found && allowedMethods(found.kind).includes(kind === 'totp' ? 'totp' : 'recovery-codes') ? found.id : null;
+  const accountId = found && allowedMethods(found.kind).includes('recovery-codes') ? found.id : null;
   const who: Who = accountId !== null ? { id: accountId } : { nameTag: name.tag };
   const refuse = async (key: string): Promise<never> => {
     await throttleFail(deps, key, accountId);
     throw new ApiError(401, 'credentials-invalid');
   };
 
-  if (kind === 'recovery-code') {
-    const key = await throttleKey(deps, req, 'recovery-code', who);
-    await throttleCheck(deps, key);
-    const normalized = normalizeRecoveryCode(code.slice(0, 64));
-    // Always one lookup with the same hashing work; a malformed code or a missing account simply
-    // matches nothing. A row matches only under its own scheme: its key's HMAC, or SHA-256 if legacy.
-    const { ids, hashes } = candidates(deps.config, accountId ?? '', normalized ?? '');
-    const { rows } = await deps.db.query<{ id: string }>(
-      `select id from recovery_codes
-        where account_id = $1 and used_at is null
-          and (coalesce(key_id, 0), code_hash) in (select * from unnest($2::int[], $3::bytea[]))`,
-      [accountId, ids, hashes],
-    );
-    const codeId = rows[0]?.id;
-    if (accountId === null || normalized === null || codeId === undefined) return refuse(key);
-    await assertNotDisabled(deps.db, accountId);
-    const used = await deps.db.query('update recovery_codes set used_at = $2 where id = $1 and used_at is null', [codeId, deps.clock()]);
-    if ((used.rowCount ?? 0) === 0) return refuse(key);
-    await throttleReset(deps, key);
-    await retagLoginName(deps, found!, name.candidates.current);
-    // Task 17 (owner, 2026-10-29): a recovery code alone is one weak way: held like a TOTP backup
-    // login, and the account's hold starts with the session.
-    const holdUntil = new Date(deps.clock().getTime() + RECOVERY_HOLD_MS);
-    await backupSession(req, reply, accountId, 'recovery-code', deviceLabel, holdUntil);
-    return { status: 'ok' as const, level: 'recovery' as const, holdUntil: holdUntil.toISOString() };
-  }
-
-  // TOTP: at most 5 tries a day per account, right or wrong, before the per-guess throttle.
-  await dailyCap(deps, `backup-totp:${accountId ?? `name:${name.tag}`}`, TOTP_BACKUP_DAILY);
-  const key = await throttleKey(deps, req, 'totp', who);
+  const key = await throttleKey(deps, req, 'recovery-code', who);
   await throttleCheck(deps, key);
-  // The same lookup for no account: NIL_UUID has no TOTP row, so it runs the dummy check (I-1).
-  const ok = await verifyTotp(deps, accountId ?? NIL_UUID, code);
-  if (!ok || accountId === null) return refuse(key);
-  await throttleReset(deps, key);
+  const normalized = normalizeRecoveryCode(code.slice(0, 64));
+  // Always one lookup with the same hashing work; a malformed code or a missing account simply
+  // matches nothing. A row matches only under its own scheme: its key's HMAC, or SHA-256 if legacy.
+  const { ids, hashes } = candidates(deps.config, accountId ?? '', normalized ?? '');
+  const { rows } = await deps.db.query<{ id: string }>(
+    `select id from recovery_codes
+      where account_id = $1 and used_at is null
+        and (coalesce(key_id, 0), code_hash) in (select * from unnest($2::int[], $3::bytea[]))`,
+    [accountId, ids, hashes],
+  );
+  const codeId = rows[0]?.id;
+  if (accountId === null || normalized === null || codeId === undefined) return refuse(key);
   await assertNotDisabled(deps.db, accountId);
+  const used = await deps.db.query('update recovery_codes set used_at = $2 where id = $1 and used_at is null', [codeId, deps.clock()]);
+  if ((used.rowCount ?? 0) === 0) return refuse(key);
+  await throttleReset(deps, key);
   await retagLoginName(deps, found!, name.candidates.current);
+  // Task 17 (owner, 2026-10-29): a recovery code alone is one weak way: the session is held, and
+  // the account's hold starts with it.
   const holdUntil = new Date(deps.clock().getTime() + RECOVERY_HOLD_MS);
-  await backupSession(req, reply, accountId, 'totp', deviceLabel, holdUntil);
+  await backupSession(req, reply, accountId, deviceLabel, holdUntil);
   return { status: 'ok' as const, level: 'recovery' as const, holdUntil: holdUntil.toISOString() };
 }
 
@@ -202,10 +188,10 @@ async function backupSession(
   req: FastifyRequest,
   reply: FastifyReply,
   accountId: string,
-  method: 'totp' | 'recovery-code',
   deviceLabel: string,
   holdUntil: Date,
 ): Promise<void> {
+  const method = 'recovery-code';
   const deps = req.server.deps;
   const now = deps.clock();
   const opened = await withTx(deps.db, async (db) => {

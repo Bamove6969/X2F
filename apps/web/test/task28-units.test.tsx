@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthApiError, type Wallet } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
+import { BACKUPS } from '../src/screens/setup/Backup.js';
 import { stepPath } from '../src/screens/setup/kit.js';
 import { passwordRules } from '../src/screens/setup/Password.js';
 import { groupFingerprint } from '../src/screens/setup/PgpKey.js';
@@ -28,9 +29,9 @@ const fresh = { registered: false, method: 'pgp' as const, backup: null };
 
 describe('summarize (Welcome rows)', () => {
   it('reads the flow first: the method just set up and the backup just added', () => {
-    expect(summarize({ methods: ['password', 'totp'] }, [wallet()], { registered: true, method: 'password', backup: 'totp' })).toEqual({
+    expect(summarize({ methods: ['password', 'recovery-codes'] }, [wallet()], { registered: true, method: 'password', backup: 'recovery-codes' })).toEqual({
       loginWith: 'Password',
-      backup: 'Authenticator app',
+      backup: 'Recovery codes',
       paidTo: { app: 'Cake Wallet', end: 'k3Fz' },
     });
     // A second PGP key is not visible in the methods list; the flow knows.
@@ -42,6 +43,12 @@ describe('summarize (Welcome rows)', () => {
     expect(summarize({ methods: ['security-key'] }, [], fresh)).toMatchObject({ loginWith: 'Security key', backup: 'None yet' });
     expect(summarize({ methods: ['password', 'recovery-codes'] }, [], fresh)).toMatchObject({ loginWith: 'Password', backup: 'Recovery codes' });
     expect(summarize({ methods: [] }, [], fresh)).toMatchObject({ loginWith: 'None yet', backup: 'None yet' });
+    // Design build gaps Job 1: an authenticator app is no backup login (it is a password's second step).
+    expect(summarize({ methods: ['password', 'totp'] }, [], fresh)).toMatchObject({ loginWith: 'Password', backup: 'None yet' });
+  });
+
+  it('setup offers no authenticator app as a backup; recovery codes come first and are picked', () => {
+    expect(BACKUPS.map((b) => b.id)).toEqual(['recovery-codes', 'security-key', 'pgp']);
   });
 
   it('"You get paid to" shows only a usable wallet, never one still waiting', () => {

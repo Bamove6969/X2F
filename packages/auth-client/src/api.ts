@@ -320,8 +320,11 @@ export interface AuthApi {
   pollLoginApproval(id: string): Promise<ApprovalPoll>;
   /** `POST /v1/login/approval/:id/cancel` (Task 16): stop waiting. */
   cancelLoginApproval(id: string): Promise<void>;
-  /** `POST /v1/login/backup`: opens a recovery session (TOTP: held 24 hours). */
-  loginBackup(b: { loginName: string; kind: 'totp' | 'recovery-code'; code: string; deviceLabel: string }): Promise<{
+  /**
+   * `POST /v1/login/backup`: a recovery code (the only backup way in; an authenticator code is 400
+   * `bad-request`) opens a recovery session held 24 hours.
+   */
+  loginBackup(b: { loginName: string; kind: 'recovery-code'; code: string; deviceLabel: string }): Promise<{
     status: 'ok';
     level: 'recovery';
     holdUntil: string | null;

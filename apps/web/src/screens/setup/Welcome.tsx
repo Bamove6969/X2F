@@ -19,13 +19,13 @@ export const FEE_SENTENCE = 'You pay X2F 1% of each completed trade from your ow
 
 const LOGIN_WORDS: Record<LoginMethod, string> = { pgp: 'PGP key', passkey: 'Passkey', 'security-key': 'Security key', password: 'Password' };
 const BACKUP_WORDS: Record<BackupChoice, string> = {
-  totp: 'Authenticator app',
   'security-key': 'Security key',
   pgp: 'Second PGP key',
   'recovery-codes': 'Recovery codes',
 };
 const LOGIN_ORDER: LoginMethod[] = ['pgp', 'passkey', 'security-key', 'password'];
-const BACKUP_ORDER: MethodType[] = ['totp', 'security-key', 'passkey', 'recovery-codes'];
+// An authenticator app is no backup login (design build gaps Job 1): it is a password's second step.
+const BACKUP_ORDER: MethodType[] = ['security-key', 'passkey', 'recovery-codes'];
 
 export interface Summary {
   loginWith: string;
@@ -42,7 +42,7 @@ export function summarize(me: Pick<Me, 'methods'>, wallets: readonly WalletEntry
   let backup = flow.backup !== null ? BACKUP_WORDS[flow.backup] : null;
   if (backup === null) {
     const other = BACKUP_ORDER.find((m) => m !== login && me.methods.includes(m));
-    if (other === 'totp' || other === 'security-key' || other === 'recovery-codes') backup = BACKUP_WORDS[other];
+    if (other === 'security-key' || other === 'recovery-codes') backup = BACKUP_WORDS[other];
     else if (other === 'passkey') backup = 'Passkey';
   }
   const usable = wallets.find((w) => w.usable);

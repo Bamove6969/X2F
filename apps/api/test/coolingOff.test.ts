@@ -348,14 +348,14 @@ describe('one weak way', () => {
     expect(wait.expiresAt).toBe(new Date(now.getTime() + 5 * 60_000).toISOString());
   });
 
-  it("an authenticator code alone (backup login): a held session and the account's hold", async () => {
+  it('an authenticator code is not a backup login (design build gaps Job 1): refused, no session and no hold', async () => {
     const { b, name, id } = await passwordTrader();
     await onboarding(deps, id, new Date(now.getTime() + HOUR));
     const { secret } = await enrolTotp(deps, b, id, () => now);
     setNow(new Date(now.getTime() + 60_000));
     const res = await new Browser(app).post('/v1/login/backup', { loginName: name, kind: 'totp', code: codeAt(secret, now), deviceLabel: 'X' });
-    expect(res.json()).toMatchObject({ status: 'ok', level: 'recovery', holdUntil: in24h() });
-    expect(await holdOf(deps, id)).toEqual({ until: in24h(), reason: 'weak-backup-login', pending: null });
+    expect([res.statusCode, res.json()]).toEqual([400, { error: 'bad-request' }]);
+    expect(await holdOf(deps, id)).toBeNull();
   });
 
   it("a recovery code alone (backup login): a held session and the account's hold", async () => {

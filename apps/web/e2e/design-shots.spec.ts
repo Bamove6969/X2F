@@ -133,9 +133,8 @@ test('05 a backup login starts the 24-hour hold', async ({ page }) => {
   await page.route('**/v1/account/me', json({ ...TRADER_ME, level: 'recovery', holdUntil: HOLD_UNTIL }));
   await page.route('**/v1/login/backup', json({ status: 'ok', level: 'recovery', holdUntil: HOLD_UNTIL }));
   await page.goto('/login/backup?returnTo=%2Fbuy');
-  await page.click('[data-kind="totp"]');
   await page.fill('#backup-login-name', 'nightowl');
-  await page.fill('#backup-code', '123456');
+  await page.fill('#backup-code', 'ABCD-EFGH-JKMN-PQRT');
   await page.click('[data-part="backup-login"]');
   await expect(page.locator('[data-part="hold-note"]')).toContainText('Your account is on a 24-hour hold');
   await shot(page, '05-backup-login-hold-note');

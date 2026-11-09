@@ -157,9 +157,10 @@ describe('owner lockout', () => {
       const res = await send(method, url, { password: 'correct horse battery staple 1', confirmToken: 'x' });
       expect({ url, error: errorOf(res) }).toEqual({ url, error: 'method-not-allowed' });
     }
-    // The backup login (TOTP or a recovery code) and the password login: the same answer as any
-    // wrong name (no oracle), never a session.
-    for (const kind of ['totp', 'recovery-code']) {
+    // The backup login (a recovery code; an authenticator code is no backup, refused for everyone
+    // before any lookup) and the password login: the same answer as any wrong name (no oracle),
+    // never a session.
+    for (const kind of ['recovery-code']) {
       const res = await t.trader.inject({
         method: 'POST', url: '/v1/login/backup', headers: { origin: 'https://x2f.test' },
         payload: { loginName: owner.loginName, kind, code: '123456', deviceLabel: 'x' },

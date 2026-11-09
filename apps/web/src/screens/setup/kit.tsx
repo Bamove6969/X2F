@@ -10,7 +10,8 @@ import type { RegisterPgpStart, SetupError } from './register.js';
 import './setup.css';
 
 export type LoginMethod = 'pgp' | 'passkey' | 'security-key' | 'password';
-export type BackupChoice = 'totp' | 'security-key' | 'pgp' | 'recovery-codes';
+/** No authenticator app: it is no backup login (design build gaps Job 1). */
+export type BackupChoice = 'security-key' | 'pgp' | 'recovery-codes';
 export type Step = '' | 'name' | 'display-name' | 'login' | 'pgp-key' | 'pgp-code' | 'password' | 'backup' | 'wallet' | 'welcome';
 
 export interface SetupState {

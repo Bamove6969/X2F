@@ -98,6 +98,11 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
     s.methods = ['password'];
     return json({ displayName: b.displayName }, 201)(r);
   });
+  await page.route('**/v1/account/recovery-codes', (r) => {
+    record('recovery-codes', r);
+    s.methods = [...s.methods, 'recovery-codes'];
+    return json({ codes: Array.from({ length: 10 }, (_, i) => `ABCD-EFGH-JKMN-PQR${i}`) })(r);
+  });
   await page.route('**/v1/account/totp/start', (r) => {
     record('totp-start', r);
     return json({ challengeId: 't1', otpauthUri: 'otpauth://totp/X2F?secret=JBSWY3DPEHPK3PXP&issuer=X2F', secret: 'JBSWY3DPEHPK3PXP' })(r);
@@ -196,10 +201,12 @@ for (const v of PHONES) {
     // The URL changes before the router commits the new screen: wait for the screen itself.
     await expect(page.locator('[data-screen="setup-backup"]')).toBeVisible();
     await expectParity(page, 'SetupBackup', { viewport: v });
+    // Design build gaps Job 1: no authenticator app as a backup; recovery codes are first and picked.
+    await expect(page.locator('[data-backup="totp"]')).toHaveCount(0);
+    await expect(page.locator('[data-backup="recovery-codes"]')).toHaveAttribute('aria-checked', 'true');
     await page.click('[data-part="backup-add"]');
-    await page.click('[data-part="totp-start"]');
-    await page.fill('#totp-code', '123456');
-    await page.click('[data-part="totp-finish"]');
+    await page.click('[data-part="recovery-make"]');
+    await page.click('[data-part="recovery-done"]');
 
     await expect(page).toHaveURL(/\/setup\/wallet\?/);
     // The URL changes before the router commits the new screen: wait for the screen itself.

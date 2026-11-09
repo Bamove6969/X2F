@@ -1,7 +1,10 @@
 /**
  * Setup step 4 (board SetupBackup; spec 6.1 step 4, 6.2 "Backup method"): an optional, strongly
- * recommended backup way to log in: an authenticator app, a security key, a second PGP key or
- * printed recovery codes. "Skip for now" goes straight on to the wallet. While the account's
+ * recommended backup way to log in: printed recovery codes, a security key or a second PGP key.
+ * An authenticator app is no longer offered here (design build gaps Job 1, board Login-Backup:
+ * the recovery code is the only backup login; an authenticator code alone no longer opens a
+ * backup login, so offering it as a backup would leave a PGP account with no way back in). It
+ * stays in Settings as a login step with a password. "Skip for now" goes straight on to the wallet. While the account's
  * sign-up window is open the server needs no confirm-it's-you for these; the confirm sheet is wired
  * in anyway, so a person who comes back later is asked to confirm rather than refused.
  */
@@ -11,24 +14,22 @@ import { Button } from '../../ui/Button.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { RecoveryCodes } from '../settings/RecoveryCodes.js';
-import { Totp } from '../settings/Totp.js';
 import { SetupFrame, SetupIntro, radioProps, useSetup, type BackupChoice } from './kit.js';
 import { errorCode, setupError } from './register.js';
 
 type Prove = ReturnType<typeof useConfirm>['prove'];
 
-/** The board's four choices, in its order and words. */
+/** The board's choices in its words, recovery codes first (the backup login); no authenticator app. */
 export const BACKUPS: { id: BackupChoice; name: string; short: string; desc: string }[] = [
-  { id: 'totp', name: 'Authenticator app', short: 'authenticator app', desc: 'Six-digit codes from any authenticator app.' },
+  { id: 'recovery-codes', name: 'Printed recovery codes', short: 'recovery codes', desc: 'Ten one-time codes to print or write down.' },
   { id: 'security-key', name: 'Security key', short: 'security key', desc: 'A YubiKey or similar that you keep somewhere safe.' },
   { id: 'pgp', name: 'Second PGP key', short: 'second PGP key', desc: 'A spare PGP key stored separately from your main one.' },
-  { id: 'recovery-codes', name: 'Printed recovery codes', short: 'recovery codes', desc: 'Ten one-time codes to print or write down.' },
 ];
 
 export function Backup() {
   const { update, go } = useSetup();
   const { prove, confirmUi, open } = useConfirm();
-  const [pick, setPick] = useState<BackupChoice>('totp');
+  const [pick, setPick] = useState<BackupChoice>('recovery-codes');
   const [adding, setAdding] = useState<BackupChoice | null>(null);
   const choice = BACKUPS.find((b) => b.id === pick)!;
 
@@ -87,7 +88,6 @@ export function Backup() {
           </div>
         ) : (
           <section className="x2f-stack" aria-label={BACKUPS.find((b) => b.id === adding)!.name} data-part="backup-adding">
-            {adding === 'totp' ? <Totp prove={prove} onDone={() => done('totp')} onCancel={() => setAdding(null)} /> : null}
             {adding === 'recovery-codes' ? <RecoveryCodes prove={prove} onDone={() => done('recovery-codes')} /> : null}
             {adding === 'security-key' ? <SecurityKeyBackup prove={prove} onDone={() => done('security-key')} onCancel={() => setAdding(null)} /> : null}
             {adding === 'pgp' ? <SecondPgpKey prove={prove} onDone={() => done('pgp')} onCancel={() => setAdding(null)} /> : null}
