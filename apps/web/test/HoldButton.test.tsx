@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { advance, fire, key, pointer, render, setReducedMotion } from './render.js';
+import { contrast, mix, token } from './contrast.js';
 
 const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/ui/ui.css'), 'utf8');
 
@@ -318,7 +319,47 @@ describe('HoldButton', () => {
     expect(body).toContain('background: var(--x2f-escrow);');
     expect(body).toContain('color: var(--x2f-ground);');
     expect(body).toContain('cursor: default;');
-    expect(body).toContain('box-shadow: none;');
-    expect(body).toContain('transform: none;');
+    // Kit 1.5: no state of the hold button has a lift or a glow, so done needs no reset.
+    const all = [...css.matchAll(/([^{}]*\.x2f-hold[^{}]*)\{([^}]*)\}/g)].map((m) => m[2]!).join(' ');
+    expect(all).not.toMatch(/box-shadow|translateY/);
+  });
+
+  // Review 4 (WCAG 1.4.11): hold progress must show at 3:1 against the unfilled button, and the
+  // label must still read 4.5:1 on the filled part. An on-monero overlay cannot do both (3:1 needs
+  // 58%+, 4.5:1 text needs 20% or less), so the fill is the strongest overlay the text allows and
+  // its moving front is a 2 px on-monero edge, which carries the 3:1.
+  describe('hold progress contrast', () => {
+    const body = (sel: string) => {
+      const at = css.indexOf(`${sel} {`);
+      expect(at, sel).toBeGreaterThan(-1);
+      return css.slice(at, css.indexOf('}', at));
+    };
+    const p = Number(/color-mix\(in srgb, var\(--x2f-on-monero\) (\d+)%, transparent\)/.exec(body('.x2f-hold__fill'))?.[1]) / 100;
+
+    it('no single overlay reaches 3:1 for the fill and 4.5:1 for the text', () => {
+      for (const theme of ['night', 'day'] as const) {
+        const [o, n] = [token('monero', theme), token('on-monero', theme)];
+        for (let q = 0; q <= 1; q += 0.01) {
+          const f = mix(n, q, o);
+          expect(contrast(f, o) >= 3 && contrast(n, f) >= 4.5, `${theme} ${q}`).toBe(false);
+        }
+      }
+    });
+
+    it('the fill is as strong as the label allows: text 4.5:1+ on it, and 2 points more would not be', () => {
+      expect(p).toBeGreaterThan(0.16);
+      for (const theme of ['night', 'day'] as const) {
+        const [o, n] = [token('monero', theme), token('on-monero', theme)];
+        expect(contrast(n, mix(n, p, o))).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(n, mix(n, p + 0.02, o))).toBeLessThan(4.5);
+      }
+    });
+
+    it('the moving front is a 2 px on-monero edge at 3:1+ against the unfilled button', () => {
+      expect(body(".x2f-hold[data-holding='true'] .x2f-hold__fill")).toContain('border-right: 2px solid var(--x2f-on-monero);');
+      for (const theme of ['night', 'day'] as const) {
+        expect(contrast(token('on-monero', theme), token('monero', theme))).toBeGreaterThanOrEqual(3);
+      }
+    });
   });
 });

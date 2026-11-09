@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-a{color:#ff7a1a}a:hover{color:#ffa060}
+a{color:#ff6600}a:hover{color:#ff8533}
 button:focus-visible,a:focus-visible,textarea:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
 textarea::placeholder{color:#9aa4b2}
 </style>
@@ -95,7 +95,7 @@ class Component extends DCLogic {
       sent: mode === 'sent',
       why,
       noWhy: !ready,
-      sendStyle: 'flex: 1 1 0; height: 48px; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (ready ? 'border: 0; background: #ff7a1a; color: #1a0e05; cursor: pointer;' : 'border: 1px solid #6b7584; background: transparent; color: #9aa4b2; cursor: not-allowed;'),
+      sendStyle: 'flex: 1 1 0; height: 48px; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (ready ? 'border: 0; background: #ff6600; color: #1a0e05; cursor: pointer;' : 'border: 1px solid #6b7584; background: transparent; color: #9aa4b2; cursor: not-allowed;'),
       open: () => this.setState({ mode: 'writing' }),
       cancel: () => this.setState({ mode: 'closed', why: '' }),
       submit: () => { if (ready) this.setState({ mode: 'sent' }); },

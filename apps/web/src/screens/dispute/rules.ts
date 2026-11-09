@@ -143,14 +143,11 @@ export function isCancelRefund(settling: SettleKind | null, dispute: DisputeTrad
 }
 
 /**
- * An XMR amount inside a sentence, as the boards write it ("1.25 XMR"): six decimals with the
- * trailing zeros dropped, keeping at least two. Amounts shown on their own use `Amount` (six).
+ * An XMR amount inside a sentence ("1.250000 XMR"): the kit's 6 places, trailing zeros kept, cut and
+ * never rounded up (design kit handoff 1.5, kit review 5), like amounts shown on their own.
  */
 export function xmrInText(atomic: string | bigint): string {
-  const six = formatXmr(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
-  const [whole, frac = ''] = six.split('.');
-  const kept = frac.replace(/0+$/, '').padEnd(2, '0');
-  return `${whole}.${kept}`;
+  return formatXmr(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
 }
 
 /**

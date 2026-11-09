@@ -63,9 +63,9 @@ describe('FinalAlert (buyer, refund_requested)', () => {
     vi.useFakeTimers({ now: Date.parse(SERVER_NOW) + 10 * MIN });
     const offset = -10 * MIN;
     const { host } = mount(buyerAlertView(), () => new Date(Date.now() + offset));
-    expect(host.querySelector('[role="timer"]')?.textContent).toBe('15:00');
+    expect(host.querySelector('[role="timer"]')?.textContent).toBe('15 min 0 s');
     advance(61_000, vi);
-    expect(host.querySelector('[role="timer"]')?.textContent).toBe('13:59');
+    expect(host.querySelector('[role="timer"]')?.textContent).toBe('13 min 59 s');
   });
 
   it("once the 15 minutes are over, I've paid is refused (too-late) and says why", () => {
@@ -75,7 +75,7 @@ describe('FinalAlert (buyer, refund_requested)', () => {
     advance(3000, vi);
     expect(paid().disabled).toBe(true);
     expect(host.textContent).toContain('The 15 minutes have passed.');
-    expect(host.querySelector('[role="timer"]')?.textContent).toBe('0:00');
+    expect(host.querySelector('[role="timer"]')?.textContent).toBe('0 s');
   });
 
   it("while maintenance pauses the trade the countdown stops, and I've paid still goes through", () => {
