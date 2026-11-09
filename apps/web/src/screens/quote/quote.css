@@ -426,7 +426,7 @@
    full-height screen: the rail frame scrolls the page. */
 [data-shell='desktop'] .x2f-quote {
   display: grid;
-  grid-template-columns: 560px 360px;
+  grid-template-columns: minmax(0, 560px) minmax(280px, 360px);
   column-gap: var(--x2f-space-6);
   align-content: start;
   align-items: start;
@@ -456,4 +456,17 @@
   gap: var(--x2f-space-2);
   border-top: 0;
   background: transparent;
+}
+
+/* Review I1: the rail plus 944 px of columns needs 1280 px; below 1232 px of window the quote
+   is one column and Trade follows the notes. */
+@media (max-width: 1231px) {
+  [data-shell='desktop'] .x2f-quote {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-shell='desktop'] .x2f-quote__footer {
+    grid-column: 1;
+    position: static;
+  }
 }

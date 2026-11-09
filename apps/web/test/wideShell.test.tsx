@@ -22,6 +22,14 @@ function rail(path: string, postOffers = true) {
   ).host;
 }
 
+describe('rail without the Offers role (review M4)', () => {
+  it('marks Profile current on /profile/offers, since Post offer is not listed', () => {
+    const host = rail('/profile/offers', false);
+    const cur = [...host.querySelectorAll('a.x2f-rail__link[aria-current="page"]')].map((a) => a.textContent);
+    expect(cur).toEqual(['Profile']);
+  });
+});
+
 describe('Logo (logo D, docs/brand/svg on wip/design-brief)', () => {
   it('is the board mark: ink letters and the one orange dot, named X2F once', () => {
     const { host } = render(<Logo size={24} />);
@@ -174,7 +182,7 @@ describe('the wide frame CSS (no stretched phone layout)', () => {
   });
 
   it('the wide quote is two columns, 560 and 360, with Trade at the top of the second', () => {
-    expect(rule(quote, "[data-shell='desktop'] .x2f-quote")).toMatch(/grid-template-columns: 560px 360px;/);
+    expect(rule(quote, "[data-shell='desktop'] .x2f-quote")).toMatch(/grid-template-columns: minmax\(0, 560px\) minmax\(280px, 360px\);/);
     expect(rule(quote, "[data-shell='desktop'] .x2f-quote__footer")).toMatch(/grid-column: 2;/);
   });
 });

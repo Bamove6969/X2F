@@ -88,6 +88,9 @@ function PageName({ name }: { name: RailPageName }) {
 export function DesktopRail({ postOffers = true }: { postOffers?: boolean }) {
   const { pathname } = useLocation();
   const links = postOffers ? LINKS : LINKS.filter((l) => l.to !== '/post');
+  // Without the Offers role Post offer is not listed, so /profile/offers sits under Profile.
+  const isCurrent = (l: (typeof LINKS)[number]) =>
+    l.match(pathname) || (!postOffers && l.to === '/profile' && /^\/profile\/offers(\/|$)/.test(pathname));
   return (
     <nav aria-label="Main" className="x2f-rail">
       <div className="x2f-rail__head">
@@ -102,7 +105,7 @@ export function DesktopRail({ postOffers = true }: { postOffers?: boolean }) {
           to={l.to}
           state={{ from: pathname }}
           className="x2f-rail__link"
-          aria-current={l.match(pathname) ? 'page' : undefined}
+          aria-current={isCurrent(l) ? 'page' : undefined}
         >
           <Icon name={l.icon} size={20} stroke={1.75} />
           {l.label}
