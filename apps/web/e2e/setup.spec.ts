@@ -1,5 +1,6 @@
 // Getting started (Plan 3 Task 28): Terms first, then names, login method, PGP key and code or a
-// password, a backup login (or Skip for now), the first payout wallet, and Welcome with Start
+// password, the recovery codes (required: shown, ticked and one typed back, owner S-017), an
+// optional extra backup (or Skip for now), the first payout wallet, and Welcome with Start
 // trading back to `returnTo`. Every Setup board is checked with the parity harness at the board's
 // phone size (390x844) and at a small Android size (360x800) (owner 2026-10-25: mobile ready at
 // launch). The API is stubbed per test with page.route, in FU-A's shapes (display name + private
@@ -10,6 +11,19 @@ import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { expectParity, type ParityViewport } from './parity.js';
 
 const PHONES = ['390x844', '360x800'] as const satisfies readonly ParityViewport[];
+const RECOVERY_CODES = Array.from({ length: 10 }, (_, i) => `ABCD-EFGH-JKMN-PQR${i}`);
+
+/** Owner S-017: make the recovery codes, tick "I've written it down" and type back the code asked for. */
+async function saveRecoveryCodes(page: Page): Promise<void> {
+  await expect(page.locator('[data-part="backup-skip"]')).toHaveCount(0);
+  await page.click('[data-part="recovery-make"]');
+  const input = page.locator('#recovery-typeback');
+  const n = Number(await input.getAttribute('data-code-number'));
+  await expect(page.locator('[data-part="recovery-continue"]')).toBeDisabled();
+  await page.check('[data-part="recovery-written"]');
+  await input.fill(RECOVERY_CODES[n - 1]!);
+  await page.click('[data-part="recovery-continue"]');
+}
 
 const TERMS_VERSION = '2026-10-17';
 /** The board's example message (SetupPgpChallenge), so the page shows exactly the board's text. */
@@ -101,7 +115,7 @@ async function stubApi(page: Page, o: { signedIn?: boolean; methods?: string[]; 
   await page.route('**/v1/account/recovery-codes', (r) => {
     record('recovery-codes', r);
     s.methods = [...s.methods, 'recovery-codes'];
-    return json({ codes: Array.from({ length: 10 }, (_, i) => `ABCD-EFGH-JKMN-PQR${i}`) })(r);
+    return json({ codes: RECOVERY_CODES })(r);
   });
   await page.route('**/v1/account/totp/start', (r) => {
     record('totp-start', r);
@@ -201,12 +215,12 @@ for (const v of PHONES) {
     // The URL changes before the router commits the new screen: wait for the screen itself.
     await expect(page.locator('[data-screen="setup-backup"]')).toBeVisible();
     await expectParity(page, 'SetupBackup', { viewport: v });
-    // Design build gaps Job 1: no authenticator app as a backup; recovery codes are first and picked.
+    // Owner S-017: the recovery codes come first and are required; then the extras are optional.
+    await saveRecoveryCodes(page);
+    // Design build gaps Job 1: no authenticator app as a backup.
     await expect(page.locator('[data-backup="totp"]')).toHaveCount(0);
-    await expect(page.locator('[data-backup="recovery-codes"]')).toHaveAttribute('aria-checked', 'true');
-    await page.click('[data-part="backup-add"]');
-    await page.click('[data-part="recovery-make"]');
-    await page.click('[data-part="recovery-done"]');
+    await expect(page.locator('[data-backup="security-key"]')).toHaveAttribute('aria-checked', 'true');
+    await page.click('[data-part="backup-skip"]');
 
     await expect(page).toHaveURL(/\/setup\/wallet\?/);
     // The URL changes before the router commits the new screen: wait for the screen itself.
@@ -303,7 +317,7 @@ test('I accept stays disabled until the Terms are scrolled to the end and ticked
   await expect(accept).toBeDisabled();
 });
 
-test('Mira.K_ shows exactly as typed after setup (password path, backup skipped)', async ({ page }) => {
+test('Mira.K_ shows exactly as typed after setup (password path, extra backup skipped)', async ({ page }) => {
   const s = await stubApi(page);
   const urls: string[] = [];
   page.on('framenavigated', (f) => urls.push(f.url()));
@@ -318,6 +332,7 @@ test('Mira.K_ shows exactly as typed after setup (password path, backup skipped)
   await page.click('[data-part="password-set"]');
 
   await expect(page).toHaveURL(/\/setup\/backup\?/);
+  await saveRecoveryCodes(page);
   await page.click('[data-part="backup-skip"]');
   await page.fill('#addr', ADDRESS);
   await page.click('[data-part="wallet-finish"]');
@@ -326,7 +341,7 @@ test('Mira.K_ shows exactly as typed after setup (password path, backup skipped)
   const name = page.locator('[data-username]');
   await expect(name).toHaveText('Mira.K_');
   expect(await name.evaluate((el) => getComputedStyle(el).textTransform)).toBe('none');
-  await expect(page.locator('[data-part="summary-backup"]')).toHaveText('None yet');
+  await expect(page.locator('[data-part="summary-backup"]')).toHaveText('Recovery codes');
   await expect(page.getByText('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.')).toBeVisible();
   expect(s.bodies.password?.[0]).toMatchObject({ displayName: 'Mira.K_', loginName: 'mira-signin-01' });
 
