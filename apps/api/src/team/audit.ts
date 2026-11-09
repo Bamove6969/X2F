@@ -91,9 +91,35 @@ async function tradeAmount(q: Queryable, code: string): Promise<Record<string, s
 type Detail = Record<string, string | number | boolean | null>;
 
 /**
+ * An offer's terms, for its log rows (review 2026-11-09 M2, the owner's "name and amount" rule: an
+ * offer has no single amount, so its side, currency, method, price and limits; a removed offer may
+ * be deleted later, and then the log is the only record of what a member posted or switched).
+ */
+async function offerTerms(q: Queryable, offerId: string): Promise<Detail> {
+  const { rows } = await q.query<{
+    side: string; currency: string; method_id: string; price_mode: string; margin_bps: number | null; fixed_cents_per_xmr: string | null;
+    amount_unit: string; min_atomic: string | null; max_atomic: string | null; min_fiat_cents: string | null; max_fiat_cents: string | null;
+  }>(
+    `select side, currency, method_id, price_mode, margin_bps, fixed_cents_per_xmr::text, amount_unit,
+            min_atomic::text, max_atomic::text, min_fiat_cents::text, max_fiat_cents::text
+       from offers where id = $1`,
+    [offerId],
+  );
+  const r = rows[0];
+  if (!r) return { offerId };
+  return {
+    offerId, side: r.side, currency: r.currency, methodId: r.method_id, priceMode: r.price_mode, marginBps: r.margin_bps,
+    fixedCentsPerXmr: r.fixed_cents_per_xmr, amountUnit: r.amount_unit, minAtomic: r.min_atomic, maxAtomic: r.max_atomic,
+    minFiatCents: r.min_fiat_cents, maxFiatCents: r.max_fiat_cents,
+  };
+}
+
+/**
  * Writes one audit row for a member's action (nothing for the account owner). `detail` must hold
  * no wallet address, key, token, secret, IP address or user agent: ids and plain facts only. On a
- * trade the row also gets the trade's amount (XMR atomic, fiat cents and currency); the member's
+ * trade the row also gets the trade's amount (XMR atomic, fiat cents and currency), on an offer its
+ * terms (side, currency, method, price and limits: `offerTerms`, read in the action's transaction
+ * after its write); the member's
  * name is the log's join on `team_members` (the row stays after removal).
  *
  * Review M1: `requireSession` checked the member before the handler ran, and a removal or a box
@@ -105,12 +131,14 @@ type Detail = Record<string, string | number | boolean | null>;
 export async function auditMember(
   q: Queryable,
   actor: Actor,
-  a: { action: AuditAction; tradeCode?: string | null; detail?: Detail },
+  a: { action: AuditAction; tradeCode?: string | null; offerId?: string; detail?: Detail },
   now: Date,
 ): Promise<void> {
   if (actor.memberId === null) return;
   await assertLiveMember(q, actor, ACTION_ABILITY[a.action]);
-  const detail = { ...(a.tradeCode ? await tradeAmount(q, a.tradeCode) : {}), ...(a.detail ?? {}) };
+  const detail = {
+    ...(a.tradeCode ? await tradeAmount(q, a.tradeCode) : {}), ...(a.offerId ? await offerTerms(q, a.offerId) : {}), ...(a.detail ?? {}),
+  };
   await q.query(
     'insert into team_audit (account_id, member_id, at, action, trade_code, detail) values ($1, $2, $3, $4, $5, $6)',
     [actor.accountId, actor.memberId, now, a.action, a.tradeCode ?? null, JSON.stringify(detail)],

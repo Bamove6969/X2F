@@ -562,7 +562,7 @@ export function offerRoutes(app: FastifyInstance): void {
       ],
       );
       // Task 18: a team member's post is in the account owner's audit log, in this transaction.
-      await auditMember(client, req.auth, { action: 'offer-posted', detail: { offerId: rows[0]!.id } }, now);
+      await auditMember(client, req.auth, { action: 'offer-posted', offerId: rows[0]!.id }, now);
       return rows[0]!.id;
     });
     return reply.code(201).send({ id });
@@ -608,14 +608,14 @@ export function offerRoutes(app: FastifyInstance): void {
         if (!m) throw new ApiError(404, 'not-found');
         await assertMayPost(client, req.auth!, now, m.side, id);
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
-        await auditMember(client, req.auth, { action: 'offer-relisted', detail: { offerId: id } }, now);
+        await auditMember(client, req.auth, { action: 'offer-relisted', offerId: id }, now);
       });
     } else {
       // Pausing or removing: no guard but a live session (review round 5 M2), under the account lock.
       await inTransaction(deps.db, async (client) => {
         await lockAccountLive(client, req.auth!, now);
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
-        await auditMember(client, req.auth, { action: status === 'paused' ? 'offer-paused' : 'offer-removed', detail: { offerId: id } }, now);
+        await auditMember(client, req.auth, { action: status === 'paused' ? 'offer-paused' : 'offer-removed', offerId: id }, now);
       });
     }
     return { id, status };
@@ -825,7 +825,7 @@ export function offerRoutes(app: FastifyInstance): void {
         ]);
         // Task 18: one audit row per offer a team member switched, in this transaction.
         for (const id of switched) {
-          await auditMember(client, req.auth!, { action: status === 'paused' ? 'offer-paused' : 'offer-relisted', detail: { offerId: id } }, now);
+          await auditMember(client, req.auth!, { action: status === 'paused' ? 'offer-paused' : 'offer-relisted', offerId: id }, now);
         }
       }
       return out;
