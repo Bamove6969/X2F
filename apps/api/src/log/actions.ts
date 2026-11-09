@@ -153,6 +153,9 @@ export const LOG_ACTIONS = {
   'owner.key-added': { credentialId: 'id' },
   'owner.key-removed': { credentialId: 'id' },
   'settings.changed': { field: 'id', from: 'setting', to: 'setting' },
+  // The fee wallet's sweep to the owner's cold wallet (B-006): amounts and the tx id, never the address.
+  'treasury.swept': { amountAtomic: 'amount', txHash: 'hex64' },
+  'treasury.sweep-failed': { amountAtomic: 'amount', reason: 'id' },
   // Site controls (Tasks 8, 28).
   'site.stopped': {},
   'site.resumed': {},
@@ -175,7 +178,7 @@ export const LOG_ACTIONS = {
 export type LogAction = keyof typeof LOG_ACTIONS;
 
 /** Action prefixes that the staff log scope never shows (Task 3; Task 33's pay and shifts too). */
-export const OWNER_ONLY_PREFIXES = ['staff.', 'settings.', 'owner.', 'site.', 'shift.', 'pay.', 'news.'] as const;
+export const OWNER_ONLY_PREFIXES = ['staff.', 'settings.', 'owner.', 'site.', 'shift.', 'pay.', 'news.', 'treasury.'] as const;
 
 export class LogDetailError extends Error {
   constructor(message: string) {

@@ -6,6 +6,7 @@ import type { Queryable } from '../db/pool.js';
 import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
+import { bookTradeRevenue } from '../staff/revenue.js';
 import { countActionTimes } from '../traders/actionTimes.js';
 import { countTradeTotals } from '../traders/tradedTotal.js';
 
@@ -378,7 +379,12 @@ export async function applyEvent(
       if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, next, now);
       // C12b: a completed trade adds its take-time USD value to both sides' running totals, a settled
       // buyer cancel to the buyer's cancel count (idempotent per trade; traders/tradedTotal.ts).
-      if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) await countTradeTotals(client, code);
+      if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) {
+        await countTradeTotals(client, code);
+        // Plan 4 Task 32: the 1% the settlement paid to the fee wallet goes into the aggregate
+        // revenue ledger, once per trade; a cancel or a refund pays none (staff/revenue.ts).
+        await bookTradeRevenue(client, code);
+      }
       // P5-A8: a release by the seller adds both sides' action times to their running lists (once; traders/actionTimes.ts).
       if (next.state !== prev.state && next.state === 'released') await countActionTimes(client, code);
       if (within) await within(client, prev, next, now);

@@ -9,7 +9,9 @@ import type { PushKind } from './send.js';
  * for a currency down) and a source failing. Recoveries and all-clears stay in-app only, as does
  * every trader alert kind. Staff pushes are a later plan.
  */
-export const PUSHED_OWNER_ALERTS: ReadonlySet<AlertKind> = new Set<AlertKind>(['market-prices-paused', 'price-source-failing']);
+// B-006 (owner q7): "The owner gets a notification when the threshold is reached": the fee wallet's
+// sweep alerts go to the phone too.
+export const PUSHED_OWNER_ALERTS: ReadonlySet<AlertKind> = new Set<AlertKind>(['market-prices-paused', 'price-source-failing', 'fee-sweep-due', 'fee-sweep-failed']);
 
 export interface OwnerAlertDeps {
   db: Queryable;
