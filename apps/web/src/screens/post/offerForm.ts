@@ -239,6 +239,10 @@ export function refusalText(code: string): string {
     case 'method-unavailable':
       // not-a-refusal: a catalog fact (the method is off the list), see NOT_REFUSAL_CODES
       return "This payment method isn't available right now. Choose another one.";
+    case 'price-unavailable':
+      // Owner p11-6: without a price the offer's maximum can't be checked against the trade limit,
+      // so it isn't posted (the API fails closed). COPY-UNSIGNED
+      return "There's no price for this currency right now, so your offer wasn't posted. Try again in a few minutes.";
     default:
       return "Something went wrong and your offer wasn't posted. Try again.";
   }

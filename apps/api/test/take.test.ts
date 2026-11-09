@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { fiatCents, rateFor } from '@x2f/trade';
+import { LAUNCH_TRADE_CAP_USD_CENTS, fiatCents, rateFor } from '@x2f/trade';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
@@ -86,7 +86,7 @@ async function person(stage: 'starter' | 'building' | 'graduated' = 'graduated')
 
 const OFFER = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: 0, terms: 'Zelle only.',
+  minFiatCents: '1000', maxFiatCents: '500000', minTrades: 0, terms: 'Zelle only.',
 };
 
 async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<string> {
@@ -172,7 +172,7 @@ describe('POST /v1/offers/:id/take', () => {
     expect(t).toMatchObject({
       offerId: offer, poster: 'seller', sellerId: seller.id, buyerId: buyer.id, methodId: 'ZELLE', state: 'setup',
       amountAtomic: tenth, lockedRate: { currency: 'USD', centsPerXmr: 33_330n }, fiatCents: 3_333n,
-      minFiatCents: 1000n, maxFiatCents: 1_000_000n, confirmWindowMin: 90, takenAt: deps.clock(),
+      minFiatCents: 1000n, maxFiatCents: 500_000n, confirmWindowMin: 90, takenAt: deps.clock(),
     });
     // The buyer took: their payout address is set; the seller (poster) picks on the accepted sheet.
     expect({ buyer: row.buyer_payout, seller: row.seller_refund, app: row.seller_wallet_app }).toEqual({ buyer: buyer.address, seller: null, app: null });
@@ -233,14 +233,20 @@ describe('POST /v1/offers/:id/take', () => {
     expect(rowToTrade((await loadTradeRow(deps.db, code2))!)).toMatchObject({ lockedRate: { centsPerXmr: 33_000n }, fiatCents: 33_000n });
   });
 
-  it('a fixed-price offer compares exactly, and can be taken while the feed is down; a market offer cannot', async () => {
+  it('a fixed-price offer compares exactly; while the feed is down neither a fixed nor a market offer can be taken (the launch cap fails closed)', async () => {
     const seller = await person();
     const buyer = await person();
     const fixed = await postOffer(seller, { pricing: { mode: 'fixed', centsPerXmr: '34000' } });
     expect(refusal(await take(buyer, fixed, body(buyer, tenth, 33_999n)))).toEqual({ status: 409, error: 'price-changed' });
     market.usdCentsPerXmr = null;
+    // Owner p11-6: the XMR's market value counts against the launch cap; with no price it can't be
+    // counted, so the take is refused (it used to go through for a fixed price).
+    expect(refusal(await take(buyer, fixed, body(buyer, tenth, 34_000n)))).toEqual({ status: 409, error: 'price-unavailable' });
+    expect((await deps.db.query('select 1 from trades where offer_id = $1', [fixed])).rowCount).toBe(0);
+    market.usdCentsPerXmr = 33_000n;
     const code = await taken(buyer, fixed, body(buyer, tenth, 34_000n));
     expect(rowToTrade((await loadTradeRow(deps.db, code))!).lockedRate.centsPerXmr).toBe(34_000n);
+    market.usdCentsPerXmr = null;
 
     const other = await person();
     const floating = await postOffer(seller);
@@ -425,13 +431,14 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     await taken(buyer, offer, body(buyer, atCap));
   });
 
-  it('a Building taker is held to $1,000; Graduated on both sides has no platform cap', async () => {
+  it('a Building taker is held to $1,000; Graduated on both sides has no stage cap (only the launch cap)', async () => {
     const seller = await person();
     const building = await person('building');
-    const offer = await postOffer(seller, { maxFiatCents: '100000000' });
+    const offer = await postOffer(seller);
     expect(refusal(await take(building, offer, body(building, 4n * XMR)))).toEqual({ status: 409, error: 'starter-limit', stage: 'building', capUsdCents: '100000' });
     const graduated = await person('graduated');
-    await taken(graduated, offer, body(graduated, 100n * XMR));
+    // 15 XMR is $4,950: above every stage cap, within the launch cap.
+    await taken(graduated, offer, body(graduated, 15n * XMR));
   });
 
   it("the other side's cap refuses too, without naming their stage", async () => {
@@ -445,7 +452,7 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     const seller = await person();
     const buyer = await person('starter');
     // EUR at 0.9 USD: €210 is $233.34, above the Starter cap; €180 is $200.
-    const offer = await postOffer(seller, { currency: 'EUR', pricing: { mode: 'fixed', centsPerXmr: '29700' } });
+    const offer = await postOffer(seller, { currency: 'EUR', pricing: { mode: 'fixed', centsPerXmr: '29700' }, maxFiatCents: '450000' });
     const eur = (amount: bigint) => ({
       amountAtomic: amount.toString(), walletId: buyer.wallet, centsPerXmr: '29700',
       fiatCents: fiatCents(amount, { currency: 'EUR', centsPerXmr: 29_700n }).toString(),
@@ -594,6 +601,70 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     );
     // The trade's chat is that one, for both sides.
     expect((await seller.browser.post(`/v1/trades/${trade}/chat`, {})).json()).toEqual({ chat: code, role: 'seller' });
+  });
+});
+
+describe('the launch cap: $5,000 per trade (owner p11-6)', () => {
+  const CAP = { status: 409, error: 'launch-cap', capUsdCents: '500000' };
+
+  it('is one constant: $5,000 in US cents', () => {
+    expect(LAUNCH_TRADE_CAP_USD_CENTS).toBe(500_000n);
+  });
+
+  it("posting: the offer's maximum is at most $5,000, counted in US dollars by the app's own price", async () => {
+    const p = await person();
+    await postOffer(p, { maxFiatCents: '500000' });
+    expect(refusal(await p.browser.post('/v1/offers', { ...OFFER, maxFiatCents: '500001' }))).toEqual(CAP);
+    // EUR at 0.9 USD: €4,500.00 is $5,000.00; €4,500.01 is over.
+    await postOffer(p, { currency: 'EUR', maxFiatCents: '450000' });
+    expect(refusal(await p.browser.post('/v1/offers', { ...OFFER, currency: 'EUR', maxFiatCents: '450001' }))).toEqual(CAP);
+    // Nothing was written by a refusal.
+    const { rows } = await deps.db.query<{ max: string }>('select max(max_fiat_cents)::text as max from offers where account_id = $1', [p.id]);
+    expect(rows[0]!.max).toBe('500000');
+  });
+
+  it('posting fails closed without a price to convert with; US dollars need none', async () => {
+    const p = await person();
+    market.usdCentsPerXmr = null;
+    expect(refusal(await p.browser.post('/v1/offers', { ...OFFER, currency: 'EUR', maxFiatCents: '1000' }))).toEqual({ status: 409, error: 'price-unavailable' });
+    expect((await deps.db.query("select 1 from offers where account_id = $1 and currency = 'EUR'", [p.id])).rowCount).toBe(0);
+    await postOffer(p, { maxFiatCents: '500000' });
+    expect(refusal(await p.browser.post('/v1/offers', { ...OFFER, maxFiatCents: '500001' }))).toEqual(CAP);
+  });
+
+  it("taking: the trade's USD value is at most $5,000 for Graduated traders too (an offer from before the cap)", async () => {
+    const seller = await person();
+    const buyer = await person();
+    const offer = await postOffer(seller);
+    // An offer posted before the cap existed can have a larger maximum; the take still refuses.
+    await deps.db.query('update offers set max_fiat_cents = 10000000 where id = $1', [offer]);
+    // $5,000.00 exactly goes through; one atomic unit more is over.
+    const atCap = (XMR * 500_000n) / 33_000n;
+    expect(fiatCents(atCap, { currency: 'USD', centsPerXmr: 33_000n })).toBe(500_000n);
+    const over = (XMR * 500_001n) / 33_000n + 1n;
+    expect(refusal(await take(buyer, offer, body(buyer, over)))).toEqual(CAP);
+    expect((await deps.db.query('select 1 from trades where offer_id = $1', [offer])).rowCount).toBe(0);
+    await taken(buyer, offer, body(buyer, atCap));
+  });
+
+  it('taking counts the XMR at the market price too, and other currencies in US dollars', async () => {
+    const seller = await person();
+    const buyer = await person();
+    // Fixed at $33.00 per XMR, a tenth of the $330 market: 200 XMR is $6,600 at the offer's price
+    // but $66,000 at market. 15.2 XMR is $501.60 at the offer's price but $5,016 at market.
+    const fixed = await postOffer(seller, { pricing: { mode: 'fixed', centsPerXmr: '3300' } });
+    expect(refusal(await take(buyer, fixed, body(buyer, (XMR * 152n) / 10n, 3300n)))).toEqual(CAP);
+    await taken(buyer, fixed, body(buyer, 15n * XMR, 3300n));
+    // EUR at 0.9 USD, from an offer from before the cap: €4,600 is $5,111.12.
+    const other = await person();
+    const eur = await postOffer(seller, { currency: 'EUR', pricing: { mode: 'fixed', centsPerXmr: '29700' }, maxFiatCents: '450000' });
+    await deps.db.query('update offers set max_fiat_cents = 10000000 where id = $1', [eur]);
+    const eurBody = (amount: bigint) => ({
+      amountAtomic: amount.toString(), walletId: other.wallet, centsPerXmr: '29700',
+      fiatCents: fiatCents(amount, { currency: 'EUR', centsPerXmr: 29_700n }).toString(),
+    });
+    expect(refusal(await take(other, eur, eurBody((XMR * 460_000n) / 29_700n)))).toEqual(CAP);
+    await taken(other, eur, eurBody((XMR * 440_000n) / 29_700n));
   });
 });
 

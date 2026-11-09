@@ -14,8 +14,11 @@ import { tradeApp } from './helpers/tradeApp.js';
 
 const DAY = 86_400_000;
 
+/**
+ * Every currency has a price, $330 per XMR at 1:1: posting converts the offer's maximum to US
+ * dollars and fails closed without a price (the launch cap, owner p11-6).
+ */
 function quote(currency: string): MarketQuote | null {
-  if (currency !== 'USD') return null;
   return {
     price: { currency, centsPerXmr: 33_000n }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
     usdCentsPerXmr: 33_000n, fx: null,

@@ -16,6 +16,7 @@ import type { MarketPrices } from '../price/market.js';
 import { assertNotBlocked } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, tradeCap, usdCentsOf, type TradeCap } from '../traders/stage.js';
 import { usableWallets, type Wallet } from '../wallets/routes.js';
+import { assertWithinLaunchCap } from './launchCap.js';
 import { insertTrade, loadTradeRow, rowToTrade, type TradeSides } from './store.js';
 import { roleOf } from './view.js';
 
@@ -288,6 +289,9 @@ export function takeRoutes(app: FastifyInstance): void {
       // The trade's USD value, counted against the caps and kept (301) to weigh its reviews (Plan 5 Task 3).
       const usd = usdCents(r.currency, b.amountAtomic, total, deps.prices);
       await checkStarterLimits(c, { takerId, posterId, usd: () => usd, now });
+      // The launch cap (owner p11-6) for every stage, Graduated too: the same USD value, and no
+      // price to count it with fails closed. After the starter caps, which are lower and say more.
+      assertWithinLaunchCap(usd);
 
       const poster = posterRole(r.side);
       const profile = getProfile(r.method_id) ?? getProfile(FALLBACK_PROFILE);

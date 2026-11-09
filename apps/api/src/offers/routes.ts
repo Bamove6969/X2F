@@ -11,6 +11,7 @@ import { getMethod, isAvailable } from '../methods/profiles.js';
 import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
 import type { MarketPrices } from '../price/market.js';
+import { assertWithinLaunchCap, usdCentsFor } from '../trades/launchCap.js';
 import { blockedEitherWaySql } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
 import { hasPendingReview, pendingReviewSql } from '../reviews/gate.js';
@@ -463,6 +464,9 @@ export function offerRoutes(app: FastifyInstance): void {
     const p = o.pricing;
     const id = await inTransaction(deps.db, async (client) => {
       await assertMayPost(client, req.auth!, now, o, null);
+      // The launch cap (owner p11-6): the offer's maximum, in US dollars by the app's own price; a
+      // currency with no price now fails closed (409 price-unavailable). The take checks the trade.
+      assertWithinLaunchCap(usdCentsFor(o.currency, o.maxFiatCents, deps.prices));
       const { rows } = await client.query<{ id: string }>(
       `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, fixed_cents_per_xmr,
                            min_fiat_cents, max_fiat_cents, min_trades, terms, country, status, created_at, updated_at)

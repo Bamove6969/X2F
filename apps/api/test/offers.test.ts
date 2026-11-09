@@ -17,11 +17,18 @@ const DAY = 86_400_000;
 /** The market the app sees: USD (and EUR at 0.9 USD) at `usdCentsPerXmr`, or nothing while down. */
 const market = { usdCentsPerXmr: 33_000n as bigint | null };
 
+/**
+ * Currencies with no price in the fake feed. Every other currency is priced (EUR at 0.9 USD, the
+ * rest 1:1), because posting converts the offer's maximum to US dollars and fails closed without
+ * a price (the launch cap, owner p11-6). A test that needs a currency with no price adds it here
+ * after posting and takes it out again.
+ */
+const unpriced = new Set<string>();
+
 function quote(currency: string): MarketQuote | null {
   const usd = market.usdCentsPerXmr;
-  if (usd === null) return null;
-  const local = currency === 'USD' ? usd : currency === 'EUR' ? (usd * 9n) / 10n : null;
-  if (local === null) return null;
+  if (usd === null || unpriced.has(currency)) return null;
+  const local = currency === 'EUR' ? (usd * 9n) / 10n : usd;
   return {
     price: { currency, centsPerXmr: local }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
     usdCentsPerXmr: usd, fx: null,
@@ -52,6 +59,7 @@ afterAll(async () => {
 });
 beforeEach(() => {
   market.usdCentsPerXmr = 33_000n;
+  unpriced.clear();
 });
 
 type Who = Awaited<ReturnType<typeof trader>>;
@@ -109,8 +117,10 @@ describe('POST /v1/offers and GET /v1/offers', () => {
   it('posts an offer and lists it to a logged-out browser, in the shape the web parses (P3-M9)', async () => {
     const p = await poster();
     const id = await post(p, { currency: 'CAD' });
-    // CAD has no market in the fake feed: the market offer has no rate now.
+    // Once posted, CAD has no market in the fake feed: the market offer has no rate now.
+    unpriced.add('CAD');
     const cards = await list('side=sell&method=ZELLE&currency=CAD&sort=best');
+    unpriced.delete('CAD');
     expect(cards).toEqual([
       {
         id,
@@ -538,13 +548,15 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
   it("M7: the poster's own offers never carry opensAt; another viewer's single-offer answer does", async () => {
     const p = await poster(); // Starter, cap $200
     const id = await post(p, { currency: 'SAR', minFiatCents: '50000', maxFiatCents: '90000', pricing: { mode: 'fixed', centsPerXmr: '120000' } });
-    // SAR has no market in the fake feed, so use USD for the converted cap.
+    // Once posted, SAR has no market in the fake feed (no opensAt for it), so use USD for the converted cap.
+    unpriced.add('SAR');
     const usd = await post(p, { currency: 'USD', side: 'sell', methodId: 'APPLE_CASH', minFiatCents: '50000', maxFiatCents: '90000' });
     expect((await list('side=sell&method=APPLE_CASH&currency=USD', p.browser)).find((c) => c.id === usd)!.opensAt).toBeUndefined();
     expect((await p.browser.get(`/v1/offers/${usd}`)).json()).not.toHaveProperty('opensAt');
     const other = await trader();
     expect((await other.browser.get(`/v1/offers/${usd}`)).json()).toMatchObject({ opensAt: 'building' });
     expect((await other.browser.get(`/v1/offers/${id}`)).json()).not.toHaveProperty('opensAt');
+    unpriced.delete('SAR');
   });
 
   it('M11: the single-offer route hides held and disabled posters and methods under legal review', async () => {
