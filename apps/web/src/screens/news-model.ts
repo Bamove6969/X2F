@@ -48,7 +48,7 @@ export function unseenOf(items: readonly NewsItem[], lastSeen: number): NewsItem
   return items.filter((i) => i.id > lastSeen);
 }
 
-/** "29 Oct 2026, 09:00" in the reader's own locale and time zone. */
+/** "29 Oct 2026, 09:00 UTC", the same for every reader (design X5). */
 export function postedDate(iso: string): string {
   return utcDateTime(new Date(iso));
 }

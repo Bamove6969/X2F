@@ -57,7 +57,7 @@ export function handleNudge(ev: NudgeEvent, env: NudgeEnv): string | null {
 
 /**
  * What the sender can learn: `sent` (which is also what a silently dropped nudge answers),
- * `too-soon` (their own 10 minutes) or `no-shared-context`.
+ * `too-soon` (their own 15 minutes) or `no-shared-context`.
  */
 export type SendResult = { result: 'sent' } | { result: 'too-soon'; retryAfterSeconds?: number } | { result: 'no-shared-context' };
 

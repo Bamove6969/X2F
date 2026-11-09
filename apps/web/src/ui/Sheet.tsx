@@ -13,7 +13,7 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * On a foldable it opens inside the pane that asked for it, never across the hinge (Task 40,
  * styles/fold.css): the pane is the one holding the focused element when the sheet opens.
  * `eyebrow` puts a small caution line with the alert icon above the title (the warning boards'
- * "Before you pay" / "Before you release", Task 38), and makes the sheet an `alertdialog`.
+ * "Before you release", Task 38), and makes the sheet an `alertdialog`.
  * `describedBy` names the element that holds the sheet's message (read out with the title), and
  * `initialFocus` is a selector inside the sheet for the control that gets focus when it opens (the
  * warnings' safe action, review M5); without it the panel itself is focused.

@@ -73,12 +73,16 @@ export function tradeFromView(v: RefundView): Trade {
     settling: v.settling,
     settleFrom: null,
     settleBy: date(v.settleBy, 'settleBy'),
+    // `?? null`: a view from an API without the field (a deploy in between) must not make the
+    // dry runs throw; these events never read the claim.
+    releaseClaimedAt: date(v.releaseClaimedAt ?? null, 'releaseClaimedAt'),
     pausedAt: date(v.pausedAt, 'pausedAt'),
     txHash: v.txHash,
     dispute: null,
     closedAt: date(v.closedAt, 'closedAt'),
     cancelConfirmedAt: date(v.cancelConfirmedAt ?? null, 'cancelConfirmedAt'),
     cancelConfirmableAt: date(v.cancelConfirmableAt ?? null, 'cancelConfirmableAt'),
+    sellerNudgedAt: date(v.sellerNudgedAt ?? null, 'sellerNudgedAt'),
   };
 }
 
@@ -104,9 +108,23 @@ function allowed(v: RefundView, e: RefundEvent, by: Party, now: Date): boolean {
   }
 }
 
-/** The seller may tap "Cancel & get refund" now (server clock). */
+/** The seller may tap "Cancel and get refund" now (server clock): the 90 minutes are over and they have nudged (owner G2). */
 export function canRequestRefund(v: RefundView, now: Date): boolean {
   return v.role === 'seller' && allowed(v, { type: 'request-refund' }, 'seller', now);
+}
+
+/**
+ * The view as if the seller nudged right now: what the machine would say once they nudge. `now`
+ * is the server clock, never before `securedAt` in `secured`, so the nudge counts.
+ */
+const asNudged = (v: RefundView, now: Date): RefundView => ({ ...v, sellerNudgedAt: now.toISOString() });
+
+/**
+ * Owner G2 / g66: the window is over but Cancel is still locked only because the seller has not
+ * nudged the buyer since the escrow was secured. The screen then makes Nudge the primary.
+ */
+export function refundNeedsNudge(v: RefundView, now: Date): boolean {
+  return v.role === 'seller' && !canRequestRefund(v, now) && allowed(asNudged(v, now), { type: 'request-refund' }, 'seller', now);
 }
 
 /** The seller may tap "Give 30 more min" now: the window has ended and fewer than two extensions were used. */
@@ -117,10 +135,13 @@ export function canExtend(v: RefundView, now: Date): boolean {
 /**
  * The trade-room slot guard for SellerRefund (`when`): the seller, in `secured`, once the buyer's
  * payment window has passed by the server clock. That is exactly when the machine accepts
- * `request-refund`, so the final alert can only start after the window (Global Constraints).
+ * `request-refund` from a seller who has nudged, so the final alert can only start after the
+ * window (Global Constraints). It opens before the first nudge too: Cancel shows locked there and
+ * Nudge is the primary (owner G2, `refundNeedsNudge`).
  */
 export function sellerRefundOpen(v: RefundView, nowMs: number): boolean {
-  return v.state === 'secured' && canRequestRefund(v, new Date(nowMs));
+  const now = new Date(nowMs);
+  return v.state === 'secured' && (canRequestRefund(v, now) || refundNeedsNudge(v, now));
 }
 
 /** FinalAlert is the buyer's screen while the seller's refund request is open. */
