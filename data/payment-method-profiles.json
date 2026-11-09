@@ -1,5 +1,5 @@
 {
- "note": "X2F payment method profiles (spec 2.6). Each profile drives all copy about its method: what it is, where the money lands (this fills every \"check your ...\" prompt, so it never names the method itself), the typical arrival time (which with the payment type sets the seller's confirmation window, from 120 min for instant apps to 4 days for cash by mail; owner 2026-11-07 F9), the buyer's dispute wait after marking paid (buyerDisputeWaitMin: 90 min for instant types, 3 h Faster Payments, 24 h same or next day, 48 h ACH, 72 h SWIFT, 4 days cash by mail; owner 2026-11-07 F9) and the matching fields. Ids are catalog ids from data/payment-methods.json. Launch set (spec 11.5, Plan 3 Task 3); wording to be checked by the owner. The ten common types after Custom were added by owner 2026-11-07 F9.",
+ "note": "X2F payment method profiles (spec 2.6). Each profile drives all copy about its method: what it is, where the money lands (this fills every \"check your ...\" prompt, so it never names the method itself), the typical arrival time and the seller's confirmation window, which is also the buyer's wait before a dispute (owner F9, 7 Nov: 90 min for instant types, 24 h same or next day, 48 h to 4 days for slow types; per type from the approved F1 table) and the matching fields. Ids are catalog ids from data/payment-methods.json. Launch set (spec 11.5, Plan 3 Task 3); wording to be checked by the owner. The ten common types after Custom were added by owner 2026-11-07 F9 (F1 table).",
  "profiles": [
   {
    "id": "ZELLE",
@@ -7,8 +7,7 @@
    "landsIn": "your bank account, checked in your bank's app",
    "checkPrompt": "Open your bank's app and check that the payment arrived in your account.",
    "arrival": "instant",
-   "confirmWindowMin": 120,
-   "buyerDisputeWaitMin": 90,
+   "confirmWindowMin": 90,
    "fields": [
     { "key": "recipient", "label": "Email or US phone number", "kind": "email-or-phone" },
     { "key": "name", "label": "Name on the account", "kind": "text" }
@@ -20,8 +19,7 @@
    "landsIn": "your app balance, checked in the app's activity list",
    "checkPrompt": "Open the app's activity list and check that the payment is shown as received.",
    "arrival": "instant",
-   "confirmWindowMin": 120,
-   "buyerDisputeWaitMin": 90,
+   "confirmWindowMin": 90,
    "fields": [
     { "key": "cashtag", "label": "$cashtag", "kind": "account" }
    ]
@@ -32,8 +30,7 @@
    "landsIn": "your app balance, checked in the app's transactions",
    "checkPrompt": "Open the app's transactions and check that the payment arrived in your balance.",
    "arrival": "instant",
-   "confirmWindowMin": 120,
-   "buyerDisputeWaitMin": 90,
+   "confirmWindowMin": 90,
    "fields": [
     { "key": "revtag", "label": "Revtag or phone number", "kind": "account" }
    ]
@@ -45,7 +42,6 @@
    "checkPrompt": "Open the app or the website and check that the transfer is shown as received.",
    "arrival": "same-day",
    "confirmWindowMin": 1440,
-   "buyerDisputeWaitMin": 1440,
    "fields": [
     { "key": "recipient", "label": "Email registered with the account", "kind": "email-or-phone" },
     { "key": "name", "label": "Name on the account", "kind": "text" }
@@ -58,7 +54,6 @@
    "checkPrompt": "Check your bank's app or statement for the incoming transfer before you release.",
    "arrival": "days",
    "confirmWindowMin": 2880,
-   "buyerDisputeWaitMin": 2880,
    "fields": [
     { "key": "name", "label": "Name on the account", "kind": "text" },
     { "key": "routing", "label": "Routing number", "kind": "account" },
@@ -72,7 +67,6 @@
    "checkPrompt": "Check your bank's app or statement for the incoming transfer before you release.",
    "arrival": "days",
    "confirmWindowMin": 1440,
-   "buyerDisputeWaitMin": 1440,
    "fields": [
     { "key": "name", "label": "Name on the account", "kind": "text" },
     { "key": "iban", "label": "IBAN", "kind": "iban" },
@@ -86,7 +80,6 @@
    "checkPrompt": "Open the envelope, count the notes and check the amount before you release.",
    "arrival": "days",
    "confirmWindowMin": 5760,
-   "buyerDisputeWaitMin": 5760,
    "fields": [
     { "key": "address", "label": "Mailing address", "kind": "postal" }
    ]
@@ -98,7 +91,6 @@
    "checkPrompt": "Check that the payment arrived the way you agreed before you release.",
    "arrival": "same-day",
    "confirmWindowMin": 1440,
-   "buyerDisputeWaitMin": 1440,
    "fields": [
     { "key": "details", "label": "Payment details", "kind": "text" }
    ]
@@ -109,8 +101,7 @@
    "landsIn": "your bank account, checked in your bank's app",
    "checkPrompt": "Open your bank's app and check that the transfer was deposited into your account.",
    "arrival": "instant",
-   "confirmWindowMin": 120,
-   "buyerDisputeWaitMin": 90,
+   "confirmWindowMin": 90,
    "fields": [
     { "key": "recipient", "label": "Email or Canadian phone number", "kind": "email-or-phone" },
     { "key": "name", "label": "Name on the account", "kind": "text" }
@@ -122,8 +113,7 @@
    "landsIn": "your bank account, checked in your bank's app",
    "checkPrompt": "Open your bank's app and check that the payment arrived in your account.",
    "arrival": "instant",
-   "confirmWindowMin": 120,
-   "buyerDisputeWaitMin": 90,
+   "confirmWindowMin": 90,
    "fields": [
     { "key": "name", "label": "Name on the account", "kind": "text" },
     { "key": "iban", "label": "IBAN", "kind": "iban" }
@@ -135,8 +125,7 @@
    "landsIn": "your account balance, checked in the app or on the website",
    "checkPrompt": "Open the app or the website and check that the payment is shown as completed in your balance.",
    "arrival": "instant",
-   "confirmWindowMin": 120,
-   "buyerDisputeWaitMin": 90,
+   "confirmWindowMin": 90,
    "fields": [
     { "key": "recipient", "label": "Email or phone number registered with the account", "kind": "email-or-phone" },
     { "key": "name", "label": "Name on the account", "kind": "text" }
@@ -148,8 +137,7 @@
    "landsIn": "your app balance, checked in the app's activity list",
    "checkPrompt": "Open the app's activity list and check that the payment is shown as received.",
    "arrival": "instant",
-   "confirmWindowMin": 120,
-   "buyerDisputeWaitMin": 90,
+   "confirmWindowMin": 90,
    "fields": [
     { "key": "username", "label": "Username (@name)", "kind": "account" }
    ]
@@ -160,8 +148,7 @@
    "landsIn": "your bank account, checked in your bank's app",
    "checkPrompt": "Open your bank's app and check that the payment arrived in your account.",
    "arrival": "instant",
-   "confirmWindowMin": 120,
-   "buyerDisputeWaitMin": 90,
+   "confirmWindowMin": 90,
    "fields": [
     { "key": "key", "label": "Key (CPF or CNPJ, email, phone or random key)", "kind": "account" },
     { "key": "name", "label": "Name on the account", "kind": "text" }
@@ -173,8 +160,7 @@
    "landsIn": "your bank account, checked in your bank's app or payment app",
    "checkPrompt": "Open your bank's app or payment app and check that the payment arrived in your account.",
    "arrival": "instant",
-   "confirmWindowMin": 120,
-   "buyerDisputeWaitMin": 90,
+   "confirmWindowMin": 90,
    "fields": [
     { "key": "vpa", "label": "Payment ID (for example name@bank)", "kind": "account" },
     { "key": "name", "label": "Name on the account", "kind": "text" }
@@ -187,7 +173,6 @@
    "checkPrompt": "Check your bank's app or statement for the incoming transfer before you release.",
    "arrival": "instant",
    "confirmWindowMin": 180,
-   "buyerDisputeWaitMin": 180,
    "fields": [
     { "key": "name", "label": "Name on the account", "kind": "text" },
     { "key": "sortCode", "label": "Sort code", "kind": "account" },
@@ -201,7 +186,6 @@
    "checkPrompt": "Check your bank's app or statement for the incoming transfer before you release.",
    "arrival": "same-day",
    "confirmWindowMin": 1440,
-   "buyerDisputeWaitMin": 1440,
    "fields": [
     { "key": "name", "label": "Name on the account", "kind": "text" },
     { "key": "routing", "label": "Routing number", "kind": "account" },
@@ -215,7 +199,6 @@
    "checkPrompt": "Check your bank's app or statement for the incoming transfer before you release.",
    "arrival": "days",
    "confirmWindowMin": 4320,
-   "buyerDisputeWaitMin": 4320,
    "fields": [
     { "key": "name", "label": "Name on the account", "kind": "text" },
     { "key": "account", "label": "IBAN or account number", "kind": "account" },
@@ -229,8 +212,7 @@
    "landsIn": "the card's code, checked on the issuer's website or app",
    "checkPrompt": "Check the card's balance on the issuer's website or app, or redeem it, before you release.",
    "arrival": "instant",
-   "confirmWindowMin": 120,
-   "buyerDisputeWaitMin": 90,
+   "confirmWindowMin": 90,
    "fields": [
     { "key": "card", "label": "Card brand and country you accept", "kind": "text" }
    ]

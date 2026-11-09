@@ -4,10 +4,10 @@
  * trade is paid and the seller is checking, the timer shows the seller's confirm window, "What
  * happens next" says what each side does, and the payment's details fold away under "Your
  * payment". The footer has Nudge (the API's nudge on an open trade, spec 2.4), Open dispute (the terms list)
- * (disabled with "Available from … in …" until the server's `disputeOpensAt`: the trade's own wait
- * after I've paid, by payment type, 90 min for instant ones, owner F9 7 Nov; then a soft link while
- * the seller's window still runs, the outlined button once it ended), and the reminder that a paid
- * trade can't be cancelled. While trading is paused for maintenance both clocks stop at the pause (owner Q10).
+ * (disabled with "Available from … in …" until the server's `confirmBy`: the payment method's
+ * window from I've paid, 90 min for instant ones, owner F9 7 Nov; either side waits it, owner p9-4;
+ * then the outlined button), and the reminder that a paid trade can't be cancelled. While trading
+ * is paused for maintenance the clock stops at the pause and no dispute is offered (owner Q10, G19).
  *
  * The status is the board's caution hero (chip, key mark, lead, then the timer inside it); once the
  * window ends without a release its chip reads "Paid · not confirmed in time" (the board's
@@ -33,20 +33,27 @@ import { TimerCard } from '../../ui/TimerCard.js';
 import { When } from '../../ui/When.js';
 import type { DeviceTotal } from './PaidFlowSheet.js';
 import { usePaymentDetails, type MethodInfo } from './paySeams.js';
-import { publicName, type TradeView } from './payTypes.js';
+import { publicName, type TradeEscrow, type TradeView } from './payTypes.js';
+import { amounts } from './release/view.js';
 import { Name } from './TradeTimeline.js';
 import { waitPart } from '../dispute/rules.js';
 
 const MIN_MS = 60_000;
-/** The server's limit between two nudges (spec 2.4), said in the "Nudge sent" line. */
-const NUDGE_AGAIN_MS = 10 * MIN_MS;
+/**
+ * The server's limit between two nudges, said in the "Nudge sent" line: one per 15 minutes (owner
+ * F10, p6-1; apps/api/src/nudge/routes.ts NUDGE_GAP_MS, which the web can't import).
+ */
+export const NUDGE_AGAIN_MS = 15 * MIN_MS;
 
-/** The seller's confirm window, from the view: when it ends, how long it is, how much is left. */
-export function confirmWindow(view: Pick<TradeView, 'paidAt' | 'confirmBy'>, nowMs: number): { ends: number; lengthMs: number; leftMs: number; ended: boolean } | null {
+/**
+ * The confirm window, from the view: when it ends (`confirmBy`, the server's, later by any
+ * maintenance), how long it is (the trade's own `confirmWindowMin`, never confirmBy − paidAt, which
+ * would count a pause in; lead review 2026-11-08 R-m1), how much is left.
+ */
+export function confirmWindow(view: Pick<TradeView, 'confirmBy' | 'confirmWindowMin'>, nowMs: number): { ends: number; lengthMs: number; leftMs: number; ended: boolean } | null {
   const ends = view.confirmBy === null ? NaN : Date.parse(view.confirmBy);
-  const paid = view.paidAt === null ? NaN : Date.parse(view.paidAt);
   if (!Number.isFinite(ends)) return null;
-  const lengthMs = Number.isFinite(paid) ? Math.max(0, ends - paid) : 0;
+  const lengthMs = Number.isSafeInteger(view.confirmWindowMin) && view.confirmWindowMin > 0 ? view.confirmWindowMin * MIN_MS : 0;
   const leftMs = Math.max(0, ends - nowMs);
   return { ends, lengthMs, leftMs, ended: leftMs === 0 };
 }
@@ -62,14 +69,13 @@ export function roomClock(view: Pick<TradeView, 'pausedAt'>, serverClock: () => 
 }
 
 /**
- * When the buyer's Open dispute becomes available in `paid`: the server's `disputeOpensAt`, the
- * trade's own wait after I've paid (by payment type, owner F9 7 Nov; design review P1-1), moved
- * later by any maintenance during the wait (owner Q10). The machine refuses the buyer's dispute
- * before it (`too-early`), so the client never reckons a time of its own: null (not offered) while
- * the view carries none.
+ * When Open dispute becomes available in `paid`: the server's `confirmBy`, the payment method's
+ * window from I've paid, for either side (owner p9-4, F9 7 Nov; design review P1-1), moved later by
+ * any maintenance during it (owner Q10). The machine refuses a dispute before it (`too-early`), so
+ * the client never reckons a time of its own: null (not offered) while the view carries none.
  */
-export function disputeOpensAt(view: Pick<TradeView, 'disputeOpensAt'>): number | null {
-  const at = view.disputeOpensAt === null ? NaN : Date.parse(view.disputeOpensAt);
+export function disputeOpensAt(view: Pick<TradeView, 'confirmBy'>): number | null {
+  const at = view.confirmBy === null ? NaN : Date.parse(view.confirmBy);
   return Number.isFinite(at) ? at : null;
 }
 
@@ -81,6 +87,7 @@ function whenForm(at: number, nowMs: number): 'time' | 'date-time' {
 /** The status card, the timer, What happens next and Your payment (the board's main column). */
 export function PaidWaitingBody({
   view,
+  escrow,
   method,
   total,
   serverClock,
@@ -89,6 +96,8 @@ export function PaidWaitingBody({
   actions,
 }: {
   view: TradeView;
+  /** The amounts are the ones this device accepted (review 2026-10-27 I3; release/view.ts `amounts`), never the API's. */
+  escrow: Pick<TradeEscrow, 'amountAtomic' | 'fiatCents'>;
   method: MethodInfo;
   total: DeviceTotal | null;
   serverClock: () => Date;
@@ -102,12 +111,16 @@ export function PaidWaitingBody({
   const win = confirmWindow(view, clock().getTime());
   const ended = win?.ended ?? false;
   // The window's length as a Duration ("2 h"), never in words (the duration rule; design review P1-4).
-  const length = win === null || win.lengthMs === 0 ? null : <Duration ms={win.lengthMs} />;
-  const xmr = <Xmr value={formatXmr(BigInt(view.amountAtomic))} />;
+  // In the window's own unit ("90 min", "2 h", "4 d"), the trade's length, never one stretched by a pause (R-m1).
+  const length = win === null || win.lengthMs === 0 ? null : <Duration ms={win.lengthMs} parts={[waitPart(view.confirmWindowMin)]} />;
+  // What the buyer receives, as this device accepted it: a poster buyer gets the amount less the 1%
+  // fee (p10-1), as Released says it (lead review 2026-11-08 R-I1). With no device amount, no amount.
+  const got = amounts(view, escrow);
+  const xmr = got === null ? null : <Xmr value={formatXmr(got.buyerReceivesAtomic)} />;
   const opensAt = disputeOpensAt(view);
   const paidMs = view.paidAt === null ? NaN : Date.parse(view.paidAt);
-  // Maintenance during the wait moved the server's time later than paid + the wait (owner Q10).
-  const movedByPause = opensAt !== null && Number.isFinite(paidMs) && opensAt > paidMs + view.disputeWaitMin * MIN_MS;
+  // Maintenance during the window moved the server's time later than paid + the window (owner Q10).
+  const movedByPause = opensAt !== null && Number.isFinite(paidMs) && win !== null && win.lengthMs > 0 && opensAt > paidMs + win.lengthMs;
 
   // The hero (standard 11; design review P1-3): one caution card with the chip and the key mark,
   // the lead (the page's h1 stays "Buying from …"), a divider, then the timer inside it.
@@ -169,7 +182,10 @@ export function PaidWaitingBody({
                 <When at={win.ends} />
               </>
             ) : null}
-            . The XMR is still safe in escrow. You can open a dispute now, or keep waiting and nudge them.
+            {/* COPY-UNSIGNED the paused ending: the machine refuses a dispute during maintenance (owner G19; lead review 2026-11-08 R-m2). */}
+            {paused
+              ? '. The XMR is still safe in escrow. You can open a dispute once the maintenance is over, or keep waiting and nudge them.'
+              : '. The XMR is still safe in escrow. You can open a dispute now, or keep waiting and nudge them.'}
           </>
         ) : (
           <>
@@ -213,18 +229,18 @@ export function PaidWaitingBody({
         </li>
         <li>
           {/* COPY-UNSIGNED: design's wording (7 Nov), owner still to sign. The co-sign runs in the open page (Released.tsx). */}
-          When they release, {xmr} goes to your wallet once your app co-signs. Keep this page open until it arrives.
+          When they release, {xmr ?? 'the XMR'} goes to your wallet once your app co-signs. Keep this page open until it arrives.
         </li>
         <li data-part="paid-next-dispute">
-          {/* The board's step 3 with the trade's own wait (design review P1-2; owner F9). While paused
-              the time moves later, so none is shown; COPY-UNSIGNED the paused and moved-by-maintenance wording. */}
+          {/* The board's step 3 with the trade's own window (design review P1-2; owner F9, p9-4). While
+              paused the time moves later, so none is shown; COPY-UNSIGNED the paused and moved-by-maintenance wording. */}
           If something goes wrong, you can open a dispute{' '}
           {opensAt !== null && !paused ? (
             <>
               from <When at={opensAt} form={whenForm(opensAt, clock().getTime())} />,{' '}
             </>
           ) : null}
-          <Duration ms={view.disputeWaitMin * MIN_MS} parts={[waitPart(view.disputeWaitMin)]} /> after you marked it as paid
+          <Duration ms={view.confirmWindowMin * MIN_MS} parts={[waitPart(view.confirmWindowMin)]} /> after you marked it as paid
           {paused ? ', not counting the maintenance' : movedByPause ? ', plus the time trading was paused' : ''}. A moderator checks the
           chat and proof, then decides.
         </li>
@@ -236,7 +252,7 @@ export function PaidWaitingBody({
   const rows: Fact[] = [
     ...(details ?? []).map((d) => ({ key: d.label === `${method.name} to` ? 'Sent to' : d.label, value: d.value, mono: true })),
     { key: 'Memo', value: view.code, mono: true },
-    { key: 'For', value: xmr },
+    ...(xmr !== null ? [{ key: 'For', value: xmr }] : []),
     ...(view.paidAt !== null ? [{ key: 'Marked as paid', value: <When at={view.paidAt} />, mono: true }] : []),
     // The board's design call keeps this row (design review P2-17). The upload is not built yet, so
     // no proof is ever attached here and the row says so. COPY-UNSIGNED (design's wording)
@@ -285,7 +301,7 @@ const PROGRESS = ['Escrow', 'You pay', 'Seller checks', 'Released'] as const;
  * You pay done in escrow, Seller checks current with a caution fill for the share of the seller's
  * window that has run (all of it once it ended), Released still to come.
  */
-export function PaidProgress({ view, serverClock }: { view: Pick<TradeView, 'paidAt' | 'confirmBy'>; serverClock: () => Date }) {
+export function PaidProgress({ view, serverClock }: { view: Pick<TradeView, 'confirmBy' | 'confirmWindowMin'>; serverClock: () => Date }) {
   const win = confirmWindow(view, serverClock().getTime());
   const run = win === null ? 0 : win.ended || win.lengthMs === 0 ? 1 : 1 - win.leftMs / win.lengthMs;
   const fill = `${Math.round(Math.min(Math.max(run, 0), 1) * 100)}%`;
@@ -311,7 +327,8 @@ export function PaidProgress({ view, serverClock }: { view: Pick<TradeView, 'pai
  * surface-raised with "Available from … · in …" under it, or the danger outline once open), then
  * Nudge, then the no-cancel line. Wide (P2-10): one row, Nudge left and the dispute right, the
  * "Available from" line right-aligned under it, then the no-cancel line. Nudge is ink with only its
- * bell in caution (P2-13).
+ * bell in caution (P2-13). The board's soft link (P2-12, after the buyer's shorter wait while the
+ * seller's window still ran) is gone: one window for both sides (owner p9-4), so it never applies.
  */
 export function PaidWaitingActions({ view, serverClock, wide = false }: { view: TradeView; serverClock: () => Date; wide?: boolean }) {
   const name = publicName(view.counterparty);
@@ -349,7 +366,7 @@ export function PaidWaitingActions({ view, serverClock, wide = false }: { view: 
         Nudge <Name view={view} />
       </Button>
     );
-  // Review N1 keeps the button after a send; the server's 10-minute limit answers a second tap.
+  // Review N1 keeps the button after a send; the server's 15-minute limit answers a second tap.
   // (Design review P2-14 asks to hide it and show only the line; that waits for the owner or design.)
   const nudgeLines = (
     <>
@@ -365,17 +382,10 @@ export function PaidWaitingActions({ view, serverClock, wide = false }: { view: 
       ) : null}
     </>
   );
-  const open = opensAt !== null && now >= opensAt;
-  const win = confirmWindow(view, now);
-  // After the wait, while the seller's window still runs: the board's soft "Open dispute ›" link
-  // under Nudge (design review P2-12); the outlined button only once the window ended.
-  const soft = open && win !== null && !win.ended;
-  const disputeButton = soft ? (
-    <Link to={`/trade/${encodeURIComponent(view.code)}/dispute`} className="x2f-paid-soft-dispute" data-part="paid-dispute" data-look="soft">
-      Open dispute
-      <Icon name="chevron-right" size={16} stroke={2} />
-    </Link>
-  ) : open ? (
+  // Never during maintenance: the machine refuses every dispute then (owner G19; lead review
+  // 2026-11-08 R-m2), even once the window had ended before the pause.
+  const open = !paused && opensAt !== null && now >= opensAt;
+  const disputeButton = open ? (
     <Link
       to={`/trade/${encodeURIComponent(view.code)}/dispute`}
       className="x2f-button x2f-button--danger-outline"
@@ -393,10 +403,16 @@ export function PaidWaitingActions({ view, serverClock, wide = false }: { view: 
   const disputeWhen =
     open || opensAt === null ? null : (
       <p id="paid-dispute-when" className="x2f-footnote" data-align={wide ? 'end' : undefined}>
-        {/* COPY-UNSIGNED "after the maintenance" (owner Q10; design words it) */}
+        {/* COPY-UNSIGNED "after the maintenance" (owner Q10; design words it). While paused the time
+            moves later, so no clock time is shown; the countdown is the working time left at the pause,
+            and goes once none was left (the window had ended before the pause; lead review R-m2). */}
         {paused ? 'Available after the maintenance' : <>Available from <When at={opensAt} form={whenForm(opensAt, now)} /></>}
-        {' · in '}
-        <Countdown deadline={new Date(opensAt)} serverClock={clock} format="minutes" />
+        {opensAt > now ? (
+          <>
+            {' · in '}
+            <Countdown deadline={new Date(opensAt)} serverClock={clock} format="minutes" />
+          </>
+        ) : null}
       </p>
     );
   const noCancel = (
@@ -422,17 +438,8 @@ export function PaidWaitingActions({ view, serverClock, wide = false }: { view: 
       </>
     );
   }
-  // The phone's order: the dispute first while locked or once the window ended; the soft link
-  // after the wait goes under Nudge (the board's after-wait).
-  return soft ? (
-    <>
-      {nudgeButton}
-      {nudgeLines}
-      {disputeButton}
-      {noCancel}
-      {limit}
-    </>
-  ) : (
+  // The phone's order: the dispute first, locked or open.
+  return (
     <>
       {disputeButton}
       {disputeWhen}

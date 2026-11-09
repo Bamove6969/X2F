@@ -59,24 +59,21 @@ export interface TradeView {
   paidAt: string | null;
   confirmBy: string | null;
   /**
-   * In `paid`, when the buyer may open a dispute: `disputeWaitMin` after marking paid, later by any
-   * maintenance during the wait (owner 2026-11-06 Q10, 2026-11-07 F9). Both sides see it; null
-   * until marked paid.
+   * The trade's confirm window in minutes, fixed at take by the payment type (owner 2026-11-07 F9:
+   * 90 for instant types up to 4 days for cash by mail). `confirmBy` is paid time plus this, later by
+   * any maintenance; it is also when either side may open a dispute in `paid` (owner p9-4).
    */
-  disputeOpensAt: string | null;
-  /**
-   * The buyer's dispute wait after marking paid, in minutes, fixed at take by the payment type
-   * (owner 2026-11-07 F9: 90 for instant types up to 4 days for cash by mail).
-   */
-  disputeWaitMin: number;
-  finalAlertAt: string | null;
-  /**
-   * When the buyer's first seen-receipt for the final alert landed (Task 19); null = not seen. Task
-   * 10 counts 15 min from it. Shown to the buyer only: the seller always gets null, so they never
-   * learn whether or when the buyer looked (Task 19 re-review, item 5).
-   */
-  finalAlertSeenAt: string | null;
+  confirmWindowMin: number;
   settleBy: string | null;
+  /**
+   * When the moderator's watcher reported that a buyer or seller says their side of the
+   * settlement is done (Task 9 I/O, lead decision b): from then on the trade waits for the network
+   * to show the sweep, and the settle window no longer reverts it. The claim time only, for both
+   * traders; nothing else about the moderator. `settleBy` is unchanged (a dispute stays open after it).
+   * Null outside `settling`: an escalation from `settling` leaves the claim on the trade, and it is
+   * not live there (plan Revision 2026-10-29), so the view never sends it (lead decision M5).
+   */
+  releaseClaimedAt: string | null;
   pausedAt: string | null;
   closedAt: string | null;
   /** The seller's "Confirm cancel" after a buyer-cancel refund (owner 2026-10-29); null until then. */
@@ -84,8 +81,8 @@ export interface TradeView {
   /** When the seller's Confirm cancel became available; the trade closes by itself 48 h later (owner 2026-10-29). */
   cancelConfirmableAt: string | null;
   /**
-   * When the seller first nudged the buyer after the escrow was secured (owner G2, g66; migration
-   * 119); null = not yet. The seller's refund stays locked until it is set and the 90 minutes are over.
+   * When the seller first nudged the buyer after the escrow was secured (migration 119); null = not
+   * yet. A record only: nudges are optional (owner 8 Nov, p6-1), the seller's cancel needs none.
    */
   sellerNudgedAt: string | null;
   nextDeadline: string | null;
@@ -98,8 +95,6 @@ export interface ViewContext {
   /** Task 3's method profile for `t.methodId` (null until Task 3 wires `getProfile`). */
   profile: unknown;
   sellerWalletApp: string | null;
-  /** `trades.final_alert_seen_at` (not a machine field). */
-  finalAlertSeenAt: Date | null;
 }
 
 /**
@@ -152,11 +147,9 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     payBy: iso(t.payBy),
     paidAt: iso(t.paidAt),
     confirmBy: iso(t.confirmBy),
-    disputeOpensAt: iso(t.buyerDisputeFrom),
-    disputeWaitMin: t.buyerDisputeWaitMin,
-    finalAlertAt: iso(t.finalAlertAt),
-    finalAlertSeenAt: role === 'buyer' ? iso(ctx.finalAlertSeenAt) : null,
+    confirmWindowMin: t.confirmWindowMin,
     settleBy: iso(t.settleBy),
+    releaseClaimedAt: t.state === 'settling' ? iso(t.releaseClaimedAt) : null,
     pausedAt: iso(t.pausedAt),
     closedAt: iso(t.closedAt),
     cancelConfirmedAt: iso(t.cancelConfirmedAt),

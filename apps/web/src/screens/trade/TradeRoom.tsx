@@ -52,8 +52,9 @@
  *   mutual-cancel (BuyerCancelling: the buyer's device builds the refund to the seller).
  * - Task 24: seller in `paid`; both in `settling` (release) and `released` (SellerConfirm, Released).
  *   Task 23's guarded buyer × `settling` wins over Task 24's unguarded one for the cancel kinds.
- * - Task 25: seller in `secured` with `when` past `payBy` (SellerRefund); buyer in `refund_requested` (FinalAlert);
- *   seller in `refund_requested` (the seller's waiting room while the buyer's final alert runs).
+ * - Task 25: seller in `secured` with `when` past `payBy` (SellerRefund); seller in `settling` and
+ *   `refunded`, and buyer in `settling`, with `when` the seller's cancel (`auto-refund`; SellerRefund's
+ *   refund views, SellerCancelled). Owner 8 Nov: no final alert, the refund starts at once.
  * - Task 27: both in `disputed` (DisputeRoom, DisputeRuling); buyer in `refunded` (the refund with the
  *   48-hour "Open a dispute", owner 2026-10-29; was 90 days).
  * - Task 39: seller in `settling` and `refunded` with `when` buyer-cancel (SellerCancelConfirm: the
@@ -91,7 +92,8 @@ import { normalizeTradeCode } from '@x2f/core';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
 import { memberOf } from '../../session/member.js';
-import { useSession } from '../../session/useSession.js';
+import { displayNameOf, useSession } from '../../session/useSession.js';
+import { setConfirmUser } from './confirmSkip.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
 import { tradeFromView } from '../dispute/api.js';
 import { DisputeEntry } from '../dispute/DisputeEntry.js';
@@ -100,6 +102,7 @@ import { hasPanes, useFoldLayout, type FoldLayout } from '../../ui/fold.js';
 import { Panes } from '../../ui/Panes.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { useTradeChat } from './paySeams.js';
+import { SettleWait } from './settleWait.js';
 import { integrityFailed, POLL_MS, useTradeEscrow, useTradeLive, type ConfirmedTrade, type TradeEscrow } from './seams.js';
 import { TradeGlance } from './TradeGlance.js';
 import { CounterpartyCard } from './TradeTimeline.js';
@@ -216,12 +219,13 @@ function useTradeView(code: string): { load: Load; refresh: () => Promise<void> 
   return { load, refresh };
 }
 
-/** Shown for a state whose screen has not landed yet. */
-function StatusCard({ view }: { view: TradeView }) {
+/** Shown for a state whose screen has not landed yet; while settling, also what the trade waits for. */
+export function StatusCard({ view, serverClock, member = false }: { view: TradeView; serverClock: () => Date; member?: boolean }) {
   return (
     <section className="x2f-trade-status" data-trade-state={view.state}>
       <p>Trade {view.code}</p>
       <p>State: {view.state.replace('_', ' ')}</p>
+      <SettleWait view={view} serverClock={serverClock} member={member} />
     </section>
   );
 }
@@ -231,6 +235,9 @@ export function TradeRoom() {
   const { code = '' } = useParams();
   const location = useLocation();
   const { load, refresh } = useTradeView(code);
+  // Owner p7-2: "Do not show me this warning again" belongs to the signed-in user (confirmSkip.ts).
+  const confirmUser = session.status === 'signed-in' ? displayNameOf(session.me) : null;
+  useEffect(() => setConfirmUser(confirmUser), [confirmUser]);
 
   if (load.kind === 'loading') return <main data-screen="trade" aria-busy="true" />;
   if (load.kind === 'missing') {
@@ -275,8 +282,8 @@ export function TradeRoom() {
  *
  * What a Trades member may still do on the trades the owner's device set up (owner question 13(d),
  * team/perms.ts; review round 2, n3), as far as it needs no escrow here:
- * - the slot's `forMembers` screen, if it has one: the seller's Propose cancel and Withdraw while
- *   the buyer pays (Task 23's SellerWaiting; a mutual cancel only records a choice, and the signing
+ * - the slot's `forMembers` screen, if it has one: the seller's Withdraw of a standing proposal while
+ *   the buyer pays (no Propose cancel, design proto review P2) (Task 23's SellerWaiting; a mutual cancel only records a choice, and the signing
  *   it leads to is the owner's device's), and the seller's Confirm cancel after a buyer's cancel
  *   (Task 39's SellerCancelConfirm, which never touches the escrow);
  * - otherwise the trade's state and a notice that the account owner's device does the rest;
@@ -296,7 +303,7 @@ function MemberRoom({ code, view, refresh }: { code: string; view: TradeView; re
         <Screen code={code} view={view} refresh={refresh} serverClock={clock} wide={false} />
       ) : (
         <>
-          <StatusCard view={view} />
+          <StatusCard view={view} serverClock={clock} member />
           <section className="x2f-card x2f-stack" data-part="member-waiting">
             <p role="status">{MEMBER_TRADE_COPY.roomWaiting}</p>
           </section>
@@ -358,7 +365,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
             // Fails closed even if no screen module registered the danger state.
             <p role="alert">Security check failed. Don't fund this trade.</p>
           ) : (
-            <StatusCard view={view} />
+            <StatusCard view={view} serverClock={clock} />
           )
         }
         side={

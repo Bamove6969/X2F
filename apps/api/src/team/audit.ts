@@ -21,7 +21,6 @@ export type AuditAction =
   // Trades role.
   | 'trade-taken'
   | 'trade-wallet-set'
-  | 'final-alert-seen'
   | 'dispute-opened'
   | 'appeal-filed'
   // Trade events a member may send (MEMBER_SIGNING_EVENTS are refused before this point).
@@ -43,7 +42,6 @@ export const ACTION_ROLE: Readonly<Record<AuditAction, TeamRole>> = {
   'offer-removed': 'offers',
   'trade-taken': 'trades',
   'trade-wallet-set': 'trades',
-  'final-alert-seen': 'trades',
   'dispute-opened': 'trades',
   'appeal-filed': 'trades',
   'mark-paid': 'trades',

@@ -8,9 +8,11 @@ import { HoldButton } from '../../ui/HoldButton.js';
 import { Icon } from '../../ui/icons.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { clearReleaseAsked, markReleaseAsked, releaseAsked } from './release/marker.js';
-import { waitInWords } from '../dispute/rules.js';
 import { ReleaseWarning } from './ReleaseWarning.js';
 import { setWarned, warned } from './warned.js';
+import { confirmSkipped, skipConfirm } from './confirmSkip.js';
+import { DisputeLocked } from './DisputeLocked.js';
+import { formatDate as utcDate, formatDateTime as utcDateTime } from '../../ui/dates.js';
 import { ESCROW_STOPPED, amounts, publicName, firstPerson, profileCopy, refusalCopy, type MethodInfo, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
 import './release/release.css';
 
@@ -34,9 +36,14 @@ import './release/release.css';
  * room's escrow runs for, never by the API's `trade.code` (round-3 review, Important 1).
  * The smart proof card is Plan 5 (`proofSlot`, masked on the board comparison).
  *
- * Before the hold works the seller goes past the release warning once for the trade (Task 38,
- * ReleaseWarning): it opens with the screen and again on ticking the box, and the hold stays
- * locked until "It's in my account" (kept per `escrowCode` on this device, warned.ts).
+ * The release warning (Task 38, ReleaseWarning) opens only on "Payment received", the completed
+ * hold (design proto review P2, 8 Nov: it used to open with the screen, before the seller had read
+ * it): the release then waits for "It's in my account", once per trade on this device (warned.ts),
+ * or never again once the seller ticked "Do not show me this warning again" (owner p7-2,
+ * confirmSkip.ts). "Payment not received" before the confirm window ends (the method's wait) says
+ * to check again first, and only after it goes to the dispute screen. "Open dispute" is locked
+ * with its UTC time until then too: the seller waits the method's full time from "I've paid"
+ * before a dispute, as the buyer does (owner p9-4, 8 Nov; the machine refuses it, too-early).
  */
 export function SellerConfirm({
   escrowCode,
@@ -79,7 +86,9 @@ export function SellerConfirm({
   /** `release()` was asked for on this mount: the automatic resume runs at most once. */
   const asked = useRef(false);
   /** Task 38: the seller went past the release warning for this trade on this device. */
-  const [acked, setAcked] = useState(() => warned('release', escrowCode));
+  const [acked, setAcked] = useState(() => warned('release', escrowCode) || confirmSkipped('release'));
+  /** "Payment not received" was tapped before the confirm window ended: the check-first note shows. */
+  const [notYet, setNotYet] = useState(false);
 
   const buyer = publicName(trade.counterparty);
   const sums = amounts(trade, escrow);
@@ -167,15 +176,40 @@ export function SellerConfirm({
   /** "Payment not received" / "Open dispute": the seller's last act retracts the release (round-3 Minor 1). */
   const retract = () => clearReleaseAsked(escrowCode);
 
-  // The release warning opens with the screen until the seller has gone past it (Task 38), never
-  // over a release already under way from this device or done.
+  // The release warning opens on "Payment received" (the completed hold) until the seller has gone
+  // past it (Task 38; proto review P2), never over a release already under way from this device or done.
   const warnDue = !acked && !done && !(releasing && !foreign);
-  const [warnOpen, setWarnOpen] = useState(warnDue);
-  const ackWarning = () => {
+  const [warnOpen, setWarnOpen] = useState(false);
+  /** The hold completed; the release waits for the warning's answer. */
+  const onHold = () => {
+    if (warnDue && !confirmSkipped('release')) {
+      setWarnOpen(true);
+      return;
+    }
+    void (foreign ? finish() : release());
+  };
+  const ackWarning = (dontShow: boolean) => {
     setWarned('release', escrowCode);
+    if (dontShow) skipConfirm('release');
     setAcked(true);
     setWarnOpen(false);
+    void (foreign ? finish() : release());
   };
+  const backFromWarning = () => {
+    setWarnOpen(false);
+    // HoldButton fires once per mount: a fresh one for the next hold.
+    setAttempt((n) => n + 1);
+  };
+  const confirmEnded = trade.confirmBy === null || clock().getTime() >= Date.parse(trade.confirmBy);
+  // Re-render once the confirm window ends on screen, so the dispute ways open by themselves.
+  const [, setEndedTick] = useState(0);
+  useEffect(() => {
+    if (confirmEnded || trade.confirmBy === null) return;
+    const left = Date.parse(trade.confirmBy) - clock().getTime();
+    if (!Number.isFinite(left)) return;
+    const id = setTimeout(() => setEndedTick((n) => n + 1), Math.min(left + 250, 2_147_000_000));
+    return () => clearTimeout(id);
+  }, [confirmEnded, trade.confirmBy, clock]);
 
   const problem = stopped ? ESCROW_STOPPED : escrow.refusal !== null ? refusalCopy(escrow.refusal, buyer) : null;
 
@@ -204,9 +238,6 @@ export function SellerConfirm({
         : 'The release isn’t signed on this device yet. Keep this page open.'
       : !checked
         ? 'Tick the box above to unlock this release button.'
-        : !acked
-          ? // COPY-UNSIGNED (review M6): the box is ticked but the warning was not answered yet.
-            'Read the warning before you release: the hold works once you answer it.'
         : sums === null && problem === null
           ? 'Waiting for this device to confirm the trade amount.'
           : blocked
@@ -239,7 +270,7 @@ export function SellerConfirm({
               <span data-username="">{buyer}</span>: Payment sent
             </span>
           </span>
-          {trade.confirmBy !== null && !releasing ? <ConfirmWindow deadline={trade.confirmBy} clock={clock} buyer={buyer} place={place} waitMin={trade.disputeWaitMin} /> : null}
+          {trade.confirmBy !== null && !releasing ? <ConfirmWindow deadline={trade.confirmBy} clock={clock} buyer={buyer} place={place} /> : null}
         </div>
 
         <h1 className="x2f-release__title">
@@ -260,10 +291,7 @@ export function SellerConfirm({
               checked={checked || (releasing && !foreign)}
               disabled={(releasing && !foreign) || busy}
               onChange={(e) => {
-                const on = e.currentTarget.checked;
-                setChecked(on);
-                // Ticking before going past the warning opens it again: the hold needs both.
-                if (on && !acked) setWarnOpen(true);
+                setChecked(e.currentTarget.checked);
               }}
             />
             <span>
@@ -276,9 +304,9 @@ export function SellerConfirm({
       <footer className="x2f-release__footer">
         <HoldButton
           key={attempt}
-          disabled={foreign ? !checked || !acked || busy || blocked || escrow.phase !== 'ready' : !checked || !acked || notReleasable || busy || blocked || releasing}
+          disabled={foreign ? !checked || busy || blocked || escrow.phase !== 'ready' || warnOpen : !checked || notReleasable || busy || blocked || releasing || warnOpen}
           done={done}
-          onComplete={() => void (foreign ? finish() : release())}
+          onComplete={onHold}
           caption={caption}
           holdingLabel="Keep holding…"
           label={
@@ -301,12 +329,6 @@ export function SellerConfirm({
           }
         />
         {hint !== null ? <span className="x2f-release__hint">{hint}</span> : null}
-        {checked && !acked && !warnOpen && warnDue ? (
-          // COPY-UNSIGNED (review M6): the kit's quiet button; not on the Warn-Release board.
-          <Button variant="quiet" onClick={() => setWarnOpen(true)}>
-            Show the warning again
-          </Button>
-        ) : null}
         {problem !== null && !done ? (
           <span role="alert" className="x2f-release__error">
             {problem}
@@ -327,14 +349,31 @@ export function SellerConfirm({
         ) : null}
         {releasing && !foreign ? null : (
           <div className="x2f-release__actions">
-            <Link className="x2f-button x2f-button--quiet" to={`/trade/${escrowCode}/dispute`} onClick={retract}>
-              Payment not received
-            </Link>
-            <Link className="x2f-button x2f-button--danger" to={`/trade/${escrowCode}/dispute`} onClick={retract}>
-              Open dispute
-            </Link>
+            {confirmEnded ? (
+              <Link className="x2f-button x2f-button--quiet" to={`/trade/${escrowCode}/dispute`} onClick={retract}>
+                Payment not received
+              </Link>
+            ) : (
+              <Button variant="quiet" aria-expanded={notYet} onClick={() => setNotYet(true)}>
+                Payment not received
+              </Button>
+            )}
+            {confirmEnded ? (
+              <Link className="x2f-button x2f-button--danger" to={`/trade/${escrowCode}/dispute`} onClick={retract}>
+                Open dispute
+              </Link>
+            ) : (
+              <DisputeLocked until={trade.confirmBy!} serverClock={clock} />
+            )}
           </div>
         )}
+        {notYet && !confirmEnded && trade.confirmBy !== null && !(releasing && !foreign) ? (
+          <p className="x2f-release__hint" role="status" data-not-received="">
+            {/* COPY-UNSIGNED (design proto review P2: check first, the dispute after the confirm window). */}
+            Payments can take a while to arrive. Check {place} again. If the money still isn&apos;t there at {untilText(trade.confirmBy, clock())}, tap
+            Payment not received again to ask a moderator.
+          </p>
+        ) : null}
       </footer>
       <ReleaseWarning
         open={warnOpen && warnDue}
@@ -343,14 +382,21 @@ export function SellerConfirm({
         buyer={buyer}
         methodName={method.name}
         onOk={ackWarning}
-        onBack={() => setWarnOpen(false)}
+        onBack={backFromWarning}
       />
     </div>
   );
 }
 
+/** "13:52 UTC" when the window ends today (server clock), else "26 Oct 2026, 13:52 UTC" (design X5). */
+function untilText(iso: string, now: Date): string {
+  const end = new Date(iso);
+  const full = utcDateTime(end);
+  return utcDate(end) === utcDate(now) ? full.slice(full.indexOf(', ') + 2) : full;
+}
+
 /** "1 h 52 min to confirm", with the board's explanation on hover, focus or tap. */
-function ConfirmWindow({ deadline, clock, buyer, place, waitMin }: { deadline: string; clock: () => Date; buyer: string; place: string; waitMin: number }) {
+function ConfirmWindow({ deadline, clock, buyer, place }: { deadline: string; clock: () => Date; buyer: string; place: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -369,11 +415,10 @@ function ConfirmWindow({ deadline, clock, buyer, place, waitMin }: { deadline: s
         </span>
       </button>
       <span id="x2f-confirm-tip" role="tooltip" className="x2f-release__tip" hidden={!open}>
-        Time you have to check {place} and release, or report that the money didn&apos;t arrive. Instant apps like Zelle get 2 hours;
-        bank transfers up to 3 days and cash by mail 4.{' '}
-        {/* DESIGN: wording (cap-dispute review I1). Owner 2026-11-07 F9: the buyer's wait is the trade's own, by payment type; maintenance pauses it (Q10). */}
-        {buyer} can ask a moderator to step in from {waitInWords(waitMin)} after marking paid. Nothing is
-        released without you or a moderator.
+        {/* COPY-UNSIGNED: the board's line, changed for owner F9 (7 Nov, the times) and p9-4 (8 Nov, the seller waits too). */}
+        Time for the payment to arrive and for you to check {place}. Instant apps like Zelle get 90 min; same or next day transfers get
+        24 h; slow ones like mail get up to 4 days. After that, you or {buyer} can ask a moderator to step in. Nothing is released
+        without you or a moderator.
       </span>
     </>
   );

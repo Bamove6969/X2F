@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { MAX_TRADE_WINDOW_MIN } from '@x2f/trade';
+import { MAX_CONFIRM_WINDOW_MIN } from '@x2f/trade';
 
 /** One payment method in `data/payment-methods.json` (spec 2.6). */
 export interface CatalogMethod {
@@ -24,14 +24,12 @@ export interface MethodProfile {
   landsIn: string;
   checkPrompt: string;
   arrival: 'instant' | 'same-day' | 'days';
-  /** The seller's confirmation window: 120 for instant apps, up to 4 days (cash by mail; owner 2026-11-07 F9). */
-  confirmWindowMin: number;
   /**
-   * How long the buyer waits after marking paid before they may open a dispute (owner 2026-11-07 F9,
-   * research F1): 90 min for instant types, 3 h Faster Payments, 24 h same/next day, 48 h to 4 days
-   * for slow ones. At most the confirm window.
+   * The seller's confirmation window, which is also either side's wait from "I've paid" before a
+   * dispute (machine.ts `confirmBy`, owner p9-4). Owner F9 (7 Nov) with the F1 research table it approved:
+   * instant types 90 min; same or next day 24 h; slow types 48 h to 4 days.
    */
-  buyerDisputeWaitMin: number;
+  confirmWindowMin: number;
   fields: { key: string; label: string; kind: FieldKind }[];
 }
 
@@ -52,6 +50,9 @@ export const FALLBACK_PROFILE_ID = 'CUSTOM';
 export const GIFT_CARD_PROFILE_ID = 'OTHER_GIFT_CARD';
 
 export const GIFT_CARD_GROUP = 'Gift cards & vouchers';
+
+/** The shortest confirm window: the instant types' 90 minutes (owner F9, 7 Nov; was 120). */
+export const MIN_CONFIRM_WINDOW_MIN = 90;
 
 const DATA = new URL('../../../../data/', import.meta.url);
 const ARRIVALS = ['instant', 'same-day', 'days'] as const;
@@ -97,23 +98,25 @@ export function loadProfiles(raw: unknown, methods: readonly CatalogMethod[]): M
     if (!method) throw bad(file, `${p.id} is not in the catalog`);
     if (seen.has(p.id)) throw bad(file, `duplicate profile ${p.id}`);
     seen.add(p.id);
-    const { whatItIs, landsIn, checkPrompt, arrival, confirmWindowMin, buyerDisputeWaitMin, fields } = p;
+    const { whatItIs, landsIn, checkPrompt, arrival, confirmWindowMin, fields } = p;
     if (!nonEmpty(whatItIs) || !nonEmpty(landsIn) || !nonEmpty(checkPrompt)) throw bad(file, `${p.id}: missing text`);
     if (landsIn.toLowerCase().includes(method.name.toLowerCase())) throw bad(file, `${p.id}: landsIn must not name the method`);
     const arr = ARRIVALS.find((a) => a === arrival);
     if (!arr) throw bad(file, `${p.id}: arrival`);
-    if (typeof confirmWindowMin !== 'number' || !Number.isInteger(confirmWindowMin) || confirmWindowMin < 120 || confirmWindowMin > MAX_TRADE_WINDOW_MIN) {
-      throw bad(file, `${p.id}: confirmWindowMin must be 120-${MAX_TRADE_WINDOW_MIN}`);
-    }
-    if (typeof buyerDisputeWaitMin !== 'number' || !Number.isInteger(buyerDisputeWaitMin) || buyerDisputeWaitMin < 1 || buyerDisputeWaitMin > confirmWindowMin) {
-      throw bad(file, `${p.id}: buyerDisputeWaitMin must be 1 to confirmWindowMin`);
+    if (
+      typeof confirmWindowMin !== 'number' ||
+      !Number.isInteger(confirmWindowMin) ||
+      confirmWindowMin < MIN_CONFIRM_WINDOW_MIN ||
+      confirmWindowMin > MAX_CONFIRM_WINDOW_MIN
+    ) {
+      throw bad(file, `${p.id}: confirmWindowMin must be ${MIN_CONFIRM_WINDOW_MIN}-${MAX_CONFIRM_WINDOW_MIN}`);
     }
     if (!Array.isArray(fields) || fields.length === 0) throw bad(file, `${p.id}: fields`);
     const outFields = fields.map((f: unknown) => {
       if (!isRecord(f) || !nonEmpty(f.key) || !nonEmpty(f.label) || !KINDS.includes(f.kind as FieldKind)) throw bad(file, `${p.id}: a field`);
       return { key: f.key, label: f.label, kind: f.kind as FieldKind };
     });
-    return { id: p.id, whatItIs, landsIn, checkPrompt, arrival: arr, confirmWindowMin, buyerDisputeWaitMin, fields: outFields };
+    return { id: p.id, whatItIs, landsIn, checkPrompt, arrival: arr, confirmWindowMin, fields: outFields };
   });
 }
 
@@ -140,8 +143,8 @@ export function getProfile(id: string): MethodProfile | null {
 }
 
 /**
- * The profile a trade on `methodId` is taken with (its confirm window and the buyer's dispute
- * wait): the method's own, else the gift card one for any gift card, else the Custom method's.
+ * The profile a trade on `methodId` is taken with (its confirm window, which is also either
+ * side's wait before a dispute): the method's own, else the gift card one for any gift card, else the Custom method's.
  */
 export function tradeProfile(methodId: string): MethodProfile {
   const p = getProfile(methodId) ?? (isGiftCard(methodId) ? getProfile(GIFT_CARD_PROFILE_ID) : null) ?? getProfile(FALLBACK_PROFILE_ID);

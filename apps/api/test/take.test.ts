@@ -172,9 +172,8 @@ describe('POST /v1/offers/:id/take', () => {
     expect(t).toMatchObject({
       offerId: offer, poster: 'seller', sellerId: seller.id, buyerId: buyer.id, methodId: 'ZELLE', state: 'setup',
       amountAtomic: tenth, lockedRate: { currency: 'USD', centsPerXmr: 33_330n }, fiatCents: 3_333n,
-      minFiatCents: 1000n, maxFiatCents: 1_000_000n, confirmWindowMin: 120, buyerDisputeWaitMin: 90, takenAt: deps.clock(),
+      minFiatCents: 1000n, maxFiatCents: 1_000_000n, confirmWindowMin: 90, takenAt: deps.clock(),
     });
-    expect(row.buyer_dispute_wait_min).toBe(90);
     // The buyer took: their payout address is set; the seller (poster) picks on the accepted sheet.
     expect({ buyer: row.buyer_payout, seller: row.seller_refund, app: row.seller_wallet_app }).toEqual({ buyer: buyer.address, seller: null, app: null });
     // Both sides see it.
@@ -182,12 +181,12 @@ describe('POST /v1/offers/:id/take', () => {
   });
 
   it("fixes the payment type's own timing at take (owner 2026-11-07 F9): SWIFT 3 days, a type with no profile the Custom one", async () => {
-    for (const [methodId, confirm, wait] of [['SWIFT', 4320, 4320], ['SPEI', 1440, 1440], ['FASTER_PAYMENTS', 180, 180]] as const) {
+    for (const [methodId, confirm] of [['SWIFT', 4320], ['SPEI', 1440], ['FASTER_PAYMENTS', 180]] as const) {
       const seller = await person();
       const buyer = await person();
       const offer = await postOffer(seller, { methodId });
       const t = rowToTrade((await loadTradeRow(deps.db, await taken(buyer, offer, body(buyer, tenth))))!);
-      expect([t.methodId, t.confirmWindowMin, t.buyerDisputeWaitMin], methodId).toEqual([methodId, confirm, wait]);
+      expect([t.methodId, t.confirmWindowMin], methodId).toEqual([methodId, confirm]);
     }
   });
 

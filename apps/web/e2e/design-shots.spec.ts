@@ -389,7 +389,7 @@ test("27 a Trades member's device when an offer is taken: a notice, not the acce
   await shot(page, '27-team-member-offer-taken-notice');
 });
 
-test("28-29 a member's trade room: waiting for the owner's device; Propose cancel", async ({ page }) => {
+test("28-29 a member's trade room: waiting for the owner's device; a standing proposal and Withdraw (no Propose cancel)", async ({ page }) => {
   const trade = sellerView().code;
   const later = new Date(Date.now() + 25 * 60_000).toISOString();
   let view = { ...sellerView(), payBy: later, nextDeadline: later, serverNow: new Date().toISOString() };
@@ -404,7 +404,9 @@ test("28-29 a member's trade room: waiting for the owner's device; Propose cance
   const room = page.locator('[data-screen="trade"][data-member]');
   await expect(room.locator('[data-part="member-waiting"]')).toBeVisible();
   await shot(page, '28-team-member-trade-waiting');
-  await room.getByRole('button', { name: 'Propose cancel' }).click();
+  await expect(room.getByRole('button', { name: 'Propose cancel' })).toHaveCount(0);
+  view = { ...view, cancelProposedBy: 'seller' };
+  await page.reload();
   await expect(room.getByRole('button', { name: 'Withdraw' })).toBeVisible();
   await shot(page, '29-team-member-trade-cancel-proposed');
 });
@@ -584,7 +586,7 @@ function apply(s: Room, e: Record<string, unknown>): { status: number; json: unk
   const v = s.view;
   switch (e.type) {
     case 'mark-paid':
-      s.view = { ...v, state: 'paid', paidAt: PAY_NOW, confirmBy: new Date(Date.parse(PAY_NOW) + 120 * 60_000).toISOString(), disputeOpensAt: new Date(Date.parse(PAY_NOW) + 90 * 60_000).toISOString(), disputeWaitMin: 90 };
+      s.view = { ...v, state: 'paid', paidAt: PAY_NOW, confirmBy: new Date(Date.parse(PAY_NOW) + 90 * 60_000).toISOString(), confirmWindowMin: 90 };
       break;
     case 'propose-cancel':
       s.view = { ...v, cancelProposedBy: v.role };
@@ -665,7 +667,7 @@ test("38-39 Task 39: the two-step I've paid, marked as paid", async ({ page }) =
   await page.locator('[data-primary]').first().click();
   const sheet = page.getByRole('dialog');
   await expect(sheet).toContainText('Mark this trade as paid?');
-  await sheet.getByRole('checkbox').check();
+  await sheet.getByRole('checkbox', { name: /I sent exactly/ }).check();
   await shot(page, '38-trade-paid-confirm-sheet');
   await page.getByRole('button', { name: 'Yes, mark as paid' }).click();
   await roomState(page, 'paid');
@@ -673,10 +675,12 @@ test("38-39 Task 39: the two-step I've paid, marked as paid", async ({ page }) =
   await shot(page, '39-trade-marked-paid');
 });
 
-test("40-41 the seller's waiting room: Propose cancel, then the buyer's accept card", async ({ page }) => {
+test("40-41 the seller's waiting room (no Propose cancel), a standing proposal, then the buyer's accept card", async ({ page }) => {
   const s = await openRoom(page, SELLER_SECURED);
   await expect(page.getByText('Waiting for mira.k to pay')).toBeVisible();
-  await page.getByRole('button', { name: 'Propose cancel' }).click();
+  await expect(page.getByRole('button', { name: 'Propose cancel' })).toHaveCount(0);
+  s.view = { ...SELLER_SECURED, cancelProposedBy: 'seller' };
+  await page.reload();
   await expect(page.getByText('You proposed cancelling. Waiting for mira.k.')).toBeVisible();
   await shot(page, '40-trade-seller-proposed-cancel');
   s.view = { ...PAY_SECURED, cancelProposedBy: 'seller' };
@@ -690,23 +694,27 @@ const PAID_SELLER = {
   poster: 'seller',
   state: 'paid',
   paidAt: new Date(Date.parse(PAY_NOW) - 8 * 60_000).toISOString(),
-  confirmBy: new Date(Date.parse(PAY_NOW) + 112 * 60_000).toISOString(),
-  disputeOpensAt: new Date(Date.parse(PAY_NOW) + 82 * 60_000).toISOString(),
-  disputeWaitMin: 90,
-  nextDeadline: new Date(Date.parse(PAY_NOW) + 112 * 60_000).toISOString(),
+  confirmBy: new Date(Date.parse(PAY_NOW) + 82 * 60_000).toISOString(),
+  confirmWindowMin: 90,
+  nextDeadline: new Date(Date.parse(PAY_NOW) + 82 * 60_000).toISOString(),
   fee: { atomic: '12500000000' },
 } as TradeView;
 
-test('42-43 SellerConfirm: the release warning, then the box ticked', async ({ page }) => {
+test('42-43 SellerConfirm: the box ticked, then the release warning on "Payment received" (the hold)', async ({ page }) => {
   await openRoom(page, PAID_SELLER, { warned: false });
   const warn = page.getByRole('alertdialog');
-  await expect(warn).toContainText('Before you release');
-  await shot(page, '42-trade-release-warning');
-  await page.getByRole('button', { name: "It's in my account" }).click();
   await expect(warn).toHaveCount(0);
   await page.getByRole('checkbox').check();
   await expect(page.locator('[data-screen="seller-confirm"]')).toBeVisible();
   await shot(page, '43-trade-seller-confirm');
+  const hold = page.locator('[data-screen="seller-confirm"] button[data-primary]');
+  const b = (await hold.boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(1700);
+  await page.mouse.up();
+  await expect(warn).toContainText('Before you release');
+  await shot(page, '42-trade-release-warning');
 });
 
 const CANCELLED = {
@@ -745,7 +753,7 @@ test('47 Released (Task 24): the buyer\'s view', async ({ page }) => {
 test("48 the buyer's refunded trade: why, and the 48-hour Open a dispute", async ({ page }) => {
   // The buyer's view of satoshi_ghost's trade (review 48: not mira.k), with the time-ran-out timeline in order.
   const ago = (min: number) => new Date(Date.parse(SERVER_NOW) - min * 60_000).toISOString();
-  const base = sellerView({ role: 'buyer', state: 'refunded', settling: 'auto-refund', payBy: ago(620), finalAlertAt: ago(615), closedAt: ago(600), txHash: 'ab'.repeat(32) });
+  const base = sellerView({ role: 'buyer', state: 'refunded', settling: 'auto-refund', payBy: ago(620), closedAt: ago(600), txHash: 'ab'.repeat(32) });
   const v = { ...base, counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' } };
   await openRoom(page, v);
   await expect(page.getByRole('link', { name: 'Open dispute', exact: true })).toBeVisible();
@@ -848,9 +856,8 @@ const disputeTrade = (o: Record<string, unknown> = {}) => ({
   state: 'paid',
   counterparty: { displayName: 'satoshi_ghost', completedTrades: 12, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
   paidAt: T('08:02'),
-  confirmBy: T('10:02'),
-  disputeOpensAt: T('09:32'),
-  disputeWaitMin: 90,
+  confirmBy: T('09:32'),
+  confirmWindowMin: 90,
   payBy: T('09:30'),
   serverNow: T('10:14'),
   ...o,

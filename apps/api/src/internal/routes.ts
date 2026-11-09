@@ -7,12 +7,20 @@ import {
   INTERNAL_SIG_HEADER,
   internalSignedBytes,
   isAttestedTerms,
+  SETTLE_KINDS,
+  settleKindFor,
+  TradeRuleError,
   type Attestation,
   type AttestedTerms,
+  type SettleKind,
+  type TradeEvent,
+  type TradeState,
 } from '@x2f/trade';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
+import { ApiError } from '../errors.js';
+import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 
 /**
  * The API's private internal listener: a SEPARATE Fastify instance, bound to a private interface
@@ -28,7 +36,21 @@ export interface InternalOptions {
   now?: () => number;
   /** Most trades served per work pull. Default 100; tests lower it. */
   workLimit?: number;
+  /** The server clock trade events are applied with (Task 9 reports). Default: `now` as a Date. */
+  clock?: () => Date;
+  /** Delivery of a trade event the watcher's report committed (main.ts passes Task 19's publisher). */
+  publish?: TradePublisher;
 }
+
+/** How long a closed trade stays on the watch list: the watcher keeps a closed escrow 30 days (Task 9). */
+export const WATCH_LIST_CLOSED_DAYS = 31;
+const TX_HASH = /^[0-9a-f]{64}$/;
+const ATOMIC = /^(0|[1-9]\d{0,30})$/;
+/** Exactly these keys, in any order. */
+const keysAre = (o: Record<string, unknown>, keys: readonly string[]): boolean => {
+  const own = Object.keys(o);
+  return own.length === keys.length && keys.every((k) => Object.hasOwn(o, k));
+};
 
 /** A signed request is refused when its `at` is further than this from the listener's clock. */
 export const INTERNAL_MAX_AGE_MS = 60_000;
@@ -190,6 +212,117 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     log({ reason: 'internal-refused' });
     return reply.code(201).send({ ok: true });
   };
+
+  /**
+   * A chain-watcher report (Task 9): `setup-done { escrowAddress }`, `chain { receivedAtomic,
+   * unlockedAtomic, confirmations }` (bigints as decimal strings), `settled { txHash }` (the kind
+   * from `settleKindFor`; 409 `settle-kind-unknown` when the trade alone does not name it) and
+   * `late-funds` and `spend-unshown` (a trade settling 6 h with no sweep shown to the moderator,
+   * Task 9 I/O fallback) and `refund-unverified` (a seller's cancel refund the moderator will not
+   * sign alone, Task 10), all applied as `escalate`, and `release-claimed` (the moderation
+   * service received a trade party's sealed post-release info: the signing window no longer
+   * reverts the settling trade, lead decision b 2026-10-29), each for an attested trade only. Applied through the
+   * trade store as `system`. The state machine's refusal is 409 with its rule code, so a repeated
+   * report is refused `wrong-state` and the watcher counts it as done.
+   */
+  const watcherReport = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    let event: TradeEvent | null = null;
+    /** `settled`: the kind the watcher counted the sweep for (security review 7 Nov, finding 3). */
+    let claimedKind: SettleKind | null = null;
+    switch (body.kind) {
+      case 'setup-done':
+        if (!keysAre(body, ['kind', 'trade', 'escrowAddress']) || typeof body.escrowAddress !== 'string' || !/^[0-9A-Za-z]{1,128}$/.test(body.escrowAddress)) break;
+        event = { type: 'setup-done', escrowAddress: body.escrowAddress };
+        break;
+      case 'chain': {
+        const { receivedAtomic: r, unlockedAtomic: u, confirmations: c } = body;
+        if (!keysAre(body, ['kind', 'trade', 'receivedAtomic', 'unlockedAtomic', 'confirmations'])) break;
+        if (typeof r !== 'string' || typeof u !== 'string' || !ATOMIC.test(r) || !ATOMIC.test(u)) break;
+        if (typeof c !== 'number' || !Number.isSafeInteger(c) || c < 0 || BigInt(u) > BigInt(r)) break;
+        event = { type: 'chain', receivedAtomic: BigInt(r), unlockedAtomic: BigInt(u), confirmations: c };
+        break;
+      }
+      case 'settled':
+        if (!keysAre(body, ['kind', 'trade', 'txHash', 'settleKind']) || typeof body.txHash !== 'string' || !TX_HASH.test(body.txHash)) break;
+        if (body.settleKind !== null && !SETTLE_KINDS.includes(body.settleKind as SettleKind)) break;
+        claimedKind = body.settleKind as SettleKind | null;
+        event = { type: 'settled', kind: 'release', txHash: body.txHash }; // kind set below from the trade
+        break;
+      case 'late-funds':
+      case 'spend-unshown':
+      // Task 10: a seller's cancel refund the moderator will not sign alone: its own records
+      // (signals, shadow trade) disagree. The final-alert reports are gone (owner 8 Nov, p6-1).
+      case 'refund-unverified':
+        if (!keysAre(body, ['kind', 'trade'])) break;
+        event = { type: 'escalate' };
+        break;
+      case 'release-claimed':
+        if (!keysAre(body, ['kind', 'trade'])) break;
+        event = { type: 'release-claimed' };
+        break;
+    }
+    if (event === null) throw new Refused(400, 'bad-body');
+    const attested = await o.db.query('select 1 from trade_attestations where code = $1', [code]);
+    if (attested.rows.length === 0) {
+      const known = await o.db.query('select 1 from trades where code = $1', [code]);
+      throw known.rows.length === 0 ? new Refused(404, 'not-found') : new Refused(409, 'not-attested');
+    }
+    // Finding 3: `settled` applies only with the kind the watcher counted the sweep for, and only
+    // while the trade still names that kind, checked again under the trade's row lock (`within`):
+    // a signing window that reverted and a new settlement started in between is refused, never
+    // recorded as the other kind.
+    let within: Parameters<typeof applyEvent>[4];
+    if (event.type === 'settled') {
+      const t = await loadTrade(o.db, code);
+      const kind = t ? settleKindFor(t) : null;
+      if (kind === null || claimedKind === null) throw new Refused(409, 'settle-kind-unknown');
+      if (kind !== claimedKind) throw new Refused(409, 'settle-kind-changed');
+      event = { ...event, kind: claimedKind };
+      const claimed = claimedKind;
+      within = async (_c, prev) => {
+        if (settleKindFor(prev) !== claimed) throw new Refused(409, 'settle-kind-changed');
+      };
+    }
+    try {
+      await applyEvent({ db: o.db, clock: o.clock ?? (() => new Date(now())), ...(o.publish ? { publish: o.publish } : {}) }, code, event, 'system', within);
+    } catch (e) {
+      if (e instanceof TradeRuleError) throw new Refused(409, e.code);
+      if (e instanceof ApiError && e.status === 404) throw new Refused(404, 'not-found');
+      if (e instanceof RangeError) throw new Refused(400, 'bad-body');
+      throw e;
+    }
+    log({ reason: `internal-${body.kind as string}` });
+    return reply.code(201).send({ ok: true });
+  };
+
+  // Every attested trade that is open, or closed within WATCH_LIST_CLOSED_DAYS, with its state:
+  // the moderation watcher's view of the API trade (Task 9). No addresses or terms. Also
+  // `settleKind` (settleKindFor: the kind a `settled` report would be applied as; the watcher checks
+  // a sweep it saw only through an import against it, review I1) and `paused` (maintenance: the
+  // watcher's 6 h fallback does not run, review M3). Owner rule g62 (trade timers stop during maintenance):
+  // an open trade also counts as paused as soon as `site_flags.maintenance_since` is set, before the
+  // timer loop's next pass writes its `paused_at`, so the moderator decides nothing in that gap.
+  app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
+    const { rows } = await o.db.query<{ code: string; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean }>(
+      `select t.code, t.state, t.settling, t.paused_at,
+              (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused
+         from trades t
+         join trade_attestations a on a.code = t.code
+        where t.closed_at is null or t.closed_at > $1
+        order by t.taken_at, t.code`,
+      [new Date(now() - WATCH_LIST_CLOSED_DAYS * 86_400_000)],
+    );
+    return reply.send({
+      trades: rows.map((r) => ({
+        trade: r.code,
+        state: r.state,
+        settleKind: settleKindFor({ state: r.state, settling: r.settling }),
+        paused: r.paused_at !== null || r.site_paused,
+      })),
+    });
+  }));
 
   // The open trades in setup that both traders have registered an identity for, with both addresses on record,
   // no attestation yet and not refused by the moderation service (a refused trade is done for good
@@ -361,6 +494,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'refused') return refuse(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-refused') return refuseChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-attestation') return attestChat(body, reply);
+    if (isPlainObject(body) && typeof body.kind === 'string' && body.kind !== 'attestation') return watcherReport(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;
     const sig = body.sig;

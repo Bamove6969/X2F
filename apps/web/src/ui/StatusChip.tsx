@@ -1,8 +1,12 @@
 import { Icon, type IconName } from './icons.js';
 import './ui.css';
 
-/** A state colour always comes with a word and an icon (design-system README), so `label` is required. */
-export type Tone = 'caution' | 'escrow' | 'danger' | 'muted';
+/**
+ * A state colour always comes with a word and an icon (design-system README), so `label` is
+ * required. `neutral` is the ink colour for an ending with nothing left to do (board Refunded:
+ * "refunds are neutral").
+ */
+export type Tone = 'caution' | 'escrow' | 'danger' | 'muted' | 'neutral';
 
 // From the trade-room boards (TradeFund "Waiting for you to fund", Desktop "Escrow secured").
 // `look="tint"` is the hero's chip (visual system v2, section 7): a 28 px pill with a 14% wash of the tone.

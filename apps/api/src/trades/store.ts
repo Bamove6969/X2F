@@ -40,12 +40,6 @@ export interface TradeRow {
   locked_cents_per_xmr: string;
   fiat_cents: string;
   confirm_window_min: number;
-  /**
-   * Migration 118 (owner 2026-11-07 F9): the buyer's dispute wait after marking paid, fixed at take
-   * from the method profile. Null only for a trade taken before 118 the backfill missed: read as the
-   * confirm window, the rule it was taken under.
-   */
-  buyer_dispute_wait_min: number | null;
   min_fiat_cents: string;
   max_fiat_cents: string;
   grown_at: Date | null;
@@ -69,15 +63,18 @@ export interface TradeRow {
   extensions: number;
   paid_at: Date | null;
   confirm_by: Date | null;
-  /** Migration 118 (owner 2026-11-06 Q10, 11-07 F9): when the buyer may dispute in `paid` (paid time + wait); moved by maintenance. */
-  buyer_dispute_from: Date | null;
+  /**
+   * Retired by the owner's 8 Nov reversal (no final alert; migration 120): kept in the table for
+   * old rows, never read or written by the machine.
+   */
   final_alert_at: Date | null;
-  /** Task 19: when the buyer's first seen-receipt for the final alert landed (null = not seen). */
+  /** Retired with the final alert (Task 19's seen-receipt); kept for old rows only. */
   final_alert_seen_at: Date | null;
   cancel_proposed_by: 'buyer' | 'seller' | null;
   settling: Trade['settling'];
   settle_from: TradeState | null;
   settle_by: Date | null;
+  release_claimed_at: Date | null;
   paused_at: Date | null;
   tx_hash: string | null;
   dispute_by: By | null;
@@ -88,8 +85,9 @@ export interface TradeRow {
   /** Migration 116: when the seller's Confirm cancel became available (the refund fully confirmed). */
   cancel_confirmable_at: Date | null;
   /**
-   * Migration 119 (owner G2, g66): when the seller first nudged the buyer after the escrow was
-   * secured. Written only by the nudge route, never by `stateColumns` (no event changes it).
+   * Migration 119: when the seller first nudged the buyer after the escrow was secured. Written
+   * only by the nudge route, never by `stateColumns` (no event changes it). A record only since the
+   * owner made nudges optional (8 Nov, p6-1): no rule reads it.
    */
   seller_nudged_at: Date | null;
   buyer_payout: string | null;
@@ -122,7 +120,6 @@ export function rowToTrade(r: TradeRow): Trade {
     lockedRate: { currency: r.locked_currency, centsPerXmr: big(r.locked_cents_per_xmr) },
     fiatCents: big(r.fiat_cents),
     confirmWindowMin: r.confirm_window_min,
-    buyerDisputeWaitMin: r.buyer_dispute_wait_min ?? r.confirm_window_min,
     minFiatCents: big(r.min_fiat_cents),
     maxFiatCents: big(r.max_fiat_cents),
     grown:
@@ -146,12 +143,11 @@ export function rowToTrade(r: TradeRow): Trade {
     extensions: r.extensions,
     paidAt: r.paid_at,
     confirmBy: r.confirm_by,
-    buyerDisputeFrom: r.buyer_dispute_from,
-    finalAlertAt: r.final_alert_at,
     cancelProposedBy: r.cancel_proposed_by,
     settling: r.settling,
     settleFrom: r.settle_from,
     settleBy: r.settle_by,
+    releaseClaimedAt: r.release_claimed_at ?? null,
     pausedAt: r.paused_at,
     txHash: r.tx_hash,
     dispute: r.dispute_by !== null && r.dispute_at !== null ? { by: r.dispute_by, at: r.dispute_at } : null,
@@ -188,12 +184,11 @@ function stateColumns(t: Trade): [string, unknown][] {
     ['extensions', t.extensions],
     ['paid_at', t.paidAt],
     ['confirm_by', t.confirmBy],
-    ['buyer_dispute_from', t.buyerDisputeFrom],
-    ['final_alert_at', t.finalAlertAt],
     ['cancel_proposed_by', t.cancelProposedBy],
     ['settling', t.settling],
     ['settle_from', t.settleFrom],
     ['settle_by', t.settleBy],
+    ['release_claimed_at', t.releaseClaimedAt],
     ['paused_at', t.pausedAt],
     ['tx_hash', t.txHash],
     ['dispute_by', t.dispute?.by ?? null],
@@ -223,7 +218,6 @@ export async function insertTrade(q: Queryable, t: Trade, sides: TradeSides, usd
     ['locked_currency', t.lockedRate.currency],
     ['locked_cents_per_xmr', t.lockedRate.centsPerXmr.toString()],
     ['confirm_window_min', t.confirmWindowMin],
-    ['buyer_dispute_wait_min', t.buyerDisputeWaitMin],
     ['min_fiat_cents', t.minFiatCents.toString()],
     ['max_fiat_cents', t.maxFiatCents.toString()],
     ['taken_at', t.takenAt],
@@ -278,6 +272,7 @@ const STORED = {
   settled: { kind: 'value', txHash: 'value' },
   'open-dispute': {},
   escalate: {},
+  'release-claimed': {},
   pause: {},
   resume: {},
   tick: {},

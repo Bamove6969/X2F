@@ -2,7 +2,7 @@
 // "now" here is the server's clock (useServerClock), never the device's alone (Review Focus 3).
 // Copy is from the DisputeOpen, DisputeRoom and DisputeRuling boards; lines marked COPY-UNSIGNED
 // have no board yet (spec wording or Plan 4 A8) and wait for the owner's sign-off.
-import { TIMERS, escrowPlan, formatXmr } from '@x2f/trade';
+import { TIMERS, escrowPlan, formatXmr, formatXmrExact } from '@x2f/trade';
 import { formatRemaining, type DurationPart } from '../../ui/Countdown.js';
 import { formatDateTime, formatUtcTime } from '../../ui/dates.js';
 import type { DisputeReason, DisputeTrade, DisputeView, Party, Reason, RulingView } from './api.js';
@@ -49,16 +49,16 @@ const ms = (iso: string | null): number | null => (iso === null ? null : Date.pa
 /**
  * Whether this side may open a dispute now, mirroring the state machine's `open-dispute` rules
  * (the API decides; this only keeps the screen from sending what would be refused):
- * - securing or secured: either side;
- * - paid: the seller at once, the buyer from the server's `disputeOpensAt`: the trade's own wait
- *   after marking paid (`disputeWaitMin`, per payment type; owner 2026-11-07 F9), later by any
- *   maintenance during the wait (owner 2026-11-06 Q10); no longer the end of the seller's confirm window;
- * - settling: either side once the signing window has passed;
+ * - securing or secured: the seller only (the buyer can cancel instead until "I've paid");
+ * - paid: either side only from confirmBy, the payment method's full wait from "I've paid"
+ *   (owner p9-4, 8 Nov; the seller used to dispute at once);
+ * - settling: either side once the signing window has passed; the buyer at once while the seller's
+ *   cancel refund settles (`auto-refund`: a buyer who paid late, owner 8 Nov p9-2);
  * - refunded: the buyer, until 48 hours after the refund (owner 2026-10-29; was 90 days).
  * `wait` carries the explanation shown instead of sending anything.
  */
 /**
- * A buyer's dispute wait in words, as the owner says them (2026-11-07 F9): "90 minutes", "3 hours",
+ * The wait before a dispute in words, as the owner says them (2026-11-07 F9): "90 minutes", "3 hours",
  * "24 hours", "2 days", "3 days", "4 days". Whole days from 2 days, whole hours from 2 hours,
  * otherwise minutes.
  */
@@ -88,23 +88,28 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
   switch (t.state) {
     case 'securing':
     case 'secured':
-      return { kind: 'open' };
+      // Never the buyer before "I've paid" (design proto review P1, 8 Nov): the machine refuses it (too-early).
+      return t.role === 'buyer' ? { kind: 'none' } : { kind: 'open' };
     case 'paid': {
-      if (t.role === 'seller') return { kind: 'open' };
-      // The server's time, which maintenance moves (owner 2026-11-06 Q10), never paidAt + the wait here.
-      const by = ms(t.disputeOpensAt);
+      // Either side from confirmBy, the server's time, which maintenance moves (owner p9-4; 2026-11-06 Q10).
+      const by = ms(t.confirmBy);
       if (ms(t.paidAt) === null || by === null) return { kind: 'none' };
       if (n >= by) return { kind: 'open' };
       // The rule in working time ("within 90 minutes"), however long a maintenance paused it.
       // DESIGN: wording (the wait in words only; the sentence is unchanged).
-      const window = waitInWords(t.disputeWaitMin);
+      const window = waitInWords(t.confirmWindowMin);
       return {
         kind: 'wait',
         until: new Date(by),
-        text: `You can open a dispute if the seller hasn't confirmed within ${window} of your payment.`,
+        text:
+          t.role === 'seller'
+            ? // COPY-UNSIGNED (owner p9-4: the other side waits the method's full time too).
+              `You can open a dispute if the payment hasn't arrived within ${window} of the buyer marking it paid.`
+            : `You can open a dispute if the seller hasn't confirmed within ${window} of your payment.`,
       };
     }
     case 'settling': {
+      if (t.role === 'buyer' && t.settling === 'auto-refund') return { kind: 'open' };
       const by = ms(t.settleBy);
       return by !== null && n > by ? { kind: 'open' } : { kind: 'none' };
     }
@@ -179,6 +184,17 @@ export function xmrInText(atomic: string | bigint): string {
   const [whole, frac = ''] = six.split('.');
   const kept = frac.replace(/0+$/, '').padEnd(2, '0');
   return `${whole}.${kept}`;
+}
+
+/**
+ * As xmrInText, but for an amount a side must send (review kit round 1, finding 1): exact to the
+ * atomic unit (formatXmrExact), so 0.610529733574 is never written as 0.610529. Trailing zeros are
+ * dropped the same way, keeping at least two: an aligned amount still reads "1.25".
+ */
+export function xmrInTextExact(atomic: string | bigint): string {
+  const exact = formatXmrExact(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
+  const [whole, frac = ''] = exact.split('.');
+  return `${whole}.${frac.replace(/0+$/, '').padEnd(2, '0')}`;
 }
 
 /** "10:14 UTC": a time under a heading that names the day (ui/dates.ts, the one format; review M1). */
@@ -273,7 +289,8 @@ export function paidOutAtomic(outcome: RulingView['outcome'], amountAtomic: stri
 export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, _now: Date, poster: Party): RulingCopy {
   const r = d.ruling;
   if (r === null) throw new Error('no ruling');
-  const amount = `${xmrInText(amountAtomic)} XMR`;
+  // What the seller must send on a seller-sends-xmr ruling: exact, never cut at 6 places.
+  const amount = `${xmrInTextExact(amountAtomic)} XMR`;
   // Lead review 7 Nov: what the ruling pays out, as `payoutsFor('dispute-buyer' | 'dispute-seller')`
   // builds it for a fully funded escrow. The poster pays the 1% fee: on a buyer's ad the buyer gets
   // the amount less the fee; the seller's refund is the amount either way.

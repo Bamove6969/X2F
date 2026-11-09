@@ -407,6 +407,19 @@
   margin: 0;
 }
 
+/* Owner p7-2's "Do not show me this warning again": an aside, quieter than the required tick. */
+.x2f-paid__check--quiet {
+  align-items: center;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-paid__check--quiet input {
+  width: 20px;
+  height: 20px;
+}
+
 .x2f-paid__grew {
   margin: 0;
   font-size: 16px;
@@ -449,6 +462,22 @@
   min-height: 44px;
   color: var(--x2f-ink-muted);
   font-size: 14px;
+}
+
+/* The buyer's locked Open dispute and when it opens (board BuyerPaidWaiting window=in-window). */
+.x2f-room__dispute-locked {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  min-width: 0;
+}
+
+.x2f-room__dispute-locked .x2f-room__dispute-wait {
+  min-height: 0;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: right;
 }
 
 .x2f-paid__actions {

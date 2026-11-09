@@ -23,6 +23,7 @@ import {
   rulingFinal,
   paidOutAtomic,
   xmrInText,
+  xmrInTextExact,
   type SettleOutcome,
 } from '../src/screens/dispute/rules.js';
 import { fire, render } from './render.js';
@@ -43,9 +44,8 @@ function trade(over: Partial<DisputeTrade> = {}): DisputeTrade {
     poster: 'seller',
     currency: 'USD',
     paidAt: iso(0),
-    confirmBy: iso(120),
-    disputeOpensAt: iso(90),
-    disputeWaitMin: 90,
+    confirmBy: iso(90),
+    confirmWindowMin: 90,
     settleBy: null,
     closedAt: null,
     dispute: null,
@@ -92,8 +92,8 @@ const at = (m: number) => () => new Date(T0 + m * MIN);
 const inRouter = (ui: React.ReactNode) => <MemoryRouter>{ui}</MemoryRouter>;
 
 describe('disputeEntry (mirrors the state machine; the server clock decides)', () => {
-  it("makes the buyer wait the trade's own time from marking paid (owner 2026-11-07 F9: 90 minutes for an instant type), not the whole confirm window, with the board explanation", () => {
-    // paidAt 0, disputeOpensAt 90, confirmBy 120: 89:59 waits, 90:00 opens.
+  it("makes the buyer wait the method's confirm window from marking paid (owner 2026-11-07 F9: 90 minutes for an instant type; p9-4), with the board explanation", () => {
+    // paidAt 0, confirmBy 90: 89:59 waits, 90:00 opens.
     const e = disputeEntry(trade(), new Date(T0 + 89 * MIN + 59_000));
     expect(e).toEqual({
       kind: 'wait',
@@ -101,12 +101,20 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
       text: "You can open a dispute if the seller hasn't confirmed within 90 minutes of your payment.",
     });
     expect(disputeEntry(trade(), new Date(T0 + 90 * MIN))).toEqual({ kind: 'open' });
-    expect(disputeEntry(trade({ paidAt: null, disputeOpensAt: null }), new Date(T0 + 90 * MIN))).toEqual({ kind: 'none' });
-    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0))).toEqual({ kind: 'open' });
+    expect(disputeEntry(trade({ paidAt: null, confirmBy: null }), new Date(T0 + 90 * MIN))).toEqual({ kind: 'none' });
   });
 
-  it('says each payment type\'s wait in words (owner 2026-11-07 F9)', () => {
-    const text = (min: number) => (disputeEntry(trade({ disputeWaitMin: min, disputeOpensAt: iso(min), confirmBy: iso(min) }), new Date(T0)) as { text: string }).text;
+  it("makes the seller wait for the same confirmBy in paid (owner p9-4)", () => {
+    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0 + 89 * MIN))).toEqual({
+      kind: 'wait',
+      until: new Date(T0 + 90 * MIN),
+      text: "You can open a dispute if the payment hasn't arrived within 90 minutes of the buyer marking it paid.",
+    });
+    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0 + 90 * MIN))).toEqual({ kind: 'open' });
+  });
+
+  it('says each payment type\'s window in words (owner 2026-11-07 F9)', () => {
+    const text = (min: number) => (disputeEntry(trade({ confirmWindowMin: min, confirmBy: iso(min) }), new Date(T0)) as { text: string }).text;
     expect(text(90)).toContain('within 90 minutes of');
     expect(text(180)).toContain('within 3 hours of');
     expect(text(1440)).toContain('within 24 hours of');
@@ -115,9 +123,9 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
     expect(text(5760)).toContain('within 4 days of');
   });
 
-  it("reads the server's disputeOpensAt, which maintenance moved later (owner 2026-11-06 Q10), never paidAt + the wait", () => {
-    // Marked paid at 0; maintenance 5 → 45 moved the end of the wait to 130 (and confirmBy to 160).
-    const paused = trade({ disputeOpensAt: iso(130), confirmBy: iso(160) });
+  it("reads the server's confirmBy, which maintenance moved later (owner 2026-11-06 Q10), and words the window in working time", () => {
+    // Marked paid at 0; maintenance 5 → 45 moved confirmBy from 90 to 130.
+    const paused = trade({ confirmBy: iso(130) });
     expect(disputeEntry(paused, new Date(T0 + 90 * MIN))).toEqual({
       kind: 'wait',
       until: new Date(T0 + 130 * MIN),
@@ -127,8 +135,9 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
     expect(disputeEntry(paused, new Date(T0 + 130 * MIN))).toEqual({ kind: 'open' });
   });
 
-  it('opens for either side while securing or secured, and not in funding or after release', () => {
-    for (const state of ['securing', 'secured']) expect(disputeEntry(trade({ state }), new Date(T0)).kind).toBe('open');
+  it("opens for the seller while securing or secured, never the buyer before I've paid (proto review P1), and not in funding or after release", () => {
+    for (const state of ['securing', 'secured']) expect(disputeEntry(trade({ state, role: 'seller' }), new Date(T0)).kind).toBe('open');
+    for (const state of ['securing', 'secured']) expect(disputeEntry(trade({ state, role: 'buyer' }), new Date(T0)).kind).toBe('none');
     for (const state of ['setup', 'funding', 'released', 'cancelled', 'lapsed']) expect(disputeEntry(trade({ state }), new Date(T0)).kind).toBe('none');
     expect(disputeEntry(trade({ state: 'disputed' }), new Date(T0)).kind).toBe('opened');
   });
@@ -152,6 +161,17 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
     const s = trade({ state: 'settling', settleBy: iso(15) });
     expect(disputeEntry(s, new Date(T0 + 15 * MIN)).kind).toBe('none');
     expect(disputeEntry(s, new Date(T0 + 15 * MIN + 1)).kind).toBe('open');
+  });
+
+  it("the seller's cancel settling (auto-refund): the buyer at once (owner 8 Nov, p9-2), the seller only after the window", () => {
+    const b = trade({ state: 'settling', settling: 'auto-refund', settleBy: iso(15), role: 'buyer' });
+    expect(disputeEntry(b, new Date(T0)).kind).toBe('open');
+    const s = trade({ state: 'settling', settling: 'auto-refund', settleBy: iso(15), role: 'seller' });
+    expect(disputeEntry(s, new Date(T0)).kind).toBe('none');
+    expect(disputeEntry(s, new Date(T0 + 15 * MIN + 1)).kind).toBe('open');
+    for (const settling of ['release', 'buyer-cancel', 'mutual-cancel'] as const) {
+      expect(disputeEntry(trade({ state: 'settling', settling, settleBy: iso(15), role: 'buyer' }), new Date(T0)).kind).toBe('none');
+    }
   });
 });
 
@@ -282,15 +302,12 @@ describe('DisputeOpen', () => {
     expect(host.querySelector('input[type=file]')).toBeNull();
   });
 
-  it("from 90 minutes after marking paid the buyer may open one; the seller's-time flag shows only once confirmBy has passed (owner 2026-11-07 F9)", () => {
-    const early = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(90)} onOpen={vi.fn(async () => undefined)} />));
-    expect(early.host.querySelector<HTMLButtonElement>('[data-primary]')!.disabled).toBe(false);
-    expect(early.host.textContent).not.toContain("Seller's time to confirm ran out");
-    expect(early.host.querySelector('.dispute-wait')).toBeNull();
-    early.unmount();
-    const late = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(120)} onOpen={vi.fn(async () => undefined)} />));
-    expect(late.host.textContent).toContain("Seller's time to confirm ran out");
-    late.unmount();
+  it("from 90 minutes after marking paid (confirmBy, one window for both sides, owner p9-4, F9) the buyer may open one, with the seller's-time flag", () => {
+    const open = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(90)} onOpen={vi.fn(async () => undefined)} />));
+    expect(open.host.querySelector<HTMLButtonElement>('[data-primary]')!.disabled).toBe(false);
+    expect(open.host.textContent).toContain("Seller's time to confirm ran out");
+    expect(open.host.querySelector('.dispute-wait')).toBeNull();
+    open.unmount();
   });
 
   it('sends the picked reason and the note once the window has ended', async () => {
@@ -596,6 +613,17 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     const buyer = render(inRouter(<DisputeRuling trade={{ ...t, role: 'buyer', counterparty: 'satoshi_ghost' }} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} />));
     expect(buyer.host.textContent).toContain('satoshi_ghost must send you 1.25 XMR');
     expect(buyer.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
+  });
+
+  it('seller-sends-xmr: the amount to send is exact, never cut at 6 places (review kit round 1, finding 1)', () => {
+    const t = trade({ role: 'seller', counterparty: 'mira.k', state: 'refunded', amountAtomic: '610529733574', dispute: { by: 'buyer', at: iso(130) } });
+    const d = { ...ruled({ outcome: 'seller-sends-xmr', destination: null }, { afterRefund: true, status: 'final' as const }), complyBy: iso(2000) };
+    const seller = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(seller.host.textContent).toContain('You must send mira.k 0.610529733574 XMR');
+    const buyer = render(inRouter(<DisputeRuling trade={{ ...t, role: 'buyer', counterparty: 'satoshi_ghost' }} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(buyer.host.textContent).toContain('satoshi_ghost must send you 0.610529733574 XMR');
+    expect(xmrInTextExact(733_574n)).toBe('0.000000733574');
+    expect(xmrInTextExact('1250000000000')).toBe('1.25');
   });
 });
 

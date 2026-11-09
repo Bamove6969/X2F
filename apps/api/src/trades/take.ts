@@ -301,7 +301,6 @@ export function takeRoutes(app: FastifyInstance): void {
           amountAtomic: b.amountAtomic,
           lockedRate: rate,
           confirmWindowMin: profile.confirmWindowMin,
-          buyerDisputeWaitMin: profile.buyerDisputeWaitMin,
           minFiatCents: BigInt(r.min_fiat_cents),
           maxFiatCents: BigInt(r.max_fiat_cents),
         },

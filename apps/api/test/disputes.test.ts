@@ -1,11 +1,8 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { RulingOutcome } from '@x2f/staff';
 import { loadDispute } from '../src/disputes/store.js';
-import { MIGRATIONS_DIR } from '../src/db/migrate.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { appealDirect, publishRuling } from './helpers/disputes.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
@@ -86,9 +83,9 @@ async function rule(code: string, o: { outcome: RulingOutcome; round?: 1 | 2; ru
 }
 
 describe('POST /v1/trades/:code/dispute', () => {
-  it("refuses the buyer before the trade's 90-minute wait after marking paid (89:59), and writes nothing (owner 2026-11-07 F9: instant types)", async () => {
+  it('refuses the buyer before the seller\'s confirm window ends, and writes nothing', async () => {
     const { buyer, t } = await tradeIn('paid');
-    setNow(at(89 * MIN + 59_000));
+    setNow(at(119 * MIN));
     const res = await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
     expect(res.statusCode).toBe(409);
     expect(errorOf(res)).toBe('too-early');
@@ -97,15 +94,28 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect(await eventTypes(t.code)).not.toContain('open-dispute');
   });
 
-  it('opens a dispute from 90:00 after marking paid, inside the seller\'s 2-hour window: the trade, its event and the dispute row in one go', async () => {
+  it("refuses the seller too in paid until the confirm window ends (owner p9-4), then opens it", async () => {
+    const { seller, t } = await tradeIn('paid');
+    setNow(at(119 * MIN));
+    const early = await seller.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    expect(early.statusCode).toBe(409);
+    expect(errorOf(early)).toBe('too-early');
+    expect(await disputeRow(t.code)).toBeUndefined();
+    expect(await eventTypes(t.code)).not.toContain('open-dispute');
+    setNow(at(120 * MIN));
+    expect((await seller.browser.post(dispute(t.code), { reason: 'paid', note: '' })).statusCode).toBe(200);
+    expect(await disputeRow(t.code)).toMatchObject({ opened_by: 'seller' });
+  });
+
+  it('opens a dispute once the window has ended: the trade, its event and the dispute row in one go', async () => {
     const { buyer, seller, t } = await tradeIn('paid');
-    setNow(at(90 * MIN));
+    setNow(at(120 * MIN));
     const note = 'I sent $412.50 by Zelle at 10:02 from my own account.';
     const res = await buyer.browser.post(dispute(t.code), { reason: 'paid', note });
     expect(res.statusCode).toBe(200);
     const body = res.json() as Record<string, unknown>;
     expect(body).toMatchObject({ openedBy: 'buyer', reason: 'paid', afterRefund: false, status: 'open', moderator: null, ruling: null, appeal: null });
-    expect(body.openedAt).toBe(at(90 * MIN).toISOString());
+    expect(body.openedAt).toBe(at(120 * MIN).toISOString());
     expect(body).not.toHaveProperty('note');
     expect((await loadTrade(deps.db, t.code))!.state).toBe('disputed');
     expect(await eventTypes(t.code)).toContain('open-dispute');
@@ -117,52 +127,17 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect(await disputeRow(t.code)).toMatchObject({ opened_by: 'buyer' });
   });
 
-  it("maintenance pauses the buyer's wait: it ends later by the paused time; the seller's confirm window moves as before (owner 2026-11-06 Q10)", async () => {
-    const { buyer, seller, t } = await tradeIn('paid'); // marked paid at START: wait 90 min, confirmBy +120
-    const view0 = (await buyer.browser.get(`/v1/trades/${t.code}`)).json() as Record<string, unknown>;
-    expect(view0).toMatchObject({ disputeOpensAt: at(90 * MIN).toISOString(), disputeWaitMin: 90 });
-    expect((await seller.browser.get(`/v1/trades/${t.code}`)).json()).toMatchObject({ disputeOpensAt: at(90 * MIN).toISOString(), disputeWaitMin: 90 });
-    setNow(at(5 * MIN));
-    await applyEvent(deps, t.code, { type: 'pause' }, 'system');
-    setNow(at(45 * MIN));
-    await applyEvent(deps, t.code, { type: 'resume' }, 'system'); // paused 40 min
-    const resumed = (await loadTrade(deps.db, t.code))!;
-    expect(resumed.buyerDisputeFrom).toEqual(at(130 * MIN));
-    expect(resumed.confirmBy).toEqual(at(160 * MIN));
-    expect(resumed.paidAt).toEqual(START);
-    setNow(at(129 * MIN + 59_000));
-    await relogin(buyer);
-    const early = await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
-    expect(early.statusCode).toBe(409);
-    expect(errorOf(early)).toBe('too-early');
-    expect(await disputeRow(t.code)).toBeUndefined();
-    expect((await buyer.browser.get(`/v1/trades/${t.code}`)).json()).toMatchObject({ disputeOpensAt: at(130 * MIN).toISOString() });
-    setNow(at(130 * MIN));
-    expect((await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' })).statusCode).toBe(200);
-  });
-
-  it("migration 118 keeps the landed rule for trades already taken: the buyer's wait is the confirm window, opening at confirmBy", async () => {
-    const sql = await readFile(join(MIGRATIONS_DIR, '118_buyer_dispute_from.sql'), 'utf8');
-    const backfill = sql.slice(sql.indexOf('-- BACKFILL'), sql.indexOf('-- END BACKFILL'));
-    const a = await tradeIn('paid'); // paid at START, confirmBy +120 (a 2-hour window)
-    const b = await tradeIn('paid');
-    const c = await tradeIn('secured');
-    // As before 118: nothing stored; b had a 40-minute maintenance, so its confirmBy is +160.
-    await deps.db.query('update trades set buyer_dispute_from = null, buyer_dispute_wait_min = null where code = any($1)', [[a.t.code, b.t.code, c.t.code]]);
-    await deps.db.query('update trades set confirm_by = $2 where code = $1', [b.t.code, at(160 * MIN)]);
-    await deps.db.query(backfill);
-    const [ta, tb, tc] = await Promise.all([a, b, c].map(async (x) => (await loadTrade(deps.db, x.t.code))!));
-    expect([ta!.buyerDisputeWaitMin, ta!.buyerDisputeFrom]).toEqual([120, at(120 * MIN)]);
-    expect([tb!.buyerDisputeWaitMin, tb!.buyerDisputeFrom]).toEqual([120, at(160 * MIN)]);
-    expect([tc!.buyerDisputeWaitMin, tc!.buyerDisputeFrom]).toEqual([120, null]);
-  });
-
-  it('lets either side open one while the escrow is securing or secured', async () => {
+  it("lets the seller open one while the escrow is securing or secured, never the buyer before I've paid (proto review P1)", async () => {
     const a = await tradeIn('secured');
     expect((await a.seller.browser.post(dispute(a.t.code), { reason: 'silent', note: '' })).statusCode).toBe(200);
     expect(await disputeRow(a.t.code)).toMatchObject({ opened_by: 'seller', reason: 'silent' });
     const b = await tradeIn('securing');
-    expect((await b.buyer.browser.post(dispute(b.t.code), { reason: 'other', note: 'x' })).statusCode).toBe(200);
+    expect(errorOf(await b.buyer.browser.post(dispute(b.t.code), { reason: 'other', note: 'x' }))).toBe('too-early');
+    expect(errorOf(await a.buyer.browser.post(dispute(a.t.code), { reason: 'other', note: 'x' }))).toBe('dispute-exists');
+    const c = await tradeIn('secured');
+    expect(errorOf(await c.buyer.browser.post(dispute(c.t.code), { reason: 'paid', note: '' }))).toBe('too-early');
+    expect(await disputeRow(c.t.code)).toBeUndefined();
+    expect((await b.seller.browser.post(dispute(b.t.code), { reason: 'other', note: 'x' })).statusCode).toBe(200);
   });
 
   it('opens a dispute after a refund for the buyer within 48 hours (owner 2026-10-29), never for the seller, never after', async () => {
@@ -188,7 +163,7 @@ describe('POST /v1/trades/:code/dispute', () => {
   });
 
   it('refuses a bad body with 400 and changes nothing', async () => {
-    const { buyer, t } = await tradeIn('secured');
+    const { seller, t } = await tradeIn('secured');
     for (const body of [
       {},
       { reason: 'paid' },
@@ -203,12 +178,12 @@ describe('POST /v1/trades/:code/dispute', () => {
       { reason: 'paid', note: 'a\u0007b' },
       { reason: 'paid', note: 'a\u001bb' },
     ]) {
-      const res = await buyer.browser.post(dispute(t.code), body);
+      const res = await seller.browser.post(dispute(t.code), body);
       expect(res.statusCode, JSON.stringify(body)).toBe(400);
     }
     expect(await disputeRow(t.code)).toBeUndefined();
     // A line break and a tab are text.
-    expect((await buyer.browser.post(dispute(t.code), { reason: 'paid', note: 'x'.repeat(998) + '\n\t' })).statusCode).toBe(200);
+    expect((await seller.browser.post(dispute(t.code), { reason: 'paid', note: 'x'.repeat(998) + '\n\t' })).statusCode).toBe(200);
   });
 
   it('answers 404 to an outsider and an unknown code, 403 to staff, 401 without a session', async () => {
@@ -237,9 +212,9 @@ describe('GET /v1/trades/:code/dispute', () => {
   it('is 404 before a dispute, then shows the dispute, the moderator once joined, and never the note', async () => {
     const { buyer, seller, t } = await tradeIn('secured');
     expect((await buyer.browser.get(dispute(t.code))).statusCode).toBe(404);
-    await buyer.browser.post(dispute(t.code), { reason: 'silent', note: 'private to the moderator' });
+    await seller.browser.post(dispute(t.code), { reason: 'silent', note: 'private to the moderator' });
     const before = (await seller.browser.get(dispute(t.code))).json() as Record<string, unknown>;
-    expect(before).toMatchObject({ openedBy: 'buyer', reason: 'silent', moderator: null, dueAt: at(48 * 60 * MIN).toISOString() });
+    expect(before).toMatchObject({ openedBy: 'seller', reason: 'silent', moderator: null, dueAt: at(48 * 60 * MIN).toISOString() });
     expect(JSON.stringify(before)).not.toContain('private to the moderator');
     expect(typeof before.serverNow).toBe('string');
 
@@ -255,7 +230,7 @@ describe('GET /v1/trades/:code/dispute', () => {
     await deps.db.query(`insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Main', $2, $3, $3)`, [
       buyer.id, sides.buyerPayout, START,
     ]);
-    await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    await seller.browser.post(dispute(t.code), { reason: 'paid', note: '' });
     await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(2 * 60 * MIN), appealUntil: at(50 * 60 * MIN), evidence: ['The trade chat, 09:40 to 13:55', 7] });
     const mine = (await buyer.browser.get(dispute(t.code))).json() as { ruling: Record<string, unknown>; status: string };
     expect(mine.status).toBe('ruled');
@@ -278,8 +253,8 @@ describe('GET /v1/trades/:code/dispute', () => {
   });
 
   it('shows the appeal round over the first one', async () => {
-    const { buyer, t } = await tradeIn('secured');
-    await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    const { buyer, seller, t } = await tradeIn('secured');
+    await seller.browser.post(dispute(t.code), { reason: 'paid', note: '' });
     await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(49 * 60 * MIN) });
     await rule(t.code, { outcome: 'refund-to-seller', round: 2, ruledAt: at(70 * MIN), appealUntil: null });
     const body = (await buyer.browser.get(dispute(t.code))).json() as { ruling: Record<string, unknown> };
@@ -290,7 +265,7 @@ describe('GET /v1/trades/:code/dispute', () => {
 describe('POST /v1/trades/:code/appeal', () => {
   async function ruled() {
     const x = await tradeIn('secured');
-    await x.buyer.browser.post(dispute(x.t.code), { reason: 'paid', note: '' });
+    await x.seller.browser.post(dispute(x.t.code), { reason: 'paid', note: '' });
     return x;
   }
 
@@ -395,10 +370,10 @@ describe('a dispute the system escalates (late funds, a lapse nobody refunded)',
   });
 
   it('a re-escalation opens a new dispute and keeps every earlier dispute, ruling, appeal and note as they were', async () => {
-    // The reviewer's probe: a buyer's dispute gets a final round-2 ruling, the trade is released,
+    // The reviewer's probe: a dispute gets a final round-2 ruling, the trade is released,
     // then late funds escalate it (twice). Nothing of the earlier disputes is deleted or wiped.
     const { buyer, seller, t } = await tradeIn('secured');
-    await buyer.browser.post(dispute(t.code), { reason: 'paid', note: 'the first one' });
+    await seller.browser.post(dispute(t.code), { reason: 'paid', note: 'the first one' });
     await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(49 * 60 * MIN) });
     expect((await seller.browser.post(appeal(t.code), { why: 'Please look again at this.' })).statusCode).toBe(200);
     await rule(t.code, { outcome: 'release-to-buyer', round: 2, ruledAt: at(90 * MIN), appealUntil: null });
@@ -409,7 +384,7 @@ describe('a dispute the system escalates (late funds, a lapse nobody refunded)',
 
     const all = await disputeRows(t.code);
     expect(all).toHaveLength(2);
-    expect(all[0]).toMatchObject({ seq: 1, opened_by: 'buyer', reason: 'paid', note: 'the first one', status: 'final' });
+    expect(all[0]).toMatchObject({ seq: 1, opened_by: 'seller', reason: 'paid', note: 'the first one', status: 'final' });
     expect(all[1]).toMatchObject({ seq: 2, opened_by: 'system', reason: 'escalated', note: '', status: 'open', closed_at: null });
     const rulings = await deps.db.query('select seq, round, outcome from dispute_rulings where code = $1 order by seq, round', [t.code]);
     expect(rulings.rows).toEqual([{ seq: 1, round: 1, outcome: 'release-to-buyer' }, { seq: 1, round: 2, outcome: 'release-to-buyer' }]);
@@ -462,8 +437,8 @@ describe('one dispute per trade opening, whatever the dispute rows say', () => {
     // The reviewer's probe: the buyer disputes, the final ruling is refund-to-seller, the trade
     // settles to refunded and the dispute closes. Inside the 48-hour window (TIMERS.disputeAfterRefundHours) the buyer may not
     // re-open the decided case, before or after any purge of the dispute rows.
-    const { buyer, t } = await tradeIn('secured');
-    await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    const { buyer, seller, t } = await tradeIn('secured');
+    await seller.browser.post(dispute(t.code), { reason: 'paid', note: '' });
     await rule(t.code, { outcome: 'refund-to-seller', round: 2, ruledAt: at(60 * MIN), appealUntil: null });
     expect((await applyEvent(deps, t.code, { type: 'settled', kind: 'mutual-cancel', txHash: 'bc'.repeat(32) }, 'system')).state).toBe('refunded');
     await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [t.code, at(2 * 60 * MIN)]);
@@ -489,15 +464,15 @@ describe('one dispute per trade opening, whatever the dispute rows say', () => {
 
 describe('dispute records (108, 110)', () => {
   it('closed and closed_at go together', async () => {
-    const { buyer, t } = await tradeIn('secured');
-    await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    const { seller, t } = await tradeIn('secured');
+    await seller.browser.post(dispute(t.code), { reason: 'paid', note: '' });
     await expect(deps.db.query(`update disputes set status = 'closed' where code = $1`, [t.code])).rejects.toMatchObject({ code: '23514' });
     await expect(deps.db.query(`update disputes set closed_at = now() where code = $1`, [t.code])).rejects.toMatchObject({ code: '23514' });
   });
 
   it('a trade with a dispute cannot be deleted until its dispute records are handled (no cascade)', async () => {
-    const { buyer, t } = await tradeIn('secured');
-    await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    const { seller, t } = await tradeIn('secured');
+    await seller.browser.post(dispute(t.code), { reason: 'paid', note: '' });
     await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(49 * 60 * MIN) });
     const client = await deps.db.connect();
     try {

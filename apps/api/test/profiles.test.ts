@@ -40,32 +40,29 @@ describe('method profiles', () => {
     const zelle = getProfile('ZELLE') as MethodProfile;
     expect(zelle.whatItIs).toBe('Zelle: a US bank-to-bank instant transfer built into most US banking apps.');
     expect(zelle.landsIn).toBe("your bank account, checked in your bank's app");
-    expect(zelle.confirmWindowMin).toBe(120);
+    expect(zelle.confirmWindowMin).toBe(90);
     expect(zelle.arrival).toBe('instant');
     for (const p of PROFILES) {
-      expect(p.confirmWindowMin, p.id).toBeGreaterThanOrEqual(120);
+      expect(p.confirmWindowMin, p.id).toBeGreaterThanOrEqual(90);
       expect(p.confirmWindowMin, p.id).toBeLessThanOrEqual(5760);
-      expect(p.buyerDisputeWaitMin, p.id).toBeLessThanOrEqual(p.confirmWindowMin);
     }
   });
 
-  it("each payment type's seller confirm window and buyer dispute wait (owner 2026-11-07 F9 on research F1)", () => {
+  it("each payment type's confirm window, which is also either side's wait before a dispute (owner 2026-11-07 F9 on research F1, p9-4)", () => {
     const H = 60;
     const D = 24 * H;
-    const table: Record<string, [confirm: number, wait: number]> = {
-      // Instant: 90 minutes before the buyer may dispute (owner F9, replacing the research's 30 min-1 h).
-      ZELLE: [120, 90], INTERAC_E_TRANSFER: [120, 90], SEPA_INSTANT: [120, 90], PAYPAL: [120, 90], CASH_APP: [120, 90],
-      VENMO: [120, 90], REVOLUT: [120, 90], PIX: [120, 90], UPI: [120, 90], OTHER_GIFT_CARD: [120, 90],
-      FASTER_PAYMENTS: [3 * H, 3 * H],
+    const table: Record<string, number> = {
+      // Instant: 90 minutes (owner F9, replacing the research's 30 min-1 h).
+      ZELLE: 90, INTERAC_E_TRANSFER: 90, SEPA_INSTANT: 90, PAYPAL: 90, CASH_APP: 90,
+      VENMO: 90, REVOLUT: 90, PIX: 90, UPI: 90, OTHER_GIFT_CARD: 90,
+      FASTER_PAYMENTS: 3 * H,
       // Same or next day: 24 h.
-      SEPA: [D, D], DOMESTIC_WIRE_TRANSFER: [D, D], TRANSFERWISE: [D, D], CUSTOM: [D, D],
+      SEPA: D, DOMESTIC_WIRE_TRANSFER: D, TRANSFERWISE: D, CUSTOM: D,
       // Slow: ACH 48 h, SWIFT 72 h (research 48-72 h, the longer end), cash by mail 4 days.
-      ACH_TRANSFER: [2 * D, 2 * D], SWIFT: [3 * D, 3 * D], PAY_BY_MAIL: [4 * D, 4 * D],
+      ACH_TRANSFER: 2 * D, SWIFT: 3 * D, PAY_BY_MAIL: 4 * D,
     };
     expect(Object.keys(table).sort()).toEqual([...LAUNCH_PROFILE_IDS].sort());
-    for (const [id, [confirm, wait]] of Object.entries(table)) {
-      expect([getProfile(id)!.confirmWindowMin, getProfile(id)!.buyerDisputeWaitMin], id).toEqual([confirm, wait]);
-    }
+    for (const [id, confirm] of Object.entries(table)) expect(getProfile(id)!.confirmWindowMin, id).toBe(confirm);
   });
 
   it('the profile a trade uses: its own, else a gift card\'s for any gift card, else the Custom one', () => {
@@ -78,16 +75,11 @@ describe('method profiles', () => {
   it('refuses a profile whose timing is out of range (owner 2026-11-07 F9: up to 4 days, was 24 h)', () => {
     const base = { id: 'ZELLE', whatItIs: 'x', landsIn: 'your bank account', checkPrompt: 'Check it.', arrival: 'instant', fields: [{ key: 'k', label: 'L', kind: 'text' }] };
     const load = (p: Record<string, unknown>) => () => loadProfiles({ profiles: [{ ...base, ...p }] }, catalog());
-    expect(load({ confirmWindowMin: 5760, buyerDisputeWaitMin: 5760 })).not.toThrow();
-    expect(load({ confirmWindowMin: 120, buyerDisputeWaitMin: 1 })).not.toThrow();
-    for (const bad of [
-      { confirmWindowMin: 5761, buyerDisputeWaitMin: 90 },
-      { confirmWindowMin: 119, buyerDisputeWaitMin: 90 },
-      { confirmWindowMin: 120 }, // no wait
-      { confirmWindowMin: 120, buyerDisputeWaitMin: 0 },
-      { confirmWindowMin: 120, buyerDisputeWaitMin: 90.5 },
-      { confirmWindowMin: 120, buyerDisputeWaitMin: 121 }, // past the seller's window
-    ]) expect(load(bad), JSON.stringify(bad)).toThrow(/confirmWindowMin|buyerDisputeWaitMin/);
+    expect(load({ confirmWindowMin: 5760 })).not.toThrow();
+    expect(load({ confirmWindowMin: 90 })).not.toThrow();
+    for (const bad of [{ confirmWindowMin: 5761 }, { confirmWindowMin: 89 }, {}, { confirmWindowMin: 90.5 }]) {
+      expect(load(bad), JSON.stringify(bad)).toThrow(/confirmWindowMin/);
+    }
   });
 
   it('has no profile for an unknown method', () => {

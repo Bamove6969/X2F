@@ -3,8 +3,6 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import webpush from 'web-push';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { EventBus } from '../src/events/bus.js';
-import { recordFinalAlert } from '../src/events/finalAlert.js';
 import { canonicalEndpoint, isPublicAddress, publicOnlyLookup } from '../src/push/endpoint.js';
 import { ownerAlertSink, pushOwnerAlert } from '../src/push/ownerAlert.js';
 import {
@@ -583,44 +581,6 @@ describe('the real transport refuses non-public addresses', () => {
     );
     expect(looked).toBe(false);
   });
-});
-
-describe('recordFinalAlert (request-refund; wired in by Task 6/10)', () => {
-  const CODE = 'X2F-REFD-0001';
-
-  it('is false with no stream and no subscription', async () => {
-    const t = await trader();
-    expect(await recordFinalAlert(app, CODE, t.id)).toBe(false);
-  });
-
-  it('is true with an open stream and no subscription, and publishes the trade event to the buyer only', async () => {
-    const buyer = await trader();
-    const seller = await trader();
-    const bus = new EventBus({ perAccount: 2, global: 10 });
-    const got: Record<string, string[]> = { buyer: [], seller: [] };
-    bus.attach(buyer.id, { send: (d) => void got.buyer!.push(d), close: () => undefined });
-    bus.attach(seller.id, { send: (d) => void got.seller!.push(d), close: () => undefined });
-    expect(await recordFinalAlert({ events: bus, push: app.push }, CODE, buyer.id)).toBe(true);
-    expect(got.buyer!.map((f) => JSON.parse(f.slice(6)))).toEqual([{ type: 'trade', code: CODE, state: 'refund_requested' }]);
-    expect(got.seller).toEqual([]);
-  });
-
-  it('is true with no stream when a push service accepted the push (201), and pushes the trade text', async () => {
-    const t = await trader();
-    await post(t.b, subscription());
-    expect(await recordFinalAlert(app, CODE, t.id)).toBe(true);
-    expect(calls.map((c) => c.payload)).toEqual([PUSH_PAYLOADS.trade]);
-  });
-
-  it('is false when the only push service refused', async () => {
-    const t = await trader();
-    const s = subscription();
-    await post(t.b, s);
-    answers.set(s.endpoint, 410);
-    expect(await recordFinalAlert(app, CODE, t.id)).toBe(false);
-  });
-
-  it.todo('Task 10: the API records final_alert_delivered from recordFinalAlert on request-refund and reports it to moderation');
 });
 
 describe('privacy', () => {

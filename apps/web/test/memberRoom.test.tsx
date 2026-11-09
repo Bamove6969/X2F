@@ -98,18 +98,15 @@ describe("a team member's trade room (review round 2, n3)", () => {
     expect(memberScreenFor(waiting({ state: 'paid', paidAt: iso(-10), confirmBy: iso(20) }), now)).toBeNull();
   });
 
-  it("the seller's member proposes a mutual cancel and withdraws it; the escrow never starts", async () => {
+  it("the seller's member waits with no Propose cancel (design proto review P2), and can withdraw one that stands; the escrow never starts", async () => {
     const { host } = await room(waiting());
     expect(host.querySelector('[data-member] [data-member-screen]')).not.toBeNull();
     expect(host.textContent).toContain(MEMBER_TRADE_COPY.roomWaiting);
-    await click(button(host, 'Propose cancel')!);
-    expect(host.textContent).toContain('You proposed cancelling.');
-    await click(button(host, 'Withdraw')!);
-    expect(button(host, 'Propose cancel')).toBeDefined();
-    expect(calls).toEqual([
-      `POST /v1/trades/${tradeView.code}/events {"type":"propose-cancel"}`,
-      `POST /v1/trades/${tradeView.code}/events {"type":"withdraw-cancel"}`,
-    ]);
+    expect(button(host, 'Propose cancel')).toBeUndefined();
+    const standing = await room(waiting({ cancelProposedBy: 'seller' }));
+    expect(standing.host.textContent).toContain('You proposed cancelling.');
+    await click(button(standing.host, 'Withdraw')!);
+    expect(calls).toEqual([`POST /v1/trades/${tradeView.code}/events {"type":"withdraw-cancel"}`]);
     // Open dispute is there too (secured: either side may dispute).
     expect([...host.querySelectorAll('a')].some((a) => a.textContent === 'Open dispute')).toBe(true);
     expect(start).not.toHaveBeenCalled();
@@ -125,9 +122,12 @@ describe("a team member's trade room (review round 2, n3)", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  it("the buyer's member gets the status, the notice and Open dispute: no I've paid and no cancel", async () => {
-    const { host } = await room(buyerSecured());
-    expect(host.querySelector('[data-part="member-waiting"]')?.textContent).toBe(MEMBER_TRADE_COPY.roomWaiting);
+  it("the buyer's member gets the status and the notice, no I've paid and no cancel; Open dispute only after I've paid and the wait (proto review P1)", async () => {
+    const before = await room(buyerSecured());
+    expect(before.host.querySelector('[data-part="member-waiting"]')?.textContent).toBe(MEMBER_TRADE_COPY.roomWaiting);
+    expect([...before.host.querySelectorAll('button, a')].map((b) => b.textContent)).toEqual([]);
+    before.unmount();
+    const { host } = await room(buyerSecured({ state: 'paid', paidAt: iso(-100), confirmBy: iso(-10) }));
     const names = [...host.querySelectorAll('button, a')].map((b) => b.textContent);
     expect(names).toEqual(['Open dispute']);
     expect(host.querySelector('a')!.getAttribute('href')).toBe(`/trade/${encodeURIComponent(tradeView.code)}/dispute`);

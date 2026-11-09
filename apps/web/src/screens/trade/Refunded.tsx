@@ -32,7 +32,6 @@ import './pay.css';
 import { registerTradeScreen, type TradeScreenProps } from './TradeRoom.js';
 
 const HOUR_MS = 3_600_000;
-const MIN_MS = 60_000;
 
 interface Story {
   chip: { tone: Tone; icon: IconName; label: string };
@@ -98,7 +97,8 @@ export function refundStory(view: TradeView, seller: string, disputeOpen: boolea
         disputeTitle: 'Did you send the money anyway?',
       };
     case 'buyer-cancel':
-      return { chip: muted('Cancelled'), title: 'You cancelled this trade', lead: <>You cancelled, so all the XMR went back to {N}.</>, disputeTitle: paidQuestion };
+      // Board Refunded variant=buyer-cancelled: a neutral CANCELLED chip, never "Refunded" (trade-rules-p1).
+      return { chip: { tone: 'neutral', icon: 'check', label: 'Cancelled' }, title: 'You cancelled this trade', lead: <>You cancelled, so all the XMR went back to {N}.</>, disputeTitle: paidQuestion };
     case 'mutual-cancel':
       return { chip: muted('Cancelled together'), title: 'You both cancelled this trade', lead: <>You and {N} agreed to cancel, so all the XMR went back to {N}.</>, disputeTitle: paidQuestion };
     case 'lapse-refund':
@@ -113,15 +113,14 @@ export function refundStory(view: TradeView, seller: string, disputeOpen: boolea
 export function refundTimeline(view: TradeView, seller: string): { key: string; label: ReactNode; at: string }[] {
   const N = <span data-username="">{seller}</span>;
   const rows: { key: string; label: ReactNode; at: string | null }[] = [];
-  const plus = (iso: string | null, ms: number) => (iso === null ? null : new Date(Date.parse(iso) + ms).toISOString());
   if (view.dispute !== null) {
     // COPY-UNSIGNED (the moderator variant's "You opened a dispute").
     const by = view.dispute.by;
     rows.push({ key: 'opened', label: by === 'buyer' ? 'You opened a dispute' : by === 'seller' ? <>{N} opened a dispute</> : 'A dispute was opened', at: view.dispute.at });
   } else if (view.settling === 'auto-refund') {
+    // No final alert any more: the seller's cancel refunds at once (owner 8 Nov p6-1; lead review
+    // 2026-11-08 R-I4). The view carries no time for the cancel itself, so that row is left out.
     rows.push({ key: 'pay-ended', label: 'Time to pay ended', at: view.payBy });
-    rows.push({ key: 'cancelled', label: <>{N} cancelled</>, at: view.finalAlertAt });
-    rows.push({ key: 'alert-ended', label: 'Your final alert ended', at: plus(view.finalAlertAt, TIMERS.finalAlertMin * MIN_MS) });
   } else if (view.settling === 'lapse-refund') {
     rows.push({ key: 'fund-ended', label: 'Funding time ended', at: view.fundBy }); // COPY-UNSIGNED
   }

@@ -25,7 +25,6 @@ export type ReleaseTrade = Pick<
   | 'settling'
   | 'txHash'
   | 'confirmBy'
-  | 'disputeWaitMin'
   | 'serverNow'
 >;
 
@@ -70,6 +69,8 @@ export function amounts(t: Pick<ReleaseTrade, 'role' | 'lockedRate' | 'fee'>, de
     fee: fee === null ? null : xmr(fee),
     /** A poster buyer receives the amount less the fee; a taker buyer the whole amount (both before the network fee). */
     buyerReceives: xmr(fee !== null && t.role === 'buyer' ? amount - fee : amount),
+    /** The same, unformatted, for the kit's Xmr (the paid room, lead review 2026-11-08 R-I1). */
+    buyerReceivesAtomic: fee !== null && t.role === 'buyer' ? amount - fee : amount,
     /** A poster seller funded the amount plus the fee (Task 22 "Includes X2F fee (1%, your ad)"). */
     sellerSent: fee === null ? null : xmr(amount + fee),
   };

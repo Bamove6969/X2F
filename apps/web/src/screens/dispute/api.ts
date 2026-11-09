@@ -27,10 +27,8 @@ export interface DisputeTrade {
   currency: string;
   paidAt: string | null;
   confirmBy: string | null;
-  /** When the buyer may dispute in `paid` (the server's, moved by maintenance; owner 2026-11-06 Q10). */
-  disputeOpensAt: string | null;
-  /** The trade's dispute wait in minutes (owner 2026-11-07 F9: per payment type), for the wait's wording. */
-  disputeWaitMin: number;
+  /** The trade's confirm window in minutes (owner 2026-11-07 F9: per payment type; p9-4: either side's wait before a dispute), for the wording. */
+  confirmWindowMin: number;
   settleBy: string | null;
   closedAt: string | null;
   dispute: { by: 'buyer' | 'seller' | 'system'; at: string } | null;
@@ -133,8 +131,7 @@ export function tradeFromView(v: TradeView): DisputeTrade {
     currency: v.lockedRate.currency,
     paidAt: v.paidAt,
     confirmBy: v.confirmBy,
-    disputeOpensAt: v.disputeOpensAt ?? null,
-    disputeWaitMin: v.disputeWaitMin,
+    confirmWindowMin: v.confirmWindowMin,
     settleBy: v.settleBy,
     closedAt: v.closedAt,
     dispute: v.dispute,

@@ -3,13 +3,12 @@ import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BuyerCancelling, BuyerPay, SellerWaiting, TASK23_SLOTS } from '../src/screens/trade/BuyerPay.js';
-import { disputeOpensAt } from '../src/screens/trade/PaidWaiting.js';
+import { confirmWindow, disputeOpensAt, NUDGE_AGAIN_MS } from '../src/screens/trade/PaidWaiting.js';
 import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
 import { resetWarned } from '../src/screens/trade/warned.js';
-import { FinalAlert } from '../src/screens/trade/FinalAlert.js';
-import { buyerAlertView, SERVER_NOW } from '../e2e/refundViews.js';
+import { resetConfirmSkips, setConfirmUser } from '../src/screens/trade/confirmSkip.js';
 
 const T0 = Date.parse('2026-10-25T12:00:00.000Z');
 const at = (min: number) => new Date(T0 + min * 60_000).toISOString();
@@ -55,11 +54,9 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     payBy: null,
     paidAt: null,
     confirmBy: null,
-    disputeOpensAt: null,
-    disputeWaitMin: 90,
-    finalAlertAt: null,
-    finalAlertSeenAt: null,
+    confirmWindowMin: 120,
     settleBy: null,
+    releaseClaimedAt: null,
     pausedAt: null,
     closedAt: null,
     cancelConfirmedAt: null,
@@ -273,6 +270,64 @@ describe('BuyerPay (BuyerPay board), phone', () => {
   it('a gift-card method shows the one bold warning', () => {
     mount(props({ view: tradeView({ ...SECURED, profile: { ...ZELLE, name: 'Amazon gift card', giftCard: true } }) }));
     expect([...document.querySelectorAll('strong')].map((s) => s.textContent)).toContain(GIFT_CARD_WARNING);
+  });
+});
+
+describe('"Do not show me this warning again" on I\'ve paid (owner 8 Nov p7-2; per user, on this device)', () => {
+  afterEach(() => resetConfirmSkips());
+  const dontShow = 'Do not show me this warning again';
+
+  it('the confirm offers the tick, unticked; ticked with Yes, the next I\'ve paid for this user marks paid at once', async () => {
+    setConfirmUser('mira.k');
+    answer = () => ({ status: 200, json: tradeView({ ...SECURED, state: 'paid', paidAt: at(0) }) });
+    const r = mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    const box = byText(dontShow, 'label').querySelector('input')!;
+    expect(box.checked).toBe(false);
+    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${CODE}.`, 'label'));
+    await click(byText(dontShow, 'label'));
+    await click(byText('Yes, mark as paid', 'button'));
+    await flush();
+    expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'escrow:markPaid(41250)', 'refresh']);
+    r.unmount();
+    expect(window.localStorage.getItem('x2f.noconfirm.paid.mira.k')).toBe('1');
+
+    calls = [];
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    await flush();
+    expect(dialog()).toBeNull();
+    expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'escrow:markPaid(41250)', 'refresh']);
+  });
+
+  it('another user on the same device, or no known user, still gets the confirm; Yes without the tick remembers nothing', async () => {
+    window.localStorage.setItem('x2f.noconfirm.paid.mira.k', '1');
+    for (const who of ['kettle.moss', null]) {
+      setConfirmUser(who);
+      const r = mount(props({ view: tradeView(SECURED) }));
+      await click(byText("I've paid", 'button'));
+      expect(dialog()!.textContent).toContain('Mark this trade as paid?');
+      expect(calls).toEqual([]);
+      r.unmount();
+    }
+    setConfirmUser('kettle.moss');
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${CODE}.`, 'label'));
+    await click(byText('Yes, mark as paid', 'button'));
+    await flush();
+    expect(window.localStorage.getItem('x2f.noconfirm.paid.kettle.moss')).toBeNull();
+  });
+
+  it('skipped, a trade that grew meanwhile (409 total-changed) still asks, with the new total', async () => {
+    setConfirmUser('mira.k');
+    window.localStorage.setItem('x2f.noconfirm.paid.mira.k', '1');
+    answer = () => ({ status: 409, json: { error: 'total-changed' } });
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    await flush();
+    expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'refresh']);
+    expect(dialog()!.textContent).toContain('Mark this trade as paid?');
   });
 });
 
@@ -551,6 +606,14 @@ describe('buyer cancel (spec 2.3; owner G56, g67)', () => {
     expect(calls).toEqual([]);
   });
 
+  it('names the trade amount, never the escrow with the poster\'s 1% fee in it (design proto review P2, board CancelRequest buyer-confirms)', async () => {
+    // The seller posted, so the escrow holds 1.25 + 0.0125 XMR; the buyer has only ever seen 1.250000.
+    mount(props({ view: tradeView({ ...SECURED, receivedAtomic: '1262500000000', fee: { atomic: '12500000000' } }) }));
+    await click(byText('Cancel trade', 'button'));
+    expect(sheet()!.textContent).toContain('The 1.250000 XMR goes back to satoshi_ghost');
+    expect(sheet()!.textContent).not.toContain('1.262500');
+  });
+
   it('before "I\'ve paid", the sheet\'s Cancel trade re-reads the trade, posts buyer-cancel and then starts the refund (trade.cancel)', async () => {
     answer = (b) => ({ status: 200, json: b.type ? tradeView({ state: 'settling', settling: 'buyer-cancel' }) : tradeView(SECURED) });
     mount(props({ view: tradeView(SECURED) }));
@@ -605,28 +668,23 @@ describe("the seller's funded room (SellerWaiting)", () => {
   const seller = (over: Partial<TradeView> = {}) =>
     tradeView({ ...SECURED, role: 'seller', counterparty: { ...tradeView().counterparty, displayName: 'mira.k' }, ...over });
 
-  it("offers no cancel-alone control in any funded state, only Propose cancel, and nothing after I've paid", async () => {
-    for (const state of ['secured', 'securing', 'paid'] as const) {
-      const r = mount(props({ view: seller({ state }) }), SellerWaiting);
-      expect(maybe('Cancel trade')).toBeUndefined();
-      expect(maybe('Cancel & get refund')).toBeUndefined();
-      if (state === 'paid') expect(maybe('Propose cancel')).toBeUndefined();
-      else expect(maybe('Propose cancel')).toBeDefined();
-      expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
-      r.unmount();
+  it("offers no cancel of any kind while waiting: no cancel-alone control and no Propose cancel (design proto review P2, 8 Nov)", async () => {
+    for (const wide of [false, true]) {
+      for (const state of ['secured', 'securing', 'paid'] as const) {
+        const r = mount(props({ view: seller({ state }), wide }), SellerWaiting);
+        expect(text()).toContain('Waiting for mira.k to pay');
+        expect(maybe('Cancel trade')).toBeUndefined();
+        expect(maybe('Cancel & get refund')).toBeUndefined();
+        expect(maybe('Propose cancel')).toBeUndefined();
+        expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
+        r.unmount();
+      }
     }
   });
 
-  it('Propose cancel posts propose-cancel and never touches the escrow; Withdraw takes it back', async () => {
-    const p = props({ view: seller() });
-    const r = mount(p, SellerWaiting);
-    expect(text()).toContain('Waiting for mira.k to pay');
-    await click(byText('Propose cancel', 'button'));
-    await flush();
-    expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"propose-cancel"}`, 'refresh']);
-    r.rerender({ ...p, view: seller({ cancelProposedBy: 'seller' }) });
+  it('a proposal that already stands (made before this change) can still be withdrawn', async () => {
+    mount(props({ view: seller({ cancelProposedBy: 'seller' }) }), SellerWaiting);
     expect(text()).toContain('You proposed cancelling. Waiting for mira.k.');
-    calls = [];
     await click(byText('Withdraw', 'button'));
     await flush();
     expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"withdraw-cancel"}`, 'refresh']);
@@ -656,26 +714,6 @@ describe('slots for the trade room (Task 22)', () => {
       ['buyer', ['settling'], 'guarded'],
     ]);
     expect(TASK23_SLOTS.every((s) => s.owner === 'Task 23')).toBe(true);
-  });
-});
-
-describe("Task 25's FinalAlert: I've paid opens Task 23's paid step", () => {
-  it('Yes posts mark-paid with the device total, then sends trade.paid', async () => {
-    answer = (b) => (String(b.type) === 'mark-paid' ? { status: 200, json: tradeView({ ...SECURED, state: 'paid' }) } : { status: 204, json: {} });
-    const view = buyerAlertView();
-    render(
-      <MemoryRouter>
-        <FinalAlert code={view.code} view={view} escrow={fakeEscrow()} refresh={async () => void calls.push('refresh')} serverClock={() => new Date(SERVER_NOW)} wide={false} />
-      </MemoryRouter>,
-    );
-    await flush();
-    calls = calls.filter((c) => !c.includes('final-alert-seen'));
-    await click(byText("I've paid", 'button'));
-    expect(dialog()!.textContent).toContain(`I sent exactly $412.50 by Zelle with the memo ${view.code}.`);
-    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${view.code}.`, 'label'));
-    await click(byText("Yes, mark as paid", 'button'));
-    await flush();
-    expect(calls).toEqual([`POST /v1/trades/${encodeURIComponent(view.code)}/events {"type":"mark-paid","fiatCents":"41250"}`, 'escrow:markPaid(41250)', 'refresh']);
   });
 });
 
@@ -784,6 +822,67 @@ describe('help tips (review Minor 2)', () => {
   });
 });
 
+describe("no dispute for the buyer before I've paid (design proto review P1, 8 Nov)", () => {
+  it('securing and secured offer no Open dispute at all (the machine refuses it: too-early)', () => {
+    for (const view of [tradeView(), tradeView(SECURED)]) {
+      const r = mount(props({ view }));
+      expect(maybe('Open dispute')).toBeUndefined();
+      expect(document.querySelector('a[href$="/dispute"]')).toBeNull();
+      expect(maybe('Cancel trade')).toBeDefined();
+      r.unmount();
+    }
+  });
+
+  it('a 24 h wait shows its UTC date', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(1439), confirmWindowMin: 1440 }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const locked = document.querySelector<HTMLElement>('[data-part="paid-dispute"]')!;
+    expect(document.getElementById(locked.getAttribute('aria-describedby')!)!.textContent).toMatch(/^Available from 26 Oct 2026, 11:59 UTC · in /);
+  });
+});
+
+describe('after the time to pay (design proto review P1; owner 8 Nov p6-1: not a hard end)', () => {
+  const over = { ...SECURED, securedAt: at(-91), payBy: at(-1) };
+
+  it("keeps I've paid and the payment details, and says the seller may now cancel at any moment", () => {
+    for (const wide of [false, true]) {
+      const r = mount(props({ view: tradeView(over), wide }));
+      const paid = byText("I've paid", 'button') as HTMLButtonElement;
+      expect(paid.disabled).toBe(false);
+      expect(text()).toContain('Send exactly');
+      expect(text()).toContain('[SELLER ZELLE ID]');
+      const note = document.querySelector<HTMLElement>('[data-pay-over]');
+      expect(note?.textContent).toBe("The time to pay is over. satoshi_ghost may now cancel this trade at any moment. If you've sent the money, tap I've paid now.");
+      expect(note?.getAttribute('role')).toBe('status');
+      if (!wide) expect(document.querySelector('[aria-label="Payment timer"]')?.textContent).toContain('Time to pay is over');
+      r.unmount();
+    }
+  });
+
+  it('says nothing of it before payBy, or while maintenance has the clock paused', () => {
+    const r = mount(props({ view: tradeView(SECURED) }));
+    expect(document.querySelector('[data-pay-over]')).toBeNull();
+    r.unmount();
+    mount(props({ view: tradeView({ ...over, pausedAt: at(-2) }) }));
+    expect(document.querySelector('[data-pay-over]')).toBeNull();
+  });
+
+  it('appears by itself when payBy passes on screen', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      let now = T0;
+      mount(props({ view: tradeView({ ...SECURED, payBy: at(0.25) }), serverClock: () => new Date(now) }));
+      expect(document.querySelector('[data-pay-over]')).toBeNull();
+      now = T0 + 30_000;
+      await act(async () => {
+        vi.advanceTimersByTime(16_000);
+      });
+      expect(document.querySelector('[data-pay-over]')).not.toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('review minors 1, 5 and 7', () => {
   const grown = { ...SECURED, amountAtomic: '1312500000000', fiatCents: '43313', grown: { at: at(-1), fromAtomic: '1250000000000', fromFiatCents: '41250' } };
   const grownEscrow = () => fakeEscrow({ amountAtomic: 1_312_500_000_000n, fiatCents: 43_313n });
@@ -805,81 +904,89 @@ describe('review minors 1, 5 and 7', () => {
     expect(document.querySelector('[data-grown]')).toBeNull();
   });
 
-  it("in paid, Open dispute waits for the server's disputeOpensAt (owner F9: the trade's own wait, 90 min for Zelle; design review P1-1), not for confirmBy", () => {
+  it("in paid, Open dispute waits for confirmBy, the method's window (owner p9-4, F9: 90 min for Zelle; design review P1-1)", () => {
     // 89 min after I've paid: locked, with the board's "Available from 15:35 UTC · in 1 min".
-    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-89), disputeOpensAt: at(1), confirmBy: at(31) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-89), confirmBy: at(1), confirmWindowMin: 90 }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(document.querySelector('a[href$="/dispute"]')).toBeNull();
     const waiting = document.querySelector<HTMLButtonElement>('[data-part="paid-dispute"]')!;
     expect(waiting.tagName).toBe('BUTTON');
     // aria-disabled, so it keeps focus and its "Available from" (review N4).
     expect(waiting.getAttribute('aria-disabled')).toBe('true');
     // The time alone on the same day and no full stop (design review P2-11); "in 1 min" keeps its space (review 39).
     expect(document.getElementById(waiting.getAttribute('aria-describedby')!)?.textContent).toMatch(/^Available from \d\d:\d\d UTC · in 1 min$/);
-    r.unmount();
-    // 90 min after, the seller's window still running: the board's after-wait, a soft link under Nudge (P2-12).
-    const r2 = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-90), disputeOpensAt: at(0), confirmBy: at(30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
-    const soft = document.querySelector('[data-part="paid-dispute"]')!;
-    expect(soft.tagName).toBe('A');
-    expect(soft.textContent).toBe('Open dispute');
-    expect(soft.className).toBe('x2f-paid-soft-dispute');
-    expect(soft.getAttribute('href')).toBe(`/trade/${CODE}/dispute`);
-    expect(soft.querySelector('svg')).not.toBeNull();
-    expect(document.getElementById('paid-dispute-when')).toBeNull();
-    const footer = document.querySelector('footer')!;
-    expect([...footer.querySelectorAll('[data-part="paid-dispute"], [data-part="nudge"]')].map((e) => e.getAttribute('data-part'))).toEqual(['nudge', 'paid-dispute']);
-    // The window still runs: the hero is not "ended".
     expect(document.querySelector('[data-part="paid-status"] .x2f-chip')?.textContent).toBe('Paid');
-    r2.unmount();
-    // The window ended: the outlined button.
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), disputeOpensAt: at(-31), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    r.unmount();
+    // The window ended: the outlined button, no soft link (one window for both sides, p9-4).
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-91), confirmBy: at(-1), confirmWindowMin: 90 }), escrow: fakeEscrow({ paidRecorded: true }) }));
     const open = document.querySelector('[data-part="paid-dispute"]')!;
     expect(open.tagName).toBe('A');
     expect(open.className).toBe('x2f-button x2f-button--danger-outline');
     expect(open.textContent).toBe('Open dispute');
-    // Ended: the same caution hero; the chip says so and the lead gives the window as a Duration.
+    expect(open.getAttribute('href')).toBe(`/trade/${CODE}/dispute`);
+    expect(document.querySelector('.x2f-paid-soft-dispute')).toBeNull();
+    expect(document.getElementById('paid-dispute-when')).toBeNull();
+    // Ended: the same caution hero; the chip says so and the lead gives the window in its own unit.
     const ended = document.querySelector('[data-part="paid-status"]')!;
     expect(ended.getAttribute('data-tone')).toBe('caution');
     expect(ended.querySelector('.x2f-chip')?.textContent).toBe('Paid · not confirmed in time');
-    expect(ended.querySelector('.x2f-hero__lead')?.textContent).toMatch(/^Their 2 h to check Zelle ended at .+ UTC\. The XMR is still safe in escrow\./);
+    expect(ended.querySelector('.x2f-hero__lead')?.textContent).toMatch(/^Their 90 min to check Zelle ended at .+ UTC\. The XMR is still safe in escrow\. You can open a dispute now/);
     // No arc once the time is up, only the track.
     expect(ended.querySelectorAll('.x2f-timer__ring circle')).toHaveLength(1);
   });
 
-  it('the wide after-wait: the soft link on the right of the row, no "Available from" line (design review P2-12)', () => {
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-92), disputeOpensAt: at(-2), confirmBy: at(28) }), escrow: fakeEscrow({ paidRecorded: true }), wide: true }));
+  it('maintenance after the window ended: no dispute is offered, the machine refuses it (owner G19; lead review 2026-11-08 R-m2)', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-100), confirmBy: at(-10), confirmWindowMin: 90, pausedAt: at(-5) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(document.querySelector('a[href$="/dispute"]')).toBeNull();
+    const locked = document.querySelector<HTMLElement>('[data-part="paid-dispute"]')!;
+    expect([locked.tagName, locked.getAttribute('aria-disabled')]).toEqual(['BUTTON', 'true']);
+    expect(document.getElementById(locked.getAttribute('aria-describedby')!)?.textContent).toBe('Available after the maintenance');
+    expect(document.querySelector('[data-part="paid-status"] .x2f-hero__lead')?.textContent).toContain('You can open a dispute once the maintenance is over');
+    expect(text()).not.toContain('You can open a dispute now');
+  });
+
+  it('the wide room once the window ended: the outlined dispute on the right of the row, no "Available from" line', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-92), confirmBy: at(-2), confirmWindowMin: 90 }), escrow: fakeEscrow({ paidRecorded: true }), wide: true }));
     const row = document.querySelector('.x2f-paid-actions__row')!;
     expect([...row.children].map((c) => c.getAttribute('data-part') ?? c.className)).toEqual(['nudge', 'x2f-room__spacer', 'paid-dispute']);
-    expect(row.querySelector('[data-part="paid-dispute"]')?.className).toBe('x2f-paid-soft-dispute');
+    expect(row.querySelector('[data-part="paid-dispute"]')?.className).toBe('x2f-button x2f-button--danger-outline');
     expect(document.getElementById('paid-dispute-when')).toBeNull();
   });
 
-  it("disputeOpensAt is the server's time (owner F9; maintenance moves it, Q10), and nothing without it", () => {
+  it("disputeOpensAt is the server's confirmBy (owner p9-4; maintenance moves it, Q10), and nothing without it", () => {
     const t = (min: number) => new Date(Date.UTC(2026, 10, 6, 15, 0) + min * 60_000).toISOString();
-    expect(disputeOpensAt({ disputeOpensAt: t(90) })).toBe(Date.parse(t(90)));
-    // Earlier than the seller's window is the point: the client never waits for confirmBy.
-    expect(disputeOpensAt({ disputeOpensAt: t(5) })).toBe(Date.parse(t(5)));
-    expect(disputeOpensAt({ disputeOpensAt: null })).toBeNull();
-    expect(disputeOpensAt({ disputeOpensAt: 'not a time' })).toBeNull();
+    expect(disputeOpensAt({ confirmBy: t(90) })).toBe(Date.parse(t(90)));
+    expect(disputeOpensAt({ confirmBy: null })).toBeNull();
+    expect(disputeOpensAt({ confirmBy: 'not a time' })).toBeNull();
+  });
+
+  it("the window's length is the trade's own, never confirmBy − paidAt stretched by a maintenance (lead review 2026-11-08 R-m1)", () => {
+    // Paid 100 min ago, a 40-minute maintenance moved confirmBy from -10 to +30.
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-100), confirmBy: at(30), confirmWindowMin: 90 }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const status = document.querySelector('[data-part="paid-status"]')!;
+    expect(status.querySelector('.x2f-timer__hint')?.textContent).toMatch(/^Zelle gets 90 min · ends /);
+    expect(status.querySelector('.x2f-hero__lead')?.textContent).toContain('has up to 90 min to check Zelle');
+    expect(confirmWindow({ confirmBy: at(30), confirmWindowMin: 90 }, T0)?.lengthMs).toBe(90 * 60_000);
   });
 
   it("What happens next's step 3 is the board's: the time the dispute opens and the trade's own wait (design review P1-2)", () => {
     const step = () => document.querySelector('[data-part="paid-next-dispute"]')!;
     // Zelle: 90 min, said as the board's "90 min" (never "1 h 30 min"), the number in mono.
-    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), disputeOpensAt: at(89), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(89), confirmWindowMin: 90 }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(step().textContent).toMatch(/^If something goes wrong, you can open a dispute from \d\d:\d\d UTC, 90 min after you marked it as paid\. A moderator checks the chat and proof, then decides\.$/);
     expect(step().querySelector('time')?.getAttribute('dateTime')).toBe(at(89));
     expect(step().querySelector('.x2f-duration__n')?.textContent).toBe('90');
     expect(step().textContent).not.toContain('confirm by');
     r.unmount();
     // A bank transfer's 3-day wait: the date as well, and "3 d".
-    const r2 = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), disputeOpensAt: at(3 * 1440 - 1), disputeWaitMin: 3 * 1440, confirmBy: at(3 * 1440 - 1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    const r2 = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmWindowMin: 3 * 1440, confirmBy: at(3 * 1440 - 1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(step().textContent).toMatch(/you can open a dispute from \d{1,2} \w{3} \d{4}, \d\d:\d\d UTC, 3 d after you marked it as paid\./);
     r2.unmount();
-    // A maintenance during the wait moved the server's time later (owner Q10).
-    const r3 = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-100), disputeOpensAt: at(30), confirmBy: at(60) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    // A maintenance during the window moved the server's time later (owner Q10).
+    const r3 = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-100), confirmBy: at(30), confirmWindowMin: 90 }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(step().textContent).toContain('90 min after you marked it as paid, plus the time trading was paused.');
     r3.unmount();
     // Paused now: no time, since it moves.
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-40), disputeOpensAt: at(50), confirmBy: at(80), pausedAt: at(-30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-40), confirmBy: at(50), confirmWindowMin: 90, pausedAt: at(-30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(step().textContent).toMatch(/^If something goes wrong, you can open a dispute 90 min after you marked it as paid, not counting the maintenance\./);
     expect(step().querySelector('time')).toBeNull();
   });
@@ -897,17 +1004,34 @@ describe('review minors 1, 5 and 7', () => {
     expect(amount.closest('.x2f-when')).toBeNull();
   });
 
+  // Lead review 2026-11-08 R-I1: the amount this device accepted, less the fee for a poster buyer (p10-1).
+  it("a poster buyer's payout is the device's amount less the 1% fee, never the API's amount", async () => {
+    const view = tradeView({ ...SECURED, poster: 'buyer', fee: { atomic: '12500000000' }, amountAtomic: '9990000000000', state: 'paid', paidAt: at(-1), confirmBy: at(119) });
+    const r = mount(props({ view, escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(document.querySelector('[data-part="paid-next"]')!.textContent).toContain('When they release, 1.237500 XMR goes to your wallet');
+    expect(text()).not.toContain('9.990000');
+    await click(document.querySelector<HTMLElement>('[data-part="paid-payment-toggle"]')!);
+    const rows = [...document.querySelectorAll('[data-part="paid-payment"] dl > div')].map((d) => [d.querySelector('dt')!.textContent, d.querySelector('dd')!.textContent]);
+    expect(rows).toContainEqual(['For', '1.237500 XMR']);
+    r.unmount();
+    // No device amount: no amount at all, and no For row.
+    mount(props({ view, escrow: fakeEscrow({ paidRecorded: true, amountAtomic: null, fiatCents: null }) }));
+    expect(document.querySelector('[data-part="paid-next"]')!.textContent).toContain('When they release, the XMR goes to your wallet');
+    await click(document.querySelector<HTMLElement>('[data-part="paid-payment-toggle"]')!);
+    expect([...document.querySelectorAll('[data-part="paid-payment"] dt')].map((d) => d.textContent)).not.toContain('For');
+  });
+
   // Owner Q10 (6 Nov 2026): the clock pauses in maintenance. Lead review m2.
   it('paused for maintenance: the confirm timer and the dispute wait stop at the pause and say why', () => {
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-40), disputeOpensAt: at(50), confirmBy: at(80), pausedAt: at(-30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-40), confirmBy: at(80), pausedAt: at(-30) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     // 110 min were left at the pause (80 now + the 30 paused), not 80.
     expect(document.querySelector('[data-part="confirm-timer"] [role="timer"]')?.textContent).toBe('1 h 50 min');
     expect(document.querySelector('[data-part="confirm-timer"]')!.textContent).toContain('Trading is paused for maintenance.');
     const waiting = document.querySelector<HTMLButtonElement>('[data-part="paid-dispute"]')!;
     expect(waiting.tagName).toBe('BUTTON');
     const when = document.getElementById(waiting.getAttribute('aria-describedby')!)!.textContent ?? '';
-    // The server's wait (paid + 90 min) froze at the pause too: 80 min were left then.
-    expect(when).toMatch(/^Available after the maintenance · in 1 h 20 min$/);
+    // The dispute opens at confirmBy, which froze at the pause too: 110 min were left then.
+    expect(when).toMatch(/^Available after the maintenance · in 1 h 50 min$/);
   });
 
   it('the phone footer (design review P2-11, P2-13): the dispute first at 56 px, then an ink Nudge with only its bell in caution', () => {
@@ -922,7 +1046,7 @@ describe('review minors 1, 5 and 7', () => {
   });
 
   it('the open dispute on the phone is the 56 px danger outline, not the medium size', () => {
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), disputeOpensAt: at(-31), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     const open = document.querySelector('[data-part="paid-dispute"]')!;
     expect(open.className).toBe('x2f-button x2f-button--danger-outline');
     expect(open.hasAttribute('data-size')).toBe(false);
@@ -946,7 +1070,7 @@ describe('review minors 1, 5 and 7', () => {
   });
 
   it('the wide room in the Wide board\'s order (design review P2-10): hero, the actions row, What happens next, Your payment', () => {
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), disputeOpensAt: at(89), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }), wide: true }));
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }), wide: true }));
     const order = [...document.querySelectorAll('[data-part="paid-progress"], [data-part="paid-status"], [data-part="paid-actions"], [data-part="paid-next"], [data-part="paid-payment"]')].map((e) => e.getAttribute('data-part'));
     expect(order).toEqual(['paid-progress', 'paid-status', 'paid-actions', 'paid-next', 'paid-payment']);
     expect(document.querySelector('.x2f-room__grid')).toBeNull();
@@ -975,14 +1099,15 @@ describe('review minors 1, 5 and 7', () => {
     }
   });
 
-  it('Nudge sent says when the next one can go, the 10 in mono (design review P1-4)', async () => {
+  it('Nudge sent says when the next one can go: 15 min, the server\'s gap (owner F10, p6-1; lead review R-I2), the 15 in mono', async () => {
     answer = () => ({ status: 200, json: {} });
     mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     await click(document.querySelector<HTMLElement>('[data-part="nudge"]')!);
     await flush();
     const sent = document.querySelector('[data-part="nudge-sent"]')!;
-    expect(sent.textContent).toBe('Nudge sent. You can send another in 10 min.');
-    expect(sent.querySelector('.x2f-duration__n')?.textContent).toBe('10');
+    expect(sent.textContent).toBe('Nudge sent. You can send another in 15 min.');
+    expect(sent.querySelector('.x2f-duration__n')?.textContent).toBe('15');
+    expect(NUDGE_AGAIN_MS).toBe(15 * 60_000);
   });
 
   // Lead review m4: the tabletop glance shows the confirm timer, so the screen's copy hides there.
@@ -1026,21 +1151,6 @@ describe('review round 2 (2026-10-28): fix round 3', () => {
     expect(paidButton().disabled).toBe(true);
     expect(text()).toContain('$412.50');
     expect(count(MISMATCH)).toBe(1);
-  });
-
-  it('I1: the paid step itself (FinalAlert opens it) refuses on a refusal: no Yes, the reason instead', async () => {
-    const view = buyerAlertView();
-    render(
-      <MemoryRouter>
-        <FinalAlert code={view.code} view={view} escrow={fakeEscrow({ refusal: 'view-mismatch' })} refresh={async () => void calls.push('refresh')} serverClock={() => new Date(SERVER_NOW)} wide={false} />
-      </MemoryRouter>,
-    );
-    await flush();
-    calls = calls.filter((c) => !c.includes('final-alert-seen'));
-    await click(byText("I've paid", 'button'));
-    expect(dialog()!.textContent).toContain(MISMATCH);
-    expect(maybe("Yes, mark as paid")).toBeUndefined();
-    expect(calls).toEqual([]);
   });
 
   it('I1: Finish is offered but refused while the view does not match, and says not to pay again', async () => {

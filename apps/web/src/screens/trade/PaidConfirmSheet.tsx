@@ -5,6 +5,10 @@
  * you can't cancel the trade" line, then Yes, mark as paid (disabled until ticked) or Not yet.
  * Yes hands the total the sheet showed to `onYes`; a trade that grew meanwhile comes back as
  * `total-changed`, and the sheet asks again with the new total (Revision 2026-10-21).
+ *
+ * Owner 8 Nov (p7-2): it is the "Are you sure…?" step of "I've paid", with an optional "Do not
+ * show me this warning again" tick, handed to `onYes` (PaidFlowSheet remembers it per user on this
+ * device, confirmSkip.ts, and skips the sheet from then on). COPY-UNSIGNED: the owner's words.
  */
 import { useEffect, useId, useState } from 'react';
 import { Button } from '../../ui/Button.js';
@@ -32,11 +36,14 @@ export function PaidConfirmSheet({
   code: string;
   /** Set after a `total-changed`: the grown amount ("1.312500"), for "Trade grew to … XMR, you now pay …". */
   grewTo: string | null;
-  onYes(fiatCents: bigint): Promise<YesResult>;
+  /** `dontShow`: the user ticked "Do not show me this warning again". */
+  onYes(fiatCents: bigint, dontShow: boolean): Promise<YesResult>;
   onNotYet(): void;
 }) {
   const boxId = useId();
+  const dontShowId = useId();
   const [ticked, setTicked] = useState(false);
+  const [dontShow, setDontShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,7 +58,7 @@ export function PaidConfirmSheet({
     setBusy(true);
     setError(null);
     try {
-      const r = await onYes(fiatCents);
+      const r = await onYes(fiatCents, dontShow);
       if (!r.ok && r.reason === 'error') setError(r.message);
       if (!r.ok) setTicked(false);
     } finally {
@@ -75,6 +82,10 @@ export function PaidConfirmSheet({
         </label>
         {/* not-a-refusal: the board's plain notice before the buyer confirms (no cancel after "I've paid"); nothing is refused here */}
         <p className="x2f-paid__note">After this you can't cancel the trade. If something goes wrong, open a dispute.</p>
+        <label htmlFor={dontShowId} className="x2f-paid__check x2f-paid__check--quiet">
+          <input id={dontShowId} type="checkbox" checked={dontShow} onChange={(e) => setDontShow(e.target.checked)} />
+          <span>Do not show me this warning again</span>
+        </label>
         {error !== null ? (
           <p className="x2f-paid__error" role="alert">
             {error}

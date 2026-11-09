@@ -65,7 +65,6 @@ export async function seedTrade(
       amountAtomic: a.amountAtomic ?? AMOUNT,
       lockedRate: RATE,
       confirmWindowMin: 120,
-      buyerDisputeWaitMin: 90, // Zelle's (owner 2026-11-07 F9: instant types 90 min)
       minFiatCents: a.minFiatCents ?? 1_000n,
       maxFiatCents: a.maxFiatCents ?? 100_000n,
     },
@@ -78,15 +77,6 @@ export async function seedTrade(
   };
   await insertTrade(deps.db, trade, sides, a.usdCents ?? null);
   return { code: trade.code, trade, sides };
-}
-
-/**
- * Owner G2 / g66: the seller's refund needs at least one nudge since the escrow was secured. Tests
- * that are not about the nudge record one directly (the nudge route's own write is covered in
- * nudge.test.ts), at the trade's secured_at.
- */
-export async function markSellerNudged(deps: Pick<Deps, 'db'>, code: string): Promise<void> {
-  await deps.db.query('update trades set seller_nudged_at = secured_at where code = $1 and secured_at is not null', [code]);
 }
 
 /** The events (and who sends them) that move a fresh trade along the happy path, one state at a time. */

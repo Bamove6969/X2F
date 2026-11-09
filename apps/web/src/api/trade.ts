@@ -7,7 +7,6 @@ export type TradeState =
   | 'securing'
   | 'secured'
   | 'paid'
-  | 'refund_requested'
   | 'settling'
   | 'released'
   | 'refunded'
@@ -21,7 +20,6 @@ export const TRADE_STATES: readonly TradeState[] = [
   'securing',
   'secured',
   'paid',
-  'refund_requested',
   'settling',
   'released',
   'refunded',
@@ -100,17 +98,17 @@ export interface TradeView {
   paidAt: string | null;
   confirmBy: string | null;
   /**
-   * In `paid`, when the buyer may open a dispute: `disputeWaitMin` after marking paid, later by any
-   * maintenance during the wait (owner 2026-11-06 Q10, 2026-11-07 F9); the server's own time, null
-   * until marked paid.
+   * The trade's confirm window in minutes, fixed at take by the payment type (owner 2026-11-07 F9:
+   * 90 for instant types up to 4 days). Either side may dispute in `paid` from `confirmBy` (owner p9-4).
    */
-  disputeOpensAt: string | null;
-  /** The buyer's dispute wait in minutes, fixed at take by the payment type (owner 2026-11-07 F9: 90 for instant types up to 4 days). */
-  disputeWaitMin: number;
-  finalAlertAt: string | null;
-  /** When the buyer's device posted the final-alert seen-receipt (Task 25's FinalAlert); sent to the buyer only, null for the seller. */
-  finalAlertSeenAt: string | null;
+  confirmWindowMin: number;
   settleBy: string | null;
+  /**
+   * When a trader's side of the settlement was reported done (Task 9 I/O, lead decision b): the
+   * trade then waits for the network's sweep and the settle window no longer reverts it. Null
+   * until then. `settleBy` is unchanged (a dispute stays open after it).
+   */
+  releaseClaimedAt: string | null;
   pausedAt: string | null;
   closedAt: string | null;
   /** The seller's "Confirm cancel" after a buyer-cancel refund (owner 2026-10-29); null until then. */
@@ -118,8 +116,8 @@ export interface TradeView {
   /** When the seller's Confirm cancel became available; the trade closes by itself 48 h later (owner 2026-10-29). */
   cancelConfirmableAt: string | null;
   /**
-   * When the seller first nudged the buyer after the escrow was secured (owner G2, g66); null =
-   * not yet. The seller's "Cancel and get refund" stays locked until it is set and the 90 minutes are over.
+   * When the seller first nudged the buyer after the escrow was secured; null = not yet. A record
+   * only: nudges are optional (owner 8 Nov, p6-1), the seller's cancel needs none.
    */
   sellerNudgedAt: string | null;
   nextDeadline: string | null;

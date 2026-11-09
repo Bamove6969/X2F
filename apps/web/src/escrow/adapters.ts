@@ -12,7 +12,7 @@ function isRecord(x: unknown): x is Record<string, unknown> {
 
 // ── Task 6: TradeView ────────────────────────────────────────────────────────
 
-const STATES: readonly TradeState[] = ['setup', 'funding', 'securing', 'secured', 'paid', 'refund_requested', 'settling', 'released', 'refunded', 'lapsed', 'cancelled', 'disputed'];
+const STATES: readonly TradeState[] = ['setup', 'funding', 'securing', 'secured', 'paid', 'settling', 'released', 'refunded', 'lapsed', 'cancelled', 'disputed'];
 
 /**
  * The parts of `GET /v1/trades/:code` the escrow runtime reads (bigints arrive as decimal strings).
