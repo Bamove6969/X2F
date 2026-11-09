@@ -967,7 +967,8 @@ describe('a recovery-code login', () => {
   it('lead review 8 Nov I5 with batch 3\'s dispute rules: a buyer whose cancel is recorded cannot dispute before "I\'ve paid"; the cancel is carried out at the hold\'s end', async () => {
     // Batch 3 (design review P1, 8 Nov): the buyer disputes only after "I've paid", and buyer-cancel
     // only comes before it, so a trader can no longer open a dispute over a recorded cancel (the
-    // held seller is refused by the hold). held.ts still lets a dispute take the cancel's place.
+    // held seller is refused by the hold). held.ts would let a dispute take the cancel's place (its
+    // catch still handles a moderator's decision and the crash rerun); no trader route can now.
     const t = await ownerWithCode();
     const partner = await trader();
     const { trade } = await seedTrade(deps, { sellerId: t.id, buyerId: partner.id, poster: 'buyer' });

@@ -141,7 +141,13 @@ export async function syncHeldTrades(deps: Pick<Deps, 'db' | 'clock'> & { publis
       }
     }
     // Owner G7 (lead review 8 Nov I5): the partner's buyer-cancel recorded during the hold is
-    // carried out now, as the buyer's (a dispute opened meanwhile makes the machine refuse it).
+    // carried out now, as the buyer's. Under batch 3's trade rules no trader can open a dispute
+    // over a recorded cancel (the buyer may not dispute before "I've paid", and buyer-cancel only
+    // comes before it; the held seller gets 403), so the catch below is no longer reached for a
+    // dispute. It is still needed: a moderator's decision during the hold, or a rerun after the
+    // cancel already applied (a crash between the apply and the row's delete leaves the trade
+    // settling), makes the machine refuse it. Without the catch that throw would end this pass
+    // partway, leave this row for good and never decide the rows after it (lead re-verify 9 Nov m1).
     if (t.rows[0]?.asked === true) {
       try {
         await applyEvent(store, r.code, { type: 'buyer-cancel' }, 'buyer', undefined, (c) => stillHeld(c, true));
@@ -195,9 +201,9 @@ export function syncHeldTradesJob(publish: TradePublisher): RetentionJob {
  * Owner G7 (lead review 8 Nov I5): the partner's buyer-cancel that would start returning escrowed
  * coins (the machine's `settling`) is recorded on the trade's open rows (`cancel_requested_at`)
  * instead, and `'stop'` is returned: the caller commits that and changes nothing else. The
- * sync carries it out when the trade's last row goes; a dispute opened meanwhile takes its place
- * (the machine refuses the cancel then). A buyer-cancel that moves no coins (nothing funded) goes
- * through as before.
+ * sync carries it out when the trade's last row goes (a moderator's decision meanwhile takes its
+ * place: the machine refuses the cancel then; under batch 3's rules no trader can open a dispute
+ * over it). A buyer-cancel that moves no coins (nothing funded) goes through as before.
  *
  * Lead review 8 Nov R-C1: the dry run is the caller's own side (`held.by`), and only the buyer's
  * cancel is recorded. The machine refuses a seller's `buyer-cancel` (409 `wrong-party`); were it
