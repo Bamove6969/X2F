@@ -144,18 +144,33 @@ describe('Display amounts including vendor markup', () => {
   });
 });
 
-describe('PostOffer in XMR or fiat', () => {
-  const form = (over: Partial<FormState> = {}): FormState => ({ ...DEFAULT_FORM, methodId: 'ZELLE', ...over });
+/** J-16: one currency with one band (key 1), at market +0% unless given, and Zelle. */
+function one(over: { unit?: FormState['unit']; currency?: string; min?: string; max?: string; marginPct?: string } = {}): FormState {
+  const currency = over.currency ?? 'USD';
+  return {
+    ...DEFAULT_FORM,
+    unit: over.unit ?? DEFAULT_FORM.unit,
+    currencies: [currency],
+    bands: { [currency]: [{ key: 1, min: over.min ?? '', max: over.max ?? '', marginSide: 'above', marginPct: over.marginPct ?? '0', minTrades: null }] },
+    methods: [{ methodId: 'ZELLE', adjustBps: 0, same: true, instructions: '', byCurrency: {} }],
+  };
+}
+const boxes = (f: FormState): [string, string] => {
+  const b = f.bands[f.currencies[0]!]![0]!;
+  return [b.min, b.max];
+};
 
-  it('defaults to XMR and posts atomic units; in fiat, minor units; the amounts sit at the top of the wire body', () => {
+describe('PostOffer in XMR or fiat', () => {
+  it('defaults to XMR and posts atomic units; in fiat, whole units (O-018); the unit sits at the top of the wire body', () => {
     expect(DEFAULT_FORM.unit).toBe('xmr');
-    const x = validate(form({ min: '0.5', max: '25' }));
-    expect(x.body?.amounts).toEqual({ amountUnit: 'xmr', minAtomic: 500_000_000_000n, maxAtomic: 25n * XMR });
-    expect(wireBody(x.body!)).toMatchObject({ amountUnit: 'xmr', minAtomic: 500_000_000_000n, maxAtomic: 25n * XMR });
+    const x = validate(one({ min: '0.5', max: '25' }));
+    expect(x.body?.amountUnit).toBe('xmr');
+    expect(x.body?.currencies[0]?.bands[0]).toMatchObject({ min: String(500_000_000_000n), max: String(25n * XMR) });
+    expect(wireBody(x.body!)).toMatchObject({ amountUnit: 'xmr', currencies: [{ currency: 'USD', bands: [{ min: '500000000000', max: '25000000000000' }] }] });
     expect(wireBody(x.body!)).not.toHaveProperty('amounts');
     // "Entering $500-$3000 in CAD still means the offer sells XMR."
-    const f = validate(form({ unit: 'fiat', currency: 'CAD', min: '$500', max: '$3,000' }));
-    expect(f.body).toMatchObject({ side: 'sell', currency: 'CAD', amounts: { amountUnit: 'fiat', minFiatCents: 50_000n, maxFiatCents: 300_000n } });
+    const f = validate(one({ unit: 'fiat', currency: 'CAD', min: '$500', max: '$3,000' }));
+    expect(f.body).toMatchObject({ side: 'sell', amountUnit: 'fiat', currencies: [{ currency: 'CAD', bands: [{ min: '500', max: '3000' }] }] });
   });
 
   it('reads XMR to the atomic unit and refuses more places, fiat signs and junk', () => {
@@ -163,18 +178,22 @@ describe('PostOffer in XMR or fiat', () => {
     expect(parseXmrAmount('.5')).toBe(500_000_000_000n);
     expect(parseXmrAmount('1,000 XMR')).toBe(1000n * XMR);
     for (const bad of ['1.0000000000001', '$50', '', '1e3', '-1', '1.2.3']) expect(parseXmrAmount(bad), bad).toBeNull();
-    expect(validate(form({ min: '$50', max: '2' })).errors.min).toBe(XMR_AMOUNT_ERROR);
-    expect(validate(form({ min: '3', max: '2' })).errors.min).toBe("The smallest trade can't be more than the largest.");
+    const rows = (f: FormState) => validate(f).errors.bands?.['USD']?.rows[1];
+    expect(rows(one({ min: '$50', max: '2' }))?.min).toBe(XMR_AMOUNT_ERROR);
+    expect(rows(one({ min: '3', max: '2' }))?.min).toBe("The smallest trade can't be more than the largest.");
   });
 
   it('keeps the unit in the draft; a draft from before the switch is fiat', () => {
     const s = memoryStorage();
-    saveDraft(s, form({ unit: 'xmr', min: '1', max: '2' }));
+    saveDraft(s, one({ unit: 'xmr', min: '1', max: '2' }));
     expect(loadDraft(s)?.unit).toBe('xmr');
-    const { unit: _u, ...old } = form({ min: '$50', max: '$2,000' });
+    // The single-offer form's draft (before J-16), without a unit.
+    const old = { side: 'sell', methodId: 'ZELLE', currency: 'USD', marginSide: 'above', marginPct: '0.5', min: '$50', max: '$2,000', terms: '', minTrades: null, country: '' };
     s.setItem('x2f.post-draft', JSON.stringify(old));
     expect(loadDraft(s)?.unit).toBe('fiat');
-    s.setItem('x2f.post-draft', JSON.stringify({ ...form(), unit: 'btc' }));
+    s.setItem('x2f.post-draft', JSON.stringify({ ...old, unit: 'btc' }));
+    expect(loadDraft(s)).toBeNull();
+    s.setItem('x2f.post-draft', JSON.stringify({ v: 2, ...one(), unit: 'btc' }));
     expect(loadDraft(s)).toBeNull();
   });
 
@@ -202,46 +221,51 @@ describe('PostOffer in XMR or fiat', () => {
   });
 });
 
-describe('switching the unit on Post an offer converts both boxes (review H1)', () => {
-  const form = (over: Partial<FormState> = {}): FormState => ({ ...DEFAULT_FORM, methodId: 'ZELLE', ...over });
+describe('switching the unit on Post an offer converts every band at its own price (review H1)', () => {
   const RATE = 1_500_033n; // CA$15,000.33 per XMR
   const at = { currency: 'CAD', centsPerXmr: RATE };
-  const fiatForm = form({ unit: 'fiat', currency: 'CAD', min: '500', max: '3000' });
+  const CAD = { CAD: RATE };
+  // At market +0%, the band's price is the market.
+  const fiatForm = one({ unit: 'fiat', currency: 'CAD', min: '500', max: '3000' });
 
   it('fiat to XMR: the boxes no longer read 500 and 3000; the min rounds up, the max down', () => {
-    const x = switchUnit(fiatForm, 'xmr', RATE);
+    const x = switchUnit(fiatForm, 'xmr', CAD);
     expect(x.unit).toBe('xmr');
-    expect(x.min).not.toBe('500');
-    expect(x.max).not.toBe('3000');
-    expect(fiatCents(parseXmrAmount(x.min)!, at)).toBeGreaterThanOrEqual(50_000n);
-    expect(fiatCents(parseXmrAmount(x.max)!, at)).toBeLessThanOrEqual(300_000n);
-    expect([x.min, x.max]).toEqual(['0.033333', '0.199995']);
+    const [min, max] = boxes(x);
+    expect(min).not.toBe('500');
+    expect(max).not.toBe('3000');
+    expect(fiatCents(parseXmrAmount(min)!, at)).toBeGreaterThanOrEqual(50_000n);
+    expect(fiatCents(parseXmrAmount(max)!, at)).toBeLessThanOrEqual(300_000n);
+    expect([min, max]).toEqual(['0.033333', '0.199995']);
   });
 
-  it('XMR to fiat: the min rounds up to the cent, the max down', () => {
-    const f = switchUnit(form({ unit: 'xmr', currency: 'CAD', min: '0.1', max: '0.5' }), 'fiat', RATE);
+  it('XMR to fiat: whole units (O-018), the min rounded up, the max down; each band at its own margin', () => {
+    const f = switchUnit(one({ unit: 'xmr', currency: 'CAD', min: '0.1', max: '0.5' }), 'fiat', CAD);
     expect(f.unit).toBe('fiat');
-    expect([f.min, f.max]).toEqual(['1500.04', '7500.16']);
-    expect(switchUnit(form({ unit: 'xmr', min: '1', max: '2' }), 'fiat', 33_000n)).toMatchObject({ min: '330', max: '660' });
+    expect(boxes(f)).toEqual(['1501', '7500']);
+    expect(boxes(switchUnit(one({ unit: 'xmr', min: '1', max: '2' }), 'fiat', { USD: 33_000n }))).toEqual(['330', '660']);
+    // +10% on $330.00 is $363.00.
+    expect(boxes(switchUnit(one({ unit: 'xmr', min: '1', max: '2', marginPct: '10' }), 'fiat', { USD: 33_000n }))).toEqual(['363', '726']);
   });
 
   it('equal boxes never come out with the smallest above the largest (review 2, M2)', () => {
     // CA$500 / CA$500 at 1,500,033: the min rounds up to 0.033333, the max down to 0.033332; the largest is set to the smallest.
-    const x = switchUnit(form({ unit: 'fiat', currency: 'CAD', min: '500', max: '500' }), 'xmr', RATE);
-    expect([x.min, x.max]).toEqual(['0.033333', '0.033333']);
-    expect(validate(x).errors.min).toBeUndefined();
-    const f = switchUnit(form({ unit: 'xmr', currency: 'CAD', min: '0.1000001', max: '0.1000001' }), 'fiat', RATE);
-    expect([f.min, f.max]).toEqual(['1500.04', '1500.04']);
+    const x = switchUnit(one({ unit: 'fiat', currency: 'CAD', min: '500', max: '500' }), 'xmr', CAD);
+    expect(boxes(x)).toEqual(['0.033333', '0.033333']);
+    expect(validate(x).errors.bands).toBeUndefined();
+    const f = switchUnit(one({ unit: 'xmr', currency: 'CAD', min: '0.1000001', max: '0.1000001' }), 'fiat', CAD);
+    expect(boxes(f)).toEqual(['1501', '1501']);
   });
 
-  it('with no price, both boxes are cleared; the same unit changes nothing', () => {
-    expect(switchUnit(fiatForm, 'xmr', null)).toMatchObject({ unit: 'xmr', min: '', max: '' });
-    expect(switchUnit(fiatForm, 'fiat', RATE)).toBe(fiatForm);
+  it('with no price, the boxes are cleared; the same unit changes nothing', () => {
+    expect(switchUnit(fiatForm, 'xmr', { CAD: null })).toMatchObject({ unit: 'xmr', bands: { CAD: [{ min: '', max: '' }] } });
+    expect(switchUnit(fiatForm, 'xmr', {})).toMatchObject({ unit: 'xmr', bands: { CAD: [{ min: '', max: '' }] } });
+    expect(switchUnit(fiatForm, 'fiat', CAD)).toBe(fiatForm);
   });
 
   it('an empty or unreadable box is left empty', () => {
-    const x = switchUnit(form({ unit: 'fiat', currency: 'CAD', min: '', max: 'abc' }), 'xmr', RATE);
-    expect([x.min, x.max]).toEqual(['', '']);
+    const x = switchUnit(one({ unit: 'fiat', currency: 'CAD', min: '', max: 'abc' }), 'xmr', CAD);
+    expect(boxes(x)).toEqual(['', '']);
   });
 });
 
@@ -254,7 +278,7 @@ describe('XMR amounts the API can store (review L2)', () => {
   it('a draft from before the choices with minTrades 0 (the old default) loads as No minimum', () => {
     const m = new Map<string, string>();
     const s = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k) } as unknown as Storage;
-    s.setItem('x2f.post-draft', JSON.stringify({ ...DEFAULT_FORM, methodId: 'ZELLE', min: '50', max: '2000', minTrades: 0 }));
-    expect(loadDraft(s)).toMatchObject({ methodId: 'ZELLE', min: '50', minTrades: null });
+    s.setItem('x2f.post-draft', JSON.stringify({ side: 'sell', methodId: 'ZELLE', currency: 'USD', marginSide: 'above', marginPct: '0.5', unit: 'xmr', min: '50', max: '2000', terms: '', minTrades: 0, country: '' }));
+    expect(loadDraft(s)).toMatchObject({ methods: [{ methodId: 'ZELLE' }], bands: { USD: [{ min: '50', minTrades: null }] } });
   });
 });

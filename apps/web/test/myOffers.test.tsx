@@ -169,6 +169,30 @@ describe('the model', () => {
     expect([allHint(0, 3), allHint(3, 3), allHint(2, 3)]).toEqual(['Pick offers to turn them on or off together.', 'All 3 offers selected.', 'Some selected: 2 of 3.']);
   });
 
+  it('J-16: an offer with several currencies and payment types lists them all; no market price in any is said (Task 34 review M4)', () => {
+    const tier = { min: '5000', max: '200000', marginBps: 50, minTrades: null, methodIds: null };
+    const multi = {
+      ...RAW[0],
+      currencies: [{ currency: 'USD', rate: '33165', tiers: [tier] }, { currency: 'CAD', rate: null, tiers: [tier] }],
+      methods: [
+        { methodId: 'ZELLE', methodName: 'Zelle', adjustBps: 0, instructions: '', currencies: ['USD'], instructionsByCurrency: {} },
+        { methodId: 'PAYPAL', methodName: 'PayPal', adjustBps: 200, instructions: 'pp', currencies: ['USD', 'CAD'], instructionsByCurrency: {} },
+      ],
+    };
+    const [m] = parseMyOffers([multi]) as [MyOffer];
+    expect(m.currencies).toEqual(['USD', 'CAD']);
+    expect(m.methodNames).toEqual(['Zelle', 'PayPal']);
+    expect([offerTitle(m), offerMethods(m)]).toEqual(['Selling XMR · USD, CAD', 'Zelle, PayPal']);
+    // An answer from before J-16 (no lists) reads as its one currency and method.
+    const [a] = parseMyOffers(RAW) as [MyOffer];
+    expect([a.currencies, a.methodNames]).toEqual([['USD'], ['Zelle']]);
+    expect(() => parseMyOffers([{ ...multi, currencies: [{ currency: 'USD' }] }])).toThrow();
+    expect(() => parseMyOffers([{ ...multi, methods: [{ methodId: 'ZELLE' }] }])).toThrow();
+    const hidden = parseMyOffers([{ ...RAW[0], hidden: 'no-price' }])[0]!;
+    expect(hidden.hidden).toBe('no-price');
+    expect(statusLine(hidden).tone).toBe('caution');
+  });
+
   it('applies results, words the summary, always sends explicit ids (M1) and batches them (M5)', () => {
     const [a, b, c] = parseMyOffers(RAW) as [MyOffer, MyOffer, MyOffer];
     const next = applyResults([a, b, c], [{ id: a.id, status: 'paused' }, { id: b.id, status: 'paused', refused: 'trading-hold' }, { id: c.id, refused: 'not-found' }]);

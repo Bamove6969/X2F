@@ -238,6 +238,8 @@ describe('BuyQuote', () => {
     expect(stub.takes).toHaveLength(1);
     const sent = stub.takes[0]!;
     expect(sent.walletId).toBe('w-cake');
+    // J-16: the take names the currency and the method the offer was opened under (the API refuses it otherwise).
+    expect(sent).toMatchObject({ methodId: 'ZELLE', currency: 'USD' });
     expect(fiatCents(BigInt(sent.amountAtomic), { currency: 'USD', centsPerXmr: 33_000n })).toBe(41_250n);
     // The rate the person saw is the rate that locks: the take carries the quoted rate and total
     // (Task 5 Revision 2026-10-27), so the server locks exactly these or refuses price-changed.
