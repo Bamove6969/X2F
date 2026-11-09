@@ -130,6 +130,21 @@ curve arithmetic. `@noble/curves` is the fallback if the reviewer prefers audite
 not constant-time either, and the signing it would serve happens once per key rotation over public
 data with a fresh 64-byte nonce. The protobuf framing is two varint field types and needs no library.
 
+**Landing note (review L1, owner question 6; lead decision 2026-11-09): no secret in the bigint
+code.** X2F's identity is an Ed25519 key pair from a 32-byte seed (`identityFromSeed`): the X25519
+identity scalar is a = clamp(SHA-512(seed)[0..32]), the Montgomery identity key the bundle publishes
+is u = (1 + y)/(1 − y) of the Ed25519 public key A (= X25519(a), so a libsignal client sees an
+ordinary Curve25519 identity key, as before), and the signed prekey is signed by OpenSSL's Ed25519
+signer with A's sign bit ORed into S[63], which is a valid XEdDSA signature (same a, same A;
+libsignal's `curve25519_verify` clears the bit and checks the Ed25519 equation). The hand-written
+`xeddsaSign` stays for the known-answer tests and the test devices (`OmemoDevice`, which signs as a
+libsignal client does). Sealed identity format: `0x01 ‖ seed` (33 bytes) under the unchanged
+context `x2f/jabber-omemo-identity/<public hex>`; the pre-landing form (a bare 32-byte X25519
+scalar) is refused with a fixed error, not misread. No migration and no rewrap change: no production
+row was ever written (the sender has never been lit, `X2F_XMPP_*` is unset, the row is created on
+first use), and `rewrap-jabber` reseals the plaintext as opaque bytes. Migration 332's comment
+("Curve25519 identity key pair") describes the column, which still holds the Montgomery public key.
+
 ## 4. Where it lives and how it is built
 
 - `packages/omemo` (`@x2f/omemo`, server-only, Node crypto; the browser-safe `@x2f/protocol` stays

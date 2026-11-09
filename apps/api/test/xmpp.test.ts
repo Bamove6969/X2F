@@ -10,7 +10,7 @@ import { connect as tcpConnect, createServer as createTcpServer, type AddressInf
 import { createServer as createTlsServer, type TLSSocket } from 'node:tls';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../src/config.js';
-import { OmemoDevice, PreKeyLedger, generateBundleSecrets, parseEncryptedElement, parsePreKeyMessage, x25519KeyPair } from '@x2f/omemo';
+import { OmemoDevice, PreKeyLedger, generateBundleSecrets, identityFromSeed, newIdentitySeed, parseEncryptedElement, parsePreKeyMessage } from '@x2f/omemo';
 import { OMEMO_NS, omemoEncryptorFrom, parseBundle, xeddsaVerify, type OmemoEncrypt } from '../src/jabber/omemo.js';
 import { xmlEscape, xmppSender, type XmppSenderOptions } from '../src/jabber/xmpp.js';
 import { certificate } from './helpers/der.js';
@@ -431,9 +431,8 @@ describe('xmppSender: TLS, SASL', () => {
 
 /** X2F's identity and bundle as the production encryptor loads them from the database. */
 const realOmemo = (deviceId = 777) => {
-  const kp = x25519KeyPair();
-  const identity = { deviceId, publicKey: kp.publicKey, privateKey: kp.privateKey };
-  return omemoEncryptorFrom(identity, generateBundleSecrets(kp.privateKey, 20));
+  const id = identityFromSeed(newIdentitySeed());
+  return omemoEncryptorFrom({ deviceId, ...id }, generateBundleSecrets(id, 20));
 };
 
 describe('xmppSender: OMEMO is mandatory (owner ruling p11-31); never a plaintext message', () => {
@@ -496,8 +495,8 @@ describe('xmppSender: OMEMO is mandatory (owner ruling p11-31); never a plaintex
     const brokenXml = broken.bundleXml().replace(/<preKeyPublic preKeyId='(\d+)'>[^<]*<\/preKeyPublic>/g, (_, id: string) => `<preKeyPublic preKeyId='${id}'>${b64(djb(Buffer.alloc(32)))}</preKeyPublic>`);
     expect(parseBundle(12, brokenXml)?.preKeys).toHaveLength(3); // the parser cannot tell; the encryptor does
     const logged: unknown[] = [];
-    const kp = x25519KeyPair();
-    const omemo = omemoEncryptorFrom({ deviceId: 777, publicKey: kp.publicKey, privateKey: kp.privateKey }, generateBundleSecrets(kp.privateKey, 20), (e) => logged.push(e));
+    const id = identityFromSeed(newIdentitySeed());
+    const omemo = omemoEncryptorFrom({ deviceId: 777, ...id }, generateBundleSecrets(id, 20), (e) => logged.push(e));
     const s = await setup({ devices: [{ id: 12, bundle: brokenXml }, { id: 11, bundle: phone.bundleXml() }], opts: omemo });
     await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
     const encrypted = /<encrypted[\s\S]*?<\/encrypted>/.exec(messagesIn(s.all())[0]!)![0];

@@ -9,7 +9,7 @@ import { startDispute } from '../src/disputes/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { codeHash, maskJid, normalizeJid, openJid, sealJid } from '../src/jabber/address.js';
 import { OmemoDevice, PreKeyLedger, parseBundleSecrets } from '@x2f/omemo';
-import { loadOmemoBundle, loadOmemoIdentity, omemoEncryptor, parseBundle } from '../src/jabber/omemo.js';
+import { loadOmemoBundle, loadOmemoIdentity, omemoEncryptor, parseBundle, xeddsaVerify } from '../src/jabber/omemo.js';
 import { rewrapJabberSecrets } from '../src/jabber/rewrap.js';
 import { PENDING_RETENTION_MS, purgeJabberPending } from '../src/jabber/retention.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
@@ -408,6 +408,10 @@ describe("review H1 (owner ruling p11-31, OMEMO mandatory): X2F's own OMEMO iden
     // The pair is a real X25519 pair: the public key is the private key's own.
     const derived = createPublicKey(createPrivateKey({ key: { kty: 'OKP', crv: 'X25519', d: a.privateKey.toString('base64url'), x: a.publicKey.toString('base64url') }, format: 'jwk' }));
     expect(derived.export({ format: 'jwk' }).x).toBe(a.publicKey.toString('base64url'));
+    // Lead decision after review L1: the identity is an Ed25519 seed; it signs (OpenSSL) what the libsignal-style verifier accepts under the Montgomery key.
+    const probe = randomBytes(33);
+    expect(xeddsaVerify(a.publicKey, probe, a.sign(probe))).toBe(true);
+    expect(xeddsaVerify(a.publicKey, probe, b.sign(probe))).toBe(true);
     const bundle1 = await loadOmemoBundle(deps.db, ring, a);
     const bundle2 = await loadOmemoBundle(deps.db, ring, a);
     expect(bundle2).toEqual(bundle1);

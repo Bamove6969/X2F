@@ -7,18 +7,19 @@
  * owner question 1 in the plan).
  *
  * Here: the PEP requests, parsing and checking each bundle (key types and lengths, the signed
- * prekey's XEdDSA signature under the identity key), X2F's own OMEMO identity (device id and
- * Curve25519 key pair) and bundle (signed prekey, 100 prekeys), both created once and stored sealed
- * under X2F_JABBER_KEYS (`jabber_omemo_identity`, migrations 332 and 333), and the production
- * encryptor. The cryptography (X3DH, Double Ratchet, libsignal framing, the envelope) is
+ * prekey's XEdDSA signature under the identity key), X2F's own OMEMO identity (device id and an
+ * Ed25519 seed, from which the Curve25519 identity key and OpenSSL's XEdDSA-compatible signer come;
+ * `@x2f/omemo` `identityFromSeed`) and bundle (signed prekey, 100 prekeys), both created once and
+ * stored sealed under X2F_JABBER_KEYS (`jabber_omemo_identity`, migrations 332 and 333), and the
+ * production encryptor. The cryptography (X3DH, Double Ratchet, libsignal framing, the envelope) is
  * `@x2f/omemo`. Every notice is a fresh session and a PreKeySignalMessage per device: no session
  * state is kept (plan, section 2.8).
  */
-import { generateKeyPairSync, randomInt } from 'node:crypto';
+import { randomInt } from 'node:crypto';
 import type pg from 'pg';
 import {
-  bundleXml, deviceListXml, encryptMessage, generateBundleSecrets, parseBundleSecrets, serializeBundleSecrets, xeddsaVerify, type BundleSecrets,
-  type PreKeyLedger,
+  bundleXml, deviceListXml, encryptMessage, generateBundleSecrets, identityFromSeed, newIdentitySeed, parseBundleSecrets, serializeBundleSecrets, xeddsaVerify,
+  type BundleSecrets, type PreKeyLedger, type SeedIdentity,
 } from '@x2f/omemo';
 import { keyringBox } from '../auth/keystore.js';
 import type { Keyring } from '../config.js';
@@ -146,22 +147,31 @@ export function isEncryptedElement(xml: string): boolean {
 // ---------------------------------------------------------------------------------------------
 // X2F's own OMEMO identity and bundle.
 
-export interface OmemoIdentity {
+/**
+ * X2F's identity: an Ed25519 seed's `SeedIdentity` (`@x2f/omemo`: the Montgomery `publicKey` the
+ * bundle publishes, the X25519 `privateKey` X3DH uses, OpenSSL's `sign`) plus our device id.
+ */
+export interface OmemoIdentity extends SeedIdentity {
   /** Our device id (1 to 2^31 - 1), published in our device list. */
   deviceId: number;
-  /** Curve25519 identity key pair, raw 32 bytes each. */
-  publicKey: Buffer;
-  privateKey: Buffer;
 }
 
 export const IDENTITY_CONTEXT = 'x2f/jabber-omemo-identity';
 export const BUNDLE_CONTEXT = 'x2f/jabber-omemo-bundle';
+/**
+ * The sealed identity's plaintext: this byte, then the 32-byte Ed25519 seed. Before the landing
+ * (lead decision after review L1) the plaintext was the bare 32-byte X25519 scalar; no production
+ * row was ever written in that form (the sender has never been lit: `X2F_XMPP_*` is unset, the
+ * identity row is created on first use), so there is nothing to migrate and the rewrap is
+ * unchanged (it reseals the plaintext as opaque bytes). A row in the old form is refused, not misread.
+ */
+const SEALED_SEED_V1 = 0x01;
 
 /**
- * X2F's OMEMO identity: created on first use (a random device id and a fresh Curve25519 key pair;
- * two processes racing keep the first one written) and stored with the private key sealed under
- * X2F_JABBER_KEYS. Throws when the stored key does not open (a removed key: `npm run rewrap-jabber`
- * before removing one).
+ * X2F's OMEMO identity: created on first use (a random device id and a fresh Ed25519 seed; two
+ * processes racing keep the first one written) and stored with the seed sealed under
+ * X2F_JABBER_KEYS, bound to the Montgomery public key. Throws when the stored seed does not open (a
+ * removed key: `npm run rewrap-jabber` before removing one) or does not derive the stored public key.
  */
 export async function loadOmemoIdentity(db: pg.Pool, ring: Keyring, now: Date): Promise<OmemoIdentity> {
   const box = keyringBox(ring);
@@ -171,19 +181,27 @@ export async function loadOmemoIdentity(db: pg.Pool, ring: Keyring, now: Date): 
     )).rows[0];
   let row = await read();
   if (!row) {
-    const { publicKey, privateKey } = generateKeyPairSync('x25519');
-    const pub = Buffer.from(publicKey.export({ format: 'jwk' }).x!, 'base64url');
-    const priv = Buffer.from(privateKey.export({ format: 'jwk' }).d!, 'base64url');
+    const seed = newIdentitySeed();
+    const fresh = identityFromSeed(seed);
+    const plain = Buffer.concat([Buffer.from([SEALED_SEED_V1]), seed]);
     await db.query(
       `insert into jabber_omemo_identity (device_id, identity_public, identity_sealed, created_at) values ($1, $2, $3, $4)
        on conflict do nothing`,
-      [randomInt(1, 0x7fffffff), pub, box.seal(priv, `${IDENTITY_CONTEXT}/${pub.toString('hex')}`), now],
+      [randomInt(1, 0x7fffffff), fresh.publicKey, box.seal(plain, `${IDENTITY_CONTEXT}/${fresh.publicKey.toString('hex')}`), now],
     );
-    priv.fill(0);
+    plain.fill(0);
+    seed.fill(0);
+    fresh.privateKey.fill(0);
     row = (await read())!;
   }
-  const privateKey = Buffer.from(box.open(row.identity_sealed, `${IDENTITY_CONTEXT}/${row.identity_public.toString('hex')}`));
-  return { deviceId: row.device_id, publicKey: row.identity_public, privateKey };
+  const opened = Buffer.from(box.open(row.identity_sealed, `${IDENTITY_CONTEXT}/${row.identity_public.toString('hex')}`));
+  if (opened.length !== 33 || opened[0] !== SEALED_SEED_V1) {
+    throw new Error('jabber: the OMEMO identity row is not an Ed25519 seed (the pre-landing form); no production row was ever in it, so drop the row and a new identity is created on first use');
+  }
+  const identity = identityFromSeed(opened.subarray(1));
+  opened.fill(0);
+  if (!identity.publicKey.equals(row.identity_public)) throw new Error('jabber: the OMEMO identity does not derive its stored public key');
+  return { deviceId: row.device_id, ...identity };
 }
 
 /**
@@ -199,7 +217,7 @@ export async function loadOmemoBundle(db: pg.Pool, ring: Keyring, identity: Omem
   let row = await read();
   if (row === undefined) throw new Error('jabber: the OMEMO identity row is gone');
   if (row.bundle_sealed === null) {
-    const fresh = serializeBundleSecrets(generateBundleSecrets(identity.privateKey));
+    const fresh = serializeBundleSecrets(generateBundleSecrets(identity));
     await db.query('update jabber_omemo_identity set bundle_sealed = $2 where identity_public = $1 and bundle_sealed is null', [identity.publicKey, box.seal(fresh, context)]);
     fresh.fill(0);
     row = (await read())!;

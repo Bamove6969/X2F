@@ -6,7 +6,7 @@ import {
   DEVICELIST_NODE, bundleNode, bundleXml, deviceListXml, generateBundleSecrets, newDeviceId, parseBundleSecrets, serializeBundleSecrets,
 } from '../src/bundle.js';
 import { OmemoDevice } from '../src/device.js';
-import { xeddsaSign, xeddsaVerify } from '../src/edwards.js';
+import { identityFromSeed, newIdentitySeed, xeddsaSign, xeddsaVerify } from '../src/edwards.js';
 import { OMEMO_NS, parseEncryptedElement } from '../src/envelope.js';
 import { parsePreKeyMessage, wireKey } from '../src/message.js';
 import { PreKeyLedger, encryptMessage, registrationIdFor, type RecipientBundle, type SenderIdentity } from '../src/omemo.js';
@@ -33,8 +33,9 @@ function recipientBundle(d: OmemoDevice): RecipientBundle {
 
 describe('our bundle', () => {
   it('has a signed prekey whose signature verifies under the identity key over its 33-byte wire form, and 100 prekeys with ids 1..100', () => {
-    const id = x25519KeyPair();
-    const s = generateBundleSecrets(id.privateKey);
+    const id = identityFromSeed(newIdentitySeed());
+    const s = generateBundleSecrets(id);
+    // Signed by OpenSSL's Ed25519 signer (lead decision after review L1), checked by the XEdDSA verifier a libsignal client runs.
     expect(xeddsaVerify(id.publicKey, wireKey(s.signedPreKey.publicKey), s.signedPreKeySignature)).toBe(true);
     expect(s.preKeys.map((p) => p.id)).toEqual(Array.from({ length: 100 }, (_, i) => i + 1));
     expect(new Set(s.preKeys.map((p) => p.key.publicKey.toString('hex'))).size).toBe(100);
@@ -49,8 +50,8 @@ describe('our bundle', () => {
   });
 
   it('round-trips through its sealed form and refuses one made for another identity', () => {
-    const id = x25519KeyPair();
-    const s = generateBundleSecrets(id.privateKey, 20);
+    const id = identityFromSeed(newIdentitySeed());
+    const s = generateBundleSecrets(id, 20);
     const back = parseBundleSecrets(serializeBundleSecrets(s), id.privateKey);
     expect(back).toEqual(s);
     expect(() => parseBundleSecrets(serializeBundleSecrets(s), x25519KeyPair().privateKey)).toThrow(/verify/);
@@ -58,8 +59,8 @@ describe('our bundle', () => {
   });
 
   it('review L4: a malformed stored bundle fails with a fixed text that quotes nothing of the (decrypted) input or of any key', () => {
-    const id = x25519KeyPair();
-    const s = generateBundleSecrets(id.privateKey, 3);
+    const id = identityFromSeed(newIdentitySeed());
+    const s = generateBundleSecrets(id, 3);
     const good = serializeBundleSecrets(s).toString('utf8');
     const MARK = 'c0ffee00deadbeef';
     const bad: string[] = [

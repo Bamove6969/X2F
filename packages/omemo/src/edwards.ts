@@ -1,25 +1,34 @@
 /**
  * XEdDSA (Signal's signature scheme over Curve25519 keys; libsignal's `xed25519_sign` and
- * `curve25519_verify`), with the small amount of Ed25519 point arithmetic node:crypto does not
- * expose: multiplying the base point by an arbitrary scalar. Signing is rare here (our signed
- * prekey, once per rotation); verifying is node:crypto's Ed25519 behind the Montgomery-to-Edwards
- * map. BigInt arithmetic is not constant-time, which the plan (docs/jabber/omemo-plan.md, section 3)
- * accepts for this use: a public message, a fresh 64-byte nonce per signature.
+ * `curve25519_verify`). Verifying is node:crypto's Ed25519 behind the Montgomery-to-Edwards map.
  *
- * Signing (libsignal `curve25519_sign` / `crypto_sign_modified`, what its Java and native
- * providers call): a = clamp(k); A = a·B (its sign bit kept); r = SHA-512(0xFE ‖ 0xFF×31 ‖ a ‖ M ‖ Z)
- * mod L; R = r·B; h = SHA-512(R ‖ A ‖ M) mod L; S = r + h·a mod L; signature = R ‖ S with A's sign
- * bit in the (otherwise zero) top bit of S.
+ * Signing, two ways:
+ * - **X2F's own identity** (`identityFromSeed`; lead decision after review L1, 2026-11-09): an
+ *   Ed25519 key pair from a 32-byte seed. Its Ed25519 scalar a = clamp(SHA-512(seed)[0..32]) is the
+ *   X25519 identity private key, and the Montgomery u = (1 + y)/(1 − y) of its Ed25519 public key A
+ *   is the identity key the bundle publishes (= X25519(a), what a libsignal client expects). OpenSSL
+ *   signs (deterministic Ed25519: R = rB, S = r + H(R ‖ A ‖ M)·a over the same a and A) and A's sign
+ *   bit is ORed into S[63]: exactly what `curve25519_verify` undoes, so the result is a XEdDSA
+ *   signature. No secret touches the bigint arithmetic below.
+ * - **The hand-written path** (`xeddsaSign`, libsignal `curve25519_sign` / `crypto_sign_modified`)
+ *   for a plain Curve25519 private key, kept for the known-answer tests and the test devices (what a
+ *   libsignal client does): a = clamp(k); A = a·B (its sign bit kept); r = SHA-512(0xFE ‖ 0xFF×31 ‖
+ *   a ‖ M ‖ Z) mod L; R = r·B; h = SHA-512(R ‖ A ‖ M) mod L; S = r + h·a mod L; signature = R ‖ S
+ *   with A's sign bit in the (otherwise zero) top bit of S. BigInt arithmetic is not constant-time,
+ *   which is why production does not sign with it.
+ *
  * Verifying (`curve25519_verify`): Montgomery u → Edwards y = (u − 1)/(u + 1), the sign bit taken
  * from the signature (and cleared there), then plain Ed25519 verification.
  */
-import { createHash, createPublicKey, verify } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign, verify } from 'node:crypto';
+import { x25519PublicKey, type KeyPair } from './x25519.js';
 
 const P = 2n ** 255n - 19n;
 const L = 2n ** 252n + 27742317777372353535851937790883648493n;
 const D = mod(-121665n * modInverse(121666n));
 const D2 = (2n * D) % P;
 const ED25519_SPKI = Buffer.from('302a300506032b6570032100', 'hex');
+const ED25519_PKCS8 = Buffer.from('302e020100300506032b657004220420', 'hex');
 
 function mod(a: bigint, m = P): bigint {
   const r = a % m;
@@ -154,6 +163,50 @@ export function xeddsaSign(priv: Uint8Array, msg: Uint8Array, random: Uint8Array
   const S = toLe(mod(r + h * a, L));
   S[31] = S[31]! | (A[31]! & 0x80);
   return Buffer.concat([R, S]);
+}
+
+/** Anything that signs as XEdDSA does under a Curve25519 identity. */
+export interface XedSigner {
+  sign(msg: Uint8Array): Buffer;
+}
+
+/** The hand-written XEdDSA signer for a plain Curve25519 private key (a fresh 64-byte nonce per signature): test devices, never X2F's identity. */
+export const xeddsaSigner = (priv: Uint8Array): XedSigner => ({ sign: (msg) => xeddsaSign(priv, msg, randomBytes(64)) });
+
+/**
+ * X2F's identity (see the header): `publicKey` is the Montgomery identity key the bundle publishes,
+ * `privateKey` the X25519 scalar X3DH uses, `edwardsPublicKey` the Ed25519 key behind both, `sign`
+ * OpenSSL's Ed25519 signer made XEdDSA.
+ */
+export interface SeedIdentity extends KeyPair, XedSigner {
+  edwardsPublicKey: Buffer;
+}
+
+/** A fresh 32-byte seed for `identityFromSeed` (OpenSSL generates it). */
+export function newIdentitySeed(): Buffer {
+  return Buffer.from(generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' }).d!, 'base64url');
+}
+
+/** The identity a 32-byte Ed25519 seed defines; throws on any other length or when the two derivations of the Montgomery key disagree. */
+export function identityFromSeed(seed: Uint8Array): SeedIdentity {
+  if (seed.length !== 32) throw new RangeError('edwards: an identity seed is 32 bytes');
+  const key = createPrivateKey({ key: Buffer.concat([ED25519_PKCS8, seed]), format: 'der', type: 'pkcs8' });
+  const edwardsPublicKey = Buffer.from(createPublicKey(key).export({ format: 'jwk' }).x!, 'base64url');
+  const privateKey = clampScalar(sha512(seed).subarray(0, 32));
+  const publicKey = montgomeryFromEdwards(edwardsPublicKey);
+  // Both OpenSSL: the Ed25519 public key mapped to Montgomery form must be the X25519 public key of the scalar.
+  if (!x25519PublicKey(privateKey).equals(publicKey)) throw new Error('edwards: identity derivation mismatch');
+  const signBit = edwardsPublicKey[31]! & 0x80;
+  return {
+    publicKey,
+    privateKey,
+    edwardsPublicKey,
+    sign: (msg) => {
+      const s = sign(null, msg, key);
+      s[63] = s[63]! | signBit;
+      return s;
+    },
+  };
 }
 
 /** True when `sig` (64 bytes) is a valid XEdDSA signature of `msg` under the Curve25519 public key `mont` (32 bytes). */

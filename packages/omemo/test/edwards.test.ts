@@ -3,8 +3,8 @@
 // keys (the differential test), and against the verifier.
 import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { clampScalar, edwardsPublicKey, montgomeryFromEdwards, xeddsaSign, xeddsaVerify } from '../src/edwards.js';
-import { x25519PublicKey } from '../src/x25519.js';
+import { clampScalar, edwardsPublicKey, identityFromSeed, montgomeryFromEdwards, newIdentitySeed, xeddsaSign, xeddsaSigner, xeddsaVerify } from '../src/edwards.js';
+import { x25519, x25519KeyPair, x25519PublicKey } from '../src/x25519.js';
 
 // libsignal-protocol-java, tests/.../ecc/Curve25519Test.java testSignature (keys in libsignal's 0x05-prefixed form).
 const ALICE_IDENTITY_PRIVATE = Buffer.from('c097248412e58bf05df487968205132794178e367637f5818f81e0e6ce73e865', 'hex');
@@ -66,6 +66,45 @@ describe('XEdDSA: differential test against OpenSSL', () => {
       other[0] = other[0]! ^ 0x80;
       expect(xeddsaVerify(mont, other, sig)).toBe(false);
     }
+  });
+
+  it("review L1 (lead decision): X2F's identity is an Ed25519 key pair from a seed; OpenSSL signs, and the result is a XEdDSA signature under the derived Curve25519 key", () => {
+    for (let i = 0; i < 100; i++) {
+      const seed = newIdentitySeed();
+      expect(seed).toHaveLength(32);
+      const id = identityFromSeed(seed);
+      // The X25519 identity scalar is a = clamp(SHA-512(seed)[0..32]); its Montgomery key is the Ed25519 public key's u = (1 + y)/(1 - y).
+      const a = clampScalar(createHash('sha512').update(seed).digest().subarray(0, 32));
+      expect(id.privateKey).toEqual(a);
+      expect(id.publicKey).toEqual(x25519PublicKey(a));
+      expect(id.publicKey).toEqual(montgomeryFromEdwards(id.edwardsPublicKey));
+      expect(id.edwardsPublicKey).toEqual(edwardsPublicKey(a));
+      // The same seed gives the same identity (what the sealed row holds).
+      expect(identityFromSeed(seed)).toMatchObject({ publicKey: id.publicKey, privateKey: a });
+      const msg = randomBytes(1 + (i % 70));
+      const sig = id.sign(msg);
+      expect(sig).toHaveLength(64);
+      expect(sig[63]! >> 7, 'sign bit of A carried in S[63]').toBe(id.edwardsPublicKey[31]! >> 7);
+      expect(xeddsaVerify(id.publicKey, msg, sig)).toBe(true);
+      // Deterministic (Ed25519): no nonce, so nothing about the key depends on randomness at signing time.
+      expect(id.sign(msg).equals(sig)).toBe(true);
+      // The hand-written signer over the same scalar is interchangeable with it (both are XEdDSA under a, A).
+      expect(xeddsaVerify(id.publicKey, msg, xeddsaSign(a, msg, randomBytes(64)))).toBe(true);
+      expect(xeddsaVerify(id.publicKey, msg, xeddsaSigner(a).sign(msg))).toBe(true);
+      // Not under another key, not of another message, not with the sign bit flipped.
+      expect(xeddsaVerify(identityFromSeed(newIdentitySeed()).publicKey, msg, sig)).toBe(false);
+      const other = Buffer.from(msg);
+      other[0] = other[0]! ^ 0x01;
+      expect(xeddsaVerify(id.publicKey, other, sig)).toBe(false);
+      const flipped = Buffer.from(sig);
+      flipped[63] = flipped[63]! ^ 0x80;
+      expect(xeddsaVerify(id.publicKey, msg, flipped)).toBe(false);
+      // And the scalar does X25519 as a libsignal peer expects of the published identity key.
+      const peer = x25519KeyPair();
+      expect(x25519(id.privateKey, peer.publicKey)).toEqual(x25519(peer.privateKey, id.publicKey));
+    }
+    expect(() => identityFromSeed(Buffer.alloc(31))).toThrow(/32 bytes/);
+    expect(() => identityFromSeed(Buffer.alloc(33))).toThrow(/32 bytes/);
   });
 
   it('refuses malformed input: wrong lengths, u = p - 1 (the Edwards map has no inverse there), and a private key that is not 32 bytes', () => {

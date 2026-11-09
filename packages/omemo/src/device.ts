@@ -6,6 +6,7 @@
  */
 import { decryptPayload, parseEncryptedElement, PAYLOAD_KEY_LENGTH, PAYLOAD_TAG_LENGTH } from './envelope.js';
 import { bundleXml, generateBundleSecrets, newDeviceId, type BundleSecrets } from './bundle.js';
+import { xeddsaSigner } from './edwards.js';
 import { parsePreKeyMessage, parseSignalMessage, VERSION_BYTE } from './message.js';
 import { decrypt, initBob, type SessionState } from './ratchet.js';
 import { registrationIdFor } from './omemo.js';
@@ -23,7 +24,8 @@ export class OmemoDevice {
   constructor(deviceId = newDeviceId(), preKeyCount?: number) {
     this.deviceId = deviceId;
     this.identity = x25519KeyPair();
-    this.bundle = generateBundleSecrets(this.identity.privateKey, preKeyCount);
+    // A libsignal client signs with XEdDSA over its Curve25519 identity key: the hand-written path, as it does.
+    this.bundle = generateBundleSecrets(xeddsaSigner(this.identity.privateKey), preKeyCount);
   }
 
   bundleXml(): string {

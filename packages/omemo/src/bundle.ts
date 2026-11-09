@@ -4,8 +4,8 @@
  * device-list XML. X2F's bundle is generated once and stored sealed (the API's job); it is
  * published on every connection so that recipients' clients can read and check our keys.
  */
-import { randomBytes, randomInt } from 'node:crypto';
-import { xeddsaSign, xeddsaVerify } from './edwards.js';
+import { randomInt } from 'node:crypto';
+import { xeddsaVerify, type XedSigner } from './edwards.js';
 import { OMEMO_NS } from './envelope.js';
 import { wireKey } from './message.js';
 import { x25519KeyPair, x25519PublicKey, type KeyPair } from './x25519.js';
@@ -24,12 +24,13 @@ export interface BundleSecrets {
 /** A fresh device id, 1..2^31-1 (XEP-0384 0.3.0, 4.1). */
 export const newDeviceId = (): number => randomInt(1, 0x7fffffff);
 
-export function generateBundleSecrets(identityPrivate: Uint8Array, preKeyCount = PREKEY_COUNT): BundleSecrets {
+/** A fresh bundle signed by `identity` (`identityFromSeed` for X2F's own; `xeddsaSigner` for a test device). */
+export function generateBundleSecrets(identity: XedSigner, preKeyCount = PREKEY_COUNT): BundleSecrets {
   const signedPreKey = x25519KeyPair();
   return {
     signedPreKeyId: randomInt(1, 0xffffff),
     signedPreKey,
-    signedPreKeySignature: xeddsaSign(identityPrivate, wireKey(signedPreKey.publicKey), randomBytes(64)),
+    signedPreKeySignature: identity.sign(wireKey(signedPreKey.publicKey)),
     preKeys: Array.from({ length: preKeyCount }, (_, i) => ({ id: i + 1, key: x25519KeyPair() })),
   };
 }

@@ -1,4 +1,6 @@
-export { clampScalar, edwardsPublicKey, montgomeryFromEdwards, xeddsaSign, xeddsaVerify } from './edwards.js';
+export {
+  clampScalar, edwardsPublicKey, identityFromSeed, montgomeryFromEdwards, newIdentitySeed, xeddsaSign, xeddsaSigner, xeddsaVerify, type SeedIdentity, type XedSigner,
+} from './edwards.js';
 export { x25519, x25519KeyPair, x25519PublicKey, type KeyPair } from './x25519.js';
 export { hkdf, hmac } from './kdf.js';
 export {
