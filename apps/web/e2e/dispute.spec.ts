@@ -185,7 +185,8 @@ test('from 90 minutes after marking paid (confirmBy, owner p9-4) the buyer may o
   await stub(page, { trade: tradeView({ serverNow: T('09:32') }) });
   await open(page);
   await expect(page.getByRole('button', { name: 'Open dispute' })).toBeEnabled();
-  await expect(page.getByText("Seller's time to confirm ran out")).toHaveCount(0);
+  // One window for both sides (p9-4): once it is open, the seller's time has run out too.
+  await expect(page.getByText("Seller's time to confirm ran out")).toBeVisible();
 });
 
 test('after a maintenance moved the end of the window (owner 2026-11-06 Q10), the buyer still waits past paidAt + 90 min', async ({ page }) => {

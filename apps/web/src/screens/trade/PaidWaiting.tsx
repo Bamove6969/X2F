@@ -110,8 +110,8 @@ export function PaidWaitingBody({
   const { clock, paused } = roomClock(view, serverClock);
   const win = confirmWindow(view, clock().getTime());
   const ended = win?.ended ?? false;
-  // The window's length as a Duration ("2 h"), never in words (the duration rule; design review P1-4).
-  // In the window's own unit ("90 min", "2 h", "4 d"), the trade's length, never one stretched by a pause (R-m1).
+  // The window's length as a Duration in its own unit ("90 min", "2 h", "4 d"), never in words (the
+  // duration rule; design review P1-4), and the trade's own length, never one stretched by a pause (R-m1).
   const length = win === null || win.lengthMs === 0 ? null : <Duration ms={win.lengthMs} parts={[waitPart(view.confirmWindowMin)]} />;
   // What the buyer receives, as this device accepted it: a poster buyer gets the amount less the 1%
   // fee (p10-1), as Released says it (lead review 2026-11-08 R-I1). With no device amount, no amount.
