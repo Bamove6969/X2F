@@ -204,6 +204,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: '$50 – $2,000',
       why: 'Owner #11 (8 Nov), boards v142: the preview shows the range in both units, each row with its unit ("$50 – $2,000 USD"); design/x2f-app still has the one-row preview.',
     },
+    ...['−', '+'].map((text) => ({
+      text,
+      why: 'Owner F1 (7 Nov): the vendor picks Above or Below market and types the percentage, at most 50% (J-02); the board still draws the ±0.1% stepper buttons (design to-do).',
+    })),
   ],
   // Task 27's dispute boards: parts other tasks build (Plan 5's evidence and unblurred proof, Task 20's chat).
   DisputeOpen: [
