@@ -103,6 +103,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       profile: profile(t.methodId) ?? null,
       sellerWalletApp: row.seller_wallet_app,
       finalAlertSeenAt: row.final_alert_seen_at,
+      paymentInstructions: row.method_instructions,
     });
   };
 

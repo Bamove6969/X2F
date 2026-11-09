@@ -1,7 +1,8 @@
+import { currencyChoices } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../app.js';
 import { ApiError } from '../errors.js';
-import { currencyExponent } from './currencies.js';
+import { CURRENCY_EXPONENTS, currencyExponent } from './currencies.js';
 
 /**
  * `GET /v1/price?currency=EUR` (no session, P3-M9) → `{ currency, centsPerXmr, exponent, at,
@@ -11,6 +12,18 @@ import { currencyExponent } from './currencies.js';
  * when that currency's market prices are paused (Review Focus 5). An unknown currency is 400.
  */
 export function priceRoutes(app: FastifyInstance): void {
+  /**
+   * `GET /v1/currencies` (no session) → `{ currencies: { code, flag, available }[] }` (J-16; owner
+   * Q28, O-019; Q24, O-020): every currency the price feed knows, USD, EUR, GBP, CAD, AUD, JPY first
+   * and the rest A-Z, each with its flag; `available` is whether it has a market price right now, so
+   * a currency whose rate stops is kept (marked) and is available again on the next call after its
+   * rate is back. How the web shows an unavailable one is design's pick.
+   */
+  app.get('/v1/currencies', async (req) => {
+    const prices = req.server.deps.prices;
+    return { currencies: currencyChoices(Object.keys(CURRENCY_EXPONENTS), (c) => prices.current(c) !== null) };
+  });
+
   app.get('/v1/price', async (req) => {
     const currency = (req.query as Record<string, unknown> | null)?.currency;
     if (typeof currency !== 'string' || currencyExponent(currency) === null) throw new ApiError(400, 'bad-request');

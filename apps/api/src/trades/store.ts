@@ -24,6 +24,8 @@ export interface TradeSides {
   buyerPayout: string | null;
   sellerRefund: string | null;
   sellerWalletApp: string | null;
+  /** J-16 (440): the chosen method's instructions for the chosen currency, locked at take; '' when absent. */
+  methodInstructions?: string;
 }
 
 /** A `trades` row as pg returns it: numeric columns arrive as strings. */
@@ -34,6 +36,8 @@ export interface TradeRow {
   seller_account_id: string;
   buyer_account_id: string;
   method_id: string;
+  /** J-16 (440): the chosen method's instructions, locked at take. */
+  method_instructions: string;
   amount_atomic: string;
   fee_atomic: string;
   seller_funds_atomic: string;
@@ -223,6 +227,7 @@ export async function insertTrade(q: Queryable, t: Trade, sides: TradeSides, usd
     ['buyer_payout', sides.buyerPayout],
     ['seller_refund', sides.sellerRefund],
     ['seller_wallet_app', sides.sellerWalletApp],
+    ['method_instructions', sides.methodInstructions ?? ''],
     ['usd_cents', usdCents === null ? null : usdCents.toString()],
   ];
   // Column names are the fixed literals above, never input.

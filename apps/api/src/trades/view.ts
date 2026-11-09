@@ -27,6 +27,13 @@ export interface TradeView {
   state: Trade['state'];
   counterparty: TraderSummary;
   methodId: string;
+  /**
+   * J-16 (Task 34): the chosen method's instructions from the offer, locked at take (the payment
+   * details). Lead default (Task 34 builder, 29 Oct): shown to the two traders only once the escrow
+   * was secured (`securedAt` set), so taking an offer never reveals the poster's payment details by
+   * itself; null before that. '' when the offer gave none (offers from before migration 440).
+   */
+  paymentInstructions: string | null;
   profile: unknown;
   amountAtomic: string;
   fiatCents: string;
@@ -98,6 +105,8 @@ export interface ViewContext {
   sellerWalletApp: string | null;
   /** `trades.final_alert_seen_at` (not a machine field). */
   finalAlertSeenAt: Date | null;
+  /** `trades.method_instructions` (J-16, 440); absent → ''. */
+  paymentInstructions?: string;
 }
 
 /**
@@ -115,6 +124,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     state: t.state,
     counterparty: ctx.counterparty,
     methodId: t.methodId,
+    paymentInstructions: t.securedAt === null ? null : (ctx.paymentInstructions ?? ''),
     profile: ctx.profile,
     amountAtomic: t.amountAtomic.toString(),
     fiatCents: t.fiatCents.toString(),

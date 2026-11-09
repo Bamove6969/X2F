@@ -1,5 +1,5 @@
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
-import { fiatCents, newTrade, offerRate, posterRole, rangeAllows, tradeFiatLimits, type Price, type Pricing, type Side } from '@x2f/trade';
+import { fiatCents, newTrade, pickTier, posterRole, rangeAllows, tierRange, tierRate, tradeFiatLimits, type Price, type Side, type Tier } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
@@ -18,13 +18,24 @@ import { COMPLETED_TRADES_SQL, loadStarterSettings, tradeCap, usdCentsOf, type T
 import { usableWallets, type Wallet } from '../wallets/routes.js';
 import { insertTrade, loadTradeRow, rowToTrade, type TradeSides } from './store.js';
 import { roleOf } from './view.js';
-import { MARKET_PRICED, rangeOf } from '../offers/routes.js';
+import { MARKET_PRICED, instructionsFor, loadFlex, tiersOf, type FlexMethod } from '../offers/routes.js';
 
 /**
  * Plan 3 Task 5: taking an offer, and the poster's side of the new trade.
  *
- * - `POST /v1/offers/:id/take { amountAtomic, walletId, centsPerXmr, fiatCents }` (`requireTrader`)
- *   → `{ code, centsPerXmr, fiatCents }`. The amount, the rates and the totals are decimal strings.
+ * - `POST /v1/offers/:id/take { amountAtomic, walletId, centsPerXmr, fiatCents, methodId, currency }`
+ *   (`requireTrader`) → `{ code, centsPerXmr, fiatCents }`. The amount, the rates and the totals are
+ *   decimal strings, the rates and totals in `currency`.
+ *   Flexible offers (J-16, from claude2's Task 34): `currency` is one of the offer's currencies and
+ *   `methodId` one of its methods offered in that currency (400 otherwise; owner: the buyer picks
+ *   one, locked in). The band is chosen by @x2f/trade `pickTier`: that currency's bands holding the
+ *   take (a fiat offer by the quoted total, an XMR offer by the amount) with this method, the best
+ *   for the taker of those whose rule they meet (409 `out-of-range` when none holds it, 409
+ *   `not-enough-trades` `{ minTrades }` when the taker meets none). The rate that locks is that band
+ *   and method's final rate now (the currency's market + band margin + method adjustment), and the
+ *   size must fit the band at that rate (409 `out-of-range`). The trade records the chosen currency
+ *   and method, that method's instructions for that currency (`method_instructions`) and the band's
+ *   fiat limits.
  *   The client's rate and total are the ones the taker's quote showed; they are never locked (lead
  *   decision 2026-10-29, Task 5 review I2). The take always locks the server's own rate now
  *   (`offerRate`: the market plus the offer's margin) and that rate's total (OD-5), and answers
@@ -65,18 +76,22 @@ interface TakeBody {
   walletId: string;
   centsPerXmr: bigint;
   fiatCents: bigint;
+  methodId: string;
+  currency: string;
 }
 
 function parseTake(body: unknown): TakeBody {
   if (!isObject(body)) throw bad();
   const keys = Object.keys(body).sort().join(',');
-  if (keys !== 'amountAtomic,centsPerXmr,fiatCents,walletId') throw bad();
-  const { amountAtomic, walletId, centsPerXmr, fiatCents: cents } = body;
+  if (keys !== 'amountAtomic,centsPerXmr,currency,fiatCents,methodId,walletId') throw bad();
+  const { amountAtomic, walletId, centsPerXmr, fiatCents: cents, methodId, currency } = body;
+  if (typeof methodId !== 'string' || methodId.length === 0 || methodId.length > 64) throw bad();
+  if (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency)) throw bad();
   if (typeof amountAtomic !== 'string' || !ATOMIC.test(amountAtomic)) throw bad();
   if (typeof walletId !== 'string' || !UUID.test(walletId)) throw bad();
   if (typeof centsPerXmr !== 'string' || !PRICE.test(centsPerXmr)) throw bad();
   if (typeof cents !== 'string' || !CENTS.test(cents)) throw bad();
-  return { amountAtomic: BigInt(amountAtomic), walletId, centsPerXmr: BigInt(centsPerXmr), fiatCents: BigInt(cents) };
+  return { amountAtomic: BigInt(amountAtomic), walletId, centsPerXmr: BigInt(centsPerXmr), fiatCents: BigInt(cents), methodId, currency };
 }
 
 function parseWalletBody(body: unknown): string {
@@ -102,40 +117,27 @@ async function pickWallet(db: Queryable, accountId: string, walletId: string, no
 interface OfferRow {
   account_id: string;
   side: Side;
-  method_id: string;
-  currency: string;
-  margin_bps: number;
+  /** The unit every band is in (migration 324; one per offer). */
   amount_unit: 'xmr' | 'fiat';
-  min_atomic: string | null;
-  max_atomic: string | null;
-  min_fiat_cents: string | null;
-  max_fiat_cents: string | null;
-  /** Null: no minimum (migration 315). */
-  min_trades: number | null;
   status: 'live' | 'paused' | 'removed';
   /** The poster may be seen: a trader, not disabled, with no trading hold (Task 4's LISTED). */
   poster_ok: boolean;
 }
 
-const OFFER_SQL = `select o.account_id, o.side, o.method_id, o.currency, o.margin_bps,
-    o.amount_unit, o.min_atomic, o.max_atomic, o.min_fiat_cents, o.max_fiat_cents, o.min_trades, o.status,
+const OFFER_SQL = `select o.account_id, o.side, o.amount_unit, o.status,
     (a.kind = 'trader' and a.disabled_at is null
       and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)) as poster_ok
   from offers o join accounts a on a.id = o.account_id where o.id = $1 and ${MARKET_PRICED}`;
 
-function pricingOf(r: OfferRow): Pricing {
-  return { mode: 'market', marginBps: r.margin_bps };
-}
-
 /**
- * The rate that locks: always the offer's rate now (`offerRate`), never the client's (lead decision
- * 2026-10-29). The client's quoted rate only detects a move: 409 `price-changed` when it differs
- * from the rate now by more than 0.5%. 409 `price-unavailable` while the feed is down: every offer
- * is market-priced (owner Q1, F1), so no offer can be taken without a price.
+ * The rate that locks: always the band and method's rate now in the chosen currency (`tierRate`),
+ * never the client's (lead decision 2026-10-29). The client's quoted rate only detects a move: 409
+ * `price-changed` when it differs from the rate now by more than 0.5%. 409 `price-unavailable` while
+ * the currency has no market price: every offer is market-priced (owner Q1, F1), so no offer can be
+ * taken without a price.
  */
-function lockRate(r: OfferRow, quoted: bigint, prices: MarketPrices): Price {
-  const p = pricingOf(r);
-  const now = offerRate(p, r.currency, prices.current(r.currency));
+function lockRate(currency: string, tier: Tier, method: FlexMethod, quoted: bigint, prices: MarketPrices): Price {
+  const now = tierRate(currency, tier, method, prices.current(currency));
   if (now === null) throw new ApiError(409, 'price-unavailable');
   const diff = quoted > now.centsPerXmr ? quoted - now.centsPerXmr : now.centsPerXmr - quoted;
   if (diff * 1000n > now.centsPerXmr * TOLERANCE_PER_MILLE) throw new ApiError(409, 'price-changed');
@@ -257,7 +259,14 @@ export function takeRoutes(app: FastifyInstance): void {
       if (!r || r.status !== 'live' || !r.poster_ok) throw notFound();
       // Blocked either way: as if the offer did not exist, before any refusal that shows it does.
       await assertNotBlocked(c, takerId, posterId);
-      if (!isAvailable(r.method_id)) throw new ApiError(409, 'method-unavailable');
+      // The chosen currency must be one of the offer's and the chosen method one of its methods
+      // offered in that currency (currencies, bands and methods never change after post, and the
+      // offer row is locked above).
+      const flex = (await loadFlex(c, [id])).get(id)!;
+      const tiers = tiersOf(flex, b.currency);
+      const method = flex.methods.find((m) => m.methodId === b.methodId);
+      if (tiers === null || method === undefined || !method.currencies.includes(b.currency)) throw bad();
+      if (!isAvailable(method.methodId)) throw new ApiError(409, 'method-unavailable');
       if (posterId === takerId) throw new ApiError(409, 'own-offer');
       const now = deps.clock();
       const flags = (
@@ -281,24 +290,29 @@ export function takeRoutes(app: FastifyInstance): void {
       const completed = (
         await c.query<{ n: number }>(`select ${COMPLETED_TRADES_SQL}::int as n from accounts a where a.id = $1`, [takerId])
       ).rows[0]!.n;
-      if (completed < (r.min_trades ?? 0)) throw new ApiError(409, 'not-enough-trades');
 
       // The client's total must be its amount at its rate, as the quote works it out.
-      if (fiatCents(b.amountAtomic, { currency: r.currency, centsPerXmr: b.centsPerXmr }) !== b.fiatCents) throw bad();
-      const rate = lockRate(r, b.centsPerXmr, deps.prices);
+      if (fiatCents(b.amountAtomic, { currency: b.currency, centsPerXmr: b.centsPerXmr }) !== b.fiatCents) throw bad();
+      // The band: that currency's bands holding the take with this method, the best for the taker
+      // of those whose rule they meet (the rule goes with the refusal, Task 34 review I2).
+      const pick = pickTier(tiers, r.amount_unit, b, method.methodId, r.side, completed);
+      if ('refused' in pick) {
+        throw pick.refused === 'out-of-range' ? new ApiError(409, 'out-of-range') : new ApiError(409, 'not-enough-trades', { minTrades: pick.minTrades });
+      }
+      const rate = lockRate(b.currency, pick.tier, method, b.centsPerXmr, deps.prices);
       const total = fiatCents(b.amountAtomic, rate);
-      // The size in the poster's unit (owner, 8 Nov): an XMR range compares the amount, a fiat range
-      // its total, both at the rate that locks (the margin included).
-      const range = rangeOf(r);
+      // The size in the poster's unit (owner, 8 Nov): an XMR band compares the amount, a fiat band
+      // its total, both at the rate that locks (the margin and adjustment included).
+      const range = tierRange(r.amount_unit, pick.tier);
       if (rangeAllows(range, b.amountAtomic, rate) !== 'ok') throw new ApiError(409, 'out-of-range');
       // The fiat limits the trade keeps (an XMR range's at the locked rate), for its growth cap.
       const limits = tradeFiatLimits(range, rate);
       // The trade's USD value, counted against the caps and kept (301) to weigh its reviews (Plan 5 Task 3).
-      const usd = usdCents(r.currency, b.amountAtomic, total, deps.prices);
+      const usd = usdCents(b.currency, b.amountAtomic, total, deps.prices);
       await checkStarterLimits(c, { takerId, posterId, usd: () => usd, now });
 
       const poster = posterRole(r.side);
-      const profile = getProfile(r.method_id) ?? getProfile(FALLBACK_PROFILE);
+      const profile = getProfile(method.methodId) ?? getProfile(FALLBACK_PROFILE);
       if (profile === null) throw new Error('no fallback method profile');
       const t = newTrade(
         {
@@ -307,7 +321,7 @@ export function takeRoutes(app: FastifyInstance): void {
           poster,
           sellerId: poster === 'seller' ? posterId : takerId,
           buyerId: poster === 'buyer' ? posterId : takerId,
-          methodId: r.method_id,
+          methodId: method.methodId,
           amountAtomic: b.amountAtomic,
           lockedRate: rate,
           confirmWindowMin: profile.confirmWindowMin,
@@ -316,11 +330,13 @@ export function takeRoutes(app: FastifyInstance): void {
         },
         now,
       );
-      // The taker's side now; the poster's from the accepted sheet.
+      // The taker's side now; the poster's from the accepted sheet. The method's instructions for the
+      // chosen currency (its own where they differ, owner Q3) are locked with the trade.
+      const methodInstructions = instructionsFor(method, b.currency);
       const sides: TradeSides =
         poster === 'seller'
-          ? { buyerPayout: wallet.address, sellerRefund: null, sellerWalletApp: null }
-          : { buyerPayout: null, sellerRefund: wallet.address, sellerWalletApp: wallet.app };
+          ? { buyerPayout: wallet.address, sellerRefund: null, sellerWalletApp: null, methodInstructions }
+          : { buyerPayout: null, sellerRefund: wallet.address, sellerWalletApp: wallet.app, methodInstructions };
       try {
         await insertTrade(c, t, sides, usd);
       } catch (e) {
