@@ -19,6 +19,7 @@ import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffPastRepRoutes } from './pastrep.js';
 import { staffPriceHealthRoutes } from './priceHealth.js';
+import { staffRevenueRoutes } from './revenue.js';
 import { staffSettingsRoutes } from './settings.js';
 import { staffSiteRoutes } from './site.js';
 
@@ -150,6 +151,8 @@ export async function buildStaffApi(
   staffPastRepRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
+  // Plan 4 Task 32: the owner's revenue totals from the internal revenue ledger (earnings.read).
+  staffRevenueRoutes(app);
 
   return app;
 }

@@ -96,4 +96,6 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Owner Q60: senior moderators by role, moderators and helpers by grant.
   { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
+  // Plan 4 Task 32: the owner's revenue totals (the internal revenue ledger).
+  { method: 'GET', url: '/staff/v1/revenue', perm: 'earnings.read', allowed: OWNER },
 ];
