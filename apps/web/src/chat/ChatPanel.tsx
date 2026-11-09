@@ -378,6 +378,9 @@ function payErrorText(e: unknown, spec: readonly PayFieldSpec[]): string {
         return `${label} is too long.`;
       case 'bad-value':
         return field?.kind === 'postal' ? `${label} has too many lines.` : `${label} can't have line breaks.`;
+      case 'bad-chars':
+        // COPY-UNSIGNED (J-08, pay-details review M6): a tab, joiner, separator or other hidden character in an account box.
+        return `${label} can't have tabs or hidden characters.`;
       default:
         return SEND_ERRORS['bad-details'];
     }

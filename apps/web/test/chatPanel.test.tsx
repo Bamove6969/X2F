@@ -469,6 +469,23 @@ describe('ChatPanel: the payee\'s payment details boxes and the payer\'s card (J
     expect(field(host, 'name')!.value).toBe('Jane Doe');
   });
 
+  it('review M6 (pay details): a tab or a hidden character in an account box is refused on the page, by box, and nothing is sent', async () => {
+    current = snap({ role: 'seller' });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    fill(field(host, 'name')!, 'Jane Doe');
+    fill(field(host, 'email')!, 'jane\u200d@example.ca');
+    submit(boxes(host)!);
+    await flush();
+    expect(host.querySelector('[data-pay-error]')?.textContent).toBe("Email can't have tabs or hidden characters.");
+    fill(field(host, 'email')!, '');
+    fill(field(host, 'phone')!, '+1 416\t555 0100');
+    submit(boxes(host)!);
+    await flush();
+    expect(host.querySelector('[data-pay-error]')?.textContent).toBe("Phone number can't have tabs or hidden characters.");
+    expect(client.sendPay).not.toHaveBeenCalled();
+  });
+
   it("review M2 (pay details): the worker's own refusal of a package before the escrow is secured (not-ready) is said as the secured line", async () => {
     current = snap({ role: 'seller' });
     const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);

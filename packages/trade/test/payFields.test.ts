@@ -98,6 +98,34 @@ describe('checkPayDetails', () => {
     expect(codeOf(() => checkPayDetails('INTERAC_E_TRANSFER', { name: 1 as unknown as string, email: 'j@x.ca' }))).toBe('bad-value:name');
   });
 
+  it('review M6 (pay details): a one-line account box (email, phone, IBAN, account) takes letters, digits, punctuation, symbols and plain spaces, and nothing hidden', () => {
+    // What people type into these boxes, in any script: fine.
+    expect(checkPayDetails('INTERAC_E_TRANSFER', { name: 'Jane', email: "josé.o'brien+x2f@exämple.ca", phone: '+1 (416) 555-0100' })).toEqual([
+      { key: 'name', value: 'Jane' },
+      { key: 'email', value: "josé.o'brien+x2f@exämple.ca" },
+      { key: 'phone', value: '+1 (416) 555-0100' },
+    ]);
+    expect(checkPayDetails('SEPA', { name: 'Jane', iban: 'DE89 3704 0044 0532 0130 00', bic: 'COBADEFFXXX' }).map((f) => f.value)).toEqual(['Jane', 'DE89 3704 0044 0532 0130 00', 'COBADEFFXXX']);
+    expect(checkPayDetails('CASH_APP', { cashtag: '$Jane_Doe' })).toEqual([{ key: 'cashtag', value: '$Jane_Doe' }]);
+    expect(checkPayDetails('UPI', { upiId: 'जेन@upi' })).toEqual([{ key: 'upiId', value: 'जेन@upi' }]);
+    expect(checkPayDetails('PAYPAL', { link: 'https://paypal.me/JaneDoe?country.x=CA&locale.x=en_CA' })).toEqual([{ key: 'link', value: 'https://paypal.me/JaneDoe?country.x=CA&locale.x=en_CA' }]);
+    // Refused, one code point at a time, inside an otherwise fine value: tab, the other C0/C1 whitespace,
+    // the no-break and ideographic spaces, the soft hyphen, ALM, ZWSP, ZWNJ, ZWJ, LRM, RLM, the line and
+    // paragraph separators, a bidi embedding and override and isolate, the word joiner, a variation
+    // selector (a mark, but one that renders as nothing), the BOM, a tag.
+    const hidden = ['\t', '\u000b', '\u000c', '\u0085', '\u00a0', '\u00ad', '\u061c', '\u200b', '\u200c', '\u200d', '\u200e', '\u200f', '\u2028', '\u2029', '\u202a', '\u202e', '\u2060', '\u2066', '\u3000', '\ufe0f', '\ufeff', '\u{e0041}'];
+    for (const c of hidden) {
+      const at = `U+${c.codePointAt(0)!.toString(16)}`;
+      expect(codeOf(() => checkPayDetails('INTERAC_E_TRANSFER', { name: 'Jane', email: `jane${c}@example.ca` })), at).toBe('bad-chars:email');
+      expect(codeOf(() => checkPayDetails('INTERAC_E_TRANSFER', { name: 'Jane', phone: `+1 416${c}555 0100` })), at).toBe('bad-chars:phone');
+      expect(codeOf(() => checkPayDetails('SEPA', { name: 'Jane', iban: `DE89 3704${c}0044 0532 0130 00` })), at).toBe('bad-chars:iban');
+      expect(codeOf(() => checkPayDetails('FASTER_PAYMENTS', { name: 'Jane', sortCode: `12${c}34 56`, account: '12345678' })), at).toBe('bad-chars:sortCode');
+    }
+    // A name (text) and a mailing address (postal) keep the chat text's rule: a tab is whitespace there, a line break is still the one-line box's refusal.
+    expect(checkPayDetails('INTERAC_E_TRANSFER', { name: 'Jane\tDoe', email: 'jane@example.ca' })[0]).toEqual({ key: 'name', value: 'Jane\tDoe' });
+    expect(codeOf(() => checkPayDetails('INTERAC_E_TRANSFER', { name: 'Jane', email: 'jane@\nexample.ca' }))).toBe('bad-value:email');
+  });
+
   it('a mailing address may span lines, but never more than its box allows', () => {
     const ok = checkPayDetails('PAY_BY_MAIL', { name: 'Jane Doe', address: '12 Main St\nApt 4\nToronto ON  M5V 1A1' });
     expect(ok).toEqual([

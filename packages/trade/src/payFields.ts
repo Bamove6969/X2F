@@ -108,7 +108,21 @@ export function payFieldsFor(methodId: string): readonly PayFieldSpec[] {
   return Object.prototype.hasOwnProperty.call(PAY_FIELDS, methodId) ? PAY_FIELDS[methodId]!.fields : PAY_FIELDS_FALLBACK;
 }
 
-export type PayDetailsErrorCode = 'missing' | 'one-of' | 'unknown-field' | 'bad-value' | 'too-long' | 'bad-shape';
+export type PayDetailsErrorCode = 'missing' | 'one-of' | 'unknown-field' | 'bad-value' | 'bad-chars' | 'too-long' | 'bad-shape';
+
+/**
+ * What a one-line account box (kinds email, phone, iban, account) may hold (pay-details review M6):
+ * letters with their combining marks (Indic, Thai, Arabic and decomposed Latin text need them),
+ * digits, punctuation, symbols and the plain space. Nothing else: no tab or other whitespace, no
+ * format character (the joiners ZWNJ/ZWJ, the direction marks LRM/RLM/ALM, the soft hyphen, word
+ * joiner and BOM), no line or paragraph separator, no control, and no variation selector or
+ * Mongolian free variation selector (marks that render as nothing). The chat's own text check
+ * refuses most hidden characters already; this closes what it allows for a line of text (tab,
+ * ZWNJ/ZWJ, LRM/RLM/ALM) and the separators and spaces (Zl, Zp, Zs) it never looks at. A hidden
+ * character here only ever hurts the payee: the value copied at the payer's bank would not match.
+ * Written as escapes: no literal invisible characters in source.
+ */
+const ACCOUNT_CHARS = /^(?:(?![\ufe00-\ufe0f\u180b-\u180f\u{e0100}-\u{e01ef}])[\p{L}\p{M}\p{N}\p{P}\p{S} ])*$/u;
 
 /** A refused package. `key` names the box (or the one-of group); messages never carry a value. */
 export class PayDetailsError extends Error {
@@ -139,9 +153,10 @@ const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typ
 
 /**
  * Checks the boxes as typed: every table key, each value a string; trimmed; required boxes filled,
- * each one-of group with at least one; one-line boxes without a line break, a mailing address with
- * at most PAY_POSTAL_MAX_LINES; within PAY_FIELD_MAX_CHARS. Returns the filled boxes in table
- * order (empty optional ones dropped). Throws PayDetailsError.
+ * each one-of group with at least one; one-line boxes without a line break, an account box
+ * (email, phone, iban, account) with only ACCOUNT_CHARS, a mailing address with at most
+ * PAY_POSTAL_MAX_LINES; within PAY_FIELD_MAX_CHARS. Returns the filled boxes in table order
+ * (empty optional ones dropped). Throws PayDetailsError.
  */
 export function checkPayDetails(methodId: string, values: Record<string, unknown>): PayDetailField[] {
   const spec = payFieldsFor(methodId);
@@ -163,6 +178,7 @@ export function checkPayDetails(methodId: string, values: Record<string, unknown
       if (value.length > PAY_FIELD_MAX_CHARS.postal) throw new PayDetailsError('too-long', f.key);
     } else {
       if (/[\r\n]/.test(value)) throw new PayDetailsError('bad-value', f.key);
+      if (f.kind !== 'text' && !ACCOUNT_CHARS.test(value)) throw new PayDetailsError('bad-chars', f.key);
       if (value.length > PAY_FIELD_MAX_CHARS.line) throw new PayDetailsError('too-long', f.key);
     }
     out.push({ key: f.key, value });
