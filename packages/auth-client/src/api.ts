@@ -302,6 +302,12 @@ export interface AuthApi {
   getTerms(): Promise<{ version: string }>;
   /** `GET /v1/pgp/signing-key`: X2F's official PGP key, which signs every challenge (R7). */
   getPgpSigningKey(): Promise<{ fingerprint: string; publicKey: string }>;
+  /**
+   * `POST /v1/register/name-check`: the sign-up's live "is available" tick for the private username
+   * (the login name). Advice only: register checks again. Paced per device (429 `slow-down`) and
+   * site wide (503 `busy`), both with `retryAfterSeconds`; 400 `login-name-invalid` for a wrong shape.
+   */
+  nameAvailable(b: { loginName: string }): Promise<{ available: boolean }>;
   /** Both names are picked at sign-up (spec 6.1): the public `displayName` and the private `loginName`; they must differ. */
   registerPassword(b: { displayName: string; loginName: string; password: string; deviceLabel: string; acceptedTerms: string }): Promise<{
     displayName: string;
@@ -512,6 +518,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
   return {
     getTerms: () => get('/v1/terms'),
     getPgpSigningKey: () => get('/v1/pgp/signing-key'),
+    nameAvailable: (b) => post('/v1/register/name-check', b),
     registerPassword: (b) => post('/v1/register/password', b),
     loginPassword: (b) => post('/v1/login/password', b),
     loginSecondFactor: (b) => post('/v1/login/second-factor', b),

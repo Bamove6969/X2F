@@ -11,7 +11,7 @@ import './setup.css';
 
 export type LoginMethod = 'pgp' | 'passkey' | 'security-key' | 'password';
 export type BackupChoice = 'totp' | 'security-key' | 'pgp' | 'recovery-codes';
-export type Step = '' | 'name' | 'login' | 'pgp-key' | 'pgp-code' | 'password' | 'backup' | 'wallet' | 'welcome';
+export type Step = '' | 'name' | 'display-name' | 'login' | 'pgp-key' | 'pgp-code' | 'password' | 'backup' | 'wallet' | 'welcome';
 
 export interface SetupState {
   /** The Terms version accepted on the first screen; sent as `acceptedTerms` with the register call. */

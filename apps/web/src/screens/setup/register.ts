@@ -40,14 +40,15 @@ export function errorCode(e: unknown): string | null {
 }
 
 /** Codes that mean the names must change (FU-A's register refusals): back to the names screen. */
+// Owner Q54: the private login name is the "username"; the public one is the "display name".
 const NAME_ERRORS: Record<string, string> = {
-  'display-name-taken': 'That username is taken. Pick another.',
-  'display-name-reserved': 'That username is kept for X2F. Pick another.',
+  'display-name-taken': 'That display name is taken. Pick another.',
+  'display-name-reserved': 'That display name is kept for X2F. Pick another.',
   // not-a-refusal: an input check on the names typed
-  'display-name-invalid': 'That username cannot be used. Pick another.',
-  'login-name-invalid': 'That login name cannot be used. Pick another.', // not-a-refusal: an input check
+  'display-name-invalid': 'That display name cannot be used. Pick another.',
+  'login-name-invalid': 'That username cannot be used. Pick another.', // not-a-refusal: an input check
   'names-unavailable': 'Those names cannot be used. Pick others.', // not-a-refusal: an input check
-  'names-same': 'Your login name must be different from your username.',
+  'names-same': 'Your display name must be different from your username.',
 };
 
 /** The sentence for a refused name, or `null` when the error is not about the names. */

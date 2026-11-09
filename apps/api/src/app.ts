@@ -4,6 +4,7 @@ import type pg from 'pg';
 import type { Config } from './config.js';
 import { methodRoutes } from './auth/methods.js';
 import { originHook } from './auth/origin.js';
+import { nameCheckRoutes } from './auth/nameCheck.js';
 import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { recoveryRoutes } from './auth/recovery.js';
@@ -273,6 +274,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   siteRoutes(app);
   logoutRoute(app);
   passwordRoutes(app);
+  // The sign-up's live "is available" tick for the private username (limits in nameCheck.ts).
+  nameCheckRoutes(app);
   await pgpRoutes(app);
   totpRoutes(app);
   recoveryRoutes(app);

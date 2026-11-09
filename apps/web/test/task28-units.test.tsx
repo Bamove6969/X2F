@@ -72,8 +72,10 @@ describe('groupFingerprint', () => {
 
 describe('register errors', () => {
   it("maps FU-A's name refusals from the typed client and nothing else", () => {
-    expect(nameError(new AuthApiError(409, 'display-name-taken'))).toBe('That username is taken. Pick another.');
-    expect(nameError(new AuthApiError(400, 'names-same'))).toBe('Your login name must be different from your username.');
+    // Owner Q54: the private login name is the "username", the public one the "display name".
+    expect(nameError(new AuthApiError(409, 'display-name-taken'))).toBe('That display name is taken. Pick another.');
+    expect(nameError(new AuthApiError(400, 'login-name-invalid'))).toBe('That username cannot be used. Pick another.');
+    expect(nameError(new AuthApiError(400, 'names-same'))).toBe('Your display name must be different from your username.');
     expect(nameError(new AuthApiError(409, 'names-unavailable'))).toBe('Those names cannot be used. Pick others.');
     expect(nameError(new ApiCallError(409, 'username-taken'))).toBeNull();
     expect(nameError(new ApiCallError(400, 'password-weak'))).toBeNull();
@@ -125,7 +127,7 @@ describe('setupError (review fix round M1, M2, I1)', () => {
     );
   });
   it('names refusals link back to the names screen; anything else is the fallback', () => {
-    expect(setupError(new AuthApiError(409, 'display-name-taken'), fallback)).toEqual({ text: 'That username is taken. Pick another.', names: true });
+    expect(setupError(new AuthApiError(409, 'display-name-taken'), fallback)).toEqual({ text: 'That display name is taken. Pick another.', names: true });
     expect(setupError(new TypeError('network'), fallback)).toEqual({ text: fallback });
   });
 });
