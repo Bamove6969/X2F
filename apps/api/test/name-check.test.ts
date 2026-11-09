@@ -120,6 +120,67 @@ describe('POST /v1/register/name-check', () => {
     expect((await check({ loginName: unique('r') }, mine)).statusCode).toBe(200);
   });
 
+  // Review F3 (signup-team review, 8 Nov): the site budget is spent only by requests that passed
+  // their device's limit, so a device over its pace never drains it for everyone else.
+  it('a device over its limit does not spend the site budget', async () => {
+    const mine = await device();
+    for (let i = 1; i < NAME_CHECK_DEVICE_BUCKET.capacity; i++) expect((await check({ loginName: unique('o') }, mine)).statusCode).toBe(200);
+    for (let i = 0; i < 3 * NAME_CHECK_BUCKET.capacity; i++) expect((await check({ loginName: unique('o') }, mine)).statusCode).toBe(429);
+    // The site has spent only this device's own allowance: the rest is still there for others.
+    let ok = 0;
+    for (let i = 0; i < NAME_CHECK_BUCKET.capacity; i++) if ((await check({ loginName: unique('o') })).statusCode === 200) ok++;
+    expect(ok).toBe(NAME_CHECK_BUCKET.capacity - NAME_CHECK_DEVICE_BUCKET.capacity);
+  });
+
+  it('a made-up but well-formed cookie is a fresh device (R29: device cookies are chosen by the client)', async () => {
+    const madeUp = 'A'.repeat(43);
+    for (let i = 0; i < NAME_CHECK_DEVICE_BUCKET.capacity; i++) expect((await check({ loginName: unique('m') }, madeUp)).statusCode).toBe(200);
+    expect((await check({ loginName: unique('m') }, madeUp)).statusCode).toBe(429);
+    expect((await check({ loginName: unique('m') }, 'B'.repeat(43))).statusCode).toBe(200);
+  });
+
+  // Review F2: the counts live in Postgres, so every API process (and a restart) shares them.
+  describe('with a second API process on the same database', () => {
+    let other: FastifyInstance;
+
+    beforeAll(async () => {
+      ({ app: other } = await testApp({ db: deps.db, clock: deps.clock, config: deps.config }));
+    });
+
+    afterAll(async () => {
+      await other.close();
+    });
+
+    const checkOn = (on: FastifyInstance, device?: string) =>
+      on.inject({
+        method: 'POST', url: '/v1/register/name-check', headers: { origin: ORIGIN },
+        cookies: device !== undefined ? { [DEVICE_COOKIE]: device } : {}, payload: { loginName: unique('p') },
+      });
+
+    it("one device's allowance is shared across processes", async () => {
+      const mine = await device();
+      for (let i = 1; i < NAME_CHECK_DEVICE_BUCKET.capacity; i++) {
+        expect((await checkOn(i % 2 === 0 ? app : other, mine)).statusCode).toBe(200);
+      }
+      expect((await checkOn(other, mine)).statusCode).toBe(429);
+      expect((await checkOn(app, mine)).statusCode).toBe(429);
+    });
+
+    it('the site budget is shared across processes, and a new process does not refill it', async () => {
+      let ok = 0;
+      for (let i = 0; i < NAME_CHECK_BUCKET.capacity; i++) if ((await checkOn(i % 2 === 0 ? app : other)).statusCode === 200) ok++;
+      expect(ok).toBe(NAME_CHECK_BUCKET.capacity);
+      expect((await checkOn(app)).statusCode).toBe(503);
+      expect((await checkOn(other)).statusCode).toBe(503);
+      const { app: third } = await testApp({ db: deps.db, clock: deps.clock, config: deps.config });
+      try {
+        expect((await checkOn(third)).statusCode).toBe(503);
+      } finally {
+        await third.close();
+      }
+    });
+  });
+
   it(`the whole site gets ${NAME_CHECK_BUCKET.capacity} checks at once, however many cookies a script throws away: then 503 busy`, async () => {
     let busy: LightMyRequestResponse | undefined;
     // Every request without a cookie gets a fresh device, so only the site-wide budget stops it.

@@ -204,3 +204,48 @@ export async function visitorMiss(deps: Pick<Deps, 'db' | 'clock'>, device: Buff
 export async function visitorReset(deps: Pick<Deps, 'db'>, device: Buffer | null): Promise<void> {
   if (device !== null) await deps.db.query('delete from login_throttle where key = $1', [`password-visitor:${device.toString('hex')}`]);
 }
+
+// ---------------------------------------------------------------------------------------------
+// Shared token buckets (signup-team review F2, 8 Nov 2026): a request budget kept in Postgres, so
+// every API process and every restart draws on the same count (an in-memory `TokenBucket` is per
+// process: N processes would give N times the budget, and a restart refilled it).
+
+/** Thousandths of a token: `login_throttle.failures` is an integer column. */
+const MILLI = 1000;
+
+/**
+ * Takes one token from the shared bucket `key` (a `login_throttle` row: `failures` holds the
+ * bucket's level in thousandths of a token, `last_failure_at` when it was last refilled), or
+ * throws `refusal` with `retryAfterSeconds` when it has less than one. One atomic upsert: a
+ * parallel burst never takes more tokens than the bucket holds. A missing row is a full bucket, so
+ * `purgeExpired` deleting a row an hour after its last use changes nothing, provided the bucket
+ * refills completely within the hour (asserted here).
+ */
+export async function takeSharedBucket(
+  deps: Pick<Deps, 'db' | 'clock'>,
+  key: string,
+  size: { capacity: number; perMinute: number },
+  refusal: { status: 429 | 503; code: 'slow-down' | 'busy' },
+): Promise<void> {
+  if (size.capacity / size.perMinute > 60) throw new Error(`shared bucket ${key} takes longer than the purge hour to refill`);
+  const now = deps.clock();
+  const capacity = size.capacity * MILLI;
+  const perSecond = (size.perMinute * MILLI) / 60;
+  const level = `least($2::int, t.failures + floor(greatest(0, extract(epoch from ($3::timestamptz - t.last_failure_at))) * $4::float8))`;
+  const { rows } = await deps.db.query(
+    `insert into login_throttle as t (key, failures, last_failure_at) values ($1, $2::int - ${MILLI}, $3)
+     on conflict (key) do update set failures = (${level} - ${MILLI})::int, last_failure_at = greatest(t.last_failure_at, $3::timestamptz)
+     where ${level} >= ${MILLI}
+     returning failures`,
+    [key, capacity, now, perSecond],
+  );
+  if (rows.length > 0) return;
+  const { rows: held } = await deps.db.query<{ failures: number; last_failure_at: Date }>(
+    'select failures, last_failure_at from login_throttle where key = $1',
+    [key],
+  );
+  const row = held[0];
+  const have = row ? Math.min(capacity, row.failures + Math.max(0, (now.getTime() - row.last_failure_at.getTime()) / 1000) * perSecond) : capacity;
+  const retryAfterSeconds = Math.max(1, Math.ceil((MILLI - have) / perSecond));
+  throw new ApiError(refusal.status, refusal.code, { retryAfterSeconds });
+}
