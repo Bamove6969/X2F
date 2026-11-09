@@ -300,13 +300,14 @@ export function assertTermsVersion(deps: Pick<Deps, 'config'>, acceptedTerms: un
 }
 
 /**
- * What a new account agreed to: a trader always signs the Terms; a team member accepts them for
- * their own login account (review 2026-11-08 F1); staff and the owner have no version or signature.
+ * What a new account agreed to. Everyone who gets a login signs the Terms (owner, 9 Nov 2026,
+ * p11-14: "Yes, everyone who gets a login signs"): a trader at sign-up, a team member on their own
+ * login account (review 2026-11-08 F1), a staff member at their invite. Each passes
+ * `assertTermsAccepted` first. Only the owner's account, made by the owner's setup, has neither.
  */
 export type NewAccountTerms =
-  | { kind: 'trader'; termsVersion: string; termsSignature: TermsSignature }
-  | { kind: 'member'; termsVersion: string; termsSignature?: never }
-  | { kind: Exclude<AccountKind, 'trader' | 'member'>; termsVersion: null; termsSignature?: never };
+  | { kind: Exclude<AccountKind, 'owner'>; termsVersion: string; termsSignature: TermsSignature }
+  | { kind: 'owner'; termsVersion: null; termsSignature?: never };
 
 /** The unique constraints a new account's names can still hit after `namesTaken` (a racing writer without the lock). */
 const NAME_CONSTRAINTS: ReadonlySet<string> = new Set(['accounts_display_key_key', 'accounts_login_tag_key', 'name_keys_pkey']);
@@ -319,10 +320,10 @@ const NAME_CONSTRAINTS: ReadonlySet<string> = new Set(['accounts_display_key_key
  * anybody's display name nor the other way round (FU-A review I1). A taken name → 409
  * `names-unavailable`, one answer for all, so it never says which one (or that a login name
  * exists). The names-differ check SQL can no longer make is here too (400 `names-same`;
- * `assertNewNames` already refused it). `webauthn_user_id` is 32 random bytes. Terms version and
- * acceptance time are both null when `termsVersion` is null (staff, owner and team members, Plan
- * 4); a trader always has both and a Terms signature, sealed to the account (so its id is chosen
- * here, not by the database), and nothing else about the signing is stored.
+ * `assertNewNames` already refused it). `webauthn_user_id` is 32 random bytes. Terms version,
+ * acceptance time and signature are all null for the owner (`termsVersion` null); every other
+ * account has all three, the signature sealed to the account (so its id is chosen here, not by the
+ * database), and nothing else about the signing is stored.
  */
 export async function createAccount(
   db: Queryable,
@@ -341,7 +342,7 @@ export async function createAccount(
       [
         id, a.displayName, a.displayKey, login.current, config.loginNameKeys.current, a.kind, randomBytes(32),
         a.termsVersion, a.termsVersion === null ? null : a.now,
-        a.kind === 'trader' ? sealTermsSignature(config, a.termsSignature, id) : null, a.now,
+        a.kind === 'owner' ? null : sealTermsSignature(config, a.termsSignature, id), a.now,
       ],
     );
     return id;

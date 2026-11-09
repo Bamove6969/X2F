@@ -2,8 +2,9 @@
  * Joining a team (Plan 2 Task 18; spec 6.7): the page an invite link opens (`/team/join#<code>`).
  * The invite never names the team account (review 2026-11-08 F3): the vendor is named once the
  * member is inside. The code is read from the fragment (never sent in a URL to the server) and then dropped from the
- * address bar. The person first reads and accepts the Terms (review 2026-11-08 F1: nobody gets
- * past the front door without signing the agreement, a team member included), then picks a private
+ * address bar. The person first reads, accepts and signs the Terms (review 2026-11-08 F1: nobody gets
+ * past the front door without signing the agreement, a team member included; owner 9 Nov 2026,
+ * p11-14: the signature too, sent with the first factor's finish), then picks a private
  * login name and proves a PGP key, then adds a second factor: a security key, a passkey or a second PGP key (the staff rule, lead default). The second
  * step starts their first session, and the page goes to the app.
  *
@@ -13,7 +14,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { startRegistration } from '@simplewebauthn/browser';
-import { AuthApiError, type PgpChallenge, type TeamInviteView } from '@x2f/auth-client';
+import { AuthApiError, type PgpChallenge, type TeamInviteView, type TermsSignature } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { JOIN_COPY as C } from '../settings/teamCopy.js';
 import { TermsScreen } from '../setup/Terms.js';
@@ -145,7 +146,8 @@ export function MemberInvite() {
   const [invite, setInvite] = useState<TeamInviteView | null | 'gone'>(null);
   const [loginName, setLoginName] = useState('');
   /** The Terms version the member accepted on this page; null until then. */
-  const [terms, setTerms] = useState<string | null>(null);
+  /** The Terms accepted and signed on the first step (owner 9 Nov 2026, p11-14: everyone who gets a login signs). */
+  const [terms, setTerms] = useState<{ version: string; signature: TermsSignature } | null>(null);
   const [setup, setSetup] = useState<{ setupId: string; setupUntil: string } | null>(null);
   const [second, setSecond] = useState<Second>('choose');
   const [error, setError] = useState<string | null>(null);
@@ -198,8 +200,8 @@ export function MemberInvite() {
         screen="team-join-terms"
         title={C.title}
         intro={C.termsIntro}
-        onAccept={async (version) => {
-          setTerms(version);
+        onAccept={async (version, signature) => {
+          setTerms({ version, signature });
         }}
       />
     );
@@ -244,9 +246,9 @@ export function MemberInvite() {
               <PgpProof
                 keyLabel={C.keyLabel}
                 primaryLabel={C.confirmKey}
-                start={(publicKey) => authApi.joinStart({ invite: code, loginName: loginName.trim(), publicKey, acceptedTerms: terms! })}
+                start={(publicKey) => authApi.joinStart({ invite: code, loginName: loginName.trim(), publicKey, acceptedTerms: terms!.version })}
                 finish={async (challengeId, c) => {
-                  const r = await authApi.joinFinish({ challengeId, code: c });
+                  const r = await authApi.joinFinish({ challengeId, code: c, termsSignature: terms!.signature });
                   setSetup({ setupId: r.setupId, setupUntil: r.setupUntil });
                 }}
               />

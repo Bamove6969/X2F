@@ -320,18 +320,25 @@ describe('uniqueness across keys', () => {
     expect(row).toEqual({ login_tag: currentLoginTag(deps, name, 5), login_tag_key_id: 5, login_name: null, login_key: null });
   });
 
-  // Security review 2026-11-08, finding 9. `npm run typecheck` is what enforces these.
-  it('createAccount needs a signature and a version for a trader, by type', () => {
+  // Security review 2026-11-08, finding 9; owner 9 Nov 2026 (p11-14): everyone who gets a login
+  // signs. `npm run typecheck` is what enforces these.
+  it('createAccount needs a signature and a version for a trader, a member and staff, by type', () => {
     type Args = Parameters<typeof createAccount>[2];
     const base = { displayName: 'A', displayKey: 'a', loginKey: 'b', now: new Date() };
     // @ts-expect-error a trader must carry a signature
     const unsigned: Args = { ...base, kind: 'trader', termsVersion: TERMS };
     // @ts-expect-error a trader must carry a Terms version
     const unversioned: Args = { ...base, kind: 'trader', termsVersion: null, termsSignature: SIG };
-    // @ts-expect-error a signature belongs to a trader only
-    const staffSigned: Args = { ...base, kind: 'staff', termsVersion: null, termsSignature: SIG };
-    const staff: Args = { ...base, kind: 'staff', termsVersion: null };
-    expect([unsigned, unversioned, staffSigned, staff]).toHaveLength(4);
+    // @ts-expect-error a staff login signs too
+    const staffUnsigned: Args = { ...base, kind: 'staff', termsVersion: null };
+    // @ts-expect-error a team member's login signs too
+    const memberUnsigned: Args = { ...base, kind: 'member', termsVersion: TERMS };
+    // @ts-expect-error the owner's account has no signature
+    const ownerSigned: Args = { ...base, kind: 'owner', termsVersion: null, termsSignature: SIG };
+    const staff: Args = { ...base, kind: 'staff', termsVersion: TERMS, termsSignature: SIG };
+    const member: Args = { ...base, kind: 'member', termsVersion: TERMS, termsSignature: SIG };
+    const owner: Args = { ...base, kind: 'owner', termsVersion: null };
+    expect([unsigned, unversioned, staffUnsigned, memberUnsigned, ownerSigned, staff, member, owner]).toHaveLength(8);
   });
 
   it('createAccount refuses equal names itself (the check SQL can no longer make)', async () => {

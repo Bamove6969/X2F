@@ -312,11 +312,19 @@ export function accountRoutes(app: FastifyInstance): void {
         // Review round 4: the accepting session must still be live where it writes.
         await requireLiveSessionInTx(db, req.auth, now);
         if (req.auth.memberId !== null) {
-          await db.query(
-            `update accounts set terms_version = $2, terms_accepted_at = $3
-              where kind = 'member' and id = (select member_account_id from team_members where id = $1)`,
-            [req.auth.memberId, version, now],
-          );
+          // The member signs too (owner 9 Nov 2026, p11-14), sealed to their own login account; only
+          // a changed version writes, as for a trader.
+          const { rows } = await db.query<{ member_account_id: string | null }>('select member_account_id from team_members where id = $1', [
+            req.auth.memberId,
+          ]);
+          const memberAccountId = rows[0]?.member_account_id ?? null;
+          if (memberAccountId !== null) {
+            await db.query(
+              `update accounts set terms_version = $2, terms_accepted_at = $3, terms_signature = $4
+                where id = $1 and kind = 'member' and terms_version is distinct from $2`,
+              [memberAccountId, version, now, sealTermsSignature(d.config, signature, memberAccountId)],
+            );
+          }
         } else {
           await db.query('update accounts set terms_version = $2, terms_accepted_at = $3, terms_signature = $5 where id = $1 and kind = $4 and terms_version is distinct from $2', [
             req.auth.accountId, version, now, 'trader', sealTermsSignature(d.config, signature, req.auth.accountId),

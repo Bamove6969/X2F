@@ -345,6 +345,9 @@ test('21-23 a member joins: the invite, the PGP step, the second way', async ({ 
     el.dispatchEvent(new Event('scroll'));
   });
   await page.check('[data-part="terms-tick"]');
+  // And signs (owner 9 Nov 2026, p11-14: everyone who gets a login signs).
+  await page.click('[data-part="signature-type"]');
+  await page.fill('[data-part="signature-name"]', 'AK');
   await page.click('[data-part="terms-accept"]');
   await expect(page.locator('[data-part="invite-who"]')).toBeVisible();
   await shot(page, '21-team-join-invite');

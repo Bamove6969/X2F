@@ -10,7 +10,7 @@ import { SESSION_COOKIE, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, log
 import { seedAccount } from '../helpers/accounts.js';
 import { driveTo, seedTrade } from '../helpers/trades.js';
 import { applyEvent } from '../../src/trades/store.js';
-import { sealTermsSignature } from '../../src/termsSignature.js';
+import { openTermsSignature, sealTermsSignature } from '../../src/termsSignature.js';
 import { SIG } from '../helpers/signature.js';
 import { attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
 
@@ -48,9 +48,12 @@ async function createInvite(role: 'senior' | 'mod' | 'helper', hours: LoginHours
 const invitee = () => new StaffBrowser(t.app);
 const acceptUrl = (token: string, step = '') => `/staff/v1/invites/accept/${token}${step}`;
 
+/** The Terms every staff invitee accepts and signs with their names (owner 9 Nov 2026, p11-14). */
+const signed = () => ({ acceptedTerms: t.deps.config.termsVersion, termsSignature: SIG });
+
 async function pickNames(b: StaffBrowser, token: string) {
   const n = loginName();
-  const res = await b.post(acceptUrl(token, '/account'), { displayName: `Mod${n}`, loginName: n });
+  const res = await b.post(acceptUrl(token, '/account'), { displayName: `Mod${n}`, loginName: n, ...signed() });
   return { res, loginName: n, displayName: `Mod${n}` };
 }
 
@@ -173,6 +176,32 @@ describe('invites', () => {
     // A passkey is PGP's partner for staff (spec 6.6).
     expect((await addInviteKey(h.b, helper.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
     expect((await h.b.post(acceptUrl(helper.token, '/finish'), {})).statusCode).toBe(201);
+  });
+
+  it('the invitee accepts and signs the Terms with their names (owner 9 Nov 2026, p11-14: everyone who gets a login signs)', async () => {
+    const inv = await createInvite('helper');
+    const b = invitee();
+    const n = loginName();
+    const names = { displayName: `Mod${n}`, loginName: n };
+    for (const [extra, error] of [
+      [{}, 'terms-not-accepted'],
+      [{ acceptedTerms: '2020-01-01', termsSignature: SIG }, 'terms-not-accepted'],
+      [{ acceptedTerms: t.deps.config.termsVersion }, 'signature-required'],
+      [{ acceptedTerms: t.deps.config.termsVersion, termsSignature: { kind: 'typed', name: '' } }, 'signature-invalid'],
+    ] as const) {
+      const res = await b.post(acceptUrl(inv.token, '/account'), { ...names, ...extra });
+      expect(res.statusCode, res.body).toBe(400);
+      expect(errorOf(res)).toBe(error);
+    }
+    // Nothing was made by the refusals: the names are still free and the invite still open.
+    expect((await b.post(acceptUrl(inv.token, '/account'), { ...names, ...signed() })).statusCode).toBe(201);
+    const id = await accountOf(n);
+    const { rows } = await t.deps.db.query<{ terms_version: string | null; terms_accepted_at: Date | null; terms_signature: Buffer | null }>(
+      'select terms_version, terms_accepted_at, terms_signature from accounts where id = $1', [id],
+    );
+    expect(rows[0]!.terms_version).toBe(t.deps.config.termsVersion);
+    expect(rows[0]!.terms_accepted_at).not.toBeNull();
+    expect(openTermsSignature(t.deps.config, rows[0]!.terms_signature!, id)).toEqual(SIG);
   });
 
   it('the account cannot log in before finish, and the names are picked once', async () => {
@@ -369,7 +398,7 @@ describe('open cases (was NEEDS_P4_CASE_ASSIGNEE)', () => {
 describe('owner Q54: the public name is displayName; a field named username is refused', () => {
   it('the invitee names the account with displayName and loginName; username is not taken', async () => {
     const inv = await createInvite('helper');
-    const res = await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Public1x', loginName: 'secretlogin1x' });
+    const res = await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Public1x', loginName: 'secretlogin1x', ...signed() });
     expect(res.statusCode).toBe(400);
   });
 });
@@ -417,6 +446,16 @@ describe('Task 7 tripwires (local tree only)', () => {
     // When Task 13's gate lands (apps/moderation/src/gate): give ModerationClient a revoke call and
     // make `switchOff` call it after the commit (revocation needs no signature).
     expect(existsSync(`${ROOT}apps/moderation/src/gate`), 'the ruling gate landed: notify it on switch-off (see this test)').toBe(false);
+  });
+
+  it('NEEDS_P4_TASK16: the staff web invite page signs the Terms before it names the account', () => {
+    // Owner 9 Nov 2026 (p11-14): staff sign too. `POST …/accept/:token/account` needs
+    // `acceptedTerms` and `termsSignature` (staff/invites.ts). When Task 16's staff web lands, its
+    // invite page must show the Terms with the signature pad and send both.
+    const page = `${ROOT}apps/staff-web/src/screens/Invite.tsx`;
+    if (!existsSync(page)) return;
+    const text = readFileSync(page, 'utf8');
+    expect(text.includes('termsSignature') && text.includes('acceptedTerms'), 'the staff invite page must send acceptedTerms and termsSignature').toBe(true);
   });
 
 });

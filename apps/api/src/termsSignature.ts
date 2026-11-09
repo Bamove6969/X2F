@@ -1,6 +1,8 @@
 /**
- * The signature a trader gives when accepting the Terms (owner, 8 Nov 2026): once, at account
- * opening, and again whenever the Terms version changes, never per trade. Stored with the account
+ * The signature given when accepting the Terms (owner, 8 Nov 2026): once, at account opening, and
+ * again whenever the Terms version changes, never per trade. Everyone who gets a login signs (owner,
+ * 9 Nov 2026, p11-14): a trader at sign-up, a team member at join (and on their own login account
+ * when the Terms change), a staff member at their invite; not the owner's own account. Stored with the account
  * (`accounts.terms_signature`, migration 316) next to `terms_version` and `terms_accepted_at`, and
  * erased when the account closes (owner, 9 Nov 2026, p11-13: "Erase it when the account closes"):
  * a deleted row takes it, and every close that keeps the row calls `eraseTermsSignature` in its

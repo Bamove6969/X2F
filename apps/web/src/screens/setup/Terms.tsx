@@ -11,7 +11,8 @@
  *   with `terms-required` (the Terms changed). Accepting posts `POST /v1/account/terms`
  *   `{ version, signature }` (a new version asks for a new signature too) and returns to `returnTo`.
  * - `TermsScreen` in MemberInvite (`/team/join`): a team member signs the Terms before joining
- *   (review 2026-11-08 F1); the version goes with `POST /v1/team/join/start` (`acceptedTerms`).
+ *   (review 2026-11-08 F1); the version goes with `POST /v1/team/join/start` (`acceptedTerms`), the
+ *   signature with `POST /v1/team/join/finish` (`termsSignature`; owner 9 Nov 2026, p11-14).
  *
  * The pad and its help line are not on the SetupTerms board; they sit under the tick box, before
  * the board's footer, and their wording is unsigned.

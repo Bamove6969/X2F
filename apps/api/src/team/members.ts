@@ -18,6 +18,7 @@ import type pg from 'pg';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
 import { createAccount, type NewNames } from '../accounts.js';
+import type { TermsSignature } from '../termsSignature.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -368,13 +369,16 @@ export async function checkMemberLoginName(db: Queryable, raw: unknown): Promise
 export async function startMember(
   c: Queryable,
   config: Config,
-  a: { inviteId: string; names: NewNames; now: Date; terms: string; addKey: (memberAccountId: string) => Promise<void> },
+  a: { inviteId: string; names: NewNames; now: Date; terms: { version: string; signature: TermsSignature }; addKey: (memberAccountId: string) => Promise<void> },
 ): Promise<{ memberId: string; memberAccountId: string; teamId: string; setupUntil: Date }> {
   const invite = await openInvite(c, { id: a.inviteId }, a.now, true);
   // FU-D: the login name is stored only as its keyed tag (createAccount); the display name is the
   // random placeholder `memberNames` made, never shown.
-  // The member's own acceptance of the Terms (review 2026-11-08 F1), checked by `assertTermsVersion`.
-  const memberAccountId = await createAccount(c, config, { ...a.names, kind: 'member', termsVersion: a.terms, now: a.now });
+  // The member's own acceptance of the Terms and their signature (review 2026-11-08 F1; owner 9 Nov
+  // p11-14, everyone who gets a login signs), checked by `assertTermsAccepted`.
+  const memberAccountId = await createAccount(c, config, {
+    ...a.names, kind: 'member', termsVersion: a.terms.version, termsSignature: a.terms.signature, now: a.now,
+  });
   await a.addKey(memberAccountId);
   const setupUntil = new Date(Math.max(invite.invite_expires_at.getTime(), a.now.getTime() + SETUP_MIN_MS));
   await c.query('update team_members set member_account_id = $2, invite_hash = null, invite_expires_at = $3 where id = $1', [

@@ -70,7 +70,7 @@ export const SAMPLE_CALLS: { [K in keyof AuthApi]: Parameters<AuthApi[K]> } = {
   teamAudit: [],
   readInvite: [{ invite: 'x' }],
   joinStart: [{ invite: 'x', loginName: 'sample.login', publicKey: 'x', acceptedTerms: '2026-10-17' }],
-  joinFinish: [{ challengeId: UUID, code: 'x' }],
+  joinFinish: [{ challengeId: UUID, code: 'x', termsSignature: { kind: 'typed', name: 'x' } }],
   joinSecondPgpStart: [{ setupId: UUID, publicKey: 'x' }],
   joinSecondPgpFinish: [{ setupId: UUID, challengeId: UUID, code: 'x', deviceLabel: 'B' }],
   joinSecondWebAuthnStart: [{ setupId: UUID, kind: 'passkey' }],

@@ -439,7 +439,8 @@ export interface AuthApi {
   /** `acceptedTerms`: the Terms version the member read and accepted (review 2026-11-08 F1). */
   joinStart(b: { invite: string; loginName: string; publicKey: string; acceptedTerms: string }): Promise<PgpChallenge & { fingerprint: string }>;
   /** The PGP key proved: the member's login exists, no session yet; add the second factor before `setupUntil`. */
-  joinFinish(b: { challengeId: string; code: string }): Promise<{ setupId: string; needs: ('security-key' | 'passkey' | 'pgp')[]; setupUntil: string }>;
+  /** `termsSignature`: the signature given on the Terms step, with the version sent at `joinStart` (owner, 9 Nov 2026). */
+  joinFinish(b: { challengeId: string; code: string; termsSignature: TermsSignature }): Promise<{ setupId: string; needs: ('security-key' | 'passkey' | 'pgp')[]; setupUntil: string }>;
   joinSecondPgpStart(b: { setupId: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
   joinSecondPgpFinish(b: { setupId: string; challengeId: string; code: string; deviceLabel: string }): Promise<{ status: 'ok' }>;
   joinSecondWebAuthnStart(b: { setupId: string; kind: WebAuthnKind }): Promise<RegistrationChallenge>;

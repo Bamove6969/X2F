@@ -23,7 +23,7 @@
  * - `POST /v1/team/join/start { invite, loginName, publicKey, acceptedTerms }` → a PGP challenge to
  *   the key; 400 `terms-not-accepted` `{ version }` unless `acceptedTerms` is the current version
  *   (the member signs the Terms themselves, review 2026-11-08 F1).
- * - `POST /v1/team/join/finish { challengeId, code }` → `{ setupId, needs, setupUntil }`: the
+ * - `POST /v1/team/join/finish { challengeId, code, termsSignature }` → `{ setupId, needs, setupUntil }`: the
  *   member's login exists with that key and the invite is used up; no session yet.
  * - `POST /v1/team/join/second/webauthn/start { setupId, kind }` and
  *   `.../finish { setupId, challengeId, response, deviceLabel, label? }`, or
@@ -35,6 +35,7 @@ import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
 import { assertTermsVersion, openNames, sealNames } from '../accounts.js';
+import { SIGNED_BODY_LIMIT, checkTermsSignature } from '../termsSignature.js';
 import { ApiError } from '../errors.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { requireConfirm } from '../auth/confirm.js';
@@ -239,16 +240,21 @@ export function teamRoutes(app: FastifyInstance): void {
     });
   });
 
-  app.post('/v1/team/join/finish', async (req: FastifyRequest, reply: FastifyReply) => {
+  // Owner 9 Nov 2026 (p11-14): the member's signature comes with the finish, as a trader's does
+  // with their register finish; it is sealed to the login account made here, never kept in the
+  // challenge.
+  app.post('/v1/team/join/finish', { bodyLimit: SIGNED_BODY_LIMIT }, async (req: FastifyRequest, reply: FastifyReply) => {
     ensureDeviceCookie(req, reply);
     req.server.budgets.register.take();
     const deps = req.server.deps;
     const b = body(req);
+    // The signature is checked before the code is used, so a bad one costs the member no new code.
+    const signature = checkTermsSignature(b.termsSignature);
     const proved = await checkTeamJoinCode(deps, req, str(b, 'challengeId'), str(b, 'code'), null);
     const p = proved.payload as { step?: unknown; inviteId?: unknown; names?: unknown; terms?: unknown };
     if (p.step !== 'first' || typeof p.inviteId !== 'string') throw new ApiError(400, 'challenge-expired');
-    // The Terms signed at `join/start` must still be the current ones.
-    const terms = assertTermsVersion(deps, p.terms);
+    // The Terms accepted at `join/start` must still be the current ones.
+    const terms = { version: assertTermsVersion(deps, p.terms), signature };
     const names = openNames(deps.config, p.names);
     const inviteId = p.inviteId;
     const now = deps.clock();

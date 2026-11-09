@@ -12,6 +12,8 @@ import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
+import { SIG } from './helpers/signature.js';
+import { openTermsSignature } from '../src/termsSignature.js';
 
 // Every route the app registers, as Fastify's own onRoute hook sees it (as team.test.ts does).
 const registered = vi.hoisted(() => [] as RouteOptions[]);
@@ -204,12 +206,25 @@ describe('a team member signs the Terms themselves', () => {
   it('the member accepts the Terms on their own login account and is inside; the team account row is untouched', async () => {
     const m = await memberOn('2020-01-01');
     const before = await deps.db.query<{ terms_accepted_at: Date | null }>('select terms_accepted_at from accounts where id = $1', [m.owner.id]);
-    const wrong = await m.browser.post('/v1/account/terms', { version: '2020-01-01' });
+    const wrong = await m.browser.post('/v1/account/terms', { version: '2020-01-01', signature: SIG });
     expect(wrong.statusCode).toBe(400);
-    const ok = await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion });
+    // Owner 9 Nov 2026 (p11-14): everyone who gets a login signs, a member included.
+    const unsigned = await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion });
+    expect(unsigned.statusCode).toBe(400);
+    expect((unsigned.json() as { error: string }).error).toBe('signature-required');
+    const ok = await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion, signature: SIG });
     expect(ok.statusCode, ok.body).toBe(204);
-    const rows = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [m.loginId]);
+    const rows = await deps.db.query<{ terms_version: string | null; terms_signature: Buffer | null }>(
+      'select terms_version, terms_signature from accounts where id = $1', [m.loginId],
+    );
     expect(rows.rows[0]!.terms_version).toBe(deps.config.termsVersion);
+    // Sealed to the member's own login account.
+    expect(openTermsSignature(deps.config, rows.rows[0]!.terms_signature!, m.loginId)).toEqual(SIG);
+    // The same version again changes nothing (security review 2026-11-08 finding 5, as for a trader).
+    const again = await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion, signature: { kind: 'typed', name: 'Someone Else' } });
+    expect(again.statusCode).toBe(204);
+    const still = await deps.db.query<{ terms_signature: Buffer }>('select terms_signature from accounts where id = $1', [m.loginId]);
+    expect(openTermsSignature(deps.config, still.rows[0]!.terms_signature, m.loginId)).toEqual(SIG);
     const after = await deps.db.query<{ terms_accepted_at: Date | null }>('select terms_accepted_at from accounts where id = $1', [m.owner.id]);
     expect(after.rows[0]!.terms_accepted_at?.toISOString()).toBe(before.rows[0]!.terms_accepted_at?.toISOString());
     for (const { url, inside } of READS) expect((await m.browser.get(url)).statusCode, url).toBe(inside);
@@ -222,7 +237,7 @@ describe('a team member signs the Terms themselves', () => {
     for (const { url } of READS) expect((await m.browser.get(url)).statusCode, url).toBe(403);
     expect(((await m.browser.get('/v1/account/me')).json() as { termsCurrent: boolean }).termsCurrent).toBe(false);
     // The member's acceptance is theirs only: it does not accept for the account.
-    expect((await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion })).statusCode).toBe(204);
+    expect((await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion, signature: SIG })).statusCode).toBe(204);
     const team = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [m.owner.id]);
     expect(team.rows[0]!.terms_version).toBe('2020-01-01');
     expect((await m.browser.get('/v1/news')).statusCode).toBe(403);
