@@ -803,3 +803,33 @@ The owner asked design to treat his 12 comments as a brief for the whole app and
 - **Desktop refs:** I'll recapture them after the rail lands on main.
 - **G37 incident ID:** the boards already put the incident ID at the top of the trade (DisputeRoom). Please send me the exact G37 wording if it asks for more.
 - Canvas v164.
+
+## Owner answers not yet on a board (9 Nov 2026, owner order "all my answers … worked on") — READY
+I audited every owner answer on origin/comms against the canvas: the decisions file, page 1/2, page 3, follow-ups, page 11, the 28 Oct–2 Nov answers, and all 68 raw JSON answers, which match their .md transcriptions word for word.
+- **Full register, one row per answer:** docs/owner-answers-audit/combined-by-stage.md (82 rows; duplicates across sources are merged in the drawing, not in the register). Per-source files with the DRAWN id lists are next to it.
+- **Totals:** about 20 CONFLICT, 41 PARTLY and 24 NOT DRAWN, across the four sources (overlapping). About 120 answers are already drawn.
+- **Biggest conflicts, in the order a user meets them:**
+  - G34: user + password + TOTP counts as strong; the security boards say it doesn't.
+  - G32: a recovery code only lets you in to set up login methods again.
+  - Q23: 3 bands per currency and 5 payment types per ad; boards say 5 bands.
+  - G19: traders never see "emergency".
+  - 28 Oct: appeal is 48 h; Refunded shows 72 h.
+  - p11-11: 90 days count from when the dispute closes; SelfDestruct counts from when it opens.
+  - Q77: vendor to trader means opening a new account; BecomeVendor still offers "Switch back".
+  - G57: removing team members.
+  - Clawback: pay goes out at clock-out; StaffSettings holds the bonus.
+  - Q54: owner username vs display name.
+  - Q51/G3: staff need all three login methods.
+- **Head-designer rulings on ambiguous items:**
+  - Q58 cap in USD. Q77: the 60-day idle close applies to every account. Five member types stay (owner-approved).
+  - TeamChat follows the owner's 28 Oct words: "Message from Team <display> member: <member name>".
+  - G34: the combination counts as strong for traders; vendor and staff rules stay as boarded unless the owner's words say otherwise.
+  - p11-3 ("48 mark"), F3 (what makes a band different), F8, reviewer naming and the public won/lost line wait for the owner or lead.
+- **Drawing now, by journey stage:**
+  - 1–2: signup and security.
+  - 3–4: browse, quote and post.
+  - 5–6: trade, proof and dispute.
+  - 7–8: after the trade and settings.
+  - 9: staff and owner.
+
+  Each stage gets its own READY push with a note here.
