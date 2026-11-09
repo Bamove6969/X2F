@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { Deps } from '../src/app.js';
 import { loginNameLookup } from '../src/accounts.js';
 import { DEVICE_COOKIE } from '../src/auth/device.js';
+import { hashPassword, verifyPassword } from '../src/auth/password.js';
 import { RECOVERY_HOLD_MS } from '../src/auth/recovery.js';
 import { SESSION_COOKIE, requireSession } from '../src/auth/sessions.js';
 import { sealSecret } from '../src/auth/totp.js';
@@ -458,6 +459,77 @@ describe('the held recovery session of a backup login (P2-I1, Task 17)', () => {
     const { id: fullId } = await sessionRow(owner);
     expect((await owner.delete(`/v1/account/recovery-sessions/${fullId}`)).statusCode).toBe(404);
     expect((await owner.delete('/v1/account/recovery-sessions/not-a-uuid')).statusCode).toBe(404);
+  });
+});
+
+describe('S-019: the recovery code is an emergency login only (owner G32; lead job J-09)', () => {
+  const PASSWORD = 'Correct-Horse-9';
+
+  async function withPassword(accountId: string): Promise<void> {
+    const { hash, pepperId } = await hashPassword(deps.config, PASSWORD);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [accountId, hash, pepperId, now]);
+  }
+
+  const accountRow = async (id: string) =>
+    (await deps.db.query('select display_name, display_key, login_tag, login_tag_key_id from accounts where id = $1', [id])).rows[0];
+  const passwordRow = async (id: string) =>
+    (await deps.db.query<{ hash: string; pepper_id: number; updated_at: Date }>('select hash, pepper_id, updated_at from passwords where account_id = $1', [id]))
+      .rows[0];
+  const holdUntil = async (id: string) =>
+    (await deps.db.query<{ hold_until: Date }>('select hold_until from account_holds where account_id = $1', [id])).rows[0]?.hold_until;
+
+  it('changes neither the username nor the password, and the password still logs in', async () => {
+    const { id, username } = await account();
+    await withPassword(id);
+    const codes = await newCodes(await loggedIn(id));
+    const names = await accountRow(id);
+    const pw = await passwordRow(id);
+
+    expect((await backup(new Browser(app), username, 'recovery-code', codes[0]!)).statusCode).toBe(200);
+
+    expect(await accountRow(id)).toEqual(names);
+    expect(await passwordRow(id)).toEqual(pw);
+    expect(await verifyPassword(deps.config, { hash: pw!.hash, pepperId: pw!.pepper_id }, PASSWORD)).toBe(true);
+    expect(await alerts(id, 'login-method-added')).toEqual([{ method: 'recovery-codes' }]);
+  });
+
+  it('the recovery session cannot set a new password during its 24 hours: the password stays', async () => {
+    const { id, username } = await account();
+    await withPassword(id);
+    const codes = await newCodes(await loggedIn(id));
+    const pw = await passwordRow(id);
+    const b = new Browser(app);
+    expect((await backup(b, username, 'recovery-code', codes[0]!)).statusCode).toBe(200);
+    const until = new Date(now.getTime() + RECOVERY_HOLD_MS);
+
+    setNow(new Date(until.getTime() - 1000));
+    const res = await b.put('/v1/account/password', { password: 'Another-Horse-77' });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
+    expect(await passwordRow(id)).toEqual(pw);
+  });
+
+  it('never shortens the 24-hour hold: a second code later moves the end later, never earlier', async () => {
+    const { id, username } = await account();
+    const codes = await newCodes(await loggedIn(id));
+    const first = new Browser(app);
+    expect((await backup(first, username, 'recovery-code', codes[0]!)).statusCode).toBe(200);
+    const firstEnd = new Date(now.getTime() + RECOVERY_HOLD_MS);
+    expect(await holdUntil(id)).toEqual(firstEnd);
+    expect((await sessionRow(first)).hold_until).toEqual(firstEnd);
+
+    setNow(at(12 * HOUR));
+    const second = new Browser(app);
+    expect((await backup(second, username, 'recovery-code', codes[1]!)).statusCode).toBe(200);
+    const secondEnd = new Date(now.getTime() + RECOVERY_HOLD_MS);
+    expect(await holdUntil(id)).toEqual(secondEnd);
+    expect(secondEnd.getTime()).toBeGreaterThan(firstEnd.getTime());
+    // The first backup session keeps its own 24 hours.
+    expect((await sessionRow(first)).hold_until).toEqual(firstEnd);
+    // A recovery session cannot end a hold (only a full session can end a backup session).
+    const { id: firstId } = await sessionRow(first);
+    expect((await second.delete(`/v1/account/recovery-sessions/${firstId}`)).json()).toEqual({ error: 'recovery-session' });
+    expect(await holdUntil(id)).toEqual(secondEnd);
   });
 });
 
