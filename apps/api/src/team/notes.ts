@@ -5,7 +5,8 @@
  * - `GET /v1/account/notes/:displayName` → the account's notes about that trader, newest first:
  *   `{ id, text, by, byLead, at }[]` (`by` is the member's name, null for the lead). The account
  *   owner, or a member with "View notes on traders" (`notes-view`).
- * - `POST /v1/account/notes { about, text }` → 201 the note. The account owner, or a member with
+ * - `POST /v1/account/notes { about, text }` → 201 the note (409 `too-many-notes` `{ max }` at
+ *   `NOTES_PER_ACCOUNT` for the account). The account owner, or a member with
  *   "Add notes on traders" (`notes-add`); a member's note is in the team log (`note-added`, the
  *   note's id and the trader's name, never the text).
  * - `DELETE /v1/account/notes/:id` → 204. The account owner only: no member deletes a note (owner
@@ -25,6 +26,12 @@ import { auditMember } from './audit.js';
 
 /** Engineering default (lead may change): a note's longest text. */
 export const NOTE_MAX = 1000;
+/**
+ * Engineering default (lead may change; review 2026-11-09 m4): at most this many notes per account,
+ * the lead's and every member's together. Past it, 409 `too-many-notes` `{ max }`; the lead deletes
+ * old ones to add more.
+ */
+export const NOTES_PER_ACCOUNT = 500;
 const NAME_MAX = 64;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -96,7 +103,10 @@ export function noteRoutes(app: FastifyInstance): void {
     const about = await traderNamed(deps.db, rawAbout, req.auth.accountId);
     const now = deps.clock();
     const note = await inTransaction(req, async (c) => {
+      // The account lock (taken here) makes the count and the insert one step.
       await requireLiveSessionInTx(c, req.auth, now);
+      const count = await c.query<{ n: number }>('select count(*)::int as n from trader_notes where account_id = $1', [req.auth.accountId]);
+      if (count.rows[0]!.n >= NOTES_PER_ACCOUNT) throw new ApiError(409, 'too-many-notes', { max: NOTES_PER_ACCOUNT });
       const { rows } = await c.query<{ id: string }>(
         'insert into trader_notes (account_id, about_account_id, member_id, text, created_at) values ($1, $2, $3, $4, $5) returning id',
         [req.auth.accountId, about.id, req.auth.memberId, text, now],

@@ -14,8 +14,9 @@ import { ACTION_ABILITY, auditMember } from '../src/team/audit.js';
 import { HARD_OWNER_ONLY, legacyRoles, ROLE_ABILITIES, rolesToAbilities, sortAbilities } from '../src/team/abilities.js';
 import { memberAccessOf } from '../src/auth/sessions.js';
 import { openInvite, purgeTeamLeftovers } from '../src/team/members.js';
+import { NOTES_PER_ACCOUNT } from '../src/team/notes.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
-import { EVENT_ABILITY, MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '../src/team/perms.js';
+import { EVENT_ABILITY, eventAbility, MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '../src/team/perms.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
 import { openEvents, until, type SseStream } from './helpers/sse.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
@@ -718,11 +719,27 @@ describe('role changes and removal reach a member in flight', () => {
     const sendable = CLIENT_EVENTS.filter((e) => !MEMBER_SIGNING_EVENTS.has(e) && e !== 'open-dispute');
     for (const e of sendable) {
       expect(ACTION_ABILITY[e as keyof typeof ACTION_ABILITY], e).toMatch(/^trades-/);
-      expect(EVENT_ABILITY[e], e).toBe(ACTION_ABILITY[e as keyof typeof ACTION_ABILITY]);
+      expect(EVENT_ABILITY[e as keyof typeof EVENT_ABILITY], e).toBe(ACTION_ABILITY[e as keyof typeof ACTION_ABILITY]);
     }
     // The signing events map to boxes no member holds today (release: never, p10-2).
     expect(EVENT_ABILITY['release-started']).toBe('trades-release');
     expect(HARD_OWNER_ONLY.has('trades-release')).toBe(true);
+    // Review 2026-11-09 m2: an event with no box is a 400, never a 500.
+    expect(() => eventAbility('a-future-event')).toThrow(expect.objectContaining({ status: 400, code: 'event-not-allowed' }));
+    expect(eventAbility('mark-paid')).toBe('trades-mark-paid');
+  });
+
+  it('review 2026-11-09 m1: a trade event also needs a box that reads the trade', async () => {
+    const owner = await team();
+    const other = await team();
+    const m = await member(owner.id, { abilities: ['trades-mark-paid'] });
+    const t = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    const secured = await driveTo(deps, t.trade, 'secured');
+    expect(err(await m.browser.post(`/v1/trades/${t.code}/events`, { type: 'mark-paid', fiatCents: secured.fiatCents.toString() }))).toEqual({ status: 403, error: 'forbidden' });
+    expect(await auditRows(owner.id)).toEqual([]);
+    const m2 = await member(owner.id, { abilities: ['trades-see-active', 'trades-mark-paid'] });
+    const ok = await m2.browser.post(`/v1/trades/${t.code}/events`, { type: 'mark-paid', fiatCents: secured.fiatCents.toString() });
+    expect(ok.statusCode, ok.body).toBe(200);
   });
 
   it('auditMember checks every action against the box it needs', async () => {
@@ -1332,6 +1349,14 @@ describe('review 2026-11-09 M1: the boxes and the 24-hour hold (hold v3 staging,
     expect((await m.browser.delete('/v1/account/hold/changes')).statusCode).toBe(204);
   });
 
+  it('review 2026-11-09 m3: the team list marks a set the old roles do not describe as custom', async () => {
+    const owner = await team();
+    const a = await member(owner.id, ['trades']);
+    const b = await member(owner.id, { abilities: ['trades-see-active'] });
+    const list = ((await owner.browser.get('/v1/team')).json() as { members: { id: string; roles: string[]; custom: boolean }[] }).members;
+    expect(list.map((x) => [x.id, x.roles, x.custom])).toEqual([[a.id, ['trades'], false], [b.id, ['trades'], true]]);
+  });
+
   it('a strong lead grants a hold box through { abilities }', async () => {
     const owner = await team();
     const m = await member(owner.id, ['trades']);
@@ -1601,5 +1626,21 @@ describe('notes on traders (S-094, p7-8)', () => {
     expect(theirs.statusCode).toBe(200);
     expect(theirs.json()).toEqual([]);
     expect(err(await subject.browser.post('/v1/account/notes', { about: subjectName, text: 'me' }))).toEqual({ status: 400, error: 'bad-request' });
+  });
+
+  it('review 2026-11-09 m4: an account holds at most NOTES_PER_ACCOUNT notes, the lead\'s and members\' together', async () => {
+    const owner = await team();
+    const subject = await team();
+    const subjectName = ((await subject.browser.get('/v1/account/me')).json() as { displayName: string }).displayName;
+    await deps.db.query(
+      `insert into trader_notes (account_id, about_account_id, text, created_at) select $1, $2, 'n' || g, $3 from generate_series(1, $4::int) g`,
+      [owner.id, subject.id, deps.clock(), NOTES_PER_ACCOUNT - 1],
+    );
+    expect((await owner.browser.post('/v1/account/notes', { about: subjectName, text: 'The last one.' })).statusCode).toBe(201);
+    const full = await owner.browser.post('/v1/account/notes', { about: subjectName, text: 'One more.' });
+    expect([full.statusCode, full.json()]).toEqual([409, { error: 'too-many-notes', max: NOTES_PER_ACCOUNT }]);
+    const m = await member(owner.id, { abilities: ['notes-add'] });
+    expect(err(await m.browser.post('/v1/account/notes', { about: subjectName, text: 'Mine.' }))).toEqual({ status: 409, error: 'too-many-notes' });
+    expect(await auditRows(owner.id)).toEqual([]);
   });
 });

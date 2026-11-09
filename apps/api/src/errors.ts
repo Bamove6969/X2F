@@ -37,6 +37,8 @@ export type ApiErrorCode =
   | 'approval-unavailable'
   | 'changes-changed'
   | 'too-many-changes'
+  // Notes on traders (review 2026-11-09 m4): the account's notes are at NOTES_PER_ACCOUNT.
+  | 'too-many-notes'
   | 'counterparty-unavailable'
   | 'method-not-allowed'
   | 'last-login-method'

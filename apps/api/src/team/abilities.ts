@@ -318,6 +318,13 @@ export function legacyRoles(abilities: readonly string[]): TeamRole[] {
   return out;
 }
 
+/** True when the old roles do not describe the set exactly (review 2026-11-09 m3: the web's roles view then says "Custom"). */
+export function isCustomSet(abilities: readonly string[]): boolean {
+  const back = rolesToAbilities(legacyRoles(abilities));
+  const set = new Set(abilities);
+  return back.length !== set.size || back.some((id) => !set.has(id));
+}
+
 /** Parses a roles list from a request body (the old shape): a non-empty set of known roles. */
 export function parseRoles(raw: unknown): TeamRole[] {
   if (!Array.isArray(raw) || raw.length === 0 || raw.length > TEAM_ROLES.length) throw new ApiError(400, 'bad-request');

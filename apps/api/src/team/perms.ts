@@ -14,7 +14,7 @@
  *   device. Until a per-member key scheme is designed (OPEN, Plan 3 Task 42) they get 403
  *   `member-cannot-sign` whatever the member's boxes. Releasing stays the lead's even then (p10-2).
  */
-import type { TradeEvent } from '@x2f/trade';
+import type { CLIENT_EVENTS, TradeEvent } from '@x2f/trade';
 import type { FastifyRequest } from 'fastify';
 import { ApiError } from '../errors.js';
 import { hasAbility, type AbilityNeed } from './abilities.js';
@@ -33,11 +33,15 @@ const MEMBER_SIGNING_EVENTS_LIST: readonly string[] = ['release-started', 'fund-
 /** The box a live stream (`GET /v1/events`, the account's trade events) needs. */
 export const STREAM_ABILITY = 'trades-see-active';
 
+/** The client events the events route takes (`open-dispute` comes only through the dispute route). */
+export type EventsRouteEvent = Exclude<(typeof CLIENT_EVENTS)[number], 'open-dispute'>;
+
 /**
  * The box each trade event a member may send needs (the events route checks it, and
  * `auditMember` again in the event's transaction). `MEMBER_SIGNING_EVENTS` are refused before.
+ * Typed over every client event (review 2026-11-09 m2), so a new one cannot compile without its box.
  */
-export const EVENT_ABILITY: Readonly<Record<string, string>> = {
+export const EVENT_ABILITY: Readonly<Record<EventsRouteEvent, string>> = {
   'mark-paid': 'trades-mark-paid',
   extend: 'trades-extend',
   'request-refund': 'trades-cancel-no-show',
@@ -51,6 +55,13 @@ export const EVENT_ABILITY: Readonly<Record<string, string>> = {
   'release-started': 'trades-release',
   'fund-started': 'trades-fund',
 };
+
+/** The box `type` needs; 400 `event-not-allowed` for an event with none (never a 500 from an undefined box). */
+export function eventAbility(type: string): string {
+  const box = (EVENT_ABILITY as Readonly<Record<string, string | undefined>>)[type];
+  if (box === undefined) throw new ApiError(400, 'event-not-allowed');
+  return box;
+}
 
 /** The boxes that let a member read one of the account's trades (its room, attestation, confirmations). */
 export const TRADE_READ: readonly string[] = ['trades-see-active', 'trades-see-history'];

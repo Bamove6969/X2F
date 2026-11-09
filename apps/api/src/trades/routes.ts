@@ -7,7 +7,7 @@ import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
 import { assertLiveMember, auditLead, auditMember, type AuditAction } from '../team/audit.js';
-import { assertMemberMay, assertMemberMaySend, EVENT_ABILITY, MEMBER_EVENT_ABILITIES, TRADE_READ } from '../team/perms.js';
+import { assertMemberMay, assertMemberMaySend, EVENT_ABILITY, eventAbility, MEMBER_EVENT_ABILITIES, TRADE_READ } from '../team/perms.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
@@ -124,9 +124,11 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
   app.post('/v1/trades/:code/events', { preHandler: sendEvent }, async (req) => {
     const e = clientEvent(req.body);
     // Task 18 (R44): no team member signs escrow until a per-member key scheme exists, and never
-    // releases on the lead's sell trades (p10-2); then the event's own box (Job 1c).
+    // releases on the lead's sell trades (p10-2); then the event's own box (Job 1c), and a box that
+    // reads the trade it acts on (review 2026-11-09 m1: no acting on a trade one cannot see).
     assertMemberMaySend(req.auth.memberId, e.type);
-    assertMemberMay(req.auth, EVENT_ABILITY[e.type]!);
+    assertMemberMay(req.auth, eventAbility(e.type));
+    assertMemberMay(req.auth, TRADE_READ);
     const row = await tradeFor(req);
     // `by` is the session's side in this trade (P3-C2); the two sides never change after take.
     const by = roleOf(rowToTrade(row), req.auth.accountId);
@@ -146,7 +148,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       // The first full count also starts the 48 hours, if the watcher has not yet (cancelReturn.ts).
       // A member's request records it only while still a live Trades member: the check runs in the
       // record's transaction, as auditMember's does for the event (Task 18 review round 2, n2).
-      await recordReturnConfirmed({ db: deps.db, clock: deps.clock, publish }, row, n, (client) => assertLiveMember(client, req.auth, EVENT_ABILITY['confirm-cancel']!));
+      await recordReturnConfirmed({ db: deps.db, clock: deps.clock, publish }, row, n, (client) => assertLiveMember(client, req.auth, EVENT_ABILITY['confirm-cancel']));
     }
     let next: Trade;
     try {

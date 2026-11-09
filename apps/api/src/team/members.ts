@@ -27,7 +27,7 @@ import { waits } from '../auth/strength.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
 import { assertVendor } from '../routes/accountType.js';
-import { hasAbility, legacyRoles, parseAbilities, presetOf, sortAbilities, type PresetId, type TeamRole } from './abilities.js';
+import { hasAbility, isCustomSet, legacyRoles, parseAbilities, presetOf, sortAbilities, type PresetId, type TeamRole } from './abilities.js';
 import { MAX_TEAM_MEMBERS, STREAM_ABILITY } from './perms.js';
 
 /** An invite lives this long (as Plan 4's staff invites). */
@@ -51,6 +51,8 @@ export interface TeamMemberView {
   preset: PresetId | null;
   /** The old roles the boxes still read as (for the web until it renders the boxes). */
   roles: TeamRole[];
+  /** True when those roles do not describe the boxes exactly: the web's roles view says "Custom" (review 2026-11-09 m3). */
+  custom: boolean;
   status: MemberStatus;
   /** Until when the invite (or an unfinished sign-up) can be used; null once joined. */
   inviteExpiresAt: string | null;
@@ -83,6 +85,7 @@ function toView(r: MemberRow): TeamMemberView {
     id: r.id,
     displayName: r.display_name,
     ...abilitiesView(r.abilities),
+    custom: isCustomSet(r.abilities),
     status,
     inviteExpiresAt: r.joined_at === null ? r.invite_expires_at.toISOString() : null,
     joinedAt: r.joined_at?.toISOString() ?? null,

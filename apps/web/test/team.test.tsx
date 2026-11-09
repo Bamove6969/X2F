@@ -96,6 +96,16 @@ describe('Team (settings)', () => {
     expect(host.querySelectorAll('[data-primary]').length).toBe(1);
   });
 
+  it('a member whose boxes no role describes reads "Custom", not a role (review 2026-11-09 m3)', async () => {
+    members = [
+      { id: 'm4', displayName: 'Dana', roles: ['trades'], abilities: ['trades-see-active'], preset: null, custom: true, status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+    ];
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    expect(host.querySelector('[data-member="Dana"]')?.textContent).toContain('Custom · Active');
+    expect(host.querySelector('[data-member="Dana"]')?.textContent).not.toContain('Trades');
+  });
+
   it('Make an invite link sends the name and roles and shows the link once', async () => {
     const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
     await settle();

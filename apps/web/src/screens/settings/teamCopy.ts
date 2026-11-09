@@ -74,6 +74,8 @@ export const TEAM_COPY = {
   status: { invited: 'Invited', joining: 'Setting up their login', active: 'Active' } as const,
   inviteUntil: (iso: string) => `Invite works until ${when(iso)}`,
   roles: (roles: readonly TeamRole[]) => rolesText(roles),
+  // Job 1c (review 2026-11-09 m3): a member whose boxes no role describes. COPY-UNSIGNED.
+  custom: 'Custom',
   changeRoles: (name: string) => `Change roles for ${name}`,
   saveRoles: 'Save roles',
   remove: 'Remove',

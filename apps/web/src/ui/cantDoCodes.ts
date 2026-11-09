@@ -36,6 +36,9 @@ export const CANT_DO_CODES = [
   // trade event refused because the partner's account has a temporary problem (no words yet).
   'approval-unavailable',
   'too-many-changes',
+  // Notes on traders (review 2026-11-09 m4): the account's note cap. API only so far, no words here
+  // (no notes screen yet).
+  'too-many-notes',
   'counterparty-unavailable',
   // Plan 3 Task 26: the nudge limit. Task 6: no more payment-time extensions.
   'too-soon',

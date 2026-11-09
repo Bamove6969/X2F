@@ -252,7 +252,7 @@ export function Team() {
                     <span data-username="">{m.displayName}</span>
                     <br />
                     <span className="x2f-list__time">
-                      {C.roles(m.roles)} · {C.status[m.status]}
+                      {m.custom === true ? C.custom : C.roles(m.roles)} · {C.status[m.status]}
                       {m.inviteExpiresAt !== null ? ` · ${C.inviteUntil(m.inviteExpiresAt)}` : ''}
                     </span>
                   </span>
