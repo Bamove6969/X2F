@@ -256,7 +256,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px;">
         <li><strong>One ad covers every currency the vendor supports.</strong> The trader picks currency and payment method from the drop-downs; both are locked in for that trade. Payment-method rules (time to pay, name match…) come with the method.</li>
         <li><strong>Ad limit:</strong> <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> buy + <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> sell ads per vendor.</li>
-        <li><strong>Each currency has its own bands set by the vendor; nothing is converted.</strong> Up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">5</span> currencies per ad. Limits and tier prices shown are the chosen currency's own figures. A currency the vendor ticked but that has no market price is hidden from the Currency drop-down for that currency only. <em>Design proposal, 6 Nov: show it greyed instead (see the notes above).</em></li>
+        <li><strong>Each currency has its own bands set by the vendor; nothing is converted.</strong> Up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">5</span> currencies per ad. Limits and tier prices shown are the chosen currency's own figures. A currency the vendor ticked but that has no market rate stays in the Currency drop-down, greyed, with "No rate right now" (see the notes above).</li>
         <li><strong>Volume line is opt-in.</strong> Never shown unless the vendor turns it on. <em>Wording and unit replaced 6 Nov (Q63), below.</em></li>
       </ul>
     </aside>
@@ -275,6 +275,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <li><strong>F7.</strong> Currencies and payment types on an ad are indexed, so buyer searches find them.</li>
       </ul>
     </aside>
+    <aside aria-label="Decided by the owner, 6 Nov: payment types" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q5, Q23)</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px;">
+        <li><strong>Q5.</strong> The vendor picks currencies and payment types separately; X2F doesn't pair them. The ad offers the same payment types with every currency, and the taker picks the pair that makes sense to them. Drawn 9 Nov: the {{ad.methodLabel}} list no longer changes with the currency.</li>
+        <li><strong>Q23.</strong> Up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">5</span> payment types per ad. The sample ads now carry 5 each (sell: Zelle, PayPal, Wise, Revolut, Cash by mail; buy: Zelle, Bank transfer, Wise, Revolut, PayPal).</li>
+      </ul>
+    </aside>
     <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">COPY-UNSIGNED, new 7 Nov (draft): the closed field "Zelle · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> min to pay" ("PayPal · pays in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">60</span> min" when buying) and the row meta "<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">60</span> min to pay · up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$500</span>".</p>
     <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">COPY-UNSIGNED, new 7 Nov (draft): the sheet title "{{ad.vendor}}'s badges", the tile label "XMR traded", "replies in about", and the badge names, meanings and dates (as on the Badges board).</p>
     <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Names, prices and terms are examples. Market prices: USD <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">329.90</span>, CAD <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">456.10</span>, EUR <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">305.40</span>, GBP <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">260.60</span>, ARS no rate.</p>
@@ -283,7 +290,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["selling","buying"],"default":"selling"},"volumeLine":{"editor":"enum","options":["on","off"],"default":"on"},"currencyMenu":{"editor":"enum","options":["closed","open"],"default":"closed"},"payMenu":{"editor":"enum","options":["closed","open"],"default":"closed"},"badges":{"editor":"enum","options":["closed","open"],"default":"closed"},"role":{"editor":"enum","options":["auto","buyer-taker","seller-taker","poster-selling","poster-buying"],"default":"auto"},"$preview":{"width":390,"height":5399}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["selling","buying"],"default":"selling"},"volumeLine":{"editor":"enum","options":["on","off"],"default":"on"},"currencyMenu":{"editor":"enum","options":["closed","open"],"default":"closed"},"payMenu":{"editor":"enum","options":["closed","open"],"default":"closed"},"badges":{"editor":"enum","options":["closed","open"],"default":"closed"},"role":{"editor":"enum","options":["auto","buyer-taker","seller-taker","poster-selling","poster-buying"],"default":"auto"},"$preview":{"width":390,"height":5609}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -301,9 +308,9 @@ class Component extends DCLogic {
     // Measured with lead/offerad-tools/measure.js: screen block per side and currency (method count differs),
     // The volume is now the third stat tile (rating tile when it's off), so it no longer changes the height (VOL_H 0).
     // Re-measured 7 Nov (render-board MEASURE) after the trader block from the Badges board went in.
-    const SCREEN_H = { selling: { USD: 1804, CAD: 1822, EUR: 1800, GBP: 1800 }, buying: { USD: 1812, EUR: 1830, GBP: 1830 } };
+    const SCREEN_H = { selling: { USD: 1804, CAD: 1804, EUR: 1804, GBP: 1804 }, buying: { USD: 1812, EUR: 1812, GBP: 1812 } };
     const VOL_H = 0;
-    const NOTES_H = 3141;
+    const NOTES_H = { selling: 3351, buying: 3369 }[side];
 
     const RR = 'M5 6h14a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z';
     const RING = 'M3 12a9 9 0 1018 0a9 9 0 10-18 0';
@@ -319,6 +326,22 @@ class Component extends DCLogic {
       bolt: ['M13 3L5 13h6l-1 8 8-10h-6z', '', '']
     };
     const M = (id, name, icon, adj, win, unit, note, extra) => Object.assign({ id, name, icon, adj, win, unit, note }, extra || {});
+    // One list of payment types per ad, offered with every currency the vendor ticked (owner, 6 Nov, Q5: X2F doesn't pair
+    // currencies and payment types; the taker knows which ones make sense). At most 5 per ad (Q23).
+    const SELL_M = [
+      M('zelle', 'Zelle', 'zelle', 0, '90', 'min', 'Send to the Zelle ID in the trade room. Trade code in the memo, nothing else.'),
+      M('paypal', 'PayPal', 'wallet', 1.5, '60', 'min', 'Friends and family only, from a PayPal in your own name.', { cap: 500 }),
+      M('wise', 'Wise', 'globe', 0, '2', 'h', 'From your own Wise account, in the currency you picked. Reference: the trade code.'),
+      M('revolut', 'Revolut', 'card', 0, '90', 'min', 'Send to the Revolut username in the trade room.'),
+      M('mail', 'Cash by mail', 'mail', 3, '3', 'days', 'Tracked post only. I share the address in chat after I accept.', { floor: 500 })
+    ];
+    const BUY_M = [
+      M('zelle', 'Zelle', 'zelle', 0, '60', 'min', 'Put your Zelle ID in the trade room. It must be in your own name.'),
+      M('bank', 'Bank transfer', 'bank', 0, '3', 'days', 'Takes 1 to 3 business days. Share account details in your own name in the trade room only.'),
+      M('wise', 'Wise', 'globe', 0, '2', 'h', 'Share your Wise details in the trade room.'),
+      M('revolut', 'Revolut', 'card', 0, '60', 'min', 'Share your Revolut username in the trade room.'),
+      M('paypal', 'PayPal', 'wallet', -1, '60', 'min', 'I send friends and family to a PayPal in your own name.', { xcap: 2 })
+    ];
     const ADS = {
       selling: {
         vendor: 'satoshi_ghost', initials: 'SG', adId: 'OF-4QK7', trades: '1,284', positive: '99.4%', rating: '4.9', starCount: 5, reviews: '612', reply: '4',
@@ -326,33 +349,10 @@ class Component extends DCLogic {
         searched: { cur: 'USD', method: 'zelle' },
         terms: 'Pay only from an account in your own name. No third-party payments. Memo: the trade code.',
         currencies: [
-          { code: 'USD', name: 'US dollar', sym: '$', market: 329.90, def: 300, min: 200, max: 2000, methods: [
-            M('zelle', 'Zelle', 'zelle', 0, '90', 'min', 'Send to the Zelle ID in the trade room. Trade code in the memo, nothing else.'),
-            M('paypal', 'PayPal', 'wallet', 1.5, '60', 'min', 'Friends and family only, from a PayPal in your own name.', { cap: 500 }),
-            M('cashapp', 'Cash App', 'phone', 0.5, '60', 'min', 'Send to the $cashtag in the trade room. Trade code in the note.'),
-            M('wise', 'Wise', 'globe', 0, '2', 'h', 'A USD transfer from your own Wise account. Reference: the trade code.'),
-            M('revolut', 'Revolut', 'card', 0, '90', 'min', 'Send to the Revolut username in the trade room.'),
-            M('mail', 'Cash by mail', 'mail', 3, '3', 'days', 'Tracked post only. I share the address in chat after I accept.', { floor: 500 })
-          ] },
-          { code: 'CAD', name: 'Canadian dollar', sym: 'C$', market: 456.10, def: 400, min: 250, max: 2500, methods: [
-            M('interac', 'Interac e-Transfer', 'send', 0, '90', 'min', 'Send to the contact in the trade room. Trade code in the message.'),
-            M('wise', 'Wise', 'globe', 0, '2', 'h', 'A CAD transfer from your own Wise account. Reference: the trade code.'),
-            M('paypal', 'PayPal', 'wallet', 1.5, '60', 'min', 'Friends and family only, from a PayPal in your own name.', { cap: 500 }),
-            M('mail', 'Cash by mail', 'mail', 3, '4', 'days', 'Tracked post only. I share the address in chat after I accept.', { floor: 500 })
-          ] },
-          { code: 'EUR', name: 'Euro', sym: '€', market: 305.40, def: 280, min: 180, max: 1800, methods: [
-            M('sepainst', 'SEPA Instant', 'bank', 0, '90', 'min', 'From a bank account in your own name. Reference: the trade code.'),
-            M('sepa', 'SEPA transfer', 'bank', 0, '2', 'days', 'From a bank account in your own name. Reference: the trade code.'),
-            M('wise', 'Wise', 'globe', 0, '2', 'h', 'A EUR transfer from your own Wise account.'),
-            M('revolut', 'Revolut', 'card', 0, '90', 'min', 'Send to the Revolut username in the trade room.'),
-            M('paypal', 'PayPal', 'wallet', 1.5, '60', 'min', 'Friends and family only, from a PayPal in your own name.', { cap: 500 })
-          ] },
-          { code: 'GBP', name: 'British pound', sym: '£', market: 260.60, def: 240, min: 150, max: 1500, methods: [
-            M('fps', 'Faster Payments', 'bolt', 0, '90', 'min', 'From a UK account in your own name. Reference: the trade code.'),
-            M('wise', 'Wise', 'globe', 0, '2', 'h', 'A GBP transfer from your own Wise account.'),
-            M('revolut', 'Revolut', 'card', 0, '90', 'min', 'Send to the Revolut username in the trade room.'),
-            M('paypal', 'PayPal', 'wallet', 1.5, '60', 'min', 'Friends and family only, from a PayPal in your own name.', { cap: 500 })
-          ] }
+          { code: 'USD', name: 'US dollar', sym: '$', market: 329.90, def: 300, min: 200, max: 2000, methods: SELL_M },
+          { code: 'CAD', name: 'Canadian dollar', sym: 'C$', market: 456.10, def: 400, min: 250, max: 2500, methods: SELL_M },
+          { code: 'EUR', name: 'Euro', sym: '€', market: 305.40, def: 280, min: 180, max: 1800, methods: SELL_M },
+          { code: 'GBP', name: 'British pound', sym: '£', market: 260.60, def: 240, min: 150, max: 1500, methods: SELL_M }
         ]
       },
       buying: {
@@ -362,27 +362,9 @@ class Component extends DCLogic {
         xmin: 0.5, xmax: 5,
         terms: 'I pay from accounts in my own name, with the trade code in the memo. Release only when the money is in your account, not because of a screenshot.',
         currencies: [
-          { code: 'USD', name: 'US dollar', sym: '$', market: 329.90, methods: [
-            M('zelle', 'Zelle', 'zelle', 0, '60', 'min', 'Put your Zelle ID in the trade room. It must be in your own name.'),
-            M('ach', 'Bank transfer (ACH)', 'bank', 0, '3', 'days', 'Takes 1 to 3 business days. Share your account details in the trade room only.'),
-            M('wise', 'Wise', 'globe', 0, '2', 'h', 'Share your Wise details in the trade room.'),
-            M('revolut', 'Revolut', 'card', 0, '60', 'min', 'Share your Revolut username in the trade room.'),
-            M('paypal', 'PayPal', 'wallet', -1, '60', 'min', 'I send friends and family to a PayPal in your own name.', { xcap: 2 }),
-            M('cashapp', 'Cash App', 'phone', -0.5, '60', 'min', 'Share your $cashtag in the trade room.')
-          ] },
-          { code: 'EUR', name: 'Euro', sym: '€', market: 305.40, methods: [
-            M('sepainst', 'SEPA Instant', 'bank', 0, '60', 'min', 'Share an IBAN in your own name in the trade room.'),
-            M('sepa', 'SEPA transfer', 'bank', 0, '2', 'days', 'Share an IBAN in your own name in the trade room.'),
-            M('wise', 'Wise', 'globe', 0, '2', 'h', 'Share your Wise details in the trade room.'),
-            M('revolut', 'Revolut', 'card', 0, '60', 'min', 'Share your Revolut username in the trade room.'),
-            M('paypal', 'PayPal', 'wallet', -1, '60', 'min', 'I send friends and family to a PayPal in your own name.', { xcap: 2 })
-          ] },
-          { code: 'GBP', name: 'British pound', sym: '£', market: 260.60, methods: [
-            M('fps', 'Faster Payments', 'bolt', 0, '60', 'min', 'Share UK account details in your own name in the trade room.'),
-            M('wise', 'Wise', 'globe', 0, '2', 'h', 'Share your Wise details in the trade room.'),
-            M('revolut', 'Revolut', 'card', 0, '60', 'min', 'Share your Revolut username in the trade room.'),
-            M('paypal', 'PayPal', 'wallet', -1, '60', 'min', 'I send friends and family to a PayPal in your own name.', { xcap: 2 })
-          ] }
+          { code: 'USD', name: 'US dollar', sym: '$', market: 329.90, methods: BUY_M },
+          { code: 'EUR', name: 'Euro', sym: '€', market: 305.40, methods: BUY_M },
+          { code: 'GBP', name: 'British pound', sym: '£', market: 260.60, methods: BUY_M }
         ]
       }
     };

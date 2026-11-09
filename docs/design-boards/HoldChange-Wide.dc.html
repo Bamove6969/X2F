@@ -372,6 +372,11 @@ h1,h2,h3{text-wrap:balance}
       <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
       <span style="font-weight: 600;">The account owner is told at once on every channel they set up (push, secure Jabber and others), listing each change.</span>
     </aside>
+    <aside aria-label="Decided by the owner: password plus authenticator is strong for traders" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G34, G13)</span>
+      <span style="font-weight: 600;">On a trader account, a password with an authenticator code counts as a strong login: no 24 h wait, and it can approve waiting changes. Vendors still need a passkey, security key or PGP key.</span>
+      <span style="color: var(--ink-muted);">The sample is a vendor with a team, so the screen copy stays. A trader version would add &quot;an authenticator app&quot; to each &quot;Add a passkey, security key or PGP key&quot; line (COPY-UNSIGNED).</span>
+    </aside>
     <aside aria-label="Open for the owner: moderator contact" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span class="mono" style="font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to supply</span>
       <span style="font-weight: 600;">Moderator contact: the Matrix or Telegram address the warning should show.</span>
@@ -407,7 +412,7 @@ h1,h2,h3{text-wrap:balance}
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["warn","edit","review","approve","submitted"],"default":"review"},"login":{"editor":"enum","options":["username-password","strong"],"default":"username-password"},"instant":{"editor":"enum","options":["no","yes"],"default":"no"},"$preview":{"width":1280,"height":2913}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["warn","edit","review","approve","submitted"],"default":"review"},"login":{"editor":"enum","options":["username-password","strong"],"default":"username-password"},"instant":{"editor":"enum","options":["no","yes"],"default":"no"},"$preview":{"width":1280,"height":3047}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props.step); }
   preset(step) {

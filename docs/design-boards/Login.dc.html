@@ -36,6 +36,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </span>
       </div>
     </sc-if>
+    <sc-if value="{{refused}}" hint-placeholder-val="{{false}}">
+      <div role="alert" style="display: flex; gap: 14px; align-items: center; padding: 24px 20px 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+        <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--caution) 16%, transparent); color: var(--caution);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span>
+        <span style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Use the staff site</span>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">This is a staff login. Staff log in on the X2F staff site, not here.</span>
+        </span>
+      </div>
+    </sc-if>
     <sc-if value="{{askName}}" hint-placeholder-val="{{false}}">
       <div style="display: flex; flex-direction: column; gap: 8px;">
         <label for="li-name" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Username</label>
@@ -131,11 +140,12 @@ Wm3nR8yXp1…
   </sc-if>
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2><p style="margin: 0; font-size: 13px; line-height: 18px;">Header: logo D (owner, 8 Nov, page 8); before login the logo stands alone, centred, with no page name (comment #2).</p>
+    <aside aria-label="Decided by the owner: staff log in on the staff site" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 3 Nov + 6 Nov (Q19, Q13)</span><span style="font-weight: 600;">Staff and the owner have their own logins on the staff site. A staff login tried here is refused with one short line, without naming the role.</span><span style="color: var(--ink-muted);">Preview with the result tweak (staff-refused). COPY-UNSIGNED.</span></aside>
     <aside aria-label="Decided by the owner: no free tours" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 8 Nov (no free tours)</span><span style="font-weight: 600;">Nobody sees behind the front door without an agreement, an account and a login.</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Logged-out visitors see only three things: log in, create an account (Terms, tick box and signature on SetupTerms), and recovery (Login-Backup).</li><li>No offers, prices, names, badges or counts before login; the API refuses marketplace and user data without a live, fully set-up session.</li><li>&quot;Create an account&quot; replaces &quot;Tap Trade or post an offer, and X2F sets one up on the way&quot;, which offered a free tour.</li></ul></aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "method": {"editor": "enum", "options": ["pgp", "passkey", "security-key", "password"], "default": "pgp"}, "$preview": {"width": 390, "height": 1498}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "method": {"editor": "enum", "options": ["pgp", "passkey", "security-key", "password"], "default": "pgp"}, "result": {"editor": "enum", "options": ["normal", "staff-refused"], "default": "normal"}, "$preview": {"width": 390, "height": 1650}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { askName: false, uname: 'nightowl_44', pwStep: 'pw', pw: '', pwShown: false, copied: false, done: false }; }
   componentDidUpdate(prev) { if (prev.method !== this.props.method) this.setState({ pwStep: 'pw', done: false, askName: false }); }
@@ -150,16 +160,18 @@ class Component extends DCLogic {
     const s = this.state;
     const m = this.props.method || 'pgp';
     const ctas = { pgp: 'Log in', passkey: 'Log in with passkey', 'security-key': 'Log in with security key', password: 'Log in' };
-    const showMethod = !s.askName && !s.done;
-    const NOTES_H = 329; // design notes under the screen (measured)
+    // Owner Q13/Q19: staff and owner logins are separate. A staff login tried here is refused with one short line that doesn't say which staff role it is (result tweak).
+    const refused = this.props.result === 'staff-refused';
+    const showMethod = !s.askName && !s.done && !refused;
+    const NOTES_H = 397; // design notes under the screen (measured)
     // Per-variant height (measured, night): the screen never clips and the default matches $preview.
-    const minH = (({ pgp: 1121, passkey: 844, 'security-key': 844, password: 844 })[m] || 844) + NOTES_H;
+    const minH = (refused ? 844 : (({ pgp: 1121, passkey: 844, 'security-key': 844, password: 844 })[m] || 844)) + NOTES_H;
     return {
       rootStyle: rootStyle.replace('min-height: 844px;', 'min-height: ' + minH + 'px;'),
-      done: s.done,
+      done: s.done && !refused, refused,
       askName: s.askName && !s.done,
       showMethod,
-      showCta: !s.done,
+      showCta: !s.done && !refused,
       uname: s.uname,
       onName: (e) => this.setState({ uname: e.target.value }),
       change: () => this.setState({ askName: true }),

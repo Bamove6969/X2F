@@ -83,11 +83,12 @@ class Component extends DCLogic {
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const s = this.state;
     // Measured heights: the lead's view has an extra line under the team notice.
-    const H = (this.props.viewer === 'lead' ? 882 : 928) + s.sent.length * 75;
+    const H = (this.props.viewer === 'lead' ? 902 : 928) + s.sent.length * 75;
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     // Owner, 2 Nov: a team member's replies get their own colour (--team) so it's very obvious a team member is replying.
-    // The trade partner only ever sees "Team member"; the lead (account owner) sees the member's name here and in the audit log.
+    // Owner, 28 Oct 13:41 (head designer ruling, 9 Nov): messages are labelled "Team <account display name> member: <member name>",
+    // so the partner sees "Team satoshi_ghost member: desk_ana". Replaces "Team member", never the name. COPY-UNSIGNED.
     const lead = this.props.viewer === 'lead';
     const me = lead ? 'vendor' : 'partner';
     const MSG = [
@@ -118,15 +119,15 @@ class Component extends DCLogic {
       if (m.k === 'sys') return { isSys: true, isNotice: false, isMsg: false, t: m.t, text: m.text };
       if (m.k === 'notice') return {
         isSys: false, isNotice: true, isMsg: false, t: m.t,
-        text: lead ? 'desk_ana replied for you.' : 'A team member from satoshi_ghost’s team is replying.',
-        hasSub: lead, sub: 'mira.k sees “Team member”, not the name.'
+        text: lead ? 'desk_ana replied for you.' : 'desk_ana from Team satoshi_ghost is replying.',
+        hasSub: lead, sub: 'mira.k sees “Team satoshi_ghost member: desk_ana”.'
       };
       const base = { isSys: false, isNotice: false, isMsg: true, t: m.t, text: m.text, metaStyle: meta, tagTeam: false, tagVendor: false, hasTeamOf: false, teamOf: '', whoStyle: 'color: var(--ink-muted);' };
       if (m.k === 'member') {
-        // Partner: people icon + "Team member · satoshi_ghost's team", left. Lead: DA avatar + name, right (sent from your account).
+        // Partner: people icon + "Team satoshi_ghost member: desk_ana", left. Lead: DA avatar + name, right (sent from your account).
         return Object.assign(base, {
           rowStyle: row(lead), wrapStyle: wrap(lead, '94%'), personAv: false, teamAv: !lead, init: '', avStyle: '', bubbleStyle: BUB.team + (lead ? 'border-radius: 12px 12px 4px 12px;' : 'border-radius: 12px 12px 12px 4px;'),
-          tagTeam: true, hasTeamOf: !lead, teamOf: 'satoshi_ghost’s team',
+          tagTeam: true, hasTeamOf: !lead, teamOf: 'Team satoshi_ghost member: desk_ana',
           who: lead ? 'desk_ana' : '',
           whoStyle: lead ? 'color: var(--ink); font-weight: 600;' : 'display: none;'
         });

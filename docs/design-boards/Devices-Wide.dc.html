@@ -87,7 +87,7 @@ h1,h2,h3{text-wrap:balance}
             <h3 id="dv-team-h" style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; line-height: 24px; font-weight: 600;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; color: var(--team);"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c2.8 0 4.5 1.9 4.5 4.5"/></svg>Team members logged in</h3>
             <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">These are your team members&#39; logins, not yours.</p>
             <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Team members&#39; logins don&#39;t count toward your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> devices.</p>
-            <p style="display: flex; gap: 8px; margin: 4px 0 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Switching a member off or on needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key.</span></p>
+            <p style="display: flex; gap: 8px; margin: 4px 0 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Switching a member off logs them out at once. If you logged in with just a username and password, it becomes final after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h, and switching someone back on waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h.</span></p>
             <sc-if value="{{hasTeam}}" hint-placeholder-val="{{true}}">
               <ul aria-labelledby="dv-team-h" style="margin: 0; padding: 0; list-style: none;">
                 <sc-for list="{{team}}" as="t" hint-placeholder-count="2">
@@ -120,7 +120,7 @@ h1,h2,h3{text-wrap:balance}
             </sc-if>
             <button type="button" disabled="{{noTeamOut}}" onClick="{{askTeamAll}}" style="{{teamAllStyle}}">Log out all team members</button>
           </div>
-          <a href="Team-Wide.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; min-height: 44px; margin: -8px 0; font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink); text-decoration: none;"><span>Manage roles and invites in Team</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg></a>
+          <a href="Team-Wide.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; min-height: 44px; margin: -8px 0; font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink); text-decoration: none;"><span>Manage member types and invites in Team</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg></a>
 
         </section>
       </div>
@@ -165,6 +165,25 @@ h1,h2,h3{text-wrap:balance}
               </sc-if>
               <p id="dv-idle-n" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">When this time is up, we&#39;ll ask you to confirm it&#39;s you to stay logged in. If you don&#39;t, you&#39;re logged out.</p>
             </div>
+        <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px 0; border-top: 1px solid var(--surface-raised);">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+              <span id="dv-rem-l" style="font-size: 16px; line-height: 24px; font-weight: 600;">Idle reminder</span>
+              <span id="dv-rem-d" style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">If you haven&#39;t done anything for a while, we&#39;ll remind you that you&#39;re still logged in.</span>
+            </span>
+            <button type="button" role="switch" aria-checked="{{rem.on}}" aria-labelledby="dv-rem-l" aria-describedby="dv-rem-d" onClick="{{rem.toggle}}" style="display: flex; align-items: center; justify-content: center; width: 60px; height: 44px; flex-shrink: 0; margin-right: -4px; padding: 0; border: 0; border-radius: 999px; background: transparent; cursor: pointer;"><span aria-hidden="true" style="{{rem.track}}"><span style="{{rem.knob}}"></span></span></button>
+          </div>
+          <sc-if value="{{remOn}}" hint-placeholder-val="{{false}}">
+            <div role="radiogroup" aria-labelledby="dv-rem-e" style="display: flex; flex-direction: column; gap: 8px;">
+              <span id="dv-rem-e" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Remind me after</span>
+              <div style="display: flex; gap: 8px;">
+                <sc-for list="{{remOpts}}" as="o" hint-placeholder-count="3">
+                  <button type="button" role="radio" aria-checked="{{o.ariaSel}}" onClick="{{o.pick}}" style="{{o.style}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{o.num}}</span>&nbsp;min</button>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+        </div>
           </div>
 
           <sc-if value="{{hasOptNote}}" hint-placeholder-val="{{false}}">
@@ -194,7 +213,7 @@ h1,h2,h3{text-wrap:balance}
               <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg></span>
               <div style="display: flex; flex-direction: column; gap: 4px;">
                 <h3 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink);">No other device with you?</h3>
-                <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Log in with a passkey, security key or PGP key.</p>
+                <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">{{noDeviceText}}</p>
               </div>
               <a href="Login-Backup-Wide.dc.html" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; border-top: 1px solid var(--surface-raised); color: var(--ink); font-size: 15px; line-height: 20px; font-weight: 600; text-decoration: none;"><span>Log in another way</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg></a>
             </li>
@@ -205,7 +224,7 @@ h1,h2,h3{text-wrap:balance}
               </div>
               <div style="display: flex; flex-direction: column; gap: 4px;">
                 <h3 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink);">Only have your username and password?</h3>
-                <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Use your recovery code. It starts a <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</span> hold, and everyone on your account is logged out until it ends.</p>
+                <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Use your recovery code. It starts a <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</span> hold: everyone else is logged out, and you can only set up your login methods again.</p>
               </div>
               <a href="RecoveryHold-Wide.dc.html" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; border-top: 1px solid var(--surface-raised); color: var(--ink); font-size: 15px; line-height: 20px; font-weight: 600; text-decoration: none;"><span>How the hold works</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg></a>
             </li>
@@ -252,7 +271,7 @@ h1,h2,h3{text-wrap:balance}
           <span style="white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
         </div>
         <h2 id="dv-hold-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">This change waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">24</span> h</h2>
-        <p id="dv-hold-d" style="margin: 0; font-size: 16px; line-height: 24px;">You logged in with just your username and password, so switching team members on or off takes effect after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h. Until then everything keeps working as it does now. Add a passkey, security key or PGP key to make changes like this straight away.</p>
+        <p id="dv-hold-d" style="margin: 0; font-size: 16px; line-height: 24px;">You logged in with just your username and password, so switching a team member back on takes effect after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h. Until then they stay logged out. Add a passkey, security key or PGP key to make changes like this straight away.</p>
         <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
           <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
           <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Want it sooner? Message us on Matrix (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">@x2f-support:matrix.org</span>) or Telegram (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">@x2f_support</span>).</p>
@@ -271,29 +290,29 @@ h1,h2,h3{text-wrap:balance}
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
     <aside aria-label="Decided by the owner: Session length here changes this session only" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (F18)</span><span style="font-weight: 600;">Session length here changes this session only</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Picking a new length on Devices changes how long this login lasts. The next login asks again, with nothing pre-selected.</li><li>A new choice starts counting from now (G24).</li></ul></aside>
     <aside aria-label="Decided by the owner: two-factor method for switching members" style="display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
-      <span>Switching members on or off needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key. With just a username and password it waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h.</span>
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G57)</span>
+      <span>With a passkey, security key or PGP key, switching a member off or on applies at once. With just a username and password, switching off logs the member out at once and is final after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h (row: &quot;Logged out · final in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h&quot;); switching back on waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h. COPY-UNSIGNED.</span>
       <span style="color: var(--ink-muted);">Preview with the session tweak. Showing: {{sessionName}}</span>
+    </aside>
+    <aside aria-label="Decided by the owner: idle reminder and new-device logins" style="display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q75) · 7 Nov (G34, G32)</span>
+      <span>Idle reminder: off by default; when on, the person picks the interval (draft <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">15</span> / <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> / <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">60</span> min). Traders can also get in on a new device with password + authenticator code; vendors still need a passkey, security key or PGP key. The recovery code only lets you set up login methods again. COPY-UNSIGNED.</span>
+      <span style="color: var(--ink-muted);">Preview with the idleReminder and accountType tweaks.</span>
     </aside>
     <aside aria-label="Decided by the owner: logging out team members" style="display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
       <span>&quot;Log out all other devices&quot; covers only your own devices. Use &quot;Log out all team members&quot; for your team.</span>
     </aside>
-    <aside aria-label="Open for the owner: default session length" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
-      <span style="font-weight: 600;">Default not decided, for either account type (current build: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h)</span>
-      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-      <li>Traders: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
-      <li>Vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</li>
-      <li>Until chosen, nothing is pre-selected</li>
-      </ul>
-      <span style="color: var(--ink-muted);">Preview with the idleDefault tweak. Showing: {{idleDefaultName}}</span>
+    <aside aria-label="Decided by the owner: no default session length" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G23)</span>
+      <span style="font-weight: 600;">No default: the drop-down starts empty, for both account types.</span>
+      <span style="color: var(--ink-muted);">Preview a picked value with the idleDefault tweak. Showing: {{idleDefaultName}}</span>
     </aside>
     <aside aria-label="Decided by the owner: session length by account type" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov · 7 Nov (G23)</span>
       <span style="font-weight: 600;">Session length choices depend on the account type</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-      <li>Traders: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
+      <li>Traders: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">8</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
       <li>Vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</li>
       <li>Session = the chosen time. At the end: confirm with a passkey, security key, PGP key or the password (plus authenticator code if set up) to extend by the same time; otherwise logged out (owner, 2 Nov). No fixed maximum.</li>
       </ul>
@@ -317,9 +336,9 @@ h1,h2,h3{text-wrap:balance}
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","8h","12h","24h"],"default":"not-set"},"session":{"editor":"enum","options":["strong","username-password"],"default":"strong"},"$preview":{"width":1280,"height":2313}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","8h","12h","24h"],"default":"not-set"},"session":{"editor":"enum","options":["strong","username-password"],"default":"strong"},"idleReminder":{"editor":"enum","options":["off","on"],"default":"off"},"$preview":{"width":1280,"height":2496}}'>
 class Component extends DCLogic {
-  constructor(props) { super(props); this.state = { gone: [], ask: null, single: false, confirmOne: false, idle: null, idleMenu: false, devNote: '', optNote: '', off: [], kept: [], teamNote: '', verify: null, hold: null }; }
+  constructor(props) { super(props); this.state = { gone: [], ask: null, single: false, confirmOne: false, idle: null, idleMenu: false, devNote: '', optNote: '', off: [], kept: [], teamNote: '', verify: null, hold: null, pendOff: [], rem: null, remEvery: 30 }; }
   renderVals() {
     const THEMES = {
       night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
@@ -355,8 +374,8 @@ class Component extends DCLogic {
     // Owner, 2 Nov: members can be switched on and off here too (same as Team). "Can log in" is on by default.
     // Switching off asks first, logs the member out, and keeps the row in this card, dimmed. Switching on needs no confirm.
     // kept = members logged out by switching off; they stay listed. teamLive = members still logged in.
-    // Owner decided 2 Nov: switching members on or off needs a two-factor method you’ve already set up: a passkey, security key or PGP key. With just a username and password it waits 24 hours (owner rule change, 2 Nov: nobody is logged out).
-    // session tweak: strong = flipping asks "Confirm it's you" first; username-password = flipping opens the hold pop-up.
+    // Owner decided 2 Nov: switching members on or off needs a two-factor method you’ve already set up: a passkey, security key or PGP key. Owner 7 Nov (G57): with just a username and password, switching a member off logs them out at once and the switch-off is final after 24 h; switching back on (and other team changes) waits 24 h.
+    // session tweak: strong = flipping asks "Confirm it's you" first; username-password = switching off asks, logs out now, final in 24 h; switching back on opens the hold pop-up.
     const strongSession = this.props.session !== 'username-password';
     const teamRows = live.filter((d) => d.member);
     const teamLive = teamRows.filter((d) => s.kept.indexOf(d.id) < 0);
@@ -365,11 +384,12 @@ class Component extends DCLogic {
     const team = teamRows.map((d, i) => {
       const off = s.off.indexOf(d.id) >= 0;
       const out = s.kept.indexOf(d.id) >= 0;
+      const pend = s.pendOff.indexOf(d.id) >= 0; // switched off from a username-and-password session: logged out now, final after 24 h (G57)
       return {
         member: d.member, initials: d.initials,
         dev: out ? '' : d.name,
-        linePre: off ? 'Logged out · can’t log in' : (out ? 'Logged out' : ' · '),
-        agoNum: out ? '' : d.ago[0], agoPost: out ? '' : d.ago[1],
+        linePre: off ? (pend ? 'Logged out · final in ' : 'Logged out · can’t log in') : (out ? 'Logged out' : ' · '),
+        agoNum: off && pend ? '24' : (out ? '' : d.ago[0]), agoPost: off && pend ? ' h' : (out ? '' : d.ago[1]),
         pill: off ? 'Switched off' : 'Team member',
         avatar: 'display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; font-family: \'Familjen Grotesk\', sans-serif; font-size: 15px; line-height: 16px; font-weight: 700; letter-spacing: -0.01em; ' + (off ? 'background: var(--surface-raised); color: var(--ink-muted);' : 'background: var(--team); color: var(--ground);'),
         nameStyle: 'font-size: 16px; line-height: 24px; font-weight: 700; color: ' + (off ? 'var(--ink-muted);' : 'var(--ink);'),
@@ -377,7 +397,7 @@ class Component extends DCLogic {
         swLabel: 'Can log in, ' + d.member,
         sw: {
           on: off ? 'false' : 'true',
-          toggle: () => this.setState(strongSession ? { verify: d.id } : { hold: d.id }),
+          toggle: () => this.setState(strongSession ? { verify: d.id } : (off ? { hold: d.id } : { ask: 'off:' + d.id })),
           track: swTrack(!off), knob: swKnob(!off)
         },
         canOut: !out,
@@ -401,6 +421,20 @@ class Component extends DCLogic {
       track: 'display: flex; align-items: center; width: 52px; height: 32px; box-sizing: border-box; padding: 3px; border-radius: 999px; border: 1px solid ' + (s.single ? 'var(--ink); background: var(--ink); justify-content: flex-end;' : 'var(--line); background: var(--surface-raised); justify-content: flex-start;'),
       knob: 'width: 24px; height: 24px; border-radius: 999px; background: ' + (s.single ? 'var(--ground);' : 'var(--ink-muted);')
     };
+    // Owner, 6 Nov (Q75): an optional idle reminder in personal settings, on or off, with the person's own interval. Off by default.
+    // Interval choices are design's draft (15, 30 or 60 min); turning it on picks 30.
+    const remOn = s.rem === null ? this.props.idleReminder === 'on' : s.rem;
+    const rem = {
+      on: remOn ? 'true' : 'false',
+      toggle: () => this.setState({ rem: !remOn }),
+      track: 'display: flex; align-items: center; width: 52px; height: 32px; box-sizing: border-box; padding: 3px; border-radius: 999px; border: 1px solid ' + (remOn ? 'var(--ink); background: var(--ink); justify-content: flex-end;' : 'var(--line); background: var(--surface-raised); justify-content: flex-start;'),
+      knob: 'width: 24px; height: 24px; border-radius: 999px; background: ' + (remOn ? 'var(--ground);' : 'var(--ink-muted);')
+    };
+    const remOpts = [15, 30, 60].map((m) => ({
+      num: String(m), ariaSel: s.remEvery === m ? 'true' : 'false',
+      pick: () => this.setState({ remEvery: m }),
+      style: 'display: flex; flex: 1; align-items: center; justify-content: center; height: 44px; padding: 0 8px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 15px; line-height: 20px; color: var(--ink); cursor: pointer; ' + (s.remEvery === m ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 1px solid var(--line); background: transparent;')
+    }));
     const ownGone = () => s.gone.concat(others.map((d) => d.id));
 
     // Owner, 2 Nov + 7 Nov (G23, G24): a drop-down; session length is 2, 4, 8 or 12 h for traders and 2, 6, 12 or 24 h for vendors. When it is up we ask for
@@ -437,10 +471,10 @@ class Component extends DCLogic {
     const target = ALL.find((d) => d.id === s.ask);
     if (offTarget) {
       askTitle = 'Switch off ' + offTarget.member + '?';
-      askText = offTarget.member + ' is logged out now and can’t log in until you switch them back on. Their roles are kept.';
+      askText = strongSession ? offTarget.member + ' is logged out now and can’t log in until you switch them back on. Their member type is kept.' : offTarget.member + ' is logged out now and can’t log in. You logged in with just a username and password, so the switch-off becomes final in 24 h.';
       confirmLabel = 'Switch off';
       cancelLabel = 'Keep them on';
-      confirm = () => this.setState({ off: s.off.concat([offTarget.id]), kept: s.kept.indexOf(offTarget.id) < 0 ? s.kept.concat([offTarget.id]) : s.kept, ask: null, teamNote: offTarget.member + ' is switched off and was logged out.', devNote: '' });
+      confirm = () => this.setState({ off: s.off.concat([offTarget.id]), kept: s.kept.indexOf(offTarget.id) < 0 ? s.kept.concat([offTarget.id]) : s.kept, pendOff: strongSession ? s.pendOff : s.pendOff.concat([offTarget.id]), ask: null, teamNote: offTarget.member + (strongSession ? ' is switched off and was logged out.' : ' was logged out. The switch-off is final in 24 h.'), devNote: '' });
     } else if (target && target.member) {
       askTitle = 'Log out ' + target.member + '?';
       askText = target.member + '’s session on ' + target.name + ' ends right away.';
@@ -463,10 +497,11 @@ class Component extends DCLogic {
       confirm = () => this.setState({ gone: s.gone.concat(teamLive.map((d) => d.id)), ask: null, devNote: 'All team members were logged out.', teamNote: '' });
     }
 
-    // Board height = measured content height (night, fonts loaded): 1872 for the default state.
+    // Board height = measured content height (night, fonts loaded): 2496 for the default state (re-measured 9 Nov).
     // The right column is the taller one in every state; only its changes move the height.
-    const H = Math.max(800, 2313
-      + (vendor ? 52 : 0)
+    const H = Math.max(800, 2496
+      + (vendor ? 30 : 0)
+      + (remOn ? 80 : 0)
       + (s.optNote ? 58 : 0)
       + (s.confirmOne && !s.single ? 118 : 0));
 
@@ -494,6 +529,8 @@ class Component extends DCLogic {
       idleOpen, idleExpanded: idleOpen ? 'true' : 'false', idleChevron: idleOpen ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6',
       idleToggle: () => this.setState({ idleMenu: !idleOpen }),
       idleDefaultName: IDLE.indexOf(propIdle) >= 0 ? propIdle + ' h' : (propIdle ? 'none (' + propIdle + ' h isn’t a choice for this account type)' : 'none (not set)'),
+      rem, remOn, remOpts,
+      noDeviceText: vendor ? 'Log in with a passkey, security key or PGP key.' : 'Log in with a passkey, security key or PGP key, or your password with an authenticator code.',
       isVendor: vendor, accountTypeName: vendor ? 'vendor' : 'trader',
       hasOptNote: s.optNote !== '', optNote: s.optNote,
       asking: s.ask !== null, askTitle, askText, confirmLabel, cancelLabel, confirm,

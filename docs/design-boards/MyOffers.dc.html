@@ -36,8 +36,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <div role="status" style="display: flex; gap: 10px; align-items: flex-start; margin-bottom: 4px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
         <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
         <div style="display: flex; flex-direction: column; gap: 4px;">
-          <span style="font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink);">Your offers are paused during a trading hold</span>
-          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Nobody can see or take them until the hold ends. A moderator wrote in your dispute what to do to get trading back. Trades already started carry on.</p>
+          <span style="font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink);">A moderator froze trading on your account</span>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Your offers are hidden for now. Open your dispute to see what you need to do to trade again. Trades already started carry on.</p>
+          <a href="DisputeRoom.dc.html" style="display: inline-flex; align-self: flex-start; align-items: center; gap: 2px; min-height: 44px; margin: -6px 0 -10px; color: var(--ink); font-size: 15px; font-weight: 600;">Open your dispute<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
         </div>
       </div>
     </sc-if>
@@ -63,7 +64,16 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </label>
         <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1; min-width: 0; padding-top: 12px;">
           <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted); {{o.dim}}">{{o.title}}</span>
-          <span style="font-size: 16px; line-height: 22px; font-weight: 600; {{o.textStyle}} {{o.dim}}">{{o.methods}}</span>
+          <span style="display: flex; flex-direction: column; min-width: 0; {{o.dim}}">
+            <button type="button" aria-expanded="{{o.payExp}}" aria-controls="{{o.payId}}" aria-label="{{o.payAria}}" onClick="{{o.togglePay}}" style="display: inline-flex; align-self: flex-start; align-items: center; gap: 4px; height: 44px; margin: -11px 0; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; line-height: 22px; font-weight: 600; cursor: pointer; {{o.textStyle}}">{{o.payLabel}}<svg style="flex-shrink: 0;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{o.payChev}}"/></svg></button>
+            <sc-if value="{{o.payOpen}}" hint-placeholder-val="{{false}}">
+              <ul id="{{o.payId}}" style="list-style: none; margin: 8px 0 2px; padding: 2px 12px; border-radius: 12px; border: 1px solid var(--line); display: flex; flex-direction: column;">
+                <sc-for list="{{o.payRows}}" as="m" hint-placeholder-count="2">
+                  <li style="{{m.style}}"><span>{{m.name}}</span><span style="{{m.adjStyle}}">{{m.adj}}</span></li>
+                </sc-for>
+              </ul>
+            </sc-if>
+          </span>
           <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted); {{o.dim}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; {{o.textStyle}}">{{o.priceFrom}}</span><sc-if value="{{o.hasTo}}" hint-placeholder-val="{{true}}"> to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; {{o.textStyle}}">{{o.priceTo}}</span></sc-if> · {{o.priceSub}}</span>
           <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted); {{o.dim}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.limits}}</span> per trade</span>
           <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; {{o.dim}}">
@@ -145,10 +155,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </ul>
     </aside>
     <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;">Craft pass, 7 Nov: three stat tiles under the title (on, selling, buying; computed from the offers). Edit gets a chevron. COPY-UNSIGNED: "on", "selling", "buying".</p>
+    <aside aria-label="Decided by the owner: payment types drop-down and frozen account wording" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (F6) and 6 Nov (Q39)</span>
+      <span style="font-weight: 600;">F6: each card shows its payment types in a drop-down, not one long line. Q39: when a moderator freezes an account, the notice says so plainly and sends the vendor to their dispute to see how to get trading back.</span>
+    </aside>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>9 Nov.</strong> The card's methods line is now a drop-down button, "2 payment types ▾" (44 px tap target, same 16/22 600 type, so closed cards keep their height). Open, it lists each type with its price change in mono, or "Band price" (tweak <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">payTypes</span> = open shows the first card). The hold notice now reads "A moderator froze trading on your account" / "Your offers are hidden for now. Open your dispute to see what you need to do to trade again. Trades already started carry on." with an "Open your dispute" link (to DisputeRoom). The card chip still says "Paused · trading hold". COPY-UNSIGNED: "N payment types", "Band price", the notice title and body, "Open your dispute".</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"hold":{"editor":"enum","options":["off","on"],"default":"off"},"rate":{"editor":"enum","options":["all","one-missing","none"],"default":"all"},"$preview":{"width":390,"height":2451}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"hold":{"editor":"enum","options":["off","on"],"default":"off"},"rate":{"editor":"enum","options":["all","one-missing","none"],"default":"all"},"payTypes":{"editor":"enum","options":["closed","open"],"default":"closed"},"$preview":{"width":390,"height":2783}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -164,8 +179,8 @@ class Component extends DCLogic {
     // F4 (owner, 7 Nov): currencies with no market rate. "one-missing": o1 also covers ARS, which has no rate.
     // "none": o3 is an ARS-only offer and ARS has no rate, so it can't go live.
     const rate = ['one-missing', 'none'].includes(this.props.rate) ? this.props.rate : 'all';
-    const H = { all: [2451, 2621], 'one-missing': [2493, 2663], none: [2531, 2701] };
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H[rate][hold ? 1 : 0] + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const H = { all: [2783, 2945], 'one-missing': [2825, 2987], none: [2863, 3025] };
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + (H[rate][hold ? 1 : 0] + (this.props.payTypes === 'open' ? 89 : 0)) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     const OFFERS = [
       { id: 'o1', side: 'Selling XMR', cur: 'USD · CAD', methods: 'Zelle · PayPal +2.0%', priceFrom: '+0.4%', priceTo: '+0.8%', priceSub: '2 bands · follows the market', limits: '$50 – $2,000' },
@@ -176,6 +191,9 @@ class Component extends DCLogic {
     ];
     if (rate === 'one-missing') Object.assign(OFFERS[0], { cur: 'USD · CAD · ARS', noRate: ['ARS'] });
     if (rate === 'none') Object.assign(OFFERS[2], { cur: 'ARS', methods: 'Mercado Pago', limits: 'ARS 50,000 – 800,000', noRate: ['ARS'] });
+    // F6: one offer's payment types, parsed from its methods line ("PayPal +2.0%" = PayPal at +2.0%).
+    const payList = (o) => o.methods.split(' · ').map((p) => { const m = p.match(/^(.*?) ([+−-][\d.]+%)$/); return m ? { name: m[1], adj: m[2] } : { name: p, adj: '' }; });
+    const payOpenId = this.state.payOpen == null ? (this.props.payTypes === 'open' ? 'o1' : '') : this.state.payOpen;
     const FLAG = { USD: 'US', CAD: 'CA', ARS: 'AR', EUR: 'EU', GBP: 'GB' };
     const on = this.state.on;
     const nOn = OFFERS.filter((o) => on[o.id]).length;
@@ -219,6 +237,15 @@ class Component extends DCLogic {
         title: o.side + ' · ' + o.cur,
         isOn: v, isOff: !v,
         onStr: v ? 'true' : 'false',
+        // F6 (owner, 7 Nov): payment types sit in a drop-down on the card, each with its price change.
+        payLabel: payList(o).length + (payList(o).length === 1 ? ' payment type' : ' payment types'),
+        payAria: 'Payment types: ' + payList(o).map((m) => m.name).join(', '),
+        payRows: payList(o).map((m, i) => ({ name: m.name, adj: m.adj || 'Band price',
+          adjStyle: m.adj ? "font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);" : 'color: var(--ink-muted);',
+          style: 'display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; font-size: 14px; line-height: 20px;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '') })),
+        payId: 'pay-' + o.id, payOpen: payOpenId === o.id, payExp: payOpenId === o.id ? 'true' : 'false',
+        payChev: payOpenId === o.id ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6',
+        togglePay: () => this.setState({ payOpen: payOpenId === o.id ? '' : o.id }),
         switchLabel: o.side + ' in ' + o.cur + ' via ' + o.methods,
         trackStyle: track(v), thumbStyle: thumb(v),
         curs, dim,

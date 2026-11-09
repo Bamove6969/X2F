@@ -91,6 +91,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent); font-size: 14px; line-height: 20px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--caution);"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Appeal sent. A senior moderator will look at it. The XMR has already moved; if they overturn the ruling, the other trader gets a lien until they pay it back.</span></div>
       </sc-if>
     </section>
+    <div role="note" aria-label="Reviews" style="display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);"><svg style="flex-shrink: 0; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg><span style="flex-grow: 1; font-size: 14px; line-height: 20px; color: var(--ink);">{{reviewText}}</span><sc-if value="{{reviewLink}}" hint-placeholder-val="{{false}}"><a href="Review.dc.html" style="display: inline-flex; align-items: center; flex-shrink: 0; height: 44px; margin: -12px -6px; padding: 0 6px; color: var(--monero-ink); font-size: 15px; font-weight: 600; text-decoration: none; white-space: nowrap;">Leave a review</a></sc-if></div>
     <p style="margin: 0; display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent); font-size: 14px; line-height: 20px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg><span>This ruling and its evidence are kept with the trade. {{lostLine}}</span></p>
   </main>
 
@@ -106,10 +107,19 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
     <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">The ruling card carries the decided-by row and the fee row in one inner block. Preview the release and refund rulings with the variant tweak; File appeal opens the reason box, and Send appeal shows the sent state, where the fee row waits for the outcome.</p>
     <aside aria-label="Decided by the owner: who pays the fee after a ruling" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (g63)</span><span style="font-weight: 600;">The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span> fee after a dispute</span><span style="color: var(--ink-muted);">A full reversal, where all funds go back to the original parties, carries no <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span> fee: X2F pays the moderator itself. A ruling that moves the trade forward, an appeal that upholds completion, or a lien means the trade completes and the offer poster pays the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span>. While an appeal is open, the fee waits for the outcome.</span></aside>
+    <aside aria-label="Decided by the owner: reviews follow the outcome" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q40)</span>
+      <span style="font-weight: 600;">Reviews follow how the dispute ends.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Settled like a trade (variant=release): &quot;Reviews work as normal. You can both leave one.&quot; with Leave a review.</li>
+        <li>Reversed (variant=refund): &quot;No reviews for this trade. It was reversed.&quot;</li>
+        <li>Appeal sent (either variant): &quot;Reviews of this trade are hidden until the appeal is decided.&quot; The appeal&#39;s outcome then decides them (Appeal-Notice). New text is COPY-UNSIGNED.</li>
+      </ul>
+    </aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["release","refund"],"default":"release"},"$preview":{"width":390,"height":1717}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["release","refund"],"default":"release"},"$preview":{"width":390,"height":2025}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -125,9 +135,9 @@ class Component extends DCLogic {
     const variant = this.props.variant === 'refund' ? 'refund' : 'release';
     const refund = variant === 'refund';
     // Root height switches per variant and state (the HoldChange pattern), so no variant clips.
-    const HT = { release: { closed: 1362, writing: 1504, sent: 1408 }, refund: { closed: 1402, writing: 1544, sent: 1448 } };
+    const HT = { release: { closed: 1442, writing: 1584, sent: 1488 }, refund: { closed: 1462, writing: 1604, sent: 1528 } }; // + the Reviews row (Q40)
     const H = HT[variant][mode] || HT[variant].closed;
-    const NOTES = 355;
+    const NOTES = 583;
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (H + NOTES) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + H + 'px; display: flex; flex-direction: column; overflow: hidden;';
     const ready = why.trim().length >= 10;
@@ -143,6 +153,8 @@ class Component extends DCLogic {
       appealTail: refund ? "If your appeal wins, satoshi_ghost gets a lien. They can't trade until they pay you back." : "If an appeal overturns the ruling, you get a lien. You can't trade until you pay the XMR back.",
       lostLine: refund ? 'It appears on your profile as a lost dispute.' : "It appears on satoshi_ghost's profile as a lost dispute.",
       feeNum: fee[0], feeRest: fee[1],
+      reviewText: mode === 'sent' ? 'Reviews of this trade are hidden until the appeal is decided.' : refund ? 'No reviews for this trade. It was reversed.' : 'Reviews work as normal. You can both leave one.',
+      reviewLink: mode !== 'sent' && !refund,
       closed: mode === 'closed',
       writing: mode === 'writing',
       sent: mode === 'sent',

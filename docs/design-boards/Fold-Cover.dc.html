@@ -31,7 +31,7 @@ h1,h2,h3{text-wrap:balance}
       <span style="display: inline-flex; align-items: baseline; flex-wrap: wrap; column-gap: 10px;"><span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em;">$412.50</span><span style="font-size: 14px; font-weight: 600; color: var(--ink-muted);">USD</span></span><span style="font-size: 14px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span></span></span>
     </div>
     <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
-      <span aria-hidden="true" style="{{tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+      <span aria-hidden="true" style="{{tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{tileIcon}}"/></svg></span>
       <div style="display: flex; flex-direction: column; min-width: 0;">
         <span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{t.a}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 500;">{{t.n1}}</span>{{t.b}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; font-weight: 500;">{{t.n2}}</span>{{t.c}}</span>
         <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{n.a}}<span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{n.n1}}</span>{{n.b}}</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{n.n2}}</span>{{n.c}}</span>
@@ -63,7 +63,7 @@ class Component extends DCLogic {
     const V = {
       'waiting-payment': { label: 'Pay now', icon: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3 2', tone: 'var(--caution)', timer: '62 min left', note: "Send by Zelle, then tap I've paid" },
       paid: { label: 'You paid', icon: 'M5 12l4 4 10-10', tone: 'var(--escrow)', timer: '1 h 58 min', note: 'Left for satoshi_ghost to check and release' },
-      dispute: { label: 'Dispute open', icon: 'M8.5 3h7L21 8.5v7L15.5 21h-7L3 15.5v-7zM12 8v5M12 16h.01', tone: 'var(--danger)', timer: 'Opened 12 min ago', note: 'A moderator usually replies within 4 h' }
+      dispute: { label: 'Dispute open', icon: 'M8.5 3h7L21 8.5v7L15.5 21h-7L3 15.5v-7zM12 8v5M12 16h.01', tone: 'var(--danger)', timer: '23 h 48 min left', note: 'for a moderator to step in. Usually much sooner.', tile: 'M6 3h12M6 21h12M7 3c0 5 10 7 10 18M17 3c0 5-10 7-10 18' } // Q38 (owner, 6 Nov): hourglass counting down from 24 h; replaces 'usually replies within 4 h'. COPY-UNSIGNED.
     };
     const v = V[this.props.variant] || V['waiting-payment'];
     // Digits in mono, words in body: '1 h 58 min' -> parts (also used for the note line).
@@ -77,6 +77,7 @@ class Component extends DCLogic {
       markStyle: 'flex-shrink: 0; color: ' + v.tone + ';',
       // Toned icon tile (craft kit): tone at 14% behind the tone glyph.
       tileStyle: 'display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, ' + v.tone + ' 14%, transparent); color: ' + v.tone + ';',
+      tileIcon: v.tile || 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 7v5l3 2',
       t: parts(v.timer),
       n: parts(v.note),
       asked: this.state.asked,

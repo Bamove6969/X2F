@@ -162,7 +162,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <button type="button" aria-expanded="{{stepsOn}}" aria-controls="la-steps" onClick="{{toggleSteps}}" style="display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 56px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; text-align: left; cursor: pointer;">Where do I approve it?<span style="{{chevron}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span></button>
           <sc-if value="{{stepsOpen}}" hint-placeholder-val="{{false}}">
             <ol id="la-steps" style="margin: 0; padding: 0 0 16px 20px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 22px;">
-              <li>Open X2F on a phone or computer where you&#39;re already logged in.</li>
+              <li>Open X2F on a phone or computer where you&#39;re already logged in. If you turned on Jabber alerts, we&#39;ve sent you a message there too.</li>
               <li>A login request pops up. Check it says Chrome, Windows.</li>
               <li>Tap {{num}}, then Yes, let them in.</li>
             </ol>

@@ -111,7 +111,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
     <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
       <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Nothing changes after you tap Trade. satoshi_ghost then has <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> min to lock the XMR in escrow. You only pay once it's locked.</p>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Nothing changes after you tap Request to buy XMR. satoshi_ghost then has <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> min to lock the XMR in escrow. You only pay once it's locked.</p>
     </div>
     <section data-m="what-applies" aria-labelledby="wa-title" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
       <div style="display: flex; align-items: center; gap: 14px;">
@@ -138,10 +138,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
   <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
     <sc-if value="{{ok}}" hint-placeholder-val="{{true}}">
-      <a href="BuyerPay.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Trade</a>
+      <a href="BuyerPay.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Request to buy XMR</a>
     </sc-if>
     <sc-if value="{{notOk}}" hint-placeholder-val="{{false}}">
-      <button type="button" disabled style="height: 56px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">Trade</button>
+      <button type="button" disabled style="height: 56px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">Request to buy XMR</button>
     </sc-if>
     <span style="display: flex; align-items: center; justify-content: center; min-height: 32px; font-size: 13px; line-height: 16px; color: var(--ink-muted); text-align: center;">Next, satoshi_ghost locks the XMR in escrow.</span>
   </footer>
@@ -154,14 +154,19 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>p9-4 (owner, 8 Nov): the method's timing on the quote.</strong> Under the hero's wallet line: "Time to pay: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> min · Dispute after: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> min", from the picked method (Zelle). Examples until the lead's research on each method's real transfer time lands; the dispute wait equals the method's transfer time.</p>
     <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>p10-1 case 2 (owner, 8 Nov): the taker never sees an X2F fee.</strong> The footer line "Taking an offer is free. No X2F fee is added." is gone; it now says what happens next, "Next, satoshi_ghost locks the XMR in escrow.". The 1% shows to the poster alone (poster roles in the role tweak, and the trade boards). "Network fee" is Monero's send fee, not an X2F fee.</p>
     <p style="margin: 0; font-size: 13px; line-height: 18px;">COPY-UNSIGNED, 8 Nov (follow-up): "Time to pay: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> min · Dispute after: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> min" (p9-4), "Next, satoshi_ghost locks the XMR in escrow." (p10-1).</p>
+    <aside aria-label="Decided by the owner: launch trade cap and button" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 8 Nov (p11-6) and 2 Nov (ad button)</span>
+      <span style="font-weight: 600;">p11-6: for the first months, one trade can be up to $5,000. Max and the "Too high" line use the lower of the offer's largest trade and $5,000. 2 Nov: the button asks rather than promises: "Request to buy XMR", as on OfferAd.</span>
+    </aside>
+    <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>Launch cap, 9 Nov.</strong> Tweak <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">cap</span>: under (default, this offer tops out at $1,500, nothing extra shows), binds (the offer goes to $8,000; the help line adds "For now, X2F allows up to $5,000 a trade." and Max fills $5,000), too-high ($6,000 typed: "Too high: for now, one trade can be up to $5,000."). COPY-UNSIGNED: those two lines and "Request to buy XMR" in the footer and the "Nothing changes…" line.</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"bandsView":{"editor":"enum","options":["with","without"],"default":"with"},"role":{"editor":"enum","options":["auto","buyer-taker","seller-taker","poster-selling","poster-buying"],"default":"auto"},"$preview":{"width":390,"height":3052}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"bandsView":{"editor":"enum","options":["with","without"],"default":"with"},"role":{"editor":"enum","options":["auto","buyer-taker","seller-taker","poster-selling","poster-buying"],"default":"auto"},"cap":{"editor":"enum","options":["under","binds","too-high"],"default":"under"},"$preview":{"width":390,"height":3352}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { amount: '412.50', wallet: 'cake', obView: null };
+    this.state = { amount: props.cap === 'too-high' ? '6,000.00' : '412.50', wallet: 'cake', obView: null };
   }
   renderVals() {
     const THEMES = {
@@ -169,13 +174,17 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + ((this.state.obView || this.props.bandsView) === 'without' ? 2628 : 2598) + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
-    const MIN = 50, MAX = 1500, MKT = 329.90;
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + (((this.state.obView || this.props.bandsView) === 'without' ? 2928 : 2898) + ({ binds: 18, 'too-high': -32 }[this.props.cap] || 0)) + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    // Launch cap (owner p11-6, 8 Nov): one trade can be up to $5,000 for now. Tweak cap: the offer's top band ends
+    // under it (default), above it (binds: Max stops at $5,000), or the typed amount is over it (too-high).
+    const CAP = 5000, capOn = this.props.cap === 'binds' || this.props.cap === 'too-high';
+    const OFFER_MAX = capOn ? 8000 : 1500;
+    const MIN = 50, MAX = Math.min(OFFER_MAX, CAP), MKT = 329.90;
     const raw = String(this.state.amount).replace(/[^0-9.]/g, '');
     const usd = parseFloat(raw);
     const valid = !isNaN(usd) && usd >= MIN && usd <= MAX;
     // This offer's bands (owner #4 + #11, 8 Nov): set in USD by the vendor; the rate depends on the band.
-    const BANDS = [{ from: 50, to: 500, rate: 330.00 }, { from: 500.01, to: 1500, rate: 331.88 }];
+    const BANDS = [{ from: 50, to: 500, rate: 330.00 }, { from: 500.01, to: OFFER_MAX, rate: 331.88 }];
     const bi = valid ? BANDS.findIndex((b) => usd >= b.from && usd <= b.to) : -1;
     const RATE = bi >= 0 ? BANDS[bi].rate : BANDS[0].rate;
     const d$ = (n) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
@@ -208,10 +217,10 @@ class Component extends DCLogic {
       style: 'display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 10px 16px; box-sizing: border-box; border-radius: 12px; cursor: pointer; ' + (pick === d.id ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 2px solid transparent; background: var(--surface);'),
       pick: () => this.setState({ wallet: d.id }) }));
     const w = defs.find((d) => d.id === pick);
-    let help = 'satoshi_ghost sells $50 to $1,500 per trade.';
+    let help = 'satoshi_ghost sells $50 to ' + d$(OFFER_MAX) + ' per trade.' + (OFFER_MAX > CAP ? ' For now, X2F allows up to $5,000 a trade.' : '');
     let helpStyle = 'display: flex; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);';
     if (!valid) {
-      help = isNaN(usd) ? 'Enter an amount between $50 and $1,500.' : (usd < MIN ? 'Too low: the smallest trade is $50.' : 'Too high: the largest trade is $1,500.');
+      help = isNaN(usd) ? 'Enter an amount between $50 and ' + d$(MAX) + '.' : (usd < MIN ? 'Too low: the smallest trade is $50.' : (OFFER_MAX > CAP ? 'Too high: for now, one trade can be up to $5,000.' : 'Too high: the largest trade is ' + d$(MAX) + '.'));
       helpStyle = 'display: flex; gap: 6px; font-size: 13px; line-height: 18px; color: var(--danger);';
     }
     return { rootStyle,

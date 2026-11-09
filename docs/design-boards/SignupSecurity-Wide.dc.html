@@ -74,18 +74,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             </label>
           </sc-for>
           <sc-if value="{{totpNote}}" hint-placeholder-val="{{false}}">
-            <div role="note" aria-labelledby="ss-totp-t" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
-              <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+            <div role="note" aria-labelledby="ss-totp-t" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
+              <svg style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
               <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0; font-size: 14px; line-height: 20px;">
-                <h3 id="ss-totp-t" style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">What an authenticator app can&#39;t do on its own</h3>
-                <p style="margin: 0;">It&#39;s fine for logging in with your password. But some sensitive actions need a passkey, security key or PGP key instead:</p>
-                <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px;">
-                  <li>Ending a <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</span> hold early</li>
-                  <li>Logging in on a new device when your other devices aren&#39;t with you</li>
-                  <li>Adding team members, changing their roles or switching them on and off</li>
-                  <li>Switching to a vendor account</li>
-                </ul>
-                <p style="margin: 0; color: var(--ink-muted);">Add one of those too and you won&#39;t be limited.</p>
+                <h3 id="ss-totp-t" style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">Strong enough for trading</h3>
+                <p style="margin: 0;">Your password plus an authenticator code counts as a strong login. You can use it to end a <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</span> hold early or to log in on a new device.</p>
+                <p style="margin: 0; color: var(--ink-muted);">To switch to a vendor account later, you&#39;ll also need a passkey, security key or PGP key.</p>
               </div>
             </div>
           </sc-if>
@@ -209,10 +203,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G25)</span>
       <span style="font-weight: 600;">Signup no longer asks for a session length: after signup you go to the login screen, log in, then pick it (owner G25).</span>
     </aside>
+    <aside aria-label="Decided by the owner: password plus authenticator counts as strong" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G34, G13)</span>
+      <span style="font-weight: 600;">Traders: username, password, authenticator code and display name count as a strong login. Vendors still need a passkey, security key or PGP key (G13).</span>
+      <span style="color: var(--ink-muted);">The authenticator note shows only with a password and says what it unlocks. COPY-UNSIGNED.</span>
+    </aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":1280,"height":2345}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","password-authenticator","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":1280,"height":2443}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props); }
   preset(p) {
@@ -234,9 +233,9 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    // Authenticator app ticked with no passkey, security key or PGP key: show its limits (owner, 2 Nov).
+    // Password + authenticator app with no passkey, security key or PGP key: say it counts as strong for a trader (owner G34, 7 Nov; head designer: traders) and name the vendor limit (G13).
     const on0 = this.state.on || {};
-    const totpNote = !!on0.totp && !on0.passkey && !on0.key && !on0.pgp;
+    const totpNote = !!on0.pw && !!on0.totp && !on0.passkey && !on0.key && !on0.pgp;
     const s = this.state;
     const on = s.on;
 
@@ -246,7 +245,7 @@ class Component extends DCLogic {
       { id: 'passkey', name: 'Passkey', desc: 'Your face, fingerprint or phone PIN.' },
       { id: 'key', name: 'Security key', desc: 'Tap a YubiKey or similar key.' },
       { id: 'pgp', name: 'PGP key', desc: 'Decrypt a short message in your PGP app.', tag: 'Recommended', tagColor: 'var(--escrow)' },
-      { id: 'totp', name: 'Authenticator app', desc: 'A 6-digit code that changes every 30 s.', tag: 'Login only', tagColor: 'var(--ink-muted)' }
+      { id: 'totp', name: 'Authenticator app', desc: 'A 6-digit code that changes every 30 s.', tag: '2nd step', tagColor: 'var(--ink-muted)' }
     ];
     const rowStyle = (o) => 'display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box; border-radius: 16px; cursor: pointer; ' + (o ? 'background: var(--surface-raised); border: 2px solid var(--ink);' : 'background: var(--surface); border: 2px solid transparent;');
     const methods = DEFS.map((d) => ({
@@ -323,7 +322,7 @@ class Component extends DCLogic {
     const T = {
       none: { title: 'Not allowed yet', lines: ['A username alone can’t prove it’s you, and your display name can’t be used to log in.', 'Pick at least one way to log in.'] },
       totp: { title: 'Not allowed', lines: ['An authenticator app alone isn’t enough.', 'Add at least a password, but we recommend the other options.'] },
-      weak: { title: 'Weak', lines: ['If your account is ever broken into, it’s harder and slower to prove it’s you.', 'While we check, a 24 h cooling-off applies to you too.', 'Harden it with a passkey, security key or PGP key.'] },
+      weak: { title: 'Weak', lines: ['If your account is ever broken into, it’s harder and slower to prove it’s you.', 'While we check, a 24 h cooling-off applies to you too.', 'Harden it with an authenticator app, passkey, security key or PGP key.'] },
       strong: { title: 'Strong', lines: ['This stops simple guessing, and you can act right away.'] }
     };
     const t = T[tier] || T.strong;
@@ -342,7 +341,7 @@ class Component extends DCLogic {
       return { label, cur: cur ? 'step' : 'false', style: 'display: block; height: 4px; border-radius: 999px; background: ' + (done ? 'var(--escrow);' : cur ? 'var(--ink);' : 'var(--surface-raised);'),
         labelStyle: 'font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ' + (cur ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);') }; });
     // Screen height = header + both stacked blocks (forms stay in one 720 column) (measured parts, night, fonts loaded) + the design-notes block under it.
-    const P = { top: 250, left: 818, pw: 266, totp: 230, notes: 497, tier: { none: 675, totp: 675, weak: 749, strong: 710, strongNoPw: 710, armored: 830 } };
+    const P = { top: 250, left: 818, pw: 266, totp: 230, notes: 615, tier: { none: 675, totp: 675, weak: 749, strong: 710, strongNoPw: 710, armored: 830 } };
     const leftH = P.left + (hasPw ? P.pw : 0) + (totpNote ? P.totp : 0);
     const rightH = P.tier[tier === 'strong' && !hasPw ? 'strongNoPw' : tier];
     const frameH = 800;

@@ -117,7 +117,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <aside aria-label="Decided by the owner: gift card rules" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G50–G53, p4-3)</span>
       <span style="font-weight: 600;">Gift card rules</span>
-      <ul style="margin: 0; padding-left: 18px;"><li>The person holding the escrow has <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">45</span> min to check the card once its details are handed over.</li><li>Photo or video proof; video is encouraged (log in, show the details, then send).</li><li>Cards bought within the last <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> days.</li><li>Full written value only; range cards (e.g. Visa <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$200–$500</span>) may be partial and always need the video.</li><li>"Other" is kept as a brand choice.</li></ul>
+      <ul style="margin: 0; padding-left: 18px;"><li>The person holding the escrow has <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">45</span> min to check the card once its details are handed over.</li><li>Photo or video proof; video is encouraged (log in, show the details, then send).</li><li>Cards bought within the last <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> days.</li><li>Full written value only; range cards (e.g. Visa <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$200–$500</span>) may be partial and always need the video.</li><li>In the trade (drawn 9 Nov): the video option on ProofBlur (giftCard tweak; required for range cards) and the 45 min check timer on SellerConfirm (situation=gift-card).</li><li>"Other" is kept as a brand choice.</li></ul>
     </aside>
     <aside aria-label="Decided by the owner: the brand list is final" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (p5-6)</span>
@@ -130,7 +130,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"picked":{"editor":"enum","options":["amazon","other","none"],"default":"amazon"},"$preview":{"width":390,"height":3422}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"picked":{"editor":"enum","options":["amazon","other","none"],"default":"amazon"},"$preview":{"width":390,"height":3494}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -147,7 +147,7 @@ class Component extends DCLogic {
     const s = this.state;
     const picked = s.base === propPick && s.picked ? s.picked : propPick;
     // Measured natural heights (night) per variant; the root switches so no variant clips.
-    const HEIGHTS = { amazon: 3422, other: 3544, none: 3448 };
+    const HEIGHTS = { amazon: 3494, other: 3616, none: 3520 };
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + HEIGHTS[propPick] + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     // Brand list, final (owner, 7 Nov, p5-6): the 30 researched brands plus Home Hardware and Canadian Tire; Other stays. Initials only: names are trademarks.

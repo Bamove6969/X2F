@@ -145,10 +145,14 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             </section>
           </sc-if>
           <sc-if value="{{isFunded}}" hint-placeholder-val="{{false}}">
+            <section aria-label="You can still talk" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+              <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>
+              <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">You can still open the trade and message each other. Anything you add helps the moderator. No coins move until a moderator decides.</p>
+            </section>
             <section aria-label="If you need us" style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 16px; background: var(--surface);">
-              <p style="margin: 0; font-size: 15px; line-height: 22px;">If you need us: message the team on Matrix or Telegram with this ID.</p>
+              <p style="margin: 0; font-size: 15px; line-height: 22px;">If you need us: message X2F staff on Matrix or Telegram with this ID.</p>
               <div style="display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 16px; border-radius: 12px; background: var(--surface-raised);">
-                <span id="tti-id" style="flex-grow: 1; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 22px; line-height: 28px; font-weight: 500; letter-spacing: 0.04em; word-break: break-all;">#K7M2Q9XA4FTR</span>
+                <span id="tti-id" style="flex-grow: 1; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 22px; line-height: 28px; font-weight: 500; letter-spacing: 0.04em; word-break: break-all;">#K7M2Q9XA</span>
                 <button type="button" onClick="{{copyId}}" aria-describedby="tti-id" style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; min-width: 44px; height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/></svg><span aria-live="polite">{{copyLabel}}</span></button>
               </div>
               <div style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
@@ -193,9 +197,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <section role="dialog" aria-modal="true" aria-labelledby="tti-pop-t" style="width: 480px; box-sizing: border-box; padding: 32px; border-radius: 16px; background: var(--surface); border: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
         <h2 id="tti-pop-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Your trade is on hold</h2>
         <p style="margin: 0; font-size: 16px; line-height: 24px;">Your account is on hold, so your trade with mira.k for <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> XMR</span> is on hold too.</p>
-        <p style="margin: 0; font-size: 16px; line-height: 24px;">Contact the team on Matrix or Telegram with this incident ID:</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">Contact X2F staff on Matrix or Telegram with this incident ID:</p>
         <div style="display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 16px; border-radius: 12px; background: var(--surface-raised);">
-          <span id="tti-pop-id" style="flex-grow: 1; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 22px; line-height: 28px; font-weight: 500; letter-spacing: 0.04em; word-break: break-all;">#K7M2Q9XA4FTR</span>
+          <span id="tti-pop-id" style="flex-grow: 1; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 22px; line-height: 28px; font-weight: 500; letter-spacing: 0.04em; word-break: break-all;">#K7M2Q9XA</span>
           <button type="button" onClick="{{copyId}}" aria-describedby="tti-pop-id" style="display: flex; align-items: center; gap: 6px; flex-shrink: 0; min-width: 44px; height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/></svg><span aria-live="polite">{{copyLabel}}</span></button>
         </div>
         <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-radius: 12px; background: var(--surface-raised);">
@@ -203,7 +207,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <a href="#" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 6px 14px; box-sizing: border-box; color: var(--ink); text-decoration: none;"><span style="display: flex; align-items: center; gap: 14px; min-width: 0;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 3L3 10.5l7 2.5 2.5 7z"/><path d="M10 13l11-10"/></svg></span><span style="display: flex; flex-direction: column;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">Telegram</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted);">@x2f_help</span></span></span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg></a>
         </div>
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px;">
-          <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">A team member decides how to go on.</p>
+          <p style="margin: 0; font-size: 15px; line-height: 22px;">You can still open the trade and message mira.k. Anything you add helps the moderator. No coins move until a moderator decides.</p>
+          <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">A moderator decides how to go on.</p>
           <button type="button" onClick="{{closePop}}" style="flex-shrink: 0; height: 48px; min-width: 120px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">OK</button>
         </div>
       </section>
@@ -215,16 +220,23 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
     <p style="margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink);">Showing: {{showing}}</p>
     <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; max-width: 944px;">
-      <aside aria-label="Open for the owner: incident ID format" style="display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
-        <span style="font-weight: 600;">Incident ID format. The model shows #xxxxxxxxxxx; <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">#K7M2Q9XA4FTR</span> is an example.</span>
-        <span style="color: var(--ink-muted);">The Matrix and Telegram addresses are also undecided; <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">#x2f-help:example.org</span> and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">@x2f_help</span> are examples.</span>
-      </aside>
-      <aside aria-label="Open for the owner: incident ID for the held account" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
-        <span style="font-weight: 600;">Does the held account also get the incident-ID pop-up for a funded trade?</span>
-        <span style="color: var(--ink-muted);">The hold model only says &quot;the user&quot;. Shown at login, on top of the hold notice, since nobody can stay logged in during a hold. Preview with the side tweak.</span>
-      </aside>
+        <aside aria-label="Decided by the owner: incident ID" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G37)</span>
+          <span style="font-weight: 600;">Incident IDs are 8 to 9 characters, e.g. <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">#K7M2Q9XA</span>, and both traders see theirs.</span>
+          <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+            <li>Replaces the 12-character example. Shown to both members of the trade when it starts, at the top of the trade, and to the moderator who picks it up.</li>
+            <li>The held account gets the same pop-up (side=held account); the owner: it&#39;s &quot;displayed to both members of the trade&quot;.</li>
+            <li>Still open: the Matrix and Telegram addresses; <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">#x2f-help:example.org</span> and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">@x2f_help</span> are examples.</li>
+          </ul>
+        </aside>
+        <aside aria-label="Decided by the owner: a paused trade stays open to talk" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G7)</span>
+          <span style="font-weight: 600;">On hold, both traders can still open the trade, chat and add context. No coins move until a moderator decides.</span>
+          <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+            <li>Funded partner views (case=funded-you-sold, funded-you-bought) and the held account&#39;s pop-up add: &quot;You can still open the trade and message each other. Anything you add helps the moderator. No coins move until a moderator decides.&quot;</li>
+            <li>Staff are &quot;X2F staff&quot;, not &quot;the team&quot; (p5-4): &quot;message X2F staff on Matrix or Telegram&quot;, &quot;A moderator decides how to go on.&quot; New text is COPY-UNSIGNED.</li>
+          </ul>
+        </aside>
     </div>
     <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; max-width: 944px;">
       <aside aria-label="Decided by the owner: what happens to trades during a hold" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
@@ -260,7 +272,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"case":{"editor":"enum","options":["unfunded","funded-you-sold","funded-you-bought","resolved-refund","resolved-resume"],"default":"unfunded"},"side":{"editor":"enum","options":["partner","held account"],"default":"partner"},"$preview":{"width":1280,"height":1411}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"case":{"editor":"enum","options":["unfunded","funded-you-sold","funded-you-bought","resolved-refund","resolved-resume"],"default":"unfunded"},"side":{"editor":"enum","options":["partner","held account"],"default":"partner"},"$preview":{"width":1280,"height":1487}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { pop: true, copied: false }; }
   componentDidUpdate(prev) { if (prev.case !== this.props.case || prev.side !== this.props.side) this.setState({ pop: true, copied: false }); }
@@ -307,7 +319,7 @@ class Component extends DCLogic {
       popOpen: held && s.pop, popClosed: held && !s.pop,
       copyLabel: s.copied ? 'Copied' : 'Copy',
       copyId: () => {
-        try { if (navigator.clipboard) navigator.clipboard.writeText('#K7M2Q9XA4FTR'); } catch (e) {}
+        try { if (navigator.clipboard) navigator.clipboard.writeText('#K7M2Q9XA'); } catch (e) {}
         this.setState({ copied: true });
       },
       openPop: () => this.setState({ pop: true }),

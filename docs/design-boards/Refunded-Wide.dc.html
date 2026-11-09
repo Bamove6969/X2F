@@ -68,9 +68,13 @@ button,a{transition:background-color 150ms ease-out,border-color 150ms ease-out,
             <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0;">
               <h2 id="rf-dispute" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{disputeTitle}}</h2>
               <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Open a dispute and add your payment proof. If the money reached satoshi_ghost, a moderator can rule that they owe you the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000</span> XMR. Until they pay it back, they can't trade.</p>
+              <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">You can open a dispute until <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">31 Oct 2026, 12:03 UTC</span>.</p>
               <button type="button" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; margin: 2px 0 -10px; padding: 0; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer; align-self: flex-start;">Open dispute<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
             </div>
           </section>
+        </sc-if>
+        <sc-if value="{{disputeEnded}}" hint-placeholder-val="{{false}}">
+          <p style="padding: 0 4px; margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">The 48 hours to open a dispute ended on <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">31 Oct 2026, 12:03 UTC</span>.</p>
         </sc-if>
         <sc-if value="{{showRuling}}" hint-placeholder-val="{{false}}">
           <section aria-labelledby="rf-reason" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: color-mix(in srgb, var(--mod) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--mod) 40%, transparent);">
@@ -79,7 +83,8 @@ button,a{transition:background-color 150ms ease-out,border-color 150ms ease-out,
               <h2 id="rf-reason" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">The moderator's reason</h2>
             </div>
             <p style="margin: 0; font-size: 16px; line-height: 24px;">satoshi_ghost's Zelle activity shows no payment for this trade. Your screenshot shows a payment to a different Zelle ID.</p>
-            <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Don't agree? You can request an appeal until <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">1 Nov 2026, 14:05 UTC</span>.</p>
+            <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Don't agree? You can request an appeal until <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">31 Oct 2026, 14:05 UTC</span>.</p>
+            <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">This trade was reversed, so there are no reviews for it.</p>
             <a href="Appeal-Notice-Wide.dc.html" style="display: inline-flex; align-items: center; justify-content: center; align-self: flex-start; height: 48px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Read the ruling and appeal</a>
           </section>
         </sc-if>
@@ -113,10 +118,20 @@ button,a{transition:background-color 150ms ease-out,border-color 150ms ease-out,
       <span style="font-weight: 600;">Cancelling is final. The confirm sheet is the one warning: cancel before you pay, never after.</span>
       <span>Sheet title "Cancelling is final"; body "The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> XMR goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap I've paid instead." The danger-confirm button stays. The "Did you pay before you cancelled?" dispute card is gone from the returning and cancelled steps here and from Refunded (buyer cancelled): a buyer who paid taps I've paid instead of cancelling.</span>
     </aside>
+    <aside aria-label="Decided by the owner: 48 h windows after a refund or ruling" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 28 Oct (13:34, 14:05) · 6 Nov (Q40)</span>
+      <span style="font-weight: 600;">Both windows are 48 hours.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>variant=time-ran-out: &quot;You can open a dispute until 31 Oct 2026, 12:03 UTC.&quot; (48 h after the refund at 29 Oct, 12:03). disputeWindow=ended hides the card and leaves a muted line saying the window ended.</li>
+        <li>variant=moderator: the appeal line now reads &quot;until 31 Oct 2026, 14:05 UTC&quot; (ruling 29 Oct, 14:05 + 48 h), matching DisputeRuling and Appeal-Notice. Was 1 Nov (72 h).</li>
+        <li>Q40: a reversed trade gets no reviews; the ruling card says so. New text is COPY-UNSIGNED.</li>
+      </ul>
+      <span style="color: var(--ink-muted);">Preview with variant and disputeWindow. Showing: {{windowName}}</span>
+    </aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "variant": {"editor": "enum", "options": ["buyer-cancelled", "time-ran-out", "moderator"], "default": "buyer-cancelled"}, "$preview": {"width": 1280, "height": 1065}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "variant": {"editor": "enum", "options": ["buyer-cancelled", "time-ran-out", "moderator"], "default": "buyer-cancelled"}, "disputeWindow": {"editor": "enum", "options": ["open", "ended"], "default": "open"}, "$preview": {"width": 1280, "height": 1241}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = {}; }
   renderVals() {
@@ -125,7 +140,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const H = { 'buyer-cancelled': 1065, 'time-ran-out': 1065, 'moderator': 1065 }[this.props.variant] || 1065;
+    const H = { 'buyer-cancelled': 1241, 'time-ran-out': 1259, 'moderator': 1241 }[this.props.variant] || 1241; // notes column sets the height
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     const v = ['buyer-cancelled', 'time-ran-out', 'moderator'].indexOf(this.props.variant) >= 0 ? this.props.variant : 'buyer-cancelled';
     const C = {
@@ -185,7 +200,9 @@ class Component extends DCLogic {
       rows,
       isMod: v === 'moderator',
       notMod: v !== 'moderator',
-      showDispute: v === 'time-ran-out',
+      showDispute: v === 'time-ran-out' && this.props.disputeWindow !== 'ended',
+      disputeEnded: v === 'time-ran-out' && this.props.disputeWindow === 'ended',
+      windowName: v + (v === 'time-ran-out' ? ', dispute window ' + (this.props.disputeWindow === 'ended' ? 'ended' : 'open') : ''),
       disputeTitle: 'Did you send the money anyway?',
       showRuling: v === 'moderator'
     };

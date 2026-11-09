@@ -880,3 +880,57 @@ I audited every owner answer on origin/comms against the canvas: the decisions f
 - Reviewer naming and the public won/lost line wait on the owner.
 
 Canvas v165. Stages 1–6 follow.
+
+## 9 Nov 2026: owner answers drawn, stages 1–6 (signup → disputes) — READY, COPY-UNSIGNED
+Each board has a "Decided · owner" aside naming the ids. New tweaks are listed in brackets.
+
+**1–2 security**
+- SignupSecurity(+W), G34/G13: password + authenticator code counts as a strong login. A vendor still needs a passkey, security key or PGP key.
+- RecoveryHold(+W)/RecoveryCode(+W), G32: a recovery code only lets you in to set up login methods again. The rest of the team is logged out, and changes already waiting stay waiting.
+- Devices(+W):
+  - G34: the no-other-device text depends on account type.
+  - G57: switching a member off logs them out at once; after a username/password-only login the switch-off becomes final in 24 h.
+  - G23: session lengths 2/4/8/12 h.
+  - Q75: idle reminder at 15/30/60 min [idleReminder].
+  - Q16: wording.
+- Login(+W), Q13/Q19: a staff login on the trader site is refused [result].
+- Settings(+W): Q16, Q75 and G23.
+- LoginApprove-Wide: Jabber line.
+- DeleteAccount, p11-13: the signature is erased.
+
+**3–4 browse/post**
+- Main/BuyMain, Q28/Q24: currency menu ordered USD EUR GBP CAD AUD JPY, then A–Z, with flags, search, and greyed "No rate right now" [currencyMenu].
+- FlexOffer-Post(+W), Q23/Q4/Q5/p11-6:
+  - 3 bands per currency, 5 payment types [methods].
+  - $5,000 per-trade launch cap error [cap].
+- PostOffer: Decided, FlexOffer-Post ships.
+- OfferAd(+W), Q5/Q23: one method list per ad, at most 5.
+- BuyQuote/SellQuote(+W):
+  - "Request to buy XMR" / "Request to sell XMR".
+  - $5,000 cap on Max [cap].
+- BuyOffers/SellOffers/FlexOffer-Quote(+W): request buttons.
+- MyOffers(+W)/Fold-MyOffers: F6 methods dropdown, Q39 frozen wording, stale fixed-price line removed.
+
+**5–6 trade/dispute**
+- ProofBlur(+W):
+  - Q42 stale screenshot [date stale].
+  - Q43 amount not found, send anyway [amount].
+  - F14 trade code hidden, with a chat notice [protect code-hidden].
+  - G50/G52 gift-card video, required for range cards [giftCard].
+- SellerConfirm [situation], covering F14 (chat notice), Q20 (paid less: talk first, then release or dispute) and G50 (45-min card check).
+- Warn-Release(+W): paid-less line [amount short].
+- TradeFund, G2: cancel before escrow [fund cancelled].
+- SellerRefund + DisputeOpen [side seller], p11-16: the escrower opens a dispute before "I've paid"; the payer is greyed out and told not to pay.
+- TradeTechIssue(+W): G7 chat still open, G37 incident ID, OPEN boxes resolved.
+- Refunded(+W): 48 h appeal (31 Oct 14:05) and the 48 h no-show dispute.
+- MyTrades(+W): "File appeal" button that ends with the window.
+- DisputeRuling/Appeal-Notice(+W), Q40: feedback rules.
+- Fold-Cover, Q38: 24 h countdown.
+- TeamChat(+W): team display name + "member: <name>".
+- GiftCardBrand: rules synced.
+
+**Pre-existing height mismatches (not new)**
+- DeleteAccount-Wide 800/753.
+- Fold-Cover 392/368.
+
+Canvas v166. The audit register (docs/owner-answers-audit/) is now drawn except the items listed as waiting for the owner or lead.
