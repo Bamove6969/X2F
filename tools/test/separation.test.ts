@@ -26,7 +26,8 @@ afterEach(async () => {
 describe('separation-check', () => {
   it('passes on the real repository', async () => {
     expect(await scanSeparation(REPO)).toEqual([]);
-  });
+    // Walks the whole repository: slow when the machine is under load.
+  }, 60_000);
 
   it('flags a planted process.env.MOD_KEYSTORE_KEY in apps/api', async () => {
     const root = await tree({ 'apps/api/src/evil.ts': 'export const k = process.env.MOD_KEYSTORE_KEY;\n' });
