@@ -49,7 +49,7 @@ export interface RangeRows {
   fiat: string | null;
 }
 
-/** A converted row starts with "≈" (boards v142, owner #11: the poster's own row is exact). */
+/** A converted row starts with "≈" (boards v142, owner #11: the poster's own row is exact). COPY-UNSIGNED: the "≈ " prefix. */
 export const APPROX = '≈ ';
 
 /** The two rows at `rate` (null: only the poster's own row); the converted one starts with "≈". */
@@ -65,13 +65,16 @@ export function rowsAt(range: OfferRange, currency: string, rate: Price | null):
   return range.unit === 'xmr' ? { xmr, fiat: APPROX + fiat } : { xmr: APPROX + xmr, fiat };
 }
 
-/** One amount in the other unit at `rate`, "≈ $165.77" or "≈ 1.508 XMR" (PostOffer's line under each box). */
+/** One amount in the other unit at `rate`, "≈ $165.77" or "≈ 1.508 XMR" (PostOffer's line under each box). COPY-UNSIGNED. */
 export function otherUnit(amount: bigint, unit: OfferRange['unit'], currency: string, rate: Price): string {
   const b = rangeInBoth({ unit, min: amount, max: amount }, rate);
   return unit === 'xmr' ? `${APPROX}${formatMinor(b.minFiat, currency)}` : `${APPROX}${xmrBound(b.minAtomic, 'down', 6)} XMR`;
 }
 
-/** "Market rate · updated 14:05 UTC" from the feed's `at` (boards v142, anticipated from owner #3); null for a bad time. */
+/**
+ * "Market rate · updated 14:05 UTC" from the feed's `at` (boards v142, anticipated from owner #3); null for a bad time.
+ * COPY-UNSIGNED: "Market rate · updated HH:MM UTC" (shown on Browse and Post an offer).
+ */
 export function marketUpdated(at: string): string | null {
   const d = new Date(at);
   if (Number.isNaN(d.getTime())) return null;

@@ -178,6 +178,7 @@ export function PostOffer() {
   };
   const unitSwitch = (box: string) => <UnitSwitch box={box} currency={form.currency} unit={form.unit} onChange={changeUnit} />;
   // Under each box, the other unit at your price (boards v142): "≈ $165.77 at your price (+0.5%)".
+  // COPY-UNSIGNED: "≈ … at your price (+N%)" and "≈ … at your price".
   const otherLine = (raw: string) => {
     const v = parseRangeAmount(raw, form.unit);
     if (v === null || v === 0n || yourPrice === null) return null;

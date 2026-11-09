@@ -116,7 +116,8 @@ function importedLine(l: { site: string; overUsd: number }): string {
  * The markup at the card's bottom left (owner #11, 8 Nov; boards v142): the figure in mono over its
  * label, "+0.4%" over "Vendor markup", "0%" over "At market" when there is none. A fixed price's
  * markup is its difference from the market price now ("+$0.10"); with no market price it reads only
- * "Fixed price". Null while a market offer has no price. COPY-UNSIGNED: "Vendor markup".
+ * "Fixed price". Null while a market offer has no price. COPY-UNSIGNED: "Vendor markup", and the marks
+ * "+0.4%" / "−0.4%", "+$0.10" / "−$0.90" and "0%" over "At market" / "Fixed price" (the labels existed; the marks are new).
  */
 export interface Markup {
   mark: string | null;

@@ -225,6 +225,15 @@ describe('switching the unit on Post an offer converts both boxes (review H1)', 
     expect(switchUnit(form({ unit: 'xmr', min: '1', max: '2' }), 'fiat', 33_000n)).toMatchObject({ min: '330', max: '660' });
   });
 
+  it('equal boxes never come out with the smallest above the largest (review 2, M2)', () => {
+    // CA$500 / CA$500 at 1,500,033: the min rounds up to 0.033333, the max down to 0.033332; the largest is set to the smallest.
+    const x = switchUnit(form({ unit: 'fiat', currency: 'CAD', min: '500', max: '500' }), 'xmr', RATE);
+    expect([x.min, x.max]).toEqual(['0.033333', '0.033333']);
+    expect(validate(x).errors.min).toBeUndefined();
+    const f = switchUnit(form({ unit: 'xmr', currency: 'CAD', min: '0.1000001', max: '0.1000001' }), 'fiat', RATE);
+    expect([f.min, f.max]).toEqual(['1500.04', '1500.04']);
+  });
+
   it('with no price, both boxes are cleared; the same unit changes nothing', () => {
     expect(switchUnit(fiatForm, 'xmr', null)).toMatchObject({ unit: 'xmr', min: '', max: '' });
     expect(switchUnit(fiatForm, 'fiat', RATE)).toBe(fiatForm);

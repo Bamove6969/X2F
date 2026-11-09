@@ -136,13 +136,20 @@ function convertBox(raw: string, from: AmountUnit, to: AmountUnit, rate: bigint,
 /**
  * The form after the poster picks `to` for the range (review H1): both boxes converted at your price
  * (`rate`, minor units per XMR), the smallest trade rounded up and the largest down, so the range
- * never grows; once converted, the new unit is exact. With no price, both boxes are cleared, so a
+ * never grows (except that a largest rounded below the smallest is set to the smallest); once
+ * converted, the new unit is exact. With no price, both boxes are cleared, so a
  * number typed in one unit is never read in the other.
  */
 export function switchUnit(f: FormState, to: AmountUnit, rate: bigint | null): FormState {
   if (f.unit === to) return f;
   if (rate === null || rate <= 0n) return { ...f, unit: to, min: '', max: '' };
-  return { ...f, unit: to, min: convertBox(f.min, f.unit, to, rate, 'up'), max: convertBox(f.max, f.unit, to, rate, 'down') };
+  const min = convertBox(f.min, f.unit, to, rate, 'up');
+  const max = convertBox(f.max, f.unit, to, rate, 'down');
+  // Equal (or nearly equal) boxes can cross after rounding: the largest is set to the smallest, so
+  // the switch never leaves an error the poster didn't cause (review 2, M2).
+  const lo = parseRangeAmount(min, to);
+  const hi = parseRangeAmount(max, to);
+  return { ...f, unit: to, min, max: lo !== null && hi !== null && lo > hi ? min : max };
 }
 
 export function stepMargin(bps: number, dir: 1 | -1): number {
