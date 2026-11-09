@@ -509,7 +509,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
           closedHere = false;
         }
         if (!closedHere) continue;
-        item = { state: 'cancelled', settleKind: null, paused: false };
+        item = { state: 'cancelled', chat: null, settleKind: null, paused: false };
         unlisted = item;
       }
       const apiState = item.state as TradeState;

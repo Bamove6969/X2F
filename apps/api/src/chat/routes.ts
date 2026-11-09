@@ -26,7 +26,8 @@
  * (Task 19's bus): a hint to re-read, carrying nothing but the chat code.
  *
  * Every chat route needs a trader session; a chat that does not exist or does not include the
- * caller is the same 404 `not-found`. Nothing here logs a chat code, a key or a ciphertext.
+ * caller is the same 404 `not-found`, except a chat purged under the caller: 410 `chat-purged`
+ * (its member mark, kept CHAT_PURGED_MARK_DAYS), on which the device erases its copy (p11-10). Nothing here logs a chat code, a key or a ciphertext.
  *
  * Blocks (Task 37, traders/blocks.ts): while either trader has blocked the other, a chat between
  * them answers the same 404 on every route and leaves `GET /v1/chats`, and `POST /v1/chats`
@@ -40,6 +41,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { purgedTagSql } from './retention.js';
 import { assertNotBlocked, blockedEitherWaySql } from '../traders/blocks.js';
 import { traderSummaries, type TraderSummary } from '../traders/summary.js';
 
@@ -117,7 +119,15 @@ export async function roleInChat(db: Queryable, raw: string, accountId: string):
     [code],
   );
   const row = rows[0];
-  if (!row) throw notFound();
+  if (!row) {
+    // A chat purged under the caller (123's mark): 410, so the device erases its copy (p11-10).
+    // Only a member's own session matches the tag; everyone else gets the same 404 as ever.
+    if (UUID.test(accountId)) {
+      const gone = await db.query(`select 1 from chat_purged_marks where tag = ${purgedTagSql('$1::text', '$2::uuid')}`, [code, accountId]);
+      if (gone.rows.length > 0) throw new ApiError(410, 'chat-purged');
+    }
+    throw notFound();
+  }
   const role: ChatRole | null = row.buyer_account_id === accountId ? 'buyer' : row.seller_account_id === accountId ? 'seller' : null;
   if (role === null) throw notFound();
   if (!(await tradeOpen(db, row.trade_code))) await assertNotBlocked(db, accountId, role === 'buyer' ? row.seller_account_id : row.buyer_account_id);

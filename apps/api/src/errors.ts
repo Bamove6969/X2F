@@ -91,6 +91,8 @@ export type ApiErrorCode =
   | 'wrong-channel'
   | 'wrong-sender'
   | 'chat-unavailable'
+  // Design 2026-11-08 section 5: a chat purged under the caller (its member mark); the device erases its copy.
+  | 'chat-purged'
   // Plan 3, Task 27: a second dispute on one trade.
   | 'dispute-exists'
   // Plan 3, Task 26: the nudge sender's own limits.

@@ -334,12 +334,15 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   // watcher's 6 h fallback does not run, review M3). Owner rule g62 (trade timers stop during maintenance):
   // an open trade also counts as paused as soon as `site_flags.maintenance_since` is set, before the
   // timer loop's next pass writes its `paused_at`, so the moderator decides nothing in that gap.
+  // Also `chat` (chat shred review I1): the code of the chat linked to the trade, or null (none, or
+  // purged); moderation records the link while the trade is live and holds a shred by it.
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean }>(
-      `select t.code, t.state, t.settling, t.paused_at,
+    const { rows } = await o.db.query<{ code: string; chat: string | null; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean }>(
+      `select t.code, c.code as chat, t.state, t.settling, t.paused_at,
               (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused
          from trades t
          join trade_attestations a on a.code = t.code
+         left join chats c on c.trade_code = t.code
         where t.closed_at is null or t.closed_at > $1
         order by t.taken_at, t.code`,
       [new Date(now() - WATCH_LIST_CLOSED_DAYS * 86_400_000)],
@@ -347,6 +350,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.send({
       trades: rows.map((r) => ({
         trade: r.code,
+        chat: r.chat,
         state: r.state,
         settleKind: settleKindFor({ state: r.state, settling: r.settling }),
         paused: r.paused_at !== null || r.site_paused,
@@ -431,6 +435,40 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     }));
     return reply.send({ work });
   }));
+
+  // ── Chat shred (design-chat-membership-keys 5, task 1) ─────────────────────
+  // The chats purgeChats deleted whose keys the moderation service has not yet reported destroyed,
+  // with the linked trade's code (null before a take). Moderation checks its own view of that trade
+  // before it shreds; this list is only the trigger. Never-served orders first, then the least
+  // recently served (review M4): orders moderation holds move to the back instead of keeping the
+  // ones behind them waiting.
+  app.get('/internal/v1/chat-shred', guard('/internal/v1/chat-shred', async (_req, reply) => {
+    const { rows } = await o.db.query<{ chat: string; trade_code: string | null; purged_at: Date }>(
+      `with picked as (
+         select chat, trade_code, purged_at, served_at from chat_shred_orders
+          order by served_at nulls first, purged_at, chat
+          limit $1
+       ), served as (
+         update chat_shred_orders s set served_at = $2 from picked p where s.chat = p.chat
+       )
+       select chat, trade_code, purged_at from picked order by served_at nulls first, purged_at, chat`,
+      [o.workLimit ?? WORK_LIMIT, new Date(now())],
+    );
+    return reply.send({ orders: rows.map((r) => ({ chat: r.chat, trade: r.trade_code, purgedAt: r.purged_at.toISOString() })) });
+  }));
+
+  /**
+   * `{ kind: 'chat-shredded', chat }`: the moderation service destroyed its copy of the chat's keys.
+   * The order is removed; a repeat (or a chat with no order) is still 201, so the report is idempotent.
+   */
+  const chatShredded = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'chat'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    await o.db.query('delete from chat_shred_orders where chat = $1', [code]);
+    log({ reason: 'internal-chat-shredded' });
+    return reply.code(201).send({ ok: true });
+  };
 
   /** `{ kind: 'chat-refused', chat, reason }`: the moderation service will never attest this chat. */
   const refuseChat = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
@@ -524,6 +562,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'refused') return refuse(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-refused') return refuseChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-attestation') return attestChat(body, reply);
+    if (isPlainObject(body) && body.kind === 'chat-shredded') return chatShredded(body, reply);
     if (isPlainObject(body) && typeof body.kind === 'string' && body.kind !== 'attestation') return watcherReport(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;

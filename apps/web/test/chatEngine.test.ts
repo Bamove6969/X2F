@@ -38,25 +38,37 @@ class FakeApi implements ChatApi {
   envelopes: ApiEnvelope[] = [];
   posted: unknown[] = [];
   nextId = 1;
+  /** The API purged the chat: every route answers 410 chat-purged (or 404 for `blocked`). */
+  gone: 410 | 404 | null = null;
+  calls = 0;
   constructor(readonly chat: string) {}
+  check(): void {
+    this.calls++;
+    if (this.gone) throw Object.assign(new Error(`api ${this.gone}`), { status: this.gone, code: this.gone === 410 ? 'chat-purged' : 'not-found' });
+  }
   async getChat() {
+    this.check();
     return { ...this.view, mySignPublic: this.identities[this.view.role]?.signPublic ?? this.view.mySignPublic };
   }
   async registerIdentity(chat: string, body: { signPublic: string; boxPublic: string; proof: string }) {
+    this.check();
     expect(await chatIdentityProofValid(chat, this.view.role, body)).toBe(true);
     if (this.identities[this.view.role]) return 'exists' as const;
     this.identities[this.view.role] = body;
     return 'ok' as const;
   }
   async getAttestation() {
+    this.check();
     if (this.refused) throw Object.assign(new Error('refused'), { status: 409, code: 'attestation-refused' });
     return this.attestation;
   }
   async listEnvelopes(_chat: string, after: string) {
+    this.check();
     const list = this.envelopes.filter((e) => BigInt(e.id) > BigInt(after));
     return { envelopes: list.slice(0, 2), more: list.length > 2 };
   }
   async postEnvelope(_chat: string, envelope: unknown) {
+    this.check();
     this.posted.push(envelope);
     return this.add(this.view.role, envelope);
   }
@@ -303,7 +315,7 @@ describe('chat engine: messages', () => {
     await e.send(chat, 'first');
     // The saved state is rolled back to before the send (an older copy): the guard catches up first.
     const rec = (await store.load(chat))!;
-    await store.save({ ...rec, state: null, cursor: '0', messages: [] });
+    await store.save({ ...rec, state: null, cursor: '0', receipts: [] });
     await engine().send(chat, 'second');
     expect(api.posted.map((p) => (p as Envelope).seq)).toEqual([0, 1]);
     const lines = (await engine().sync(chat)).lines;
@@ -311,7 +323,199 @@ describe('chat engine: messages', () => {
   });
 });
 
+describe('chat engine: no text on the device, and erased on purge (owner p11-10, design 2026-11-08 section 5)', () => {
+  it('keeps no message text in the store: only keys, the guard, the cursor and receipts', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    await fromSeller('IBAN DE89 3704', parts);
+    await e.send(chat, 'Sending via Zelle now');
+    expect((await e.sync(chat)).lines.map((l) => l.text)).toEqual(['IBAN DE89 3704', 'Sending via Zelle now']);
+    const saved = store.records.get(chat)!;
+    expect(saved).not.toContain('IBAN');
+    expect(saved).not.toContain('Zelle');
+    expect(JSON.parse(saved)).toMatchObject({ v: 2, receipts: [{ id: '1', from: 'seller', seq: 0 }, { id: '2', from: 'buyer', seq: 0 }] });
+  });
+
+  it('a reopened app (a new engine) decrypts every line again from the server; a line the server no longer serves shows as a placeholder (review I2)', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('one', parts);
+    await fromSeller('two', parts);
+    await engine().sync(chat);
+    const before = api.calls;
+    expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['one', 'two']);
+    expect(api.calls).toBeGreaterThan(before + 1);
+    const at1 = api.envelopes.find((x) => x.id === '1')!.at;
+    api.envelopes = api.envelopes.filter((x) => x.id !== '1');
+    // The device still holds the receipt (sender, seq, time, signature): the gap is shown, never hidden.
+    const after = await engine().sync(chat);
+    expect(after.lines).toEqual([
+      { id: '1', from: 'seller', text: '', at: at1, mine: false, gapBefore: false, missing: true },
+      expect.objectContaining({ id: '2', text: 'two' }),
+    ]);
+    expect(after.lines[1]).not.toHaveProperty('missing');
+  });
+
+  it('a re-read shows a line only for the envelope the guard took: another one the sender signed with that seq is dropped', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('pay to account A', parts, 'seller', 0);
+    expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['pay to account A']);
+    const other = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state: newChatState(channel), text: 'pay to account B' });
+    api.envelopes[0] = { ...api.envelopes[0]!, envelope: other.envelope };
+    expect((await engine().sync(chat)).lines).toEqual([expect.objectContaining({ id: '1', from: 'seller', text: '', missing: true })]);
+  });
+
+  it('review I3: a read that fails partway through the first sync is not taken as done: the next sync reads from the start again', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    for (const t of ['a', 'b', 'c', 'd', 'e']) await fromSeller(t, parts);
+    await engine().sync(chat);
+    const e = engine();
+    const list = api.listEnvelopes.bind(api);
+    let n = 0;
+    api.listEnvelopes = async (c, after) => {
+      if (++n === 2) throw Object.assign(new Error('circuit dropped'), { status: 502 });
+      return list(c, after);
+    };
+    await expect(e.sync(chat)).rejects.toMatchObject({ status: 502 });
+    const lines = (await e.sync(chat)).lines;
+    expect(lines.map((l) => l.text)).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(lines.some((l) => l.missing)).toBe(false);
+  });
+
+  it('review M2: a re-read skips an envelope at or below the cursor that it holds no receipt for (a new line given an old id)', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('one', parts);
+    api.nextId = 3;
+    await fromSeller('two', parts);
+    await engine().sync(chat);
+    // The API slips a new line (the next seq) in at id 2, below the cursor.
+    const injected = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state: sellerState, text: 'send to account B' });
+    api.envelopes.splice(1, 0, { id: '2', senderRole: 'seller', envelope: injected.envelope, at: null });
+    // The seller's real next line (the same seq) follows past the cursor.
+    await fromSeller('three', parts);
+    expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['one', 'two', 'three']);
+    expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['one', 'two', 'three']);
+    expect(JSON.parse(store.records.get(chat)!).receipts.map((r: { id: string }) => r.id)).toEqual(['1', '3', '4']);
+  });
+
+  it('a v1 record (which kept the text) is upgraded: its text is dropped and its lines come from the server again', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    await fromSeller('hello', parts);
+    await e.sync(chat);
+    const v2 = JSON.parse(store.records.get(chat)!) as Record<string, unknown> & { receipts: Array<Record<string, unknown>> };
+    const { receipts, ...rest } = v2;
+    store.records.set(chat, JSON.stringify({ ...rest, v: 1, messages: receipts.map(({ sig: _sig, ...m }) => ({ ...m, text: 'hello' })) }));
+    expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['hello']);
+    expect(store.records.get(chat)).not.toContain('hello');
+  });
+
+  it('on 410 chat-purged the device erases its record and the lines it held, and makes no new identity', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    await fromSeller('secret line', parts);
+    expect((await e.sync(chat)).lines).toHaveLength(1);
+    api.gone = 410;
+    await expect(e.sync(chat)).rejects.toMatchObject({ status: 410 });
+    expect(store.records.has(chat)).toBe(false);
+    await expect(e.sync(chat)).rejects.toMatchObject({ status: 410 });
+    expect(made).toHaveLength(1);
+    expect(store.records.has(chat)).toBe(false);
+  });
+
+  it('a send into a purged chat erases it too', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await e.sync(chat);
+    const postEnvelope = api.postEnvelope.bind(api);
+    api.postEnvelope = async (c, env) => {
+      api.gone = 410;
+      return postEnvelope(c, env);
+    };
+    await expect(e.send(chat, 'hi')).rejects.toBeInstanceOf(ChatSendFailed);
+    expect(store.records.has(chat)).toBe(false);
+  });
+
+  it('a 404 (a block hides the chat) keeps the record', async () => {
+    const e = engine();
+    await e.sync(chat);
+    api.gone = 404;
+    await expect(e.sync(chat)).rejects.toMatchObject({ status: 404 });
+    expect(store.records.has(chat)).toBe(true);
+  });
+
+  it('sweep erases every stored chat the API says was purged and keeps the rest, even when one check fails', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const kept = { ...(await store.load(chat))! };
+    for (const c of ['AAAA-AAAA-AAAA-AAAA', 'BBBB-BBBB-BBBB-BBBB', 'CCCC-CCCC-CCCC-CCCC']) await store.save({ ...kept, chat: c });
+    const answers: Record<string, number> = { 'AAAA-AAAA-AAAA-AAAA': 410, 'BBBB-BBBB-BBBB-BBBB': 503, 'CCCC-CCCC-CCCC-CCCC': 410 };
+    api.getChat = async (c?: string) => {
+      const status = answers[c ?? ''];
+      if (status) throw Object.assign(new Error('x'), { status, code: status === 410 ? 'chat-purged' : 'internal' });
+      return { ...api.view, mySignPublic: api.identities.buyer?.signPublic ?? null };
+    };
+    expect(await e.sweep()).toEqual(['AAAA-AAAA-AAAA-AAAA', 'CCCC-CCCC-CCCC-CCCC']);
+    expect([...store.records.keys()].sort()).toEqual([chat, 'BBBB-BBBB-BBBB-BBBB'].sort());
+  });
+});
+
 describe('the worker side of the chat protocol (serve.ts)', () => {
+  it('review M3: sweeps the stored chats for purged ones when the worker starts, before any chat message, and once', async () => {
+    const { serveChat } = await import('../src/chat/serve.js');
+    let sweeps = 0;
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sweep: async () => (sweeps++, []) };
+    let handler: (e: { data: unknown }) => void = () => undefined;
+    const out: unknown[] = [];
+    serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
+    for (let i = 0; i < 200 && sweeps === 0; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(sweeps).toBe(1);
+    handler({ data: { t: 'chat-sync', id: 1, chat } });
+    handler({ data: { t: 'chat-sync', id: 2, chat } });
+    for (let i = 0; i < 200 && out.length < 2; i++) await new Promise((r) => setTimeout(r, 5));
+    expect(sweeps).toBe(1);
+  });
+
+  it('review M3: a sweep with no live session (401) erases nothing and is tried again on the next chat message', async () => {
+    const e = engine();
+    await e.sync(chat);
+    api.getChat = async () => {
+      throw Object.assign(new Error('x'), { status: 401, code: 'unauthenticated' });
+    };
+    await expect(e.sweep()).rejects.toMatchObject({ status: 401 });
+    expect(store.records.has(chat)).toBe(true);
+    const { serveChat } = await import('../src/chat/serve.js');
+    const results: Array<() => Promise<string[]>> = [
+      async () => {
+        throw Object.assign(new Error('x'), { status: 401 });
+      },
+      async () => [],
+    ];
+    let sweeps = 0;
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sweep: () => results[Math.min(sweeps++, 1)]!() };
+    let handler: (e: { data: unknown }) => void = () => undefined;
+    const out: unknown[] = [];
+    serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
+    for (let i = 0; i < 200 && sweeps === 0; i++) await new Promise((r) => setTimeout(r, 5));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(sweeps).toBe(1);
+    handler({ data: { t: 'chat-sync', id: 1, chat } });
+    for (let i = 0; i < 200 && out.length < 1; i++) await new Promise((r) => setTimeout(r, 5));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(sweeps).toBe(2);
+    handler({ data: { t: 'chat-sync', id: 2, chat } });
+    for (let i = 0; i < 200 && out.length < 2; i++) await new Promise((r) => setTimeout(r, 5));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(sweeps).toBe(2);
+  });
+
   it('answers sync and send with snapshots, refuses a bad chat code, and never posts a key', async () => {
     const { serveChat, chatConfig } = await import('../src/chat/serve.js');
     const out: unknown[] = [];
@@ -338,6 +542,10 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
     handler({ data: { t: 'escrow-thing', id: 4 } });
     await new Promise((r) => setTimeout(r, 20));
     expect(out).toEqual([]);
+    api.gone = 410;
+    handler({ data: { t: 'chat-sync', id: 5, chat } });
+    await settle();
+    expect(out.shift()).toEqual({ t: 'chat', id: 5, ok: false, error: 'not-found' });
     expect(() => chatConfig({})).toThrow();
     expect(chatConfig({ VITE_MOD_SIGNING_PUBLIC: modSigningPublic })).toEqual({ modSigningPublic });
   });
