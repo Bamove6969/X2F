@@ -22,8 +22,8 @@ const OFFERS: Offer[] = [
     status: 'live', createdAt: '2026-10-29T10:00:00.000Z',
   },
   {
-    id: B, side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '30000',
-    pricing: { mode: 'fixed', centsPerXmr: '30000' }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5,
+    id: B, side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '27000',
+    pricing: { mode: 'market', marginBps: -1000 }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5,
     status: 'paused', createdAt: '2026-10-29T09:00:00.000Z',
   },
   {

@@ -2,7 +2,7 @@
 // poster set the range in XMR or in fiat (`amountUnit`); the ad card shows it in both, one row each,
 // and the list's "Display amounts including vendor markup" box picks the rate the other unit is
 // worked out at: off (the default), the market price; on, the offer's own rate (the market moved by
-// its margin, or its fixed price), what a taker trades at. The poster's own row never changes.
+// its margin; there are no fixed-price offers, owner Q1), what a taker trades at. The poster's own row never changes.
 //
 // The money maths is @x2f/trade's (offerRange.ts: rangeInBoth, displayRate, rangeAllows); this file
 // only picks the rate and formats. The quote screen can use the same: `offerRange` for the poster's

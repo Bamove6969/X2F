@@ -18,7 +18,8 @@ export interface MyOffer {
   methodName: string;
   currency: string;
   rate: bigint | null;
-  pricing: { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
+  /** Always the market price moved by the margin (owner Q1, F1: there are no fixed-price offers). */
+  pricing: { mode: 'market'; marginBps: number };
   /**
    * The unit the range was set in (owner, 8 Nov): that pair is exact; the API sends the other at the
    * offer's rate now, or null with no rate.
@@ -75,9 +76,9 @@ function str(v: unknown): string {
   return v;
 }
 
+/** `{ mode: 'market', marginBps }`; any other mode (a fixed price, owner Q1) does not parse. */
 function parsePricing(v: unknown): MyOffer['pricing'] {
   if (isRecord(v) && v.mode === 'market' && typeof v.marginBps === 'number' && Number.isInteger(v.marginBps)) return { mode: 'market', marginBps: v.marginBps };
-  if (isRecord(v) && v.mode === 'fixed') return { mode: 'fixed', centsPerXmr: big(v.centsPerXmr) };
   throw shape();
 }
 

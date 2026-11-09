@@ -62,18 +62,19 @@ export interface TraderSummary {
   imported: { site: string; overUsd: number }[];
 }
 
-export type Pricing = { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
+/** Always the market price moved by the margin (owner Q1, F1: there are no fixed-price offers). */
+export type Pricing = { mode: 'market'; marginBps: number };
 
 export interface Offer {
   id: string;
   poster: TraderSummary;
-  /** The offer's price now, in minor units per XMR; null for a market offer while the feed is down. */
+  /** The offer's price now, in minor units per XMR; null while the feed is down. */
   rate: bigint | null;
   pricing: Pricing;
   /**
    * The unit the poster set the range in (owner, 8 Nov: "Offer amounts in XMR or fiat"); that pair is
-   * exact. The API sends the other pair converted at the offer's rate now, or null with no rate (a
-   * market offer while the feed is down). XMR in atomic units, fiat in the currency's minor units.
+   * exact. The API sends the other pair converted at the offer's rate now, or null with no rate (the
+   * feed is down). XMR in atomic units, fiat in the currency's minor units.
    */
   amountUnit: AmountUnit;
   minAtomic: bigint | null;
@@ -202,10 +203,11 @@ function parsePoster(v: unknown, at: string): TraderSummary {
   };
 }
 
+/** `{ mode: 'market', marginBps }`; any other mode (a fixed price, owner Q1) does not parse. */
 function parsePricing(v: unknown, at: string): Pricing {
   const o = obj(v, at);
-  const mode = oneOf(o, 'mode', at, ['market', 'fixed'] as const);
-  return mode === 'market' ? { mode, marginBps: num(o, 'marginBps', at) } : { mode, centsPerXmr: big(o, 'centsPerXmr', at) };
+  const mode = oneOf(o, 'mode', at, ['market'] as const);
+  return { mode, marginBps: num(o, 'marginBps', at) };
 }
 
 /** `minTrades`: null is no minimum (owner, 8 Nov), read as 0; the key must be there. */

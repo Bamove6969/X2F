@@ -40,6 +40,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { MARKET_PRICED } from '../offers/routes.js';
 import { assertNotBlocked, blockedEitherWaySql } from '../traders/blocks.js';
 import { traderSummaries, type TraderSummary } from '../traders/summary.js';
 
@@ -85,8 +86,12 @@ export const ENVELOPE_PAGE = 100;
 /** Chats listed by GET /v1/chats. */
 const CHAT_LIST_LIMIT = 200;
 
-/** An offer anyone may see (Task 4's LISTED): live, and its poster neither disabled nor on hold. */
-const LISTED = `o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
+/**
+ * An offer anyone may see (Task 4's LISTED): market-priced (an offer stored as fixed before the
+ * owner's market-only rule is not found, offers/routes.ts MARKET_PRICED), live, and its poster
+ * neither disabled nor on hold.
+ */
+const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)`;
 
 interface ChatRow {

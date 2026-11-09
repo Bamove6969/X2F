@@ -32,7 +32,8 @@ const poster = (displayName: string) => ({
 });
 
 const GHOST = { id: 'offer-ghost', poster: poster('satoshi_ghost'), rate: '33000', pricing: { mode: 'market', marginBps: 0 }, minFiatCents: '5000', maxFiatCents: '150000', minTrades: 0 };
-const FIXED = { ...GHOST, id: 'offer-fixed', pricing: { mode: 'fixed', centsPerXmr: '34000' }, rate: '34000' };
+/** 50% above the market, the furthest an offer goes (owner F1); there are no fixed-price offers (owner Q1). */
+const ABOVE = { ...GHOST, id: 'offer-above', pricing: { mode: 'market', marginBps: 5000 }, rate: '49500' };
 const MIRA = { ...GHOST, id: 'offer-mira', poster: poster('mira.k') };
 
 const WALLETS = [
@@ -72,7 +73,7 @@ beforeEach(() => {
   arrivedState = null;
   session.status = 'signed-in';
   stub = {
-    offers: [GHOST, FIXED, MIRA],
+    offers: [GHOST, ABOVE, MIRA],
     price: 'ok',
     rate: '33000',
     wallets: WALLETS,
@@ -332,19 +333,22 @@ describe('BuyQuote', () => {
     expect(host.textContent).toContain('The trade could not start. Try again.');
   });
 
-  it('a market offer with the feed down is disabled with "Price unavailable right now"; a fixed-price offer still quotes', async () => {
-    stub.price = 'down';
-    const market = await open(`${BUY}&amount=412.50`);
-    pick(market.host, 'w-cake');
-    expect(primary(market.host).disabled).toBe(true);
-    expect(market.host.textContent).toContain('Price unavailable right now');
-    market.unmount();
+  it('with the feed down every offer, at any margin, is disabled with "Price unavailable right now" (no fixed price, owner Q1)', async () => {
+    const above = await open(`${quotePath('sell', 'ZELLE', 'offer-above', 'USD')}&amount=495`);
+    pick(above.host, 'w-cake');
+    expect(above.host.textContent).toContain('$495.00 / XMR');
+    expect(above.host.textContent).toContain('1.000000 XMR');
+    expect(primary(above.host).disabled).toBe(false);
+    above.unmount();
 
-    const fixed = await open(`${quotePath('sell', 'ZELLE', 'offer-fixed', 'USD')}&amount=340`);
-    pick(fixed.host, 'w-cake');
-    expect(fixed.host.textContent).toContain('$340.00 / XMR');
-    expect(fixed.host.textContent).toContain('1.000000 XMR');
-    expect(primary(fixed.host).disabled).toBe(false);
+    stub.price = 'down';
+    for (const path of [`${BUY}&amount=412.50`, `${quotePath('sell', 'ZELLE', 'offer-above', 'USD')}&amount=495`]) {
+      const { host, unmount } = await open(path);
+      pick(host, 'w-cake');
+      expect(primary(host).disabled, path).toBe(true);
+      expect(host.textContent, path).toContain('Price unavailable right now');
+      unmount();
+    }
   });
 
   it('out of range: the board\'s help, and Trade stays off', async () => {
@@ -416,7 +420,7 @@ describe('BuyQuote', () => {
   it('a marker for another offer, another amount or another nonce takes nothing, and is used up', async () => {
     stub.wallets = [WALLETS[0]];
     const cases = [
-      { nonce: mark('offer-fixed'), url: `${BUY}&amount=412.50&unit=fiat` },
+      { nonce: mark('offer-above'), url: `${BUY}&amount=412.50&unit=fiat` },
       { nonce: mark('offer-ghost', '1000'), url: `${BUY}&amount=412.50&unit=fiat` },
       { nonce: (mark(), 'b'.repeat(32)), url: `${BUY}&amount=412.50&unit=fiat` },
     ];

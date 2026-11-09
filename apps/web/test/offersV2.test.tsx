@@ -87,9 +87,10 @@ describe('44 px tap targets', () => {
     expect(rule(browse, '.x2f-offer__nudge')).toContain('height: 44px;');
   });
 
-  it('PostOffer: the two-up choices are 48 px, the steppers and the close 44 px', () => {
+  it('PostOffer: the two-up choices (above or below too) and the boxes (the percentage too) are 48 px, the close 44 px', () => {
     expect(rule(post, '.post-choices .x2f-chip-button')).toContain('height: 48px;');
-    expect(rule(post, '.post-step')).toContain('height: 44px;');
+    // Owner F1: the margin is typed in a box (the ±0.1% steppers are gone).
+    expect(rule(post, '.post-field input')).toContain('height: 48px;');
     expect(rule(post, '.post-close')).toContain('height: 44px;');
   });
 });

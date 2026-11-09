@@ -70,3 +70,34 @@ describe('migration 315: minimum completed trades is no minimum, 5, 10, 25 or 50
     });
   });
 });
+
+describe('migration 345: no new fixed-price offer (owner Q1, 6 Nov: market ± % only)', () => {
+  it('keeps an offer stored as fixed exactly as it was, and refuses any new or changed row that is not market-priced', async () => {
+    await migratedBefore('345', async (db) => {
+      const a = await account(db);
+      const { rows } = await db.query<{ id: string }>(
+        `insert into offers (account_id, side, method_id, currency, price_mode, fixed_cents_per_xmr, min_fiat_cents, max_fiat_cents,
+                             min_trades, terms, status, created_at, updated_at)
+         values ($1, 'sell', 'ZELLE', 'USD', 'fixed', 34000, 5000, 200000, null, '', 'live', now(), now()) returning id`,
+        [a],
+      );
+      const legacy = rows[0]!.id;
+      await migrate(db);
+      const kept = await db.query(`select price_mode, fixed_cents_per_xmr::text, margin_bps, status from offers where id = $1`, [legacy]);
+      expect(kept.rows).toEqual([{ price_mode: 'fixed', fixed_cents_per_xmr: '34000', margin_bps: null, status: 'live' }]);
+      await offer(db, a, 5);
+      await expect(
+        db.query(
+          `insert into offers (account_id, side, method_id, currency, price_mode, fixed_cents_per_xmr, min_fiat_cents, max_fiat_cents,
+                               min_trades, terms, status, created_at, updated_at)
+           values ($1, 'sell', 'ZELLE', 'USD', 'fixed', 34000, 5000, 200000, null, '', 'live', now(), now())`,
+          [a],
+        ),
+      ).rejects.toThrow(/offers_market_only/);
+      const m = await offer(db, a, 5);
+      await expect(db.query(`update offers set price_mode = 'fixed', margin_bps = null, fixed_cents_per_xmr = 1 where id = $1`, [m])).rejects.toThrow(
+        /offers_market_only/,
+      );
+    });
+  });
+});

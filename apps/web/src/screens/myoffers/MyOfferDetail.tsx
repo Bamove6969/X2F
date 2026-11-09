@@ -7,7 +7,7 @@ import { useId } from 'react';
 import { TIMERS } from '@x2f/trade';
 import { Switch } from '../../ui/Switch.js';
 import type { MyOffer } from './api.js';
-import { marketLine, offerMethods, offerPrice, offerLimitsRange, offerTitle, statusLine, whoCanTrade } from './model.js';
+import { MARKET_LINE, offerMethods, offerPrice, offerLimitsRange, offerTitle, statusLine, whoCanTrade } from './model.js';
 
 export function MyOfferDetail({ offer, busy, held, why, onSwitch }: { offer: MyOffer; busy: boolean; held: boolean; why: string | undefined; onSwitch: () => void }) {
   const id = useId();
@@ -39,7 +39,7 @@ export function MyOfferDetail({ offer, busy, held, why, onSwitch }: { offer: MyO
       <section className="x2f-stack" aria-labelledby={`${id}-price`}>
         <h3 id={`${id}-price`}>Price</h3>
         <span>{offerPrice(offer)}</span>
-        <span className="x2f-note">{marketLine(offer)}</span>
+        <span className="x2f-note">{MARKET_LINE}</span>
       </section>
       <section className="x2f-stack" aria-labelledby={`${id}-methods-h`}>
         <h3 id={`${id}-methods-h`}>Payment methods</h3>
