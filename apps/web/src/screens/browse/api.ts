@@ -27,6 +27,11 @@ export interface MethodRow {
   offers: number;
   /** The best rate among the live offers, in minor units per XMR, or null when none has a price now. */
   bestRate: bigint | null;
+  /**
+   * How long the method's money can take to arrive, in minutes (owner p9-4: shown up front where
+   * the method is picked); null from an older API, and then no line is shown.
+   */
+  upToMin: number | null;
 }
 
 export interface MethodLists {
@@ -149,6 +154,7 @@ function parseRow(v: unknown, at: string): MethodRow {
     giftCard: optional(o, 'giftCard', at, bool, false),
     offers: num(o, 'offers', at),
     bestRate: orNull(o, 'bestRate', at, big),
+    upToMin: optional<number | null>(o, 'upToMin', at, num, null),
   };
 }
 

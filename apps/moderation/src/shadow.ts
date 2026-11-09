@@ -12,6 +12,13 @@ import { apply, MAX_CONFIRM_WINDOW_MIN, newTrade, TradeRuleError, type AttestedT
  * minimum (1 minor unit: only growth reads the limits, and it reads the maximum), the confirm window
  * (the longest the machine allows, MAX_CONFIRM_WINDOW_MIN; only disputes after paid read it), placeholder ids. The trade's code is the
  * real one.
+ *
+ * The time to pay is NOT in the attested deal, so it stays the machine's default, TIMERS.payMin (90
+ * min), as before per-method times (owner p9-6). For a method whose time to pay is longer (bank
+ * transfers 3 h, cash by mail 24 h) the API holds the seller's cancel until the trade's own payBy,
+ * but a lying API could ask this service to co-sign that refund after 90 minutes. Taking the
+ * longest window instead would hold every seller's refund for 24 hours. OPEN (lead): put
+ * `payWindowMin` in the attested terms so the shadow uses the trade's own window.
  */
 export function newShadow(code: string, terms: AttestedTerms, takenAt: Date): Trade {
   const d = terms.deal;

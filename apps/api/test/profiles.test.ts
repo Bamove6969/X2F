@@ -3,8 +3,9 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import {
-  catalog, getMethod, getProfile, isAvailable, isGiftCard, LAUNCH_PROFILE_IDS, PROFILES, type MethodProfile,
+  catalog, getMethod, getProfile, isAvailable, isGiftCard, LAUNCH_PROFILE_IDS, loadProfiles, PROFILES, profileOrFallback, type MethodProfile,
 } from '../src/methods/profiles.js';
+import { MAX_PAY_WINDOW_MIN, TIMERS } from '@x2f/trade';
 import type { LiveOfferQuery, LiveOfferStat } from '../src/methods/routes.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
@@ -15,9 +16,40 @@ const raw = JSON.parse(readFileSync(new URL('../../../data/payment-methods.json'
 };
 
 describe('method profiles', () => {
-  it('has exactly the launch profiles', () => {
+  it('has exactly the launch profiles and the F1 research table\'s (owner F9), Interac first', () => {
     expect(PROFILES.map((p) => p.id).sort()).toEqual([...LAUNCH_PROFILE_IDS].sort());
-    expect(LAUNCH_PROFILE_IDS).toEqual(['ZELLE', 'CASH_APP', 'REVOLUT', 'TRANSFERWISE', 'ACH_TRANSFER', 'SEPA', 'PAY_BY_MAIL', 'CUSTOM']);
+    expect(LAUNCH_PROFILE_IDS).toEqual([
+      'ZELLE', 'CASH_APP', 'REVOLUT', 'TRANSFERWISE', 'ACH_TRANSFER', 'SEPA', 'PAY_BY_MAIL', 'CUSTOM',
+      'INTERAC_E_TRANSFER', 'FASTER_PAYMENTS', 'SEPA_INSTANT', 'DOMESTIC_WIRE_TRANSFER', 'SWIFT', 'PIX', 'UPI', 'PAYPAL', 'VENMO',
+    ]);
+    // Every profile is offered (none waits for legal review).
+    for (const id of LAUNCH_PROFILE_IDS) expect(isAvailable(id), id).toBe(true);
+  });
+
+  it('gives every profile a time to pay (owner p9-6): 90 min to 24 h, fixed at take', () => {
+    // Lead defaults pending the owner: 90 min for apps and instant transfers, 3 h for bank transfers, 24 h for cash by mail.
+    const want: Record<string, number> = {
+      ZELLE: 90, CASH_APP: 90, REVOLUT: 90, INTERAC_E_TRANSFER: 90, FASTER_PAYMENTS: 90, SEPA_INSTANT: 90, PIX: 90, UPI: 90,
+      PAYPAL: 90, VENMO: 90, TRANSFERWISE: 180, ACH_TRANSFER: 180, SEPA: 180, DOMESTIC_WIRE_TRANSFER: 180, SWIFT: 180,
+      CUSTOM: 180, PAY_BY_MAIL: 1440,
+    };
+    for (const p of PROFILES) {
+      expect(p.payWindowMin, p.id).toBe(want[p.id]);
+      expect(p.payWindowMin, p.id).toBeGreaterThanOrEqual(TIMERS.payMin);
+      expect(p.payWindowMin, p.id).toBeLessThanOrEqual(MAX_PAY_WINDOW_MIN);
+    }
+    // A method without a profile of its own gets the Custom method's times.
+    expect(getProfile('CHIME')).toBeNull();
+    expect(profileOrFallback('CHIME')).toBe(getProfile('CUSTOM'));
+    expect(profileOrFallback('INTERAC_E_TRANSFER').id).toBe('INTERAC_E_TRANSFER');
+  });
+
+  it('refuses a profile file whose time to pay is missing or out of range', () => {
+    const file = JSON.parse(readFileSync(new URL('../../../data/payment-method-profiles.json', import.meta.url), 'utf8')) as { profiles: Record<string, unknown>[] };
+    for (const bad of [undefined, 89, 1441, 90.5, '90']) {
+      const profiles = file.profiles.map((p) => (p.id === 'ZELLE' ? { ...p, payWindowMin: bad } : p));
+      expect(() => loadProfiles({ profiles }, catalog()), String(bad)).toThrow(/ZELLE: payWindowMin/);
+    }
   });
 
   it('every profile id exists in the catalog, with a landsIn that never names the method', () => {
@@ -39,6 +71,9 @@ describe('method profiles', () => {
     expect(zelle.confirmWindowMin).toBe(90);
     expect(zelle.arrival).toBe('instant');
     // Owner F9 (7 Nov) and the F1 table it approved: instant 90 min, same or next day 24 h, slow 48 h to 4 days.
+    // The added methods' times are the F1 table's suggestions, instant raised to 90 min (owner F9:
+    // "Everything else you recommended, just do it"): Faster Payments 3 h, a domestic wire 24 h,
+    // SWIFT 72 h (the table's 48-72 h, taken at its longest).
     const want: Record<string, number> = {
       ZELLE: 90,
       CASH_APP: 90,
@@ -48,10 +83,19 @@ describe('method profiles', () => {
       CUSTOM: 1440,
       ACH_TRANSFER: 2880,
       PAY_BY_MAIL: 5760,
+      INTERAC_E_TRANSFER: 90,
+      FASTER_PAYMENTS: 180,
+      SEPA_INSTANT: 90,
+      DOMESTIC_WIRE_TRANSFER: 1440,
+      SWIFT: 4320,
+      PIX: 90,
+      UPI: 90,
+      PAYPAL: 90,
+      VENMO: 90,
     };
     for (const p of PROFILES) {
       expect(p.confirmWindowMin, p.id).toBe(want[p.id]);
-      if (p.arrival === 'instant') expect(p.confirmWindowMin, p.id).toBe(90);
+      if (p.arrival === 'instant' && p.id !== 'FASTER_PAYMENTS') expect(p.confirmWindowMin, p.id).toBe(90);
       expect(p.confirmWindowMin, p.id).toBeGreaterThanOrEqual(90);
       expect(p.confirmWindowMin, p.id).toBeLessThanOrEqual(5760);
     }
@@ -59,7 +103,7 @@ describe('method profiles', () => {
 
   it('has no profile for an unknown method', () => {
     expect(getProfile('NOPE')).toBeNull();
-    expect(getProfile('VENMO')).toBeNull(); // in the catalog, but no profile yet
+    expect(getProfile('CHIME')).toBeNull(); // in the catalog, but no profile yet
     expect(getMethod('NOPE')).toBeNull();
   });
 
@@ -115,16 +159,20 @@ describe('GET /v1/methods', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['set-cookie']).toBeUndefined();
     const body = res.json() as { live: Array<Record<string, unknown>>; all: Array<Record<string, unknown>> };
-    expect(body.live).toEqual([{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 1, bestRate: '33000' }]);
+    expect(body.live).toEqual([{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 1, bestRate: '33000', upToMin: 90, payWindowMin: 90 }]);
     for (const list of [body.live, body.all]) {
       for (const id of ['SBP', 'MIR', 'YOOMONEY']) expect(list.map((r) => r.id)).not.toContain(id);
     }
     // No cookie: no viewer, so no block filter (Task 37 added viewerId to the query).
     expect(calls.at(-1)).toEqual({ side: 'buy', currency: 'USD', viewerId: null });
     const zelle = body.all.find((r) => r.id === 'ZELLE');
-    expect(zelle).toEqual({ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 1, bestRate: '33000' });
+    expect(zelle).toEqual({ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 1, bestRate: '33000', upToMin: 90, payWindowMin: 90 });
     const venmo = body.all.find((r) => r.id === 'VENMO');
-    expect(venmo).toEqual({ id: 'VENMO', name: 'Venmo', group: 'Payment apps', giftCard: false, offers: 0, bestRate: null });
+    expect(venmo).toEqual({ id: 'VENMO', name: 'Venmo', group: 'Payment apps', giftCard: false, offers: 0, bestRate: null, upToMin: 90, payWindowMin: 90 });
+    // Owner p9-4: every method says up front how long it can take; one without a profile says the Custom method's 24 h.
+    expect(body.all.find((r) => r.id === 'SWIFT')).toMatchObject({ upToMin: 4320, payWindowMin: 180 });
+    expect(body.all.find((r) => r.id === 'CHIME')).toMatchObject({ upToMin: 1440, payWindowMin: 180 });
+    expect(body.all.find((r) => r.id === 'PAY_BY_MAIL')).toMatchObject({ upToMin: 5760, payWindowMin: 1440 });
     expect(body.all.find((r) => r.id === 'AMAZON_GIFT_CARD')?.giftCard).toBe(true);
     expect(body.all).toHaveLength(raw.methods.filter((m) => m.legalReview === undefined).length);
   });

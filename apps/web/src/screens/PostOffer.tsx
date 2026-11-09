@@ -12,6 +12,7 @@ import { Icon } from '../ui/icons.js';
 import { RadioChips } from './browse/RadioChips.js';
 import { fetchMethods, fetchPrice, postOffer, type PickMethod, type PriceQuote, type Side } from './post/api.js';
 import { COUNTRIES } from './post/countries.js';
+import { methodUpToLine } from './browse/methodTime.js';
 import { MY_OFFERS_PATH } from './myoffers/model.js';
 import {
   DEFAULT_FORM,
@@ -278,6 +279,12 @@ export function PostOffer() {
                 'method',
               )
             )}
+            {/* Owner p9-4: how long the chosen method can take, up front where it is picked. */}
+            {method?.upToMin != null ? (
+              <span className="post-note" data-part="method-up-to">
+                {methodUpToLine(method.upToMin)}
+              </span>
+            ) : null}
             {field(
               'currency',
               'Currency',

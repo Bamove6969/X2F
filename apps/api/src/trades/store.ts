@@ -40,6 +40,8 @@ export interface TradeRow {
   locked_cents_per_xmr: string;
   fiat_cents: string;
   confirm_window_min: number;
+  /** Migration 123 (owner p9-6): the method's time to pay, fixed at take. */
+  pay_window_min: number;
   min_fiat_cents: string;
   max_fiat_cents: string;
   grown_at: Date | null;
@@ -120,6 +122,7 @@ export function rowToTrade(r: TradeRow): Trade {
     lockedRate: { currency: r.locked_currency, centsPerXmr: big(r.locked_cents_per_xmr) },
     fiatCents: big(r.fiat_cents),
     confirmWindowMin: r.confirm_window_min,
+    payWindowMin: r.pay_window_min,
     minFiatCents: big(r.min_fiat_cents),
     maxFiatCents: big(r.max_fiat_cents),
     grown:
@@ -218,6 +221,7 @@ export async function insertTrade(q: Queryable, t: Trade, sides: TradeSides, usd
     ['locked_currency', t.lockedRate.currency],
     ['locked_cents_per_xmr', t.lockedRate.centsPerXmr.toString()],
     ['confirm_window_min', t.confirmWindowMin],
+    ['pay_window_min', t.payWindowMin],
     ['min_fiat_cents', t.minFiatCents.toString()],
     ['max_fiat_cents', t.maxFiatCents.toString()],
     ['taken_at', t.takenAt],

@@ -125,7 +125,7 @@ describe('GET /v1/account/offers', () => {
     expect(list[0]).toEqual({
       id: b, side: 'buy', methodId: 'REVOLUT', methodName: expect.any(String), currency: 'EUR', rate: '30000',
       pricing: { mode: 'fixed', centsPerXmr: '30000' }, minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0,
-      status: 'paused', createdAt: expect.any(String),
+      status: 'paused', payWindowMin: 90, createdAt: expect.any(String),
     });
     expect(list[1]).toMatchObject({ id: a, methodId: 'ZELLE', methodName: 'Zelle', rate: '33165', status: 'live', pricing: { mode: 'market', marginBps: 50 } });
   });

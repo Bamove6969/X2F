@@ -35,7 +35,8 @@ import { CancelFinalSheet } from './CancelFinalSheet.js';
 import { CancelProposalCard, SellerCancelControls } from './CancelSheet.js';
 import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
-import { buyerCancelMode, escrowChip, finishBlock, payBlock, paySecured, payTimeOver, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { buyerCancelMode, escrowChip, finishBlock, PAY_MIN, payBlock, paySecured, payTimeOver, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { minutesText } from '../browse/methodTime.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
@@ -121,8 +122,9 @@ function TradeSub({ view, method }: { view: TradeView; method: MethodInfo }) {
 
 const CONFIRM_TIP =
   "The seller's XMR is already locked in the escrow. It's secured once the Monero network confirms it 10 times, about 20 min in total. For the safest trade, wait until this finishes before you pay. If you're comfortable with this seller, feel free to move the trade along now.";
-const PAY_TIP =
-  "You get 90 minutes to send the money and tap I've paid. The clock starts once the escrow has settled, so waiting for it never costs you time. If time runs out without that tap, the seller can cancel and get a refund, or give you more time.";
+/** The time to pay is the payment method's (owner p9-6); 90 minutes for instant methods. */
+const payTip = (min: number) =>
+  `You get ${minutesText(min)} to send the money and tap I've paid. The clock starts once the escrow has settled, so waiting for it never costs you time. If time runs out without that tap, the seller can cancel and get a refund, or give you more time.`;
 
 /**
  * A help tip (BuyerPay board): a mouse shows it on hover; a tap or click opens it (never toggles,
@@ -282,7 +284,7 @@ function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () 
       </button>
       {tip.open ? (
         <span id="tip-pay" role="tooltip" className="x2f-tip">
-          {PAY_TIP}
+          {payTip(view.payWindowMin ?? PAY_MIN)}
         </span>
       ) : null}
       {ring}

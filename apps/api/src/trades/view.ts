@@ -56,6 +56,8 @@ export interface TradeView {
   fundStartedAt: string | null;
   securedAt: string | null;
   payBy: string | null;
+  /** The buyer's time to pay in minutes, the payment method's, fixed at take (owner p9-6). */
+  payWindowMin: number;
   paidAt: string | null;
   confirmBy: string | null;
   settleBy: string | null;
@@ -139,6 +141,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     fundStartedAt: iso(t.fundStartedAt),
     securedAt: iso(t.securedAt),
     payBy: iso(t.payBy),
+    payWindowMin: t.payWindowMin,
     paidAt: iso(t.paidAt),
     confirmBy: iso(t.confirmBy),
     settleBy: iso(t.settleBy),

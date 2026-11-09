@@ -1,5 +1,5 @@
 {
- "note": "X2F payment method profiles (spec 2.6). Each profile drives all copy about its method: what it is, where the money lands (this fills every \"check your ...\" prompt, so it never names the method itself), the typical arrival time and the seller's confirmation window, which is also the buyer's wait before a dispute (owner F9, 7 Nov: 90 min for instant types, 24 h same or next day, 48 h to 4 days for slow types; per type from the approved F1 table) and the matching fields. Ids are catalog ids from data/payment-methods.json. Launch set (spec 11.5, Plan 3 Task 3); wording to be checked by the owner.",
+ "note": "X2F payment method profiles (spec 2.6). Each profile drives all copy about its method: what it is, where the money lands (this fills every \"check your ...\" prompt, so it never names the method itself), the typical arrival time and the seller's confirmation window, which is also the buyer's wait before a dispute (owner F9, 7 Nov: 90 min for instant types, 24 h same or next day, 48 h to 4 days for slow types; per type from the approved F1 table) and the matching fields. Ids are catalog ids from data/payment-methods.json. payWindowMin is the buyer's time to pay from \"secured\" (owner p9-6; lead defaults pending the owner: 90 min for apps and instant transfers, 3 h for bank transfers, 24 h for cash by mail), fixed on the trade at take. Launch set (spec 11.5, Plan 3 Task 3) plus the methods of the F1 research table (owner-followups-2026-11-06, F1; confirm windows per owner F9: instant 90 min, Faster Payments 3 h, same or next day 24 h, SWIFT 72 h); wording to be checked by the owner.",
  "profiles": [
   {
    "id": "ZELLE",
@@ -8,9 +8,18 @@
    "checkPrompt": "Open your bank's app and check that the payment arrived in your account.",
    "arrival": "instant",
    "confirmWindowMin": 90,
+   "payWindowMin": 90,
    "fields": [
-    { "key": "recipient", "label": "Email or US phone number", "kind": "email-or-phone" },
-    { "key": "name", "label": "Name on the account", "kind": "text" }
+    {
+     "key": "recipient",
+     "label": "Email or US phone number",
+     "kind": "email-or-phone"
+    },
+    {
+     "key": "name",
+     "label": "Name on the account",
+     "kind": "text"
+    }
    ]
   },
   {
@@ -20,8 +29,13 @@
    "checkPrompt": "Open the app's activity list and check that the payment is shown as received.",
    "arrival": "instant",
    "confirmWindowMin": 90,
+   "payWindowMin": 90,
    "fields": [
-    { "key": "cashtag", "label": "$cashtag", "kind": "account" }
+    {
+     "key": "cashtag",
+     "label": "$cashtag",
+     "kind": "account"
+    }
    ]
   },
   {
@@ -31,8 +45,13 @@
    "checkPrompt": "Open the app's transactions and check that the payment arrived in your balance.",
    "arrival": "instant",
    "confirmWindowMin": 90,
+   "payWindowMin": 90,
    "fields": [
-    { "key": "revtag", "label": "Revtag or phone number", "kind": "account" }
+    {
+     "key": "revtag",
+     "label": "Revtag or phone number",
+     "kind": "account"
+    }
    ]
   },
   {
@@ -42,9 +61,18 @@
    "checkPrompt": "Open the app or the website and check that the transfer is shown as received.",
    "arrival": "same-day",
    "confirmWindowMin": 1440,
+   "payWindowMin": 180,
    "fields": [
-    { "key": "recipient", "label": "Email registered with the account", "kind": "email-or-phone" },
-    { "key": "name", "label": "Name on the account", "kind": "text" }
+    {
+     "key": "recipient",
+     "label": "Email registered with the account",
+     "kind": "email-or-phone"
+    },
+    {
+     "key": "name",
+     "label": "Name on the account",
+     "kind": "text"
+    }
    ]
   },
   {
@@ -54,10 +82,23 @@
    "checkPrompt": "Check your bank's app or statement for the incoming transfer before you release.",
    "arrival": "days",
    "confirmWindowMin": 2880,
+   "payWindowMin": 180,
    "fields": [
-    { "key": "name", "label": "Name on the account", "kind": "text" },
-    { "key": "routing", "label": "Routing number", "kind": "account" },
-    { "key": "account", "label": "Account number", "kind": "account" }
+    {
+     "key": "name",
+     "label": "Name on the account",
+     "kind": "text"
+    },
+    {
+     "key": "routing",
+     "label": "Routing number",
+     "kind": "account"
+    },
+    {
+     "key": "account",
+     "label": "Account number",
+     "kind": "account"
+    }
    ]
   },
   {
@@ -67,10 +108,23 @@
    "checkPrompt": "Check your bank's app or statement for the incoming transfer before you release.",
    "arrival": "days",
    "confirmWindowMin": 1440,
+   "payWindowMin": 180,
    "fields": [
-    { "key": "name", "label": "Name on the account", "kind": "text" },
-    { "key": "iban", "label": "IBAN", "kind": "iban" },
-    { "key": "bic", "label": "BIC (optional)", "kind": "account" }
+    {
+     "key": "name",
+     "label": "Name on the account",
+     "kind": "text"
+    },
+    {
+     "key": "iban",
+     "label": "IBAN",
+     "kind": "iban"
+    },
+    {
+     "key": "bic",
+     "label": "BIC (optional)",
+     "kind": "account"
+    }
    ]
   },
   {
@@ -80,8 +134,212 @@
    "checkPrompt": "Open the envelope, count the notes and check the amount before you release.",
    "arrival": "days",
    "confirmWindowMin": 5760,
+   "payWindowMin": 1440,
    "fields": [
-    { "key": "address", "label": "Mailing address", "kind": "postal" }
+    {
+     "key": "address",
+     "label": "Mailing address",
+     "kind": "postal"
+    }
+   ]
+  },
+  {
+   "id": "INTERAC_E_TRANSFER",
+   "whatItIs": "Interac e-Transfer: a Canadian bank-to-bank transfer sent by email or phone number, usually arriving within minutes.",
+   "landsIn": "your bank account, checked in your bank's app (the deposit itself, not the email about it)",
+   "checkPrompt": "Open your bank's app and check that the money was deposited in your account. An email saying it was sent is not enough.",
+   "arrival": "instant",
+   "confirmWindowMin": 90,
+   "payWindowMin": 90,
+   "fields": [
+    {
+     "key": "recipient",
+     "label": "Email or Canadian phone number",
+     "kind": "email-or-phone"
+    },
+    {
+     "key": "name",
+     "label": "Name on the account",
+     "kind": "text"
+    }
+   ]
+  },
+  {
+   "id": "FASTER_PAYMENTS",
+   "whatItIs": "Faster Payments: the UK's bank-to-bank transfer, usually arriving in seconds and always within 2 hours.",
+   "landsIn": "your bank account, checked in your bank's app",
+   "checkPrompt": "Open your bank's app and check that the payment arrived in your account.",
+   "arrival": "instant",
+   "confirmWindowMin": 180,
+   "payWindowMin": 90,
+   "fields": [
+    {
+     "key": "name",
+     "label": "Name on the account",
+     "kind": "text"
+    },
+    {
+     "key": "sortCode",
+     "label": "Sort code",
+     "kind": "account"
+    },
+    {
+     "key": "account",
+     "label": "Account number",
+     "kind": "account"
+    }
+   ]
+  },
+  {
+   "id": "SEPA_INSTANT",
+   "whatItIs": "SEPA Instant: a euro bank transfer between banks in the Single Euro Payments Area that arrives within seconds, any day.",
+   "landsIn": "your bank account, checked in your bank's app",
+   "checkPrompt": "Open your bank's app and check that the transfer arrived in your account.",
+   "arrival": "instant",
+   "confirmWindowMin": 90,
+   "payWindowMin": 90,
+   "fields": [
+    {
+     "key": "name",
+     "label": "Name on the account",
+     "kind": "text"
+    },
+    {
+     "key": "iban",
+     "label": "IBAN",
+     "kind": "iban"
+    }
+   ]
+  },
+  {
+   "id": "DOMESTIC_WIRE_TRANSFER",
+   "whatItIs": "Domestic wire: a US bank wire, usually arriving the same business day; wires sent after the bank's cut-off or on a weekend arrive the next business day.",
+   "landsIn": "your bank account, checked in your bank's app or statement",
+   "checkPrompt": "Check your bank's app or statement for the incoming wire before you release.",
+   "arrival": "same-day",
+   "confirmWindowMin": 1440,
+   "payWindowMin": 180,
+   "fields": [
+    {
+     "key": "name",
+     "label": "Name on the account",
+     "kind": "text"
+    },
+    {
+     "key": "routing",
+     "label": "Routing number",
+     "kind": "account"
+    },
+    {
+     "key": "account",
+     "label": "Account number",
+     "kind": "account"
+    }
+   ]
+  },
+  {
+   "id": "SWIFT",
+   "whatItIs": "International wire (SWIFT): a bank transfer between countries, which can pass through other banks and take several business days.",
+   "landsIn": "your bank account, checked in your bank's app or statement",
+   "checkPrompt": "Check your bank's app or statement for the incoming international transfer before you release.",
+   "arrival": "days",
+   "confirmWindowMin": 4320,
+   "payWindowMin": 180,
+   "fields": [
+    {
+     "key": "name",
+     "label": "Name on the account",
+     "kind": "text"
+    },
+    {
+     "key": "iban",
+     "label": "IBAN or account number",
+     "kind": "account"
+    },
+    {
+     "key": "bic",
+     "label": "BIC / SWIFT code",
+     "kind": "account"
+    }
+   ]
+  },
+  {
+   "id": "PIX",
+   "whatItIs": "Pix: Brazil's instant payment system run by the central bank, arriving in seconds, any day.",
+   "landsIn": "your bank account, checked in your bank's app",
+   "checkPrompt": "Open your bank's app and check that the payment arrived in your account.",
+   "arrival": "instant",
+   "confirmWindowMin": 90,
+   "payWindowMin": 90,
+   "fields": [
+    {
+     "key": "key",
+     "label": "Pix key",
+     "kind": "account"
+    },
+    {
+     "key": "name",
+     "label": "Name on the account",
+     "kind": "text"
+    }
+   ]
+  },
+  {
+   "id": "UPI",
+   "whatItIs": "UPI: India's instant bank payment system, used from most Indian banking and payment apps.",
+   "landsIn": "your bank account, checked in your bank's or payment app",
+   "checkPrompt": "Open your bank's app and check that the payment arrived in your account.",
+   "arrival": "instant",
+   "confirmWindowMin": 90,
+   "payWindowMin": 90,
+   "fields": [
+    {
+     "key": "upiId",
+     "label": "UPI ID",
+     "kind": "account"
+    },
+    {
+     "key": "name",
+     "label": "Name on the account",
+     "kind": "text"
+    }
+   ]
+  },
+  {
+   "id": "PAYPAL",
+   "whatItIs": "PayPal: an online payment service for sending money by email address or phone number.",
+   "landsIn": "your account balance, checked in the app or on the website (a payment shown as pending is not yet yours)",
+   "checkPrompt": "Open the app or the website and check that the payment is completed, not pending or on hold.",
+   "arrival": "instant",
+   "confirmWindowMin": 90,
+   "payWindowMin": 90,
+   "fields": [
+    {
+     "key": "recipient",
+     "label": "Email or phone number",
+     "kind": "email-or-phone"
+    },
+    {
+     "key": "name",
+     "label": "Name on the account",
+     "kind": "text"
+    }
+   ]
+  },
+  {
+   "id": "VENMO",
+   "whatItIs": "Venmo: a US payment app for sending money between people by username.",
+   "landsIn": "your app balance, checked in the app's transactions (a payment in review is not yet yours)",
+   "checkPrompt": "Open the app's transactions and check that the payment is complete, not in review.",
+   "arrival": "instant",
+   "confirmWindowMin": 90,
+   "payWindowMin": 90,
+   "fields": [
+    {
+     "key": "username",
+     "label": "Username",
+     "kind": "account"
+    }
    ]
   },
   {
@@ -91,8 +349,13 @@
    "checkPrompt": "Check that the payment arrived the way you agreed before you release.",
    "arrival": "same-day",
    "confirmWindowMin": 1440,
+   "payWindowMin": 180,
    "fields": [
-    { "key": "details", "label": "Payment details", "kind": "text" }
+    {
+     "key": "details",
+     "label": "Payment details",
+     "kind": "text"
+    }
    ]
   }
  ]

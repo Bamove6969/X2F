@@ -7,7 +7,7 @@ import type { AuthContext } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
-import { getMethod, isAvailable } from '../methods/profiles.js';
+import { getMethod, isAvailable, profileOrFallback } from '../methods/profiles.js';
 import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
 import type { MarketPrices } from '../price/market.js';
@@ -80,6 +80,8 @@ export interface MyOffer {
   minTrades: number;
   country?: string;
   status: 'live' | 'paused';
+  /** The buyer's time to pay with this offer's method, in minutes (owner p9-6), as a take fixes it. */
+  payWindowMin: number;
   /**
    * A live offer that nobody can see right now, and why (review M4): the site's emergency stop,
    * the account's trading hold, a trade it has not rated yet (Plan 5 Task 3, P5-A4; review round 1
@@ -631,6 +633,7 @@ export function offerRoutes(app: FastifyInstance): void {
         pricing: p.mode === 'fixed' ? { mode: 'fixed', centsPerXmr: p.centsPerXmr.toString() } : { mode: 'market', marginBps: p.marginBps },
         minFiatCents: r.min_fiat_cents,
         maxFiatCents: r.max_fiat_cents, minTrades: r.min_trades, status: r.status as 'live' | 'paused',
+        payWindowMin: profileOrFallback(r.method_id).payWindowMin,
         createdAt: r.created_at.toISOString(),
       };
       if (r.country !== null) out.country = r.country;

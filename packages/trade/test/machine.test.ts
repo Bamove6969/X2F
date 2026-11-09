@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { feeFor } from '@x2f/core';
 import {
   CLIENT_EVENTS,
+  MAX_PAY_WINDOW_MIN,
   SELLER_CONFIRM_CANCEL_TIMEOUT_H,
   awaitingCancelConfirm,
   amountForFunds,
@@ -98,6 +99,30 @@ const sampleEvent: Record<TradeEvent['type'], TradeEvent> = {
   resume: { type: 'resume' },
   tick: { type: 'tick' },
 };
+
+describe('the time to pay is the payment method\'s, fixed at take (owner p9-6)', () => {
+  test('newTrade keeps the pay window it was given; without one it is TIMERS.payMin', () => {
+    expect(taken().payWindowMin).toBe(90);
+    expect(newTrade({ ...TAKE, poster: 'seller', payWindowMin: 1440 }, T0).payWindowMin).toBe(1440);
+  });
+
+  test("payBy counts the trade's own window from secured, and the seller's cancel waits for it", () => {
+    const slow = newTrade({ ...TAKE, poster: 'seller', payWindowMin: 1440 }, T0);
+    const s = run([[{ type: 'setup-done', escrowAddress: '4Escrow' }, 'system', 1], [chain(FUNDS, 0n, 1), 'system', 5], [chain(FUNDS, FUNDS, 10), 'system', 30]], slow);
+    expect(s.payBy).toEqual(at(30 + 1440));
+    // 90 minutes is not the time to pay any more for this trade.
+    expect(rule(() => apply(s, { type: 'request-refund' }, 'seller', at(121)))).toBe('too-early');
+    expect(rule(() => apply(s, { type: 'request-refund' }, 'seller', at(30 + 1440)))).toBe('too-early');
+    expect(apply(s, { type: 'request-refund' }, 'seller', at(30 + 1441)).state).toBe('settling');
+  });
+
+  test('a pay window outside 1..MAX_PAY_WINDOW_MIN is refused', () => {
+    expect(MAX_PAY_WINDOW_MIN).toBe(1440);
+    for (const bad of [0, -1, 1.5, MAX_PAY_WINDOW_MIN + 1, Number.NaN]) {
+      expect(() => newTrade({ ...TAKE, poster: 'seller', payWindowMin: bad }, T0)).toThrow(RangeError);
+    }
+  });
+});
 
 describe('constants', () => {
   test('TIMERS', () => {
@@ -370,8 +395,19 @@ describe('request-refund: the seller cancels after the time to pay (owner 8 Nov,
     expect(rule(() => apply(sellerCancelled(), { type: 'request-refund' }, 'seller', at(122)))).toBe('wrong-state');
     const p = apply(secured(), { type: 'pause' }, 'system', at(125));
     expect(rule(() => apply(p, { type: 'request-refund' }, 'seller', at(126)))).toBe('wrong-state');
-    const d = apply(secured(), { type: 'open-dispute' }, 'buyer', at(100));
+    // A dispute before "I've paid" is the seller's (the buyer can still cancel then; design P1).
+    const d = apply(secured(), { type: 'open-dispute' }, 'seller', at(100));
     expect(rule(() => apply(d, { type: 'request-refund' }, 'seller', at(130)))).toBe('wrong-state');
+  });
+
+  test("p11-16: a dispute opened before \"I've paid\" takes the buyer's \"I've paid\" away at once", () => {
+    const d = apply(secured(), { type: 'open-dispute' }, 'seller', at(40));
+    expect(d.state).toBe('disputed');
+    expect(d.dispute).toEqual({ by: 'seller', at: at(40) });
+    expect(rule(() => apply(d, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(41)))).toBe('wrong-state');
+    // Also while it is still securing.
+    const s = apply(securing(), { type: 'open-dispute' }, 'seller', at(6));
+    expect(rule(() => apply(s, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(7)))).toBe('wrong-state');
   });
 
   test("race: I've paid and Cancel at the same moment; whichever the trade row takes first wins, the other is refused", () => {

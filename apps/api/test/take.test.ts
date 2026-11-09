@@ -172,12 +172,28 @@ describe('POST /v1/offers/:id/take', () => {
     expect(t).toMatchObject({
       offerId: offer, poster: 'seller', sellerId: seller.id, buyerId: buyer.id, methodId: 'ZELLE', state: 'setup',
       amountAtomic: tenth, lockedRate: { currency: 'USD', centsPerXmr: 33_330n }, fiatCents: 3_333n,
-      minFiatCents: 1000n, maxFiatCents: 500_000n, confirmWindowMin: 90, takenAt: deps.clock(),
+      minFiatCents: 1000n, maxFiatCents: 500_000n, confirmWindowMin: 90, payWindowMin: 90, takenAt: deps.clock(),
     });
     // The buyer took: their payout address is set; the seller (poster) picks on the accepted sheet.
     expect({ buyer: row.buyer_payout, seller: row.seller_refund, app: row.seller_wallet_app }).toEqual({ buyer: buyer.address, seller: null, app: null });
     // Both sides see it.
     expect((await seller.browser.get(`/v1/trades/${code}`)).json()).toMatchObject({ role: 'seller', state: 'setup', fiatCents: '3333' });
+  });
+
+  it("fixes the payment method's time to pay and confirm window on the trade at take; they never change after (owner p9-4, p9-6)", async () => {
+    const seller = await person();
+    const buyer = await person();
+    const swift = await postOffer(seller, { methodId: 'SWIFT', terms: 'SWIFT only.' });
+    const code = await taken(buyer, swift, body(buyer, tenth));
+    expect(rowToTrade((await loadTradeRow(deps.db, code))!)).toMatchObject({ methodId: 'SWIFT', payWindowMin: 180, confirmWindowMin: 4320 });
+    // A method with no profile of its own takes the Custom method's times.
+    const other = await person();
+    const chime = await postOffer(seller, { methodId: 'CHIME', terms: 'Chime only.' });
+    const code2 = await taken(other, chime, body(other, tenth));
+    expect(rowToTrade((await loadTradeRow(deps.db, code2))!)).toMatchObject({ payWindowMin: 180, confirmWindowMin: 1440 });
+    // Part of the deal: the database refuses a change for every role.
+    await expect(deps.db.query('update trades set pay_window_min = 90 where code = $1', [code])).rejects.toMatchObject({ code: '23000' });
+    expect((await deps.db.query<{ m: number }>('select pay_window_min as m from trades where code = $1', [code])).rows[0]!.m).toBe(180);
   });
 
   it('answers with the rate and total that locked, so the device records the deal that locked', async () => {

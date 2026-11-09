@@ -318,8 +318,8 @@ describe('api parsers (Task 3 shapes: GET /v1/price, GET /v1/methods on the main
   it('parseMethods takes the whole catalog list (`all`)', () => {
     const row = (id: string, name: string, giftCard = false) => ({ id, name, group: 'g', giftCard, offers: 0, bestRate: null });
     expect(parseMethods({ live: [row('ZELLE', 'Zelle')], all: [row('ZELLE', 'Zelle'), row('AMAZON_GIFT_CARD', 'Amazon gift card', true)] })).toEqual([
-      { id: 'ZELLE', name: 'Zelle', giftCard: false },
-      { id: 'AMAZON_GIFT_CARD', name: 'Amazon gift card', giftCard: true },
+      { id: 'ZELLE', name: 'Zelle', giftCard: false, upToMin: null },
+      { id: 'AMAZON_GIFT_CARD', name: 'Amazon gift card', giftCard: true, upToMin: null },
     ]);
     expect(() => parseMethods({ live: [] })).toThrow();
   });

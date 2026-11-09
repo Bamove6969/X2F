@@ -6,6 +6,7 @@
 import { useId } from 'react';
 import { TIMERS } from '@x2f/trade';
 import { Switch } from '../../ui/Switch.js';
+import { minutesText } from '../browse/methodTime.js';
 import type { MyOffer } from './api.js';
 import { marketLine, offerMethods, offerPrice, offerLimitsRange, offerTitle, statusLine, whoCanTrade } from './model.js';
 
@@ -56,7 +57,8 @@ export function MyOfferDetail({ offer, busy, held, why, onSwitch }: { offer: MyO
         </div>
         <div className="x2f-row">
           <dt className="x2f-note">Time to pay</dt>
-          <dd>{TIMERS.payMin} min</dd>
+          {/* The method's time to pay (owner p9-6), as a take fixes it on the trade. */}
+          <dd>{minutesText(offer.payWindowMin ?? TIMERS.payMin)}</dd>
         </div>
       </dl>
     </div>

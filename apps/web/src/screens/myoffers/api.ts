@@ -24,6 +24,8 @@ export interface MyOffer {
   minTrades: number;
   country?: string;
   status: OfferState;
+  /** The buyer's time to pay with this method, in minutes (owner p9-6); missing from an older API. */
+  payWindowMin?: number;
   /** A live offer nobody can see right now, and why (review M4). */
   hidden?: (typeof HIDDEN_REASONS)[number];
 }
@@ -81,6 +83,10 @@ export function parseMyOffers(raw: unknown): MyOffer[] {
       status: state(o.status),
     };
     if (o.country !== undefined) out.country = str(o.country);
+    if (o.payWindowMin !== undefined) {
+      if (typeof o.payWindowMin !== 'number' || !Number.isInteger(o.payWindowMin) || o.payWindowMin <= 0) throw shape();
+      out.payWindowMin = o.payWindowMin;
+    }
     if (o.hidden !== undefined) {
       const hidden = HIDDEN_REASONS.find((h) => h === o.hidden);
       if (hidden === undefined) throw shape();

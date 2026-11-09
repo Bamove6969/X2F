@@ -44,6 +44,7 @@ export { LAUNCH_TRADE_CAP_USD_CENTS } from './limits.js';
 export {
   CLIENT_EVENTS,
   MAX_CONFIRM_WINDOW_MIN,
+  MAX_PAY_WINDOW_MIN,
   SYSTEM_EVENTS,
   TradeRuleError,
   apply,
