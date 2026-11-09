@@ -17,16 +17,17 @@ import { XMR, fakeAddress, happyPath, seedReviews, seedTrade } from './helpers/t
 // pending p11-60), up to 5 currencies with their own bands, methods offered in some or all of them
 // with instructions per method and currency; the buyer picks a currency and a method at take, both
 // locked into the trade; market ± X% only (no fixed price). Real Postgres; a fake market (USD
-// $330.00 per XMR, EUR 0.9 of it, every other known currency 1.0 of it unless made unpriced).
+// $330.00 per XMR, EUR 0.9 of it, every other known currency 1.0 of it unless made unpriced, or moved
+// to a rate of its own in `market.rates`).
 
 const DAY = 86_400_000;
-const market = { usdCentsPerXmr: 33_000n as bigint | null, unpriced: new Set<string>() };
+const market = { usdCentsPerXmr: 33_000n as bigint | null, unpriced: new Set<string>(), rates: new Map<string, bigint>() };
 
 function quote(currency: string): MarketQuote | null {
   const usd = market.usdCentsPerXmr;
   const exponent = currencyExponent(currency);
   if (usd === null || exponent === null || market.unpriced.has(currency)) return null;
-  const local = currency === 'EUR' ? (usd * 9n) / 10n : usd;
+  const local = market.rates.get(currency) ?? (currency === 'EUR' ? (usd * 9n) / 10n : usd);
   return { price: { currency, centsPerXmr: local }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent, usdCentsPerXmr: usd, fx: null };
 }
 
@@ -54,6 +55,7 @@ afterAll(async () => {
 beforeEach(() => {
   market.usdCentsPerXmr = 33_000n;
   market.unpriced = new Set();
+  market.rates = new Map();
 });
 
 type Who = Awaited<ReturnType<typeof trader>> & { wallet: string };
@@ -503,6 +505,133 @@ describe('the 3 + 3 cap counts an offer once, whatever its currencies', () => {
     for (let i = 0; i < 3; i++) await post(p, flex('BDT', two));
     expect(refusal(await p.browser.post('/v1/offers', flex('PKR')))).toEqual({ status: 409, error: 'too-many-offers' });
     await post(p, flex('PKR', { side: 'buy' }));
+  });
+});
+
+describe('the launch cap over a flexible offer (owner p11-6 on J-16; launch-rules review F1)', () => {
+  const CAP = { status: 409, error: 'launch-cap', capUsdCents: '500000' };
+  const NO_PRICE = { status: 409, error: 'price-unavailable' };
+  /** An offer in `first` and EUR, the euro band reaching `eurMax` whole euros (€4,500 is $5,000 at 0.9). */
+  const withEur = (first: string, eurMax: string, more: Record<string, unknown> = {}) => ({
+    ...flex(first),
+    currencies: [{ currency: first, bands: [band('10', '5000')] }, { currency: 'EUR', bands: [band('10', '1000'), band('1001', eurMax, 50)] }],
+    ...more,
+  });
+  const relist = (who: Who, id: string) => who.browser.patch(`/v1/offers/${id}`, { status: 'live' });
+  const bulk = async (who: Who, ids: string[]) => {
+    const res = await who.browser.post('/v1/account/offers/status', { ids, status: 'live' });
+    expect(res.statusCode, res.body).toBe(200);
+    return (res.json() as { results: unknown[] }).results;
+  };
+
+  it("posting: every band's top edge in every currency is at most $5,000 at that currency's rate; a second currency over it refuses the whole offer", async () => {
+    const p = await person(0);
+    // $5,000 in the first currency and €4,500 (= $5,000) in the second: fine.
+    await post(p, withEur('HUF', '4500'));
+    // €4,600 is $5,111.12: the band in the second currency is over, so nothing is posted.
+    const mine = async () => (await deps.db.query('select 1 from offers where account_id = $1', [p.id])).rowCount;
+    expect(refusal(await p.browser.post('/v1/offers', withEur('HUF', '4600')))).toEqual(CAP);
+    expect(await mine()).toBe(1);
+    // The cap is on the top edge: a lower band's size does not matter, and a band ending at 5,001 of a 1:1 currency is over.
+    expect(refusal(await p.browser.post('/v1/offers', { ...flex('HUF'), currencies: [{ currency: 'HUF', bands: [band('10', '5001')] }] }))).toEqual(CAP);
+    // An XMR offer: the band's largest amount is valued at the currency's market. 15 XMR is $4,950, 16 XMR is $5,280.
+    const xmr = (max: bigint) => ({ ...flex('HUF'), amountUnit: 'xmr', currencies: [{ currency: 'HUF', bands: [band(XMR.toString(), max.toString())] }] });
+    await post(p, xmr(15n * XMR));
+    expect(refusal(await p.browser.post('/v1/offers', xmr(16n * XMR)))).toEqual(CAP);
+    expect(await mine()).toBe(2);
+  });
+
+  it('posting fails closed when any currency of the offer has no price to count its bands with', async () => {
+    const p = await person(0);
+    market.unpriced = new Set(['EUR']);
+    expect(refusal(await p.browser.post('/v1/offers', withEur('RUB', '4500')))).toEqual(NO_PRICE);
+    // A priced band over the cap is named first: the poster has to lower it either way.
+    expect(refusal(await p.browser.post('/v1/offers', withEur('RUB', '4500', { currencies: [{ currency: 'RUB', bands: [band('10', '5001')] }, { currency: 'EUR', bands: [band('10', '4500')] }] })))).toEqual(CAP);
+    expect((await deps.db.query('select 1 from offers where account_id = $1', [p.id])).rowCount).toBe(0);
+    market.unpriced = new Set();
+    await post(p, withEur('RUB', '4500'));
+  });
+
+  it('relisting checks every band again at the rates now: a euro band the rate moved above $5,000 keeps the offer off, in PATCH and in the bulk switch', async () => {
+    const p = await person(0);
+    const id = await post(p, withEur('CZK', '4500'));
+    await p.browser.patch(`/v1/offers/${id}`, { status: 'paused' });
+    // The euro strengthens: 1 XMR = €270 = $330, so €4,500 is $5,500.
+    market.rates = new Map([['EUR', 27_000n]]);
+    expect(refusal(await relist(p, id))).toEqual(CAP);
+    expect(await bulk(p, [id])).toEqual([{ id, status: 'paused', refused: 'launch-cap' }]);
+    expect((await deps.db.query<{ status: string }>('select status from offers where id = $1', [id])).rows[0]!.status).toBe('paused');
+    // Back at 0.9 it relists.
+    market.rates = new Map();
+    expect((await relist(p, id)).json()).toEqual({ id, status: 'live' });
+  });
+
+  it('the bulk switch judges each offer on its own: over the cap, within it, and one with an unpriced currency', async () => {
+    const p = await person(0);
+    const over = await post(p, withEur('SAR', '4500'));
+    const fine = await post(p, { ...flex('SAR'), side: 'buy' });
+    const half = await post(p, { ...flex('MMK'), currencies: [{ currency: 'MMK', bands: [band('10', '5000')] }, { currency: 'DKK', bands: [band('10', '5000')] }] });
+    for (const id of [over, fine, half]) await p.browser.patch(`/v1/offers/${id}`, { status: 'paused' });
+    market.rates = new Map([['EUR', 27_000n]]);
+    market.unpriced = new Set(['DKK']);
+    expect(await bulk(p, [over, fine, half])).toEqual([
+      { id: over, status: 'paused', refused: 'launch-cap' },
+      { id: fine, status: 'live' },
+      // OWNER QUESTION p11-95 (lead default): the priced currency relists; DKK stays hidden until its rate returns.
+      { id: half, status: 'live' },
+    ]);
+  });
+
+  it('OWNER QUESTION p11-95 (lead default): a relist with one currency unpriced relists the priced currencies and leaves the unpriced one hidden until its rate returns; with no priced currency at all it fails closed', async () => {
+    const p = await person(0);
+    const id = await post(p, withEur('PLN', '4500'));
+    await p.browser.patch(`/v1/offers/${id}`, { status: 'paused' });
+    market.unpriced = new Set(['EUR']);
+    // Relists: the PLN bands pass; the EUR bands cannot be judged and that currency is hidden anyway (owner Q5).
+    expect((await relist(p, id)).json()).toEqual({ id, status: 'live' });
+    expect((await list('side=sell&method=ZELLE&currency=PLN')).some((c) => c.id === id)).toBe(true);
+    expect(await list('side=sell&method=ZELLE&currency=EUR')).toEqual([]);
+    const mine = (await p.browser.get('/v1/account/offers')).json() as { id: string; hidden?: string }[];
+    expect(mine.find((o) => o.id === id)).not.toHaveProperty('hidden');
+    // The rate returns: the euro side is listed again, at its bands (the take checks the cap on each trade).
+    market.unpriced = new Set();
+    expect((await list('side=sell&method=ZELLE&currency=EUR')).some((c) => c.id === id)).toBe(true);
+    // An offer none of whose currencies has a price cannot be judged at all: price-unavailable, as posting.
+    const dark = await post(p, { ...flex('PLN'), side: 'buy', currencies: [{ currency: 'PLN', bands: [band('10', '5000')] }, { currency: 'EUR', bands: [band('10', '4500')] }] });
+    await p.browser.patch(`/v1/offers/${dark}`, { status: 'paused' });
+    market.unpriced = new Set(['PLN', 'EUR']);
+    expect(refusal(await relist(p, dark))).toEqual(NO_PRICE);
+    expect(await bulk(p, [dark])).toEqual([{ id: dark, status: 'paused', refused: 'price-unavailable' }]);
+    market.unpriced = new Set();
+    expect((await relist(p, dark)).json()).toEqual({ id: dark, status: 'live' });
+  });
+
+  it("taking: the trade's USD value in the chosen currency is at most $5,000 at the rate now, whatever the band allows, and the growth ceiling follows it", async () => {
+    const p = await person(0);
+    // €10-€4,500 posted at 0.9: within the cap.
+    const id = await post(p, withEur('LKR', '4500'));
+    const t = await person(0);
+    // Both sides are Starters: lift the stage caps far above the launch cap for this test, so only
+    // the launch cap can refuse (owner settings, read on every take).
+    await deps.db.query(
+      `insert into owner_settings (key, value, updated_at) values ('starter_cap_usd', 1000000, now()), ('building_cap_usd', 1000000, now())`,
+    );
+    try {
+      // The euro strengthens to 1 XMR = €270: €4,400 is now $5,377.78, €4,000 is $4,888.89.
+      market.rates = new Map([['EUR', 27_000n]]);
+      const rate = rateFor(market$('EUR'), 50).centsPerXmr;
+      const eur = (cents: bigint) => takeBody(t, atomicForFiat(cents, { currency: 'EUR', centsPerXmr: rate }), rate, 'ZELLE', 'EUR');
+      expect(refusal(await t.browser.post(`/v1/offers/${id}/take`, eur(440_000n)))).toEqual(CAP);
+      expect((await deps.db.query('select 1 from trades where offer_id = $1', [id])).rowCount).toBe(0);
+      const ok = await t.browser.post(`/v1/offers/${id}/take`, eur(400_000n));
+      expect(ok.statusCode, ok.body).toBe(200);
+      // The growth ceiling: the band's €4,500 clamped to $5,000 in euros at the take's price (€4,090.90 at 1:1.2222).
+      const out = ok.json() as { code: string; maxFiatCents: string };
+      expect(out.maxFiatCents).toBe('409090');
+      expect((await loadTradeRow(deps.db, out.code))!.max_fiat_cents).toBe('409090');
+    } finally {
+      await deps.db.query(`delete from owner_settings where key in ('starter_cap_usd', 'building_cap_usd')`);
+    }
   });
 });
 
