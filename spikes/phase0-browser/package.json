@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "monero-ts": "^0.11.16"
+    "monero-ts": "^0.11.22"
   },
   "devDependencies": {
     "esbuild": "^0.24.2"
