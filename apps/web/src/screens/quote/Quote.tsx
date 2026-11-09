@@ -10,7 +10,7 @@ import { Icon } from '../../ui/icons.js';
 import { Notice } from '../../ui/Notice.js';
 import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
 import type { ConfirmedTrade } from './confirmed.js';
-import { STAGE_NAMES, amountText, currencySign, fiatWhole, formatMinor, quote, quoteExponent, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
+import { STAGE_NAMES, amountText, currencySign, dealMaxFiat, formatMinor, maxText, quote, quoteExponent, rangeText, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
 import { claimTake, rememberTake } from './pendingTake.js';
 import { TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
 import { useQuoteKept } from './quoteKept.js';
@@ -213,8 +213,8 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const posterName = <span data-username="">{poster}</span>;
   // Every fiat figure below is in the currency's minor units with its exponent (whole yen, 3-place dinars).
   const exponent = quoteExponent(o, marketNow);
-  const min = fiatWhole(o.minFiatCents, o.currency, exponent);
-  const max = fiatWhole(o.maxFiatCents, o.currency, exponent);
+  // The range in the unit the poster set: the limits the take checks (review M1).
+  const { min, max } = rangeText(o, exponent);
   const rate = q ? rateOf(q) : null;
   const ok = q?.kind === 'ok' ? q : null;
 
@@ -246,7 +246,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
       ? {
           role: copy.adSide === 'sell' ? 'buyer' : 'seller',
           ownAddress: pickedWallet.address,
-          deal: { poster: posterRole(o.side), takeAmountAtomic: ok.amountAtomic, currency: o.currency, centsPerXmr: ok.rate.centsPerXmr, maxFiatCents: o.maxFiatCents },
+          deal: { poster: posterRole(o.side), takeAmountAtomic: ok.amountAtomic, currency: o.currency, centsPerXmr: ok.rate.centsPerXmr, maxFiatCents: dealMaxFiat(o, ok.rate) },
         }
       : null;
   const refusal = state.error === null ? null : takeRefusal(state.error, o);
@@ -316,7 +316,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             />
             <span className="x2f-quote__unit">{unit === 'fiat' ? o.currency : 'XMR'}</span>
             {copy.showMax && rate ? (
-              <button type="button" className="x2f-quote__max" onClick={() => setText(amountText(o.maxFiatCents, unit, rate, exponent))}>
+              <button type="button" className="x2f-quote__max" onClick={() => setText(maxText(o, unit, rate, exponent))}>
                 Max
               </button>
             ) : null}
