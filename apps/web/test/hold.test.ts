@@ -46,10 +46,11 @@ describe('loginCantDo', () => {
     expect(holdLoginSentence(null)).toContain("This login can't get in for a day.");
   });
 
-  it('round 4 R4-M3: it says a backup login uses up a recovery code and makes the hold longer', () => {
+  it('lead review 8 Nov: it promises no backup login meanwhile (the used code is spent, the new one sealed) and says open trades wait', () => {
     const t = holdLoginSentence(UNTIL);
-    expect(t).toContain('With a recovery code you can use a backup login in the meantime to finish trades already open.');
-    expect(t).toContain('A backup login uses up that recovery code and makes the hold last 24 hours from then.');
+    expect(t).not.toContain('backup login');
+    expect(t).not.toContain('finish trades');
+    expect(t).toContain('Your open trades are paused until the hold ends or a moderator decides.');
   });
 
   it('the hourly cap on approvals, but not a throttle on tries', () => {

@@ -193,8 +193,9 @@ async function withTx<T>(deps: Pick<Deps, 'db'>, fn: (db: pg.PoolClient) => Prom
  * approval to wait for (see the module comment). Staff and owner accounts never get here.
  *
  * Hold model v3 (owner 1-2 Nov 2026; hold.ts), all in this one transaction with the account locked:
- * - a login that proved a passkey, security key or PGP key discards the changes waiting from a
- *   username-and-password session that were submitted while that method was held (holdChanges.ts);
+ * - a login that proved a passkey, security key or PGP key keeps the changes waiting from a
+ *   username-and-password session: it sees them and may approve, untick or cancel them (owner G58,
+ *   7 Nov, replacing the earlier discard; holdChanges.ts);
  * - an account hold (a recovery-code login's) whose time is up settles first; while one runs, only
  *   a login whose passkey, security key or PGP key the account held when it started gets in (no
  *   approval: the approving devices may be the thief's; never refused by the device limit, the
@@ -229,9 +230,9 @@ export async function traderLogin(
   const secret = randomBytes(32).toString('base64url');
   const settle = settleOf(req);
 
-  // `refused`: the login is refused, but what this transaction did first (the owner's proof
-  // discarding a thief's waiting changes) is committed before the error is thrown (lead hold v3
-  // review item 6: a thief's approval flood must not undo the discard).
+  // `refused`: the login is refused, but what this transaction did first (the owner's proof ending
+  // an account hold, a due change settling) is committed before the error is thrown (lead hold v3
+  // review item 6: a thief's approval flood must not undo the owner's proof).
   type Outcome = { kind: 'session'; after: () => void } | { kind: 'wait'; wait: ApprovalWait } | { kind: 'refused'; error: ApiError };
   /** The owner's proof ended an account hold: its held trades resume after the commit. */
   let heldEnded = false;

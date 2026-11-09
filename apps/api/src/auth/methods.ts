@@ -351,7 +351,7 @@ export async function removeMethod(
       const found = await removable(client, deps.config, accountId, type, id, deps.clock());
       await redeemConfirm({ db: client, clock: deps.clock }, req, { kind: 'remove-method', method: found.type, id }, token);
       // Hold model v3: a waiting login's removal is staged; the method stays until 24 h after the
-      // removal is submitted (and a pre-existing passkey, security key or PGP login discards it).
+      // removal is submitted (a strong login may approve it now or cancel it, owner G58).
       held = await gateChange(client, req, { kind: 'remove-method', type: found.type, id });
       if (held === null) ended = await applyRemoval(client, deps.config, accountId, found.type, id, req.auth.sessionId, deps.clock());
       await client.query('commit');

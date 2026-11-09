@@ -15,7 +15,8 @@
  *    them (p4-8, holdRoutes.ts); the owner is alerted (in-app and push; Jabber later) with the list.
  * 2. **A recovery-code login holds the account 24 h** (`account_holds`, reason `recovery-code`;
  *    recovery.ts `backupSession`, all in the login's transaction): every session of the account
- *    (the owner's and the team members') is logged out, waiting changes are discarded, open trades
+ *    (the owner's and the team members') is logged out, waiting changes are kept (owner G32: they
+ *    still wait their 24 h and any session of the owner, the recovery one included, cancels them), open trades
  *    are held (trades/held.ts: unfunded ones cancelled, funded ones paused, the
  *    partner told only that the other account has a temporary problem), the code used is replaced
  *    by a new one shown once at the next login. During it no login opens a session (traderLogin;

@@ -414,20 +414,22 @@ export const HOLD_CODE = 'recovery-hold' satisfies CantDoCode;
  * code does not; owner 2 Nov and 6 Nov 2026, Q81). `when` is "until Tue 3:05 PM" or "for a day".
  */
 export function holdText(when: string): string {
-  // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81)
-  return `Your account is on a 24-hour hold after a login with a recovery code, so new trades, wallet changes and login changes wait ${when}. Trades already open can still be finished. Logging in with a passkey, a security key or a PGP key you had before the hold ends it.`;
+  // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: held trades
+  // are paused for the account's own sessions too, owner G7; the old "can still be finished" was wrong).
+  return `Your account is on a 24-hour hold after a login with a recovery code, so new trades, wallet changes and login changes wait ${when}. Your open trades are paused until the hold ends or a moderator decides. Logging in with a passkey, a security key or a PGP key you had before the hold ends it.`;
 }
 
 /**
  * 403 `recovery-hold` on the login screen (review round 3 R3-M3): this login was refused a session
  * because it waits, and the hold is still running. `when` is "until Tue 3:05 PM" or "for a day".
  * It says what this login cannot do and what the reader can do, whatever methods the account has
- * (the login screen does not know them); review round 4 R4-M3: a backup login spends a recovery
- * code and pushes the hold's end out to 24 hours from then. COPY-UNSIGNED
+ * (the login screen does not know them). It offers no backup login (lead review 8 Nov: the used
+ * code is spent and its replacement sealed until the owner's next login). COPY-UNSIGNED
  */
 export function holdLoginText(when: string): string {
-  // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81)
-  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with a recovery code, and a login like this one waits until the hold ends. If you had a passkey, a security key or a PGP key set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. With a recovery code you can use a backup login in the meantime to finish trades already open. A backup login uses up that recovery code and makes the hold last 24 hours from then.`;
+  // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: no backup
+  // login meanwhile, as the used code is spent and its replacement sealed; held trades are paused).
+  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with a recovery code, and a login like this one waits until the hold ends. If you had a passkey, a security key or a PGP key set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. Your open trades are paused until the hold ends or a moderator decides.`;
 }
 
 /** 429 `slow-down` `{ reason: 'approvals' }`: too many login approvals asked for in an hour. */
@@ -439,8 +441,9 @@ export const WEAK_SESSION_CODE = 'weak-session' satisfies CantDoCode;
 
 /**
  * 403 `weak-session`: this device logged in with a username and password and nothing stronger, so
- * it cannot log out a device that logged in more strongly (or any device during the 24-hour hold),
- * nor answer a strong login (a passkey, security key, PGP key since Q81, or password and code).
+ * it cannot log out a device that logged in more strongly or earlier than itself (owner g64, lead
+ * review 8 Nov: it may log out the owner's newer username-and-password devices), nor answer a
+ * strong login (a passkey, security key, PGP key since Q81, or password and code).
  */
 // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81)
 export const WEAK_SESSION_TEXT =
@@ -478,10 +481,11 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
       return `A team can have at most ${o.max ?? 3} members. Remove one before inviting someone new.`;
     case 'member-cannot-sign':
       return "Starting or accepting a trade, and securing or releasing coins, stay on the account owner's device for now. Ask the account owner to do this step.";
-    // Owner 1 Nov 2026: inviting a member and changing roles need a strong login (API 403 weak-session).
+    // Owner 1 Nov 2026: inviting a member needs a strong login (API 403 weak-session). Owner p5-7:
+    // role changes and removals from such a device are not refused; they wait 24 hours.
     case 'weak-session':
-      // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81)
-      return "This device logged in with just a username and password, so it can't invite team members or change their roles. Do this from a device where you logged in with a passkey, a security key, a PGP key, or your username, password and authenticator code.";
+      // DESIGN: wording (owner 6 Nov 2026, Q14 and Q81). COPY-UNSIGNED (lead review 8 Nov: role changes are staged now)
+      return "This device logged in with just a username and password, so it can't invite team members. Do this from a device where you logged in with a passkey, a security key, a PGP key, or your username, password and authenticator code.";
     default:
       return "This can't be done on the team right now.";
   }

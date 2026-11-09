@@ -2,8 +2,8 @@
 // branch; lead brief 2026-11-02). It replaces Task 17's hold for everything but a recovery-code login:
 // - a username + password session's changes to login methods, payout wallets or a team member's
 //   permissions are staged, reviewed and submitted, then QUEUED for 24 h: nobody is logged out and
-//   trading goes on; any logged-in session can cancel them; a login with a passkey, security key or
-//   PGP key the account held before they were submitted discards them;
+//   trading goes on; any logged-in session can cancel them; a strong login sees them and may
+//   approve them now, untick or cancel them (owner G58);
 // - a recovery-code login logs everyone out and holds the account 24 h: logins are refused except
 //   the owner's pre-existing passkey, security key or PGP key (which ends it); unfunded trades are
 //   cancelled, funded ones paused, and the partner sees only that the other account has

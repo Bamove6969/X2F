@@ -4,7 +4,8 @@
  *
  * - Hold model v3: ONE 16-character code (`RECOVERY_CODE_COUNT`). A recovery-code login logs
  *   everyone on the account out, holds the account 24 h (reason `recovery-code`), holds its open
- *   trades (trades/held.ts) and discards waiting changes, all in the login's transaction; the code
+ *   trades (trades/held.ts) and keeps the waiting changes (owner G32: they still wait their 24 h and
+ *   the recovery session may cancel them), all in the login's transaction; the code
  *   used is replaced there by a new one, sealed in `recovery_code_reveals` until a full session of
  *   the account owner opened after it shows it once (`POST /v1/account/recovery-code/reveal`;
  *   `GET /v1/account` `recoveryCodeToShow` is the reminder). An authenticator code alone is no
