@@ -370,7 +370,7 @@ describe('request-refund: the seller cancels after the time to pay (owner 8 Nov,
     expect(rule(() => apply(sellerCancelled(), { type: 'request-refund' }, 'seller', at(122)))).toBe('wrong-state');
     const p = apply(secured(), { type: 'pause' }, 'system', at(125));
     expect(rule(() => apply(p, { type: 'request-refund' }, 'seller', at(126)))).toBe('wrong-state');
-    const d = apply(secured(), { type: 'open-dispute' }, 'buyer', at(100));
+    const d = apply(secured(), { type: 'open-dispute' }, 'seller', at(100));
     expect(rule(() => apply(d, { type: 'request-refund' }, 'seller', at(130)))).toBe('wrong-state');
   });
 
