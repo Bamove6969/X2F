@@ -132,6 +132,7 @@ describe('tapChallenge', () => {
       { kind: 'create-invite', inviteId: 'i1', role: 'mod', tokenHash: 'c'.repeat(64), expiresAt: '2027-01-01T00:00:00.000Z' },
       { kind: 'switch-on', accountId: 'a1', role: 'senior' },
       { kind: 'set-role', accountId: 'a1', role: 'helper' },
+      { kind: 'remove-staff', accountId: 'a1' },
       { kind: 'add-owner-key', credentialId: 'cred', publicKeySha256: 'd'.repeat(64) },
       { kind: 'settings', largeTradeLimitUsd: 1000, firstResponseH: 4, appealWindowH: 48 },
       ruling,

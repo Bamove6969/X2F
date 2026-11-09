@@ -43,7 +43,7 @@ const CONTROL_BUT_NEWLINE = new RegExp('[\\u0000-\\u0009\\u000b-\\u001f\\u007f-\
  *   `banner-too-long`; `DELETE /staff/v1/site/banner` → 204.
  * - `PUT /staff/v1/site/maintenance { on, message?, kind? }`: on sets `maintenance_since` (kept if
  *   already on, so the timers shift by the whole maintenance), the message and the kind
- *   (`planned` | `emergency`, default `emergency`); off clears all three. The trader API answers 503
+ *   (`planned` | `emergency`, required: owner G19, no default); off clears all three. The trader API answers 503
  *   `maintenance` meanwhile (site/routes.ts). Nothing pauses the trade timers yet (lead review 7 Nov:
  *   `timerEvents` has no caller; the loop is on held work): the owner decides on the timer loop.
  * A request that changes nothing (stop while stopped, removing no banner) consumes its tap but
@@ -112,7 +112,8 @@ export function staffSiteRoutes(app: FastifyInstance): void {
         return readSiteState(c);
       });
     }
-    const kind = b.kind === undefined ? 'emergency' : b.kind;
+    // Owner G19 (7 Nov): no default kind; the staff member says which (an emergency is internal).
+    const kind = b.kind;
     if (!(MAINTENANCE_KINDS as readonly unknown[]).includes(kind)) throw badRequest('kind');
     let message: string | null = null;
     if (b.message !== undefined && b.message !== null) {

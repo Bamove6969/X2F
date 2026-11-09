@@ -296,6 +296,15 @@ async function verifyRegistration(
   const kind = a.kind ?? (attested ? 'security-key' : 'passkey');
   if (kind === 'passkey' && !info.userVerified) throw failed();
   assertCredentialAllowed(a.accountKind, { kind, attested });
+  // Owner G3 (review P-m1): a moderator's passkey must be another device than their security key,
+  // or the key-plus-passkey pair is one key and its PIN. A staff passkey is registered without
+  // attestation, so the AAGUID is the client's word: one on the staff security-key allowlist (a
+  // YubiKey registered a second time as a resident passkey, the common case) is refused. A client
+  // that zeroes or forges the AAGUID is not caught; the same credential twice is refused by
+  // `insertCredential` (credential IDs are unique).
+  if (a.accountKind === 'staff' && kind === 'passkey' && info.aaguid !== ZERO_AAGUID && deps.attestation.isAllowed(info.aaguid, 'packed', 'staff')) {
+    throw new ApiError(409, 'passkey-is-security-key');
+  }
   return {
     credentialId: info.credential.id,
     publicKey: info.credential.publicKey,
@@ -567,20 +576,21 @@ export function decoyCredentialIds(
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * True when `pendingId` names this account's open pending login (purpose `second-factor`) started
- * from this device whose first factor was PGP. Read without consuming it: `completeLogin` consumes
- * it when the second factor finishes.
+ * The first factor's method of this account's open pending login (purpose `second-factor`) that
+ * `pendingId` names, started from this device on this site, when it was PGP or a security key; null
+ * otherwise. Read without consuming it: `completeLogin` consumes it when the second factor finishes.
  */
-async function pendingAfterPgp(deps: Deps, req: FastifyRequest, accountId: string, pendingId: string | undefined): Promise<boolean> {
+async function pendingFirstMethod(deps: Deps, req: FastifyRequest, accountId: string, pendingId: string | undefined): Promise<'pgp' | 'security-key' | null> {
   const device = deviceHash(req);
-  if (pendingId === undefined || !UUID.test(pendingId) || device === null) return false;
-  const { rows } = await deps.db.query(
-    `select 1 from challenges
+  if (pendingId === undefined || !UUID.test(pendingId) || device === null) return null;
+  const { rows } = await deps.db.query<{ m: string }>(
+    `select payload->'first'->>'method' as m from challenges
       where id = $1 and account_id = $2 and device_hash = $3 and purpose = 'second-factor' and method = 'pair'
-        and used_at is null and expires_at > $4 and payload->'first'->>'method' = 'pgp' and payload->>'app' = $5`,
+        and used_at is null and expires_at > $4 and payload->'first'->>'method' in ('pgp', 'security-key') and payload->>'app' = $5`,
     [pendingId, accountId, device, deps.clock(), realmOf(req).app],
   );
-  return rows.length > 0;
+  const m = rows[0]?.m;
+  return m === 'pgp' || m === 'security-key' ? m : null;
 }
 
 /**
@@ -610,6 +620,10 @@ export type LoginRealm = 'trader' | 'staff';
 
 interface LoginRouteOptions {
   kinds: AccountKind[];
+  /** Owner G3: one factor is enough on a known device for this account (the staff app decides). */
+  oneFactorOnKnownDevice?: (accountId: string, device: Buffer) => Promise<boolean>;
+  /** Owner G3: two PGP keys are no pair for this staff account (the staff app decides: moderators). */
+  pgpPairRefused?: (accountId: string) => Promise<boolean>;
   /** The site these routes serve; 'trader' when absent. The staff app passes 'staff'. */
   realm?: LoginRealm;
   afterAuthenticate?: (accountId: string) => Promise<void>;
@@ -645,6 +659,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     const pendingId = optStr(body, 'pendingId');
     let found: { id: string; kind: AccountKind; login_tag_key_id: number | null } | null;
     let afterPgp: boolean;
+    // Owner G3: a staff member's security key then a passkey is a pair too.
+    let afterKey = false;
     let tag: string;
     // FU-D: a row under an older login-name key moves to the current key once a login by name succeeds.
     let retag: { from: number; tag: string } | undefined;
@@ -673,10 +689,12 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       }
       // The pending-step lookup runs whenever a pendingId is given, whatever the account, so the
       // query count does not reveal a staff login name (second review).
-      afterPgp = pendingId !== undefined && (await pendingAfterPgp(deps, req, found?.id ?? NIL_UUID, pendingId));
+      const firstMethod = pendingId !== undefined ? await pendingFirstMethod(deps, req, found?.id ?? NIL_UUID, pendingId) : null;
+      afterPgp = firstMethod === 'pgp';
+      afterKey = firstMethod === 'security-key';
     }
     // A team member logs in by the staff rule (Plan 2 Task 18): PGP + a passkey is a pair for them too.
-    const withPasskeys = afterPgp && (found?.kind === 'staff' || found?.kind === 'member');
+    const withPasskeys = (afterPgp && (found?.kind === 'staff' || found?.kind === 'member')) || (afterKey && found?.kind === 'staff');
     let creds = (await credentialsOf(deps.db, found?.id ?? NIL_UUID)).filter(
       (c) =>
         found !== null &&
@@ -749,6 +767,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       ...(boundPending !== undefined ? { pendingId: boundPending } : {}),
       deviceLabel,
       ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}),
+      ...(opts.oneFactorOnKnownDevice ? { oneFactorOnKnownDevice: opts.oneFactorOnKnownDevice } : {}),
+      ...(opts.pgpPairRefused ? { pgpPairRefused: opts.pgpPairRefused } : {}),
     });
     const retag = ch.payload.retag as { from?: unknown; tag?: unknown } | undefined;
     if (ch.payload.mode === 'login-name' && typeof retag?.from === 'number' && typeof retag.tag === 'string') {
@@ -772,6 +792,7 @@ export async function securityKeyLoginRoutes(app: FastifyInstance, opts: LoginRo
 /** `buildApi`'s mount at `/v1/login/webauthn`: the login-name-based routes plus discoverable passkey login (`start {}`). */
 export async function webauthnLoginRoutes(app: FastifyInstance, opts: LoginRouteOptions): Promise<void> {
   loginRoutes(app, { kinds: opts.kinds, ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}), discoverable: true });
+  // (The trader site never passes oneFactorOnKnownDevice: traders have their own login rules.)
 }
 
 // ---------------------------------------------------------------------------------------------

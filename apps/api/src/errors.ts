@@ -126,6 +126,12 @@ export type ApiErrorCode =
   | 'two-factors-required'
   | 'owner-protected'
   | 'owner-needs-two-keys'
+  // Owner G3 (7 Nov): a moderator holds a security key, a PGP key and a passkey.
+  | 'all-three-methods-required'
+  // Owner G4 (7 Nov): adding or removing an owner key needs taps by both owner keys.
+  | 'both-owner-keys-required'
+  // Owner G3 (review P-m1): a staff passkey that reports a security-key model is that key again.
+  | 'passkey-is-security-key'
   // Plan 5 Task 10 on the staff API: the past-rep claim is no longer live (revoked, removed, rejected).
   | 'not-live'
   // Plan 5, Task 10: past reputation claims.
