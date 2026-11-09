@@ -381,8 +381,10 @@ async function removable(db: Queryable, config: Config, accountId: string, type:
   if (kind === undefined) throw new ApiError(401, 'not-authenticated');
   const found = await findMethod(db, accountId, type, id);
   if (found === null) throw new ApiError(404, 'not-found');
-  // Staff and the owner have no reset (R2): only keys a login challenge can go to count.
-  const usable = kind === 'trader' ? null : await usablePgpIds(db, config, accountId, now);
+  // Staff and the owner have no reset (R2): only keys a login challenge can go to count. A vendor's
+  // G13 check below counts them too (security review 8 Nov M3: an expired key logs no one in).
+  const vendor = acct.rows[0]!.account_type === 'vendor';
+  const usable = kind === 'trader' && !vendor ? null : await usablePgpIds(db, config, accountId, now);
   const counts = await countsOf(db, accountId);
   const after: Counts = { ...counts, usablePgp: usable?.size ?? counts.pgp };
   for (const [k, n] of Object.entries(found.less) as Array<[keyof Counts, number]>) after[k] -= n;
@@ -390,7 +392,7 @@ async function removable(db: Queryable, config: Config, accountId: string, type:
   if (!leavesLogin(kind, after)) throw new ApiError(409, 'last-login-method');
   // Owner G13 (7 Nov): a vendor never goes back to a password-only login. Its last passkey,
   // security key or PGP key can only be exchanged: add the new one, then remove the old.
-  if (acct.rows[0]!.account_type === 'vendor' && after.pgp + after.keys + after.passkeys === 0) throw new ApiError(409, 'last-login-method');
+  if (vendor && after.usablePgp + after.keys + after.passkeys === 0) throw new ApiError(409, 'last-login-method');
   return found;
 }
 

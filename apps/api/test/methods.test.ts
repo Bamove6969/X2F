@@ -433,6 +433,19 @@ describe('removing a login method', () => {
     expect((await listMethods(deps.db, id)).map((m) => m.type).sort()).toEqual(['passkey', 'password']);
   });
 
+  it('owner G13 (security review 8 Nov M3): an expired PGP key does not count, so a vendor with one and a passkey keeps the passkey', async () => {
+    const { id } = await account();
+    await addPassword(id);
+    // Expired a day after it was made, long before `now`.
+    await addPgp(id, await genKey({ keyExpirationTime: 86_400 }));
+    const passkey = await addCredential(id, 'passkey', false);
+    await deps.db.query("update accounts set account_type = 'vendor', vendor_since = $2 where id = $1", [id, now]);
+    const b = await loggedIn(id);
+    const t = await token(b, id, { kind: 'remove-method', method: 'passkey', id: passkey.id });
+    const refused = await b.del(`/v1/account/methods/passkey/${passkey.id}`, { confirmToken: t });
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'last-login-method']);
+  });
+
   it('a trader whose only primary method is a password keeps it; TOTP and recovery codes can go', async () => {
     const { id } = await account();
     await addPassword(id);
