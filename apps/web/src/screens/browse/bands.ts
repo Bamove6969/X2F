@@ -1,37 +1,49 @@
 // An offer's size bands (owner 2026-11-06 Q23/Q27: up to 3 amount bands per currency, each with its
-// own price and fewest trades) and the words for its range and price. The offers card (OfferCard.tsx)
-// and the quote (quote/QuoteBands.tsx) both read this file, so what the two screens say about an
-// offer's ranges and prices never disagree (owner 2026-11-08: the quote carries the bands over).
+// own price and fewest trades) and the words for its range and price, for the quote's bands card
+// (quote/QuoteBands.tsx). The offers card (OfferCard.tsx) words its range with offerAmounts.ts and
+// its markup with markupOf; the range words here are the card's (rangeText is fiatRangeText for a
+// 2-place currency, an XMR band's range is the card's xmrRangeText), so the two screens never
+// disagree about an offer's range (owner 2026-11-08: the quote carries the bands over).
 //
 // The API sends one range and one price per offer today (Task 4 `OfferCard`), so `offerBands` gives
-// one band: the offer's min to max at its price. When bands reach the API (FlexOffer-Post, not built),
-// `offerBands` is the one place that reads them; the rest already handles several.
-import { atomicForFiat, formatXmr, offerRate, type Price } from '@x2f/trade';
+// one band: the offer's min to max at its price, in the unit the poster set (owner 8 Nov, "Offer
+// amounts in XMR or fiat"). When bands reach the API (FlexOffer-Post, not built), `offerBands` is the
+// one place that reads them; the rest already handles several.
+import { atomicForFiat, formatXmr, formatXmrExact, offerRate, rangeInBoth, type AmountUnit, type Price } from '@x2f/trade';
 import { formatMinor, type Offer, type Pricing } from './api.js';
+import { APPROX, offerRange, xmrRangeText } from './offerAmounts.js';
 
-/** One band: amounts from `fromFiatCents` to `toFiatCents`, both included, in the currency's minor units. */
+/**
+ * One band: amounts from `from` to `to`, both included, in the band's `unit` as the poster set it:
+ * the currency's minor units ('fiat') or atomic XMR ('xmr'). An offer's bands share one unit.
+ */
 export interface Band {
-  fromFiatCents: bigint;
-  toFiatCents: bigint;
+  unit: AmountUnit;
+  from: bigint;
+  to: bigint;
   pricing: Pricing;
   /** The fewest completed trades the band asks of the other trader (0: none). */
   minTrades: number;
 }
 
 /** The offer's bands, lowest first. */
-export function offerBands(o: Pick<Offer, 'minFiatCents' | 'maxFiatCents' | 'pricing' | 'minTrades'>): readonly Band[] {
-  return [{ fromFiatCents: o.minFiatCents, toFiatCents: o.maxFiatCents, pricing: o.pricing, minTrades: o.minTrades }];
+export function offerBands(o: Pick<Offer, 'amountUnit' | 'minAtomic' | 'maxAtomic' | 'minFiatCents' | 'maxFiatCents' | 'pricing' | 'minTrades'>): readonly Band[] {
+  const r = offerRange(o);
+  return [{ unit: r.unit, from: r.min, to: r.max, pricing: o.pricing, minTrades: o.minTrades }];
 }
 
 /** Where an amount falls: inside band `index`, under the smallest trade, over the largest, or in a gap. */
 export type BandAt = { kind: 'in'; index: number } | { kind: 'below' } | { kind: 'above' } | { kind: 'between' };
 
-/** The band `fiatCents` falls in; both edges of a band are inside it. `bands` is lowest first and not empty. */
-export function bandAt(bands: readonly Band[], fiatCents: bigint): BandAt {
-  const index = bands.findIndex((b) => fiatCents >= b.fromFiatCents && fiatCents <= b.toFiatCents);
+/**
+ * The band `amount` falls in; both edges of a band are inside it. `amount` is in the bands' unit
+ * (minor units for fiat bands, atomic for XMR bands). `bands` is lowest first and not empty.
+ */
+export function bandAt(bands: readonly Band[], amount: bigint): BandAt {
+  const index = bands.findIndex((b) => amount >= b.from && amount <= b.to);
   if (index >= 0) return { kind: 'in', index };
-  if (fiatCents < bands[0]!.fromFiatCents) return { kind: 'below' };
-  if (fiatCents > bands[bands.length - 1]!.toFiatCents) return { kind: 'above' };
+  if (amount < bands[0]!.from) return { kind: 'below' };
+  if (amount > bands[bands.length - 1]!.to) return { kind: 'above' };
   return { kind: 'between' };
 }
 
@@ -60,13 +72,18 @@ export function rangeText(from: bigint, to: bigint, currency: string, exponent =
   return `${whole(from, currency, exponent)} – ${whole(to, currency, exponent)}`;
 }
 
-/** The offer's whole range per trade, as on its card. */
-export function offerRange(o: Pick<Offer, 'minFiatCents' | 'maxFiatCents'>, currency: string): string {
-  return rangeText(o.minFiatCents, o.maxFiatCents, currency);
+/** The band's own range, as the poster set it: "$50 – $1,500", or XMR figures "0.300000 – 9.000000" (the card's 6 places; the view adds "XMR"). */
+export function bandRange(band: Band, currency: string, exponent = 2): string {
+  return band.unit === 'xmr' ? xmrRangeText(band.from, band.to) : rangeText(band.from, band.to, currency, exponent);
 }
 
 /**
- * A price compared with the market, as on the offers card: "0.2% above market", "At market"; a
+ * TODO(design): the offers card and the quote word an offer's price differently and design has not
+ * picked one (asked 9 Nov). The card (batch 2, OfferCard.tsx markupOf) says "+0.4%" over "Vendor
+ * markup"; this says "0.4% above market". Both are COPY-UNSIGNED; the numbers agree
+ * (test/bands.test.ts). Keep both until design answers, then make one call the other.
+ *
+ * A price compared with the market: "0.2% above market", "At market"; a
  * fixed price reads its difference from the market price now, or "Fixed price" with no market.
  * `favourable` says whether a price above (positive) or below (negative) market is good for the
  * person looking (BrowseCopy.favourable), shown in the escrow tone.
@@ -100,9 +117,26 @@ export function bandRate(band: Band, currency: string, market: bigint | null, wi
   return withMarkup ? offerRate(band.pricing, currency, marketPrice) : marketPrice;
 }
 
-/** The band's fiat edges in XMR at `rate`: "0.151515 – 4.545454" (atomicForFiat floors, 6 places, truncated). */
+/** A fiat band's edges in XMR at `rate`: "0.151515 – 4.545454" (atomicForFiat floors, 6 places, truncated). */
 export function bandXmr(band: Band, rate: Price): string {
-  return `${formatXmr(atomicForFiat(band.fromFiatCents, rate), 6)} – ${formatXmr(atomicForFiat(band.toFiatCents, rate), 6)}`;
+  if (band.unit !== 'fiat') throw new RangeError('bandXmr takes a fiat band');
+  return `${formatXmr(atomicForFiat(band.from, rate), 6)} – ${formatXmr(atomicForFiat(band.to, rate), 6)}`;
+}
+
+/** An XMR band's edges in the currency at `rate`: "$165.77 – $1,500" (@x2f/trade fiatCents, half up; the quote's exponent). */
+export function bandFiat(band: Band, rate: Price, currency: string, exponent = 2): string {
+  if (band.unit !== 'xmr') throw new RangeError('bandFiat takes an XMR band');
+  const b = rangeInBoth({ unit: 'xmr', min: band.from, max: band.to }, rate);
+  return rangeText(b.minFiat, b.maxFiat, currency, exponent);
+}
+
+/**
+ * The band's range in the other unit at `rate`, marked as converted (lead 9 Nov, design not yet
+ * asked: an XMR band shows its XMR and "≈" the fiat at the live rate, as the card does): the text
+ * after "≈ " and its unit. COPY-UNSIGNED: the "≈ " prefix (offerAmounts APPROX).
+ */
+export function bandOther(band: Band, rate: Price, currency: string, exponent = 2): { text: string; unit: string } {
+  return band.unit === 'fiat' ? { text: `${APPROX}${bandXmr(band, rate)}`, unit: 'XMR' } : { text: `${APPROX}${bandFiat(band, rate, currency, exponent)}`, unit: currency };
 }
 
 /**
@@ -124,11 +158,16 @@ export function markupText(pricing: Pricing, market: bigint | null): string | nu
   return `${sign}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}%`;
 }
 
-/** A clip line: "Above $500 the rate changes to $331.88." (`dir` up) or "Below $500.01 …" (down). */
+/** A clip line: "Above $500 the rate changes to $331.88." (`dir` up) or "Below $500.01 …" (down); an XMR band's edge reads "5.000000 XMR". */
 export interface Clip {
   dir: 'up' | 'down';
   at: string;
   rate: string;
+}
+
+/** A band edge as the clip line says it: whole money, or the exact XMR with its unit. COPY-UNSIGNED: "XMR" after the figure. */
+function edgeText(band: Band, edge: bigint, currency: string, exponent: number): string {
+  return band.unit === 'xmr' ? `${formatXmrExact(edge)} XMR` : whole(edge, currency, exponent);
 }
 
 /**
@@ -142,9 +181,9 @@ export function clipLines(bands: readonly Band[], at: BandAt | null, currency: s
   const out: Clip[] = [];
   const up = bands[at.index + 1];
   const upRate = up && bandRate(up, currency, market, true);
-  if (upRate) out.push({ dir: 'up', at: whole(band.toFiatCents, currency, exponent), rate: money(upRate.centsPerXmr, currency, exponent) });
+  if (upRate) out.push({ dir: 'up', at: edgeText(band, band.to, currency, exponent), rate: money(upRate.centsPerXmr, currency, exponent) });
   const down = bands[at.index - 1];
   const downRate = down && bandRate(down, currency, market, true);
-  if (downRate) out.push({ dir: 'down', at: whole(band.fromFiatCents, currency, exponent), rate: money(downRate.centsPerXmr, currency, exponent) });
+  if (downRate) out.push({ dir: 'down', at: edgeText(band, band.from, currency, exponent), rate: money(downRate.centsPerXmr, currency, exponent) });
   return out;
 }

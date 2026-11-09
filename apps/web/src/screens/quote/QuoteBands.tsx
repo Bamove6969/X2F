@@ -1,12 +1,14 @@
 import { useId, useState } from 'react';
 import { Icon } from '../../ui/icons.js';
-import { bandAt, bandRate, bandXmr, clipLines, markupText, money, offerBands, rangeText, type BandAt } from '../browse/bands.js';
+import { bandAt, bandOther, bandRange, bandRate, clipLines, markupText, money, offerBands, type BandAt } from '../browse/bands.js';
 import { RadioChips } from '../browse/RadioChips.js';
 import { quoteExponent, type MarketNow, type Quote, type QuoteOffer } from './quoteModel.js';
 
 // "This offer's bands" (BuyQuote board, canvas v142; owner 2026-11-08 #4, #11 and "Offer amounts in
 // XMR or fiat"): right under "You receive", so the buyer never goes back a screen to see where the
-// price clips. Each band: its range in the offer's unit and in XMR ("≈"), its rate and markup; the
+// price clips. Each band: its range in the unit the poster set and, converted at the live rate, in
+// the other ("≈": XMR for a fiat-set offer, the currency for an XMR-set one, lead 9 Nov, design not
+// yet asked), its rate and markup; the
 // band holding the amount has the 2 px ink ring and a "Your amount" tag; under the list, where the
 // rate changes; "With markup / Without" converts the XMR at each band's price or at the market rate
 // (with the freshness line). Money maths is in browse/bands.ts, all bigint.
@@ -21,9 +23,13 @@ const VIEWS = [
   { id: 'without', label: 'Without' },
 ] as const satisfies readonly { id: View; label: string }[];
 
-/** Where the quote's amount falls: by the fiat total of a good quote; nowhere otherwise. */
+/**
+ * Where the quote's amount falls: a good quote's fiat total in fiat bands, its XMR amount in XMR
+ * bands (the unit the take checks, @x2f/trade rangeAllows); nowhere otherwise.
+ */
 function quoteBandAt(q: Quote | null, bands: ReturnType<typeof offerBands>): BandAt | null {
-  return q?.kind === 'ok' ? bandAt(bands, q.fiatCents) : null;
+  if (q?.kind !== 'ok') return null;
+  return bandAt(bands, bands[0]!.unit === 'xmr' ? q.amountAtomic : q.fiatCents);
 }
 
 /** "14:05" from the feed's ISO time, in UTC; null when it is unknown. */
@@ -82,9 +88,9 @@ export function QuoteBands({ offer, quote, market }: { offer: QuoteOffer; quote:
               <span className="x2f-quote__band-line">
                 <span className="x2f-quote__band-range">
                   <span data-part="band-range" className="x2f-quote__mono">
-                    {rangeText(b.fromFiatCents, b.toFiatCents, offer.currency, exponent)}
+                    {bandRange(b, offer.currency, exponent)}
                   </span>{' '}
-                  <span className="x2f-quote__band-unit">{offer.currency}</span>
+                  {b.unit === 'xmr' ? <span className="x2f-quote__band-xmr-unit">XMR</span> : <span className="x2f-quote__band-unit">{offer.currency}</span>}
                 </span>
                 {withMarkup ? (
                   markup === null ? null : (
@@ -101,10 +107,10 @@ export function QuoteBands({ offer, quote, market }: { offer: QuoteOffer; quote:
               </span>
               {rate ? (
                 <span className="x2f-quote__muted-sm">
-                  <span data-part="band-xmr" className="x2f-quote__mono">
-                    ≈ {bandXmr(b, rate)}
+                  <span data-part={b.unit === 'xmr' ? 'band-fiat' : 'band-xmr'} className="x2f-quote__mono">
+                    {bandOther(b, rate, offer.currency, exponent).text}
                   </span>{' '}
-                  <span className="x2f-quote__band-xmr-unit">XMR</span>
+                  {b.unit === 'xmr' ? <span className="x2f-quote__band-unit">{offer.currency}</span> : <span className="x2f-quote__band-xmr-unit">XMR</span>}
                 </span>
               ) : null}
               {b.minTrades > 0 ? <span className="x2f-quote__muted-sm">{b.minTrades}+ completed trades</span> : null}

@@ -344,7 +344,8 @@ test.describe("the offer's bands on the quote", () => {
     await stubApi(page, base);
     await page.goto(`/buy/${B.method.id}?currency=${B.currency}`);
     const offerCard = page.locator('article.x2f-offer').first();
-    const range = (await offerCard.locator('.x2f-offer__range').innerText()).trim();
+    // Batch 2's card has a row per unit; the poster's own (fiat here) is the band's range.
+    const range = (await offerCard.locator('[data-part="range-fiat"] .x2f-offer__figures').innerText()).trim();
     await offerCard.getByRole('button', { name: `Trade with ${B.offer.poster.displayName}` }).click();
     await expect(page).toHaveURL(new RegExp(`/buy/${B.method.id}/${B.offer.id}`));
 

@@ -693,7 +693,36 @@ describe("This offer's bands (BuyQuote board, canvas v142; owner 2026-11-08)", (
       </MemoryRouter>,
     );
     await settle();
-    expect(list.host.querySelector('.x2f-offer__range')?.textContent).toBe(part(row, 'band-range'));
+    // Batch 2's card has a row per unit; the poster's own (fiat here) is the band's range, word for word.
+    expect(list.host.querySelector('[data-part="range-fiat"] .x2f-offer__figures')?.textContent).toBe(part(row, 'band-range'));
+  });
+
+  it('an offer set in XMR (batch 2): the band shows its XMR range, as the card does, and "≈" the fiat at the live rate (lead 9 Nov)', async () => {
+    const XMR_SET = { ...MIRA, id: 'offer-mira', amountUnit: 'xmr', minAtomic: '100000000000', maxAtomic: '1000000000000', minFiatCents: null, maxFiatCents: null };
+    stub.offers = [XMR_SET];
+    const { host } = await open(`${quotePath('buy', 'ZELLE', 'offer-mira', 'USD')}&amount=0.5&unit=xmr`);
+    const row = rows(host)[0]!;
+    expect(part(row, 'band-range')).toBe('0.100000 – 1.000000');
+    expect(row.textContent).toContain('0.100000 – 1.000000 XMR');
+    // Converted at the band's rate ($330.00, at market): never shown as exact.
+    expect(part(row, 'band-fiat')).toBe('≈ $33 – $330');
+    expect(row.textContent).toContain('≈ $33 – $330 USD');
+    expect(part(row, 'band-xmr')).toBeNull();
+    // Placed by the XMR amount, the unit the take checks.
+    expect(current(host)).toHaveLength(1);
+    type(host, '1.000000000001');
+    expect(current(host)).toHaveLength(0);
+    type(host, '1');
+    expect(current(host)).toHaveLength(1);
+    const list = render(
+      <MemoryRouter initialEntries={['/sell/ZELLE?currency=USD']}>
+        <Routes>
+          <Route path="/sell/:methodId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(list.host.querySelector('[data-part="range-xmr"] .x2f-offer__figures')?.textContent).toBe(part(row, 'band-range'));
   });
 
   it('With markup / Without: the XMR at the band price or at the market rate, with the freshness line; the fiat range and the quote stay', async () => {
