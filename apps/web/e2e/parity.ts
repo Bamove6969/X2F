@@ -212,6 +212,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     { text: 'Zelle screenshot', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
     { text: 'Already in this trade, blurred', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
     { text: 'Included', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
+    { text: 'A moderator looks at what happened and decides where the 1.25 XMR goes. It stays locked in escrow until then.', why: 'Design kit handoff 1.5 and kit review 5 (8 Nov): prose XMR has 6 places, so the page reads 1.250000 XMR; the board predates the rule (design to re-export).' },
   ],
   DisputeRoom: [
     { text: '1.25 XMR locked in escrow', why: 'Board v119 (design 7 Nov, not in this repo yet): the amount is an inner block, six decimals.' },
@@ -237,6 +238,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     { text: 'Send unblurred proof to sarah.v', why: "Plan 5 (SendUnblurred) with Plan 4's proof request." },
   ],
   DisputeRuling: [
+    { text: '1.25 XMR goes to you', why: 'Design kit handoff 1.5 and kit review 5 (8 Nov): prose XMR has 6 places, so the page reads 1.250000 XMR; the board predates the rule (design to re-export).' },
     {
       text: 'To Cake Wallet, address ending …k3Fz, once the appeal window closes.',
       why: 'Superseded (design review 2026-11-01 fix 2; board DisputeRuling on wip/design-brief; Plan 4 "A1 dropped"): no wait for the window. The newer board reads "Sent to …", but nothing executes the payout yet (C11 review I1, NEEDS_PLAN_4_RULING_PAYOUT), so the page reads "Goes to Cake Wallet, address ending …k3Fz." (COPY-UNSIGNED) until the API reports it executed.',

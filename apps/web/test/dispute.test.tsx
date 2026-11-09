@@ -149,10 +149,12 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
 });
 
 describe('copy helpers', () => {
-  it('writes amounts in sentences as the boards do, and dates as "Fri 16 Oct, 10:14"', () => {
-    expect(xmrInText('1250000000000')).toBe('1.25');
-    expect(xmrInText('1000000000000')).toBe('1.00');
+  it('writes amounts in sentences with the kit\'s 6 places (review 5), and dates as "Fri 16 Oct, 10:14"', () => {
+    expect(xmrInText('1250000000000')).toBe('1.250000');
+    expect(xmrInText('1000000000000')).toBe('1.000000');
     expect(xmrInText('1234567000000')).toBe('1.234567');
+    expect(xmrInText('1250000999999')).toBe('1.250000'); // cut, never rounded up
+    expect(xmrInText(12_500_000_000n)).toBe('0.012500');
     expect(dayTime(new Date('2026-10-16T10:14:00Z'), 'UTC')).toBe('Fri 16 Oct, 10:14');
     expect(inTime(23 * 60 * MIN + 59 * MIN)).toBe('in 23 h');
     expect(inTime(40 * MIN)).toBe('in 40 min');
@@ -163,12 +165,12 @@ describe('copy helpers', () => {
     const mine = rulingCopy(d, 'buyer', 'satoshi_ghost', '1250000000000', new Date(T0 + 500 * MIN), 'seller');
     expect(mine).toEqual({
       label: 'Ruling: release to the buyer',
-      title: '1.25 XMR goes to you',
+      title: '1.250000 XMR goes to you',
       destination: { app: 'Cake Wallet', end: 'k3Fz' },
       footer: "This ruling and its evidence are kept with the trade. It appears on satoshi_ghost's profile as a lost dispute.",
     });
     const theirs = rulingCopy(d, 'seller', 'mira.k', '1250000000000', new Date(T0 + 500 * MIN), 'seller');
-    expect(theirs.title).toBe('1.25 XMR goes to mira.k');
+    expect(theirs.title).toBe('1.250000 XMR goes to mira.k');
     expect(theirs.destination).toBeNull();
     expect(theirs.footer).toBe('This ruling and its evidence are kept with the trade. It appears on your profile as a lost dispute.');
   });
@@ -246,7 +248,7 @@ describe('rulingAllowsCosign: a moderator-built transaction is co-signed only th
 describe('ModeratorTag: the violet badge only inside a disputed trade', () => {
   it('draws the badge for a moderator message in a dispute with a recorded moderator', () => {
     const { host } = render(<ModeratorTag from="mod" inDispute moderator="sarah.v" />);
-    expect(host.querySelector('.x2f-moderator-badge')?.textContent).toBe('X2F Moderator');
+    expect(host.querySelector('.x2f-tag[data-role="mod"]')?.textContent).toBe('X2F Moderator');
   });
 
   it('draws nothing for a trader, outside a dispute, or with no moderator on record', () => {
@@ -256,7 +258,7 @@ describe('ModeratorTag: the violet badge only inside a disputed trade', () => {
       { from: 'mod' as const, inDispute: true, moderator: null },
     ]) {
       const { host } = render(<ModeratorTag {...p} />);
-      expect(host.querySelector('.x2f-moderator-badge')).toBeNull();
+      expect(host.querySelector('.x2f-tag[data-role="mod"]')).toBeNull();
     }
   });
 });
@@ -443,7 +445,7 @@ describe('DisputeRuling appeal form', () => {
   it('shows the ruling card with the moderator badge, and no appeal button once final', () => {
     const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled({ round: 2, appealUntil: null })} serverClock={at(500)} onAppeal={async () => undefined} />));
-    expect(host.querySelector('[aria-label="Ruling"] .x2f-moderator-badge')).not.toBeNull();
+    expect(host.querySelector('[aria-label="Ruling"] .x2f-tag[data-role="mod"]')).not.toBeNull();
     expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Appeal this ruling')).toBe(false);
   });
 });
@@ -534,7 +536,7 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
 
   it('tells the party the server says owes the fee, with the amount; nobody else (Revision 2026-10-29c)', () => {
     const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
-    const line = 'This also means you still owe the 1% fee for this trade, equal to 0.0125 XMR, which will be deducted automatically from your future trades.';
+    const line = 'This also means you still owe the 1% fee for this trade, equal to 0.012500 XMR, which will be deducted automatically from your future trades.';
     const owes = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={{ ...ruled({ outcome: 'refund-to-seller', destination: null }), feeOwedAtomic: '12500000000' }} serverClock={at(500)} onAppeal={async () => undefined} />));
     expect(owes.host.textContent).toContain(line);
     const not = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled({ outcome: 'refund-to-seller', destination: null })} serverClock={at(500)} onAppeal={async () => undefined} />));
@@ -545,7 +547,7 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     const t = trade({ role: 'seller', counterparty: 'mira.k', state: 'refunded', dispute: { by: 'buyer', at: iso(130) } });
     const d = { ...ruled({ outcome: 'seller-sends-xmr', destination: null }, { afterRefund: true, status: 'final' as const }), complyBy: iso(2000) };
     const plain = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
-    expect(plain.host.textContent).toContain('You must send mira.k 1.25 XMR');
+    expect(plain.host.textContent).toContain('You must send mira.k 1.250000 XMR');
     // Design X5: "D Mon YYYY, HH:MM UTC" in mono.
     expect(plain.host.textContent).toContain(`Send it by ${utcDateTime(new Date(T0 + 2000 * MIN))}.`);
     expect(utcDateTime(new Date('2026-11-06T15:00:00Z'))).toBe('6 Nov 2026, 15:00 UTC');
@@ -575,7 +577,7 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     expect(onTxProof).toHaveBeenCalledWith('a'.repeat(64), 'b'.repeat(64));
     // The buyer only reads what the seller must do.
     const buyer = render(inRouter(<DisputeRuling trade={{ ...t, role: 'buyer', counterparty: 'satoshi_ghost' }} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} />));
-    expect(buyer.host.textContent).toContain('satoshi_ghost must send you 1.25 XMR');
+    expect(buyer.host.textContent).toContain('satoshi_ghost must send you 1.250000 XMR');
     expect(buyer.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
   });
 
@@ -587,6 +589,8 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     const buyer = render(inRouter(<DisputeRuling trade={{ ...t, role: 'buyer', counterparty: 'satoshi_ghost' }} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
     expect(buyer.host.textContent).toContain('satoshi_ghost must send you 0.610529733574 XMR');
     expect(xmrInTextExact(733_574n)).toBe('0.000000733574');
-    expect(xmrInTextExact('1250000000000')).toBe('1.25');
+    // Kit handoff 1.5: an exact figure still reads as money, 6 places at least, more only when non-zero.
+    expect(xmrInTextExact('1250000000000')).toBe('1.250000');
+    expect(xmrInTextExact('1250000000100')).toBe('1.2500000001');
   });
 });

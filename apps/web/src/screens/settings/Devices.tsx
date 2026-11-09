@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { isHeld, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry } from '@x2f/auth-client';
+import { Avatar, RoleTag } from '../../ui/Avatar.js';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
@@ -254,7 +255,13 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                     </span>
                     <span className="x2f-item__text">
                       <span className="x2f-item__name">{s.deviceLabel}</span>
-                      {s.current ? <span className="x2f-tag">{C.thisDevice}</span> : null}
+                      {s.current ? (
+                        <span className="x2f-item__tag">
+                          <RoleTag role="neutral" tone="escrow">
+                            {C.thisDevice}
+                          </RoleTag>
+                        </span>
+                      ) : null}
                       <span className="x2f-item__note">
                         {s.current ? 'Active now' : lastActive(s.lastSeenAt)}
                         {s.level === 'recovery' ? ` · ${C.recovery}` : ''}
@@ -296,13 +303,11 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                     const m = memberOfSession(s)!;
                     return (
                       <li className="x2f-item" key={s.id} data-member={m}>
-                        <span className="x2f-avatar" aria-hidden="true">
-                          {initials(m)}
-                        </span>
+                        <Avatar name={m} initials={initials(m)} kind="team" />
                         <span className="x2f-item__text">
                           <span className="x2f-item__name">{m}</span>
-                          <span className="x2f-tag" data-tone="team">
-                            {C.teamMember}
+                          <span className="x2f-item__tag">
+                            <RoleTag role="team" />
                           </span>
                           <span className="x2f-item__note">
                             {s.deviceLabel} · {lastActive(s.lastSeenAt)}

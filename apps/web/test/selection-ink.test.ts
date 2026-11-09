@@ -52,7 +52,7 @@ const ORANGE_ALLOWED = [
   // The one primary action per screen and the press-and-hold release button.
   'ui/ui.css .x2f-button--primary',
   'ui/ui.css .x2f-hold',
-  'ui/ui.css .x2f-hold:not(:disabled):hover, .x2f-hold[data-holding=\'true\']',
+  'ui/ui.css .x2f-hold:not(:disabled):hover',
   // Links and text buttons (boards: a { color: var(--monero-ink) }).
   'ui/ui.css .x2f-link',
   'ui/ui.css .x2f-link:hover',
@@ -65,6 +65,7 @@ const ORANGE_ALLOWED = [
   'screens/dispute/dispute.css .dispute-retry',
   // The XMR unit label (tokens.json monero-ink usage; BuyQuote board).
   'ui/ui.css .x2f-amount__unit',
+  'ui/kit.css .x2f-recipient__unit',
   'screens/quote/quote.css .x2f-quote__xmr-unit',
 ];
 

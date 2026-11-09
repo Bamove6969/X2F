@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-a{color:#ff7a1a}a:hover{color:#ffa060}
+a{color:#ff6600}a:hover{color:#ff8533}
 button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,label:focus-within{outline:2px solid #eef1f5;outline-offset:2px}
 input::placeholder,textarea::placeholder{color:#9aa4b2}
 </style>
@@ -138,7 +138,7 @@ input::placeholder,textarea::placeholder{color:#9aa4b2}
           <legend style="padding: 0 6px; font-size: 16px; font-weight: 600;">Account action</legend>
           <sc-for list="{{actions}}" as="a" hint-placeholder-count="4">
             <label style="display: flex; align-items: center; gap: 10px; min-height: 36px; font-size: 15px; cursor: pointer;">
-              <input type="radio" name="acct" checked="{{a.on}}" onChange="{{a.pick}}" style="width: 18px; height: 18px; margin: 0; accent-color: #ff7a1a;">
+              <input type="radio" name="acct" checked="{{a.on}}" onChange="{{a.pick}}" style="width: 18px; height: 18px; margin: 0; accent-color: #ff6600;">
               <span>{{a.label}} <span style="color: #9aa4b2; font-size: 13px;">{{a.note}}</span></span>
             </label>
           </sc-for>
@@ -177,7 +177,7 @@ class Component extends DCLogic {
       { id: 'buyer', name: 'Release to buyer', desc: '4.00 XMR goes to harbor_lin. quietfox gets a lost dispute on their profile.' },
       { id: 'seller', name: 'Refund to seller', desc: '4.00 XMR goes back to quietfox. harbor_lin gets a lost dispute on their profile.' }
     ].map((o) => ({ ...o, on: outcome === o.id ? 'true' : 'false',
-      style: base + (outcome === o.id ? 'border: 2px solid #ff7a1a;' : 'border: 2px solid #20262f;'),
+      style: base + (outcome === o.id ? 'border: 2px solid #ff6600;' : 'border: 2px solid #20262f;'),
       pick: () => this.setState({ outcome: o.id }) }));
     const actions = [
       ['none', 'None', ''],
@@ -193,7 +193,7 @@ class Component extends DCLogic {
       reasonHint: len >= 40 ? len + ' characters' : 'At least 40 characters. ' + len + ' so far.',
       onReason: (e) => this.setState({ reason: e.target.value }),
       blocked: !ready,
-      sendStyle: 'display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (ready ? 'border: 0; background: #ff7a1a; color: #1a0e05; cursor: pointer;' : 'border: 1px solid #6b7584; background: transparent; color: #9aa4b2; cursor: not-allowed;'),
+      sendStyle: 'display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (ready ? 'border: 0; background: #ff6600; color: #1a0e05; cursor: pointer;' : 'border: 1px solid #6b7584; background: transparent; color: #9aa4b2; cursor: not-allowed;'),
       sendHint: ready ? 'The traders see the ruling once it is approved.' : (outcome ? 'Write the reason to continue.' : 'Pick an outcome and write the reason.'),
       sent, notSent: !sent,
       submit: () => { if (ready) this.setState({ sent: true }); }

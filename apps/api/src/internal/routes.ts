@@ -19,7 +19,9 @@ import {
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
+import { addOwnerAlert } from '../alerts.js';
 import { ApiError } from '../errors.js';
+import { appendLog } from '../log/append.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 
 /**
@@ -281,8 +283,36 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       if (kind !== claimedKind) throw new Refused(409, 'settle-kind-changed');
       event = { ...event, kind: claimedKind };
       const claimed = claimedKind;
-      within = async (_c, prev) => {
+      within = async (c, prev, next, at) => {
         if (settleKindFor(prev) !== claimed) throw new Refused(409, 'settle-kind-changed');
+        // Review I1 (8 Nov): the seller's cancel refund landed on a trade disputed meanwhile (the
+        // machine keeps it `disputed` and records the tx). The escrow is empty now, so a dispute
+        // still `open` (no ruling proposed) becomes after-refund in this same transaction: its ruling
+        // offers the after-refund outcomes (the seller sends the XMR, or no action), never an escrow
+        // payout that can't run.
+        // Re-verify 43fbbb2f, R-I1: a dispute past `open` already has an escrow ruling proposed or
+        // published (a seller's device can hold the refund back until then). Flipping it would let
+        // `resolveFinal` close a `release-to-buyer` case with nothing owed, so it is left as it is
+        // (it waits for an execution that cannot come, and never closes) and raised for staff to
+        // re-rule with `seller-sends-xmr`: logged on the case and the owner alerted.
+        // NEEDS_PLAN_4_RULING_PAYOUT (R-M2): a ruling's own payout must report its own kind
+        // (`RulingKind`), never `auto-refund`, before ruling execution lands; see machine.ts `settled`.
+        if (prev.state === 'disputed' && next.state === 'disputed' && prev.txHash === null && next.txHash !== null) {
+          const { rows } = await c.query<{ seq: number; status: string }>(
+            `select seq, status from disputes
+              where code = $1 and closed_at is null and seq = (select max(seq) from disputes where code = $1)
+              for update`,
+            [code],
+          );
+          const d = rows[0];
+          if (d === undefined) return;
+          if (d.status === 'open') {
+            await c.query('update disputes set after_refund = true where code = $1 and seq = $2', [code, d.seq]);
+          } else {
+            await appendLog(c, { at, actor: { kind: 'system' }, tradeCode: code, action: 'dispute.refund-after-ruling', detail: { seq: d.seq, status: d.status } });
+            await addOwnerAlert(c, 'dispute-refund-after-ruling', { trade: code, seq: d.seq }, at);
+          }
+        }
       };
     }
     try {

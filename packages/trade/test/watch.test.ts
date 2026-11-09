@@ -721,6 +721,12 @@ describe('settleKindFor', () => {
     expect(settleKindFor({ state: 'funding', settling: null })).toBeNull();
     expect(settleKindFor({ state: 'securing', settling: null })).toBeNull();
   });
+  test("a dispute opened on the seller's cancel still names auto-refund: the refund lands anyway (review I1, 8 Nov)", () => {
+    expect(settleKindFor({ state: 'disputed', settling: 'auto-refund' })).toBe('auto-refund');
+    for (const settling of ['release', 'buyer-cancel', 'mutual-cancel', 'lapse-refund'] as const) {
+      expect(settleKindFor({ state: 'disputed', settling })).toBeNull();
+    }
+  });
   test('anything else cannot be named from the trade alone', () => {
     for (const state of ['secured', 'paid', 'disputed'] as const) {
       expect(settleKindFor({ state, settling: null })).toBeNull();
