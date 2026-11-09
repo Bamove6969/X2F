@@ -533,6 +533,46 @@
   opacity: 0.6;
 }
 
+/* Password strength meter (owner S-014; levels and words to design). */
+.x2f-start__meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.x2f-start__meter-bars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.x2f-start__meter-bar {
+  height: 4px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-start__meter[data-level='weak'] .x2f-start__meter-bar[data-on='true'] {
+  background: var(--x2f-danger);
+}
+
+.x2f-start__meter[data-level='medium'] .x2f-start__meter-bar[data-on='true'] {
+  background: var(--x2f-ink-muted);
+}
+
+.x2f-start__meter[data-level='strong'] .x2f-start__meter-bar[data-on='true'] {
+  background: var(--x2f-escrow);
+}
+
+.x2f-start__meter[data-level='weak'] .x2f-start__meter-text {
+  color: var(--x2f-danger);
+}
+
+.x2f-start__meter[data-level='strong'] .x2f-start__meter-text {
+  color: var(--x2f-escrow);
+}
+
 /* Terms (screen 0). */
 .x2f-terms__points {
   display: flex;
