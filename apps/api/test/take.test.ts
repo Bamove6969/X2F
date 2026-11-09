@@ -629,6 +629,8 @@ describe('taking a gift-card offer (J-17, F13 tick-box terms)', () => {
     );
     // G50: 45 minutes to check the card.
     expect(rows[0]).toEqual({ gift_card_terms: GIFT_CARD_TERMS_VERSION, confirm_window_min: 45 });
+    // What the taker agreed to never changes (355_gift_card_terms.sql).
+    await expect(deps.db.query('update trades set gift_card_terms = null where code = $1', [code])).rejects.toThrow(/never change/);
   });
 
   it('a take of any other offer carries no gift-card terms', async () => {

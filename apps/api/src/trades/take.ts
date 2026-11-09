@@ -1,5 +1,5 @@
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
-import { fiatCents, newTrade, offerRate, posterRole, rangeAllows, tradeFiatLimits, type Price, type Pricing, type Side } from '@x2f/trade';
+import { GIFT_CARD_TERMS_VERSION, fiatCents, newTrade, offerRate, posterRole, rangeAllows, tradeFiatLimits, type Price, type Pricing, type Side } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
@@ -10,7 +10,7 @@ import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
 import { ownerDeviceOnly } from '../team/perms.js';
 import { acceptedEvent } from '../events/publicName.js';
-import { isAvailable, tradeProfile } from '../methods/profiles.js';
+import { isAvailable, isGiftCard, tradeProfile } from '../methods/profiles.js';
 import { assertNoPendingReview, hasPendingReview } from '../reviews/gate.js';
 import type { MarketPrices } from '../price/market.js';
 import { assertNotBlocked } from '../traders/blocks.js';
@@ -62,18 +62,20 @@ interface TakeBody {
   walletId: string;
   centsPerXmr: bigint;
   fiatCents: bigint;
+  /** The gift-card terms version the taker ticked (J-17, F13); only on a gift-card offer. */
+  giftCardTerms: unknown;
 }
 
 function parseTake(body: unknown): TakeBody {
   if (!isObject(body)) throw bad();
-  const keys = Object.keys(body).sort().join(',');
+  const keys = Object.keys(body).filter((k) => k !== 'giftCardTerms').sort().join(',');
   if (keys !== 'amountAtomic,centsPerXmr,fiatCents,walletId') throw bad();
-  const { amountAtomic, walletId, centsPerXmr, fiatCents: cents } = body;
+  const { amountAtomic, walletId, centsPerXmr, fiatCents: cents, giftCardTerms } = body;
   if (typeof amountAtomic !== 'string' || !ATOMIC.test(amountAtomic)) throw bad();
   if (typeof walletId !== 'string' || !UUID.test(walletId)) throw bad();
   if (typeof centsPerXmr !== 'string' || !PRICE.test(centsPerXmr)) throw bad();
   if (typeof cents !== 'string' || !CENTS.test(cents)) throw bad();
-  return { amountAtomic: BigInt(amountAtomic), walletId, centsPerXmr: BigInt(centsPerXmr), fiatCents: BigInt(cents) };
+  return { amountAtomic: BigInt(amountAtomic), walletId, centsPerXmr: BigInt(centsPerXmr), fiatCents: BigInt(cents), giftCardTerms };
 }
 
 function parseWalletBody(body: unknown): string {
@@ -258,6 +260,10 @@ export function takeRoutes(app: FastifyInstance): void {
       // Blocked either way: as if the offer did not exist, before any refusal that shows it does.
       await assertNotBlocked(c, takerId, posterId);
       if (!isAvailable(r.method_id)) throw new ApiError(409, 'method-unavailable');
+      // J-17 (F13): a gift-card take carries the version of the terms the taker ticked, the one the
+      // API has now (a page showing older words cannot agree to these); any other take carries none.
+      const giftCardTerms = isGiftCard(r.method_id) ? GIFT_CARD_TERMS_VERSION : null;
+      if (b.giftCardTerms !== (giftCardTerms ?? undefined)) throw bad();
       if (posterId === takerId) throw new ApiError(409, 'own-offer');
       const now = deps.clock();
       const flags = (
@@ -322,7 +328,7 @@ export function takeRoutes(app: FastifyInstance): void {
           ? { buyerPayout: wallet.address, sellerRefund: null, sellerWalletApp: null }
           : { buyerPayout: null, sellerRefund: wallet.address, sellerWalletApp: wallet.app };
       try {
-        await insertTrade(c, t, sides, usd);
+        await insertTrade(c, t, sides, usd, giftCardTerms);
       } catch (e) {
         const refusal = raceRefusal(e);
         if (refusal) throw refusal;

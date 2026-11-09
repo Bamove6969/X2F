@@ -1,4 +1,4 @@
-import { MAX_MARGIN_BPS, fiatCents, offerRate, rangeInBoth, type AmountUnit, type OfferRange, type Price, type Pricing, type Side } from '@x2f/trade';
+import { GIFT_CARD_TERMS_VERSION, MAX_MARGIN_BPS, fiatCents, giftCardCurrencyOk, offerRate, rangeInBoth, type AmountUnit, type OfferRange, type Price, type Pricing, type Side } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import { requireSession } from '../auth/sessions.js';
@@ -291,6 +291,8 @@ interface NewOffer {
   minTrades: MinTrades;
   terms: string;
   country: string | null;
+  /** The gift-card terms version the poster ticked (J-17, F13); null on every other method. */
+  giftCardTerms: string | null;
 }
 
 function parsePricing(v: unknown): Pricing {
@@ -336,9 +338,12 @@ function parseRange(b: Record<string, unknown>): OfferRange {
 }
 
 /** The body's shape; the method's availability and the gift-card country are checked by the caller. */
-function parseNewOffer(body: unknown): NewOffer & { countryGiven: unknown } {
+function parseNewOffer(body: unknown): NewOffer & { countryGiven: unknown; giftCardTermsGiven: unknown } {
   if (!isObject(body)) throw bad();
-  const { side, methodId, currency, pricing, amountUnit, minAtomic, maxAtomic, minFiatCents, maxFiatCents, minTrades, terms, country, ...rest } = body;
+  const {
+    side, methodId, currency, pricing, amountUnit, minAtomic, maxAtomic, minFiatCents, maxFiatCents, minTrades, terms, country, giftCardTerms,
+    ...rest
+  } = body;
   if (Object.keys(rest).length > 0) throw bad();
   if (side !== 'sell' && side !== 'buy') throw bad();
   if (typeof methodId !== 'string' || methodId.length === 0 || methodId.length > 64) throw bad();
@@ -350,7 +355,7 @@ function parseNewOffer(body: unknown): NewOffer & { countryGiven: unknown } {
   if ([...cleanTerms].length > TERMS_MAX || BAD_TERMS_CHAR.test(cleanTerms)) throw bad();
   return {
     side, methodId, currency, pricing: parsePricing(pricing), range, minTrades: minTrades as MinTrades,
-    terms: cleanTerms, country: null, countryGiven: country,
+    terms: cleanTerms, country: null, countryGiven: country, giftCardTerms: null, giftCardTermsGiven: giftCardTerms,
   };
 }
 
@@ -547,8 +552,14 @@ export function offerRoutes(app: FastifyInstance): void {
     // A gift-card offer names the card's country; no other offer has one (Revision 2026-10-27).
     if (method.giftCard) {
       if (typeof o.countryGiven !== 'string' || !/^[A-Z]{2}$/.test(o.countryGiven)) throw bad();
+      // J-17 (T-081): the card's currency follows its country.
+      if (!giftCardCurrencyOk(o.countryGiven, o.currency)) throw bad();
+      // J-17 (F13): the poster ticked the gift-card terms of the version the API has now (a page
+      // showing older words cannot agree to these).
+      if (o.giftCardTermsGiven !== GIFT_CARD_TERMS_VERSION) throw bad();
       o.country = o.countryGiven;
-    } else if (o.countryGiven !== undefined) {
+      o.giftCardTerms = GIFT_CARD_TERMS_VERSION;
+    } else if (o.countryGiven !== undefined || o.giftCardTermsGiven !== undefined) {
       throw bad();
     }
     const accountId = req.auth!.accountId;
@@ -558,14 +569,15 @@ export function offerRoutes(app: FastifyInstance): void {
       await assertMayPost(client, req.auth!, now, o, null);
       const { rows } = await client.query<{ id: string }>(
       `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, fixed_cents_per_xmr,
-                           amount_unit, min_atomic, max_atomic, min_fiat_cents, max_fiat_cents, min_trades, terms, country, status, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'live', $16, $16) returning id`,
+                           amount_unit, min_atomic, max_atomic, min_fiat_cents, max_fiat_cents, min_trades, terms, country, gift_card_terms,
+                           status, created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $17, 'live', $16, $16) returning id`,
       [
         accountId, o.side, o.methodId, o.currency, p.mode, p.mode === 'market' ? p.marginBps : null,
         p.mode === 'fixed' ? p.centsPerXmr.toString() : null, o.range.unit,
         o.range.unit === 'xmr' ? o.range.min.toString() : null, o.range.unit === 'xmr' ? o.range.max.toString() : null,
         o.range.unit === 'fiat' ? o.range.min.toString() : null, o.range.unit === 'fiat' ? o.range.max.toString() : null,
-        o.minTrades, o.terms, o.country, now,
+        o.minTrades, o.terms, o.country, now, o.giftCardTerms,
       ],
       );
       // Task 18: a team member's post is in the account owner's audit log, in this transaction.
