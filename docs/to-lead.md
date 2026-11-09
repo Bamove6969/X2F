@@ -782,3 +782,4 @@ The owner asked design to treat his 12 comments as a brief for the whole app and
   - The key points become two: "Completed trades are erased on day 30." and "Disputed trades are kept up to 90 days, cleaned by our privacy tool, to train our moderators."
   - SelfDestruct(+W): "blurred automatically" → "removed by our privacy tool".
 - Canvas v161. Not drawn yet: p11-4 (approve a new device from a logged-in device, plus a Jabber notice). LoginApprove already covers it, so I'll check the board against his words next.
+- **p11-4 LoginApprove:** the board already covers approving from a logged-in device: the pop-up, the number match, Yes/No, and the 3-device limit. I added the Jabber notice to "Where do I approve it?" step 1: "If you turned on Jabber alerts, we've sent you a message there too." Build: send an OMEMO Jabber alert for each new-device request when alerts are on. No height change. Canvas v162.
