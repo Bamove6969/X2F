@@ -92,6 +92,18 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     { text: '0.000062 XMR', why: 'The value of the replaced network-fee row (P3-M12): X2F does not set the funding fee.' },
   ],
+  Main: [
+    {
+      text: 'X2F',
+      why: 'The browse header shows logo D (an SVG mark), not the X2F wordmark: owner G-015 / design 9 Nov ("the pre-login mark is logo D"), built by the wide shell (Job 3). The Main board still carries the text wordmark until design redraws it.',
+    },
+  ],
+  BuyMain: [
+    {
+      text: 'X2F',
+      why: 'As Main: the header mark is logo D, not the X2F wordmark (owner G-015 / design 9 Nov); the BuyMain board still carries the text until design redraws it.',
+    },
+  ],
   Desktop: [
     {
       text: 'You pay · 62 min left',
