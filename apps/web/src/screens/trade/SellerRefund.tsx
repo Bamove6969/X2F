@@ -24,7 +24,7 @@
  * chat anchor for now.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { formatXmr } from '@x2f/trade';
+import { formatXmr, formatXmrExact } from '@x2f/trade';
 import { Link } from 'react-router';
 import { sendNudge } from '../../nudge/useNudge.js';
 import { Button } from '../../ui/Button.js';
@@ -53,11 +53,15 @@ function Num({ children }: { children: string | number }) {
   return <span className="x2f-num">{children}</span>;
 }
 
-/** An XMR amount as the boards write it: always 6 decimals ("1.250000 XMR"), the digits mono. */
-function Xmr({ atomic }: { atomic: string | bigint }) {
+/**
+ * An XMR amount as the boards write it: 6 decimals ("1.250000 XMR"), the digits mono. `exact` is
+ * for an amount the seller may have to send (review kit round 1, finding 1): more places when the
+ * digits past the 6th are non-zero (formatXmrExact).
+ */
+function Xmr({ atomic, exact = false }: { atomic: string | bigint; exact?: boolean }) {
   return (
     <>
-      <Num>{formatXmr(BigInt(atomic))}</Num> <span className="x2f-refund__unit">XMR</span>
+      <Num>{(exact ? formatXmrExact : formatXmr)(BigInt(atomic))}</Num> <span className="x2f-refund__unit">XMR</span>
     </>
   );
 }
@@ -101,7 +105,7 @@ function LateDispute({ view, escrow }: Pick<RefundScreenProps, 'view' | 'escrow'
     <p className="x2f-refund__late" data-late-dispute="">
       Even after your refund, <Name name={name} /> can still open a dispute if they sent the money anyway. A moderator can pause your account
       from trading until it's resolved, then reviews it fairly. If their payment reached you, you'll be asked to send <Name name={name} /> the{' '}
-      <Xmr atomic={owed} /> as agreed. Refusing leads to an account suspension and a possible lifetime ban.
+      <Xmr atomic={owed} exact /> as agreed. Refusing leads to an account suspension and a possible lifetime ban.
     </p>
   );
 }

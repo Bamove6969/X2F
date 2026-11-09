@@ -88,6 +88,18 @@ export function formatXmr(atomic: bigint, decimals = 6): string {
   return decimals === 0 ? `${sign}${whole}` : `${sign}${whole}.${frac}`;
 }
 
+/**
+ * XMR exact to the atomic unit, for any figure the user must send (or a remainder to send): at
+ * least 6 places, and more (up to all 12) only when the digits past the 6th are non-zero,
+ * trailing zeros trimmed. 0.610529733574 stays 0.610529733574 (formatXmr would show 0.610529, and
+ * a seller who typed that would come up short); 1.25 reads 1.250000, as on the boards.
+ */
+export function formatXmrExact(atomic: bigint): string {
+  const full = formatXmr(atomic, XMR_DECIMALS).replace(/0+$/, '');
+  const places = full.length - full.indexOf('.') - 1;
+  return places >= 6 ? full : formatXmr(atomic, 6);
+}
+
 /** Fiat cents as a currency string, e.g. 41250n USD → "$412.50". Exact for any bigint. */
 export function formatFiat(cents: bigint, currency: string): string {
   const nf = new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });

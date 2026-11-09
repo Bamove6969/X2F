@@ -553,14 +553,14 @@ describe('purgeChats', () => {
   }
   const exists = async (chat: string): Promise<boolean> => (await deps.db.query('select 1 from chats where code = $1', [chat])).rows.length === 1;
 
-  it('deletes pre-trade chats after 7 idle days and trade chats 90 days after close; keeps a disputed chat past 90 days', async () => {
+  it('deletes pre-trade chats after 7 idle days and undisputed trade chats 30 days after close; keeps a disputed chat', async () => {
     const t0 = new Date('2026-06-01T00:00:00Z');
     const idle = await chatAt(t0);
     const talked = await chatAt(t0, { lastMessage: new Date(t0.getTime() + 20 * DAY) });
     const closed = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
     const disputed = await chatAt(t0, { trade: { state: 'disputed', closedAt: null } });
     const open = await chatAt(t0, { trade: { state: 'secured', closedAt: null } });
-    const at = new Date(t0.getTime() + 91 * DAY);
+    const at = new Date(t0.getTime() + 31 * DAY);
     await purgeChats(deps.db, new Date(t0.getTime() + 8 * DAY));
     expect(await exists(idle)).toBe(false);
     expect(await exists(talked)).toBe(true);
@@ -569,6 +569,133 @@ describe('purgeChats', () => {
     expect(await exists(closed)).toBe(false);
     expect(await exists(disputed)).toBe(true);
     expect(await exists(open)).toBe(true);
+  });
+
+  /** A dispute row on the chat's trade, as the dispute machine leaves it at `status`. */
+  async function addDispute(chat: string, seq: number, status: string, o: { openedAt: Date; closedAt?: Date } ): Promise<void> {
+    const { rows } = await deps.db.query<{ trade_code: string }>('select trade_code from chats where code = $1', [chat]);
+    const published = status === 'published' || status === 'final' || status === 'complying' || status === 'closed';
+    await deps.db.query(
+      `insert into disputes (code, seq, opened_by, reason, opened_at, status, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents,
+         published_at, appeal_ends_at, closed_at)
+       values ($1, $2, 'buyer', 'paid', $3, $4, $3, $3, 0, 100000, $5, $5, $6)`,
+      [rows[0]!.trade_code, seq, o.openedAt, status, published ? o.openedAt : null, o.closedAt ?? null],
+    );
+  }
+  const plusDays = (t: Date, d: number, ms = 0): Date => new Date(t.getTime() + d * DAY + ms);
+
+  it('undisputed: gone only after exactly 30 days past the close, both sides of the boundary', async () => {
+    const t0 = new Date('2026-03-01T00:00:00Z');
+    const chat = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
+    await purgeChats(deps.db, plusDays(t0, 30));
+    expect(await exists(chat)).toBe(true);
+    await purgeChats(deps.db, plusDays(t0, 30, 1));
+    expect(await exists(chat)).toBe(false);
+  });
+
+  it('disputed and closed: kept past the 30 days, gone only after 90 days past the dispute closing', async () => {
+    const t0 = new Date('2026-02-01T00:00:00Z');
+    const chat = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
+    const closedAt = plusDays(t0, 3);
+    await addDispute(chat, 1, 'closed', { openedAt: t0, closedAt });
+    await purgeChats(deps.db, plusDays(t0, 31));
+    expect(await exists(chat)).toBe(true);
+    await purgeChats(deps.db, plusDays(closedAt, 90));
+    expect(await exists(chat)).toBe(true);
+    await purgeChats(deps.db, plusDays(closedAt, 90, 1));
+    expect(await exists(chat)).toBe(false);
+  });
+
+  it.each(['open', 'awaiting-approval', 'published', 'appealed', 'final', 'complying'])(
+    'never while a dispute is %s, on a trade that has already closed',
+    async (status) => {
+      const t0 = new Date('2026-01-01T00:00:00Z');
+      const chat = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
+      await addDispute(chat, 1, status, { openedAt: t0 });
+      await purgeChats(deps.db, plusDays(t0, 500));
+      expect(await exists(chat)).toBe(true);
+    },
+  );
+
+  it('a later dispute on the same trade: kept while it is open, then 90 days from the last close', async () => {
+    const t0 = new Date('2026-01-05T00:00:00Z');
+    const chat = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
+    await addDispute(chat, 1, 'closed', { openedAt: t0, closedAt: plusDays(t0, 1) });
+    await addDispute(chat, 2, 'open', { openedAt: plusDays(t0, 2) });
+    await purgeChats(deps.db, plusDays(t0, 500));
+    expect(await exists(chat)).toBe(true);
+    const last = plusDays(t0, 501);
+    await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = (select trade_code from chats where code = $1) and seq = 2`, [chat, last]);
+    await purgeChats(deps.db, plusDays(last, 90));
+    expect(await exists(chat)).toBe(true);
+    await purgeChats(deps.db, plusDays(last, 90, 1));
+    expect(await exists(chat)).toBe(false);
+  });
+
+  it('a dispute committed while the purge waits on the chat row lock is seen by the re-read under that lock', async () => {
+    const t0 = new Date('2026-01-10T00:00:00Z');
+    const chat = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
+    await raceThePurge(chat, plusDays(t0, 31), async (q) => {
+      await q.query(
+        `insert into disputes (code, seq, opened_by, reason, opened_at, status, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents)
+         values ((select trade_code from chats where code = $1), 1, 'system', 'escalated', $2, 'open', $2, $2, 0, 100000)`,
+        [chat, plusDays(t0, 30)],
+      );
+    });
+    expect(await exists(chat)).toBe(true);
+  });
+
+  it('M2: a dispute not yet committed makes the purge wait on the trade, and the chat stays', async () => {
+    const t0 = new Date('2026-01-12T00:00:00Z');
+    const chat = await chatAt(t0, { trade: { state: 'released', closedAt: t0 } });
+    const code = (await deps.db.query<{ trade_code: string }>('select trade_code from chats where code = $1', [chat])).rows[0]!.trade_code;
+    const dispute = await deps.db.connect();
+    try {
+      // As applyEvent does when a dispute opens: the trade's row lock, the state, then the dispute row.
+      await dispute.query('begin');
+      await dispute.query('select 1 from trades where code = $1 for update', [code]);
+      await dispute.query(`update trades set state = 'disputed', closed_at = null where code = $1`, [code]);
+      await dispute.query(
+        `insert into disputes (code, seq, opened_by, reason, opened_at, status, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents)
+         values ($1, 1, 'system', 'escalated', $2, 'open', $2, $2, 0, 100000)`,
+        [code, plusDays(t0, 30)],
+      );
+      const purge = purgeChats(deps.db, plusDays(t0, 31));
+      for (let i = 0; ; i++) {
+        const { rows } = await deps.db.query(
+          `select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%for share%'`,
+        );
+        if (rows.length > 0) break;
+        if (i > 200) throw new Error('the purge never waited on the trade lock');
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      await dispute.query('commit');
+      expect(await purge).toBe(0);
+    } finally {
+      dispute.release();
+    }
+    expect(await exists(chat)).toBe(true);
+  });
+
+  // M3: the rule says due, so the scan and the re-read cannot save the chat: only the delete's own
+  // checks can. One case per check, so that removing either is caught by itself.
+  it.each([
+    ['a dispute row not yet closed, on a trade already closed', { t0: '2026-01-14T00:00:00Z', state: 'released', closed: true, row: true }],
+    ['a trade in dispute with no dispute row', { t0: '2026-01-15T00:00:00Z', state: 'disputed', closed: false, row: false }],
+  ])('the delete keeps a chat the rule calls due: %s', async (_name, c) => {
+    const t0 = new Date(c.t0);
+    const chat = await chatAt(t0, { trade: { state: c.state, closedAt: c.closed ? t0 : null } });
+    if (c.row) await addDispute(chat, 1, 'open', { openedAt: t0 });
+    const seen: boolean[] = [];
+    const removed = await purgeChats(deps.db, plusDays(t0, 500), (facts) => {
+      if (facts.createdAt.getTime() !== t0.getTime()) return false;
+      seen.push(facts.disputeOpen);
+      return true;
+    });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every(Boolean)).toBe(true); // what the scan tells the rule: the first guard, by itself
+    expect(removed).toBe(0);
+    expect(await exists(chat)).toBe(true);
   });
 
   /**
