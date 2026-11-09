@@ -141,7 +141,7 @@ describe('createPriceFeed', () => {
     expect(feed.quote('USD')).toMatchObject({ price: { centsPerXmr: 33010n }, sources: 2 });
   });
 
-  it('returns null when the sources disagree (no two within 5% of the median)', async () => {
+  it('returns null when the sources disagree (no two within 3% of the median)', async () => {
     const c = clockAt(T0);
     const feed = createPriceFeed([stub('a', () => usd(30000n)), stub('b', () => usd(36000n))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
     await feed.poll();
@@ -175,24 +175,38 @@ describe('createPriceFeed', () => {
     expect(feed.current('XXX')).toBeNull();
   });
 
-  it('with only two sources in play the spread is 2%, not 5% (re-review)', async () => {
-    expect(PRICE_FEED_DEFAULTS).toMatchObject({ maxSpreadBps: 500, pairSpreadBps: 200 });
+  it('with only two sources in play the spread is 2%, not 3% (re-review)', async () => {
+    expect(PRICE_FEED_DEFAULTS).toMatchObject({ maxSpreadBps: 300, pairSpreadBps: 200 });
     const c = clockAt(T0);
     // 3% apart: each is 1.5% from the mean, so within 2% of the median: a price.
     const close = createPriceFeed([stub('a', () => usd(33000n)), stub('b', () => usd(33990n))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
     await close.poll();
     expect(close.current('USD')).toEqual({ currency: 'USD', centsPerXmr: 33495n });
-    // 6% apart: 3% from the mean each. Under the 5% spread that would count; with two it does not.
+    // 6% apart: 3% from the mean each. Under the 3% spread that would count; with two it does not.
     const two = createPriceFeed([stub('a', () => usd(33000n)), stub('b', () => usd(34980n))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
     await two.poll();
     expect(two.current('USD')).toBeNull();
-    // The same gap with a third source in play keeps the 5% spread.
+    // The same gap with a third source in play keeps the 3% spread (2.9% each side of the median).
     const three = createPriceFeed(
       [stub('a', () => usd(33000n)), stub('b', () => usd(34980n)), stub('c', () => usd(34000n))],
       { ...PRICE_FEED_DEFAULTS, clock: c.clock },
     );
     await three.poll();
     expect(three.quote('USD')).toMatchObject({ price: { centsPerXmr: 34000n }, sources: 3 });
+  });
+
+  it('the spread with three or more sources is 3% of the median (owner Q7): inside 3% counts, past it does not', async () => {
+    const c = clockAt(T0);
+    const feed = (far: bigint) =>
+      createPriceFeed([stub('a', () => usd(34000n)), stub('b', () => usd(34010n)), stub('c', () => usd(far))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
+    // Median 34010: 35030 is 1020 above it, just inside 3% (1020 × 10000 ≤ 34010 × 300).
+    const atEdge = feed(35030n);
+    await atEdge.poll();
+    expect(atEdge.quote('USD')).toMatchObject({ price: { centsPerXmr: 34010n }, sources: 3 });
+    // 3.5% above the median: under the old 5% it counted, now it does not (the other two still give a price).
+    const past = feed(35200n);
+    await past.poll();
+    expect(past.quote('USD')).toMatchObject({ price: { centsPerXmr: 34010n }, sources: 2 });
   });
 
   it('an undated quote unchanged for over 30 min while another source moves is stale (frozen pair, re-review)', async () => {
