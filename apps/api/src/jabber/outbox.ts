@@ -6,6 +6,7 @@
  * carry counts only: never an address, an account id or an error message (which could quote one).
  */
 import type pg from 'pg';
+import { PreKeyLedger } from '@x2f/omemo';
 import type { Config } from '../config.js';
 import { openJid } from './address.js';
 import type { JabberSender, NoticeKind } from './sender.js';
@@ -56,6 +57,8 @@ export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
      returning account_id, jid_sealed, txid, kind, attempts`,
     [now, OUTBOX_BATCH],
   );
+  // OMEMO review M2: one ledger per pass, so two notices to an offline device never use the same prekey.
+  const preKeys = new PreKeyLedger();
   for (const row of rows) {
     let jid: string;
     try {
@@ -65,7 +68,7 @@ export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
       continue;
     }
     try {
-      await withTimeout(deps.sender.send(jid, { kind: row.kind }), SEND_TIMEOUT_MS);
+      await withTimeout(deps.sender.send(jid, { kind: row.kind }, { preKeys }), SEND_TIMEOUT_MS);
       out.sent++;
       await deps.db.query('update jabber_contacts set last_sent_at = $2 where account_id = $1', [row.account_id, deps.clock()]);
     } catch {

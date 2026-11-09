@@ -8,7 +8,7 @@ import { startHold, withTx } from '../src/auth/hold.js';
 import { startDispute } from '../src/disputes/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { codeHash, maskJid, normalizeJid, openJid, sealJid } from '../src/jabber/address.js';
-import { OmemoDevice, parseBundleSecrets } from '@x2f/omemo';
+import { OmemoDevice, PreKeyLedger, parseBundleSecrets } from '@x2f/omemo';
 import { loadOmemoBundle, loadOmemoIdentity, omemoEncryptor, parseBundle } from '../src/jabber/omemo.js';
 import { rewrapJabberSecrets } from '../src/jabber/rewrap.js';
 import { PENDING_RETENTION_MS, purgeJabberPending } from '../src/jabber/retention.js';
@@ -22,12 +22,15 @@ import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
 const sent: Array<{ to: string; message: JabberMessage }> = [];
+/** The prekey ledger each send was given (review M2: one per outbox pass). */
+const passes: unknown[] = [];
 let failing = false;
 const fake: JabberSender = {
-  async send(to, message) {
+  async send(to, message, o) {
     // A real failure may quote the address: the code must never log it.
     if (failing) throw new Error(`server refused ${to}`);
     sent.push({ to, message });
+    passes.push(o?.preKeys);
   },
 };
 
@@ -49,6 +52,7 @@ afterAll(async () => {
 });
 beforeEach(() => {
   sent.length = 0;
+  passes.length = 0;
   failing = false;
 });
 
@@ -229,6 +233,12 @@ describe('switching off, turning off and changing the address tell the address t
     expect((await t.browser.post('/v1/account/jabber/verify', { code })).json()).toMatchObject({ state: 'on', address: maskJid(next) });
     await sendAll();
     expect(sent).toEqual([{ to: t.jid, message: { kind: 'account-change' } }, { to: t.jid, message: { kind: 'account-change' } }]);
+    // Review M2: both notices of one pass share one prekey ledger, so an offline device never gets two on the same prekey
+    // (the test-code send before them, outside any pass, had none).
+    const [first, second] = passes.slice(-2);
+    expect(first).toBeInstanceOf(PreKeyLedger);
+    expect(second).toBe(first);
+    expect(passes.at(0)).toBeUndefined();
   });
 });
 

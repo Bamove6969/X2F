@@ -40,7 +40,7 @@ import {
   type OmemoEncrypt,
 } from './omemo.js';
 import { SCRAM_MECHANISMS, scramClient } from './scram.js';
-import { messageText, SENDER_NAME, type JabberMessage, type JabberSender } from './sender.js';
+import { messageText, SENDER_NAME, type JabberMessage, type JabberSender, type SendOptions } from './sender.js';
 import { socksConnect } from './socks.js';
 
 /** A server that sends more than this before we have what we wait for is refused. */
@@ -189,7 +189,7 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
   /** Who may answer a request to another party: exactly the JID it was addressed to. */
   const answerFrom = (to: string) => (from: string | undefined) => from === to;
   return {
-    async send(to: string, message: JabberMessage): Promise<void> {
+    async send(to: string, message: JabberMessage, o: SendOptions = {}): Promise<void> {
       if (!BARE_JID.test(to)) throw new XmppError('address check');
       const text = messageText(message);
       /** A bounce comes from the recipient (bare or full JID) or their server; anyone else's error stanza is noise (review M1). */
@@ -273,7 +273,7 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
         if (bundles.length === 0) throw new XmppError('omemo');
         let encrypted: string;
         try {
-          encrypted = await encrypt({ to, plaintext: text, bundles });
+          encrypted = await encrypt({ to, plaintext: text, bundles, ...(o.preKeys ? { preKeys: o.preKeys } : {}) });
         } catch {
           throw new XmppError('omemo'); // never the encryptor's own words
         }

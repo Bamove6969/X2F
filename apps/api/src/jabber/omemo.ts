@@ -18,6 +18,7 @@ import { generateKeyPairSync, randomInt } from 'node:crypto';
 import type pg from 'pg';
 import {
   bundleXml, deviceListXml, encryptMessage, generateBundleSecrets, parseBundleSecrets, serializeBundleSecrets, xeddsaVerify, type BundleSecrets,
+  type PreKeyLedger,
 } from '@x2f/omemo';
 import { keyringBox } from '../auth/keystore.js';
 import type { Keyring } from '../config.js';
@@ -40,8 +41,11 @@ export interface OmemoBundle {
   preKeys: Array<{ id: number; key: Buffer }>;
 }
 
-/** Encrypts `plaintext` to `bundles` and returns one `<encrypted xmlns='eu.siacs.conversations.axolotl'>` element. */
-export type OmemoEncrypt = (input: { to: string; plaintext: string; bundles: OmemoBundle[] }) => Promise<string>;
+/**
+ * Encrypts `plaintext` to `bundles` and returns one `<encrypted xmlns='eu.siacs.conversations.axolotl'>`
+ * element. `preKeys` is the outbox pass's ledger (review M2), when the send belongs to one.
+ */
+export type OmemoEncrypt = (input: { to: string; plaintext: string; bundles: OmemoBundle[]; preKeys?: PreKeyLedger }) => Promise<string>;
 
 /** What the sender publishes to its own PEP nodes before each message. */
 export interface OmemoAnnouncement {
@@ -205,7 +209,7 @@ export async function loadOmemoBundle(db: pg.Pool, ring: Keyring, identity: Omem
 export function omemoEncryptorFrom(identity: OmemoIdentity, bundle: BundleSecrets): OmemoEncryptor {
   return {
     announce: async () => ({ deviceId: identity.deviceId, deviceList: deviceListXml([identity.deviceId]), bundle: bundleXml(identity.publicKey, bundle) }),
-    encrypt: async ({ plaintext, bundles }) => encryptMessage(identity, plaintext, bundles),
+    encrypt: async ({ to, plaintext, bundles, preKeys }) => encryptMessage(identity, plaintext, bundles, preKeys ? { pickPreKey: preKeys.picker(to) } : {}),
   };
 }
 

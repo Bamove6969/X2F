@@ -58,7 +58,11 @@ and Dino use libsignal, Gajim uses omemo-dr, Monal its own port of the same). So
    lengths, signed prekey signature under the identity key, at least one prekey).
 4. **X3DH** (Alice side), per recipient device: a fresh base key pair `EK`; one prekey `OPK` taken
    from the bundle at random (libsignal takes the one the server handed out; a PEP bundle lists them
-   all, so the sender picks); master secret =
+   all, so the sender picks). Review M2 (2026-11-09): within one outbox pass no prekey of a device is
+   picked twice (`PreKeyLedger`, one per pass, keyed by recipient, device id and identity key), since
+   a client deletes a prekey after its first use and an offline client's bundle does not change
+   between notices; once a device's prekeys are all used in a pass the session is set up without
+   `OPK` (X3DH allows it; libsignal's `processV3` reads it) rather than on a reused one. Master secret =
    `0xFF×32 ‖ DH(IK_A, SPK_B) ‖ DH(EK_A, IK_B) ‖ DH(EK_A, SPK_B) ‖ DH(EK_A, OPK_B)`;
    `HKDF-SHA-256(salt = 32 zero bytes, ikm = master, info = "WhisperText", 64)` → root key (32),
    receiving chain key (32, unused by a sender).

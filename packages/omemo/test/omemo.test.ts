@@ -9,7 +9,7 @@ import { OmemoDevice } from '../src/device.js';
 import { xeddsaVerify } from '../src/edwards.js';
 import { OMEMO_NS, parseEncryptedElement } from '../src/envelope.js';
 import { parsePreKeyMessage, wireKey } from '../src/message.js';
-import { encryptMessage, registrationIdFor, type RecipientBundle, type SenderIdentity } from '../src/omemo.js';
+import { PreKeyLedger, encryptMessage, registrationIdFor, type RecipientBundle, type SenderIdentity } from '../src/omemo.js';
 import { x25519KeyPair } from '../src/x25519.js';
 
 const TEXT = 'An account change was made on your X2F account.';
@@ -83,14 +83,56 @@ describe('encryptMessage', () => {
   it('every message is a fresh session: a second message to the same device uses another base key and another prekey is allowed; the device reads both', () => {
     const me = sender();
     const d = new OmemoDevice(21, 20);
-    const first = encryptMessage(me, 'one', [recipientBundle(d)], { pickPreKey: () => 0 });
-    const second = encryptMessage(me, 'two', [recipientBundle(d)], { pickPreKey: () => 1 });
+    const first = encryptMessage(me, 'one', [recipientBundle(d)], { pickPreKey: (b) => b.preKeys[0]! });
+    const second = encryptMessage(me, 'two', [recipientBundle(d)], { pickPreKey: (b) => b.preKeys[1]! });
     expect(parsePreKeyMessage(parseEncryptedElement(first).keys[0]!.data).baseKey).not.toEqual(parsePreKeyMessage(parseEncryptedElement(second).keys[0]!.data).baseKey);
     expect(d.decrypt(first)).toBe('one');
     expect(d.decrypt(second)).toBe('two');
     // A client deletes a used prekey: a third message on the same prekey would not be readable there.
-    const third = encryptMessage(me, 'three', [recipientBundle(d)], { pickPreKey: () => 0 });
+    const third = encryptMessage(me, 'three', [recipientBundle(d)], { pickPreKey: (b) => b.preKeys[0]! });
     expect(() => d.decrypt(third)).toThrow(/already used/);
+  });
+
+  describe('PreKeyLedger (review M2): no prekey of a device is picked twice within one outbox pass', () => {
+    const preKeyIdOf = (xml: string) => parsePreKeyMessage(parseEncryptedElement(xml).keys[0]!.data).preKeyId;
+
+    it('five notices to one offline device (the same published bundle every time) use five different prekeys, and the device reads all five', () => {
+      const me = sender();
+      const phone = new OmemoDevice(51, 20);
+      const offline = recipientBundle(phone); // the client is offline: nothing is consumed or republished between notices
+      const pick = new PreKeyLedger().picker('mira@xmpp.example.org');
+      const used: number[] = [];
+      for (let i = 0; i < 5; i++) {
+        const xml = encryptMessage(me, `notice ${i}`, [offline], { pickPreKey: pick });
+        used.push(preKeyIdOf(xml)!);
+        expect(phone.decrypt(xml), `notice ${i}`).toBe(`notice ${i}`);
+      }
+      expect(new Set(used).size).toBe(5);
+      expect(used.every((id) => offline.preKeys.some((p) => p.id === id))).toBe(true);
+    });
+
+    it('tracks each recipient and device apart, and once every prekey of a device is used the session is set up without a one-time prekey, which the device still reads', () => {
+      const me = sender();
+      const phone = new OmemoDevice(52, 3);
+      const sameIdElsewhere = new OmemoDevice(52, 3); // another user's device with the same id: its own identity, its own prekeys
+      const ledger = new PreKeyLedger();
+      const mira = ledger.picker('mira@xmpp.example.org');
+      const noor = ledger.picker('noor@xmpp.example.org');
+      const ids = [0, 1, 2].map((i) => {
+        const xml = encryptMessage(me, `n${i}`, [recipientBundle(phone)], { pickPreKey: mira });
+        expect(phone.decrypt(xml)).toBe(`n${i}`);
+        return preKeyIdOf(xml);
+      });
+      expect(new Set(ids)).toEqual(new Set([1, 2, 3]));
+      // Noor's device 52 is untouched by Mira's picks.
+      const other = encryptMessage(me, 'to noor', [recipientBundle(sameIdElsewhere)], { pickPreKey: noor });
+      expect([1, 2, 3]).toContain(preKeyIdOf(other));
+      expect(sameIdElsewhere.decrypt(other)).toBe('to noor');
+      // A fourth notice to Mira's exhausted device: no one-time prekey rather than a reused one (which the client could not read).
+      const fourth = encryptMessage(me, 'n3', [recipientBundle(phone)], { pickPreKey: mira });
+      expect(preKeyIdOf(fourth)).toBeUndefined();
+      expect(phone.decrypt(fourth)).toBe('n3');
+    });
   });
 
   it('refuses a bundle whose signed prekey signature does not verify, one without prekeys, and no devices at all', () => {

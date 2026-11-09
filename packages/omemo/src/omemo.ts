@@ -31,11 +31,42 @@ export interface SenderIdentity {
 /** libsignal registration ids are 1..16380; clients do not use the value. */
 export const registrationIdFor = (deviceId: number): number => 1 + (deviceId % 16380);
 
+export type PreKey = RecipientBundle['preKeys'][number];
+/** Picks the one-time prekey of a bundle to use; null when there is none left, so the session is set up without one. */
+export type PickPreKey = (bundle: RecipientBundle) => PreKey | null;
+
 export interface EncryptOptions {
-  /** Which prekey of a bundle to use (default: one at random). */
-  pickPreKey?: (count: number) => number;
+  /** Which prekey of a bundle to use (default: one at random; a `PreKeyLedger` for an outbox pass). */
+  pickPreKey?: PickPreKey;
   /** The base key per device (default: fresh); tests only. */
   baseKey?: () => KeyPair;
+}
+
+const randomPreKey: PickPreKey = (b) => b.preKeys[randomInt(b.preKeys.length)]!;
+
+/**
+ * The prekeys picked during one outbox pass (review M2). A client deletes a one-time prekey after
+ * its first use and republishes without it; while it is offline the sender sees the same bundle for
+ * every notice, so two notices picking the same prekey would leave the second unreadable. Within one
+ * pass no prekey of a device (by recipient, device id and identity key) is picked twice; once all
+ * are used, the session is set up without a one-time prekey, which X3DH allows and libsignal reads.
+ */
+export class PreKeyLedger {
+  private readonly used = new Map<string, Set<number>>();
+
+  /** The picker for notices to `recipient` (a bare JID) in this pass. */
+  picker(recipient: string): PickPreKey {
+    return (b) => {
+      const device = `${recipient}\n${b.deviceId}\n${b.identityKey.toString('hex')}`;
+      let used = this.used.get(device);
+      if (used === undefined) this.used.set(device, (used = new Set()));
+      const left = b.preKeys.filter((p) => !used.has(p.id));
+      if (left.length === 0) return null;
+      const pick = left[randomInt(left.length)]!;
+      used.add(pick.id);
+      return pick;
+    };
+  }
 }
 
 /** Encrypts `text` to every device in `bundles`; returns the `<encrypted>` element. Throws when a bundle does not verify or `bundles` is empty. */
@@ -48,15 +79,14 @@ export function encryptMessage(identity: SenderIdentity, text: string, bundles: 
     const theirIdentity = rawKey(b.identityKey);
     if (!xeddsaVerify(theirIdentity, b.signedPreKey, b.signedPreKeySignature)) throw new RangeError('omemo: bundle signature does not verify');
     if (b.preKeys.length === 0) throw new RangeError('omemo: bundle without prekeys');
-    const pre = b.preKeys[(o.pickPreKey ?? ((n) => randomInt(n)))(b.preKeys.length)]!;
+    const pre = (o.pickPreKey ?? randomPreKey)(b);
     const session = initAlice({
       ourIdentity,
       ourBaseKey: (o.baseKey ?? x25519KeyPair)(),
       theirIdentity,
       theirSignedPreKey: rawKey(b.signedPreKey),
-      theirOneTimePreKey: rawKey(pre.key),
+      ...(pre === null ? {} : { theirOneTimePreKey: rawKey(pre.key), preKeyId: pre.id }),
       signedPreKeyId: b.signedPreKeyId,
-      preKeyId: pre.id,
       registrationId: registrationIdFor(identity.deviceId),
     });
     return { rid: b.deviceId, prekey: true, data: encrypt(session, secret) };

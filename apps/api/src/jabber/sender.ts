@@ -4,6 +4,7 @@
  * changed, a name, an amount, a wallet, a trade or a link (the board's "Why no details": the
  * user's Jabber server, devices and password are outside X2F's control).
  */
+import type { PreKeyLedger } from '@x2f/omemo';
 
 /** The only account-change text (owner, 7 Nov; board JabberSetup). */
 export const ACCOUNT_CHANGE_TEXT = 'An account change was made on your X2F account.';
@@ -30,6 +31,15 @@ export const testCodeText = (code: string): string => `Your X2F test code is ${c
 
 export type JabberMessage = { kind: NoticeKind } | { kind: 'test-code'; code: string };
 
+export interface SendOptions {
+  /**
+   * The outbox pass this send belongs to (OMEMO review M2): the encryptor records in it which
+   * one-time prekey of each recipient device it used, so a later notice in the same pass never picks
+   * the same one (a client reads a prekey message once per prekey). A send outside a pass has none.
+   */
+  preKeys?: PreKeyLedger;
+}
+
 export function messageText(m: JabberMessage): string {
   if (m.kind === 'test-code') {
     if (!/^[0-9]{6}$/.test(m.code)) throw new Error('jabber: a test code is six digits');
@@ -44,5 +54,5 @@ export function messageText(m: JabberMessage): string {
  * failure with an error that never quotes the address (callers may log `e.message`'s absence only).
  */
 export interface JabberSender {
-  send(to: string, message: JabberMessage): Promise<void>;
+  send(to: string, message: JabberMessage, o?: SendOptions): Promise<void>;
 }

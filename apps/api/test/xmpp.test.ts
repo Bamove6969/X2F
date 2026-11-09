@@ -10,7 +10,7 @@ import { connect as tcpConnect, createServer as createTcpServer, type AddressInf
 import { createServer as createTlsServer, type TLSSocket } from 'node:tls';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../src/config.js';
-import { OmemoDevice, generateBundleSecrets, x25519KeyPair } from '@x2f/omemo';
+import { OmemoDevice, PreKeyLedger, generateBundleSecrets, parseEncryptedElement, parsePreKeyMessage, x25519KeyPair } from '@x2f/omemo';
 import { OMEMO_NS, omemoEncryptorFrom, parseBundle, xeddsaVerify, type OmemoEncrypt } from '../src/jabber/omemo.js';
 import { xmlEscape, xmppSender, type XmppSenderOptions } from '../src/jabber/xmpp.js';
 import { certificate } from './helpers/der.js';
@@ -467,6 +467,26 @@ describe('xmppSender: OMEMO is mandatory (owner ruling p11-31); never a plaintex
     const second = /<encrypted[\s\S]*?<\/encrypted>/.exec(messagesIn(s.all())[1]!)![0];
     expect(phone.decrypt(second)).toBe('Your X2F test code is 123456.');
     expect(s.all()).not.toContain('123456');
+  });
+
+  it('review M2: the outbox pass hands its prekey ledger to the encryptor, so notices in one pass to an offline device never share a prekey', async () => {
+    const encrypt = vi.fn(fakeEncrypt);
+    const ledger = new PreKeyLedger();
+    const s = await setup({ opts: { encrypt } });
+    await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' }, { preKeys: ledger });
+    expect(encrypt.mock.calls[0]![0].preKeys).toBe(ledger);
+    await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
+    expect(encrypt.mock.calls[1]![0].preKeys).toBeUndefined();
+
+    const phone = new OmemoDevice(11, 20);
+    const real = await setup({ devices: [{ id: 11, bundle: phone.bundleXml() }], opts: realOmemo() });
+    const pass = new PreKeyLedger();
+    for (let i = 0; i < 3; i++) await real.sender.send('mira@xmpp.example.org', { kind: 'account-change' }, { preKeys: pass });
+    const elements = messagesIn(real.all()).map((m) => /<encrypted[\s\S]*?<\/encrypted>/.exec(m)![0]);
+    expect(elements).toHaveLength(3);
+    const prekeys = elements.map((e) => parsePreKeyMessage(parseEncryptedElement(e).keys[0]!.data).preKeyId);
+    expect(new Set(prekeys).size).toBe(3);
+    for (const e of elements) expect(phone.decrypt(e)).toBe('An account change was made on your X2F account.');
   });
 
   it('a server that refuses the publish fails the send before the recipient is looked up and before any message', async () => {
