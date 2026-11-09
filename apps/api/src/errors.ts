@@ -138,10 +138,7 @@ export type ApiErrorCode =
   | 'wrong-key'
   | 'challenge-used'
   | 'site-claimed'
-  | 'fingerprint-claimed'
-  // Owner rule p5-7: secure Jabber account-change alerts.
-  | 'jabber-unavailable'
-  | 'jabber-address-invalid';
+  | 'fingerprint-claimed';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {
