@@ -851,7 +851,7 @@ describe('a recovery-code login', () => {
     }
   });
 
-  it('owner G7, lead review item 5: on a paused held trade the partner opens a dispute; the held account cannot', async () => {
+  it('owner G7, lead review item 5: on a paused held trade past the confirm time the partner opens a dispute; the held account cannot', async () => {
     const t = await ownerWithCode();
     const partner = await trader();
     const { trade } = await seedTrade(deps, { sellerId: partner.id, buyerId: t.id, poster: 'seller' });
@@ -861,6 +861,27 @@ describe('a recovery-code login', () => {
     expect((await partner.browser.put('/v1/account/session/length', { hours: 4 })).statusCode).toBe(200);
     const s = await driveTo(deps, trade, 'paid');
     setNow(new Date(s.confirmBy!.getTime() + 60_000));
+    const rec = new Browser(app);
+    expect((await backupLogin(rec, t.name, t.code)).statusCode).toBe(200);
+    expect((await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code])).rows[0]!.p).not.toBeNull();
+    const body = { reason: 'silent', note: 'The buyer went quiet.' };
+    expect(errorOf(await rec.post(`/v1/trades/${s.code}/dispute`, body))).toBe('recovery-hold');
+    const opened = await partner.browser.post(`/v1/trades/${s.code}/dispute`, body);
+    expect(opened.statusCode).toBe(200);
+    const row = await deps.db.query<{ state: string; p: Date | null }>('select state, paused_at as p from trades where code = $1', [s.code]);
+    // Still paused: no money moves until a moderator decides.
+    expect(row.rows[0]!.state).toBe('disputed');
+    expect(row.rows[0]!.p).not.toBeNull();
+  });
+
+  it('owner G7, lead review item 5 (the C2 case): on a secured held trade the partner seller disputes at once; the held buyer cannot', async () => {
+    // Restored by the lead re-verify 9 Nov (m2): the seller may dispute on secured (batch 3 P1 refuses
+    // only the buyer before "I've paid"), and with the hold checked before the machine (m3) the held
+    // buyer's recovery session hears recovery-hold, not too-early.
+    const t = await ownerWithCode();
+    const partner = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: partner.id, buyerId: t.id, poster: 'seller' });
+    const s = await driveTo(deps, trade, 'secured');
     const rec = new Browser(app);
     expect((await backupLogin(rec, t.name, t.code)).statusCode).toBe(200);
     expect((await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code])).rows[0]!.p).not.toBeNull();
