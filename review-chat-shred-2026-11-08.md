@@ -173,3 +173,80 @@
 - **Same-seq substitution is blocked for v2 receipts.** Each receipt holds the Ed25519 envelope signature, and the guard is strictly increasing per sender. A replay at a new id, or another envelope with the same seq, is refused (test 353).
 - **The v1 upgrade drops the text and saves the record back on first load.** This applies to both stores.
 - **The device stores no message text.** Test 327 checks this.
+
+## Re-verify 0d7e65f8 (cloud lead reviewer, 8-9 Nov)
+
+- **Reviewer:** independent security re-verifier, read-only on the code (worktree /home/user/X2F/.claude/worktrees/chat-shred-2, clean, head `0d7e65f8`).
+- **Scope:** `git diff 6bd6d27a 0d7e65f8` (commits `fb352557` moderation/API, `7ad097cc` web), read against the whole branch where needed.
+- **Tests:**
+  - web `test/chatEngine.test.ts`: **31/31 pass**.
+  - moderation `test/shred.test.ts` and api `test/chat.test.ts`: **did not run**. Three attempts each died in globalSetup with `docker port ... no public port '5432/tcp' published`. The box's Docker is publishing no ports right now (the dockerd log shows `net=host`). Other helpers' DB suites fail the same way at the same time, so this is infrastructure, not the branch. They must be rerun before landing.
+  - `tsc --noEmit` on apps/moderation, apps/api and apps/web: clean.
+
+### Verdict
+
+**APPROVED WITH MINOR.** I1, I2, I3, M1, M2, M4 and M8 are closed, and M3 is closed for every practical case. The fixes create no new Critical or Important. One new Minor (N1) is a gap left by the I1 fix, and it is cheap to close. Approval depends on the two DB-backed test files passing once Docker works.
+
+### Findings I1-I3, M1-M8
+
+- **I1: closed for the scenario reviewed.**
+  - The API's watch list now names each trade's chat: `left join chats c on c.trade_code = t.code` (apps/api/src/internal/routes.ts:323). `chats.trade_code` is unique and set only once, from null (106_chat.sql:17; chat/routes.ts:183 `... and trade_code is null`), so honest relinking cannot happen.
+  - `recordingLink` (apps/moderation/src/main.ts:582) records every watch read into `mod_chat_trade` and keeps the first link it sees: `on conflict (chat) do update set last_seen_at` only (main.ts:625ff). It also records moderation's own escalation reports before it sends them. `ESCALATIONS` (main.ts:26) matches the API's `escalate` kinds exactly (internal/routes.ts:253-262). The watcher, the shred pass and every report go through this wrapped link (main.ts:228).
+  - `shredHold` (main.ts:648-667) looks the dispute up by the recorded link and the order's trade together (`= any`), so `trade: null` or another closed trade is `held-dispute`. A disagreement with the link is held as `mismatch` (main.ts:663). The shred deletes the link in the same transaction as the keys (main.ts:490).
+  - Tests at shred.test.ts:231, 266 and 283 cover null, another trade, first-seen pinning, a list that drops the chat, and escalations. They could not be run (see above).
+- **I2: closed.** A receipt that the read went past and could not reopen (envelope gone, or a different signature) now renders as a placeholder line with `missing`, its sender and its time (engine.ts:170, 185; ChatPanel.tsx:51, 221-236). The API has no per-envelope delete, so a placeholder appears only after tampering. Test chatEngine.test.ts:340.
+- **I3: closed.** The per-chat session is stored only at the end of a read that went through (engine.ts:339). A throw leaves the chat cold, so the next sync reads from id 0 again and reopens the lines it already took from their receipts. Test :370.
+- **M1: closed.** `CLOSED_STATES` is exported from packages/trade/src/machine.ts:189 and used at main.ts:667 and desk.ts:183. The tests now use the real states, including `lapsed` as open (shred.test.ts:329ff).
+- **M2: closed.** On a re-read, an envelope at or below the cursor with no receipt is skipped before it is opened (engine.ts:301). Test :388.
+- **M3: closed in practice.**
+  - The engine is made when serveChat starts in the worker, and it sweeps at once (serve.ts:60). A 401 stops the sweep (engine.ts:393), and it is retried on the next chat message (serve.ts:70).
+  - Residual: a user whose session is not live when the worker starts, and who then never opens a chat, is not swept in that worker. That is acceptable.
+- **M4: closed.** Orders are served never-served first, then least recently served, and `served_at` is updated in the same statement (internal/routes.ts:428-434; migration 123 adds `served_at`). The internal listener runs as the API owner role, so `x2f_purge` needs no new grant. Test chat.test.ts:792.
+- **M5, M6, M7: left open as the lead asked.** M5 is still an owner call.
+- **M8: closed.** `MOD_DISPUTE_SEEN_DAYS = CHAT_AFTER_DISPUTE_DAYS` (main.ts:24). The row delete (`< cutoff`, main.ts:462-463) and the hold (`>= cutoff`, main.ts:660) use the same boundary, so a row is never deleted while it still holds. Test shred.test.ts:309.
+
+### New findings
+
+**N1 (Minor). A link can expire while its dispute is still being refreshed.**
+- **Where:** main.ts:463 with recordLinks (main.ts:625ff).
+- **How it works now:**
+  - `mod_chat_trade.last_seen_at` is refreshed only when a watch item names the chat. An item with `chat: null` is skipped.
+  - `mod_dispute_seen` is refreshed by the trade's `disputed` state, which needs no chat, and by moderation's own escalations.
+  - The two rows expire separately at 90 days.
+- **Scenario:**
+  - The API is compromised during a dispute that lasts longer than 90 days.
+  - From day X it lists trade T as `disputed` with `chat: null`, or moderation keeps escalating T.
+  - At X+90 the link row is deleted, while T's dispute row is still fresh.
+  - An order `{chat: C, trade: null}`, or one naming another closed trade, then has no candidates, or only an undisputed one. No mismatch is raised, and C's mod keys are shredded mid-case. This is the I1 outcome, after a 90-day wait.
+- **Severity:** it needs a long compromise and a dispute longer than 90 days, so Minor.
+- **Fix (one line):**
+  - Expire a link only once its trade has no dispute row: `delete from mod_chat_trade m where m.last_seen_at < $1 and not exists (select 1 from mod_dispute_seen d where d.trade = m.trade)`. This stays bounded, because dispute rows themselves go at the same cutoff.
+  - Or, in recordLinks, refresh `last_seen_at` by trade for every listed trade, whether or not it names a chat.
+  - Add a test: a disputed trade listed with `chat: null` for more than 90 days, then an order with `trade: null`, must be `held-dispute`.
+
+**N2 (Minor, copy rule). The new user-visible strings have no `COPY-UNSIGNED` marker.**
+- **Where:** `MISSING_LINE` (ChatPanel.tsx:51) and the `' Sent '` / time suffix (ChatPanel.tsx:226-229).
+- They carry only `not-a-refusal`. The wording is the owner's call.
+- **Fix:** add `COPY-UNSIGNED` to both, and list the line for the owner's copy pass.
+
+**Note (no action needed). An escalation is recorded as a dispute before the API accepts it.**
+- `escalating` runs before `raw.report` (main.ts:582ff). If the API refuses an escalation, for example `wrong-state` on a trade already closed, that trade's chat keys are still held 90 days instead of 30.
+- This errs toward safety, which is the right direction. It is mentioned only because it is a retention number.
+
+**Note (no action needed). A cold read capped below the cursor drops lines without a gap mark.**
+- A cold read that stops at `MAX_TOTAL_PAGES` (1,000 pages, about 100k lines) while still below the cursor records `reached` below the cursor. Warm reads then start at the cursor, so receipts between the two are neither reopened nor shown as placeholders.
+- This only matters for chats of that size, so it can wait. A cheap fix: on a warm read, start at `min(session.reached, cursor)`.
+
+### Checked and safe (no new problems)
+- **The watch list's new `chat` field:**
+  - It is parsed defensively (link.ts:167-176).
+  - It is never logged.
+  - It produces at most one row per trade, because `trade_code` is unique.
+  - Moderation keeps it only until the shred, or for 90 days.
+- **Honest API orders never hit `mismatch`.** The order's `trade_code` is taken from `chats.trade_code` at purge time. That column can never be rewritten, and the trade cannot be deleted first (foreign key).
+- **The shred pass now reads the watch list on every pass that has orders** (main.ts:466-471). If the read fails, only orders that name a trade are held (`unknown`). A pre-trade chat with no recorded link still shreds without the read, which is right.
+- **The cold re-read after I3 cannot double-take a line.** Lines already taken have receipts and are only reopened. The guard state and the cursor are saved per line as before.
+- **Migration numbering (to renumber at landing, not a finding):**
+  - API `123_chat_shred.sql` clashes with `123_pay_window.sql` on `wip/lead-launch-rules`.
+  - Moderation `007_chat_shred.sql` clashes with `007_internal.sql` on `origin/wip/third-p4-task11`.
+  - Both migrations here are unreleased and were edited in place. Renumber whichever lands second.

@@ -101,3 +101,100 @@ The staff app (`staff/app.ts`) is a separate realm. A staff session on the trade
 - The maintenance `onRequest` gate gives every outsider 503 `maintenance`, which is the same fact `/v1/site` already tells them.
 - `viewer()` was removed. `viewerId` is now always the caller, so blocks always apply and `markOpensAt` always runs. No null-viewer path remains.
 - `/v1/events` has no marketplace broadcast. The staff app is unchanged.
+
+## Review 6a5949a6 (cloud lead reviewer, 8-9 Nov)
+
+- Branch `wip/lead-front-door`, head **6a5949a6** (merged with main 0c6f3f16). I reviewed `git diff origin/main...HEAD` (64 files) in /home/user/X2F/.claude/worktrees/front-door. Read-only; no code changed, no commit.
+- Owner rule under test: "No one gets to make it past the front door and see behind the curtains without signing an agreement, creating an account and logging in. There are no free tours for outsiders." Also: a session that ends lands on the Landing board, and a signed-out visitor to any screen goes to `/?returnTo=`.
+
+### Verdict: APPROVED WITH MINOR
+
+F1, F2 and F3 from the 2f6d2c97 review are fixed correctly. I found no route that serves marketplace or account data to an outsider, a recovery session, or a session on old Terms (owner or member). The route-list tests read the real route table. `returnTo` cannot leave the origin. A valid invite no longer names the vendor in its payload, its copy or the WebAuthn options, and a bad invite still answers only `not-found`. Nothing here weakens CSP, headers, the service worker or static serving. What is left: one dead end for members (UX, no leak), the Logo/shell merge with wide-shell, and small hardening and comment fixes.
+
+### Tests run (serialised runner)
+
+- `apps/web/test/frontDoor.test.tsx` + `apps/web/test/team.test.tsx`: **2 files, 78/78 passed** (log `fd-review-web-*`).
+- `apps/api/test/frontDoor.test.ts` (and `team.test.ts`): **did not run.** The Postgres global setup failed three times on `docker port <id> 5432/tcp: no public port published`. This is a box/Docker fault (6 of the 12 logs in scratchpad/logs show the same error), not the branch. It must run green before landing.
+- Playwright: **not run** (the common brief forbids it). The builder says many specs passed one at a time and the full check was not run.
+- `npm ci` was run in the worktree to do this (the brief allowed it). The worktree is otherwise unchanged.
+
+### (1) Gate coverage
+
+- Every marketplace read now runs behind `requireInside` (`apps/api/src/auth/frontDoor.ts:20`): GET /v1/offers (`offers/routes.ts:526`), /v1/offers/:id (`:566`), /v1/methods (`methods/routes.ts:80`), /v1/price (`price/routes.ts:15`), /v1/news (`news/routes.ts:17`), and the inside view of /v1/site (`site/routes.ts`, via `insideAccount`). `viewer()` is gone, so no handler has a null-viewer path left.
+- The F1 member check is in the shared gate (`auth/sessions.ts:383-387`): `row.member_id !== null && ma.terms_version !== current` gives 403 `terms-required`. Every `requireSession` route therefore enforces it, not only `requireInside`. The one Terms check outside the gate (`offers/routes.ts:385` `assertTermsCurrent`, used for relisting) checks the member too. `GET /v1/account/me` `termsCurrent` (`routes/account.ts`) matches the gate, so the web's `isInside` and the API agree.
+- **The route-list tests enumerate the real table.** `apps/api/test/frontDoor.test.ts:17-29` wraps Fastify's `onRoute` on the app that `testApp` builds with `buildApp`. Every route registration in `app.ts:271-334` is unconditional; the only conditional block is the cancel-return watcher, which registers no route. Test `:91` requires the routes with no session guard to equal `PUBLIC_ROUTES`. Test `:106` requires every session-guarded GET to be in exactly one of two sets: `requireInside`, which must equal READS (each READS route then gets checks for logged out, forged cookie, stale Terms, recovery and member on stale Terms), or `OWN_DATA_READS`. Neither list can drift without the test failing. I checked all 29 `OWN_DATA_READS` entries: each returns only the caller's own account, trades, chats, team or settings.
+- The web route table test (`apps/web/test/frontDoor.test.tsx:22`) also reads its paths from `App.tsx`, not from a hand list.
+- No route leaks. The one gap in the enumeration is F2b below: non-GET routes behind a session are not classified.
+
+### (2) returnTo
+
+`apps/web/src/api/client.ts:69 safeReturnTo` is unchanged and tested in `test/client.test.ts`. I also ran it directly:
+
+- These all become `/sell`: `//`, `https:`, `javascript:`, backslash, raw control characters (tab, CR, LF), `/..//`, `/%2e%2e//`, and anything over 2048 characters, before or after normalising.
+- `/%2F%2Fevil.com`, `/%5Cevil.com`, `/%2e%2e%2f%2fevil.com` and `/%09/evil.com` come back **as they are**, as same-origin opaque paths. I found no sink that decodes them before navigating: every follow is react-router `navigate`/`<Navigate>`, and `browserGo` (`client.ts:43`) only ever gets a fixed pathname plus an encoded `returnTo`. These paths land on the catch-all and then `/`, so they are harmless. The brief's wording is "no encoded slashes", though; see F4 (Minor).
+- Landing (`screens/auth/Landing.tsx:70`), Login and Terms all pass `returnTo` through `safeReturnTo` before they use it or carry it on. `doorVerdict` builds it from `safeReturnTo(pathname+search)`.
+
+### (3) Terms for members
+
+- Stale member Terms: `/terms`, then `POST /v1/account/terms` (now `member: 'any'`, `routes/account.ts:297`). This writes only the member's own login account (`kind = 'member'` and the `team_members` subquery), then goes back to `returnTo`. No loop, tested at `frontDoor.test.ts:204`.
+- `join/start` checks the invite first and then the Terms (`routes/team.ts:228-233`), so a bad invite still answers 404 whatever `acceptedTerms` is. `join/finish` checks again (`:251`), so a Terms bump in between gives 400 and the account is not made on old Terms.
+- **Known gap (F5): a member on current Terms whose team account is on old Terms.** It leaks nothing: the gate gives 403 on every read, and `/v1/site` shows only the outside view (tested at `:219-229`). It is a lockout loop that needs a person to click, not an automatic redirect loop:
+  1. `doorVerdict` (`session/frontDoor.tsx:67`) sends every screen behind the door to `/terms`.
+  2. The member is told "The Terms of Service have changed... accept them to keep trading". Accepting gives 204 and changes nothing, and they are sent straight back to `/terms`.
+  3. They cannot reach Settings to log out (no logout on `/terms` or `/`), so on a shared device the session lasts until the idle timer.
+  4. Open trades stay reachable through the API (FINISH_OPEN_TRADES allows stale Terms), but the web sends `/trade/:code` to `/terms` too. A member cannot finish a trade in the web UI until the account owner accepts.
+
+  So this is more than a UX gap: it is a lockout of the member with no way to log out, and no data leaks. Severity Minor for security. The wording needs an owner decision (Q1).
+- Deploy note: every existing member has `terms_version = null`, so every member gets the Terms screen on their next visit. That is the intended F1 behaviour, and the lead should expect it.
+
+### (4) Invite never names the vendor
+
+- `InviteView` no longer has `team` (`team/members.ts:305-309`, `inviteView` `:345`), and neither does `@x2f/auth-client` `TeamInviteView`. The copy is "You are invited to a team as {name}, for {roles}." (`teamCopy.ts:95`).
+- Other answers on the join path: `join/finish` returns `{setupId, setupUntil, needs}`. The PGP challenge uses the fixed `PGP_PURPOSE['team-join']`. The WebAuthn options carry `rpName = siteName` and the member login account's random placeholder `display_name`. None of these names the vendor.
+- `team.spec.ts` checks that `main` does not contain the vendor's name, and checks the join/start body with `acceptedTerms`.
+- A wrong, used or expired invite gives 404 `not-found` with no body detail. The member's display name, which the account owner chose, is still shown; that is the owner's own choice of text.
+- Residue: `openInvite` still selects `t.display_name as team` into `InviteRow` (`members.ts:314,332`). Nothing returns it, but a future `{...row}` spread would put it back (F6).
+
+### (5) `apps/web/src/ui/Logo.tsx` against wip/lead-wide-shell
+
+Both branches add the file, so the merge is an add/add conflict, and the two APIs are incompatible:
+
+| Branch | API | Drawing | Used by |
+|---|---|---|---|
+| front-door | `Logo({height, className})` | the 120 px mark with the coin rim | Landing |
+| wide-shell | `Logo({size: 24 \| 32, decorative})` | the small marks; dot through the `.x2f-logo__dot` class; `decorative` sets aria-hidden | DesktopShell, MethodList and TradeGlance |
+
+**Keep wide-shell's copy** (it lands first in batch 2 and has more callers and the a11y switch). Add the big mark to it, either as `size: 120` with a `height` override or as a separate `LogoLarge` export, and change `Landing.tsx:81` to use it.
+
+The merge also conflicts in `App.tsx` `Layout`: wide-shell replaces `DesktopHeader` with `DesktopRail`/`WideTop` through `wideFrameOf`, and its `PRE_LOGIN = /^\/(login|setup|terms|team\/join)(\/|$)/` does not include `/`. Whoever resolves the merge must keep the front-door rule: no rail (no links behind the door) on `/`, or on any door screen, for someone not inside. Add `^/$` to `PRE_LOGIN` and keep the `door && !isInside` condition. `shell.spec.ts` (nav count 0 on `/`, wide) would catch a mistake here, but only when Playwright runs (F7).
+
+### (6) CSP, headers, service worker, static serving
+
+Nothing in the diff touches `public/`, `sw.js` (it still caches nothing), `index.html`, the vite config, the security headers or the CSP. `landing.css` has no `url()` or `@import`. The new SVGs use presentation attributes (`fill=`), not `style=`, so the CSP without `'unsafe-inline'` still holds. There is no `dangerouslySetInnerHTML`. `cache-control: no-store` on `/v1/*` is unchanged.
+
+### (7) e2e coverage
+
+- Specs that cover the gate: `shell.spec.ts` (Landing on `/`, no app nav, no market requests while logged out, `/sell/ZELLE` goes to `/?returnTo=`, Log in carries it on), `news.spec.ts` (logged-out `/news` goes to Landing and makes no `/v1/news` request), `login.spec.ts` (Landing first, and recovery goes to Security, not the market), `setup.spec.ts` and `quote.spec.ts` (from a quote link, through Landing and the shortest setup route, back to the quote), and `team.spec.ts` (Terms first, invite text with no vendor, `acceptedTerms` in the body, a removed member goes to `/?returnTo=`). The other specs gained `signedIn` stubs.
+- Every spec stubs the API with `page.route`, so the e2e suite tests the web's routing, never the API gate. The API gate is covered only by `apps/api/test/frontDoor.test.ts`, which could not run here.
+- No spec covers the member-on-stale-Terms web flow or the F5 loop.
+- None of this ran in this review. The builder reports green one spec at a time; the full check has not run.
+
+### Findings
+
+- **F2b (Minor, hardening): non-GET session routes are not classified.** `apps/api/test/frontDoor.test.ts:112` keeps only GETs. A future POST that returns other traders' data (a "search" POST, say) behind a plain `requireSession({allowRecovery})` would pass both lists. No current route does this: they all return the caller's own write result. Fix: either classify every session-guarded route (an `OWN_DATA_WRITES` list, or assert that the `sessionWriteRoutes` set is all own-account), or assert that no non-GET route is named like a read.
+- **F4 (Minor, hardening): `safeReturnTo` keeps percent-encoded `/`, `\` and control characters.** `apps/web/src/api/client.ts:69`. Scenario: `/?returnTo=%2F%252F%252Fevil.com` comes back as `/%2F%2Fevil.com`. It is same-origin and harmless today, but a future sink that decodes `returnTo` (say a `location.assign(decodeURIComponent(...))`) would open a redirect. Fix: return `DEFAULT_RETURN` when the raw value, after one decode, matches `/%(2f|5c|0[0-9a-f]|1[0-9a-f]|7f)/i`, and add these cases to `test/client.test.ts`.
+- **F5 (Minor; owner wording Q1): a member whose team account is on old Terms is stuck with no way to log out.** `apps/web/src/session/frontDoor.tsx:67` and `screens/setup/Terms.tsx:249-253`. The scenario is in section (3). Fix, which needs the API to tell the cases apart:
+  - `GET /v1/account/me` returns `termsCurrent: false` together with a field such as `termsBlockedBy: 'account' | 'me'`.
+  - `doorVerdict` sends `'account'` to a "Your account owner needs to accept the new Terms" screen with a Log out button, not to `/terms`.
+  - The `/terms` screen also gets a Log out link: a stale-Terms account owner has no logout today either.
+  - Add a web unit test and an e2e test for this path.
+- **F6 (Minor): `openInvite` still loads the vendor's name.** `apps/api/src/team/members.ts:314,332` (`InviteRow.team`). Drop the column from the select and from the type, so a later change cannot send it to someone holding only the invite.
+- **F7 (Minor, process): the gate's tests did not run in this review.** Before landing, run `apps/api/test/frontDoor.test.ts`, `team.test.ts`, `offers.test.ts`, `news.test.ts` and `site.test.ts` with Postgres working. After the wide-shell merge, run at least `shell.spec.ts`, `team.spec.ts`, `login.spec.ts` and `quote.spec.ts`.
+- **F8 (Minor, comments): stale comments say browsing needs no session.** `apps/api/src/app.ts:272` ("as every visitor sees them"), `:290` ("browsing needs no session") and `:311` ("reading needs no session"). Update them, so that no one "restores" the open routes from the comments.
+- **F9 (Minor, copy marker): one new string has no `COPY-UNSIGNED` marker.** `apps/web/src/screens/settings/teamCopy.ts:96` (`termsIntro`). The marker above `invited` covers only that line.
+
+### Owner questions
+
+- **Q1 (F5):** what should a team member see when they have accepted the current Terms but the account owner has not? Recommendation: a short screen, "Your account owner needs to accept the updated Terms before you can continue", with Log out. No vendor name is needed, since the member is already a member. Today they see "The Terms of Service have changed... accept them to keep trading" again and again.
+- **Q2 (wording, unsigned):** "You are invited to a team as Aurora, for Trades." and "Before you join, read the Terms of Service to the end and accept them. The key points first:". Both are marked unsigned.
+- **Q3 (what an invite holder sees before signing):** today the invite holder sees their given name, roles and expiry **before** the Terms screen. Under "no free tours", is that all right? Recommendation: yes. The invite is the account owner's own secret, single-use, 24-hour message to this person, and it contains nothing from the marketplace.
