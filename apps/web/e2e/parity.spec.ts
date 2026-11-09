@@ -358,13 +358,16 @@ test.describe('board texts', () => {
   });
 });
 
-test('the 1280×800 header text matches the Desktop board', async ({ page }) => {
+// Job 3: the wide rail. The page name under the logo ("Trade · K7M2" on the board, a trade room) is
+// checked in the room's own Desktop parity (pay.spec.ts); on /sell the rail names "Find a trade".
+test('the 1280×800 rail text matches the Desktop board', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/sell');
   await expect(page.locator('[data-shell="desktop"]')).toBeAttached();
-  const header = await boardTexts(page, 'Desktop', { within: 'header' });
-  expect(header).toEqual(['X2F', 'Buy', 'Sell', 'My trades', 'Wallets']);
-  expect(await missingTexts(page, header)).toEqual([]);
+  const rail = await boardTexts(page, 'Desktop', { within: 'nav[aria-label="Main"]' });
+  expect(rail).toEqual(['Trade · K7M2', 'K7M2', 'Trade', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
+  expect(await missingTexts(page, rail.slice(2))).toEqual([]);
+  await expect(page.locator('nav[aria-label="Main"] .x2f-rail__page')).toHaveText('Find a trade');
 });
 
 test('expectParity at 1280x800 sets the viewport and compares the Desktop board', async ({ page }) => {

@@ -259,9 +259,9 @@ describe('TradeGlance from the Fold-Tabletop and Fold-Cover boards', () => {
     }
   });
 
-  it('cover: "X2F", the pill, the amount and one button, which answers in a status', () => {
+  it('cover: logo D (the board\'s "X2F"), the pill, the amount and one button, which answers in a status', () => {
     const { host } = render(<TradeGlance view={PAY_SECURED} escrow={escrow()} serverClock={clock} layout="cover" />);
-    expect(host.textContent).toContain('X2F');
+    expect(host.querySelector('svg.x2f-logo[role="img"][aria-label="X2F"]')).not.toBeNull();
     expect(host.textContent).toContain('Pay now');
     expect(host.querySelector('[data-glance-amount]')?.textContent).toContain('XMR');
     expect(controls(host)).toBe(1);

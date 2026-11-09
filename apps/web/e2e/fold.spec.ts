@@ -320,9 +320,9 @@ test.describe('the flip cover screen', () => {
     const card = page.locator('[data-pane="glance"]');
     await expect(card).toContainText('Buying from');
     await expect(card).toContainText('$412.50');
-    // Fold-Cover: "X2F", the pill from the trade's state (never the API's escrow chip), and one
-    // button, which takes no trade action.
-    await expect(card).toContainText('X2F');
+    // Fold-Cover: logo D (the board's "X2F"), the pill from the trade's state (never the API's
+    // escrow chip), and one button, which takes no trade action.
+    await expect(card.getByRole('img', { name: 'X2F' })).toBeVisible();
     await expect(card.locator('.x2f-chip')).toHaveText('Pay now');
     expect(await card.locator('a, input, select, textarea').count()).toBe(0);
     await expect(card.locator('button')).toHaveCount(1);
