@@ -41,6 +41,11 @@ export interface ChatShredOrder {
 /** One trade on the API's watch list. */
 export interface WatchItem {
   state: string;
+  /**
+   * The chat linked to the trade (review I1), or null (none, or already purged). The shred pass
+   * records it (`mod_chat_trade`) so its dispute hold goes by the chat, never only by an order's trade.
+   */
+  chat: string | null;
   /** settleKindFor(trade): the kind a `settled` report would be applied as, or null (review I1). */
   settleKind: SettleKind | null;
   /** Paused for maintenance (review M3). */
@@ -159,15 +164,16 @@ export function createLink(o: {
       const body = (await res.json()) as { trades?: unknown };
       const out = new Map<string, WatchItem>();
       if (!Array.isArray(body.trades)) return out;
-      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown; settleKind?: unknown; paused?: unknown; finalAlertSeenAt?: unknown; finalAlertAt?: unknown }>) {
+      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown; chat?: unknown; settleKind?: unknown; paused?: unknown; finalAlertSeenAt?: unknown; finalAlertAt?: unknown }>) {
         if (typeof t?.trade !== 'string' || typeof t.state !== 'string') continue;
+        const chat = typeof t.chat === 'string' ? t.chat : null;
         const settleKind = SETTLE_KINDS.includes(t.settleKind as SettleKind) ? (t.settleKind as SettleKind) : null;
         const date = (v: unknown): Date | null => {
           if (typeof v !== 'string') return null;
           const d = new Date(v);
           return Number.isNaN(d.getTime()) ? null : d;
         };
-        out.set(t.trade, { state: t.state, settleKind, paused: t.paused === true, finalAlertSeenAt: date(t.finalAlertSeenAt), finalAlertAt: date(t.finalAlertAt) });
+        out.set(t.trade, { state: t.state, chat, settleKind, paused: t.paused === true, finalAlertSeenAt: date(t.finalAlertSeenAt), finalAlertAt: date(t.finalAlertAt) });
       }
       return out;
     },

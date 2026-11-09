@@ -1,6 +1,7 @@
 // Plan 3 Task 9: the moderation watcher's reports on the internal listener (setup-done, chain,
 // settled, late-funds) and the watch list it reads trade states from.
 import { createHash, randomBytes } from 'node:crypto';
+import { newTradeCode } from '@x2f/core';
 import { INTERNAL_AT_HEADER, INTERNAL_SIG_HEADER, internalSignedBytes, type Trade } from '@x2f/trade';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import sodium from 'libsodium-wrappers';
@@ -80,8 +81,8 @@ describe('GET /internal/v1/watch', () => {
     const res = await signed('GET', '/internal/v1/watch');
     expect(res.statusCode).toBe(200);
     const trades = (res.json() as { trades: Array<{ trade: string; state: string }> }).trades;
-    expect(trades).toContainEqual({ trade: open.code, state: 'setup', settleKind: null, paused: false, finalAlertSeenAt: null, finalAlertAt: null });
-    expect(trades).toContainEqual({ trade: recent.code, state: 'cancelled', settleKind: null, paused: false, finalAlertSeenAt: null, finalAlertAt: null });
+    expect(trades).toContainEqual({ trade: open.code, chat: null, state: 'setup', settleKind: null, paused: false, finalAlertSeenAt: null, finalAlertAt: null });
+    expect(trades).toContainEqual({ trade: recent.code, chat: null, state: 'cancelled', settleKind: null, paused: false, finalAlertSeenAt: null, finalAlertAt: null });
     expect(trades.map((t) => t.trade)).not.toContain(unattested.code);
     expect(trades.map((t) => t.trade)).not.toContain(old.code);
   });
@@ -92,13 +93,13 @@ describe('GET /internal/v1/watch', () => {
     await deps.db.query(`update trades set state = 'refund_requested', final_alert_at = $2 where code = $1`, [t.code, NOW]);
     const item = async () =>
       ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<Record<string, unknown>> }).trades.find((x) => x.trade === t.code);
-    expect(await item()).toEqual({ trade: t.code, state: 'refund_requested', settleKind: 'auto-refund', paused: false, finalAlertSeenAt: null, finalAlertAt: NOW.toISOString() });
+    expect(await item()).toEqual({ trade: t.code, chat: null, state: 'refund_requested', settleKind: 'auto-refund', paused: false, finalAlertSeenAt: null, finalAlertAt: NOW.toISOString() });
     // a seen time without the delivered flag is not a receipt (null = false, Task 19 review)
     const seen = new Date(NOW.getTime() + 60_000);
     await deps.db.query(`update trades set final_alert_seen_at = $2 where code = $1`, [t.code, seen]);
-    expect(await item()).toEqual({ trade: t.code, state: 'refund_requested', settleKind: 'auto-refund', paused: false, finalAlertSeenAt: null, finalAlertAt: NOW.toISOString() });
+    expect(await item()).toEqual({ trade: t.code, chat: null, state: 'refund_requested', settleKind: 'auto-refund', paused: false, finalAlertSeenAt: null, finalAlertAt: NOW.toISOString() });
     await deps.db.query(`update trades set final_alert_delivered = true where code = $1`, [t.code]);
-    expect(await item()).toEqual({ trade: t.code, state: 'refund_requested', settleKind: 'auto-refund', paused: false, finalAlertSeenAt: seen.toISOString(), finalAlertAt: NOW.toISOString() });
+    expect(await item()).toEqual({ trade: t.code, chat: null, state: 'refund_requested', settleKind: 'auto-refund', paused: false, finalAlertSeenAt: seen.toISOString(), finalAlertAt: NOW.toISOString() });
     // the API's own final alert as a resume shifted it (Task 10 review I1): the column as stored
     const shifted = new Date(NOW.getTime() + 20 * 60_000);
     await deps.db.query(`update trades set final_alert_at = $2 where code = $1`, [t.code, shifted]);
@@ -112,8 +113,8 @@ describe('GET /internal/v1/watch', () => {
     await deps.db.query(`update trades set state = 'lapsed' where code = $1`, [lapsed.code]);
     const res = await signed('GET', '/internal/v1/watch');
     const trades = (res.json() as { trades: unknown[] }).trades;
-    expect(trades).toContainEqual({ trade: settling.code, state: 'settling', settleKind: 'release', paused: true, finalAlertSeenAt: null, finalAlertAt: null });
-    expect(trades).toContainEqual({ trade: lapsed.code, state: 'lapsed', settleKind: 'lapse-refund', paused: false, finalAlertSeenAt: null, finalAlertAt: null });
+    expect(trades).toContainEqual({ trade: settling.code, chat: null, state: 'settling', settleKind: 'release', paused: true, finalAlertSeenAt: null, finalAlertAt: null });
+    expect(trades).toContainEqual({ trade: lapsed.code, chat: null, state: 'lapsed', settleKind: 'lapse-refund', paused: false, finalAlertSeenAt: null, finalAlertAt: null });
   });
 
   it('an open trade shows paused as soon as site maintenance is on, before the timer loop pauses it (owner rule g62)', async () => {
@@ -132,6 +133,19 @@ describe('GET /internal/v1/watch', () => {
       await deps.db.query('update site_flags set maintenance_since = null');
     }
     expect((await item(open.code))?.paused).toBe(false);
+  });
+
+  it('names the chat linked to each trade, or null (chat shred review I1)', async () => {
+    const linked = await trade();
+    const alone = await trade();
+    const chat = newTradeCode();
+    await deps.db.query(
+      'insert into chats (code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at) values ($1, $2, $3, $4, $5, $6)',
+      [chat, linked.offerId, linked.buyerId, linked.sellerId, linked.code, NOW],
+    );
+    const trades = ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<{ trade: string; chat: string | null }> }).trades;
+    expect(trades.find((x) => x.trade === linked.code)?.chat).toBe(chat);
+    expect(trades.find((x) => x.trade === alone.code)?.chat).toBeNull();
   });
 
   it('refuses an unsigned request', async () => {

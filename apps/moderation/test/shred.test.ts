@@ -5,7 +5,7 @@ import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, channelFor, chatIdent
 import sodium from 'libsodium-wrappers';
 import pg from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, inject, it } from 'vitest';
-import { loadChatIdentity, startModeration, type ChatWorkItem, type Fetch, type ModerationHandle } from '../src/main.js';
+import { createLink, loadChatIdentity, MOD_DISPUTE_SEEN_DAYS, recordingLink, startModeration, type ChatWorkItem, type Fetch, type ModerationHandle } from '../src/main.js';
 import { MOD_TEMPLATE_DB } from './setup/postgres.js';
 
 /**
@@ -51,7 +51,7 @@ interface Order {
 }
 
 /** The API's internal listener as the moderation service sees it, checking every signature. */
-function fakeApi(s: { chatWork?: () => ChatWorkItem[]; orders?: () => Order[]; watch?: () => Array<{ trade: string; state: string }> | null; shredStatus?: number }) {
+function fakeApi(s: { chatWork?: () => ChatWorkItem[]; orders?: () => Order[]; watch?: () => Array<{ trade: string; state: string; chat?: string | null }> | null; shredStatus?: number }) {
   const reports: Array<Record<string, unknown>> = [];
   const modKey = sodium.from_hex(modSign.public);
   const fetch: Fetch = async (url, init) => {
@@ -67,7 +67,7 @@ function fakeApi(s: { chatWork?: () => ChatWorkItem[]; orders?: () => Order[]; w
     if (init.method === 'GET' && u.pathname === '/internal/v1/watch') {
       const w = s.watch ? s.watch() : [];
       if (w === null) return reply(503);
-      return reply(200, { trades: w.map((t) => ({ ...t, settleKind: null, paused: false, finalAlertSeenAt: null, finalAlertAt: null })) });
+      return reply(200, { trades: w.map((t) => ({ chat: null, ...t, settleKind: null, paused: false, finalAlertSeenAt: null, finalAlertAt: null })) });
     }
     if (init.method === 'POST' && u.pathname === '/internal/v1/reports') {
       const body = JSON.parse(init.body ?? '{}') as Record<string, unknown>;
@@ -201,10 +201,10 @@ describe('the shred pass', () => {
     const reasons: string[] = [];
     const net = fakeApi({ orders: () => [order(c.chat, trade)], watch: () => [{ trade, state }] });
     const mod = await moderation(net.fetch, (e) => reasons.push(e.reason));
-    // The watcher pass on day 10 sees the dispute; then the API closes it (and lists the trade closed).
+    // The watcher pass on day 10 sees the dispute; then the API closes it (and lists the trade released).
     now = new Date(T0.getTime() + 10 * DAY);
     await mod.watch();
-    state = 'closed';
+    state = 'released';
     // A (compromised or buggy) API orders the shred on day 40: held.
     now = new Date(T0.getTime() + 40 * DAY);
     expect(await mod.shredTick()).toEqual([]);
@@ -228,12 +228,110 @@ describe('the shred pass', () => {
     expect((await db.query('select 1 from mod_dispute_seen where trade = $1', [trade])).rows).toHaveLength(1);
   });
 
-  it('holds a trade chat while the watch list shows its trade not closed, and every trade chat when the list cannot be read', async () => {
+  it('review I1: the dispute hold goes by the chat, from its own record of the link, whatever trade the order names (null, or another closed trade)', async () => {
+    const c = await attestedChat();
+    const trade = newTradeCode();
+    const other = newTradeCode();
+    let state = 'disputed';
+    let orders: Order[] = [];
+    const reasons: string[] = [];
+    // The watch list names each trade's chat: moderation records the link while the dispute is live.
+    const net = fakeApi({ orders: () => orders, watch: () => [{ trade, state, chat: c.chat }, { trade: other, state: 'released', chat: null }] });
+    const mod = await moderation(net.fetch, (e) => reasons.push(e.reason));
+    now = new Date(T0.getTime() + 10 * DAY);
+    await mod.watch();
+    state = 'released';
+    now = new Date(T0.getTime() + 40 * DAY);
+    for (const named of [null, other]) {
+      orders = [order(c.chat, named)];
+      reasons.length = 0;
+      expect(await mod.shredTick()).toEqual([]);
+      expect(reasons).toContain('chat-shred-held-dispute');
+    }
+    expect(await loadChatIdentity(db, keystoreKey, c.chat)).not.toBeNull();
+    // Past the 90 days, an order that disagrees with the recorded link is still held; the true one goes,
+    // and the link goes with the chat's keys.
+    now = new Date(T0.getTime() + (10 + CHAT_AFTER_DISPUTE_DAYS) * DAY + 1);
+    for (const named of [null, other]) {
+      orders = [order(c.chat, named)];
+      reasons.length = 0;
+      expect(await mod.shredTick()).toEqual([]);
+      expect(reasons).toContain('chat-shred-held-mismatch');
+    }
+    orders = [order(c.chat, trade)];
+    expect(await mod.shredTick()).toEqual([c.chat]);
+    expect((await db.query('select 1 from mod_chat_trade where chat = $1', [c.chat])).rows).toHaveLength(0);
+  });
+
+  it('review I1: a link is kept as first seen (a later list cannot rewrite it), and a list that drops the chat (null) keeps it', async () => {
+    const c = await attestedChat();
+    const trade = newTradeCode();
+    let chat: string | null = c.chat;
+    let watchTrade = trade;
+    const net = fakeApi({ watch: () => [{ trade: watchTrade, state: 'paid', chat }] });
+    const mod = await moderation(net.fetch);
+    await mod.watch();
+    chat = null;
+    await mod.watch();
+    chat = c.chat;
+    watchTrade = newTradeCode();
+    await mod.watch();
+    const { rows } = await db.query<{ trade: string }>('select trade from mod_chat_trade where chat = $1', [c.chat]);
+    expect(rows.map((r) => r.trade)).toEqual([trade]);
+  });
+
+  it('review I1: its own escalation reports record the trade as disputed, before they are sent, so its chat is held', async () => {
+    const c = await attestedChat();
+    const trade = newTradeCode();
+    now = new Date(T0.getTime() + 20 * DAY);
+    const net = fakeApi({ watch: () => [{ trade, state: 'refund_requested', chat: c.chat }] });
+    const link = recordingLink(createLink({ apiInternalUrl: API, relayAdminUrl: 'http://relay.test', signingSecret: modSign.secret, fetch: net.fetch, now: () => now.getTime() }), db, () => now);
+    await link.pullWatch();
+    for (const kind of ['late-funds', 'spend-unshown', 'alert-unseen', 'alert-late', 'refund-unverified']) {
+      await db.query('delete from mod_dispute_seen where trade = $1', [trade]);
+      expect((await link.report({ kind, trade })).status).toBe(201);
+      expect((await db.query('select 1 from mod_dispute_seen where trade = $1', [trade])).rows).toHaveLength(1);
+    }
+    await db.query('delete from mod_dispute_seen where trade = $1', [trade]);
+    expect(await link.postReport({ kind: 'refund-unverified', trade })).toBe(201);
+    expect((await db.query('select 1 from mod_dispute_seen where trade = $1', [trade])).rows).toHaveLength(1);
+    // Not an escalation: nothing recorded.
+    const plain = newTradeCode();
+    await link.report({ kind: 'release-claimed', trade: plain });
+    expect((await db.query('select 1 from mod_dispute_seen where trade = $1', [plain])).rows).toHaveLength(0);
+    now = new Date(T0.getTime() + 60 * DAY);
+    const reasons: string[] = [];
+    const orders = fakeApi({ orders: () => [order(c.chat, null)], watch: () => [] });
+    expect(await (await moderation(orders.fetch, (e) => reasons.push(e.reason))).shredTick()).toEqual([]);
+    expect(reasons).toContain('chat-shred-held-dispute');
+  });
+
+  it(`review M8: dispute and link records go ${MOD_DISPUTE_SEEN_DAYS} days after they were last seen, the owner's 90`, async () => {
+    expect(MOD_DISPUTE_SEEN_DAYS).toBe(CHAT_AFTER_DISPUTE_DAYS);
+    const c = await attestedChat();
+    const trade = newTradeCode();
+    now = new Date(T0.getTime() + 10 * DAY);
+    const net = fakeApi({ orders: () => [order(newTradeCode())], watch: () => [{ trade, state: 'disputed', chat: c.chat }] });
+    const mod = await moderation(net.fetch);
+    await mod.watch();
+    const silent = fakeApi({ orders: () => [order(newTradeCode())], watch: () => [] });
+    const later = await moderation(silent.fetch);
+    now = new Date(T0.getTime() + (10 + CHAT_AFTER_DISPUTE_DAYS) * DAY);
+    await later.shredTick();
+    expect((await db.query('select 1 from mod_dispute_seen where trade = $1', [trade])).rows).toHaveLength(1);
+    expect((await db.query('select 1 from mod_chat_trade where chat = $1', [c.chat])).rows).toHaveLength(1);
+    now = new Date(T0.getTime() + (10 + CHAT_AFTER_DISPUTE_DAYS) * DAY + 1);
+    await later.shredTick();
+    expect((await db.query('select 1 from mod_dispute_seen where trade = $1', [trade])).rows).toHaveLength(0);
+    expect((await db.query('select 1 from mod_chat_trade where chat = $1', [c.chat])).rows).toHaveLength(0);
+  });
+
+  it('holds a trade chat while the watch list shows its trade open (any state but released, refunded or cancelled), and every trade chat when the list cannot be read', async () => {
     const c = await attestedChat();
     const trade = newTradeCode();
     now = new Date(T0.getTime() + 31 * DAY);
     const reasons: string[] = [];
-    let watch: Array<{ trade: string; state: string }> | null = [{ trade, state: 'published' }];
+    let watch: Array<{ trade: string; state: string }> | null = [{ trade, state: 'paid' }];
     const pre = await attestedChat();
     now = new Date(T0.getTime() + 31 * DAY);
     const net = fakeApi({ orders: () => [order(c.chat, trade), order(pre.chat)], watch: () => watch });
@@ -244,8 +342,18 @@ describe('the shred pass', () => {
     watch = null;
     expect(await mod.shredTick()).toEqual([pre.chat]);
     expect(reasons).toContain('chat-shred-held-unknown');
-    watch = [{ trade, state: 'closed' }];
-    expect(await mod.shredTick()).toEqual([c.chat, pre.chat]);
+    // lapsed is not closed: a lapsed escrow can still hold coins.
+    watch = [{ trade, state: 'lapsed' }];
+    expect(await mod.shredTick()).toEqual([pre.chat]);
+    for (const closed of ['refunded', 'cancelled']) {
+      watch = [{ trade, state: closed }];
+      const kept = await attestedChat();
+      now = new Date(T0.getTime() + 31 * DAY);
+      const one = fakeApi({ orders: () => [order(kept.chat, trade)], watch: () => watch });
+      expect(await (await moderation(one.fetch)).shredTick()).toEqual([kept.chat]);
+    }
+    watch = [{ trade, state: 'released' }];
+    expect(await (await moderation(net.fetch, (e) => reasons.push(e.reason))).shredTick()).toEqual([c.chat, pre.chat]);
     // A trade the list no longer shows (closed more than 31 days ago) is not held either.
     expect(await loadChatIdentity(db, keystoreKey, c.chat)).toBeNull();
   });

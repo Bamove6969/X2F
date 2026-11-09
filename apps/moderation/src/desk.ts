@@ -1,6 +1,6 @@
 import type { Outcome, PartyHandle, Payout, Transport } from '@x2f/escrow';
 import { ReplayGuard, type Envelope, type ReplayGuardJSON } from '@x2f/protocol';
-import { channelFor, payoutsFor, settleKindFor, type ChainFacts, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
+import { CLOSED_STATES, channelFor, payoutsFor, settleKindFor, type ChainFacts, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
 import type pg from 'pg';
 import { FINAL_ALERT_MS } from '@x2f/escrow';
 import { AUTO_REFUND_MARGIN_MS, autoRefundStep, PAID_CONFLICT_MS } from './autoRefund.js';
@@ -180,7 +180,7 @@ const ROUTE: Record<'auto-refund' | 'buyer-cancel', { builder: 'seller' | 'buyer
   'buyer-cancel': { builder: 'buyer' },
 };
 
-const CLOSED: readonly string[] = ['released', 'refunded', 'cancelled'];
+const CLOSED: readonly string[] = CLOSED_STATES;
 
 const accepted = (r: { status: number; error: string | null }): boolean => r.status === 201 || r.status === 200 || (r.status === 409 && r.error === 'wrong-state');
 

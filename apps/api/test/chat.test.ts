@@ -789,6 +789,29 @@ describe('the purge leaves a shred order for moderation and a purged mark for de
     expect((await signedInject('POST', '/internal/v1/reports', { kind: 'chat-shredded', chat: r.chat })).statusCode).toBe(201);
   });
 
+  it('review M4: the least recently served order comes first, so an order moderation holds does not keep the rest waiting', async () => {
+    const start = now;
+    const page = internal;
+    internal = await buildInternalListener({ db: deps.db, modSigningPublic: modSign.public, now: () => now.getTime(), workLimit: 1 });
+    try {
+      await deps.db.query('delete from chat_shred_orders');
+      const held = await purgedTradeChat();
+      const next = await readyChat();
+      await purgeChats(deps.db, new Date(now.getTime() + 40 * DAY));
+      const served: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        now = new Date(now.getTime() + 1000);
+        served.push(...(await orders()).map((o) => o.chat));
+      }
+      // Held (never reported shredded), yet the order behind it is served on the next pass.
+      expect(served).toEqual([held.chat, next.chat, held.chat]);
+    } finally {
+      await internal.close();
+      internal = page;
+      now = start;
+    }
+  });
+
   it('a pre-trade chat is ordered shredded too, with no trade', async () => {
     const r = await readyChat();
     const purgedAt = new Date(now.getTime() + 8 * DAY);

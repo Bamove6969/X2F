@@ -185,7 +185,9 @@ const CLIENT = new Set<string>(CLIENT_EVENTS);
 const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 /** States from which the buyer's cancel becomes a refund settlement (never `paid`, Revision 2026-10-29b). */
 const BUYER_CANCEL_SETTLE: readonly TradeState[] = ['securing', 'secured', 'refund_requested'];
-const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
+/** The closed states (a trade in one of these is done; its escrow holds nothing to settle). */
+export const CLOSED_STATES: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
+const CLOSED = CLOSED_STATES;
 /** States in which a settlement seen on chain is recorded: every open state an escrow can hold coins in. */
 const SETTLED_FROM: readonly TradeState[] = ['funding', 'securing', 'secured', 'settling', 'disputed', 'paid', 'refund_requested', 'lapsed'];
 /** States in which extra XMR grows the trade: before "I've paid" and before any refund or settlement starts. */

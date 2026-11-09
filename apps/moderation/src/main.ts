@@ -1,7 +1,7 @@
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
 import type { PartyHandle, Transport } from '@x2f/escrow';
-import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, channelFor, WATCH_INTERVAL_MS, type Attestation, type ModPartyArgs } from '@x2f/trade';
+import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, CLOSED_STATES, channelFor, WATCH_INTERVAL_MS, type Attestation, type ModPartyArgs } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { AttestRefused, attestChat, attestTrade, BadTerms } from './attest.js';
@@ -17,8 +17,13 @@ import { createWatcher } from './watcher.js';
  * recently is never shredded, whatever the API says.
  */
 export const CHAT_SHRED_MIN_AGE_DAYS = CHAT_PRETRADE_IDLE_DAYS;
-/** How long a `mod_dispute_seen` row is kept after the last time the trade was seen disputed. */
-export const MOD_DISPUTE_SEEN_DAYS = CHAT_AFTER_DISPUTE_DAYS + 30;
+/**
+ * How long a `mod_dispute_seen` or `mod_chat_trade` row is kept after it was last seen (review M8):
+ * the owner's 90 days after a dispute closes. A dispute row older than that holds nothing anyway.
+ */
+export const MOD_DISPUTE_SEEN_DAYS = CHAT_AFTER_DISPUTE_DAYS;
+/** The reports by which this service itself puts a trade in dispute (the API applies them as `escalate`). */
+const ESCALATIONS: ReadonlySet<string> = new Set(['late-funds', 'spend-unshown', 'alert-unseen', 'alert-late', 'refund-unverified']);
 const DAY_MS = 86_400_000;
 
 /** The instance lock's advisory key ("x2mi"; the migrator's is "x2mo"): one moderation process per database. */
@@ -219,17 +224,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     fetch: deps.fetch ?? defaultFetch,
     now: () => now().getTime(),
   });
-  // Every watch list read (the watcher's and the shred pass's) records the trades it shows disputed,
-  // on this service's own clock (mod_dispute_seen): the shred pass's dispute facts. A failed record
-  // fails the read, so a pass never goes on without it.
-  const link: Link = {
-    ...rawLink,
-    pullWatch: async () => {
-      const items = await rawLink.pullWatch();
-      await recordDisputes(o.db, items, now());
-      return items;
-    },
-  };
+  // The shred pass's own facts (recordingLink): every watch list read and every escalation report.
+  const link: Link = recordingLink(rawLink, o.db, now);
   let io: PartyIO | undefined = deps.partyIO;
   const startParty =
     deps.startParty ??
@@ -443,9 +439,14 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
    * The order is only a trigger. A chat is held, and asked again next pass, when this service's own
    * records say it may still be evidence:
    * - attested less than CHAT_SHRED_MIN_AGE_DAYS ago (`chat-shred-held-young`);
-   * - its trade seen disputed by this service within CHAT_AFTER_DISPUTE_DAYS (`chat-shred-held-dispute`);
-   * - its trade on the watch list in any state but closed (`chat-shred-held-open`), or the watch
-   *   list unreadable this pass (`chat-shred-held-unknown`).
+   * - seen disputed by this service within CHAT_AFTER_DISPUTE_DAYS (`chat-shred-held-dispute`): the
+   *   trade this service recorded the chat linked to, or the order's trade. Looked up by the chat
+   *   (review I1), so an order naming no trade, or another one, does not skip the hold;
+   * - the order's trade not the one this service recorded the chat linked to (`chat-shred-held-mismatch`);
+   * - its trade on the watch list in an open state, anything but CLOSED_STATES (`chat-shred-held-open`),
+   *   or the watch list unreadable this pass (`chat-shred-held-unknown`).
+   * A held order is skipped, never a stop: the orders after it are still done this pass, and the API
+   * serves the least recently served first (review M4).
    */
   const shredTick = async (): Promise<string[]> => {
     const done: string[] = [];
@@ -456,17 +457,18 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       log({ reason: 'chat-shred-unavailable' });
       return done;
     }
-    if (orders.length === 0) return done;
     const at = now();
+    const cutoff = new Date(at.getTime() - MOD_DISPUTE_SEEN_DAYS * DAY_MS);
+    await o.db.query('delete from mod_dispute_seen where last_seen_at < $1', [cutoff]);
+    await o.db.query('delete from mod_chat_trade where last_seen_at < $1', [cutoff]);
+    if (orders.length === 0) return done;
+    // Read every pass with orders: it also records the links and disputes the holds go by.
     let watch: Map<string, WatchItem> | null = null;
-    if (orders.some((x) => x.trade !== null)) {
-      try {
-        watch = await link.pullWatch();
-      } catch {
-        watch = null;
-      }
+    try {
+      watch = await link.pullWatch();
+    } catch {
+      watch = null;
     }
-    await o.db.query('delete from mod_dispute_seen where last_seen_at < $1', [new Date(at.getTime() - MOD_DISPUTE_SEEN_DAYS * DAY_MS)]);
     for (const x of orders) {
       const chat = normalizeTradeCode(x.chat);
       const trade = x.trade === null ? null : normalizeTradeCode(x.trade);
@@ -485,6 +487,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           await client.query('begin');
           await client.query('delete from mod_chat_identities where chat = $1', [chat]);
           await client.query('delete from signed_chats where chat = $1', [chat]);
+          await client.query('delete from mod_chat_trade where chat = $1', [chat]);
           await client.query('commit');
         } catch (e) {
           await client.query('rollback');
@@ -568,15 +571,73 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   };
 }
 
-/** Records, on this service's clock, every trade the watch list shows disputed (mod_dispute_seen). */
-async function recordDisputes(db: pg.Pool, items: Map<string, WatchItem>, at: Date): Promise<void> {
-  const disputed = [...items].filter(([, w]) => w.state === 'disputed').map(([code]) => code);
-  if (disputed.length === 0) return;
+/**
+ * The link with the shred pass's own records kept on the way (design 2026-11-08 section 5, review I1),
+ * on this service's clock:
+ * - every watch list read (the watcher's and the shred pass's) records each trade's chat
+ *   (`mod_chat_trade`, kept as first seen) and the trades it shows disputed (`mod_dispute_seen`);
+ * - every escalation report this service makes records its trade as disputed, before it is sent.
+ * A failed record fails the read or the report, so nothing goes on without it.
+ */
+export function recordingLink(raw: Link, db: pg.Pool, now: () => Date): Link {
+  const escalating = async (report: unknown): Promise<void> => {
+    const r = report as { kind?: unknown; trade?: unknown } | null;
+    if (typeof r?.kind !== 'string' || !ESCALATIONS.has(r.kind) || typeof r.trade !== 'string') return;
+    const trade = normalizeTradeCode(r.trade);
+    if (trade !== null) await recordDisputes(db, [trade], now());
+  };
+  return {
+    ...raw,
+    pullWatch: async () => {
+      const items = await raw.pullWatch();
+      const at = now();
+      await recordLinks(db, items, at);
+      await recordDisputes(db, [...items].filter(([, w]) => w.state === 'disputed').map(([code]) => code), at);
+      return items;
+    },
+    postReport: async (report) => {
+      await escalating(report);
+      return raw.postReport(report);
+    },
+    report: async (report) => {
+      await escalating(report);
+      return raw.report(report);
+    },
+  };
+}
+
+/** Records the trades seen disputed (mod_dispute_seen). */
+async function recordDisputes(db: pg.Pool, trades: string[], at: Date): Promise<void> {
+  if (trades.length === 0) return;
   await db.query(
     `insert into mod_dispute_seen (trade, first_seen_at, last_seen_at)
      select t, $2, $2 from unnest($1::text[]) t
      on conflict (trade) do update set last_seen_at = greatest(mod_dispute_seen.last_seen_at, excluded.last_seen_at)`,
-    [disputed, at],
+    [trades, at],
+  );
+}
+
+/**
+ * Records each listed trade's chat (mod_chat_trade). A chat's first recorded trade is kept: a later
+ * list naming another trade for it only refreshes `last_seen_at`, and an item with no chat (none
+ * linked, or the chat already purged) records nothing.
+ */
+async function recordLinks(db: pg.Pool, items: Map<string, WatchItem>, at: Date): Promise<void> {
+  const chats: string[] = [];
+  const trades: string[] = [];
+  for (const [code, w] of items) {
+    const chat = w.chat === null ? null : normalizeTradeCode(w.chat);
+    const trade = normalizeTradeCode(code);
+    if (chat === null || trade === null) continue;
+    chats.push(chat);
+    trades.push(trade);
+  }
+  if (chats.length === 0) return;
+  await db.query(
+    `insert into mod_chat_trade (chat, trade, first_seen_at, last_seen_at)
+     select c, t, $3, $3 from unnest($1::text[], $2::text[]) as x(c, t)
+     on conflict (chat) do update set last_seen_at = greatest(mod_chat_trade.last_seen_at, excluded.last_seen_at)`,
+    [chats, trades, at],
   );
 }
 
@@ -584,19 +645,26 @@ async function recordDisputes(db: pg.Pool, items: Map<string, WatchItem>, at: Da
  * Why the shred pass keeps a purged chat's keys this pass, from this service's own records (and the
  * watch list), or null when nothing holds it. See `shredTick`.
  */
-async function shredHold(db: pg.Pool, chat: string, trade: string | null, watch: Map<string, WatchItem> | null, at: Date): Promise<'young' | 'dispute' | 'open' | 'unknown' | null> {
-  const { rows } = await db.query<{ made: Date }>(
-    `select least((select created_at from signed_chats where chat = $1), (select created_at from mod_chat_identities where chat = $1)) as made`,
+async function shredHold(db: pg.Pool, chat: string, trade: string | null, watch: Map<string, WatchItem> | null, at: Date): Promise<'young' | 'dispute' | 'mismatch' | 'open' | 'unknown' | null> {
+  const { rows } = await db.query<{ made: Date | null; linked: string | null }>(
+    `select least((select created_at from signed_chats where chat = $1), (select created_at from mod_chat_identities where chat = $1)) as made,
+            (select trade from mod_chat_trade where chat = $1) as linked`,
     [chat],
   );
   const made = rows[0]?.made ?? null;
+  const linked = rows[0]?.linked ?? null;
   if (made !== null && at.getTime() - made.getTime() < CHAT_SHRED_MIN_AGE_DAYS * DAY_MS) return 'young';
+  // By the chat (review I1): the trade this service recorded it linked to, and the order's own.
+  const candidates = [...new Set([linked, trade].filter((t): t is string => t !== null))];
+  if (candidates.length > 0) {
+    const seen = await db.query('select 1 from mod_dispute_seen where trade = any($1::text[]) and last_seen_at >= $2', [candidates, new Date(at.getTime() - CHAT_AFTER_DISPUTE_DAYS * DAY_MS)]);
+    if (seen.rows.length > 0) return 'dispute';
+  }
+  if (linked !== null && trade !== linked) return 'mismatch';
   if (trade === null) return null;
-  const seen = await db.query('select 1 from mod_dispute_seen where trade = $1 and last_seen_at >= $2', [trade, new Date(at.getTime() - CHAT_AFTER_DISPUTE_DAYS * DAY_MS)]);
-  if (seen.rows.length > 0) return 'dispute';
   if (watch === null) return 'unknown';
   const item = watch.get(trade);
-  if (item !== undefined && item.state !== 'closed') return 'open';
+  if (item !== undefined && !CLOSED_STATES.includes(item.state as (typeof CLOSED_STATES)[number])) return 'open';
   return null;
 }
 

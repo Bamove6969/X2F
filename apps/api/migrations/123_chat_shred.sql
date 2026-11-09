@@ -8,6 +8,7 @@
 --   own copy of the chat's keys (its sealed moderator chat identity and the signed attestation).
 --   Served on GET /internal/v1/chat-shred; removed by the report { kind: 'chat-shredded', chat }.
 --   The linked trade's code rides along so moderation can check its own view of that trade first.
+--   `served_at`: when the list last served the order (least recently served first, review M4).
 -- chat_purged_marks: how a former member's device learns its copy must go (410 chat-purged instead
 --   of 404). Only a tag: sha256 of 'x2f/chat-purged/v1|<chat>|<account id>', so the table names
 --   neither the chat nor who was in it; the API computes the same tag from the code a caller asks
@@ -15,7 +16,8 @@
 create table chat_shred_orders (
   chat text primary key,
   trade_code text,
-  purged_at timestamptz not null
+  purged_at timestamptz not null,
+  served_at timestamptz
 );
 
 create table chat_purged_marks (
