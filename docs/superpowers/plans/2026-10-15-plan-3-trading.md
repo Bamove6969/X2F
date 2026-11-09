@@ -11,6 +11,7 @@ Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's a
 - **Price sources (owner Q7, 6 Nov):** Task 3 maximum source gap is 3% (`maxSpreadBps` 300); fourth source off by default.
 - **Disputed trades are kept 90 days from the dispute closing (owner p11-11),** not from the dispute button; the older lines below carry a struck-through note.
 - **Trades erased 30 days after they end (owner p11-17, unchanged); window to file a dispute after a trade closes: 72 h per owner p11-17, pending confirmation of which window (p11-51).** The owner said 72 h in place of 48 h but did not say which window; the only one built is the buyer's dispute within 48 h of a no-show refund (`TIMERS.disputeAfterRefundHours = 48`). The number in code and in the older text stays 48 until the lead confirms.
+- **Team chat label (owner p11-25, changes R44):** a member's chat messages are labelled "<lead's display name> Assistant 1", "Assistant 2" (for example "Circa 55 Assistant 1"); the member's own name is not shown.
 
 ## Revision 2026-10-29 (Task 10 as built, second, `wip/second-p3-task10`; not reviewed yet)
 
@@ -1357,7 +1358,7 @@ Authority: spec (Revision 2026-10-29c) > `rulings-and-lessons.md` (R39–R41) > 
 
 **Interfaces:**
 - Produces:
-  - **Chat label:** every chat message records the sending `memberId` (or none for the account owner) in the server-side envelope metadata; the partner's app shows "Message from Team <account display name> member: <member name>" `// COPY-UNSIGNED` above it, for example "Team Calcium member: Aurora". The account owner's own messages show no label.
+  - **Chat label:** every chat message records the sending `memberId` (or none for the account owner) in the server-side envelope metadata; the partner's app shows "~~Message from Team <account display name> member: <member name>~~" `// COPY-UNSIGNED` above it, for example "~~Team Calcium member: Aurora~~". *(replaced 2026-11-09, owner p11-25: "<lead's display name> Assistant 1", "Assistant 2", e.g. "Circa 55 Assistant 1"; the member's own name is not shown)* The account owner's own messages show no label.
   - **Trades role:** `take`, `mark-paid`, proof upload, `open-dispute`, chat send, and the buyer's cancel before "I've paid" pass `requireMember('trades')`; Offers-only members get `forbidden`.
   - **Release and signing:** refused for members (`member-cannot-sign`) until the OPEN key scheme lands; *lead default:* funding as seller is refused the same way (it also needs the party key).
   - The account's Active trades list shows which member last acted on each trade (from `team_audit`), visible to the account owner only.
