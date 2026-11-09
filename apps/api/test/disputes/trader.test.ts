@@ -329,6 +329,28 @@ describe('startDisputeTimers', () => {
     await tick();
     expect((await loadDispute(deps.db, c.t.code))!.appealEndsAt).toEqual(at(base + 50 * H));
   });
+
+  it('J-14 (D-059): a compromised-account lock on either side pauses the dispute; its deadlines move by the lock once lifted', async () => {
+    await deps.db.query('update site_flags set maintenance_since = null');
+    const base = 1500 * H;
+    const c = await disputed(at(base));
+    await publishRuling(deps, c.t.code, { outcome: 'release-to-buyer' });
+    // The seller's account is locked 1 h in (as tickets/lock.ts `placeLock` writes it).
+    await deps.db.query('insert into account_locks (account_id, locked_at, set_disabled) values ($1, $2, false)', [c.seller.id, at(base + H)]);
+    setNow(at(base + 2 * H));
+    await tick();
+    expect((await row(c.t.code)).paused_since).toEqual(at(base + H));
+    // Past the original appeal end (base + 48 h) while locked: the window stays open.
+    setNow(at(base + 60 * H));
+    await tick();
+    expect((await loadDispute(deps.db, c.t.code))!.status).toBe('published');
+    // Lifted at base + 61 h: every running deadline moves by the 60 h the lock held.
+    setNow(at(base + 61 * H));
+    await deps.db.query('update account_locks set unlocked_at = $2 where account_id = $1 and unlocked_at is null', [c.seller.id, at(base + 61 * H)]);
+    await tick();
+    expect((await loadDispute(deps.db, c.t.code))!).toMatchObject({ status: 'published', appealEndsAt: at(base + 108 * H) });
+    expect((await row(c.t.code)).paused_since).toBeNull();
+  });
 });
 
 describe('live delivery', () => {
