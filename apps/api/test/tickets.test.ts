@@ -312,7 +312,7 @@ describe('"My account has been compromised" (D-059): full lockout', () => {
     expect(listed).toMatchObject({ matched: true, locked: true, methodsLeft: ['passkey'], displayName: `D${victim.loginName}` });
     const view = (await senior.b.get(`/staff/v1/compromised/${id}`)).json();
     expect(view.comment).toBe('Phone stolen');
-    expect(view.account).toMatchObject({ kind: 'trader', lockedAt: T0.toISOString() });
+    expect(view.account).toMatchObject({ id: victim.id, kind: 'trader', lockedAt: T0.toISOString() });
     expect(view.account.openTrades).toEqual([{ code: trade.code, state: 'secured', side: 'seller', paused: true }]);
     expect(errorOf(await senior.b.post(`/staff/v1/compromised/${id}/close`))).toBe('account-locked');
 

@@ -229,3 +229,54 @@ export const newsList = () => staffApi<{ items: NewsItem[] }>('/staff/v1/news');
 export const newsAdd = (d: { title: string; body: string }) => staffApi<NewsItem>('/staff/v1/news', { method: 'POST', body: d });
 export const newsEdit = (id: number, d: { title: string; body: string }) => staffApi<NewsItem>(`/staff/v1/news/${id}`, { method: 'PUT', body: d });
 export const newsDelete = (id: number) => staffApi<unknown>(`/staff/v1/news/${id}`, { method: 'DELETE' });
+
+// Plan 4 Tasks 30-31 / J-14: support tickets (perm `tickets.handle`) and compromised-account tickets
+// (perm `accounts.freeze`).
+export type TicketStatus = 'open' | 'answered' | 'closed';
+export interface StaffTicket {
+  id: string;
+  number: number;
+  category: string;
+  tradeCode: string | null;
+  status: TicketStatus;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+  displayName: string | null;
+}
+export interface StaffTicketMessage {
+  author: 'trader' | 'staff';
+  memberName: string | null;
+  staffName: string | null;
+  body: string;
+  at: string;
+}
+export const ticketQueue = (status: TicketStatus) => staffApi<{ tickets: StaffTicket[] }>(`/staff/v1/tickets?status=${status}`);
+export const ticketCase = (id: string) =>
+  staffApi<{ ticket: StaffTicket; displayName: string | null; messages: StaffTicketMessage[] }>(`/staff/v1/tickets/${encodeURIComponent(id)}`);
+export const ticketReply = (id: string, body: string) => staffApi<unknown>(`/staff/v1/tickets/${encodeURIComponent(id)}/messages`, { method: 'POST', body: { body } });
+export const ticketClose = (id: string) => staffApi<unknown>(`/staff/v1/tickets/${encodeURIComponent(id)}/close`, { method: 'POST', body: {} });
+
+export interface CompromisedItem extends StaffTicket {
+  matched: boolean;
+  locked: boolean;
+  methodsLeft: string[];
+}
+export interface CompromisedCase {
+  ticket: StaffTicket;
+  methodsLeft: string[];
+  comment: string | null;
+  account: {
+    id: string;
+    displayName: string | null;
+    kind: string;
+    createdAt: string;
+    lockedAt: string | null;
+    openTrades: { code: string; state: string; side: 'buyer' | 'seller'; paused: boolean }[];
+  } | null;
+}
+export const compromisedQueue = (status: 'open' | 'closed') => staffApi<{ tickets: CompromisedItem[] }>(`/staff/v1/compromised?status=${status}`);
+export const compromisedCase = (id: string) => staffApi<CompromisedCase>(`/staff/v1/compromised/${encodeURIComponent(id)}`);
+export const compromisedUnlock = (id: string, tapId: string) =>
+  staffApi<{ status: 'unlocked' }>(`/staff/v1/compromised/${encodeURIComponent(id)}/unlock`, { method: 'POST', body: { tapId } });
+export const compromisedClose = (id: string) => staffApi<unknown>(`/staff/v1/compromised/${encodeURIComponent(id)}/close`, { method: 'POST', body: {} });

@@ -150,6 +150,8 @@ export function staffTicketRoutes(app: FastifyInstance): void {
       const a = rows[0];
       account = a
         ? {
+            // The unlock's tap is bound to this id (`unlock-account`).
+            id: t.account_id,
             displayName: a.kind === 'member' ? null : a.display_name,
             kind: a.kind,
             createdAt: a.created_at.toISOString(),

@@ -29,6 +29,8 @@ export const STAFF_REFUSALS = {
   'owner-needs-two-keys': 'The owner account needs two security keys. Register the spare key to finish.',
   'owner-needs-pgp': 'The owner account needs a PGP key. Add it to finish.',
   forbidden: 'Your role does not include this page.',
+  // J-14 (D-059): a compromised-account ticket closes only once its lock is lifted.
+  'account-locked': 'This account is still locked. Unlock it first, once you are sure the person is its real owner.',
 } as const satisfies Record<string, string>;
 
 export type StaffRefusal = keyof typeof STAFF_REFUSALS;

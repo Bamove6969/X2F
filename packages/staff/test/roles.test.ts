@@ -86,8 +86,16 @@ describe('NAV', () => {
   test('owner Q60: a feedback grant adds Feedback to a moderator\'s or helper\'s menu, once', () => {
     expect(navFor('mod', ['feedback.read'])).toEqual(['disputes', 'training', 'log', 'feedback']);
     expect(navFor('helper', ['feedback.read'])).toEqual(['feedback']);
-    expect(navFor('mod', ['tickets.handle'])).toEqual(['disputes', 'training', 'log']);
-    expect(navFor('senior', ['feedback.read'])).toEqual(['disputes', 'training', 'log', 'feedback']);
+    expect(navFor('senior', ['feedback.read'])).toEqual(['disputes', 'training', 'log', 'feedback', 'compromised']);
+  });
+  test('J-14: Tickets for whoever holds tickets.handle (a grant, or the owner); Compromised accounts for accounts.freeze (senior, owner)', () => {
+    expect(navFor('mod', ['tickets.handle'])).toEqual(['disputes', 'training', 'log', 'tickets']);
+    expect(navFor('helper', ['tickets.handle'])).toEqual(['tickets']);
+    expect(navFor('helper', ['tickets.handle', 'feedback.read'])).toEqual(['feedback', 'tickets']);
+    expect(navFor('mod')).toEqual(['disputes', 'training', 'log']);
+    expect(navFor('senior')).toEqual(['disputes', 'training', 'log', 'feedback', 'compromised']);
+    expect(navFor('senior', ['tickets.handle'])).toEqual(['disputes', 'training', 'log', 'feedback', 'tickets', 'compromised']);
+    expect(navFor('owner')).toEqual(['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'feedback', 'tickets', 'compromised', 'settings']);
   });
   test('helper sees nothing', () => {
     expect(NAV.helper).toEqual([]);

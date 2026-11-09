@@ -16,6 +16,9 @@ export const NAV_LABELS: Readonly<Record<NavItem, string>> = {
   log: 'Activity log',
   // Plan 5 Task 4: no board places it yet (NAV puts it before Settings). DESIGNER-REVIEW
   feedback: 'Feedback',
+  // J-14 (Plan 4 Task 31): no board places these yet. DESIGNER-REVIEW, COPY-UNSIGNED
+  tickets: 'Tickets',
+  compromised: 'Compromised accounts',
   settings: 'Settings',
 };
 
@@ -27,6 +30,8 @@ export const NAV_PATHS: Readonly<Record<NavItem, string>> = {
   training: '/training',
   log: '/log',
   feedback: '/feedback',
+  tickets: '/tickets',
+  compromised: '/compromised',
   settings: '/settings',
 };
 

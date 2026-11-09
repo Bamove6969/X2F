@@ -1,5 +1,6 @@
 import { Link, Route, Routes } from 'react-router';
 import { Feedback } from './screens/Feedback.js';
+import { Compromised, Tickets } from './screens/Tickets.js';
 import { Invite } from './screens/Invite.js';
 import { Login } from './screens/Login.js';
 import { NewsEditor } from './screens/NewsEditor.js';
@@ -17,7 +18,7 @@ export function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/invite/:token" element={<Invite />} />
       <Route path="/setup" element={<OwnerSetup />} />
-      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, feedback: <Feedback /> }} />} />
+      <Route path="/*" element={<StaffShell pages={{ overview: <Overview />, feedback: <Feedback />, tickets: <Tickets />, compromised: <Compromised /> }} />} />
     </Routes>
   );
 }
