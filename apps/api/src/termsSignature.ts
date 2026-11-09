@@ -6,7 +6,8 @@
  * (`accounts.terms_signature`, migration 316) next to `terms_version` and `terms_accepted_at`, and
  * erased when the account closes (owner, 9 Nov 2026, p11-13: "Erase it when the account closes"):
  * a deleted row takes it, and every close that keeps the row calls `eraseTermsSignature` in its
- * transaction (a staff member removed; the 60-day close when it lands, see the tripwire in
+ * transaction (a staff member removed; a half-made staff account whose invite was cancelled or
+ * expired, staff/invites.ts; the 60-day close when it lands, see the tripwire in
  * test/termsSignature.test.ts). Nothing else is recorded with it: no IP address, user agent or device
  * fingerprint. It is never shown to other users, and no route reads it back (a staff route may come
  * later, by owner decision).

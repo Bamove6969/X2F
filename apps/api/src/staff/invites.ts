@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { inviteRegistrationChallenge, keyCheckCode } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type pg from 'pg';
 import { assertNewNames, assertTermsAccepted, createAccount } from '../accounts.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
 import { lockAccount, withTx } from '../auth/hold.js';
@@ -9,7 +10,8 @@ import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, type Crede
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
-import { SIGNED_BODY_LIMIT } from '../termsSignature.js';
+import type { RetentionJob } from '../retention.js';
+import { SIGNED_BODY_LIMIT, eraseTermsSignature } from '../termsSignature.js';
 import type { StaffDeps } from './app.js';
 import { requireStaff } from './guard.js';
 import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
@@ -27,7 +29,10 @@ import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type In
 //   the token text). The server re-derives that intent from the request and consumes the tap in
 //   the transaction that stores the invite. The token itself is never stored; the link is
 //   `<staffOrigin>/invite/<token>`, shown once.
-// - `DELETE /staff/v1/invites/:id` → 204 (404 when used, cancelled or unknown).
+// - `DELETE /staff/v1/invites/:id` → 204 (404 when used, cancelled or unknown). If the invitee had
+//   picked their names, that half-made account (disabled, never finished) is closed for good here:
+//   its sealed Terms signature is erased (owner 9 Nov 2026, p11-13: "Erase it when the account
+//   closes"). `purgeStaffInviteLeftovers` does the same for an invite that expired instead.
 //
 // The invitee's side (perm `public-invite`, no session; every step checks that the token's invite
 // is unused, not cancelled and not expired, else 404 `invite-invalid`; only then does it spend the
@@ -127,6 +132,33 @@ function newInviteOf(b: Record<string, unknown>, now: Date) {
   return { role, hours, inviteId, token, expiresAt: expiresAt!, at: new Date(at), tapId: tapIdOf(b) };
 }
 
+/** How long past an invite's expiry the sweep waits before it treats the half-made account as closed. */
+export const INVITE_LEFTOVER_GRACE_MS = 3_600_000;
+
+/**
+ * Retention (security review 2026-11-09, minor 3), every 10 minutes with the other jobs
+ * (retentionJobs.ts): erases the sealed Terms signature of every half-made staff account whose
+ * invite will never finish, because it was cancelled or expired over `INVITE_LEFTOVER_GRACE_MS`
+ * ago (owner 9 Nov 2026, p11-13: "Erase it when the account closes"; the account is disabled from
+ * `account` until `finish`, so nothing else ever logs it in). An invite that was used is a staff
+ * member's: their signature stays until removal (staff/members.ts). The hour's grace keeps the
+ * sweep, on the trader process's clock, clear of a `finish` racing the deadline on the staff
+ * process's; a finish past the deadline fails `openInvite` anyway. Cancelled invites are erased at
+ * cancel; the sweep covers them again for rows cancelled before this landed. Returns the rows touched.
+ */
+export const purgeStaffInviteLeftovers: RetentionJob = {
+  name: 'purgeStaffInviteLeftovers',
+  async run(db: pg.Pool, now: Date): Promise<number> {
+    const r = await db.query(
+      `update accounts a set terms_signature = null from staff_invites i
+        where i.account_id = a.id and a.terms_signature is not null and i.used_at is null
+          and (i.cancelled_at is not null or i.expires_at <= $1)`,
+      [new Date(now.getTime() - INVITE_LEFTOVER_GRACE_MS)],
+    );
+    return r.rowCount ?? 0;
+  },
+};
+
 export function staffInviteRoutes(app: FastifyInstance): void {
   const perm = 'staff.manage' as const;
   const opts = { config: { perm }, preHandler: requireStaff(perm) };
@@ -155,8 +187,15 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     const id = idParam(req);
     const { db, clock } = req.server.deps;
     await withTx(db, async (c) => {
-      const r = await c.query('update staff_invites set cancelled_at = $2 where id = $1 and used_at is null and cancelled_at is null', [id, clock()]);
-      if ((r.rowCount ?? 0) === 0) throw new ApiError(404, 'not-found');
+      const r = await c.query<{ account_id: string | null }>(
+        'update staff_invites set cancelled_at = $2 where id = $1 and used_at is null and cancelled_at is null returning account_id',
+        [id, clock()],
+      );
+      const cancelled = r.rows[0];
+      if (!cancelled) throw new ApiError(404, 'not-found');
+      // The invitee's half-made account, if the names were picked: disabled, and now it never
+      // finishes, so this is its close (owner p11-13). The Terms version and time stay, as at removal.
+      if (cancelled.account_id !== null) await eraseTermsSignature(c, cancelled.account_id);
       await log(c, req, 'staff.invite-cancelled', { inviteId: id });
     });
     return reply.code(204).send();
