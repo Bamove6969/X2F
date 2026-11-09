@@ -218,8 +218,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
    * unlockedAtomic, confirmations }` (bigints as decimal strings), `settled { txHash }` (the kind
    * from `settleKindFor`; 409 `settle-kind-unknown` when the trade alone does not name it) and
    * `late-funds` and `spend-unshown` (a trade settling 6 h with no sweep shown to the moderator,
-   * Task 9 I/O fallback), `alert-unseen`, `alert-late` and `refund-unverified` (a requested refund the moderator
-   * will not sign alone, Task 10), all applied as `escalate`, and `release-claimed` (the moderation
+   * Task 9 I/O fallback) and `refund-unverified` (a seller's cancel refund the moderator will not
+   * sign alone, Task 10), all applied as `escalate`, and `release-claimed` (the moderation
    * service received a trade party's sealed post-release info: the signing window no longer
    * reverts the settling trade, lead decision b 2026-10-29), each for an attested trade only. Applied through the
    * trade store as `system`. The state machine's refusal is 409 with its rule code, so a repeated
@@ -252,11 +252,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         break;
       case 'late-funds':
       case 'spend-unshown':
-      // Task 10: a requested refund the moderator will not sign alone: no seen-receipt for the
-      // buyer's final alert 15 min after it, or its own records (signals, shadow trade) disagree.
-      // `alert-late`: the receipt came more than 2 min after the alert (lead decision I2 (b)).
-      case 'alert-unseen':
-      case 'alert-late':
+      // Task 10: a seller's cancel refund the moderator will not sign alone: its own records
+      // (signals, shadow trade) disagree. The final-alert reports are gone (owner 8 Nov, p6-1).
       case 'refund-unverified':
         if (!keysAre(body, ['kind', 'trade'])) break;
         event = { type: 'escalate' };
@@ -302,19 +299,14 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
 
   // Every attested trade that is open, or closed within WATCH_LIST_CLOSED_DAYS, with its state:
   // the moderation watcher's view of the API trade (Task 9). No addresses or terms. Also
-  // Task 10: `finalAlertSeenAt` (`final_alert_seen_at` only while `final_alert_delivered` is true, else null).
-  // Also
   // `settleKind` (settleKindFor: the kind a `settled` report would be applied as; the watcher checks
   // a sweep it saw only through an import against it, review I1) and `paused` (maintenance: the
-  // watcher's 6 h fallback does not run, review M3). Also `finalAlertAt` (Task 10 review I1): the
-  // API's own, shifted by every maintenance pause it applied; the moderator's auto-refund waits
-  // for the later of it and its shadow's. Owner rule g62 (trade timers stop during maintenance):
+  // watcher's 6 h fallback does not run, review M3). Owner rule g62 (trade timers stop during maintenance):
   // an open trade also counts as paused as soon as `site_flags.maintenance_since` is set, before the
   // timer loop's next pass writes its `paused_at`, so the moderator decides nothing in that gap.
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; state: TradeState; settling: SettleKind | null; paused_at: Date | null; final_alert_at: Date | null; seen: Date | null; site_paused: boolean }>(
-      `select t.code, t.state, t.settling, t.paused_at, t.final_alert_at,
-              case when t.final_alert_delivered is true then t.final_alert_seen_at end as seen,
+    const { rows } = await o.db.query<{ code: string; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean }>(
+      `select t.code, t.state, t.settling, t.paused_at,
               (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused
          from trades t
          join trade_attestations a on a.code = t.code
@@ -328,8 +320,6 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         state: r.state,
         settleKind: settleKindFor({ state: r.state, settling: r.settling }),
         paused: r.paused_at !== null || r.site_paused,
-        finalAlertSeenAt: r.seen ? r.seen.toISOString() : null,
-        finalAlertAt: r.final_alert_at ? r.final_alert_at.toISOString() : null,
       })),
     });
   }));

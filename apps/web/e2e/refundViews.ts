@@ -60,8 +60,6 @@ export function sellerView(over: Partial<RefundView> = {}): RefundView {
     payBy: iso(-5),
     paidAt: null,
     confirmBy: null,
-    finalAlertAt: null,
-    finalAlertSeenAt: null,
     settleBy: null,
     releaseClaimedAt: null,
     pausedAt: null,
@@ -76,26 +74,32 @@ export function sellerView(over: Partial<RefundView> = {}): RefundView {
 }
 
 /**
- * The same, once the seller has nudged mira.k (owner G2, g66): 90 min passed and one nudge, so
- * Cancel & get refund is available. `sellerView()` is the board's locked state (no nudge yet).
+ * The same, once the seller has nudged mira.k: a record only (owner 8 Nov, p6-1: nudges are
+ * optional), so Cancel & get refund is available with or without it.
  */
 export function sellerNudgedView(over: Partial<RefundView> = {}): RefundView {
   return sellerView({ sellerNudgedAt: iso(-20), ...over });
 }
 
-/** The seller's view just after Cancel & get refund: the final alert started at server now. */
+/** The seller's view just after Cancel & get refund: the refund to them settles at once (owner 8 Nov). */
 export function sellerRequestedView(over: Partial<RefundView> = {}): RefundView {
-  return sellerView({ state: 'refund_requested', finalAlertAt: SERVER_NOW, nextDeadline: iso(15), ...over });
+  return sellerView({ state: 'settling', settling: 'auto-refund', settleBy: iso(15), nextDeadline: null, ...over });
 }
 
-/** The buyer's view of the same trade during the final alert, which started at server now. */
-export function buyerAlertView(over: Partial<RefundView> = {}): RefundView {
+/** The seller's view once the refund landed (refunded as `auto-refund`). */
+export function sellerRefundedView(over: Partial<RefundView> = {}): RefundView {
+  return sellerView({ state: 'refunded', settling: 'auto-refund', txHash: 'ab'.repeat(32), closedAt: SERVER_NOW, nextDeadline: null, ...over });
+}
+
+/** The buyer's view of the same trade while the seller's cancel refund settles. */
+export function buyerCancelledView(over: Partial<RefundView> = {}): RefundView {
   return sellerView({
     role: 'buyer',
     counterparty: trader(BOARD.seller),
-    state: 'refund_requested',
-    finalAlertAt: SERVER_NOW,
-    nextDeadline: iso(15),
+    state: 'settling',
+    settling: 'auto-refund',
+    settleBy: iso(15),
+    nextDeadline: null,
     ...over,
   });
 }

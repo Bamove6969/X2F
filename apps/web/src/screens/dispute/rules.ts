@@ -51,7 +51,8 @@ const ms = (iso: string | null): number | null => (iso === null ? null : Date.pa
  * - securing or secured: the seller only (the buyer can cancel instead until "I've paid");
  * - paid: either side only from confirmBy, the payment method's full wait from "I've paid"
  *   (owner p9-4, 8 Nov; the seller used to dispute at once);
- * - settling: either side once the signing window has passed;
+ * - settling: either side once the signing window has passed; the buyer at once while the seller's
+ *   cancel refund settles (`auto-refund`: a buyer who paid late, owner 8 Nov p9-2);
  * - refunded: the buyer, until 48 hours after the refund (owner 2026-10-29; was 90 days).
  * `wait` carries the explanation shown instead of sending anything.
  */
@@ -82,6 +83,7 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
       };
     }
     case 'settling': {
+      if (t.role === 'buyer' && t.settling === 'auto-refund') return { kind: 'open' };
       const by = ms(t.settleBy);
       return by !== null && n > by ? { kind: 'open' } : { kind: 'none' };
     }

@@ -52,8 +52,9 @@
  *   mutual-cancel (BuyerCancelling: the buyer's device builds the refund to the seller).
  * - Task 24: seller in `paid`; both in `settling` (release) and `released` (SellerConfirm, Released).
  *   Task 23's guarded buyer × `settling` wins over Task 24's unguarded one for the cancel kinds.
- * - Task 25: seller in `secured` with `when` past `payBy` (SellerRefund); buyer in `refund_requested` (FinalAlert);
- *   seller in `refund_requested` (the seller's waiting room while the buyer's final alert runs).
+ * - Task 25: seller in `secured` with `when` past `payBy` (SellerRefund); seller in `settling` and
+ *   `refunded`, and buyer in `settling`, with `when` the seller's cancel (`auto-refund`; SellerRefund's
+ *   refund views, SellerCancelled). Owner 8 Nov: no final alert, the refund starts at once.
  * - Task 27: both in `disputed` (DisputeRoom, DisputeRuling); buyer in `refunded` (the refund with the
  *   48-hour "Open a dispute", owner 2026-10-29; was 90 days).
  * - Task 39: seller in `settling` and `refunded` with `when` buyer-cancel (SellerCancelConfirm: the

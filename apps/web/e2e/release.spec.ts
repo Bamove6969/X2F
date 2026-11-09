@@ -100,7 +100,6 @@ function view(over: View = {}): View {
     payBy: '2026-10-25T11:55:00.000Z',
     paidAt: '2026-10-25T11:52:00.000Z',
     confirmBy: '2026-10-25T13:52:00.000Z',
-    finalAlertAt: null,
     settleBy: null,
     pausedAt: null,
     closedAt: null,

@@ -1,14 +1,10 @@
 import type { Payout } from './engine.js';
 
-/** The buyer's final alert lasts 15 minutes before the moderator service may refund alone. */
-export const FINAL_ALERT_MS = 15 * 60 * 1000;
-
-export type AutoRefundRefusal = 'window-open' | 'buyer-marked-paid' | 'final-alert-pending' | 'wrong-destination';
+export type AutoRefundRefusal = 'window-open' | 'buyer-marked-paid' | 'wrong-destination';
 
 export interface AutoRefundFacts {
   paymentDeadline: Date;
   markedPaidAt: Date | null;
-  finalAlertAt: Date | null;
   /** Server clock only; never a time sent by a client. */
   now: Date;
   /** The seller's refund address recorded at escrow setup. */
@@ -21,19 +17,15 @@ function valid(d: Date): boolean {
 }
 
 /**
- * May the moderator key co-sign the buyer no-show refund on its own (spec 2.3, 3.3)?
- * Only when the payment window has passed, the buyer never marked paid, the final alert
- * went out at least 15 minutes ago, and the refund pays exactly the recorded address.
- * Pure; invalid dates never allow.
+ * May the moderator key co-sign the seller's cancel refund on its own (spec 2.3, 3.3; owner 8 Nov,
+ * p6-1: no final warning)? Only when the payment window has passed, the buyer never marked paid,
+ * and the refund pays exactly the recorded address. Pure; invalid dates never allow.
  */
 export function autoRefundDecision(t: AutoRefundFacts): { ok: true } | { ok: false; reason: AutoRefundRefusal } {
   if (!valid(t.now) || !valid(t.paymentDeadline) || t.now.getTime() <= t.paymentDeadline.getTime()) {
     return { ok: false, reason: 'window-open' };
   }
   if (t.markedPaidAt !== null) return { ok: false, reason: 'buyer-marked-paid' };
-  if (t.finalAlertAt === null || !valid(t.finalAlertAt) || t.now.getTime() < t.finalAlertAt.getTime() + FINAL_ALERT_MS) {
-    return { ok: false, reason: 'final-alert-pending' };
-  }
   const [only, ...rest] = t.proposed;
   if (
     only === undefined ||

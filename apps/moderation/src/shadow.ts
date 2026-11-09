@@ -4,9 +4,9 @@ import { apply, MAX_CONFIRM_WINDOW_MIN, newTrade, TradeRuleError, type AttestedT
  * The moderation service's shadow Trade (Plan 3 Task 10): its own copy of the trade, built from the
  * deal it attested and fed ONLY by its own chain watcher (setup-done, chain, settled) and by
  * signals it opened itself (trade.paid, trade.extend, trade.refund-request, trade.cancel), through
- * the same pure `apply` the API uses, on this service's clock. The auto-refund guard reads payBy,
- * paidAt and finalAlertAt from here, never from the API: a lying API can delay a refund, never
- * cause one.
+ * the same pure `apply` the API uses, on this service's clock. The seller-cancel refund guard reads
+ * payBy, paidAt and the shadow's own settling from here, never from the API: a lying API can delay
+ * a refund, never cause one.
  *
  * Fields the attested deal does not carry are filled so they can never loosen a rule: the offer's
  * minimum (1 minor unit: only growth reads the limits, and it reads the maximum), the confirm window

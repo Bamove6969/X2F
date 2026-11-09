@@ -10,7 +10,7 @@ import './BuyerPay.js'; // Task 23: BuyerPay, SellerWaiting
 
 import './releaseScreens.js'; // Task 24: SellerConfirm, Released
 
-import './refundScreens.js'; // Task 25: SellerRefund, FinalAlert
+import './refundScreens.js'; // Task 25: SellerRefund, SellerCancelled
 
 import '../dispute/DisputeSlot.js'; // Task 27: DisputeRoom/DisputeRuling (disputed), the buyer's refunded view
 

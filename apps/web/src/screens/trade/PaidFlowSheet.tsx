@@ -1,5 +1,5 @@
 /**
- * The whole "I've paid" step, for BuyerPay and for Task 25's FinalAlert (`setFinalAlertPaidSheet`):
+ * The whole "I've paid" step, for BuyerPay:
  * the sum is this device's own (`escrow.fiatCents`, Task 12), never the API's (review 2026-10-27,
  * I1); Yes posts `mark-paid { fiatCents }` with exactly that total, then `escrow.markPaid` (the
  * `trade.paid` signal). A `total-changed` refusal sends nothing: the trade is re-read and the sheet

@@ -373,6 +373,5 @@ export function watchStep(a: {
 export function settleKindFor(t: { state: TradeState; settling: SettleKind | null }): SettleKind | null {
   if (t.state === 'settling') return t.settling;
   if (t.state === 'lapsed') return 'lapse-refund';
-  if (t.state === 'refund_requested') return 'auto-refund';
   return null;
 }

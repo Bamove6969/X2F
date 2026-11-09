@@ -4,8 +4,8 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { PushCall, PushTransport } from '../src/push/send.js';
-import { applyEvent, loadTrade } from '../src/trades/store.js';
-import { driveTo, markSellerNudged, seedTrade } from './helpers/trades.js';
+import { loadTrade } from '../src/trades/store.js';
+import { driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
 let app: FastifyInstance;
@@ -44,159 +44,104 @@ function subscription() {
   };
 }
 
-/** A secured trade whose pay window has passed, so the seller may request a refund. */
+/** A secured trade whose pay window has passed, so the seller may cancel (no nudge: optional, owner 8 Nov). */
 async function refundable() {
   const seller = await trader();
   const buyer = await trader();
   const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
   const t = await driveTo(deps, trade, 'secured');
-  await markSellerNudged(deps, t.code);
   setNow(new Date(t.payBy!.getTime() + 60_000));
   return { seller, buyer, t };
 }
 
-const delivered = async (code: string) =>
-  (await deps.db.query<{ d: boolean | null }>('select final_alert_delivered as d from trades where code = $1', [code])).rows[0]!.d;
-
-/** Delivery runs after the response (setImmediate); gives a pending one time to finish before a negative check. */
-const settled = () => new Promise<void>((r) => setTimeout(r, 50));
-
-const seenAt = async (code: string) =>
-  (await deps.db.query<{ at: Date | null }>('select final_alert_seen_at as at from trades where code = $1', [code])).rows[0]!.at;
-
-const seen = (code: string) => `/v1/trades/${code}/final-alert-seen`;
 const errorOf = (res: { json(): unknown }) => (res.json() as { error?: string }).error;
+const cancel = (b: { browser: { post(u: string, body: unknown): Promise<{ statusCode: number; json(): unknown }> } }, code: string) =>
+  b.browser.post(`/v1/trades/${code}/events`, { type: 'request-refund' });
+const markPaid = (b: { browser: { post(u: string, body: unknown): Promise<{ statusCode: number; json(): unknown }> } }, code: string, cents: bigint) =>
+  b.browser.post(`/v1/trades/${code}/events`, { type: 'mark-paid', fiatCents: String(cents) });
 
-describe('final alert: only the seen-receipt sets final_alert_delivered (P3-I13)', () => {
-  it('stays unset (not seen) with no stream and no subscription', async () => {
-    const { seller, t } = await refundable();
-    expect(await delivered(t.code)).toBeNull();
-    const res = await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
+describe("the seller's cancel after the time to pay (owner 8 Nov, p6-1, p9-2, p9-4)", () => {
+  it('starts the refund at once with no nudge and no final alert; the buyer gets the ordinary trade event and push', async () => {
+    const { seller, buyer, t } = await refundable();
+    await buyer.browser.post('/v1/account/push', subscription());
+    const publish = vi.spyOn(app.events, 'publish');
+    const res = await cancel(seller, t.code);
     expect(res.statusCode).toBe(200);
-    await settled();
-    expect(await delivered(t.code)).toBeNull();
-    expect(calls).toEqual([]);
-  });
-
-  it('a push service answering 201 alone never sets it; the push has the generic text', async () => {
-    const { seller, buyer, t } = await refundable();
-    expect((await buyer.browser.post('/v1/account/push', subscription())).statusCode).toBe(204);
-    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
+    const v = res.json() as { state: string; settling: string | null; nextDeadline: string | null; sellerNudgedAt: string | null };
+    expect(v.state).toBe('settling');
+    expect(v.settling).toBe('auto-refund');
+    expect(v.sellerNudgedAt).toBeNull();
+    expect(v.nextDeadline).toBeNull(); // nothing reverts the cancel
+    expect('finalAlertAt' in v).toBe(false);
+    expect('finalAlertSeenAt' in v).toBe(false);
     await vi.waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls.map((c) => c.payload)).toEqual(['Something changed in a trade on X2F']);
-    await settled();
-    expect(await delivered(t.code)).toBeNull();
+    expect(publish.mock.calls.map(([id, ev]) => [id, ev])).toEqual([
+      [seller.id, { type: 'trade', code: t.code, state: 'settling' }],
+      [buyer.id, { type: 'trade', code: t.code, state: 'settling' }],
+    ]);
+    const { rows } = await deps.db.query<{ final_alert_at: Date | null; final_alert_delivered: boolean | null }>(
+      'select final_alert_at, final_alert_delivered from trades where code = $1', [t.code],
+    );
+    expect(rows[0]).toEqual({ final_alert_at: null, final_alert_delivered: null });
   });
 
-  it('an open stream alone never sets it, and a dead stream with no receipt stays unset', async () => {
+  it('is refused before the time to pay is over (409 too-early), and the final-alert receipt route is gone (404)', async () => {
     const { seller, buyer, t } = await refundable();
-    const live: string[] = [];
-    const detachLive = app.events.attach(buyer.id, { send: (d) => void live.push(d), close: () => undefined })!;
-    const detachDead = app.events.attach(buyer.id, { send: () => { throw new Error('gone'); }, close: () => undefined })!;
-    try {
-      await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
-      await vi.waitFor(() => expect(live.join('')).toContain('refund_requested'));
-      await settled();
-      expect(await delivered(t.code)).toBeNull();
-    } finally {
-      detachLive();
-      detachDead();
-    }
+    setNow(new Date(t.payBy!.getTime() - 1));
+    const early = await cancel(seller, t.code);
+    expect(early.statusCode).toBe(409);
+    expect(errorOf(early)).toBe('too-early');
+    setNow(new Date(t.payBy!.getTime() + 60_000));
+    expect((await cancel(seller, t.code)).statusCode).toBe(200);
+    expect((await buyer.browser.post(`/v1/trades/${t.code}/final-alert-seen`, {})).statusCode).toBe(404);
   });
 
-  it("the buyer's receipt sets it true, and is idempotent", async () => {
+  it("Cancel first: the buyer's I've paid right after is refused (409 wrong-state), the refund goes on", async () => {
     const { seller, buyer, t } = await refundable();
-    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
-    expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
-    expect(await delivered(t.code)).toBe(true);
-    expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
-    expect(await delivered(t.code)).toBe(true);
-  });
-
-  it('the receipt records when it landed, once; the trade view shows it (review 2026-10-27, minor 6)', async () => {
-    const { seller, buyer, t } = await refundable();
-    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
-    expect(await seenAt(t.code)).toBeNull();
-    const before = (await buyer.browser.get(`/v1/trades/${t.code}`)).json() as { finalAlertSeenAt: unknown };
-    expect(before.finalAlertSeenAt).toBeNull();
-    const first = new Date(deps.clock().getTime() + 14 * 60_000); // a push held by the push service for 14 min
-    setNow(first);
-    expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
-    expect(await seenAt(t.code)).toEqual(first);
-    // A second receipt (another tab) never moves the time: Task 10 counts 15 min from the first.
-    setNow(new Date(first.getTime() + 60_000));
-    expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
-    expect(await seenAt(t.code)).toEqual(first);
-    const mine = (await buyer.browser.get(`/v1/trades/${t.code}`)).json() as { finalAlertSeenAt: unknown; finalAlertAt: unknown };
-    expect(mine.finalAlertSeenAt).toBe(first.toISOString());
-    expect(typeof mine.finalAlertAt).toBe('string');
-    // The seller never learns when (or whether) the buyer saw it (re-review item 5): null, as for "not seen".
-    const theirs = (await seller.browser.get(`/v1/trades/${t.code}`)).json() as { finalAlertSeenAt: unknown; finalAlertAt: unknown };
-    expect(theirs.finalAlertSeenAt).toBeNull();
-    expect(typeof theirs.finalAlertAt).toBe('string');
-  });
-
-  it('there is no account-wide receipt: a notification in the tray is not proof the alert was read (lead 2026-10-27)', async () => {
-    const { seller, buyer, t } = await refundable();
-    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
-    expect((await buyer.browser.post('/v1/account/final-alert-seen', {})).statusCode).toBe(404);
-    await settled();
-    expect(await delivered(t.code)).toBeNull();
-    expect(await seenAt(t.code)).toBeNull();
-  });
-
-  it('the seller cannot set it (409 wrong-party)', async () => {
-    const { seller, t } = await refundable();
-    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
-    const res = await seller.browser.post(seen(t.code), {});
-    expect(res.statusCode).toBe(409);
-    expect(errorOf(res)).toBe('wrong-party');
-    expect(await delivered(t.code)).toBeNull();
-  });
-
-  it('before a refund is requested the receipt is refused (409 wrong-state)', async () => {
-    const { buyer, t } = await refundable();
-    const res = await buyer.browser.post(seen(t.code), {});
+    expect((await cancel(seller, t.code)).statusCode).toBe(200);
+    const res = await markPaid(buyer, t.code, t.fiatCents);
     expect(res.statusCode).toBe(409);
     expect(errorOf(res)).toBe('wrong-state');
-    expect(await delivered(t.code)).toBeNull();
+    const after = (await loadTrade(deps.db, t.code))!;
+    expect(after.state).toBe('settling');
+    expect(after.settling).toBe('auto-refund');
+    expect(after.paidAt).toBeNull();
   });
 
-  it("an unknown code gets the same answer as someone else's trade", async () => {
-    const { seller, t } = await refundable();
-    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
-    const stranger = await trader();
-    const notYours = await stranger.browser.post(seen(t.code), {});
-    const unknown = await stranger.browser.post(seen(newTradeCode()), {});
-    const malformed = await stranger.browser.post(seen('nonsense'), {});
-    for (const res of [notYours, unknown, malformed]) {
-      expect(res.statusCode).toBe(404);
-      expect(res.json()).toEqual({ error: 'not-found' });
-    }
-    expect(await delivered(t.code)).toBeNull();
-  });
-
-  it('a mark-paid committing between the receipt\'s read and its write leaves the trade unflagged (review 2026-10-27, minor 5)', async () => {
+  it("I've paid first, late (after the time to pay, p9-2): the seller's Cancel right after is refused (409 wrong-state)", async () => {
     const { seller, buyer, t } = await refundable();
-    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
-    // Right after the route has read the trade (still refund_requested), the buyer's mark-paid commits.
-    const real = deps.db.query.bind(deps.db);
-    let raced = false;
-    vi.spyOn(deps.db, 'query').mockImplementation((async (text: unknown, params?: unknown[]) => {
-      const r = await real(text as string, params);
-      if (!raced && typeof text === 'string' && text.startsWith('select * from trades where code') && params?.[0] === t.code) {
-        raced = true;
-        await applyEvent({ db: deps.db, clock: deps.clock }, t.code, { type: 'mark-paid', fiatCents: t.fiatCents }, 'buyer');
+    expect((await markPaid(buyer, t.code, t.fiatCents)).statusCode).toBe(200);
+    const res = await cancel(seller, t.code);
+    expect(res.statusCode).toBe(409);
+    expect(errorOf(res)).toBe('wrong-state');
+    const after = (await loadTrade(deps.db, t.code))!;
+    expect(after.state).toBe('paid');
+    expect(after.settling).toBeNull();
+  });
+
+  it('both taps at the same moment: exactly one wins in the trade row and the trade agrees with the winner', async () => {
+    for (let i = 0; i < 6; i++) {
+      const { seller, buyer, t } = await refundable();
+      const [c, p] = i % 2 === 0
+        ? await Promise.all([cancel(seller, t.code), markPaid(buyer, t.code, t.fiatCents)])
+        : await Promise.all([markPaid(buyer, t.code, t.fiatCents), cancel(seller, t.code)]).then(([a, b]) => [b, a] as const);
+      const codes = [c.statusCode, p.statusCode].sort();
+      expect(codes).toEqual([200, 409]);
+      const loser = c.statusCode === 409 ? c : p;
+      expect(errorOf(loser)).toBe('wrong-state');
+      const after = (await loadTrade(deps.db, t.code))!;
+      if (c.statusCode === 200) {
+        expect(after.state).toBe('settling');
+        expect(after.settling).toBe('auto-refund');
+        expect(after.paidAt).toBeNull();
+      } else {
+        expect(after.state).toBe('paid');
+        expect(after.settling).toBeNull();
       }
-      return r;
-    }) as never);
-    const res = await buyer.browser.post(seen(t.code), {});
-    vi.restoreAllMocks();
-    expect(raced).toBe(true);
-    expect((await loadTrade(deps.db, t.code))!.state).toBe('paid');
-    expect(res.statusCode).toBe(409);
-    expect(errorOf(res)).toBe('wrong-state');
-    expect(await delivered(t.code)).toBeNull();
+      const ev = await deps.db.query<{ event: { type: string } }>('select event from trade_events where code = $1 order by at, id', [t.code]);
+      const types = ev.rows.map((r) => r.event.type);
+      expect(types.filter((x) => x === 'request-refund' || x === 'mark-paid')).toHaveLength(1);
+    }
   });
 });
 
@@ -233,11 +178,10 @@ describe("delivery runs after the actor's response (review 2026-10-27, minor 8)"
     });
     const res = await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
     expect(res.statusCode).toBe(200);
-    expect((res.json() as { state: string }).state).toBe('refund_requested');
+    expect((res.json() as { state: string }).state).toBe('settling');
     expect(released).toBe(false);
-    // The push still goes out, after the response, and still proves nothing about seeing it.
+    // The push still goes out, after the response.
     await vi.waitFor(() => expect(calls).toHaveLength(1));
     await gate;
-    expect(await delivered(t.code)).toBeNull();
   });
 });

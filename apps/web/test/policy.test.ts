@@ -9,14 +9,14 @@ const FEE = '4FeeWalletAddress';
 const ATTACKER = '4SomeoneElse';
 const AMOUNT = 1_250_000_000_000n;
 
-function ctx(role: 'buyer' | 'seller', o: { poster?: 'seller' | 'buyer'; balance?: bigint; state?: TradeState; paidAt?: string | null } = {}): PolicyContext {
+function ctx(role: 'buyer' | 'seller', o: { poster?: 'seller' | 'buyer'; balance?: bigint; state?: TradeState; paidAt?: string | null; settling?: string | null } = {}): PolicyContext {
   const poster = o.poster ?? 'seller';
   const { sellerFundsAtomic } = escrowPlan({ amountAtomic: AMOUNT, poster });
   return {
     role,
     own: role === 'buyer' ? { payout: BUYER } : { refund: SELLER },
     balance: o.balance ?? sellerFundsAtomic,
-    trade: { state: o.state ?? 'secured', poster, amountAtomic: AMOUNT, feeWallet: FEE, paidAt: o.paidAt ?? null },
+    trade: { state: o.state ?? 'secured', poster, amountAtomic: AMOUNT, feeWallet: FEE, paidAt: o.paidAt ?? null, settling: o.settling ?? null },
     deal: { poster, amountAtomic: AMOUNT },
     signedTerms: { payout: BUYER, refund: SELLER },
   };
@@ -79,11 +79,11 @@ describe('cosignPolicy: the shapes each side may settle', () => {
     expect(cosignPolicy(c, out(expected('mutual-cancel', c), 'buyer', 'seller'))).toBe(true);
   });
 
-  it('seller builds the release, the lapse refund and the no-show refund', () => {
+  it("seller builds the release, the lapse refund and the refund of its own cancel after the time to pay", () => {
     expect(cosignPolicy(ctx('seller', { state: 'paid' }), out(expected('release', ctx('seller')), 'seller', 'buyer'))).toBe(true);
     const lapsed = ctx('seller', { state: 'lapsed', balance: 1n });
     expect(cosignPolicy(lapsed, out(expected('lapse-refund', lapsed), 'seller', 'buyer'))).toBe(true);
-    const noShow = ctx('seller', { state: 'refund_requested' });
+    const noShow = ctx('seller', { state: 'settling', settling: 'auto-refund' });
     expect(cosignPolicy(noShow, out(expected('auto-refund', noShow), 'seller', 'mod'))).toBe(true);
   });
 
@@ -223,9 +223,17 @@ describe('cosignPolicy refuses', () => {
     expect(cosignPolicy(notLapsed, out(expected('lapse-refund', notLapsed), 'seller', 'buyer'))).toBe(false);
   });
 
-  it('a no-show refund outside refund_requested', () => {
-    const c = ctx('seller', { state: 'secured' });
-    expect(cosignPolicy(c, out(expected('auto-refund', c), 'seller', 'mod'))).toBe(false);
+  it("the seller's cancel refund only while the trade settles it (owner 8 Nov), never after I've paid", () => {
+    for (const c of [
+      ctx('seller', { state: 'secured' }),
+      ctx('seller', { state: 'paid' }),
+      ctx('seller', { state: 'settling', settling: 'release' }),
+      ctx('seller', { state: 'settling', settling: 'buyer-cancel' }),
+      ctx('seller', { state: 'settling', settling: 'auto-refund', paidAt: '2026-10-25T13:00:00.000Z' }),
+      ctx('seller', { state: 'disputed', settling: 'auto-refund' }),
+    ]) {
+      expect(cosignPolicy(c, out(expected('auto-refund', c), 'seller', 'mod')), `${c.trade.state}/${c.trade.settling}/${c.trade.paidAt}`).toBe(false);
+    }
   });
 
   it('own address that is not the one this side signed, a zero or unread balance, or an outcome this side is not part of', () => {
@@ -248,10 +256,10 @@ describe('cosignPolicy refuses', () => {
 
 describe('the trade size comes from this device, never the API', () => {
   it('a TradeView with the amount one atomic unit off, or the poster swapped, refuses every outcome', () => {
-    const states: TradeState[] = ['secured', 'paid', 'lapsed', 'refund_requested', 'disputed'];
+    const states: TradeState[] = ['secured', 'paid', 'lapsed', 'settling', 'disputed'];
     for (const role of ['buyer', 'seller'] as const) {
       for (const state of states) {
-        const c = ctx(role, { state });
+        const c = ctx(role, { state, settling: state === 'settling' ? 'auto-refund' : null });
         const cases: PolicyContext[] = [
           { ...c, trade: { ...c.trade, amountAtomic: AMOUNT + 1n } },
           { ...c, trade: { ...c.trade, amountAtomic: AMOUNT - 1n } },

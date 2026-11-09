@@ -79,15 +79,6 @@ export async function seedTrade(
   return { code: trade.code, trade, sides };
 }
 
-/**
- * Owner G2 / g66: the seller's refund needs at least one nudge since the escrow was secured. Tests
- * that are not about the nudge record one directly (the nudge route's own write is covered in
- * nudge.test.ts), at the trade's secured_at.
- */
-export async function markSellerNudged(deps: Pick<Deps, 'db'>, code: string): Promise<void> {
-  await deps.db.query('update trades set seller_nudged_at = secured_at where code = $1 and secured_at is not null', [code]);
-}
-
 /** The events (and who sends them) that move a fresh trade along the happy path, one state at a time. */
 export function happyPath(t: Trade, escrowAddress: string): { to: TradeState; e: TradeEvent; by: By }[] {
   const funds = t.sellerFundsAtomic;

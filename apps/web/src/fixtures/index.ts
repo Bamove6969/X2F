@@ -1,7 +1,6 @@
 // Fixture mode: `VITE_FIXTURES=1` in a non-production build only (vite.config.ts drops it from
 // production). The boards' example data is in boards.ts; each screen task answers its own API calls from it.
 import { createElement, useSyncExternalStore } from 'react';
-import { setFinalAlertPaidSheet } from '../screens/trade/FinalAlert.js';
 import { PENDING_ESCROW, setTradeEscrowHook, type TradeEscrow } from '../screens/trade/seams.js';
 import { BOARD_TRADE } from './boards.js';
 import { installPayFixtures } from './payChat.js';
@@ -33,8 +32,6 @@ declare global {
     __x2fEscrowCalls?: string[];
     /** Fixture builds only: while true, every escrow action is refused (a relay that is down). */
     __x2fEscrowFail?: boolean;
-    /** Fixture builds only: FinalAlert's I've paid opens a stand-in dialog until Task 23's PaidConfirmSheet lands. */
-    __x2fFixturePaidSheet?: boolean;
     /**
      * Fixture builds only: keep Task 20's real TradeChatPanel in the chat seam instead of the
      * board's stand-in (src/fixtures/payChat.tsx); e2e/chat.spec.ts sets it.
@@ -47,11 +44,6 @@ const big = (v: string | undefined): bigint | null => (v === undefined ? null : 
 
 export function installFixtures(): void {
   document.documentElement.dataset.fixtureMode = 'on';
-  if (window.__x2fFixturePaidSheet) {
-    setFinalAlertPaidSheet(({ open, onClose }) =>
-      open ? createElement('div', { role: 'dialog', 'aria-label': 'Paid sheet stand-in' }, createElement('button', { type: 'button', onClick: onClose }, 'Close')) : null,
-    );
-  }
   installPayFixtures(window.__x2fRealChat === true);
   const escrow = window.__x2fFixtureEscrow;
   if (!escrow) return;

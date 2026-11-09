@@ -2,9 +2,6 @@ import { useEffect, useRef } from 'react';
 
 /**
  * The events `GET /v1/events` sends (apps/api/src/events/bus.ts). Names are public display names.
- * Delivery only: a `trade` event with state `refund_requested` is NOT the buyer's seen-receipt
- * for the final alert. That receipt is posted by Task 25's `FinalAlert` alone, once per
- * `finalAlertAt` and only while the alert is on screen (review 2026-10-27, Important 2).
  */
 export type LiveEvent =
   | { type: 'trade'; code: string; state: string }
