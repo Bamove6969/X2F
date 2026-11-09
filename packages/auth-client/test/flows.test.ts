@@ -82,6 +82,7 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/trades/:code/chat',
   'POST /v1/trades/:code/dispute',
   'POST /v1/trades/:code/events',
+  // POST /v1/trades/:code/final-alert-seen is gone with the final alert (owner 8 Nov, p6-1; design-results).
   'POST /v1/trades/:code/identity',
   'POST /v1/trades/:code/review',
   'POST /v1/trades/:code/review/skip',

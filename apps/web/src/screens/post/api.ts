@@ -38,6 +38,8 @@ export interface PostOfferBody {
   terms: string;
   /** The card's country for a gift-card method (ISO 3166-1 alpha-2, Revision 2026-10-21); absent otherwise. */
   country?: string;
+  /** J-17 (F13): the gift-card terms version the poster ticked; with `country` only. */
+  giftCardTerms?: string;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);

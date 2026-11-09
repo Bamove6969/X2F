@@ -398,9 +398,16 @@ test("a gift-card offer needs the card's country and sends it as `country` (Revi
   await expect(f(page).country).toHaveAttribute('aria-invalid', 'true');
   expect(posts).toHaveLength(0);
   await f(page).country.selectOption({ label: 'United States' });
+  // J-17 (F13): the poster's side's gift-card terms, each ticked first (a sell ad's poster checks the card).
+  const terms = page.locator('[data-part="gift-card-terms"] input[type="checkbox"]');
+  await expect(terms).toHaveCount(3);
+  await f(page).post.click();
+  await expect(page.getByText('Tick each gift card term to post.', { exact: true })).toBeVisible();
+  expect(posts).toHaveLength(0);
+  for (const box of await terms.all()) await box.check();
   await f(page).post.click();
   await expect.poll(() => posts.length).toBe(1);
-  expect(posts[0]!.postDataJSON()).toMatchObject({ methodId: 'AMAZON_GIFT_CARD', country: 'US' });
+  expect(posts[0]!.postDataJSON()).toMatchObject({ methodId: 'AMAZON_GIFT_CARD', country: 'US', giftCardTerms: 'gift-card-terms-unsigned-1' });
   // Back on a plain method the field goes, and the country is not sent.
   await page.goto('/post?method=ZELLE');
   await expect(f(page).country).toHaveCount(0);
@@ -421,8 +428,9 @@ for (const viewport of PHONE_VIEWPORTS) {
     await expect(f(page).country).toBeVisible();
     await expectPhoneLayout(page);
     await expect(f(page).post).toBeInViewport({ ratio: 1 });
-    // Typed fields are 16 px; the board's "Minimum completed trades" select is 15 px.
-    const typed = await page.locator('input, textarea').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
+    // Typed fields are 16 px; the board's "Minimum completed trades" select is 15 px. Tick boxes and
+    // radios take no typing (the gift-card terms' boxes, J-17), so phones don't zoom into them.
+    const typed = await page.locator('input:not([type=checkbox]):not([type=radio]), textarea').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
     expect(typed.length).toBeGreaterThan(0);
     for (const s of typed) expect(s).toBeGreaterThanOrEqual(16);
     const selects = await page.locator('select').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));

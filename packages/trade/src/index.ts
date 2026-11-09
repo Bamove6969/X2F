@@ -117,3 +117,22 @@ export {
   signalPayloadOk,
   type SignalType,
 } from './signals.js';
+export {
+  GIFT_CARD_CHECK_MIN,
+  GIFT_CARD_CURRENCIES,
+  GIFT_CARD_EVIDENCE,
+  GIFT_CARD_MAX_AGE_DAYS,
+  GIFT_CARD_TERMS,
+  GIFT_CARD_TERMS_VERSION,
+  giftCardCurrencies,
+  giftCardCurrencyOk,
+  giftCardEvidence,
+  giftCardRole,
+  giftCardTermsComplete,
+  giftCardValueRule,
+  type GiftCardEvidenceItem,
+  type GiftCardEvidenceKey,
+  type GiftCardEvidenceSpec,
+  type GiftCardRole,
+  type GiftCardTermKey,
+} from './giftCards.js';

@@ -2,7 +2,7 @@
 // bigint minor units; the form takes only two-decimal currencies until formatFiat takes the
 // currency's exponent (Revision 2026-10-20).
 import { CANT_DO_TITLE, isCantDoCode, offerCapsOf, postCantDoText, type CantDoCode } from '../../ui/cantDoCodes.js';
-import type { AmountUnit } from '@x2f/trade';
+import { GIFT_CARD_TERMS_VERSION, giftCardCurrencyOk, giftCardRole, giftCardTermsComplete, posterRole, type AmountUnit, type GiftCardRole } from '@x2f/trade';
 import { CURRENCIES } from '../browse/api.js';
 import type { PostOfferBody, PriceQuote, Side } from './api.js';
 import { isCountryCode } from './countries.js';
@@ -92,6 +92,16 @@ export const GIFT_CARD_WARNING = 'When trading Monero for gift cards, you accept
 
 /** The inline refusal when a gift-card offer names no country (Revision 2026-10-21). */
 export const COUNTRY_REQUIRED = "Choose the card's country.";
+/** J-17 (T-081): the inline line when a gift card's currency is not its country's. COPY-UNSIGNED // DESIGN: wording */
+export const CURRENCY_NOT_CARD = "Pick the currency of the card's country.";
+/** J-17 (F13): the inline line until every gift-card term is ticked. COPY-UNSIGNED // DESIGN: wording */
+export const GIFT_CARD_TERMS_UNTICKED = 'Tick each gift card term to post.';
+
+/** Who the poster is on a gift card: a sell ad's poster checks the card, a buy ad's sends it (J-17). */
+export function posterGiftCardRole(side: Side): GiftCardRole {
+  return giftCardRole(posterRole(side));
+}
+
 /** Shown with a Retry button when GET /v1/methods fails, instead of an empty picker. */
 export const METHODS_FAILED = "The payment methods didn't load.";
 
@@ -252,7 +262,7 @@ export const UNIT_HELP = 'One unit for the whole offer. Traders see both, conver
 /** COPY-UNSIGNED: the range boxes' error in XMR. */
 export const XMR_AMOUNT_ERROR = 'Enter an amount in XMR, like 0.5 or 2.';
 
-export type FieldError = 'method' | 'country' | 'min' | 'max' | 'margin' | 'terms';
+export type FieldError = 'method' | 'country' | 'currency' | 'giftCardTerms' | 'min' | 'max' | 'margin' | 'terms';
 
 /** The longest terms the API stores (apps/api/src/offers/routes.ts TERMS_MAX). */
 export const TERMS_MAX = 4000;
@@ -272,6 +282,8 @@ export function cleanTerms(t: string): string {
 export interface ValidateContext {
   /** The chosen method is a gift card, so the card's country is required and sent. */
   giftCard?: boolean;
+  /** J-17 (F13): the gift-card terms the poster has ticked (GiftCardTerms). */
+  giftCardTicked?: ReadonlySet<string>;
 }
 
 export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Partial<Record<FieldError, string>>; body?: PostOfferBody } {
@@ -279,6 +291,10 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
   if (f.methodId === '') errors.method = 'Choose a payment method.';
   const giftCard = ctx.giftCard === true;
   if (giftCard && !isCountryCode(f.country)) errors.country = COUNTRY_REQUIRED;
+  // J-17 (T-081): the card's currency follows its country.
+  else if (giftCard && !giftCardCurrencyOk(f.country, f.currency)) errors.currency = CURRENCY_NOT_CARD;
+  // J-17 (F13): every term of the poster's side ticked.
+  if (giftCard && !giftCardTermsComplete(posterGiftCardRole(f.side), ctx.giftCardTicked ?? new Set())) errors.giftCardTerms = GIFT_CARD_TERMS_UNTICKED;
   const min = parseRangeAmount(f.min, f.unit);
   const max = parseRangeAmount(f.max, f.unit);
   const amountError = f.unit === 'xmr' ? XMR_AMOUNT_ERROR : 'Enter an amount, like 50 or 2,000.';
@@ -303,7 +319,7 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
       amounts: f.unit === 'xmr' ? { amountUnit: 'xmr', minAtomic: min!, maxAtomic: max! } : { amountUnit: 'fiat', minFiatCents: min!, maxFiatCents: max! },
       minTrades: f.minTrades,
       terms,
-      ...(giftCard ? { country: f.country } : {}),
+      ...(giftCard ? { country: f.country, giftCardTerms: GIFT_CARD_TERMS_VERSION } : {}),
     },
   };
 }

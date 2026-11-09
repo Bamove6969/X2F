@@ -209,7 +209,14 @@ function stateColumns(t: Trade): [string, unknown][] {
  * Inserts a new trade. `usdCents` is the take's US-dollar value (301; the starter-limit check's
  * number, null with no quote), kept only to weigh the trade's reviews (Plan 5 Task 3).
  */
-export async function insertTrade(q: Queryable, t: Trade, sides: TradeSides, usdCents: bigint | null = null): Promise<void> {
+/** `giftCardTerms`: the gift-card terms version the taker ticked (J-17); null on every other method. */
+export async function insertTrade(
+  q: Queryable,
+  t: Trade,
+  sides: TradeSides,
+  usdCents: bigint | null = null,
+  giftCardTerms: string | null = null,
+): Promise<void> {
   const cols: [string, unknown][] = [
     ['code', t.code],
     ['offer_id', t.offerId],
@@ -228,6 +235,7 @@ export async function insertTrade(q: Queryable, t: Trade, sides: TradeSides, usd
     ['seller_refund', sides.sellerRefund],
     ['seller_wallet_app', sides.sellerWalletApp],
     ['usd_cents', usdCents === null ? null : usdCents.toString()],
+    ['gift_card_terms', giftCardTerms],
   ];
   // Column names are the fixed literals above, never input.
   await q.query(

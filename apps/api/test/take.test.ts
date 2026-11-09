@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { fiatCents, rateFor } from '@x2f/trade';
+import { GIFT_CARD_TERMS_VERSION, fiatCents, rateFor } from '@x2f/trade';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
@@ -632,6 +632,41 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     );
     // The trade's chat is that one, for both sides.
     expect((await seller.browser.post(`/v1/trades/${trade}/chat`, {})).json()).toEqual({ chat: code, role: 'seller' });
+  });
+});
+
+describe('taking a gift-card offer (J-17, F13 tick-box terms)', () => {
+  const GIFT = { methodId: 'STEAM_GIFT_CARD', country: 'US', giftCardTerms: GIFT_CARD_TERMS_VERSION };
+
+  it('the taker ticks the gift-card terms of the version the API shows; the trade keeps it', async () => {
+    const poster = await person();
+    const taker = await person();
+    const offer = await postOffer(poster, GIFT);
+    // Unticked, an older page's version, or not a string: refused, and no trade.
+    for (const over of [{}, { giftCardTerms: 'gift-card-terms-unsigned-0' }, { giftCardTerms: true }]) {
+      const res = await take(taker, offer, body(taker, XMR, undefined, over));
+      expect(res.statusCode, JSON.stringify(over)).toBe(400);
+    }
+    expect((await deps.db.query('select 1 from trades where offer_id = $1', [offer])).rowCount).toBe(0);
+    const code = await taken(taker, offer, body(taker, XMR, undefined, { giftCardTerms: GIFT_CARD_TERMS_VERSION }));
+    const { rows } = await deps.db.query<{ gift_card_terms: string | null; confirm_window_min: number }>(
+      'select gift_card_terms, confirm_window_min from trades where code = $1',
+      [code],
+    );
+    // G50: 45 minutes to check the card.
+    expect(rows[0]).toEqual({ gift_card_terms: GIFT_CARD_TERMS_VERSION, confirm_window_min: 45 });
+    // What the taker agreed to never changes (355_gift_card_terms.sql).
+    await expect(deps.db.query('update trades set gift_card_terms = null where code = $1', [code])).rejects.toThrow(/never change/);
+  });
+
+  it('a take of any other offer carries no gift-card terms', async () => {
+    const poster = await person();
+    const taker = await person();
+    const offer = await postOffer(poster);
+    const res = await take(taker, offer, body(taker, XMR, undefined, { giftCardTerms: GIFT_CARD_TERMS_VERSION }));
+    expect(res.statusCode).toBe(400);
+    const code = await taken(taker, offer, body(taker, XMR));
+    expect((await deps.db.query('select gift_card_terms from trades where code = $1', [code])).rows[0]).toEqual({ gift_card_terms: null });
   });
 });
 

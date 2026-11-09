@@ -56,7 +56,7 @@ export const isPriceChanged = (e: unknown): boolean => e instanceof ApiCallError
 
 export interface TakeArgs {
   /** The quote as shown: amount, rate and total. */
-  quote: Pick<TakeRequest, 'amountAtomic' | 'centsPerXmr' | 'fiatCents'>;
+  quote: Pick<TakeRequest, 'amountAtomic' | 'centsPerXmr' | 'fiatCents' | 'giftCardTerms'>;
   walletId: string | null;
   confirmed: ConfirmedTrade | null;
   /**

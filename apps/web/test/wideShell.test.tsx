@@ -55,6 +55,8 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
   it('has the logo as the home link, the page name under it, then the six pages in board order', () => {
     const host = rail('/sell');
     const nav = host.querySelector('nav[aria-label="Main"].x2f-rail')!;
+    // The rail head carries the logo link and the Site news bell beside it (lead default 9 Nov; HEAD's
+    // rail head wins over J-17's .x2f-brand span, lead batch 4).
     const home = nav.querySelector('.x2f-rail__head > a[aria-label="X2F home"]')!;
     expect(home.getAttribute('href')).toBe('/sell');
     expect(home.querySelector('svg[aria-hidden="true"]')).not.toBeNull();

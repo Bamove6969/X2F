@@ -63,6 +63,7 @@ test('at 1024 px and wider the desktop shell replaces the bottom nav', async ({ 
   await expect(page.locator('[data-shell="phone"]')).toHaveCount(0);
 });
 
+
 // Job 3 (design review 8 Nov 2026, items 2 and 3): wide is the 240 px rail with logo D, never a
 // stretched phone layout.
 test('at 1440x900 the page sits beside a 240 px rail with logo D and is at most 720 px wide', async ({ page }) => {

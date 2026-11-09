@@ -31,6 +31,8 @@
 .x2f-browse__logo {
   display: flex;
   align-items: center;
+  /* Logo D with the Site news bell beside it. */
+  gap: var(--x2f-space-1);
   height: 30px;
   color: var(--x2f-ink);
 }

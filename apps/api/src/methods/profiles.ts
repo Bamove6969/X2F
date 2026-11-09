@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { MAX_CONFIRM_WINDOW_MIN } from '@x2f/trade';
+import { GIFT_CARD_CHECK_MIN, MAX_CONFIRM_WINDOW_MIN } from '@x2f/trade';
 
 /** One payment method in `data/payment-methods.json` (spec 2.6). */
 export interface CatalogMethod {
@@ -57,7 +57,7 @@ export const MIN_CONFIRM_WINDOW_MIN = 90;
  * The shortest for a gift card profile only (a catalog method in "Gift cards & vouchers"): owner
  * G50, "the person holding the escrow has 45 minutes to check a card". Every other profile keeps 90.
  */
-export const MIN_GIFT_CARD_CONFIRM_WINDOW_MIN = 45;
+export const MIN_GIFT_CARD_CONFIRM_WINDOW_MIN = GIFT_CARD_CHECK_MIN;
 
 const DATA = new URL('../../../../data/', import.meta.url);
 const ARRIVALS = ['instant', 'same-day', 'days'] as const;

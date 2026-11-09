@@ -270,6 +270,17 @@ describe('BuyerPay (BuyerPay board), phone', () => {
   it('a gift-card method shows the one bold warning', () => {
     mount(props({ view: tradeView({ ...SECURED, profile: { ...ZELLE, name: 'Amazon gift card', giftCard: true } }) }));
     expect([...document.querySelectorAll('strong')].map((s) => s.textContent)).toContain(GIFT_CARD_WARNING);
+    // J-17 (G50, G52): the buyer sends the card; the evidence they keep, the video a range card's.
+    expect([...document.querySelectorAll('[data-part="gift-card-evidence"] [data-evidence]')].map((e) => e.getAttribute('data-evidence'))).toEqual([
+      'receipt',
+      'card-photo',
+      'login-video',
+    ]);
+  });
+
+  it('no gift-card evidence on any other method', () => {
+    mount(props({ view: tradeView(SECURED) }));
+    expect(document.querySelector('[data-part="gift-card-evidence"]')).toBeNull();
   });
 });
 

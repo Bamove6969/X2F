@@ -2,11 +2,13 @@
 // (spec 11.6), validation into the POST /v1/offers body, the preview line, the saved draft and the
 // refusal copy. The screen itself is covered by apps/web/e2e/post.spec.ts.
 import { describe, expect, it } from 'vitest';
+import { GIFT_CARD_TERMS } from '@x2f/trade';
 import { CURRENCIES } from '../src/screens/browse/api.js';
 import { parseMethods, parsePrice } from '../src/screens/post/api.js';
 import { COUNTRIES } from '../src/screens/post/countries.js';
 import {
   COUNTRY_REQUIRED,
+  GIFT_CARD_TERMS_UNTICKED,
   TERMS_BAD_TEXT,
   TERMS_LONG_TEXT,
   DEFAULT_FORM,
@@ -218,8 +220,9 @@ describe('validate', () => {
   it('a gift-card method needs the card\'s country, sent as `country` (Revision 2026-10-21)', () => {
     const refused = validate(form({ methodId: 'AMAZON_GIFT_CARD' }), { giftCard: true });
     expect(refused.body).toBeUndefined();
-    expect(refused.errors).toEqual({ country: COUNTRY_REQUIRED });
-    const ok = validate(form({ methodId: 'AMAZON_GIFT_CARD', country: 'US' }), { giftCard: true });
+    expect(refused.errors).toEqual({ country: COUNTRY_REQUIRED, giftCardTerms: GIFT_CARD_TERMS_UNTICKED });
+    // J-17: with the poster's side's terms ticked (a sell ad's poster checks the card).
+    const ok = validate(form({ methodId: 'AMAZON_GIFT_CARD', country: 'US' }), { giftCard: true, giftCardTicked: new Set(GIFT_CARD_TERMS.checker) });
     expect(ok.errors).toEqual({});
     expect(ok.body?.country).toBe('US');
   });

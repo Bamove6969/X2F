@@ -1,4 +1,4 @@
-import { offerRate } from '@x2f/trade';
+import { GIFT_CARD_TERMS_VERSION, offerRate } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
@@ -330,7 +330,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
 
   it('a gift-card offer must name the card country, and carries it (Revision 2026-10-27)', async () => {
     const p = await poster();
-    const gift = { methodId: 'AMAZON_GIFT_CARD', currency: 'USD', side: 'buy' };
+    const gift = { methodId: 'AMAZON_GIFT_CARD', currency: 'USD', side: 'buy', giftCardTerms: GIFT_CARD_TERMS_VERSION };
     expect((await p.browser.post('/v1/offers', { ...BODY, ...gift })).statusCode).toBe(400);
     expect((await p.browser.post('/v1/offers', { ...BODY, ...gift, country: 'us' })).statusCode).toBe(400);
     // A country on a method that is not a gift card is refused too.
@@ -342,6 +342,40 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     // A card without one has no country key at all.
     const plain = await post(p, { currency: 'INR' });
     expect('country' in (await list('side=sell&method=ZELLE&currency=INR')).find((c) => c.id === plain)!).toBe(false);
+  });
+});
+
+describe('gift-card offers (J-17)', () => {
+  const gift = { methodId: 'STEAM_GIFT_CARD', side: 'buy', giftCardTerms: GIFT_CARD_TERMS_VERSION };
+
+  it("the card's currency follows its country (T-081)", async () => {
+    const p = await poster();
+    for (const [country, currency] of [['US', 'EUR'], ['DE', 'USD'], ['CA', 'USD'], ['AQ', 'USD']] as const) {
+      const res = await p.browser.post('/v1/offers', { ...BODY, ...gift, country, currency });
+      expect(res.statusCode, `${country} ${currency}`).toBe(400);
+    }
+    await post(p, { ...gift, country: 'DE', currency: 'EUR' });
+    await post(p, { ...gift, country: 'US', currency: 'USD' });
+    // Panama's cards may be in US dollars (ISO 4217 lists both legal tenders).
+    await post(p, { ...gift, country: 'PA', currency: 'USD' });
+  });
+
+  it("the poster ticks the gift-card terms; the version they ticked is kept on the offer (F13)", async () => {
+    const p = await poster();
+    const { giftCardTerms: _v, ...unticked } = gift;
+    expect((await p.browser.post('/v1/offers', { ...BODY, ...unticked, country: 'US' })).statusCode).toBe(400);
+    // A page showing older words cannot agree to these.
+    expect((await p.browser.post('/v1/offers', { ...BODY, ...gift, country: 'US', giftCardTerms: 'gift-card-terms-unsigned-0' })).statusCode).toBe(400);
+    expect((await p.browser.post('/v1/offers', { ...BODY, ...gift, country: 'US', giftCardTerms: true })).statusCode).toBe(400);
+    // Not a gift card: no gift-card terms.
+    expect((await p.browser.post('/v1/offers', { ...BODY, giftCardTerms: GIFT_CARD_TERMS_VERSION })).statusCode).toBe(400);
+    const id = await post(p, { ...gift, country: 'US' });
+    const plain = await post(p, { currency: 'EUR' });
+    const { rows } = await deps.db.query<{ id: string; gift_card_terms: string | null }>(
+      'select id, gift_card_terms from offers where id = any($1) order by id = $2 desc',
+      [[id, plain], id],
+    );
+    expect(rows).toEqual([{ id, gift_card_terms: GIFT_CARD_TERMS_VERSION }, { id: plain, gift_card_terms: null }]);
   });
 });
 
