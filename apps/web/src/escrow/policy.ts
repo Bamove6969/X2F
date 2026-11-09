@@ -12,9 +12,13 @@
  * builds its own buyer-cancel (mod co-signs) and mutual cancel (seller co-signs).
  * Seller: builds the release, the lapse refund and the no-show refund (mod co-signs, only in
  * refund_requested); co-signs a buyer-built mutual cancel; never touches a buyer-cancel.
- * Mod-built (Plan 4 rulings, only while disputed): co-signed only when it pays this side its
- * whole side of the trade at its own address (release for the buyer, full refund for the
- * seller), so no split can move this side's share to the counterparty.
+ * Mod-built (Plan 4 rulings, only while disputed): co-signed only when it is exactly the ruling's
+ * set for this side at its own address (Plan 4 Task 15, Revision 2026-10-29c "Fees on settled
+ * disputes", the poster pays the 1%): `payoutsFor('dispute-buyer')` for the buyer (its payout
+ * first, then the exact fee) and `payoutsFor('dispute-seller')` for the seller (poster seller: its
+ * refund less the exact fee, then the fee; poster buyer: the whole balance), so no split can move
+ * this side's share to the counterparty or change the fee. Whether the ruling allows it at all is
+ * screens/dispute/rules.ts `rulingAllowsCosign`, in front of this.
  *
  * The trade's size is bounded by this device, never set by the API alone: `deal` is what this
  * device stored at trade start and both sides signed in trade.terms (amount at take, poster,
@@ -24,7 +28,7 @@
  * a TradeView whose amount or poster disagrees with `deal` refuses every outcome.
  */
 import type { Outcome, Payout } from '@x2f/escrow';
-import { amountForFunds, escrowPlan, fiatCents, payoutsFor, type SettleKind, type TradeState } from '@x2f/trade';
+import { amountForFunds, escrowPlan, fiatCents, payoutsFor, type RulingKind, type SettleKind, type TradeState } from '@x2f/trade';
 
 /** What the API's TradeView says (untrusted: only cross-checked), plus the fee wallet from config. */
 export interface PolicyTrade {
@@ -94,6 +98,12 @@ const ROUTE: Record<SettleKind, { builder: Party; cosigner: Party }> = {
   'mutual-cancel': { builder: 'buyer', cosigner: 'seller' },
 };
 
+/** Whether this trader builds or co-signs the settlement of this kind (from ROUTE; the mod's part is never a trader's). */
+export function signsIn(kind: SettleKind, role: 'buyer' | 'seller'): boolean {
+  const r = ROUTE[kind];
+  return r.builder === role || r.cosigner === role;
+}
+
 /** Open states in which the buyer may cancel alone after funding (Task 2); never `paid` (no cancel after "I've paid", Task 39 review I2). */
 const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'refund_requested', 'settling'];
 const RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling'];
@@ -109,7 +119,7 @@ function samePayouts(a: readonly Payout[], b: readonly Payout[]): boolean {
   );
 }
 
-function expected(kind: SettleKind, c: PolicyContext): Payout[] {
+function expected(kind: SettleKind | RulingKind, c: PolicyContext): Payout[] {
   const plan = escrowPlan({ amountAtomic: c.deal.amountAtomic, poster: c.deal.poster });
   return payoutsFor({
     kind,
@@ -136,7 +146,7 @@ function check(c: PolicyContext, o: Outcome): boolean {
 
   const state = c.trade.state;
   const { sellerFundsAtomic } = escrowPlan({ amountAtomic: c.deal.amountAtomic, poster: c.deal.poster });
-  const is = (kind: SettleKind, builder: Party, cosigner: Party): boolean => {
+  const is = (kind: SettleKind | RulingKind, builder: Party, cosigner: Party): boolean => {
     if (o.builder !== builder || o.cosigner !== cosigner) return false;
     let want: Payout[];
     try {
@@ -154,13 +164,13 @@ function check(c: PolicyContext, o: Outcome): boolean {
     if (route('buyer-cancel')) return BUYER_CANCEL_STATES.includes(state);
     // No cancel of any kind after "I've paid" (option B, Task 39 review I2 and round 2 N4).
     if (route('mutual-cancel')) return state !== 'paid' && c.trade.paidAt === null;
-    return state === 'disputed' && is('release', 'mod', 'buyer');
+    return state === 'disputed' && is('dispute-buyer', 'mod', 'buyer');
   }
   if (route('release')) return RELEASE_STATES.includes(state);
   if (route('lapse-refund')) return state === 'lapsed';
   if (route('auto-refund')) return state === 'refund_requested';
   if (route('mutual-cancel')) return true;
-  return state === 'disputed' && is('mutual-cancel', 'mod', 'seller');
+  return state === 'disputed' && is('dispute-seller', 'mod', 'seller');
 }
 
 /** True only for an outcome this side may settle (see the module comment). Never throws. */

@@ -305,7 +305,7 @@ describe('queryLog', () => {
     await driveTo(deps, disputed.trade, 'funding');
     await driveTo(deps, other.trade, 'funding');
     await deps.db.query(
-      "insert into disputes (code, seq, opened_by, reason, opened_at) values ($1, 1, 'buyer', 'paid', $2)",
+      "insert into disputes (code, seq, opened_by, reason, opened_at, reply_due_at, ruling_due_at, usd_cents, limit_usd_cents) values ($1, 1, 'buyer', 'paid', $2, $2, $2, 0, 100000)",
       [disputed.code, now],
     );
     await append(deps.db, { actor: mod, tradeCode: disputed.code, action: 'case.opened' });

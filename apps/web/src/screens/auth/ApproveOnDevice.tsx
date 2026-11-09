@@ -18,21 +18,17 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { ApprovalPoll, ApprovalWait } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
-import { formatRemaining } from '../../ui/Countdown.js';
+import { remainingParts, remainingWords, TimeParts } from '../../ui/Countdown.js';
 import { Disclosure } from '../../ui/Disclosure.js';
 import { FlowScreen } from '../../ui/FlowScreen.js';
 import { Icon, StatusIcon } from '../../ui/icons.js';
-import { authApi } from './authApi.js';
+import { authApi, deviceLabel } from './authApi.js';
 import '../screens.css';
 
 export const POLL_MS = 2000;
 
 type Stage = 'waiting' | 'in' | 'blocked' | 'expired';
 
-/** The board's countdown form: "04:59" (mm:ss, mono). */
-export function mmss(ms: number): string {
-  return formatRemaining(ms, 'clock').padStart(5, '0');
-}
 
 export function ApproveOnDevice({
   wait,
@@ -125,6 +121,10 @@ export function ApproveOnDevice({
             You're in
           </h2>
           <p className="x2f-body">Your other device approved this login.</p>
+          {/* LoginApprove board (design build review 7 Nov). COPY-UNSIGNED */}
+          <p className="x2f-body" data-part="approve-now-yours">
+            {deviceLabel()} is now one of your devices.
+          </p>
           {loggedOut.length > 0 ? (
             <p className="x2f-fine" data-part="approve-logged-out">
               Logged out to make room: {loggedOut.join(', ')}.
@@ -202,7 +202,11 @@ export function ApproveOnDevice({
       <p className="x2f-icon-line" data-tone="caution" data-part="approve-countdown" data-mask="clock">
         <Icon name="clock" size={20} />
         <span>
-          Waiting for approval. This ends in <span className="x2f-num">{mmss(left)}</span>.
+          Waiting for approval. This ends in{' '}
+          <span className="x2f-countdown" role="timer" aria-label={remainingWords(remainingParts(left, 'clock'))}>
+            <TimeParts parts={remainingParts(left, 'clock')} />
+          </span>
+          .
         </span>
       </p>
       <Disclosure summary="Where do I approve it?" part="approve-where">

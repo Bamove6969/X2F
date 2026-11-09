@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-a{color:#ff7a1a}a:hover{color:#ffa060}
+a{color:#ff6600}a:hover{color:#ff8533}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
 input::placeholder{color:#9aa4b2}
 </style>
@@ -35,7 +35,7 @@ input::placeholder{color:#9aa4b2}
           <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 38px; font-weight: 700;">Staff</h1>
           <p style="margin: 0; font-size: 15px; color: #9aa4b2;">Everyone who helps run X2F. Only you can add or remove people.</p>
         </section>
-        <button type="button" onClick="{{openAdd}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border: 0; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Add staff member</button>
+        <button type="button" onClick="{{openAdd}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border: 0; border-radius: 12px; background: #ff6600; color: #1a0e05; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Add staff member</button>
       </header>
 
       <sc-if value="{{adding}}" hint-placeholder-val="{{true}}">
@@ -67,7 +67,7 @@ input::placeholder{color:#9aa4b2}
         </fieldset>
         <sc-if value="{{noLink}}" hint-placeholder-val="{{false}}">
           <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;">
-            <button type="button" onClick="{{makeLink}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border: 0; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Create invite link</button>
+            <button type="button" onClick="{{makeLink}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border: 0; border-radius: 12px; background: #ff6600; color: #1a0e05; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Create invite link</button>
             <span style="font-size: 14px; color: #9aa4b2;">They set up their own staff login with a security key or PGP. Staff can't use passwords.</span>
           </div>
         </sc-if>
@@ -122,7 +122,7 @@ class Component extends DCLogic {
     const role = this.state.role;
     const base = 'display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 14px 16px; border-radius: 12px; background: #0e1116; color: #eef1f5; font-family: inherit; text-align: left; cursor: pointer; ';
     const roles = defs.map((d) => ({ ...d, on: role === d.id ? 'true' : 'false',
-      style: base + (role === d.id ? 'border: 2px solid #ff7a1a;' : 'border: 2px solid #20262f;'),
+      style: base + (role === d.id ? 'border: 2px solid #ff6600;' : 'border: 2px solid #20262f;'),
       pick: () => this.setState({ role: d.id, link: false }) }));
     const chip = (c) => 'display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 13px; font-weight: 600; ' + c;
     const people = [
@@ -145,7 +145,7 @@ class Component extends DCLogic {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((label) => {
       const on = !!this.state.days[label];
       return { label, on: on ? 'true' : 'false',
-        style: dayBase + (on ? 'border: 1px solid #ff7a1a; background: #20262f; color: #eef1f5; font-weight: 600;' : 'border: 1px solid #6b7584; background: transparent; color: #9aa4b2;'),
+        style: dayBase + (on ? 'border: 1px solid #ff6600; background: #20262f; color: #eef1f5; font-weight: 600;' : 'border: 1px solid #6b7584; background: transparent; color: #9aa4b2;'),
         toggle: () => this.setState({ days: Object.assign({}, this.state.days, { [label]: !on }) }) };
     });
     return { roles, staff, days, adding: this.state.adding, noLink: !this.state.link, hasLink: this.state.link,

@@ -59,8 +59,9 @@ export async function watchCancelReturns(deps: Pick<Deps, 'db' | 'clock'> & { pu
   const cutoff = new Date(deps.clock().getTime() - CANCEL_RETURN_MAX_WAIT_H * 3_600_000);
   let n = 0;
   const flags = await deps.db.query<{ maintenance: boolean }>('select maintenance_since is not null as maintenance from site_flags');
-  // No site_flags row counts as maintenance, so nothing is escalated (fails closed).
-  const maintenance = flags.rows[0]?.maintenance !== false;
+  // The API does not start without exactly one site_flags row (assertOneSiteFlagsRow, review M1), so
+  // a missing row reads as no maintenance here, as in every other maintenance reader.
+  const maintenance = flags.rows[0]?.maintenance === true;
   if (!maintenance) {
     const stale = await deps.db.query<TradeRow>(
       `select * from trades where ${AWAITING} and paused_at is null and closed_at < $1 order by closed_at limit $2`,

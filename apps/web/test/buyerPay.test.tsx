@@ -6,8 +6,7 @@ import { BuyerCancelling, BuyerPay, SellerWaiting, TASK23_SLOTS } from '../src/s
 import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
-import { resetWarned, setWarned } from '../src/screens/trade/warned.js';
-import { PAY_WARNING_LEAD, PAY_WARNING_WHY } from '../src/screens/trade/PayWarning.js';
+import { resetWarned } from '../src/screens/trade/warned.js';
 import { FinalAlert } from '../src/screens/trade/FinalAlert.js';
 import { buyerAlertView, SERVER_NOW } from '../e2e/refundViews.js';
 
@@ -58,10 +57,12 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     finalAlertAt: null,
     finalAlertSeenAt: null,
     settleBy: null,
+    releaseClaimedAt: null,
     pausedAt: null,
     closedAt: null,
     cancelConfirmedAt: null,
     cancelConfirmableAt: null,
+    sellerNudgedAt: null,
     nextDeadline: null,
     serverNow: at(0),
     ...over,
@@ -107,8 +108,6 @@ function fakeEscrow(over: Partial<TradeEscrow> = {}): TradeEscrow {
 }
 
 beforeEach(() => {
-  // Task 38's pay warning is tested on its own (below); elsewhere the buyer went past it already.
-  setWarned('pay', CODE);
   calls = [];
   answer = () => ({ status: 200, json: tradeView() });
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -183,7 +182,12 @@ async function flush() {
 }
 
 describe('BuyerPay (BuyerPay board), phone', () => {
-  it('securing: the amber chip, "3 of 10 · about 14 min", the unstarted 90 min and the payment card', () => {
+  it('securing: the amber chip, "3 of 10 · about 14 min", the unstarted 90 min, the payment details locked and I\'ve paid closed (owner Q12)', async () => {
+    const asked = vi.fn((_code: string, on: (d: { label: string; value: string }[] | null) => void) => {
+      on([{ label: 'Zelle to', value: '[SELLER ZELLE ID]' }]);
+      return () => undefined;
+    });
+    setPaymentDetailsSource(asked);
     mount(props());
     const t = text();
     expect(t).toContain('Buying from satoshi_ghost');
@@ -192,25 +196,68 @@ describe('BuyerPay (BuyerPay board), phone', () => {
     expect(t).toContain('3 of 10 · about 14 min');
     expect(t).toContain('90 min');
     expect(t).toContain('Clock starts when escrow settles, in 14 min');
-    expect(t).toContain('$412.50 USD');
-    expect(t).toContain('[SELLER ZELLE ID]');
-    expect(t).toContain("Pay from an account in your own name. Payments from someone else's account may be rejected or frozen. Use at your own risk.");
+    // No seller details, no sum to send, until the escrow is secured: they are not even asked for.
+    expect(asked).not.toHaveBeenCalled();
+    expect(t).not.toContain('[SELLER ZELLE ID]');
+    expect(t).not.toContain('Send exactly');
+    expect(t).not.toContain('$412.50');
+    expect(t).toContain('Payment details');
+    expect(t).toContain('They appear when the escrow is secured, in about 14 min.');
+    // The board's padlock tile beside the title.
+    expect(document.querySelector('[data-locked] [data-lock-tile] svg')).not.toBeNull();
+    // The board's locked card keeps the own-name warning (not a payment detail).
+    expect(document.querySelector('[data-locked]')!.textContent).toContain('Pay from an account in your own name.');
     expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
-    expect(byText("I've paid", 'button').hasAttribute('data-primary')).toBe(true);
+    const paid = byText("I've paid", 'button') as HTMLButtonElement;
+    expect(paid.hasAttribute('data-primary')).toBe(true);
+    expect(paid.disabled).toBe(true);
+    // The reason is the button's muted caption (board: aria-describedby="pay-when"), not a red notice.
+    const why = document.querySelector<HTMLElement>('[data-pay-block="not-secured"]')!;
+    expect(why.textContent).toBe('Opens once the escrow is secured.');
+    expect(why.classList.contains('x2f-room__error')).toBe(false);
+    expect(why.classList.contains('x2f-pay__caption')).toBe(true);
+    expect(paid.getAttribute('aria-describedby')).toBe(why.id);
+    expect(document.querySelectorAll('[data-pay-block]')).toHaveLength(1);
+    await click(paid);
+    expect(dialog()).toBeNull();
+    expect(document.body.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(document.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('3');
   });
 
-  it('shows "Releasable in N min" at 10 confirmations before the coins unlock (P3-I4)', () => {
+  it('shows "Releasable in N min" at 10 confirmations before the coins unlock (P3-I4), and still no details or I\'ve paid', () => {
     mount(props({ view: tradeView({ confirmations: 10, releasableEtaMin: 2 }) }));
     expect(text()).toContain('Releasable in 2 min');
     expect(text()).not.toContain('Securing escrow');
+    expect(text()).not.toContain('[SELLER ZELLE ID]');
+    expect(text()).toContain('They appear when the escrow is secured, in about 2 min.');
+    expect((byText("I've paid", 'button') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('secured: the teal chip and the countdown to payBy from the server clock', () => {
+  it('secured: the teal chip, the countdown to payBy from the server clock, the payment details and I\'ve paid open', () => {
     mount(props({ view: tradeView(SECURED) }));
-    expect(text()).toContain('Escrow secured');
+    const t = text();
+    expect(t).toContain('Escrow secured');
     expect(document.querySelector('[role="timer"]')?.textContent).toBe('1 h 2 min');
     expect(document.querySelector('[role="progressbar"]')).toBeNull();
+    expect(t).toContain('$412.50 USD');
+    expect(t).toContain('[SELLER ZELLE ID]');
+    expect(t).toContain("Pay from an account in your own name. Payments from someone else's account may be rejected or frozen. Use at your own risk.");
+    expect(t).not.toContain('They appear when the escrow is secured');
+    expect((byText("I've paid", 'button') as HTMLButtonElement).disabled).toBe(false);
+    expect(document.querySelector('[data-pay-block]')).toBeNull();
+  });
+
+  it("paid: the payment details the buyer paid to stay on screen, never the locked card (review 2026-11-07, 1)", () => {
+    for (const wide of [false, true]) {
+      const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }), wide }));
+      const t = text();
+      expect(t).toContain('[SELLER ZELLE ID]');
+      expect(t).toContain('Send exactly');
+      expect(t).not.toContain('They appear when the escrow is secured');
+      expect(document.querySelector('[data-locked]')).toBeNull();
+      r.unmount();
+    }
   });
 
   it('the counterparty is shown by its public display name, in data-username', () => {
@@ -221,7 +268,7 @@ describe('BuyerPay (BuyerPay board), phone', () => {
   });
 
   it('a gift-card method shows the one bold warning', () => {
-    mount(props({ view: tradeView({ profile: { ...ZELLE, name: 'Amazon gift card', giftCard: true } }) }));
+    mount(props({ view: tradeView({ ...SECURED, profile: { ...ZELLE, name: 'Amazon gift card', giftCard: true } }) }));
     expect([...document.querySelectorAll('strong')].map((s) => s.textContent)).toContain(GIFT_CARD_WARNING);
   });
 });
@@ -421,65 +468,30 @@ describe("every sum comes from this device, never the API (review 2026-10-27, I1
   });
 });
 
-describe('the pay warning (Task 38; board Warn-IvePaid)', () => {
+describe("the pay warning is superseded by owner Q12 (board Warn-IvePaid): it never opens", () => {
   const fresh = () => {
     resetWarned();
     window.localStorage.clear();
   };
   const alert = () => document.body.querySelector<HTMLElement>('[role="alertdialog"]');
 
-  it("opens with the screen while the escrow still confirms, with the owner's words and the confirmations bar; I'll wait closes it", async () => {
+  it('not with the screen while the escrow still confirms: I\'ve paid is closed instead', () => {
     fresh();
     mount(props());
-    expect(alert()).not.toBeNull();
-    const t = alert()!.textContent ?? '';
-    expect(t).toContain('Before you pay');
-    expect(t).toContain('Wait until the XMR is fully in escrow');
-    expect(t).toContain(PAY_WARNING_LEAD);
-    expect(t).toContain(PAY_WARNING_WHY);
-    expect(PAY_WARNING_LEAD + ' ' + PAY_WARNING_WHY).toBe(
-      "We strongly recommend that you do not send payment until all confirmations are complete and you've received confirmation that the XMR is fully in escrow. The way our system is designed, we can help you get back the XMR you were trading for if anyone tries to scam you, but recovering a payment you've sent is much harder and sometimes impossible.",
-    );
-    expect(t).toContain('Escrow confirmations');
-    expect(t).toContain('3 of 10 · about 14 min');
-    // Review M5: "I'll wait" (the safe action) has focus; the owner's words describe the dialog.
-    expect(document.activeElement?.textContent).toBe("I'll wait");
-    expect(document.getElementById(alert()!.getAttribute('aria-describedby')!)?.textContent).toContain(PAY_WARNING_LEAD);
-    await click(byText("I'll wait", 'button'));
     expect(alert()).toBeNull();
-    expect(calls).toEqual([]);
+    expect(text()).not.toContain('Before you pay');
   });
 
-  it("I've paid shows it before the sheet; I've already paid goes on to the confirm sheet, and never shows it again for the trade (after a reload too)", async () => {
-    fresh();
-    const r = mount(props({ view: tradeView(SECURED) }));
-    // Secured and unlocked: nothing opens by itself.
-    expect(alert()).toBeNull();
-    await click(byText("I've paid", 'button'));
-    expect(alert()).not.toBeNull();
-    expect(dialog()).toBeNull();
-    // Secured: no bar.
-    expect(alert()!.textContent).not.toContain('Escrow confirmations');
-    await click(byText("I'll wait", 'button'));
-    await click(byText("I've paid", 'button'));
-    await click(byText("I've already paid", 'button'));
-    expect(alert()).toBeNull();
-    expect(dialog()!.textContent).toContain('Mark this trade as paid?');
-    await click(byText('Not yet', 'button'));
-    await click(byText("I've paid", 'button'));
-    expect(alert()).toBeNull();
-    expect(dialog()).not.toBeNull();
-    r.unmount();
-    // A reload: the in-memory mark is gone, the stored one stays.
-    resetWarned();
-    mount(props({ view: tradeView() }));
-    expect(alert()).toBeNull();
-  });
-
-  it('not shown once the trade is paid', () => {
-    fresh();
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), releasable: false }), escrow: fakeEscrow({ paidRecorded: true }) }));
-    expect(alert()).toBeNull();
+  it("not in front of the sheet once secured, even never warned, even with new coins still confirming: I've paid goes straight to the confirm sheet", async () => {
+    for (const releasable of [true, false]) {
+      fresh();
+      const r = mount(props({ view: tradeView({ ...SECURED, releasable }) }));
+      expect(alert()).toBeNull();
+      await click(byText("I've paid", 'button'));
+      expect(alert()).toBeNull();
+      expect(dialog()!.textContent).toContain('Mark this trade as paid?');
+      r.unmount();
+    }
   });
 
   it('Yes, mark as paid is disabled until the tick (the two steps)', async () => {
@@ -492,20 +504,50 @@ describe('the pay warning (Task 38; board Warn-IvePaid)', () => {
   });
 });
 
-describe('buyer cancel (spec 2.3)', () => {
-  it('before "I\'ve paid", one tap re-reads the trade, posts buyer-cancel and then starts the refund (trade.cancel)', async () => {
+describe('buyer cancel (spec 2.3; owner G56, g67)', () => {
+  /** The "Cancelling is final" sheet's own buttons (the quiet Cancel trade on the screen is outside it). */
+  const sheet = () => document.body.querySelector<HTMLElement>('[data-sheet="cancel-final"]');
+  const inSheet = (label: string) => [...(sheet()?.querySelectorAll<HTMLElement>('button') ?? [])].find((b) => (b.textContent ?? '').trim() === label)!;
+
+  it('Cancel trade opens "Cancelling is final" first and sends nothing; Keep trading closes it', async () => {
+    mount(props({ view: tradeView(SECURED) }));
+    expect(sheet()).toBeNull();
+    await click(byText('Cancel trade', 'button'));
+    expect(sheet()).not.toBeNull();
+    expect(dialog()!.textContent).toContain('Cancelling is final');
+    expect(sheet()!.textContent).toContain(
+      "The 1.250000 XMR goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap I've paid instead.",
+    );
+    // The safe action has focus; the warning describes the dialog.
+    expect(document.activeElement?.textContent).toBe('Keep trading');
+    expect(document.getElementById(dialog()!.getAttribute('aria-describedby')!)?.textContent).toContain("Don't send any money after you cancel.");
+    expect(calls).toEqual([]);
+    await click(inSheet('Keep trading'));
+    expect(sheet()).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('before "I\'ve paid", the sheet\'s Cancel trade re-reads the trade, posts buyer-cancel and then starts the refund (trade.cancel)', async () => {
     answer = (b) => ({ status: 200, json: b.type ? tradeView({ state: 'settling', settling: 'buyer-cancel' }) : tradeView(SECURED) });
     mount(props({ view: tradeView(SECURED) }));
     await click(byText('Cancel trade', 'button'));
+    await click(inSheet('Cancel trade'));
     await flush();
     expect(dialog()).toBeNull();
     expect(calls).toEqual([`GET /v1/trades/${CODE}`, `POST /v1/trades/${CODE}/events {"type":"buyer-cancel"}`, 'escrow:buyerCancel', 'refresh']);
   });
 
-  it("a one-tap cancel on a stale view: the fresh trade is paid (another tab), so nothing is cancelled and the room re-reads (review Minor 4; Revision 2026-10-29b)", async () => {
+  it('while the escrow still confirms (securing) the buyer may cancel too, through the same sheet', async () => {
+    mount(props());
+    await click(byText('Cancel trade', 'button'));
+    expect(sheet()).not.toBeNull();
+  });
+
+  it("a cancel on a stale view: the fresh trade is paid (another tab), so nothing is cancelled and the room re-reads (review Minor 4; Revision 2026-10-29b)", async () => {
     answer = () => ({ status: 200, json: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1) }) });
     mount(props({ view: tradeView(SECURED) }));
     await click(byText('Cancel trade', 'button'));
+    await click(inSheet('Cancel trade'));
     await flush();
     expect(calls).toEqual([`GET /v1/trades/${CODE}`, 'refresh']);
     expect(dialog()).toBeNull();

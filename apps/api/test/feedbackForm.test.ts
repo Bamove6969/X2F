@@ -1,11 +1,10 @@
 // Plan 5 Task 21: the feedback form behind every "can't do that" popup (spec 5.2, owner 2026-10-29).
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { requireSession } from '../src/auth/sessions.js';
-import { FEEDBACK_FORM_BUCKET, FEEDBACK_FORM_DAILY, listFeedbackForm, purgeFeedbackForm } from '../src/feedback/form.js';
+import { FEEDBACK_FORM_DAILY, FEEDBACK_FORM_MIN_GAP_S, SendGap, listFeedbackForm, purgeFeedbackForm } from '../src/feedback/form.js';
+import { ApiError } from '../src/errors.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
@@ -75,6 +74,8 @@ describe('POST /v1/feedback/form', () => {
   it('a named row holds the account id and the refusal code, so staff can reach out', async () => {
     const { b, id } = await login('named1');
     expect((await b.post('/v1/feedback/form', { kind: 'recommendation', text: 'Line one\r\nLine two', anonymous: false, from: 'offer-cap' })).statusCode).toBe(202);
+    // One send per FEEDBACK_FORM_MIN_GAP_S per person: space them out.
+    setNow(new Date(T0.getTime() + FEEDBACK_FORM_MIN_GAP_S * 1000));
     expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'No code', anonymous: false })).statusCode).toBe(202);
     expect(await rows()).toEqual([
       { kind: 'recommendation', body: 'Line one\nLine two', account_id: id, from_code: 'offer-cap', created_on: '2026-10-29' },
@@ -128,7 +129,9 @@ describe('POST /v1/feedback/form', () => {
 
   it('takes a tab, ZWNJ (Persian) and ZWJ (emoji sequences): review M5', async () => {
     const { b } = await login('script1');
-    for (const text of ['tab\there', 'می\u200cخواهم', 'family \u{1F468}\u200d\u{1F469}\u200d\u{1F467}']) {
+    for (const [i, text] of ['tab\there', 'می\u200cخواهم', 'family \u{1F468}\u200d\u{1F469}\u200d\u{1F467}'].entries()) {
+      // One send per FEEDBACK_FORM_MIN_GAP_S per person: space them out.
+      setNow(new Date(T0.getTime() + i * FEEDBACK_FORM_MIN_GAP_S * 1000));
       expect((await b.post('/v1/feedback/form', { kind: 'feedback', text, anonymous: true })).statusCode, JSON.stringify(text)).toBe(202);
     }
   });
@@ -152,15 +155,43 @@ describe('POST /v1/feedback/form', () => {
   });
 
   it('a failed insert does not use up a send (review M3)', async () => {
-    setNow(new Date('2026-11-15T12:00:00Z'));
+    const base = Date.parse('2026-11-15T12:00:00Z');
+    // One send per FEEDBACK_FORM_MIN_GAP_S per person: every try below is spaced out.
+    let tries = 0;
+    const next = () => setNow(new Date(base + tries++ * FEEDBACK_FORM_MIN_GAP_S * 1000));
+    next();
     const { b } = await login('dbfail1');
     await deps.db.query('alter table feedback_form rename to feedback_form_away');
     try {
-      for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'x', anonymous: true })).statusCode).toBe(500);
+      for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) {
+        next();
+        expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'x', anonymous: true })).statusCode).toBe(500);
+      }
     } finally {
       await deps.db.query('alter table feedback_form_away rename to feedback_form');
     }
-    for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: `ok${i}`, anonymous: true })).statusCode).toBe(202);
+    for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) {
+      next();
+      expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: `ok${i}`, anonymous: true })).statusCode).toBe(202);
+    }
+  });
+
+  it('a failed insert gives the 30 s gap back: a retry straight after a 500 is taken (review m3)', async () => {
+    setNow(new Date('2026-11-20T12:00:00Z'));
+    const { b } = await login('dbfail2');
+    await deps.db.query('alter table feedback_form rename to feedback_form_away');
+    try {
+      expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'x', anonymous: true })).statusCode).toBe(500);
+    } finally {
+      await deps.db.query('alter table feedback_form_away rename to feedback_form');
+    }
+    // Same instant: no gap was used up by the failed send.
+    expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'retry', anonymous: true })).statusCode).toBe(202);
+    // And the retry did start a gap.
+    expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'again', anonymous: true })).json()).toEqual({
+      error: 'slow-down',
+      retryAfterSeconds: FEEDBACK_FORM_MIN_GAP_S,
+    });
   });
 
   it('accepts 2000 characters, counted as characters, and a null from', async () => {
@@ -184,17 +215,20 @@ describe('POST /v1/feedback/form', () => {
   });
 
   it(`takes ${FEEDBACK_FORM_DAILY} a day per account, named or not, then 429 until midnight UTC; the count is not stored`, async () => {
-    // A later day of its own: the shared bucket has refilled whatever earlier tests took.
     setNow(new Date('2026-12-01T15:30:00Z'));
     const { b } = await login('chatty1');
     const { b: other } = await login('chatty2');
     for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) {
+      // One send per FEEDBACK_FORM_MIN_GAP_S per person: space them out.
+      setNow(new Date(Date.parse('2026-12-01T15:30:00Z') + i * FEEDBACK_FORM_MIN_GAP_S * 1000));
       expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: `n${i}`, anonymous: i % 2 === 0 })).statusCode).toBe(202);
     }
+    setNow(new Date('2026-12-01T15:30:00Z'));
     const over = await b.post('/v1/feedback/form', { kind: 'feedback', text: 'one more', anonymous: true });
     expect(over.statusCode).toBe(429);
     // 15:30 UTC → midnight is 8.5 hours away.
-    expect(over.json()).toEqual({ error: 'slow-down', retryAfterSeconds: 8.5 * 3600 });
+    // `limit: 'daily'`: the form says why (owner Q67: to stop spam).
+    expect(over.json()).toEqual({ error: 'slow-down', retryAfterSeconds: 8.5 * 3600, limit: 'daily' });
     expect(over.headers['retry-after']).toBe(String(8.5 * 3600));
     expect((await other.post('/v1/feedback/form', { kind: 'feedback', text: 'other', anonymous: true })).statusCode).toBe(202);
     expect(await rows()).toHaveLength(FEEDBACK_FORM_DAILY + 1);
@@ -202,17 +236,115 @@ describe('POST /v1/feedback/form', () => {
     expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'next day', anonymous: true })).statusCode).toBe(202);
   });
 
-  // Last in this block: it empties the app's shared bucket.
-  it('one shared budget for everyone on top of the daily count (503 busy when spent)', async () => {
-    // A month on: the bucket has refilled whatever earlier tests took.
+  it('owner Q67/Q69: 10 a day, and each team member has their own 10 (not the team\'s)', async () => {
+    expect(FEEDBACK_FORM_DAILY).toBe(10);
+    setNow(new Date('2026-12-03T10:00:00Z'));
+    const { b: owner, id: teamId } = await login('teamfb1');
+    const member = async (i: number) => {
+      const loginId = await seedAccount(deps, { loginName: `fbmember${i}x`, displayName: `fb-m-${i}`, kind: 'member' });
+      const name = `FbMember${i}`;
+      await deps.db.query(
+        `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+         values ($1, $2, $3, $4, $5, $6, $5, $5)`,
+        [teamId, name, name.toLowerCase(), ['offers'], deps.clock(), loginId],
+      );
+      const b = new Browser(app);
+      expect((await b.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
+      return b;
+    };
+    const m1 = await member(1);
+    const m2 = await member(2);
+    const sendAll = async (b: Browser) => {
+      for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) {
+        setNow(new Date(Date.parse('2026-12-03T10:00:00Z') + i * FEEDBACK_FORM_MIN_GAP_S * 1000));
+        expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: `t${i}`, anonymous: true })).statusCode).toBe(202);
+      }
+      setNow(new Date(Date.parse('2026-12-03T10:00:00Z') + FEEDBACK_FORM_DAILY * FEEDBACK_FORM_MIN_GAP_S * 1000));
+      const over = await b.post('/v1/feedback/form', { kind: 'feedback', text: 'eleventh', anonymous: true });
+      expect([over.statusCode, over.json().limit]).toEqual([429, 'daily']);
+    };
+    await sendAll(m1);
+    // The other member and the team account itself still have all of theirs.
+    await sendAll(m2);
+    await sendAll(owner);
+  });
+
+  it(`one send per ${FEEDBACK_FORM_MIN_GAP_S} s per person (owner 2026-11-02; no shared budget): 429 slow-down in between, others unaffected`, async () => {
     setNow(new Date('2027-01-05T12:00:00Z'));
-    const senders = await Promise.all(Array.from({ length: Math.ceil((FEEDBACK_FORM_BUCKET.capacity + 5) / FEEDBACK_FORM_DAILY) }, (_, i) => login(`flood${i}`)));
-    const codes: number[] = [];
-    for (const { b } of senders) {
-      for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) codes.push((await b.post('/v1/feedback/form', { kind: 'feedback', text: `f${i}`, anonymous: true })).statusCode);
+    const { b } = await login('gap1');
+    const { b: other } = await login('gap2');
+    expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'first', anonymous: true })).statusCode).toBe(202);
+    // Straight after a send: the whole gap is left.
+    const now = await b.post('/v1/feedback/form', { kind: 'feedback', text: 'at once', anonymous: true });
+    expect(now.statusCode).toBe(429);
+    expect(now.json()).toEqual({ error: 'slow-down', retryAfterSeconds: FEEDBACK_FORM_MIN_GAP_S });
+    setNow(new Date(Date.parse('2027-01-05T12:00:00Z') + (FEEDBACK_FORM_MIN_GAP_S - 1) * 1000));
+    const soon = await b.post('/v1/feedback/form', { kind: 'feedback', text: 'too soon', anonymous: true });
+    expect(soon.statusCode).toBe(429);
+    expect(soon.json()).toEqual({ error: 'slow-down', retryAfterSeconds: 1 });
+    expect(soon.headers['retry-after']).toBe('1');
+    expect((await other.post('/v1/feedback/form', { kind: 'feedback', text: 'someone else', anonymous: true })).statusCode).toBe(202);
+    setNow(new Date(Date.parse('2027-01-05T12:00:00Z') + FEEDBACK_FORM_MIN_GAP_S * 1000));
+    expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'later', anonymous: true })).statusCode).toBe(202);
+    // Many people at once are never refused for each other (no shared cap).
+    const crowd = await Promise.all(Array.from({ length: 40 }, (_, i) => login(`crowd${i}`)));
+    const codes = await Promise.all(crowd.map(({ b: c }, i) => c.post('/v1/feedback/form', { kind: 'feedback', text: `c${i}`, anonymous: true }).then((r) => r.statusCode)));
+    expect(codes.every((c) => c === 202)).toBe(true);
+  });
+
+  it('a parallel burst from one person (a double click) gets exactly one 202 (review m4)', async () => {
+    setNow(new Date('2027-01-06T12:00:00Z'));
+    const { b } = await login('double1');
+    const codes = await Promise.all(
+      ['one', 'two'].map((text) => b.post('/v1/feedback/form', { kind: 'feedback', text, anonymous: true }).then((r) => r.statusCode)),
+    );
+    expect(codes.sort()).toEqual([202, 429]);
+    expect(await rows()).toHaveLength(1);
+  });
+});
+
+describe('SendGap (review M2: keeps only "blocked until", and only while it blocks)', () => {
+  const GAP = FEEDBACK_FORM_MIN_GAP_S * 1000;
+  const refusal = (f: () => void): unknown => {
+    try {
+      f();
+    } catch (e) {
+      return e instanceof ApiError ? { status: e.status, code: e.code, ...e.extra } : e;
     }
-    expect(codes.filter((c) => c === 202)).toHaveLength(FEEDBACK_FORM_BUCKET.capacity);
-    expect(codes.filter((c) => c !== 202 && c !== 503)).toEqual([]);
+    return 'taken';
+  };
+
+  it('forgets an account once its gap has run out, on the next request from anyone', () => {
+    const g = new SendGap(GAP);
+    g.take('a', 0);
+    expect(g.size).toBe(1);
+    expect(refusal(() => g.take('a', GAP - 1))).toEqual({ status: 429, code: 'slow-down', retryAfterSeconds: 1 });
+    g.take('b', GAP);
+    // a's entry expired at GAP and was dropped; only b's remains.
+    expect(g.size).toBe(1);
+    expect(g.blockedUntil('a')).toBeUndefined();
+    expect(g.blockedUntil('b')).toBe(2 * GAP);
+    g.sweep(3 * GAP);
+    expect(g.size).toBe(0);
+  });
+
+  it('give() hands the gap back, but only the gap that take() set', () => {
+    const g = new SendGap(GAP);
+    const until = g.take('a', 0);
+    g.give('a', until);
+    expect(g.size).toBe(0);
+    expect(refusal(() => g.take('a', 0))).toBe('taken');
+    // A stale give (from an earlier take) does not clear a newer gap.
+    g.give('a', until - 1);
+    expect(g.blockedUntil('a')).toBe(GAP);
+  });
+
+  it('is bounded: past maxKeys the oldest entry is dropped (that account may send early, nothing worse)', () => {
+    const g = new SendGap(GAP, 3);
+    for (const k of ['a', 'b', 'c', 'd']) g.take(k, 0);
+    expect(g.size).toBe(3);
+    expect(g.blockedUntil('a')).toBeUndefined();
+    expect(g.blockedUntil('d')).toBe(GAP);
   });
 });
 
@@ -255,18 +387,5 @@ describe('listFeedbackForm and purgeFeedbackForm', () => {
     );
     expect(await purgeFeedbackForm.run(deps.db, T0)).toBe(1);
     expect((await rows()).map((r) => r.body)).toEqual(['keep']);
-  });
-});
-
-// TRIPWIRE (local tree only): Plan 4's staff API and Task 4's staff Feedback page are not on the main
-// line yet, so no route lists feedback_form rows. When either lands, serve listFeedbackForm behind
-// `feedback.read` (the staff list shows both kinds: Task 4's moods and these form rows, named rows
-// with their account), then delete this tripwire.
-describe('Task 21 waits for the staff Feedback page', () => {
-  const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-  it('NEEDS_PLAN_4_STAFF: no staff route lists the feedback form yet', () => {
-    for (const p of ['apps/api/src/staff/feedback.ts', 'apps/staff-web/src/screens/Feedback.tsx']) {
-      expect(existsSync(ROOT + p), `${p} landed: serve listFeedbackForm on the staff Feedback page (Task 21), then delete this tripwire`).toBe(false);
-    }
   });
 });

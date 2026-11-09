@@ -8,7 +8,7 @@ import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { recoveryRoutes } from './auth/recovery.js';
 import { approvalRoutes } from './auth/approval.js';
-import { logoutRoute, runsWithSession } from './auth/sessions.js';
+import { TRADER_LOGIN_KINDS, TRADER_REALM, logoutRoute, runsWithSession, type SessionRealm } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import type { TxConfirmations } from './trades/chain.js';
@@ -20,10 +20,14 @@ import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
 import { offerRoutes } from './offers/routes.js';
+import { reviewRoutes } from './reviews/routes.js';
+import { tradedTotalRoutes } from './traders/tradedTotal.js';
 import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import { newsRoutes } from './news/routes.js';
+import { maintenanceGate, siteRoutes } from './site/routes.js';
 import { feedbackFormRoutes } from './feedback/form.js';
 import { feedbackRoutes } from './feedback/mood.js';
+import { pastRepRoutes } from './pastrep/routes.js';
 import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
@@ -95,6 +99,8 @@ declare module 'fastify' {
      * `LIVE_SESSION_EXEMPT`, reads it).
      */
     sessionWriteRoutes: readonly string[];
+    /** Plan 4 Task 4: which app's sessions this instance reads and writes (its cookie name and `sessions.app`). */
+    sessionRealm: SessionRealm;
   }
 }
 
@@ -153,7 +159,11 @@ function logMethod(this: unknown, args: unknown[], method: (...a: unknown[]) => 
   method.apply(this, out);
 }
 
-export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<FastifyInstance> {
+/**
+ * The Fastify instance both APIs start from (the trader API and Plan 4's staff API): R5 logging,
+ * the body limit and the framework error answers.
+ */
+export function newFastify(logStream?: { write(line: string): void }): FastifyInstance {
   const app = Fastify({
     // R5: no request logging, no proxy trust (so no forwarded addresses), and a request
     // serializer that keeps only the method and the route pattern: never the URL (it can carry
@@ -177,9 +187,34 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
       },
       hooks: { logMethod },
       redact: { paths: ['req.body', 'req.headers.cookie', 'res.headers["set-cookie"]'], censor: '[redacted]' },
-      ...(options.logStream ? { stream: options.logStream } : {}),
+      ...(logStream ? { stream: logStream } : {}),
     },
   });
+  return app;
+}
+
+/** JSON 404s, `ApiError` answers and fixed answers for everything else (both APIs). */
+export function installErrorAnswers(app: FastifyInstance): void {
+  app.setNotFoundHandler((_req, reply) => {
+    void reply.code(404).send({ error: 'not-found' });
+  });
+
+  app.setErrorHandler((err: FastifyError | ApiError, req, reply) => {
+    if (err instanceof ApiError) {
+      const retry = err.extra?.retryAfterSeconds;
+      if (typeof retry === 'number') void reply.header('retry-after', String(retry));
+      return reply.code(err.status).send({ ...err.extra, error: err.code });
+    }
+    const status = typeof err.statusCode === 'number' ? err.statusCode : 500;
+    if (status === 415) return reply.code(415).send({ error: 'unsupported-media-type' });
+    if (status >= 400 && status < 500) return reply.code(status).send({ error: 'bad-request' });
+    req.log.error({ req, err }, 'request failed');
+    return reply.code(500).send({ error: 'internal' });
+  });
+}
+
+export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<FastifyInstance> {
+  const app = newFastify(options.logStream);
 
   app.decorate('budgets', newBudgets(deps.clock));
   app.decorate('deps', deps);
@@ -189,6 +224,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   app.decorate('push', {
     send: (accountId: string, kind: PushKind, opts?: PushOptions) => sendPush({ db: deps.db, clock: deps.clock, config: deps.config, transport, log: app.log }, accountId, kind, opts),
   });
+  app.decorate('sessionRealm', TRADER_REALM);
   app.decorateRequest('auth', null as never);
   app.decorateRequest('confirmedAction', null);
   await app.register(fastifyCookie);
@@ -216,25 +252,13 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // CSRF: before any body is parsed, unsafe methods need an exact configured Origin (Task 4).
   app.addHook('onRequest', originHook);
 
+  // Plan 4, Task 8: while maintenance is on, every /v1/* route but GET /v1/site answers 503 `maintenance`.
+  app.addHook('onRequest', maintenanceGate);
+
   // Only JSON bodies: the built-in text/plain parser would let a cross-site form post a JSON body.
   app.removeContentTypeParser('text/plain');
 
-  app.setNotFoundHandler((_req, reply) => {
-    void reply.code(404).send({ error: 'not-found' });
-  });
-
-  app.setErrorHandler((err: FastifyError | ApiError, req, reply) => {
-    if (err instanceof ApiError) {
-      const retry = err.extra?.retryAfterSeconds;
-      if (typeof retry === 'number') void reply.header('retry-after', String(retry));
-      return reply.code(err.status).send({ ...err.extra, error: err.code });
-    }
-    const status = typeof err.statusCode === 'number' ? err.statusCode : 500;
-    if (status === 415) return reply.code(415).send({ error: 'unsupported-media-type' });
-    if (status >= 400 && status < 500) return reply.code(status).send({ error: 'bad-request' });
-    req.log.error({ req, err }, 'request failed');
-    return reply.code(500).send({ error: 'internal' });
-  });
+  installErrorAnswers(app);
 
   // Review round 5 M1: records each route that writes with a session (registered below).
   const sessionWriteRoutes: string[] = [];
@@ -245,6 +269,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   });
 
   app.get('/healthz', async () => ({ ok: true }));
+  // Plan 4, Task 8: the banner, the emergency stop and maintenance as every visitor sees them.
+  siteRoutes(app);
   logoutRoute(app);
   passwordRoutes(app);
   await pgpRoutes(app);
@@ -256,8 +282,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // Plan 2 Task 16: new-device approval (the new device's poll and the logged-in device's decision).
   approvalRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
+  // Staff accounts log in only on the staff API (owner 2026-11-03): see `TRADER_LOGIN_KINDS`.
   webauthnRoutes(app);
-  await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner', 'member'] });
+  await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: [...TRADER_LOGIN_KINDS] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
   // Plan 3 Task 3: method lists, suggestions and the price (browsing needs no session); the owner's price health.
@@ -295,6 +322,12 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   }
   // Plan 5, Task 21: the feedback form every "can't do that" popup links to.
   feedbackFormRoutes(app);
+  // Plan 5, Task 3: reviews with blind reveal (the gate is wired into the take and wallet routes).
+  reviewRoutes(app);
+  // C12b: the opt-in "traded to date" line's setting.
+  tradedTotalRoutes(app);
+  // Plan 5, Task 10: past reputation claims proven by a PGP signature.
+  pastRepRoutes(app);
   // Plan 2, Task 18: team members (invites, the member's sign-up, roles, the owner's audit log).
   teamRoutes(app);
   // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.

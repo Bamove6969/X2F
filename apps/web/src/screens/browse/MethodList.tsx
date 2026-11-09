@@ -2,13 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { Icon } from '../../ui/icons.js';
 import { ApiShapeError, CURRENCIES, adSide, currencyFrom, fetchMethods, formatMinor, type MethodLists, type MethodRow, type MethodSort, type Side } from './api.js';
+import { MethodPicker, methodShown } from './MethodPicker.js';
 import { RadioChips } from './RadioChips.js';
 import type { BrowseCopy } from './SellCopy.js';
 import { SuggestMethodSheet } from './SuggestMethodSheet.js';
 import './browse.css';
 
-// The Main board (/sell) and, with side="buy", the BuyMain board (/buy): the methods with live offers
-// in the chosen currency first, then every other method A–Z, a currency picker, search and Sort.
+// The Main board (/sell) and, with side="buy", the BuyMain board (/buy): one card for the methods with
+// live offers in the chosen currency (a picker of them, MethodPicker.tsx; owner 2026-11-08), then every
+// other method A–Z, a currency picker, search and Sort. Search lists every match as rows.
 
 /** The sort ids in the order of `copy.methodSorts`. */
 const SORT_IDS: readonly MethodSort[] = ['buyers', 'rate', 'az'];
@@ -17,6 +19,8 @@ const SORT_IDS: readonly MethodSort[] = ['buyers', 'rate', 'az'];
 // rows stay hidden rather than read with the new currency's words and symbol. A sort change keeps
 // showing the old order until the new one lands.
 type Load = { kind: 'loading' } | { kind: 'ready'; side: Side; currency: string; lists: MethodLists } | { kind: 'failed'; shape: boolean };
+
+type Section = { title: string; rows: MethodRow[]; pick?: boolean };
 
 /** The order the API uses for `sort`, for search hits (taken from `all`). */
 function compareFor(sort: MethodSort, side: Side): (a: MethodRow, b: MethodRow) => number {
@@ -42,6 +46,8 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
   const [query, setQuery] = useState('');
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [suggesting, setSuggesting] = useState(false);
+  // The method picked on the live card; null (or one with no live offer here) shows the first.
+  const [picked, setPicked] = useState<string | null>(null);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -58,7 +64,7 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
   }, [side, currency, sort]);
 
   const q = query.trim();
-  const sections = useMemo(() => {
+  const sections = useMemo((): Section[] => {
     if (load.kind !== 'ready' || load.side !== side || load.currency !== currency) return [];
     const { live, all } = load.lists;
     if (q !== '') {
@@ -69,7 +75,7 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
     const liveIds = new Set(live.map((m) => m.id));
     const rest = all.filter((m) => !liveIds.has(m.id));
     return [
-      ...(live.length > 0 ? [{ title: copy.liveTitle(currency), rows: live }] : []),
+      ...(live.length > 0 ? [{ title: copy.liveTitle(currency), rows: live, pick: true }] : []),
       { title: 'All payment methods', rows: rest },
     ];
   }, [load, q, sort, side, currency, copy]);
@@ -102,7 +108,7 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
             ))}
           </div>
         </div>
-        <h1 className="x2f-browse__title">{copy.heading}</h1>
+        <h1 className="x2f-browse__title x2f-screen-title">{copy.heading}</h1>
         <RadioChips
           label={{ by: 'browse-currency' }}
           options={CURRENCIES.map((c) => ({ id: c, label: c }))}
@@ -117,14 +123,17 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
           <label htmlFor="browse-search" className="x2f-visually-hidden">
             Search payment methods
           </label>
-          <input
-            id="browse-search"
-            className="x2f-input x2f-browse__search"
-            type="search"
-            value={query}
-            placeholder={total === null ? 'Search payment methods' : `Search ${total} payment methods`}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <span className="x2f-browse__search-box">
+            <Icon name="search" size={20} stroke={1.75} />
+            <input
+              id="browse-search"
+              className="x2f-input x2f-browse__search"
+              type="search"
+              value={query}
+              placeholder={total === null ? 'Search payment methods' : `Search ${total} payment methods`}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </span>
         </div>
         <RadioChips label={{ name: 'Sort' }} options={SORT_IDS.map((id, i) => ({ id, label: copy.methodSorts[i]! }))} value={sort} onChange={setSort}>
           <span className="x2f-browse__sort-label">Sort</span>
@@ -141,8 +150,18 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
         ) : null}
         {sections.map((sec) => (
           <section key={sec.title} className="x2f-browse__section">
-            <h2 className="x2f-browse__section-title">{sec.title}</h2>
-            {sec.rows.map((m) => (
+            <h2 className="x2f-browse__section-title x2f-section-title">{sec.title}</h2>
+            {sec.pick ? (
+              <MethodPicker
+                live={sec.rows}
+                value={methodShown(sec.rows, picked)!}
+                onChange={setPicked}
+                title={sec.title}
+                sub={sub}
+                href={(m) => withCurrency(`/${side}/${encodeURIComponent(m.id)}`)}
+              />
+            ) : null}
+            {(sec.pick ? [] : sec.rows).map((m) => (
               <Link key={m.id} to={withCurrency(`/${side}/${encodeURIComponent(m.id)}`)} className="x2f-method">
                 <span className="x2f-method__text">
                   <span className="x2f-method__name" data-part="name">

@@ -8,17 +8,29 @@ Colours come only from the design tokens (`design/design-system/tokens.json`, ge
 
 These are lead choices. The owner may adjust any of them.
 
-- **Sheet backdrop.** The backdrop behind a `Sheet` is the `ground` colour at 80% opacity.
-- **Countdown format.** `Countdown` keeps the kit's `minutes` format ("1 h 52 min",
-  "14 min"). The phone boards win; the Desktop board's "62 min left" is out of date.
-- **Day values of the new tokens.** The day values of `moderator`, `monero-ink-hover` and
-  `monero-hold` are the lead's choice:
+- **Sheet backdrop.** The backdrop behind a `Sheet` is the `scrim` token (design kit handoff 1.1).
+- **Countdown format.** Timers are mono digits with body units and no colon (design kit handoff
+  1.5): `clock` reads "28 min 42 s" ("59 s" under a minute, "1 h 52 min" from an hour), `minutes`
+  reads "1 h 52 min" or "14 min", rounded up.
+- **Day values of the new tokens.** The day values of `mod` (was `moderator`) and `monero-ink-hover` are
+  the lead's choice (`monero-hold` was dropped by the head designer's ruling 16; the hold fill is an
+  `on-monero` 20% overlay on the orange, the strongest that keeps `on-monero` text at 4.5:1, with a
+  2 px `on-monero` front edge at 6.45:1 so progress shows at 3:1+ (kit review 4; no overlay alone can
+  give 3:1 and keep the text at 4.5:1, see HoldButton.test.tsx). Noted for design:
 
   | Token              | Day value | Contrast (day)                                                             |
   | ------------------ | --------- | -------------------------------------------------------------------------- |
-  | `moderator`        | `#6741d9` | 5.82:1 on ground, 6.30:1 on surface                                        |
+  | `mod`              | `#623ece` | 6.27:1 on ground, 6.78:1 on surface                                        |
   | `monero-ink-hover` | `#9c3f00` | 6.22:1 on ground, 6.72:1 on surface; darker than `monero-ink` so hover shows |
-  | `monero-hold`      | `#f7a47a` | `on-monero` text on it reads 9.51:1                                         |
+
+- **Day tone tokens for chips and tags (lead default, kit review 2, 8 Nov).** A status chip or role
+  tag is tone text on a 14% (16% for mod) wash of the same tone; at the kit's day values it fell
+  below 4.5:1 on ground and surface-raised. The day text tokens are darkened just enough to hold
+  4.5:1 on ground, surface and surface-raised, with the wash kept: `escrow` #0b7285 → #0a6677,
+  `caution` #8a5a00 → #815400, `danger` #c2255c → #ae2152, `team` #2f5bd3 → #2c55c5, `mod`
+  #6741d9 → #623ece. Night is unchanged. `test/kit-contrast.test.ts` computes every tone × surface.
+  Design may adjust these.
+- **monero-ink day** is #b34800 (was #b84a00, 4.49986:1 on surface-raised; kit review 9).
 
 ## Board references (parity)
 

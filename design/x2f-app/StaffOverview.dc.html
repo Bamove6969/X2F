@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-a{color:#ff7a1a}a:hover{color:#ffa060}
+a{color:#ff6600}a:hover{color:#ff8533}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
 input::placeholder{color:#9aa4b2}
 </style>
@@ -47,7 +47,7 @@ input::placeholder{color:#9aa4b2}
         </sc-if>
         <sc-if value="{{paused}}" hint-placeholder-val="{{false}}">
           <p style="margin: 0; padding: 12px 14px; border-radius: 8px; border: 1px solid #ff6b8a; font-size: 16px; line-height: 24px; color: #ff6b8a; font-weight: 600;">New trades are paused since 01:20 UTC. Trades in escrow are carrying on.</p>
-          <div><button type="button" onClick="{{resume}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border: 0; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Tap key and resume trading</button></div>
+          <div><button type="button" onClick="{{resume}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border: 0; border-radius: 12px; background: #ff6600; color: #1a0e05; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Tap key and resume trading</button></div>
         </sc-if>
       </section>
       <section aria-label="Earnings" style="display: flex; flex-direction: column; gap: 14px; padding: 24px; border-radius: 12px; background: #171b22;">
@@ -72,7 +72,7 @@ input::placeholder{color:#9aa4b2}
         </div>
         <span style="font-size: 14px; color: #9aa4b2;">Preview</span>
         <div aria-label="Banner preview" style="{{previewStyle}}">{{text}}</div>
-        <div style="display: flex; flex-wrap: wrap; gap: 8px;"><button type="button" onClick="{{toggleBanner}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border: 0; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">{{bannerCta}}</button></div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;"><button type="button" onClick="{{toggleBanner}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border: 0; border-radius: 12px; background: #ff6600; color: #1a0e05; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">{{bannerCta}}</button></div>
         <span style="font-size: 13px; color: #9aa4b2;">{{bannerState}}</span>
       </section>
       <section aria-label="Maintenance mode" style="display: flex; flex-direction: column; gap: 14px; padding: 24px; border-radius: 12px; background: #171b22;">
@@ -81,7 +81,7 @@ input::placeholder{color:#9aa4b2}
         <label for="mm" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: #9aa4b2;">Message to users
           <input id="mm" type="text" value="X2F is being upgraded. Back by 03:00 UTC." style="height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 15px;">
         </label>
-        <label style="display: flex; align-items: center; gap: 10px; font-size: 15px; cursor: pointer;"><input type="checkbox" style="width: 20px; height: 20px; margin: 0; accent-color: #ff7a1a;">Maintenance mode on</label>
+        <label style="display: flex; align-items: center; gap: 10px; font-size: 15px; cursor: pointer;"><input type="checkbox" style="width: 20px; height: 20px; margin: 0; accent-color: #ff6600;">Maintenance mode on</label>
       </section>
     </div>
   </main>
@@ -101,7 +101,7 @@ class Component extends DCLogic {
       cancel: () => this.setState({ stop: 'live' }), resume: () => this.setState({ stop: 'live' }),
       text: this.state.text, onText: (e) => this.setState({ text: e.target.value }),
       kinds: kinds.map((k) => ({ label: k.label, on: kind === k.id ? 'true' : 'false',
-        style: base + (kind === k.id ? 'border: 1px solid #ff7a1a; background: #20262f; color: #eef1f5; font-weight: 600;' : 'border: 1px solid #6b7584; background: transparent; color: #eef1f5;'),
+        style: base + (kind === k.id ? 'border: 1px solid #ff6600; background: #20262f; color: #eef1f5; font-weight: 600;' : 'border: 1px solid #6b7584; background: transparent; color: #eef1f5;'),
         pick: () => this.setState({ kind: k.id }) })),
       previewStyle: 'padding: 12px 16px; border-radius: 8px; background: #20262f; border-left: 4px solid ' + cur.color + '; color: #eef1f5; font-size: 15px; line-height: 22px;',
       toggleBanner: () => this.setState({ shown: !this.state.shown }),

@@ -3,7 +3,10 @@ import * as openpgp from 'openpgp';
 import {
   MAX_ARMORED_KEY_BYTES,
   MAX_SUBKEYS,
+  PAST_REP_MIN_RSA_BITS,
+  PAST_REP_VERIFY_CONFIG,
   PGP_PURPOSE,
+  STRICT_CONFIG,
   challengeText,
   encryptChallenge,
   inspectPublicKey,
@@ -268,6 +271,7 @@ describe('challengeText', () => {
       login: 'log in',
       'add-key': 'add this PGP key to your account',
       'team-join': 'join a team as a member',
+      'staff-join': 'join the X2F staff',
     });
   });
 });
@@ -374,5 +378,45 @@ describe('encryptChallenge', () => {
     await expect(
       openpgp.decrypt({ message, decryptionKeys, verificationKeys: other, expectSigned: true, date: now }),
     ).rejects.toThrow(/signing key/i);
+  });
+});
+
+// Plan 5 Task 10 (P5-A22): past reputation accepts older signing keys; login's defaults stay.
+describe('inspectPublicKey options (past reputation)', () => {
+  const PAST = { minRsaBits: PAST_REP_MIN_RSA_BITS, requireEncryption: false };
+
+  test('PAST_REP_MIN_RSA_BITS is 2048', () => {
+    expect(PAST_REP_MIN_RSA_BITS).toBe(2048);
+  });
+
+  test('RSA 2048 passes with the past-reputation options and is still weak for login', async () => {
+    const k = await keys.rsa2048();
+    expect(await inspectPublicKey(k.publicKey, now, PAST)).toMatchObject({ ok: true, algorithm: 'rsa', bits: 2048 });
+    expect(await inspectPublicKey(k.publicKey, now)).toMatchObject({ ok: false, reason: 'key-weak' });
+    expect(await inspectPublicKey(k.publicKey, now, {})).toMatchObject({ ok: false, reason: 'key-weak' });
+  });
+
+  test('RSA 1024 is weak even for past reputation, and the detail names the 2048 minimum', async () => {
+    const k = await openpgp.generateKey({ type: 'rsa', rsaBits: 1024, userIDs: [{ name: 'T' }], config: { minRSABits: 1024 } });
+    const r = await inspectPublicKey(k.publicKey, now, PAST);
+    expect(r).toMatchObject({ ok: false, reason: 'key-weak' });
+    if (!r.ok) expect(r.detail).toContain('2048');
+  });
+
+  test('a signing-only Ed25519 key passes without an encryption subkey, and login still refuses it', async () => {
+    const k = await openpgp.generateKey({ type: 'ecc', curve: 'ed25519Legacy', userIDs: [{ name: 'T' }], subkeys: [] });
+    expect(await inspectPublicKey(k.publicKey, now, PAST)).toMatchObject({ ok: true, algorithm: 'ed25519' });
+    expect(await inspectPublicKey(k.publicKey, now)).toMatchObject({ ok: false, reason: 'key-no-encryption' });
+  });
+
+  test('NIST P-256 stays weak for past reputation', async () => {
+    expect(await inspectPublicKey((await keys.nistP256()).publicKey, now, PAST)).toMatchObject({ ok: false, reason: 'key-weak' });
+  });
+
+  test('PAST_REP_VERIFY_CONFIG: RSA 2048 allowed, the login rejected algorithms kept', () => {
+    expect(PAST_REP_VERIFY_CONFIG.minRSABits).toBe(2048);
+    expect([...PAST_REP_VERIFY_CONFIG.rejectPublicKeyAlgorithms].sort()).toEqual([...STRICT_CONFIG.rejectPublicKeyAlgorithms].sort());
+    expect([...PAST_REP_VERIFY_CONFIG.rejectCurves].sort()).toEqual([...STRICT_CONFIG.rejectCurves].sort());
+    expect(STRICT_CONFIG.minRSABits).toBe(4096);
   });
 });

@@ -73,6 +73,11 @@ export type ApiErrorCode =
   | 'price-changed'
   | 'starter-limit'
   | 'offer-busy'
+  // Plan 4, Task 5: a security-key tap that is missing, expired, used, another account's or for another intent.
+  | 'tap-invalid'
+  // Plan 4, Task 8: the banner's 140 characters, and the trader API during maintenance (503).
+  | 'banner-too-long'
+  | 'maintenance'
   // Plan 3, Task 8: participant identities and the moderation attestation.
   | 'identity-exists'
   | 'identity-conflict'
@@ -91,11 +96,47 @@ export type ApiErrorCode =
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
   | 'no-shared-context'
+  // Plan 5, Task 3: reviews and the rate-first gate.
+  | 'not-reviewable'
+  | 'review-exists'
+  | 'review-pending'
+  // Plan 5, Task 3: @x2f/reputation's ReviewError codes, answered as 400 (reviews/routes.ts checks
+  // at compile time that every ReviewErrorCode is listed here).
+  | 'bad-shape'
+  | 'bad-stars'
+  | 'bad-phrase'
+  | 'duplicate-phrase'
+  | 'bad-trade-badge'
+  | 'duplicate-trade-badge'
+  | 'note-too-long'
+  | 'note-multiline'
+  | 'note-bad-character'
+  | 'note-personal-details'
+  | 'neutral-with-details'
   // Plan 2, Task 18: team members.
   | 'owner-only'
   | 'forbidden'
   | 'too-many-members'
-  | 'member-cannot-sign';
+  | 'member-cannot-sign'
+  // Plan 4, Task 4: staff login hours (a login, or an open session, outside the window).
+  | 'outside-login-hours'
+  // Plan 4, Task 7: staff invites and the owner's protections.
+  | 'invite-invalid'
+  | 'security-key-required'
+  | 'two-factors-required'
+  | 'owner-protected'
+  | 'owner-needs-two-keys'
+  // Plan 5 Task 10 on the staff API: the past-rep claim is no longer live (revoked, removed, rejected).
+  | 'not-live'
+  // Plan 5, Task 10: past reputation claims.
+  | 'bad-site'
+  | 'bad-url'
+  | 'bad-signature'
+  | 'wrong-text'
+  | 'wrong-key'
+  | 'challenge-used'
+  | 'site-claimed'
+  | 'fingerprint-claimed';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

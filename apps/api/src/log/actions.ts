@@ -40,6 +40,8 @@ const TRADE: Record<`trade.${TradeEvent['type']}`, Schema> = {
   'trade.settled': { kind: 'id', txHash: 'hex64' },
   'trade.open-dispute': {},
   'trade.escalate': {},
+  // Plan 3 Task 9 I/O: the watcher saw a party's release claim (no tx hash, no amount).
+  'trade.release-claimed': {},
   'trade.pause': {},
   'trade.resume': {},
   'trade.tick': {},
@@ -71,6 +73,8 @@ export const LOG_ACTIONS = {
   // Disputes and cases (Tasks 10–11).
   'dispute.opened': { reason: 'id', afterRefund: 'bool', seq: 'number' },
   'dispute.assigned': { staffId: 'uuid' },
+  // A switched-off or removed member's open case goes back to the queue (Task 7 x Task 10).
+  'dispute.unassigned': { staffId: 'uuid' },
   'case.opened': {},
   'chat.read': {},
   'chat.message-sent': {},
@@ -112,10 +116,19 @@ export const LOG_ACTIONS = {
   'staff.joined': { staffId: 'uuid', role: 'id' },
   'staff.switched-off': { staffId: 'uuid' },
   'staff.switched-on': { staffId: 'uuid', role: 'id' },
+  'staff.removed': { staffId: 'uuid' },
   'staff.role-set': { staffId: 'uuid', from: 'id', to: 'id' },
   'staff.hours-set': { staffId: 'uuid' },
-  'staff.grants-set': { staffId: 'uuid', ticketsHandle: 'bool' },
+  'staff.grants-set': { staffId: 'uuid', ticketsHandle: 'bool', feedbackRead: 'bool' },
   'staff.session-ended-hours': { staffId: 'uuid' },
+  // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods or ends
+  // one of their sessions on the staff site (the method kind only: never a fingerprint or a label).
+  'staff.method-added': { method: 'id' },
+  'staff.method-removed': { method: 'id' },
+  'staff.session-ended': {},
+  // Lead review 7 Nov M1: silencing actions on the staff site.
+  'staff.alert-seen': {},
+  'staff.push-removed': {},
   // Shifts and pay (Task 33).
   'staff.welcome-acknowledged': {},
   'shift.clocked-in': { shiftId: 'id' },
@@ -123,6 +136,9 @@ export const LOG_ACTIONS = {
   'shift.abandoned': { shiftId: 'id', ended: 'id' },
   'pay.paid': { staffId: 'uuid', kind: 'id', usdCents: 'amount', atomic: 'amount', ref: 'id' },
   'pay.clawback': { staffId: 'uuid', usdCents: 'amount', rulingId: 'id' },
+  // Past reputation (Plan 5 Task 10, owner 2026-11-02): a senior moderator or the owner sets or
+  // clears a claim's verified dollar figure. The figure itself is never logged.
+  'pastrep.verified-usd-set': { claimId: 'uuid', cleared: 'bool' },
   // The owner (Task 6).
   'owner.setup-completed': {},
   'owner.key-added': { credentialId: 'id' },

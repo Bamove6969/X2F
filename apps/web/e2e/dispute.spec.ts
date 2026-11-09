@@ -54,6 +54,7 @@ function tradeView(o: Partial<Record<string, unknown>> & { role?: 'buyer' | 'sel
     closedAt: null,
     cancelConfirmedAt: null,
     cancelConfirmableAt: null,
+    sellerNudgedAt: null,
     nextDeadline: null,
     serverNow: T('10:14'),
     ...o,
@@ -69,7 +70,8 @@ function disputeView(o: Record<string, unknown> = {}) {
     reason: 'paid',
     openedAt: T('10:14'),
     afterRefund: false,
-    dueAt: T('10:14', 16),
+    goalAt: T('10:14', 16),
+    dueAt: T('10:14', 17),
     status: 'open',
     moderator: { name: 'sarah.v', joinedAt: T('10:52') },
     ruling: null,
@@ -153,7 +155,7 @@ test('DisputeOpen shows the board copy and sends the reason and note', async ({ 
   await open(page);
   await expect(page.getByRole('heading', { name: 'Open a dispute' })).toBeVisible();
   await expect(page.getByText("Seller's time to confirm ran out", { exact: true })).toBeVisible();
-  await expect(page.getByText('A moderator looks at what happened and decides where the 1.25 XMR goes. It stays locked in escrow until then.')).toBeVisible();
+  await expect(page.getByText('A moderator looks at what happened and decides where the 1.250000 XMR goes. It stays locked in escrow until then.')).toBeVisible();
   await expect(page.getByText("A moderator will read this trade's chat to decide", { exact: true })).toBeVisible();
   await expect(page.getByRole('radio')).toHaveCount(4);
   await page.getByRole('radio', { name: "The seller isn't replying" }).check();
@@ -161,7 +163,7 @@ test('DisputeOpen shows the board copy and sends the reason and note', async ({ 
   await expect(page.getByText('22 / 1000')).toBeVisible();
   // Spec 4.2: no file can be picked until Plan 5's on-device pipeline strips and blurs it.
   await expect(page.locator('input[type=file]')).toHaveCount(0);
-  await expect(page.locator('.x2f-moderator-badge')).toHaveCount(0);
+  await expect(page.locator('.x2f-tag[data-role="mod"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Open dispute' }).click();
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]!.postDataJSON()).toEqual({ reason: 'silent', note: 'No answer since 10:02.' });
@@ -186,25 +188,32 @@ test('the seller sees the seller\'s reasons', async ({ page }) => {
   await expect(page.getByText('Selling to', { exact: false })).toBeVisible();
 });
 
-test('DisputeRoom: rose In dispute chip, locked amount, deadline line and the join banner from the server', async ({ page }) => {
+test('DisputeRoom: rose In dispute chip, locked amount, deadline line, hourglass and the join banner from the server', async ({ page }) => {
   await stub(page, { trade: disputed(), dispute: disputeView() });
   await open(page);
   const chip = page.locator('.x2f-chip[data-tone="danger"]');
   await expect(chip).toHaveText('In dispute');
-  await expect(page.getByText('1.25 XMR locked in escrow')).toBeVisible();
-  await expect(page.getByText('Replied in 38 min · ruling due by Fri 16 Oct, 10:14 (in 23 h)')).toBeVisible();
+  await expect(page.locator('[data-part="escrow-amount"]')).toContainText('1.250000 XMR');
+  await expect(page.getByText('Replied in 38 min.', { exact: true })).toBeVisible();
+  // A moderator has joined: "Replied in" replaces the hourglass (lead review 7 Nov, board v119); the
+  // 48-hour deadline is never shown to traders (owner Q38).
+  await expect(page.locator('[data-part="hourglass"]')).toHaveCount(0);
+  await expect(page.getByText(/ruling due by/)).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Moderator joined' })).toContainText('Moderator sarah.v joined this dispute');
   await expect(page.getByText('10:14 · You opened a dispute: I paid, but the seller hasn\'t released')).toBeVisible();
   await expect(page.getByText('10:52 · Moderator sarah.v joined this dispute')).toBeVisible();
   await expect(page.getByText('Chats are encrypted. If a dispute is opened, a moderator can read this conversation.')).toBeVisible();
 });
 
-test('no moderator on record: no banner and no violet badge anywhere', async ({ page }) => {
+test('no moderator on record: no banner and no violet badge anywhere; the hourglass runs', async ({ page }) => {
   await stub(page, { trade: disputed(), dispute: disputeView({ moderator: null }) });
   await open(page);
+  // Owner Q38: the 24-hour hourglass until a moderator steps in.
+  await expect(page.locator('[data-part="hourglass"]')).toContainText('Until a moderator steps in');
+  await expect(page.locator('[data-part="hourglass"]')).toContainText("A moderator steps in within 24 h at the most. Usually it's much sooner.");
   await expect(page.getByText('In dispute', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Moderator joined' })).toHaveCount(0);
-  await expect(page.locator('.x2f-moderator-badge')).toHaveCount(0);
+  await expect(page.locator('.x2f-tag[data-role="mod"]')).toHaveCount(0);
 });
 
 test('DisputeRuling: the ruling card, the destination ending, evidence and the appeal sheet', async ({ page }) => {
@@ -215,9 +224,9 @@ test('DisputeRuling: the ruling card, the destination ending, evidence and the a
   });
   await open(page);
   const card = page.getByRole('region', { name: 'Ruling' });
-  await expect(card.locator('.x2f-moderator-badge')).toHaveText('X2F Moderator');
+  await expect(card.locator('.x2f-tag[data-role="mod"]')).toHaveText('X2F Moderator');
   await expect(card).toContainText('Ruling: release to the buyer');
-  await expect(card).toContainText('1.25 XMR goes to mira.k');
+  await expect(card).toContainText('1.250000 XMR goes to mira.k');
   await expect(card).not.toContainText('address ending');
   await page.getByRole('button', { name: 'Appeal this ruling' }).click();
   const send = page.getByRole('button', { name: 'Send appeal' });

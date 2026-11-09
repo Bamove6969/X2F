@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { newTradeCode } from '@x2f/core';
 import { newTrade, type By, type Trade, type TradeEvent, type TradeState } from '@x2f/trade';
 import type { Deps } from '../../src/app.js';
+import { insertReview } from '../../src/reviews/store.js';
 import { applyEvent, insertTrade, type TradeSides } from '../../src/trades/store.js';
 
 export const XMR = 1_000_000_000_000n;
@@ -46,7 +47,11 @@ export async function seedOffer(deps: Pick<Deps, 'db' | 'clock'>, posterId: stri
  */
 export async function seedTrade(
   deps: Pick<Deps, 'db' | 'clock'>,
-  a: { sellerId: string; buyerId: string; poster: 'seller' | 'buyer'; amountAtomic?: bigint; offerId?: string } & Partial<TradeSides>,
+  a: {
+    sellerId: string; buyerId: string; poster: 'seller' | 'buyer'; amountAtomic?: bigint; offerId?: string; methodId?: string; usdCents?: bigint;
+    /** The offer's fiat limits in cents (default 1,000 to 100,000); a test of large or tiny amounts widens them. */
+    minFiatCents?: bigint; maxFiatCents?: bigint;
+  } & Partial<TradeSides>,
 ): Promise<SeededTrade> {
   const offerId = a.offerId ?? (await seedOffer(deps, a.poster === 'seller' ? a.sellerId : a.buyerId, a.poster));
   const trade = newTrade(
@@ -56,12 +61,12 @@ export async function seedTrade(
       poster: a.poster,
       sellerId: a.sellerId,
       buyerId: a.buyerId,
-      methodId: 'zelle',
+      methodId: a.methodId ?? 'zelle',
       amountAtomic: a.amountAtomic ?? AMOUNT,
       lockedRate: RATE,
       confirmWindowMin: 120,
-      minFiatCents: 1_000n,
-      maxFiatCents: 100_000n,
+      minFiatCents: a.minFiatCents ?? 1_000n,
+      maxFiatCents: a.maxFiatCents ?? 100_000n,
     },
     deps.clock(),
   );
@@ -70,8 +75,17 @@ export async function seedTrade(
     sellerRefund: a.sellerRefund !== undefined ? a.sellerRefund : fakeAddress(),
     sellerWalletApp: a.sellerWalletApp !== undefined ? a.sellerWalletApp : 'cake',
   };
-  await insertTrade(deps.db, trade, sides);
+  await insertTrade(deps.db, trade, sides, a.usdCents ?? null);
   return { code: trade.code, trade, sides };
+}
+
+/**
+ * Owner G2 / g66: the seller's refund needs at least one nudge since the escrow was secured. Tests
+ * that are not about the nudge record one directly (the nudge route's own write is covered in
+ * nudge.test.ts), at the trade's secured_at.
+ */
+export async function markSellerNudged(deps: Pick<Deps, 'db'>, code: string): Promise<void> {
+  await deps.db.query('update trades set seller_nudged_at = secured_at where code = $1 and secured_at is not null', [code]);
 }
 
 /** The events (and who sends them) that move a fresh trade along the happy path, one state at a time. */
@@ -96,4 +110,27 @@ export async function driveTo(deps: Pick<Deps, 'db' | 'clock'>, t: Trade, state:
     if (step.to === state) return cur;
   }
   throw new Error(`happy path never reaches ${state}`);
+}
+
+/**
+ * Plan 5 Task 3: both sides of an ended trade leave a Neutral review, so a history seeded for
+ * stages or counts does not trip the rate-first gate (a reviewable, unrated trade blocks the take
+ * and hides the poster's offers). Inserted directly, as the review route would.
+ */
+export async function seedReviews(deps: Pick<Deps, 'db' | 'clock'>, code: string): Promise<void> {
+  const { rows } = await deps.db.query<{ buyer_account_id: string; seller_account_id: string; method_id: string }>(
+    'select buyer_account_id, seller_account_id, method_id from trades where code = $1',
+    [code],
+  );
+  const t = rows[0]!;
+  const now = deps.clock();
+  for (const [reviewerRole, reviewerId, subjectId] of [
+    ['buyer', t.buyer_account_id, t.seller_account_id],
+    ['seller', t.seller_account_id, t.buyer_account_id],
+  ] as const) {
+    await insertReview(deps.db, {
+      tradeCode: code, reviewerId, subjectId, reviewerRole, input: { neutral: true },
+      methodId: t.method_id, createdAt: now,
+    });
+  }
 }

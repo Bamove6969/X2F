@@ -75,10 +75,11 @@
 }
 .dispute-title {
   margin: 0;
-  font-family: var(--x2f-title-family);
-  font-size: var(--x2f-title-size);
-  line-height: var(--x2f-title-line);
-  font-weight: var(--x2f-title-weight);
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: var(--x2f-screen-title-weight);
+  letter-spacing: var(--x2f-screen-title-tracking);
   overflow-wrap: anywhere;
 }
 .dispute-lead,
@@ -188,8 +189,9 @@
   line-height: 20px;
 }
 .dispute-reason[data-on='true'] {
-  border-color: var(--x2f-monero);
-  background: var(--x2f-surface);
+  /* Design build review 7 Nov (X1): selection is ink, never orange. */
+  border-color: var(--x2f-ink);
+  background: var(--x2f-surface-raised);
 }
 /* The board's 20 px radio, drawn inside a 32 px tap box (Task 15's MIN_TAP); the -6 px margin keeps the board's spacing. */
 .dispute-reason input {
@@ -203,10 +205,10 @@
   background: radial-gradient(circle closest-side, transparent 8px, var(--x2f-ink-muted) 8px 10px, transparent 10px);
 }
 .dispute-reason input:checked {
-  background: radial-gradient(circle closest-side, var(--x2f-monero) 0 5px, transparent 5px 8px, var(--x2f-monero) 8px 10px, transparent 10px);
+  background: radial-gradient(circle closest-side, var(--x2f-ink) 0 5px, transparent 5px 8px, var(--x2f-ink) 8px 10px, transparent 10px);
 }
 .dispute-reason input:focus-visible {
-  outline: 2px solid var(--x2f-monero);
+  outline: 2px solid var(--x2f-ink);
   outline-offset: -4px;
 }
 @media (forced-colors: active) {
@@ -326,26 +328,100 @@
   line-height: 18px;
   color: var(--x2f-ink-muted);
 }
+/* Owner Q38 hourglass: the hero's one big number (board DisputeRoom v119, moderator=waiting). */
+.dispute-hourglass {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dispute-hourglass[data-state='over'] {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  color: var(--x2f-danger);
+}
+.dispute-hero__label {
+  font-size: 13px;
+  line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--x2f-danger);
+}
+.dispute-hero__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--x2f-danger);
+}
+.dispute-hero__time {
+  color: var(--x2f-ink);
+}
+.dispute-hero__num {
+  font-family: var(--x2f-font-mono);
+  font-size: 40px;
+  line-height: 44px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.dispute-hero__unit {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--x2f-ink-muted);
+}
+.dispute-hero__line {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+.dispute-hero__meta {
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+}
+.dispute-hero__amount {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+}
+.dispute-hero__amount-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 16px;
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+.dispute-hero__xmr {
+  font-family: var(--x2f-font-mono);
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 500;
+}
 .dispute-joined {
   display: flex;
   gap: 10px;
   padding: 12px;
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
-  border: 1px solid var(--x2f-moderator);
+  border: 1px solid var(--x2f-mod);
   font-size: 14px;
   line-height: 20px;
 }
 .dispute-joined > svg {
   flex-shrink: 0;
-  color: var(--x2f-moderator);
+  color: var(--x2f-mod);
 }
 .dispute-joined .dispute-muted {
   font-size: 14px;
   line-height: 20px;
 }
 .dispute-mod-name {
-  color: var(--x2f-moderator);
+  color: var(--x2f-mod);
   font-weight: 600;
 }
 .dispute-see-ruling,
@@ -407,7 +483,7 @@
   padding: var(--x2f-space-4);
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
-  border: 1px solid var(--x2f-moderator);
+  border: 1px solid var(--x2f-mod);
 }
 .dispute-row-between {
   display: flex;
@@ -478,4 +554,31 @@
   font-size: 12px;
   line-height: 16px;
   color: var(--x2f-ink-muted);
+}
+
+/* Design 7 Nov P3: a tertiary link on its own line, 44px tall to tap. */
+.dispute-tertiary-link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--x2f-ink);
+  font-weight: 600;
+}
+
+/* Design 7 Nov (v2 §11): field labels 13/16 uppercase muted; mono inputs 48px on surface-raised. */
+.dispute-field-label {
+  font-size: 13px;
+  line-height: 16px;
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+.dispute-input-mono {
+  min-height: 48px;
+  padding: 0 12px;
+  border-radius: var(--x2f-radius-md);
+  border: 1px solid var(--x2f-surface-raised);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+  font-family: var(--x2f-font-mono);
+  font-size: 14px;
 }

@@ -1,6 +1,6 @@
 // Plan 5 Task 4: platform feedback, the one-tap "How's X2F doing?" prompt (P5-A19, spec 5.2).
 // Unlinkable by design: the table has no account column and keeps only the day.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -238,22 +238,12 @@ describe('listFeedback, feedbackMoodCounts and purgeFeedback', () => {
   });
 });
 
-// TRIPWIRES (local tree only, never red today): Plan 4's staff pieces live on unlanded branches, so
-// nothing serves listFeedback / feedbackMoodCounts yet. Each fails once its piece lands in this
-// checkout: then do what it says and delete it. Recorded in docs/coordination.md (Plan 5 Task 4).
-describe('Task 4 waits for the Plan 4 staff pieces', () => {
+// TRIPWIRE (local tree only, never red today): the staff API serves listFeedback and
+// feedbackMoodCounts (staff/feedback.ts, Plan 4 Task 4); the staff web page is still owed. It fails
+// once its piece lands in this checkout: then do what it says and delete it.
+describe('Task 4 waits for the Plan 4 staff web app', () => {
   const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
   const has = (p: string): boolean => existsSync(ROOT + p);
-  const read = (p: string): string => (has(p) ? readFileSync(ROOT + p, 'utf8') : '');
-
-  it('NEEDS_P4_STAFF_FEEDBACK_ROUTE: GET /staff/v1/feedback?before serves listFeedback behind `feedback.read`', () => {
-    // When the staff API lands (Plan 4, `buildStaffApi`): add apps/api/src/staff/feedback.ts with
-    // GET /staff/v1/feedback?before → { items: { mood, note, createdOn }[], counts } from listFeedback
-    // and feedbackMoodCounts (and the feedback form rows from listFeedbackForm, Task 21), perm
-    // `feedback.read`; the matrix test shows a moderator gets `forbidden`.
-    const staffApi = has('apps/api/src/staff') || /buildStaffApi/.test(read('apps/api/src/app.ts'));
-    expect(staffApi, 'Plan 4 staff API landed: serve listFeedback on GET /staff/v1/feedback (see this test)').toBe(false);
-  });
 
   it('NEEDS_P4_STAFF_WEB_FEEDBACK_PAGE: the staff-web Feedback page (no board yet, NEEDS_DESIGN)', () => {
     // When apps/staff-web lands (Plan 4 Task 16): build src/screens/Feedback.tsx listing both

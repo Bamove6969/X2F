@@ -5,30 +5,36 @@
 // code; a named row holds the account id (so staff can reach out) and the refusal code. Both keep
 // only the day. Nothing about a submission is logged, its text least of all.
 //
-// Limits: FEEDBACK_FORM_DAILY sends per account per UTC day, counted in memory only (never stored,
-// so it links no row to anyone; a restart forgets it), and one shared token bucket for everyone.
-// Over the daily count: 429 `slow-down` with `retryAfterSeconds` to the next UTC midnight.
+// Limits: FEEDBACK_FORM_DAILY sends per person (a team member on their own) per UTC day, counted in memory only (never stored,
+// so it links no row to anyone; a restart forgets it), and at most one send per
+// FEEDBACK_FORM_MIN_GAP_S seconds per account (owner 2026-11-02; no shared budget for everyone).
+// Over the daily count: 429 `slow-down` with `retryAfterSeconds` to the next UTC midnight; too soon
+// after the last send: 429 `slow-down` with the seconds left. The gap keeps only each account's
+// "blocked until" time, in memory, and drops it once it has passed (review M2): after
+// FEEDBACK_FORM_MIN_GAP_S nothing in memory says when an account last sent, so it links no row to
+// anyone either. A failed insert gives back both the daily send and the gap.
+// Both limits are per process: N API instances allow N sends per FEEDBACK_FORM_MIN_GAP_S (and N
+// times the daily count). Fine for the single instance at launch; revisit if the API scales out.
 //
 // Residual, at the database level (review M1, recorded in docs/coordination.md): Postgres keeps
 // insertion order in system columns (xmin, ctid), so someone with database access can still line
 // an anonymous row up with other rows written around the same moment. The route does not touch the
 // session (touch: false), and the form promises only "we don't record who sent it".
+import { FEEDBACK_FORM_DAILY } from '@x2f/core';
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
-import type { BucketSize } from '../limits.js';
-import { TokenBucket } from '../limits.js';
 import type { RetentionJob } from '../retention.js';
 
 export const FEEDBACK_KINDS = ['complaint', 'feedback', 'recommendation'] as const;
 export type FeedbackKind = (typeof FEEDBACK_KINDS)[number];
 
 export const FEEDBACK_TEXT_MAX = 2000;
-/** Sends per account per UTC day (in memory only). */
-export const FEEDBACK_FORM_DAILY = 5;
-/** One budget for every sender: anonymous rows carry no account, so nothing finer is possible after the daily count. */
-export const FEEDBACK_FORM_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
+/** Sends per person per UTC day (in memory only); the number lives in @x2f/core, shared with the web. */
+export { FEEDBACK_FORM_DAILY };
+/** Owner 2026-11-02: at most one send per this many seconds per account (in memory only); no shared cap. */
+export const FEEDBACK_FORM_MIN_GAP_S = 30;
 /** As P5-A19 (Task 4's platform feedback): rows are deleted after a year. */
 export const FEEDBACK_FORM_RETENTION_DAYS = 365;
 /** A refusal code from the popup (`/feedback?from=<code>`), e.g. `starter-limit`. */
@@ -59,8 +65,8 @@ export interface FeedbackFormCursor {
 /**
  * The staff list's query: newest day first, then by id, 50 a page; `before` is the last row of the
  * previous page (a keyset cursor, so a day with more than 50 rows is never cut short).
- * Plan 4's staff API and the Task 4 Feedback page call it once they are on the main line (see the
- * tripwire in test/feedbackForm.test.ts); no route serves it yet.
+ * Served by the staff API's `GET /staff/v1/feedback/form` (staff/feedback.ts, perm `feedback.read`);
+ * the staff web Feedback page (Plan 4 Task 16) is still owed (tripwire in test/feedback.test.ts).
  */
 export async function listFeedbackForm(db: pg.Pool, o: { before?: FeedbackFormCursor; limit?: number } = {}): Promise<FeedbackFormItem[]> {
   const limit = Math.min(Math.max(o.limit ?? 50, 1), 50);
@@ -84,6 +90,58 @@ export const purgeFeedbackForm: RetentionJob = {
   },
 };
 
+/**
+ * Per-account send gap (review M2): `key -> blocked until` (ms), nothing else. Expired entries are
+ * dropped on every take, so an entry lives at most `gapMs`. Entries are kept in insertion order
+ * (re-inserted on take), which is "blocked until" order while the clock moves forward, so the sweep
+ * stops at the first entry still blocking. At most `maxKeys` entries: past that the oldest goes
+ * (that account could send early; nothing worse).
+ */
+export class SendGap {
+  private readonly until = new Map<string, number>();
+
+  constructor(
+    private readonly gapMs: number,
+    private readonly maxKeys = 100_000,
+  ) {}
+
+  get size(): number {
+    return this.until.size;
+  }
+
+  blockedUntil(key: string): number | undefined {
+    return this.until.get(key);
+  }
+
+  /** Drops every entry from the front whose time has passed. */
+  sweep(now: number): void {
+    for (const [k, t] of this.until) {
+      if (t > now) return;
+      this.until.delete(k);
+    }
+  }
+
+  /** Synchronous check-and-set: throws 429 `slow-down` with the seconds left, or blocks `key` and returns until when. */
+  take(key: string, now: number): number {
+    this.sweep(now);
+    const t = this.until.get(key);
+    if (t !== undefined && t > now) throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.max(1, Math.ceil((t - now) / 1000)) });
+    const until = now + this.gapMs;
+    this.until.delete(key);
+    this.until.set(key, until);
+    for (const k of this.until.keys()) {
+      if (this.until.size <= this.maxKeys) break;
+      this.until.delete(k);
+    }
+    return until;
+  }
+
+  /** Gives back the gap a take returned (a failed insert); a newer gap for the key is left alone. */
+  give(key: string, until: number): void {
+    if (this.until.get(key) === until) this.until.delete(key);
+  }
+}
+
 interface FormBody {
   kind: FeedbackKind;
   text: string;
@@ -105,7 +163,8 @@ function parseBody(body: unknown): FormBody {
 }
 
 export function feedbackFormRoutes(app: FastifyInstance): void {
-  const bucket = new TokenBucket(FEEDBACK_FORM_BUCKET.capacity, FEEDBACK_FORM_BUCKET.perMinute, app.deps.clock);
+  // One send per FEEDBACK_FORM_MIN_GAP_S per account (429 slow-down with the seconds left).
+  const gap = new SendGap(FEEDBACK_FORM_MIN_GAP_S * 1000);
   // Per account per UTC day; cleared when the day changes. Never written anywhere.
   let day = '';
   const sent = new Map<string, number>();
@@ -124,15 +183,19 @@ export function feedbackFormRoutes(app: FastifyInstance): void {
       sent.clear();
     }
     const accountId = req.auth.accountId;
-    const count = sent.get(accountId) ?? 0;
+    // Owner Q69: a team member's sends are their own (the in-memory key only; a named row still holds
+    // the team account, which staff can reach).
+    const who = req.auth.memberId !== null ? `member:${req.auth.memberId}` : accountId;
+    const count = sent.get(who) ?? 0;
     if (count >= FEEDBACK_FORM_DAILY) {
       const midnight = Date.parse(`${today}T00:00:00Z`) + DAY_MS;
-      throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.max(1, Math.ceil((midnight - now.getTime()) / 1000)) });
+      // `limit: 'daily'` lets the form say why (owner Q67: the cap is there to stop spam).
+      throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.max(1, Math.ceil((midnight - now.getTime()) / 1000)), limit: 'daily' });
     }
-    bucket.take();
-    // Held while the insert runs (so a parallel burst cannot pass the count) and given back if the
-    // insert fails: a database error never uses up one of the account's sends.
-    sent.set(accountId, count + 1);
+    // Both taken synchronously, before any await, so a parallel burst from one account gets exactly
+    // one 202; both given back if the insert fails: a database error never uses up a send or the gap.
+    const until = gap.take(who, now.getTime());
+    sent.set(who, count + 1);
     try {
       await req.server.deps.db.query('insert into feedback_form (kind, body, account_id, from_code, created_on) values ($1, $2, $3, $4, $5)', [
         f.kind,
@@ -142,7 +205,8 @@ export function feedbackFormRoutes(app: FastifyInstance): void {
         today,
       ]);
     } catch (e) {
-      if (day === today) sent.set(accountId, Math.max(0, (sent.get(accountId) ?? 1) - 1));
+      if (day === today) sent.set(who, Math.max(0, (sent.get(who) ?? 1) - 1));
+      gap.give(who, until);
       throw e;
     }
     return reply.code(202).send({});

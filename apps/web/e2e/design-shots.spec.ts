@@ -18,7 +18,7 @@ import { attestationBytes, channelFor, chatIdentityProofValid, type Attestation 
 import type { FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import type { TradeView } from '../src/api/trade.js';
-import { BOARD_SELL_LIVE_USD, BOARD_SELL_OFFERS, boardSellOffers } from '../src/fixtures/boards.js';
+import { BOARD_BUY_LIVE_USD, BOARD_BUY_OFFERS, BOARD_SELL_LIVE_USD, BOARD_SELL_OFFERS, boardBuyOffers, boardSellOffers } from '../src/fixtures/boards.js';
 import { PAY_NOW, PAY_SECURED, PAY_SECURING } from '../src/fixtures/payBoard.js';
 import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { stubBrowseApi } from './browse-stub.js';
@@ -597,7 +597,7 @@ function apply(s: Room, e: Record<string, unknown>): { status: number; json: unk
 
 /**
  * Opens /trade/:code on the fixtures build with the fixture escrow ready for the board trade.
- * `warned` false leaves Task 38's warnings to show; `chat` keeps Task 20's real chat in the room.
+ * `warned` false leaves Task 38's release warning to show; `chat` keeps Task 20's real chat in the room.
  */
 async function openRoom(
   page: Page,
@@ -624,7 +624,6 @@ async function openRoom(
       if (f.chat) window.__x2fRealChat = true;
       if (f.warned) {
         try {
-          localStorage.setItem(`x2f.warned.pay.${f.code}`, '1');
           localStorage.setItem(`x2f.warned.release.${f.code}`, '1');
         } catch {
           // No store: the warning shows.
@@ -647,15 +646,23 @@ test('36 BuyerPay while the escrow secures', async ({ page }) => {
   await shot(page, '36-trade-buyer-pay-securing');
 });
 
-test("37-39 Task 38-39: the pay warning, the two-step I've paid, marked as paid", async ({ page }) => {
+// Shot 37 was Task 38's pay warning (board Warn-IvePaid, superseded by owner Q12); it is now the
+// buyer's "Cancelling is final" sheet (owner G56).
+test('37 owner G56: Cancelling is final', async ({ page }) => {
   await openRoom(page, PAY_SECURING, { warned: false });
-  const warn = page.getByRole('alertdialog');
-  await expect(warn).toContainText('Before you pay');
-  await shot(page, '37-trade-pay-warning');
-  await page.getByRole('button', { name: "I'll wait" }).click();
-  // The second step: I've paid, the warning again (still confirming), then the confirm sheet.
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cancel trade' }).click();
+  const final = page.getByRole('dialog', { name: 'Cancelling is final' });
+  await expect(final).toBeVisible();
+  await shot(page, '37-trade-cancel-final');
+  await final.getByRole('button', { name: 'Keep trading' }).click();
+  await expect(final).toHaveCount(0);
+});
+
+test("38-39 Task 39: the two-step I've paid, marked as paid", async ({ page }) => {
+  await openRoom(page, PAY_SECURED);
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await page.locator('[data-primary]').first().click();
-  if (await warn.count()) await page.getByRole('button', { name: "I've already paid" }).click();
   const sheet = page.getByRole('dialog');
   await expect(sheet).toContainText('Mark this trade as paid?');
   await sheet.getByRole('checkbox').check();
@@ -707,6 +714,7 @@ const CANCELLED = {
   txHash: 'ab'.repeat(32),
   cancelConfirmedAt: null,
   cancelConfirmableAt: null,
+  sellerNudgedAt: null,
 } as TradeView;
 
 test("44-46 Task 39: the seller confirms a buyer's cancel", async ({ page }) => {
@@ -782,8 +790,11 @@ test("52 an unfolded Fold (884x1104): the seller's paid room with the chat pane"
 test('53 an unfolded Fold (884x1104): the offers list (SellOffers)', async ({ page }) => {
   await page.setViewportSize(FOLD);
   await stubBrowseApi(page, { signedIn: true, live: { USD: BOARD_SELL_LIVE_USD }, offers: (c) => (c === 'USD' ? boardSellOffers() : []), market: { USD: BOARD_SELL_OFFERS.marketCentsPerXmr } });
+  await page.route('**/v1/wallets', json([...B.wallets]));
+  await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 }));
   await page.goto('/sell/ZELLE');
-  await expect(page.locator('article').first()).toBeVisible();
+  // Two panes (Fold-Offers): the list picks, the quote is beside it.
+  await expect(page.locator('[data-pane="side"] #quote-amount')).toBeVisible();
   await shot(page, '53-fold-884-offers-list');
 });
 
@@ -792,6 +803,7 @@ test('54 an unfolded Fold (884x1104): My offers', async ({ page }) => {
   await myOffersApi(page, { offers: myOffers() });
   await page.goto('/profile/offers');
   await expect(page.locator('[data-part="offer"]')).toHaveCount(3);
+  await expect(page.locator('[data-pane="side"] [data-part="offer-detail"]')).toBeVisible();
   await shot(page, '54-fold-884-myoffers');
 });
 
@@ -923,9 +935,8 @@ test('61-63 CantDoThat on PostOffer, the feedback form, the thank-you', async ({
   await expect(popup).toBeVisible();
   await shot(page, '61-cantdothat-post-offer');
   await popup.getByRole('link', { name: 'feedback' }).click();
-  await expect(page.getByRole('heading', { name: 'Feedback' })).toBeVisible();
-  await page.getByRole('radio', { name: 'Complaint' }).check();
-  await page.getByLabel('Your comment').fill('A hold should say how long it lasts.');
+  await expect(page.getByRole('heading', { name: 'Tell us what you think' })).toBeVisible();
+  await page.getByLabel('Your message').fill('A hold should say how long it lasts.');
   await shot(page, '62-feedback-form');
   await page.getByRole('button', { name: 'Send' }).click();
   await expect(page.locator('[data-part="feedback-thanks"]')).toBeVisible();
@@ -964,4 +975,81 @@ test('64-65 block a trader from the quote; Blocked traders', async ({ page }) =>
   await page.getByRole('link', { name: 'Blocked traders' }).click();
   await expect(page.locator('[data-part="blocked-list"] [data-username]')).toHaveCount(1);
   await shot(page, '65-blocked-traders');
+});
+
+// ---- 66-72 The offers screens on design v2 (batch 3): Main, BuyMain, SellOffers, BuyOffers, the quotes, PostOffer
+
+test('66, 68 browse, sell side: /sell, /sell/ZELLE', async ({ page }) => {
+  await stubBrowseApi(page, { signedIn: true, live: { USD: BOARD_SELL_LIVE_USD }, offers: (c) => (c === 'USD' ? boardSellOffers() : []), market: { USD: BOARD_SELL_OFFERS.marketCentsPerXmr } });
+  await page.goto('/sell');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('How do you want to get paid?');
+  await expect(page.locator('main a').first()).toBeVisible();
+  await shot(page, '66-main-sell');
+  await page.goto('/sell/ZELLE');
+  await expect(page.locator('article').first()).toBeVisible();
+  await shot(page, '68-selloffers');
+});
+
+test('67, 69 browse, buy side: /buy, /buy/ZELLE', async ({ page }) => {
+  await stubBrowseApi(page, { signedIn: true, live: { USD: BOARD_BUY_LIVE_USD }, offers: (c) => (c === 'USD' ? boardBuyOffers() : []), market: { USD: BOARD_BUY_OFFERS.marketCentsPerXmr } });
+  await page.goto('/buy');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('How do you want to pay?');
+  await expect(page.locator('main a').first()).toBeVisible();
+  await shot(page, '67-buymain');
+  await page.goto('/buy/ZELLE');
+  await expect(page.locator('article').first()).toBeVisible();
+  await shot(page, '69-buyoffers');
+});
+
+/**
+ * The seller quote's example (no SellQuote board): a buy ad by mira.k at the BuyQuote board's price,
+ * listed under side=buy, as quote.spec.ts's MIRA_BUYS. The buyer quote uses the BuyQuote board's
+ * sell ad (BOARD_BUY_QUOTE) as it is.
+ */
+const SELL_QUOTE_OFFER = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, displayName: 'mira.k' } };
+
+/** Every /v1 call PostOffer and the shell make, stubbed (a call nobody named answers 404). */
+async function postApi(page: Page): Promise<void> {
+  await page.route('**/v1/**', json({ error: 'not-found' }, 404));
+  await noEvents(page);
+  await page.route('**/v1/account/me', json({ displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route(/\/v1\/methods\?/, json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 0, bestRate: null }] }));
+  await page.route('**/v1/offers?*', json([]));
+  await page.route(/\/v1\/price\?/, json({ currency: 'USD', centsPerXmr: '32990', usdCentsPerXmr: '32990', exponent: 2, at: '2026-10-24T12:00:00.000Z' }));
+  await page.route('**/v1/wallets', json([...B.wallets]));
+  await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 }));
+}
+
+test('70 the buyer quote, a wallet picked', async ({ page }) => {
+  await blockApi(page);
+  await page.goto(`/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`);
+  await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+  await expect(page.locator('section[aria-label="What you get"]')).toContainText('1.250000 XMR');
+  await shot(page, '70-buyquote', { fullPage: true });
+});
+
+test("71 the seller quote (mira.k's buy ad), a wallet picked", async ({ page }) => {
+  await blockApi(page);
+  // Registered last, so it answers before blockApi's offers route.
+  await page.route('**/v1/offers?*', (r) => {
+    const side = new URL(r.request().url()).searchParams.get('side');
+    return json(side === 'buy' ? [SELL_QUOTE_OFFER] : [])(r);
+  });
+  // The seller quote starts in XMR: 1.25 XMR is the board's $412.50 at $330.00.
+  await page.goto(`/sell/${B.method.id}/${SELL_QUOTE_OFFER.id}?currency=${B.currency}&amount=1.25`);
+  await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+  await expect(page.locator('section[aria-label="What you get"]')).toBeVisible();
+  await expect(page.locator('.x2f-quote__title')).toContainText('mira.k');
+  await expect(page.locator('section[aria-label="What you get"]')).toContainText('$412.50 USD');
+  await shot(page, '71-sellquote', { fullPage: true });
+});
+
+test('72 PostOffer', async ({ page }) => {
+  await postApi(page);
+  await page.goto('/post?method=ZELLE');
+  await page.getByLabel('Smallest trade').fill('$50');
+  await page.getByLabel('Largest trade').fill('$2,000');
+  await expect(page.getByText("Your price follows the market")).toBeVisible();
+  await shot(page, '72-postoffer');
+  await shot(page, '72b-postoffer-preview', { scrollTo: page.getByText('How others will see it') });
 });

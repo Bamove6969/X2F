@@ -9,7 +9,9 @@ describe('ui.css', () => {
   it('the kit draws selection in ink, never orange (conventions 2 Nov 2026), and pins the tab bar', () => {
     const css = readFileSync(fileURLToPath(new URL('../src/ui/ui.css', import.meta.url)), 'utf8');
     const rule = (sel: string) => {
-      const at = css.indexOf(`${sel} {`);
+      // The selector alone, or one of a rule's selector list (the Panes pin, the shared selection rule).
+      const own = css.indexOf(`${sel} {`);
+      const at = own > -1 ? own : css.indexOf(`${sel},\n`);
       expect(at, sel).toBeGreaterThan(-1);
       return css.slice(at, css.indexOf('}', at));
     };
@@ -26,5 +28,12 @@ describe('ui.css', () => {
     expect(rule(':root')).toMatch(/--x2f-tab-bar-height: calc\(var\(--x2f-tab-height\) \+ 1px \+ env\(safe-area-inset-bottom/);
     expect(rule('.x2f-bottom-nav__tab')).toContain('height: var(--x2f-tab-height)');
     expect(rule('.x2f-bottom-nav')).toContain('padding-bottom: env(safe-area-inset-bottom');
+  });
+
+  it('a ticked card that is switched off keeps its dashed "off" border (review 7)', () => {
+    const css = readFileSync(fileURLToPath(new URL('../src/ui/ui.css', import.meta.url)), 'utf8');
+    const at = css.indexOf(".x2f-select-card[data-on='false'][data-selected='true'] {");
+    expect(at).toBeGreaterThan(css.indexOf(".x2f-select-card[data-selected='true'] {"));
+    expect(css.slice(at, css.indexOf('}', at))).toContain('border-style: dashed;');
   });
 });

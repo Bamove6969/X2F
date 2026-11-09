@@ -13,26 +13,28 @@
   min-height: calc(100vh - 61px);
 }
 
+/* Design v2 (batch 3): the header sits on the ground with no rule under it, 8/16/16 padding. */
 .x2f-browse__header {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: var(--x2f-space-4) var(--x2f-space-4) 12px;
-  border-bottom: 1px solid var(--x2f-surface-raised);
+  gap: var(--x2f-space-3);
+  padding: var(--x2f-space-2) var(--x2f-space-4) var(--x2f-space-4);
 }
 
 .x2f-browse__bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 44px;
 }
 
+.x2f-browse__bar .x2f-wordmark {
+  line-height: 30px;
+}
+
+/* The heading is the kit's screen title (28/32 700); this only places it. */
 .x2f-browse__title {
   margin: 0;
-  font-family: var(--x2f-title-family);
-  font-size: var(--x2f-title-size);
-  line-height: var(--x2f-title-line);
-  font-weight: var(--x2f-title-weight);
 }
 
 .x2f-visually-hidden {
@@ -42,7 +44,8 @@
   overflow: hidden;
 }
 
-/* Buy / Sell switch (Main board). */
+/* Buy / Sell switch (Main board): each tab is a 44 px tap target over the 36 px pill it draws
+   (::before); the chosen tab is a 2 px ink border on surface-raised, never orange. */
 .x2f-segment {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -53,7 +56,10 @@
 }
 
 .x2f-segment__tab {
-  height: 36px;
+  position: relative;
+  isolation: isolate;
+  height: 44px;
+  margin: -4px 0;
   padding: 0 18px;
   border: 0;
   border-radius: var(--x2f-radius-pill);
@@ -65,9 +71,23 @@
   cursor: pointer;
 }
 
+.x2f-segment__tab::before {
+  content: '';
+  position: absolute;
+  inset: 4px 0;
+  z-index: -1;
+  box-sizing: border-box;
+  border: 2px solid transparent;
+  border-radius: var(--x2f-radius-pill);
+}
+
 .x2f-segment__tab[aria-selected='true'] {
-  background: var(--x2f-surface-raised);
   color: var(--x2f-ink);
+}
+
+.x2f-segment__tab[aria-selected='true']::before {
+  border: 2px solid var(--x2f-ink);
+  background: var(--x2f-surface-raised);
 }
 
 /* Currency, search. */
@@ -88,8 +108,25 @@
   font-size: 16px;
 }
 
+/* The search box (Main board): 48 px with the search icon inside on the left. */
+.x2f-browse__search-box {
+  position: relative;
+  display: flex;
+  flex-grow: 1;
+}
+
+.x2f-browse__search-box > svg {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  color: var(--x2f-ink-muted);
+  pointer-events: none;
+}
+
 .x2f-browse__search {
   flex-grow: 1;
+  height: 48px;
+  padding: 0 14px 0 44px;
 }
 
 /* Sort chips (Main, SellOffers boards). */
@@ -97,19 +134,28 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--x2f-space-2);
+  /* A wrapped row starts 12 px below the 32 px pills above, so the 44 px targets never overlap. */
+  row-gap: var(--x2f-space-3);
   align-items: center;
 }
 
 .x2f-browse__sort-label {
   font-size: 13px;
+  line-height: 16px;
   color: var(--x2f-ink-muted);
 }
 
+/* A chip (currency, Sort): a 44 px tap target over the 32 px pill it draws (::before), as on the
+   Main and SellOffers boards; the chosen chip is a 2 px ink border on surface-raised. */
 .x2f-chip-button {
-  height: 32px;
+  position: relative;
+  isolation: isolate;
+  height: 44px;
+  margin: -6px 0;
   padding: 0 12px;
+  border: 0;
+  /* The button keeps the pill's shape, so the focus ring follows the pill. */
   border-radius: var(--x2f-radius-pill);
-  border: 1px solid var(--x2f-line);
   background: transparent;
   color: var(--x2f-ink);
   font-family: inherit;
@@ -117,10 +163,23 @@
   cursor: pointer;
 }
 
+.x2f-chip-button::before {
+  content: '';
+  position: absolute;
+  inset: 6px 0;
+  z-index: -1;
+  box-sizing: border-box;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-pill);
+}
+
 .x2f-chip-button[aria-checked='true'] {
-  border-color: var(--x2f-monero);
-  background: var(--x2f-surface-raised);
   font-weight: 600;
+}
+
+.x2f-chip-button[aria-checked='true']::before {
+  border: 2px solid var(--x2f-ink);
+  background: var(--x2f-surface-raised);
 }
 
 /* Lists. */
@@ -129,12 +188,11 @@
   flex-direction: column;
   flex-grow: 1;
   gap: var(--x2f-space-4);
-  padding: var(--x2f-space-2) var(--x2f-space-4) var(--x2f-space-4);
+  padding: 0 var(--x2f-space-4) var(--x2f-space-4);
 }
 
 .x2f-browse__main--cards {
-  gap: 12px;
-  padding: var(--x2f-space-4);
+  padding: 0 var(--x2f-space-4) var(--x2f-space-6);
 }
 
 .x2f-browse__section {
@@ -142,24 +200,71 @@
   flex-direction: column;
 }
 
-.x2f-browse__section-title {
-  margin: var(--x2f-space-2) 0;
-  font-size: 13px;
-  line-height: 16px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--x2f-ink-muted);
+/* Section heading (Main board): the kit's section title (18/24 600); this only places it. */
+.x2f-browse__section .x2f-browse__section-title {
+  margin: 0 0 var(--x2f-space-3);
+  padding-top: var(--x2f-space-1);
 }
 
+/* The method rows of a section form one 16 px surface card, a 1 px rule between rows. */
 .x2f-method {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 60px;
-  padding: var(--x2f-space-2) 0;
-  border-bottom: 1px solid var(--x2f-surface-raised);
+  gap: 14px;
+  min-height: 64px;
+  box-sizing: border-box;
+  padding: var(--x2f-space-3) var(--x2f-space-4);
+  border-top: 1px solid var(--x2f-surface-raised);
+  background: var(--x2f-surface);
   color: var(--x2f-ink);
+}
+
+a.x2f-method:first-of-type {
+  border-top: 0;
+  border-radius: var(--x2f-radius-lg) var(--x2f-radius-lg) 0 0;
+}
+
+a.x2f-method:last-of-type {
+  border-bottom-left-radius: var(--x2f-radius-lg);
+  border-bottom-right-radius: var(--x2f-radius-lg);
+}
+
+/* The live card (MethodPicker): the method picker on top, the row to its offers under it, one 16 px
+   card like the rows' (a 1 px rule between). Each row is a 44 px+ tap target. */
+.x2f-method-pick {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--x2f-radius-lg);
+}
+
+.x2f-method-pick .x2f-method {
+  min-height: 52px;
+}
+
+.x2f-method-pick__button {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.x2f-method-pick__button:focus-visible,
+.x2f-method-pick__link:focus-visible {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: -2px;
+}
+
+/* Not the list rows' first-of-type corners: the card clips its own, and the rule stays. */
+.x2f-method-pick a.x2f-method.x2f-method-pick__link {
+  border-top: 1px solid var(--x2f-surface-raised);
+  border-radius: 0;
+}
+
+.x2f-method-pick__link .x2f-method__sub {
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .x2f-method svg {
@@ -177,6 +282,7 @@
 
 .x2f-method__name {
   font-size: 16px;
+  line-height: 22px;
   font-weight: 600;
 }
 
@@ -225,40 +331,59 @@
   color: var(--x2f-monero-ink-hover);
 }
 
-/* SellOffers header. */
+/* SellOffers header (v2): the back button on its own 44 px row, then the "34 buyers · USD" line,
+   then the screen title (the kit's screen-title, 28/32 700). The line is drawn above the title
+   (column-reverse); the reading order stays title, then line. */
 .x2f-browse__back-row {
   display: flex;
-  align-items: center;
-  gap: var(--x2f-space-2);
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.x2f-browse__back-row > .x2f-icon-button {
+  margin: 0 -10px;
+  align-self: flex-start;
 }
 
 .x2f-browse__head-text {
   display: flex;
-  flex-direction: column;
-  flex-grow: 1;
+  flex-direction: column-reverse;
   min-width: 0;
 }
 
 .x2f-browse__head-title {
-  font-size: 18px;
-  font-weight: 600;
+  margin-top: var(--x2f-space-1);
+  overflow-wrap: anywhere;
 }
 
-.x2f-browse__head-sub,
+.x2f-browse__head-sub {
+  margin-top: var(--x2f-space-2);
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+}
+
 .x2f-browse__muted {
   font-size: 13px;
   color: var(--x2f-ink-muted);
 }
 
+/* Market price row (SellOffers board): 48 px, a 12 px surface card. */
 .x2f-browse__market {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--x2f-space-2);
-  padding: 10px 12px;
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 0 var(--x2f-space-4);
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
-  font-size: 13px;
+}
+
+.x2f-browse__market .x2f-browse__muted {
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .x2f-browse__mono {
@@ -266,13 +391,19 @@
   font-size: 15px;
 }
 
-/* Offer cards (SellOffers board). */
+.x2f-browse__market .x2f-browse__mono {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 500;
+}
+
+/* Offer cards (SellOffers board, v2): 20 px padding, 16 px radius. */
 .x2f-offer {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: var(--x2f-space-4);
-  border-radius: var(--x2f-radius-md);
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-5);
+  border-radius: var(--x2f-radius-lg);
   background: var(--x2f-surface);
 }
 
@@ -293,8 +424,9 @@
 .x2f-offer__name {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--x2f-space-2);
   font-size: 16px;
+  line-height: 22px;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -311,37 +443,71 @@
 }
 
 .x2f-offer__dot[data-online='false'] {
+  box-sizing: border-box;
   border: 1.5px solid var(--x2f-line);
 }
 
 .x2f-offer__sub,
 .x2f-offer__limits {
   font-size: 13px;
+  line-height: 18px;
   color: var(--x2f-ink-muted);
 }
 
+/* The trade range in mono ink over the time line, right-aligned (SellOffers board). */
 .x2f-offer__limits {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
   text-align: right;
+}
+
+.x2f-offer__range {
+  font-family: var(--x2f-font-mono);
+  font-size: 14px;
+  color: var(--x2f-ink);
+}
+
+.x2f-offer[data-opens-at] .x2f-offer__range {
+  color: var(--x2f-ink-muted);
 }
 
 .x2f-offer__badges {
   position: relative;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: var(--x2f-space-2);
 }
 
+/* "+N": a 44 x 44 px tap target over the small pill it draws (::before); the negative margins keep
+   the badge row as it was. */
 .x2f-offer__more {
-  padding: 3px 8px;
-  border: 1px solid var(--x2f-line);
-  border-radius: var(--x2f-radius-pill);
+  position: relative;
+  isolation: isolate;
+  min-width: 44px;
+  height: 44px;
+  margin: -11px -7px;
+  padding: 0 15px;
+  border: 0;
   background: transparent;
   color: var(--x2f-ink-muted);
   font-family: inherit;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.x2f-offer__more::before {
+  content: '';
+  position: absolute;
+  inset: 11px 7px;
+  z-index: -1;
+  box-sizing: border-box;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-pill);
 }
 
 .x2f-offer__tip {
@@ -382,20 +548,34 @@
   color: var(--x2f-caution);
 }
 
+/* Nudge: a 44 px tap target over the 32 px pill it draws (::before). */
 .x2f-offer__nudge {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  height: 32px;
+  height: 44px;
+  margin: -6px 0;
   padding: 0 10px;
-  border: 1px solid var(--x2f-line);
-  border-radius: var(--x2f-radius-pill);
+  border: 0;
   background: transparent;
   color: var(--x2f-caution);
   font-family: inherit;
   font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
+}
+
+.x2f-offer__nudge::before {
+  content: '';
+  position: absolute;
+  inset: 6px 0;
+  z-index: -1;
+  box-sizing: border-box;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-pill);
 }
 
 .x2f-offer__terms {
@@ -412,14 +592,16 @@
 }
 
 .x2f-offer__rate {
-  font-family: var(--x2f-font-mono);
-  font-size: 24px;
-  line-height: 28px;
-  font-weight: 500;
+  font-family: var(--x2f-amount-family);
+  font-size: var(--x2f-amount-size);
+  line-height: var(--x2f-amount-line);
+  font-weight: var(--x2f-amount-weight);
+  letter-spacing: -0.01em;
 }
 
 .x2f-offer__margin {
   font-size: 13px;
+  line-height: 18px;
   color: var(--x2f-ink-muted);
 }
 
@@ -468,4 +650,13 @@
 .x2f-suggest__label {
   font-size: 15px;
   font-weight: 600;
+}
+
+/* Two panes (Fold-Offers): the offer as a row that picks the quote beside it (kit PickButton). */
+.x2f-offer__pick-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+  min-width: 0;
 }

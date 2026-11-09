@@ -115,7 +115,7 @@ describe('LoginApprove board, new-device side (ApproveOnDevice)', () => {
     expect(num.hasAttribute('aria-labelledby')).toBe(false);
     expect(num.previousElementSibling?.textContent).toBe('Your number');
     expect(num.classList.contains('x2f-big-number')).toBe(true);
-    expect(part(host, 'approve-countdown')?.textContent).toMatch(/This ends in 0[45]:\d\d\./);
+    expect(part(host, 'approve-countdown')?.textContent).toMatch(/This ends in [45] min \d{1,2} s\./);
   });
 
   it('"Where do I approve it?" is a disclosure: aria-expanded and aria-controls the steps', () => {
@@ -288,7 +288,7 @@ describe('LoginApprove board, logged-in side (LoginApprove)', () => {
     mount();
     const d = dialog();
     expect(part(d, 'approve-block')?.classList.contains('x2f-button--danger-outline')).toBe(true);
-    expect(part(d, 'approve-countdown')?.textContent).toMatch(/the request ends in 0[45]:\d\d and they stay out\./);
+    expect(part(d, 'approve-countdown')?.textContent).toMatch(/the request ends in [45] min \d{1,2} s and they stay out\./);
   });
 
   it('with One device at a time on, only that note shows (never the device-limit note too)', () => {

@@ -76,8 +76,11 @@
  *   phone layout in the first pane, the counterparty and the chat (Task 20's panel through
  *   `setTradeChat`) in the next. Not for `disputed`: the dispute room has its own chat.
  * - tabletop: `TradeGlance` (information only) in the top half; the screen and the chat, with
- *   every control, in the bottom half.
- * - the flip cover screen: `TradeGlance` on top, the screen's phone layout under it.
+ *   every control, in the bottom half. Mark what the glance already shows (the header, a timer
+ *   card, the "Send exactly" card) with `data-fold-glance`: it is left out of the bottom half
+ *   there, and the screen's `.x2f-pay__footer` stays pinned to the bottom of it (styles/fold.css).
+ * - the flip cover screen: `TradeGlance` (Fold-Cover's card) fills the screen; the screen's phone
+ *   layout is under it, a scroll away, never hidden.
  * - `#chat` (the Chat links of Tasks 24-25): on a phone, on the cover screen and in the wide layout
  *   it opens the chat in a sheet; with a chat pane (or a screen's own wide chat aside, BuyerPay) it
  *   moves the focus to its composer once the chat is ready.
@@ -97,6 +100,7 @@ import { hasPanes, useFoldLayout, type FoldLayout } from '../../ui/fold.js';
 import { Panes } from '../../ui/Panes.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { useTradeChat } from './paySeams.js';
+import { SettleWait } from './settleWait.js';
 import { integrityFailed, POLL_MS, useTradeEscrow, useTradeLive, type ConfirmedTrade, type TradeEscrow } from './seams.js';
 import { TradeGlance } from './TradeGlance.js';
 import { CounterpartyCard } from './TradeTimeline.js';
@@ -213,12 +217,13 @@ function useTradeView(code: string): { load: Load; refresh: () => Promise<void> 
   return { load, refresh };
 }
 
-/** Shown for a state whose screen has not landed yet. */
-function StatusCard({ view }: { view: TradeView }) {
+/** Shown for a state whose screen has not landed yet; while settling, also what the trade waits for. */
+export function StatusCard({ view, serverClock, member = false }: { view: TradeView; serverClock: () => Date; member?: boolean }) {
   return (
     <section className="x2f-trade-status" data-trade-state={view.state}>
       <p>Trade {view.code}</p>
       <p>State: {view.state.replace('_', ' ')}</p>
+      <SettleWait view={view} serverClock={serverClock} member={member} />
     </section>
   );
 }
@@ -293,7 +298,7 @@ function MemberRoom({ code, view, refresh }: { code: string; view: TradeView; re
         <Screen code={code} view={view} refresh={refresh} serverClock={clock} wide={false} />
       ) : (
         <>
-          <StatusCard view={view} />
+          <StatusCard view={view} serverClock={clock} member />
           <section className="x2f-card x2f-stack" data-part="member-waiting">
             <p role="status">{MEMBER_TRADE_COPY.roomWaiting}</p>
           </section>
@@ -346,7 +351,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
     <main data-screen="trade" data-trade-state={view.state} data-role={view.role}>
       <Panes
         layout={layout}
-        glance={broken ? null : <TradeGlance view={view} escrow={escrow} serverClock={clock} cover={layout === 'cover'} />}
+        glance={broken ? null : <TradeGlance view={view} escrow={escrow} serverClock={clock} layout={layout === 'cover' ? 'cover' : 'tabletop'} />}
         glanceLabel="Trade at a glance"
         main={
           Screen ? (
@@ -355,7 +360,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
             // Fails closed even if no screen module registered the danger state.
             <p role="alert">Security check failed. Don't fund this trade.</p>
           ) : (
-            <StatusCard view={view} />
+            <StatusCard view={view} serverClock={clock} />
           )
         }
         side={
