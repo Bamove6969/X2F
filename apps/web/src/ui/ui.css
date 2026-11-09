@@ -149,11 +149,6 @@
   color: var(--x2f-escrow);
 }
 
-/* A finished state that is neither good nor bad (Refunded board: "Payment time ran out"). */
-.x2f-chip[data-tone='muted'] {
-  --x2f-chip-tone: var(--x2f-ink-muted);
-}
-
 /* Badge pills (SellOffers board). */
 .x2f-badge {
   display: inline-flex;
@@ -2172,162 +2167,6 @@
   background: transparent;
 }
 
-/*
- * The hero (visual system v2, standard 11; BuyerPaidWaiting, Refunded): the screen's one status
- * card, a 14% wash of its tone from the top over surface, a 35% border, radius 16. Row 1 is the
- * tinted chip with the key mark on the right. Wide: padding 28, gap 20, the wash to 180 px.
- */
-.x2f-hero {
-  --x2f-hero-tone: var(--x2f-caution);
-  --x2f-hero-stop: 140px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--x2f-space-4);
-  padding: 20px;
-  border: 1px solid color-mix(in srgb, var(--x2f-hero-tone) 35%, transparent);
-  border-radius: var(--x2f-radius-lg);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--x2f-hero-tone) 14%, var(--x2f-surface)) 0%, var(--x2f-surface) var(--x2f-hero-stop));
-}
-
-.x2f-hero[data-tone='muted'] {
-  --x2f-hero-tone: var(--x2f-ink-muted);
-}
-
-.x2f-hero[data-tone='mod'] {
-  --x2f-hero-tone: var(--x2f-mod);
-}
-
-/* An outcome hero (Refunded): 24/20/20, gap 20, the wash to 160 px. */
-.x2f-hero[data-kind='outcome'] {
-  --x2f-hero-stop: 160px;
-  gap: 20px;
-  padding: 24px 20px 20px;
-}
-
-.x2f-hero[data-wide] {
-  --x2f-hero-stop: 180px;
-  gap: 20px;
-  padding: 28px;
-}
-
-.x2f-hero__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--x2f-space-2);
-}
-
-.x2f-hero__mark {
-  flex-shrink: 0;
-  color: var(--x2f-hero-tone);
-}
-
-.x2f-hero__lead {
-  margin: 0;
-  font-size: 16px;
-  line-height: 24px;
-  color: var(--x2f-ink-muted);
-}
-
-.x2f-hero__lead .x2f-when,
-.x2f-hero__lead .x2f-duration__n {
-  color: var(--x2f-ink);
-}
-
-.x2f-hero__text {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-/* The outcome's h1: Familjen 32/36 700 at -0.02em. */
-.x2f-hero__title {
-  margin: 0;
-  font-family: var(--x2f-font-display);
-  font-size: 32px;
-  line-height: 36px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-/* The hero's raised box: the trade amount (mono 28/32 500, the unit 15/600, the fiat mono 16
-   muted), then a 48 px "X2F fee" row under an inset surface divider. */
-.x2f-hero__facts {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  border-radius: var(--x2f-radius-md);
-  background: var(--x2f-surface-raised);
-}
-
-.x2f-hero__facts dd {
-  margin: 0;
-}
-
-.x2f-hero__amount {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px 16px;
-}
-
-.x2f-hero__label {
-  font-size: var(--x2f-label-size);
-  line-height: var(--x2f-label-line);
-  font-weight: 600;
-  letter-spacing: var(--x2f-label-tracking);
-  text-transform: uppercase;
-  color: var(--x2f-ink-muted);
-}
-
-.x2f-hero__amount dd {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 10px;
-}
-
-.x2f-hero__amount .x2f-num {
-  font-size: 28px;
-  line-height: 32px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-}
-
-.x2f-hero__amount .x2f-xmr__unit {
-  font-size: 15px;
-}
-
-.x2f-hero__fiat {
-  font-family: var(--x2f-font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: 16px;
-  line-height: 24px;
-  color: var(--x2f-ink-muted);
-}
-
-.x2f-hero__fee {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 48px;
-  margin: 0 16px;
-  border-top: 1px solid var(--x2f-surface);
-}
-
-.x2f-hero__fee dt {
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--x2f-ink-muted);
-}
-
-.x2f-hero__fee dd {
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 500;
-}
-
 /* An outcome screen's card (Refunded "What happened"): padding 20, radius 16, gap 16; the day in
    mono 13 muted on the right of the heading. */
 .x2f-outcome-card {
@@ -2442,17 +2281,6 @@
   color: var(--x2f-ink-muted);
 }
 
-/* The muted chip in a hero: ink words on a 16% ink-muted wash (Refunded board). */
-.x2f-chip[data-look='tint'][data-tone='muted'] {
-  background: color-mix(in srgb, var(--x2f-ink-muted) 16%, transparent);
-  color: var(--x2f-ink);
-}
-
-.x2f-hero__rule {
-  height: 1px;
-  background: color-mix(in srgb, var(--x2f-hero-tone) 25%, transparent);
-}
-
 /* The chat link in a card (BuyerPaidWaiting "Message satoshi_ghost in chat"). */
 .x2f-inline-action {
   display: inline-flex;
@@ -2528,8 +2356,8 @@
   color: var(--x2f-ink-muted);
 }
 
-/* A label with a "1 of 3 new" stepper on the right (News board). */
-.x2f-stepper-row {
+/* A label with a "1 of 3 new" pager on the right (News board; not the kit's trade stepper). */
+.x2f-news-pager-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2537,7 +2365,7 @@
   min-height: 44px;
 }
 
-.x2f-stepper {
+.x2f-news-pager {
   display: inline-flex;
   align-items: center;
   gap: var(--x2f-space-1);
@@ -2545,7 +2373,7 @@
   color: var(--x2f-ink-muted);
 }
 
-.x2f-stepper .x2f-icon-button:disabled {
+.x2f-news-pager .x2f-icon-button:disabled {
   color: var(--x2f-line);
   cursor: default;
 }

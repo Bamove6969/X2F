@@ -18,8 +18,8 @@ import { Link } from 'react-router';
 import { formatFiat, formatXmr, TIMERS } from '@x2f/trade';
 import { methodOf, type TradeView } from '../../api/trade.js';
 import { Xmr } from '../../ui/Amount.js';
-import { KeyMark } from '../../ui/EscrowDots.js';
 import { formatDate } from '../../ui/dates.js';
+import { Hero, HeroAmount, ResultHeadline } from '../../ui/Hero.js';
 import { Icon } from '../../ui/icons.js';
 import { StatusChip, type Tone } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
@@ -55,7 +55,8 @@ export function refundStory(view: TradeView, disputeOpen: boolean): Story {
   // A cancel's refund that landed after "I've paid" is not "You cancelled": the buyer paid and keeps the dispute (review I1).
   const paidThenRefunded = trade.dispute === null && view.paidAt !== null && (view.settling === 'buyer-cancel' || view.settling === 'mutual-cancel');
   const paidQuestion = 'Did you pay and not get your XMR?'; // COPY-UNSIGNED
-  const muted = (label: string): Story['chip'] => ({ tone: 'muted', icon: 'undo', label });
+  // The kit's neutral chip (handoff 4.2: Refunded, Cancelled): ink words on a 16% ink-muted wash.
+  const muted = (label: string): Story['chip'] => ({ tone: 'neutral', icon: 'undo', label });
   if (paidThenRefunded) {
     return {
       chip: muted('Refunded'),
@@ -148,6 +149,8 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
   // The hero's tone (design review P1-7): ink-muted for a finished refund, the moderator's after a
   // dispute decided it, caution while a cancel is still being returned.
   const tone = trade.dispute !== null ? 'mod' : story.chip.tone === 'caution' ? 'caution' : 'muted';
+  // The kit Hero's name for ink-muted is neutral (handoff 4.5).
+  const heroTone = tone === 'muted' ? 'neutral' : tone;
   const closed = view.closedAt === null ? NaN : Date.parse(view.closedAt);
   const disputeHref = `/trade/${encodeURIComponent(trade.code)}/dispute`;
 
@@ -158,31 +161,24 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
       <div className="x2f-pay__main">
         {/* The board's hero (standard 11; design review P1-7): chip and key mark, the h1 and lead, then
             the trade amount and X2F's fee in a raised box. */}
-        <section className="x2f-hero" data-tone={tone} data-kind="outcome" aria-labelledby="refunded-title" data-part="refunded-hero">
-          <div className="x2f-hero__head">
-            <StatusChip tone={story.chip.tone} look="tint" icon={story.chip.icon} label={story.chip.label} />
-            <KeyMark className="x2f-hero__mark" />
-          </div>
-          <div className="x2f-hero__text">
-            <h1 className="x2f-hero__title" id="refunded-title">
-              {story.title}
-            </h1>
-            <p className="x2f-hero__lead">{story.lead}</p>
-          </div>
-          <dl className="x2f-hero__facts" data-part="refunded-amount">
-            <div className="x2f-hero__amount">
-              <dt className="x2f-hero__label">Trade amount</dt>
-              <dd>
-                <Xmr value={formatXmr(BigInt(view.amountAtomic))} ink /> <span className="x2f-hero__fiat">{formatFiat(BigInt(view.fiatCents), view.lockedRate.currency)}</span>
-              </dd>
-            </div>
-            <div className="x2f-hero__fee">
-              {/* The design session's row (2 Nov; was "Charged to you: Nothing"): a refund never carries X2F's fee. COPY-UNSIGNED */}
-              <dt>X2F fee</dt>
-              <dd className="x2f-num">None</dd>
-            </div>
-          </dl>
-        </section>
+        <Hero
+          tone={heroTone}
+          kind="result"
+          labelledBy="refunded-title"
+          part="refunded-hero"
+          keyMark
+          chip={<StatusChip tone={story.chip.tone} look="tint" icon={story.chip.icon} label={story.chip.label} />}
+        >
+          <ResultHeadline id="refunded-title" title={story.title} lead={story.lead} />
+          <HeroAmount
+            part="refunded-amount"
+            label="Trade amount"
+            amount={<Xmr value={formatXmr(BigInt(view.amountAtomic))} ink />}
+            fiat={formatFiat(BigInt(view.fiatCents), view.lockedRate.currency)}
+            // The design session's row (2 Nov; was "Charged to you: Nothing"): a refund never carries X2F's fee. COPY-UNSIGNED
+            rows={[{ term: 'X2F fee', value: 'None' }]}
+          />
+        </Hero>
         {/* "What happened" as the board's timeline (design review P2-20): a dot per row joined by a
             line, the last dot filled in the hero's tone and its row at 600; the day on the right of
             the heading when every row is on it (design session 2 Nov). */}

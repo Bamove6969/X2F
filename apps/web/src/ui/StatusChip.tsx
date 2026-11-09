@@ -4,10 +4,9 @@ import './ui.css';
 /**
  * A state colour always comes with a word and an icon (design-system README), so `label` is
  * required. The six tones of the design kit handoff 4.2: `neutral` is refunded or cancelled, `mod`
- * a moderator's decision, `team` a new team member; `muted` (results) a finished state that is neither
- * good nor bad. Never orange.
+ * a moderator's decision, `team` a new team member. Never orange.
  */
-export type Tone = 'caution' | 'escrow' | 'danger' | 'muted' | 'neutral' | 'mod' | 'team';
+export type Tone = 'caution' | 'escrow' | 'danger' | 'neutral' | 'mod' | 'team';
 
 // From the trade-room boards (TradeFund "Waiting for you to fund", Desktop "Escrow secured").
 // `look="tint"` is the hero's chip (visual system v2, section 7): a 28 px pill with a 14% wash of the tone.

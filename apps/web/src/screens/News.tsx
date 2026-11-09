@@ -191,10 +191,10 @@ export function News() {
       ) : null}
       {state.status === 'ready' && state.items.length > 0 ? (
         <section className="x2f-stack" aria-label="Posts" data-part="news-list" ref={list}>
-          <div className="x2f-stepper-row">
+          <div className="x2f-news-pager-row">
             <span className="x2f-kicker">Newest first</span>
             {newCount > 1 ? (
-              <span className="x2f-stepper" data-part="news-stepper">
+              <span className="x2f-news-pager" data-part="news-stepper">
                 <button type="button" className="x2f-icon-button" aria-label="Previous new post" disabled={step === 0} onClick={() => goTo(step - 1)}>
                   <Icon name="chevron-left" size={20} />
                 </button>

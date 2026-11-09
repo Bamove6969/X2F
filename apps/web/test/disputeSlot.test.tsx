@@ -213,13 +213,14 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
       </MemoryRouter>,
     );
     expect(host.querySelector('.x2f-chip')?.textContent).toBe('Payment time ran out');
-    // The board's hero (design review P1-7): the muted tone, the tinted chip and key mark, the h1 and
-    // lead, then Trade amount and X2F fee in its raised box (no longer in What happened).
+    // The board's hero, now the kit Hero (design review P1-7; kit 4, lead 8 Nov "the kit wins"): the
+    // neutral (ink-muted) tone, the chip and key mark, the h1 and lead, then Trade amount and X2F fee
+    // in its raised box (no longer in What happened).
     const hero = host.querySelector('[data-part="refunded-hero"]')!;
-    expect([hero.className, hero.getAttribute('data-tone'), hero.getAttribute('data-kind')]).toEqual(['x2f-hero', 'muted', 'outcome']);
+    expect([hero.className, hero.getAttribute('data-tone'), hero.getAttribute('data-kind')]).toEqual(['x2f-hero', 'neutral', 'result']);
     expect(hero.querySelector('.x2f-chip')?.getAttribute('data-look')).toBe('tint');
     expect(hero.querySelector('[data-part="key-mark"]')).not.toBeNull();
-    expect(hero.querySelector('h1.x2f-hero__title')?.textContent).toBe('Payment time ran out');
+    expect(hero.querySelector('h1.x2f-hero__headline')?.textContent).toBe('Payment time ran out');
     expect(hero.querySelector('.x2f-hero__lead')).not.toBeNull();
     const amount = [...hero.querySelectorAll('[data-part="refunded-amount"] > div')].map((r) => [r.querySelector('dt')!.textContent, r.querySelector('dd')!.textContent]);
     expect(amount).toEqual([
@@ -269,7 +270,7 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     const cases: [Partial<TradeView>, string][] = [
       [{ settling: 'mutual-cancel', dispute: { by: 'buyer', at: at(-20 * DAY) } }, 'mod'],
       [{ settling: 'buyer-cancel' }, 'caution'],
-      [{ settling: 'buyer-cancel', cancelConfirmedAt: at(-9 * DAY) }, 'muted'],
+      [{ settling: 'buyer-cancel', cancelConfirmedAt: at(-9 * DAY) }, 'neutral'],
     ];
     for (const [over, tone] of cases) {
       const { host, unmount } = render(
@@ -360,16 +361,19 @@ describe('the Refunded board styles (design review P1-7, P2-20)', () => {
     return css.slice(at, css.indexOf('}', at));
   };
 
-  it('the outcome hero: 24/20/20, gap 20, the wash to 160 px; the h1 in Familjen 32/36 700', () => {
-    const hero = rule(".x2f-hero[data-kind='outcome']");
-    expect(hero).toContain('padding: 24px 20px 20px');
-    expect(hero).toContain('gap: 20px');
-    expect(hero).toContain('--x2f-hero-stop: 160px');
-    const title = rule('.x2f-hero__title');
-    expect(title).toContain('font-family: var(--x2f-font-display)');
-    expect(title).toContain('font-size: 32px');
-    expect(title).toContain('line-height: 36px');
-    expect(title).toContain('letter-spacing: -0.02em');
+  it('the result hero is the kit Hero (hero.css, kit 4.1/4.3): 24/20/20, gap 20, the wash to 160 px; the h1 is the result headline', () => {
+    const kit = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/ui/hero.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const kitRule = (sel: string) => {
+      const at = kit.indexOf(`${sel} {`);
+      expect(at, sel).toBeGreaterThanOrEqual(0);
+      return kit.slice(at, kit.indexOf('}', at));
+    };
+    const hero = kitRule(".x2f-hero[data-kind='result']");
+    expect(hero).toContain('padding: var(--x2f-space-6) var(--x2f-space-5) var(--x2f-space-5)');
+    expect(hero).toContain('gap: var(--x2f-space-5)');
+    expect(hero).toContain('var(--x2f-surface) 160px');
+    expect(kitRule('.x2f-hero__headline')).toContain('font-family: var(--x2f-result-headline-family)');
+    expect(css).not.toContain('.x2f-hero');
   });
 
   it('the timeline: 12 px ringed dots joined by a 2 px line, the last dot filled in the tone and its row at 600', () => {

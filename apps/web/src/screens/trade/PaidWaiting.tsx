@@ -27,7 +27,7 @@ import { Countdown, Duration } from '../../ui/Countdown.js';
 import { Disclosure } from '../../ui/Disclosure.js';
 import { Facts, type Fact } from '../../ui/Facts.js';
 import { Icon } from '../../ui/icons.js';
-import { KeyMark } from '../../ui/EscrowDots.js';
+import { Hero, HeroRule } from '../../ui/Hero.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TimerCard } from '../../ui/TimerCard.js';
 import { When } from '../../ui/When.js';
@@ -161,11 +161,14 @@ export function PaidWaitingBody({
     );
 
   const status = (
-    <section role="status" aria-labelledby="paid-title" className="x2f-hero" data-tone="caution" data-wide={wide ? '' : undefined} data-part="paid-status">
-      <div className="x2f-hero__head">
-        <StatusChip tone="caution" look="tint" icon="check" label={ended ? 'Paid · not confirmed in time' : 'Paid'} />
-        <KeyMark className="x2f-hero__mark" />
-      </div>
+    <Hero
+      tone="caution"
+      role="status"
+      labelledBy="paid-title"
+      part="paid-status"
+      keyMark
+      chip={<StatusChip tone="caution" look="tint" icon="check" label={ended ? 'Paid · not confirmed in time' : 'Paid'} />}
+    >
       <p id="paid-title" className="x2f-hero__lead">
         {ended ? (
           <>
@@ -210,11 +213,11 @@ export function PaidWaitingBody({
       </p>
       {timer !== null ? (
         <>
-          <div className="x2f-hero__rule" aria-hidden="true" data-fold-glance="timer" />
+          <HeroRule glance="timer" />
           {timer}
         </>
       ) : null}
-    </section>
+    </Hero>
   );
 
   const next = (
