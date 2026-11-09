@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { posterRole, type Price } from '@x2f/trade';
+import { GIFT_CARD_TERMS_VERSION, giftCardRole, giftCardTermsComplete, posterRole, type Price } from '@x2f/trade';
 import { useSession } from '../../session/useSession.js';
 import { addressEnd } from '../../ui/addressEnd.js';
 import { BlockAction } from '../settings/BlockAction.js';
@@ -8,7 +8,8 @@ import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { Icon } from '../../ui/icons.js';
 import { Notice } from '../../ui/Notice.js';
-import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
+import { fetchMarket, fetchMethod, fetchOffer, fetchWallets, type PickWallet } from './api.js';
+import { GiftCardTerms } from '../giftcard/GiftCardRules.js';
 import type { ConfirmedTrade } from './confirmed.js';
 import { STAGE_NAMES, amountText, currencySign, dealMaxFiat, formatMinor, maxText, quote, quoteExponent, quoteRange, rangeText, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
 import { claimTake, rememberTake } from './pendingTake.js';
@@ -142,11 +143,17 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   // Task 37: once the person blocks the poster, this offer is gone for them (the take would 404).
   const { blockedPoster, closedError } = kept;
   const offer = useLoad((signal) => fetchOffer(copy.adSide, methodId, currency, offerId, signal), [copy.adSide, methodId, currency, offerId]);
-  const method = useLoad((signal) => fetchMethodName(copy.adSide, methodId, currency, signal), [copy.adSide, methodId, currency]);
+  const method = useLoad((signal) => fetchMethod(copy.adSide, methodId, currency, signal), [copy.adSide, methodId, currency]);
   const wallets = useLoad<PickWallet[]>(signedIn === true ? (signal) => fetchWallets(signal) : null, [signedIn]);
 
   const o: QuoteOffer | null = offer.kind === 'ready' ? offer.value : null;
-  const methodName = method.kind === 'ready' ? method.value : methodId;
+  const methodName = method.kind === 'ready' ? method.value.name : methodId;
+  // J-17 (F13): a gift card's taker ticks their side's terms first. The taker of a sell ad is the
+  // buyer, who sends the card; of a buy ad, the seller, who checks it.
+  const giftCard = method.kind === 'ready' && method.value.giftCard;
+  const giftRole = giftCardRole(copy.adSide === 'sell' ? 'buyer' : 'seller');
+  const [giftTicked, setGiftTicked] = useState<ReadonlySet<string>>(() => new Set());
+  const giftTermsOk = !giftCard || giftCardTermsComplete(giftRole, giftTicked);
   const marketNow = market.kind === 'ready' ? market.value : null;
   const q: Quote | null = o && market.kind === 'ready' ? quote({ offer: o, market: marketNow, text, unit }) : null;
   const usable = wallets.kind === 'ready' ? wallets.value.filter((w) => w.usable) : [];
@@ -256,7 +263,8 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   };
 
   const noWallet = signedIn === true && wallets.kind === 'ready' && usable.length === 0;
-  const canTrade = ok !== null && !state.busy && !blockedPoster && (signedIn === false || (signedIn === true && pickedWallet !== null));
+  const canTrade =
+    ok !== null && !state.busy && !blockedPoster && giftTermsOk && (signedIn === false || (signedIn === true && pickedWallet !== null));
   /**
    * What the trade room is handed (confirmed.ts): built from this screen's own figures, the ones the
    * person sees and taps Trade on. The taker of a sell ad is the buyer; of a buy ad, the seller.
@@ -401,6 +409,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
         <Notice tone="info">
           {copy.footnote(poster)}
         </Notice>
+        {giftCard ? <GiftCardTerms role={giftRole} ticked={giftTicked} onChange={setGiftTicked} /> : null}
         {signedIn === true && myName !== null && myName !== poster ? (
           <BlockAction displayName={poster} onBlocked={() => keep({ blockedPoster: true })} />
         ) : null}
@@ -431,7 +440,14 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             onClick={() => {
               if (!ok) return;
               touched();
-              take({ quote: { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents }, walletId: pickedWallet?.id ?? null, confirmed, range: quoteRange(o), resumeHref });
+              const sent = { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents };
+              take({
+                quote: giftCard ? { ...sent, giftCardTerms: GIFT_CARD_TERMS_VERSION } : sent,
+                walletId: pickedWallet?.id ?? null,
+                confirmed,
+                range: quoteRange(o),
+                resumeHref,
+              });
             }}
           >
             Trade

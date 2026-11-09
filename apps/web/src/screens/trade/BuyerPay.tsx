@@ -36,6 +36,7 @@ import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
 import { buyerCancelMode, escrowChip, finishBlock, payBlock, paySecured, payTimeOver, payTimer, showProposal, type EscrowChip } from './payModel.js';
 import { PaidWaitingActions, PaidWaitingBody } from './PaidWaiting.js';
+import { GiftCardEvidence } from '../giftcard/GiftCardRules.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
@@ -362,6 +363,8 @@ function SendExactlyCard({ view, method, total, rate }: { view: TradeView; metho
           <strong>{GIFT_CARD_WARNING}</strong>
         </p>
       ) : null}
+      {/* J-17 (G50, G52): the buyer sends the card; what they keep for a dispute. */}
+      {method.giftCard ? <GiftCardEvidence role="sender" /> : null}
     </section>
   );
 }

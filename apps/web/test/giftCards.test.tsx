@@ -2,9 +2,11 @@
 // J-17 (owner G50-G53, F13, T-081): the gift-card rules on the web. The words are COPY-UNSIGNED
 // placeholders (design writes the rules text, J-31 T-058); these tests pin which boxes and items
 // show, not their sentences.
-import { useState } from 'react';
-import { describe, expect, it } from 'vitest';
+import { act, useState } from 'react';
+import { MemoryRouter } from 'react-router';
+import { describe, expect, it, vi } from 'vitest';
 import { GIFT_CARD_EVIDENCE, GIFT_CARD_TERMS, GIFT_CARD_TERMS_VERSION, type GiftCardRole } from '@x2f/trade';
+import { PostOffer } from '../src/screens/PostOffer.js';
 import { GiftCardEvidence, GiftCardTerms } from '../src/screens/giftcard/GiftCardRules.js';
 import { GIFT_CARD_COPY, giftCardEvidenceText, giftCardTermText } from '../src/screens/giftcard/giftCardCopy.js';
 import { CURRENCY_NOT_CARD, DEFAULT_FORM, GIFT_CARD_TERMS_UNTICKED, validate, type FormState } from '../src/screens/post/offerForm.js';
@@ -86,5 +88,62 @@ describe('<GiftCardEvidence>', () => {
   it('the checker keeps what the check showed', () => {
     const { host } = render(<GiftCardEvidence role="checker" />);
     expect([...host.querySelectorAll('[data-evidence]')].map((i) => i.getAttribute('data-evidence'))).toEqual(['check-result']);
+  });
+});
+
+describe('<PostOffer> on a gift card (J-17)', () => {
+  it("shows the poster's tick boxes and posts the terms version only once all are ticked", async () => {
+    const posted: Record<string, unknown>[] = [];
+    const methods = { live: [], all: [{ id: 'STEAM_GIFT_CARD', name: 'Steam gift card', group: 'Gift cards & vouchers', giftCard: true, offers: 0, bestRate: null }] };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input), 'http://x2f.test');
+        const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
+        if (url.pathname === '/v1/methods') return json(methods);
+        if (url.pathname === '/v1/offers' && init?.method === 'POST') {
+          posted.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+          return json({ id: 'o1' }, 201);
+        }
+        return json({ error: 'price-unavailable' }, 503);
+      }),
+    );
+    sessionStorage.clear();
+    const { host } = render(
+      <MemoryRouter initialEntries={['/post?method=STEAM_GIFT_CARD&side=buy']}>
+        <PostOffer />
+      </MemoryRouter>,
+    );
+    const settle = async () => {
+      for (let i = 0; i < 6; i += 1) await act(async () => new Promise((r) => setTimeout(r, 0)));
+    };
+    await settle();
+    const setValue = (sel: string, v: string) => {
+      const el = host.querySelector<HTMLInputElement | HTMLSelectElement>(sel)!;
+      const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      act(() => {
+        Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, v);
+        el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }));
+      });
+    };
+    setValue('#country', 'US');
+    // A buy ad's poster pays with the card: the sender's boxes.
+    const boxes = [...host.querySelectorAll<HTMLInputElement>('[data-part="gift-card-terms"] input[type="checkbox"]')];
+    expect(boxes.map((b) => b.closest('[data-term]')?.getAttribute('data-term'))).toEqual([...GIFT_CARD_TERMS.sender]);
+    const amounts = [...host.querySelectorAll<HTMLInputElement>('.post-card input[inputmode="decimal"]')];
+    expect(amounts.length).toBeGreaterThanOrEqual(2);
+    setValue(`#${amounts[0]!.id}`, '0.5');
+    setValue(`#${amounts[1]!.id}`, '2');
+    const postButton = () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Post offer')!;
+    fire(postButton(), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(posted).toEqual([]);
+    expect(host.textContent).toContain(GIFT_CARD_TERMS_UNTICKED);
+    for (const b of boxes) fire(b, new MouseEvent('click', { bubbles: true }));
+    fire(postButton(), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toMatchObject({ methodId: 'STEAM_GIFT_CARD', country: 'US', currency: 'USD', giftCardTerms: GIFT_CARD_TERMS_VERSION });
+    vi.unstubAllGlobals();
   });
 });

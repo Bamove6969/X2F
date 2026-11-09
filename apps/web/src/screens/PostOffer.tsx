@@ -12,6 +12,7 @@ import { Icon } from '../ui/icons.js';
 import { RadioChips } from './browse/RadioChips.js';
 import { fetchMethods, fetchPrice, postOffer, type PickMethod, type PriceQuote, type Side } from './post/api.js';
 import { COUNTRIES } from './post/countries.js';
+import { GiftCardTerms } from './giftcard/GiftCardRules.js';
 import { UnitSwitch } from './post/UnitSwitch.js';
 import { marketUpdated, otherUnit, rowsAt } from './browse/offerAmounts.js';
 import { MY_OFFERS_PATH } from './myoffers/model.js';
@@ -35,6 +36,7 @@ import {
   marginWord,
   parseAmount,
   parseRangeAmount,
+  posterGiftCardRole,
   previewLine,
   priceWithMargin,
   POST_CANT_TITLE,
@@ -146,6 +148,10 @@ function PostOfferForm() {
   const [form, setForm] = useState<FormState>(() => initialForm(location.search));
   const [methods, retryMethods] = useMethods();
   const [errors, setErrors] = useState<Partial<Record<FieldError, string>>>({});
+  // J-17 (F13): the gift-card terms ticked; never kept in the draft, and cleared when the side (so
+  // the poster's part with the card) changes.
+  const [giftTicked, setGiftTicked] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => setGiftTicked(new Set()), [form.side]);
   const [refusal, setRefusal] = useState<string | null>(null);
   // A refusal by a rule (trading hold, maintenance) opens CantDoThat until closed (Plan 5 Task 21).
   const [cantDo, setCantDo] = useState<CantDoCode | null>(null);
@@ -219,7 +225,7 @@ function PostOfferForm() {
   const giftCard = method?.giftCard === true;
 
   async function submit(): Promise<void> {
-    const r = validate(form, { giftCard, market });
+    const r = validate(form, { giftCard, market, giftCardTicked: giftTicked });
     setErrors(r.errors);
     setRefusal(null);
     setCantDo(null);
@@ -313,11 +319,12 @@ function PostOfferForm() {
             {field(
               'currency',
               'Currency',
-              <select id="currency" value={form.currency} onChange={(e) => set('currency', e.target.value)}>
+              <select id="currency" value={form.currency} onChange={(e) => set('currency', e.target.value)} {...invalid('currency')}>
                 {POST_CURRENCIES.map((c) => (
                   <option key={c}>{c}</option>
                 ))}
               </select>,
+              'currency',
             )}
           </section>
 
@@ -341,6 +348,8 @@ function PostOfferForm() {
               <p className="post-giftcard">
                 <strong>{GIFT_CARD_WARNING}</strong>
               </p>
+              <GiftCardTerms role={posterGiftCardRole(form.side)} ticked={giftTicked} onChange={setGiftTicked} />
+              {fieldError('giftCardTerms')}
             </>
           ) : null}
         </div>

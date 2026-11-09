@@ -108,10 +108,10 @@ function escrowStub(order: string[] = [], over: Partial<ReleaseEscrow> = {}): St
   };
 }
 
-function sellerConfirm(t: ReleaseTrade, escrow = escrowStub(), onTrade = vi.fn()) {
+function sellerConfirm(t: ReleaseTrade, escrow = escrowStub(), onTrade = vi.fn(), method: typeof ZELLE = ZELLE) {
   const ui = (tr: ReleaseTrade, e: ReleaseEscrow) => (
     <MemoryRouter>
-      <SellerConfirm escrowCode={tr.code} trade={tr} method={ZELLE} escrow={e} onTrade={onTrade} />
+      <SellerConfirm escrowCode={tr.code} trade={tr} method={method} escrow={e} onTrade={onTrade} />
     </MemoryRouter>
   );
   const r = render(ui(t, escrow));
@@ -123,6 +123,13 @@ function sellerConfirm(t: ReleaseTrade, escrow = escrowStub(), onTrade = vi.fn()
 }
 
 describe('SellerConfirm', () => {
+  it('a gift card shows the seller what to keep from the check (J-17, G50); no other method does', () => {
+    const gift = sellerConfirm(trade(), escrowStub(), vi.fn(), { ...ZELLE, name: 'Steam gift card', giftCard: true });
+    expect([...gift.host.querySelectorAll('[data-part="gift-card-evidence"] [data-evidence]')].map((e) => e.getAttribute('data-evidence'))).toEqual(['check-result']);
+    gift.unmount();
+    expect(sellerConfirm(trade()).host.querySelector('[data-part="gift-card-evidence"]')).toBeNull();
+  });
+
   it('shows the board copy from the profile, the method and the buyer, the name exactly as set', () => {
     const s = sellerConfirm(trade());
     expect(s.text()).toContain('Selling to mira.k');

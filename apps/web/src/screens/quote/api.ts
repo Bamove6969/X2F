@@ -70,8 +70,18 @@ export function quoteOffer(o: Offer, side: AdSide, currency: string): QuoteOffer
   return offer;
 }
 
-/** The payment method's name from `GET /v1/methods` (Task 3); the id when it is not listed. */
-export async function fetchMethodName(side: AdSide, method: string, currency: string, signal?: AbortSignal): Promise<string> {
+/** What the quote shows of the payment method: its name, and whether it is a gift card (J-17). */
+export interface QuoteMethod {
+  name: string;
+  giftCard: boolean;
+}
+
+/**
+ * The payment method from `GET /v1/methods` (Task 3): its name (the id when it is not listed) and
+ * its gift-card flag (J-17: the quote's tick-box terms; false when not listed, as the API then
+ * refuses the take anyway).
+ */
+export async function fetchMethod(side: AdSide, method: string, currency: string, signal?: AbortSignal): Promise<QuoteMethod> {
   const q = new URLSearchParams({ side, currency, sort: 'az' });
   const o = obj(await api(`/v1/methods?${q}`, signal ? { signal } : {}), 'methods');
   for (const k of ['live', 'all']) {
@@ -79,10 +89,12 @@ export async function fetchMethodName(side: AdSide, method: string, currency: st
     if (!Array.isArray(rows)) throw new ApiShapeError(`methods.${k}`);
     for (const r of rows) {
       const row = obj(r, `methods.${k}[]`);
-      if (row.id === method) return str(row, 'name', `methods.${k}[]`);
+      if (row.id !== method) continue;
+      if (typeof row.giftCard !== 'boolean') throw new ApiShapeError(`methods.${k}[].giftCard`);
+      return { name: str(row, 'name', `methods.${k}[]`), giftCard: row.giftCard };
     }
   }
-  return method;
+  return { name: method, giftCard: false };
 }
 
 /** `GET /v1/price?currency`, or null on 503 `price-unavailable` (the feed is down or stale). */
@@ -137,6 +149,8 @@ export interface TakeRequest {
   centsPerXmr: bigint;
   /** The quoted total, fiatCents(amountAtomic, centsPerXmr), as shown (OD-5). */
   fiatCents: bigint;
+  /** J-17 (F13): on a gift-card offer, the terms version the taker ticked; absent otherwise. */
+  giftCardTerms?: string;
 }
 
 /** What the take locked: the trade's code, and the server's rate and total (lead decision 2026-10-29). */
