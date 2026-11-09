@@ -72,7 +72,8 @@ export const LOG_ACTIONS = {
   ...TRADE,
   // Disputes and cases (Tasks 10–11).
   'dispute.opened': { reason: 'id', afterRefund: 'bool', seq: 'number' },
-  'dispute.assigned': { staffId: 'uuid' },
+  // G37 (owner 7 Nov): taking a case is logged at once, who (the actor) and when (the entry's time).
+  'dispute.assigned': { staffId: 'uuid', tradeOpenedAt: 'iso' },
   // A switched-off or removed member's open case goes back to the queue (Task 7 x Task 10).
   'dispute.unassigned': { staffId: 'uuid' },
   // Re-verify 43fbbb2f, R-I1: the seller's cancel refund landed on a dispute already past `open`
@@ -80,7 +81,9 @@ export const LOG_ACTIONS = {
   'dispute.refund-after-ruling': { seq: 'number', status: 'id' },
   'case.opened': {},
   'chat.read': {},
-  'chat.message-sent': {},
+  // Review 8 Nov M-2: requested (before moderation seals it) and sent (in the transaction that stores it).
+  'chat.message-requested': {},
+  'chat.message-sent': { envelopeId: 'id' },
   'proof.unblurred-requested': { side: 'id' },
   'proof.unblurred-opened': {},
   // Rulings and appeals (Tasks 12, 24). `ruling.final` records "Decision overruled" or "stands".
@@ -97,7 +100,10 @@ export const LOG_ACTIONS = {
   // Holds, freezes and the ban stages (Tasks 11, 12, 27; the single `account.banned` is replaced).
   'hold.placed': { accountId: 'uuid', side: 'id', kind: 'id' },
   'hold.lifted': { accountId: 'uuid', side: 'id', kind: 'id' },
-  'account.frozen': { accountId: 'uuid' },
+  // Owner 2026-11-02: a moderator freezes a party who ignored the dispute or a ruling (Task 11),
+  // or a ruling's account action does (Task 12, which writes only `accountId`).
+  'account.frozen': { accountId: 'uuid', side: 'id', reason: 'id' },
+  'account.freeze-lifted': { accountId: 'uuid', side: 'id' },
   'account.trade-banned': BAN,
   'account.site-banned': BAN,
   'account.ban-lifted': { accountId: 'uuid', kind: 'id' },

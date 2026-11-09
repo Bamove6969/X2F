@@ -147,7 +147,15 @@ export type ApiErrorCode =
   | 'wrong-key'
   | 'challenge-used'
   | 'site-claimed'
-  | 'fingerprint-claimed';
+  | 'fingerprint-claimed'
+  // Plan 4, Task 11: the moderator's case work. `forbidden-case`: not the assignee (nor a senior
+  // moderator or the owner), or involved in round 1 of an appealed case; `freeze-not-allowed`: the
+  // party has not ignored the dispute or the ruling; the moderation process's own answers.
+  | 'forbidden-case'
+  | 'freeze-not-allowed'
+  | 'no-chat'
+  | 'no-proof'
+  | 'moderation-unavailable';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

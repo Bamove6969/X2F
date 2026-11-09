@@ -6,6 +6,7 @@ import type { StaffRoutePerm } from '../../src/staff/guard.js';
 
 const EVERY_ROLE = ['owner', 'senior', 'mod', 'helper'] as const satisfies readonly StaffRole[];
 const OWNER = ['owner'] as const satisfies readonly StaffRole[];
+const MODERATORS = ['owner', 'senior', 'mod'] as const satisfies readonly StaffRole[];
 
 export interface StaffRouteRow {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -97,4 +98,13 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Owner Q60: senior moderators by role, moderators and helpers by grant.
   { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
+  // Plan 4 Task 11: the moderator's queue and case (a sample uuid is neither a trade code nor an
+  // incident ID: 404 past the guard).
+  { method: 'GET', url: '/staff/v1/disputes', perm: 'disputes.handle', allowed: MODERATORS },
+  { method: 'POST', url: '/staff/v1/disputes/next', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
+  { method: 'POST', url: '/staff/v1/disputes/:code/take', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
+  { method: 'GET', url: '/staff/v1/disputes/:code', perm: 'disputes.handle', allowed: MODERATORS },
+  { method: 'POST', url: '/staff/v1/disputes/:code/messages', perm: 'disputes.handle', allowed: MODERATORS, body: { text: 'Hello' } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/proof-request', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'buyer' } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/freeze', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'seller', on: true, reason: 'no-reply' } },
 ];

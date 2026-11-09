@@ -18,6 +18,10 @@ export {
   INTERNAL_AT_HEADER,
   INTERNAL_SIG_HEADER,
   internalSignedBytes,
+  MOD_INTERNAL_MAC_HEADER,
+  MOD_INTERNAL_MAX_SKEW_MS,
+  MOD_INTERNAL_TS_HEADER,
+  modInternalMacInput,
   type InternalRequest,
 } from './internalAuth.js';
 export {

@@ -54,3 +54,4 @@ export {
   type TraderDisputeStatus,
 } from './dispute.js';
 export { appealReviewers, involvedIn, type InvolvementEntry } from './appealReviewers.js';
+export { INCIDENT_ALPHABET, INCIDENT_ID_LENGTH, incidentCheckChar, isIncidentId, normalizeIncidentId } from './incident.js';

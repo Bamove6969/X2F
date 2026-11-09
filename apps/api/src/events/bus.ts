@@ -8,7 +8,14 @@ export type LiveEvent =
   | { type: 'chat'; chat: string }
   | { type: 'nudge'; from: string; context: string }
   /** Plan 2 Task 16: a new device waits for approval; the approval itself is fetched over the session. */
-  | { type: 'login-approval'; id: string };
+  | { type: 'login-approval'; id: string }
+  /**
+   * Plan 4 Task 11: written only by the staff API (never by a trader): a moderator first opened the
+   * disputed trade's chat, or asks this trader for the unblurred proof. `username` is the
+   * moderator's public display name.
+   */
+  | { type: 'moderator-joined'; code: string; username: string }
+  | { type: 'proof-requested'; code: string; username: string };
 
 /** One open stream: `send` writes a whole SSE frame; `close` ends the response. */
 export interface StreamSink {
