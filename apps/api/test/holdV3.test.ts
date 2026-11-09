@@ -10,7 +10,7 @@
 //   a temporary problem; the code used is replaced by a new one, shown once at the next login;
 // - a new device with nothing logged in to approve it: only a passkey, security key or PGP key gets
 //   in; anything else is refused, and nothing is held.
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { addressEnd, normalizeRecoveryCode, type ConfirmAction } from '@x2f/accounts';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -340,13 +340,55 @@ describe('a username + password session: changes are staged, reviewed, submitted
     expect((await passwordLogin(t.b, t.name)).json()).toEqual({ status: 'ok' });
   });
 
-  it(`staging, submitting and cancelling are capped at ${HOLD_CHANGE_ACTIONS_PER_DAY} a day per account (429 slow-down)`, async () => {
+  it(`staging and submitting are capped at ${HOLD_CHANGE_ACTIONS_PER_DAY} a day per session, successes only (429 slow-down); cancelling never is`, async () => {
     const t = await passwordTrader();
     const day = now.toISOString().slice(0, 10);
-    await deps.db.query('insert into daily_counts (key, day, count) values ($1, $2, $3)', [`hold-changes:${t.id}`, day, HOLD_CHANGE_ACTIONS_PER_DAY]);
+    const sessionId = await sessionOf(t.b);
+    await deps.db.query('insert into daily_counts (key, day, count) values ($1, $2, $3)', [`hold-changes:${sessionId}`, day, HOLD_CHANGE_ACTIONS_PER_DAY]);
     expect(errorOf(await changePassword(t.b, t.id))).toBe('slow-down');
-    expect(errorOf(await t.b.delete('/v1/account/hold/changes'))).toBe('slow-down');
     expect((await deps.db.query('select 1 from hold_changes where account_id = $1', [t.id])).rowCount).toBe(0);
+    // Lead review 8 Nov C1: a session at its cap still cancels, and another session is not capped.
+    expect((await t.b.delete('/v1/account/hold/changes')).statusCode).toBe(204);
+    const other = await secondSession(t);
+    expect((await changePassword(other, t.id)).statusCode).toBe(202);
+    // Only successes count: a stage refused (409 too-many-changes) leaves the session's count as it was.
+    const otherId = await sessionOf(other);
+    const countOf = async () => (await deps.db.query<{ count: number }>('select count from daily_counts where key = $1', [`hold-changes:${otherId}`])).rows[0]?.count;
+    expect(await countOf()).toBe(1);
+    for (let i = 1; i < MAX_HOLD_CHANGES; i++) {
+      await deps.db.query('insert into hold_changes (account_id, session_id, change, created_at) values ($1, $2, $3, $4)', [
+        t.id, otherId, JSON.stringify({ kind: 'logout-timer', idleHours: 24 }), now,
+      ]);
+    }
+    expect(errorOf(await changePassword(other, t.id))).toBe('too-many-changes');
+    expect(await countOf()).toBe(1);
+  });
+
+  it('lead review 8 Nov C1: a password thief flooding the hold routes never stops the owner cancelling his new password', async () => {
+    const t = await ownerWithCode();
+    // The thief: the password, and a login approval the owner tapped.
+    const thief = await secondSession(t);
+    const id = ((await changePassword(thief, t.id)).json() as { changeId: string }).changeId;
+    expect((await submit(thief, [id])).statusCode).toBe(200);
+    // 120 cancels of made-up ids (each a 404) and a stage flood until his own session is refused.
+    for (let i = 0; i < 120; i++) expect((await thief.delete(`/v1/account/hold/changes/${randomUUID()}`)).statusCode).toBe(404);
+    let refused = false;
+    for (let i = 0; i < HOLD_CHANGE_ACTIONS_PER_DAY + 1 && !refused; i++) {
+      const r = await changePassword(thief, t.id, `Thief-Horse-${i}`);
+      if (r.statusCode === 202) await thief.delete(`/v1/account/hold/changes/${(r.json() as { changeId: string }).changeId}`);
+      else refused = errorOf(r) === 'slow-down';
+    }
+    expect(refused).toBe(true);
+    // The owner's own session taps Cancel all: it goes, and the thief's password never applies.
+    expect((await t.b.delete('/v1/account/hold/changes')).statusCode).toBe(204);
+    expect((await holdView(t.b)).changes.count).toBe(0);
+    // The owner's own session is not capped by the thief's flood: his own change stages.
+    expect((await changePassword(t.b, t.id, 'Owners-Horse-7')).statusCode).toBe(202);
+    await t.b.delete('/v1/account/hold/changes');
+    later(HOLD_MS);
+    await settleDueChanges(deps.config, app.events).run(deps.db, now);
+    expect((await passwordLogin(new Browser(app), t.name, NEW_PASSWORD)).statusCode).toBe(401);
+    expect((await passwordLogin(new Browser(app), t.name)).statusCode).not.toBe(401);
   });
 
   it('owner g62: the 24 hours keep counting during maintenance; due changes apply then', async () => {

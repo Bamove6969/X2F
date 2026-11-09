@@ -40,11 +40,15 @@ import { addressEnd } from '@x2f/accounts';
 export const MAX_HOLD_CHANGES = 20;
 
 /**
- * Staging, submitting and cancelling, together, per account and UTC day (lead hold v3 review,
- * minor: each writes an alert, and the alert list shows 50); past it 429 `slow-down`.
+ * Staging, submitting and approving, together, per session and UTC day, successes only
+ * (`dailyCapInTx`); past it 429 `slow-down` (lead hold v3 review, minor: submitting writes an
+ * alert, and the alert list shows 50). Cancelling is never limited (lead review 8 Nov C1: a shared
+ * account-wide count let a password thief use it up and lock the owner out of cancelling his new
+ * password; cancelling only takes power away, g65), and a session's count is its own, so no other
+ * session can use it up.
  */
 export const HOLD_CHANGE_ACTIONS_PER_DAY = 100;
-export const holdActionsKey = (accountId: string) => `hold-changes:${accountId}`;
+export const holdActionsKey = (sessionId: string) => `hold-changes:${sessionId}`;
 
 /** What a change is, as the review list, the alerts and the banner name it: never a secret, an address or a key. */
 export interface ChangeSummary {

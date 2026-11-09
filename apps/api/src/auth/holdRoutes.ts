@@ -31,7 +31,7 @@ import { auditMember } from '../team/audit.js';
 import { holdRightOf } from '../team/perms.js';
 import { holdInTx, holdRefusal, lockAccount, requireLiveSessionInTx, requireNotHeld, settleOf, weakOf, weakRefusal, withTx } from './hold.js';
 import { HOLD_CHANGE_ACTIONS_PER_DAY, approveChanges, cancelChanges, changesWait, holdActionsKey, listChanges, settleChangesInTx, submitChanges } from './holdChanges.js';
-import { dailyCap } from './throttle.js';
+import { dailyCapInTx } from './throttle.js';
 import { requireSession } from './sessions.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -74,13 +74,14 @@ export function holdRoutes(app: FastifyInstance): void {
     const ids = idsOf(req);
     const deps = req.server.deps;
     const now = deps.clock();
-    await dailyCap(deps, holdActionsKey(req.auth.accountId), HOLD_CHANGE_ACTIONS_PER_DAY);
     const out = await withTx(deps.db, async (db) => {
       await requireLiveSessionInTx(db, req.auth, now);
       const hold = await holdInTx(db, settleOf(req), req.auth.accountId, now);
       if (hold !== null) throw holdRefusal(hold.holdUntil);
       await settleChangesInTx(db, settleOf(req), req.auth.accountId, now);
-      return submitChanges(db, req.auth.accountId, req.auth.sessionId, ids, now);
+      const submitted = await submitChanges(db, req.auth.accountId, req.auth.sessionId, ids, now);
+      await dailyCapInTx(db, holdActionsKey(req.auth.sessionId), HOLD_CHANGE_ACTIONS_PER_DAY, now);
+      return submitted;
     });
     // The owner hears at once on every device (Jabber later).
     void req.server.push.send(req.auth.accountId, 'alert').catch(() => undefined);
@@ -94,13 +95,13 @@ export function holdRoutes(app: FastifyInstance): void {
     const ids = idsOf(req);
     const deps = req.server.deps;
     const now = deps.clock();
-    await dailyCap(deps, holdActionsKey(req.auth.accountId), HOLD_CHANGE_ACTIONS_PER_DAY);
     const n = await withTx(deps.db, async (db) => {
       const live = await requireLiveSessionInTx(db, req.auth, now);
       if (weakOf(live, now)) throw weakRefusal();
       const hold = await holdInTx(db, settleOf(req), req.auth.accountId, now);
       if (hold !== null) throw holdRefusal(hold.holdUntil);
       const settled = await approveChanges(db, settleOf(req), req.auth.accountId, ids, now);
+      await dailyCapInTx(db, holdActionsKey(req.auth.sessionId), HOLD_CHANGE_ACTIONS_PER_DAY, now);
       await auditMember(db, actor(req), { action: 'hold-changes-approved', detail: { count: settled } }, now);
       return settled;
     });
@@ -112,7 +113,9 @@ export function holdRoutes(app: FastifyInstance): void {
   const cancel = async (req: FastifyRequest, id: string | null, audit: (db: Queryable, n: number) => Promise<void>): Promise<void> => {
     const deps = req.server.deps;
     const now = deps.clock();
-    await dailyCap(deps, holdActionsKey(req.auth.accountId), HOLD_CHANGE_ACTIONS_PER_DAY);
+    // Never rate-limited (lead review 8 Nov C1): cancelling only takes power away (g65), and a
+    // shared limit let a thief lock the owner out of cancelling. It writes an alert only when a
+    // waiting change went, and those are bounded by the staging limit.
     const n = await withTx(deps.db, async (db) => {
       await requireLiveSessionInTx(db, req.auth, now);
       await settleChangesInTx(db, settleOf(req), req.auth.accountId, now);
