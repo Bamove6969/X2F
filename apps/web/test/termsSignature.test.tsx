@@ -179,10 +179,10 @@ describe('SignaturePad', () => {
     expect(host.querySelector('[data-part="signature-name"]')!.getAttribute('autocomplete')).toBe('off');
   });
 
-  it('shows a Sign here baseline that is not part of the drawing', () => {
+  it("shows design's baseline words (p11-15), not part of the drawing", () => {
     const { host } = mount();
     const line = host.querySelector('.x2f-sign__line')!;
-    expect(line.textContent).toBe('Sign here');
+    expect(line.textContent).toBe('Sign your name here with your finger or mouse. A scribble or an X is fine.');
     expect(line.getAttribute('aria-hidden')).toBe('true');
     expect(host.querySelector('.x2f-sign__pad canvas')).not.toBeNull();
   });

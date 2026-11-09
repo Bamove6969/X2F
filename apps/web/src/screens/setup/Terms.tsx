@@ -2,7 +2,8 @@
  * The Terms of Service screen (spec 6.1 step 0, Plan 2 R10). The Terms text sits in a scroll box;
  * the tick box enables only once the box has been scrolled to its end. Under it, the signature pad
  * (owner, 8 Nov 2026: the Terms are agreed once, at account opening, with a tick and a signature,
- * never per trade): **I accept** needs both the tick and a signature, drawn or typed. The version
+ * never per trade): the accept button (**I accept**; on SetupTerms **Start creating my account**,
+ * design 9 Nov p11-15) needs both the tick and a signature, drawn or typed. The version
  * comes from `GET /v1/terms`.
  *
  * - `SetupTerms` (`/setup`): the first setup screen. Accepting keeps the version and the signature
@@ -47,12 +48,15 @@ export function TermsScreen({
   intro,
   back,
   after,
+  acceptLabel = 'I accept',
   onAccept,
 }: {
   screen: string;
   title: string;
   intro: string;
   back?: string;
+  /** The accept button's words: SetupTerms says "Start creating my account" (design 9 Nov, p11-15). */
+  acceptLabel?: string;
   /** Shown under the tick box. */
   after?: ReactNode;
   onAccept: (version: string, signature: TermsSignature) => Promise<void>;
@@ -143,7 +147,7 @@ export function TermsScreen({
       {...(back !== undefined ? { back } : {})}
       footer={
         <Button variant="primary" disabled={!ticked || signature === null || version === null || stale || busy} onClick={() => void accept()} data-part="terms-accept">
-          I accept
+          {acceptLabel}
         </Button>
       }
     >
@@ -221,8 +225,9 @@ export function TermsScreen({
         </span>
       </label>
       <p className="x2f-sign__help" id="terms-sign-help">
-        Then sign in the white box with your finger, a pen or the mouse. A scribble or an X is fine. I accept needs both the tick and your
-        signature.
+        {/* COPY-UNSIGNED: the button's name follows the screen's own (SetupTerms: design 9 Nov, p11-15). */}
+        Then sign in the white box with your finger, a pen or the mouse. A scribble or an X is fine. {acceptLabel} needs both the tick and
+        your signature.
       </p>
       <SignaturePad key={padKey} onChange={setSignature} describedBy="terms-sign-help" />
       {after}
@@ -236,7 +241,11 @@ export function SetupTerms() {
     <TermsScreen
       screen="setup-terms"
       title="Before you start"
-      intro="Please read to the end. The key points first:"
+      // Design 9 Nov (p11-15, canvas ea2a9ca8; owner p11-15 "please check the box if you agree to the
+      // rules and terms of X2F and then please sign your name and hit begin account creation").
+      // COPY-UNSIGNED.
+      intro="Read to the end. If you agree to X2F's rules and terms, tick the box, sign your name and start creating your account. You agree once, here, never again on a trade."
+      acceptLabel="Start creating my account"
       back={returnTo}
       after={
         <p className="x2f-start__help">

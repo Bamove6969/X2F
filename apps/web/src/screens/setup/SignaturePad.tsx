@@ -1,13 +1,15 @@
 /**
  * The Terms signature pad (owner, 8 Nov 2026): a tall white box, full content width, that takes a
  * signature drawn with a finger, a pen or a mouse (pointer events; a scribble or an X is fine),
- * with a thin border and a "Sign here" baseline. **Clear** empties it. **Type your name to sign**
- * swaps it for a text field, for anyone who can't draw (keyboard and screen reader users too): the
- * typed name is the signature then. No board shows the pad yet; its wording is unsigned.
+ * with a thin border and a baseline reading "Sign your name here with your finger or mouse. A
+ * scribble or an X is fine." (design 9 Nov, p11-15, canvas ea2a9ca8; not in the repo's board
+ * mirror yet). **Clear** empties it. **Type your name to sign** swaps it for a text field, for
+ * anyone who can't draw (keyboard and screen reader users too): the typed name is the signature
+ * then. Its wording is unsigned.
  *
  * `onChange` gets the signature (signature.ts) after every stroke, clear or keystroke, or `null`
  * while there is none. The strokes live only in this component and go nowhere but `onChange`.
- * The "Sign here" line and label are HTML over the canvas, so they are never part of the drawing.
+ * The baseline and its words are HTML over the canvas, so they are never part of the drawing.
  */
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { TermsSignature } from '@x2f/auth-client';
@@ -197,7 +199,8 @@ export function SignaturePad({ onChange, describedBy }: { onChange: (sig: TermsS
           data-empty={strokes.length === 0 ? 'true' : 'false'}
         />
         <span className="x2f-sign__line" aria-hidden="true">
-          <span className="x2f-sign__here">Sign here</span>
+          {/* Design 9 Nov (p11-15): the pad's words. COPY-UNSIGNED. */}
+          <span className="x2f-sign__here">Sign your name here with your finger or mouse. A scribble or an X is fine.</span>
         </span>
       </div>
       <div className="x2f-sign__actions">

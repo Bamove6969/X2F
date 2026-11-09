@@ -626,7 +626,13 @@ for (const v of PHONES) {
     expect(padBox.height).toBeGreaterThanOrEqual(120);
     expect(padBox.width).toBeGreaterThanOrEqual(width - 2 * 16 - 1);
     expect(await pad.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(255, 255, 255)');
-    await expect(page.locator('.x2f-sign__here')).toHaveText('Sign here');
+    await expect(page.locator('.x2f-sign__here')).toHaveText('Sign your name here with your finger or mouse. A scribble or an X is fine.');
+    // Design 9 Nov (p11-15): the intro and the button's words.
+    await expect(page.locator('[data-screen="setup-terms"]')).toContainText(
+      "Read to the end. If you agree to X2F's rules and terms, tick the box, sign your name and start creating your account. You agree once, here, never again on a trade.",
+    );
+    await expect(page.locator('[data-part="terms-accept"]')).toHaveText('Start creating my account');
+    await expect(page.locator('#terms-sign-help')).toContainText('Start creating my account needs both the tick and your signature.');
   });
 }
 
