@@ -9,6 +9,7 @@ import type { TradeView } from '../src/api/trade.js';
 import { startFixtures } from './fixtures-serve.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 import { BOARD, SERVER_NOW, sellerView } from './refundViews.js';
+import { signedIn } from './session.js';
 
 const PORT = 4321;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -24,6 +25,10 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => {
   await server?.close();
+});
+// The room is behind the front door (owner, 8 Nov 2026): a signed-in, set-up trader.
+test.beforeEach(async ({ page }) => {
+  await signedIn(page);
 });
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });

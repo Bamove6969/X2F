@@ -112,6 +112,17 @@ const json = (body: unknown) => JSON.stringify(body, (_k, v: unknown) => (typeof
  */
 let maintenanceListener: (() => void) | null = null;
 
+let sessionGoneListener: (() => void) | null = null;
+
+/**
+ * The front door: called when a call other than `GET /v1/account/me` answers 401
+ * `not-authenticated` (the session ended or expired), so the shared session answer becomes
+ * signed-out and the screens behind the door send the page to the Landing board (session/frontDoor.tsx).
+ */
+export function setSessionGoneListener(fn: (() => void) | null): void {
+  sessionGoneListener = fn;
+}
+
 /** Plan 4 Task 8: called when any API call answers 503 `maintenance` (the site shell listens). */
 export function setMaintenanceListener(fn: (() => void) | null): void {
   maintenanceListener = fn;
@@ -142,6 +153,7 @@ export async function api<T = unknown>(path: string, init: ApiInit = {}): Promis
   if (err.status === 409 && err.code === 'no-wallet') redirect('/wallets', 'add=1');
   // Plan 4 Task 8: the site went into maintenance; the shell re-reads GET /v1/site and shows it.
   if (err.status === 503 && err.code === 'maintenance') maintenanceListener?.();
+  if (err.status === 401 && err.code === 'not-authenticated' && path !== '/v1/account/me') sessionGoneListener?.();
   throw err;
 }
 

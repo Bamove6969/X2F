@@ -3,6 +3,7 @@
 // src/screens/browse/api.ts reads (see test/browse-tripwire.test.ts).
 import { readFileSync } from 'node:fs';
 import type { Page, Request } from '@playwright/test';
+import { INSIDE } from './session.js';
 
 export type Row = { id: string; name: string; group: string; giftCard: boolean; offers: number; bestRate: string | null };
 
@@ -49,7 +50,7 @@ export async function stubBrowseApi(page: Page, o: BrowseStub): Promise<Seen> {
     if (new URL(r.url()).pathname.startsWith('/v1/')) seen.requests.push(r);
   });
   await page.route('**/v1/account/me', (r) =>
-    o.signedIn ? r.fulfill({ json: { displayName: 'viewer_1', kind: 'trader' } }) : r.fulfill({ status: 401, json: { error: 'unauthenticated' } }),
+    o.signedIn !== false ? r.fulfill({ json: { displayName: 'viewer_1', ...INSIDE } }) : r.fulfill({ status: 401, json: { error: 'unauthenticated' } }),
   );
   await page.route('**/v1/methods?*', (r) => {
     const q = new URL(r.request().url()).searchParams;

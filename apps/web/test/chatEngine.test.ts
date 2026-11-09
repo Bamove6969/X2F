@@ -200,6 +200,31 @@ describe('chat engine: messages', () => {
     expect((await engine().sync(chat)).lines).toEqual([]);
   });
 
+  it('junk from the server never throws out of a sync: every bad line is dropped and the good ones show', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    api.add('seller', null);
+    api.add('seller', 7);
+    api.add('seller', 'not an envelope');
+    api.add('seller', []);
+    api.add('constructor', { v: 1 });
+    await fromSeller('real line', parts);
+    const snap = await e.sync(chat);
+    expect(snap.phase).toBe('ready');
+    expect(snap.lines.map((l) => l.text)).toEqual(['real line']);
+  });
+
+  it('a junk attestation fails closed with nothing shown', async () => {
+    const e = engine();
+    await e.sync(chat);
+    api.attestation = { attestation: { v: 'junk' }, sig: 'zz' };
+    const snap = await e.sync(chat);
+    expect(snap.phase).toBe('failed');
+    expect(snap.problem).toBe('security');
+    expect(snap.lines).toEqual([]);
+  });
+
   it('marks a gap when a sender skipped a seq', async () => {
     await engine().sync(chat);
     const parts = attest();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { amountBoxes, detectSensitive, detectSensitiveText, type HiddenKind, type OcrWord, padAndMerge, type Region } from '../src/index.js';
-import { type DetectOptions, UPI_IDS } from '../src/detect.js';
+import { type DetectOptions, UPI_IDS, codePattern } from '../src/detect.js';
 import { covered, ocr } from './ocr.js';
 
 const KEEP = { tradeCode: 'K7M2-9QXA-4FTR-8WPN', fiatCents: 41250n, exponent: 2 };
@@ -1071,5 +1071,13 @@ describe('review RV4-M3: name labels', () => {
     expect(maskedTexts(ocr('Enviado para Ana Souza'))).toEqual(['Ana', 'Souza']);
     expect(maskedTexts(ocr('Para: Juan Pérez'))).toEqual(['Juan', 'Pérez']);
     expect(maskedTexts(ocr('Transferencia Para: Juan Pérez'))).toEqual(['Juan', 'Pérez']);
+  });
+});
+
+describe('codePattern: regex metacharacters', () => {
+  it('matches them literally', () => {
+    const re = codePattern('A.*B');
+    expect(re.test('A.*B')).toBe(true);
+    expect(re.test('AxxB')).toBe(false);
   });
 });

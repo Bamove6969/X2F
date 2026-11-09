@@ -76,5 +76,6 @@ describe('isOnlyLogin (item 7: refused before any confirm)', () => {
     expect(isOnlyLogin(e('passkey'), [e('passkey'), e('password')])).toBe(false);
     expect(isOnlyLogin(e('totp'), [e('passkey'), e('totp')])).toBe(false);
     expect(isOnlyLogin(e('pgp', 'a'), [e('pgp', 'a'), e('pgp', 'b')])).toBe(false);
-  });
+    // A cold import of the Methods screen takes 4-8 s under a full parallel run.
+  }, 30_000);
 });

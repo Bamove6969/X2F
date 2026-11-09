@@ -19,6 +19,7 @@ import { MethodList } from './screens/browse/MethodList.js';
 import { OffersRoute } from './screens/browse/OffersRoute.js';
 import { SELL_COPY } from './screens/browse/SellCopy.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
+import { Landing } from './screens/auth/Landing.js';
 import { Login } from './screens/auth/Login.js';
 import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js';
 import { MemberInvite } from './screens/auth/MemberInvite.js';
@@ -30,6 +31,7 @@ import { Team } from './screens/settings/Team.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
+import { BehindTheDoor, isInside } from './session/frontDoor.js';
 import { mayPostOffers, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
@@ -52,14 +54,16 @@ setTradeChat(TradeChatPanel);
  * desktop header (Task 40, src/ui/fold.ts). The frame keeps one tree in every layout, so folding or
  * unfolding never remounts the screen: its route, scroll position and typed text stay.
  */
-function Layout({ nav, banner }: { nav: boolean; banner: SiteBannerInfo | null }) {
+function Layout({ nav, banner, door = false }: { nav: boolean; banner: SiteBannerInfo | null; door?: boolean }) {
   const layout = useFoldLayout();
   useFoldAttribute(layout);
   const wide = layout === 'wide';
   const session = useSession();
+  // On the front door, someone not (yet) inside gets no links to the screens behind it.
+  const header = wide && (!door || isInside(session));
   return (
     <div data-shell={wide ? 'desktop' : 'phone'} className={wide ? 'x2f-desktop' : undefined}>
-      {wide ? <DesktopHeader /> : null}
+      {header ? <DesktopHeader /> : null}
       <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
         {/* Plan 4 Task 8: the owner's banner at the top of every trader screen. */}
         <SiteBanner banner={banner} />
@@ -159,41 +163,55 @@ export function App() {
   const session = useSession();
   // Plan 4 Task 8: the banner, and maintenance, which replaces the whole app with the owner's message.
   const { site, refresh } = useSite();
+  // GET /v1/site answers the banner only inside the door: read it again when someone logs in or out.
+  const inside = isInside(session);
+  useEffect(() => {
+    refresh();
+  }, [inside, refresh]);
   if (site.maintenance !== null) return <Maintenance maintenance={site.maintenance} onRetry={refresh} />;
   return (
     <>
       <RouterBridge />
       {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
       <Routes>
-        <Route element={<Layout nav banner={site.banner} />}>
-          <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
-          <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
-          <Route path="/profile/offers" element={<MyOffers />} />
+        {/* Behind the front door (owner, 8 Nov 2026): a set-up trader's session, else the login (session/frontDoor.tsx). */}
+        <Route element={<BehindTheDoor />}>
+          <Route element={<Layout nav banner={site.banner} />}>
+            <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
+            <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
+            <Route path="/profile/offers" element={<MyOffers />} />
+          </Route>
+          <Route element={<Layout nav={false} banner={site.banner} />}>
+            <Route path="/post" element={<PostOffer />} />
+            {/* The offers and their quote share one component (two panes on a fold, Fold-Offers). */}
+            <Route path="/sell/:methodId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
+            <Route path="/buy/:methodId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
+            <Route path="/sell/:methodId/:offerId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
+            <Route path="/buy/:methodId/:offerId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
+            <Route path="/trade/:code" element={<TradeRoom />} />
+            {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
+            <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
+            <Route path="/wallets" element={<Wallets />} />
+            <Route path="/settings/security" element={<Security />} />
+            <Route path="/settings/devices" element={<DevicesRoute />} />
+            <Route path="/settings/blocked" element={<Blocked />} />
+            <Route path="/settings/team" element={<Team />} />
+            <Route path="/news" element={<News />} />
+            <Route path="/feedback" element={<Feedback />} />
+          </Route>
         </Route>
-        <Route element={<Layout nav={false} banner={site.banner} />}>
-          <Route path="/post" element={<PostOffer />} />
-          {/* The offers and their quote share one component (two panes on a fold, Fold-Offers). */}
-          <Route path="/sell/:methodId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
-          <Route path="/buy/:methodId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
-          <Route path="/sell/:methodId/:offerId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
-          <Route path="/buy/:methodId/:offerId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
-          <Route path="/trade/:code" element={<TradeRoom />} />
-          {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
-          <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
-          <Route path="/wallets" element={<Wallets />} />
+        {/* The front door: open to anyone (FRONT_DOOR in session/frontDoor.tsx lists the same paths). */}
+        <Route element={<Layout nav={false} door banner={site.banner} />}>
+          {/* The Landing board (design review 2026-11-08 item 1): where every signed-out visitor lands. */}
+          <Route path="/" element={<Landing />} />
           <Route path="/setup/*" element={<SetupFlow />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/backup" element={<BackupLogin />} />
-          <Route path="/settings/security" element={<Security />} />
-          <Route path="/settings/devices" element={<DevicesRoute />} />
-          <Route path="/settings/blocked" element={<Blocked />} />
-          <Route path="/settings/team" element={<Team />} />
           <Route path="/team/join" element={<MemberInvite />} />
-          <Route path="/news" element={<News />} />
-          <Route path="/feedback" element={<Feedback />} />
         </Route>
-        <Route path="*" element={<Navigate to="/sell" replace />} />
+        {/* Anything else: the front door, which sends a set-up trader on to /sell. */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );

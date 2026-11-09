@@ -288,15 +288,25 @@ export function assertTermsAccepted(
   acceptedTerms: unknown,
   termsSignature: unknown,
 ): { version: string; signature: TermsSignature } {
-  const version = deps.config.termsVersion;
-  if (acceptedTerms !== version) throw new ApiError(400, 'terms-not-accepted', { version });
+  const version = assertTermsVersion(deps, acceptedTerms);
   return { version, signature: checkTermsSignature(termsSignature) };
 }
 
-/** What a new account agreed to: a trader always signs the Terms; nobody else has a version or a signature. */
+/** R10's version check alone: the current version, or 400 `terms-not-accepted` `{ version }`. */
+export function assertTermsVersion(deps: Pick<Deps, 'config'>, acceptedTerms: unknown): string {
+  const version = deps.config.termsVersion;
+  if (acceptedTerms !== version) throw new ApiError(400, 'terms-not-accepted', { version });
+  return version;
+}
+
+/**
+ * What a new account agreed to: a trader always signs the Terms; a team member accepts them for
+ * their own login account (review 2026-11-08 F1); staff and the owner have no version or signature.
+ */
 export type NewAccountTerms =
   | { kind: 'trader'; termsVersion: string; termsSignature: TermsSignature }
-  | { kind: Exclude<AccountKind, 'trader'>; termsVersion: null; termsSignature?: never };
+  | { kind: 'member'; termsVersion: string; termsSignature?: never }
+  | { kind: Exclude<AccountKind, 'trader' | 'member'>; termsVersion: null; termsSignature?: never };
 
 /** The unique constraints a new account's names can still hit after `namesTaken` (a racing writer without the lock). */
 const NAME_CONSTRAINTS: ReadonlySet<string> = new Set(['accounts_display_key_key', 'accounts_login_tag_key', 'name_keys_pkey']);

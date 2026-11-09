@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { expectParity } from './parity.js';
 import { takeableWallets, type WalletRule, type WalletView } from '../src/screens/wallets-model.js';
+import { INSIDE } from './session.js';
 
 /** A 95-character standard address ending in `end` (the API's `addressEnd` is its last 6 characters). */
 const address = (seed: string, end: string) => `4${seed.repeat(95).slice(0, 88)}${end}`;
@@ -51,7 +52,7 @@ async function stub(
   onPost?: (body: Record<string, unknown>, n: number, route: Route) => Promise<void> | void,
 ): Promise<Stub> {
   const s: Stub = { posts: [] };
-  await page.route('**/v1/account/me', (route) => route.fulfill({ status: 200, json: { methods: ['password'] } }));
+  await page.route('**/v1/account/me', (route) => route.fulfill({ status: 200, json: { ...INSIDE, methods: ['password'] } }));
   await page.route('**/v1/confirm/password', (route) => route.fulfill({ status: 200, json: { confirmToken: 'tok-1' } }));
   await page.route('**/v1/wallets/rule', (route) => route.fulfill({ status: 200, json: rule }));
   await page.route('**/v1/wallets', async (route) => {

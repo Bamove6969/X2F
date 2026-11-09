@@ -208,10 +208,11 @@ export interface TeamMember {
   createdAt: string;
 }
 
-/** Plan 2 Task 18: an invite as the person invited sees it (`POST /v1/team/invite`). */
+/**
+ * Plan 2 Task 18: an invite as the person invited sees it (`POST /v1/team/invite`). It never names
+ * the team account: the vendor is named only once the member is inside (review 2026-11-08 F3).
+ */
 export interface TeamInviteView {
-  /** The team account's public display name. */
-  team: string;
   displayName: string;
   roles: TeamRole[];
   expiresAt: string;
@@ -435,7 +436,8 @@ export interface AuthApi {
   teamAudit(q?: { from?: string; to?: string; member?: string }): Promise<TeamAuditEntry[]>;
   // The invited person's side (no session yet).
   readInvite(b: { invite: string }): Promise<TeamInviteView>;
-  joinStart(b: { invite: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
+  /** `acceptedTerms`: the Terms version the member read and accepted (review 2026-11-08 F1). */
+  joinStart(b: { invite: string; loginName: string; publicKey: string; acceptedTerms: string }): Promise<PgpChallenge & { fingerprint: string }>;
   /** The PGP key proved: the member's login exists, no session yet; add the second factor before `setupUntil`. */
   joinFinish(b: { challengeId: string; code: string }): Promise<{ setupId: string; needs: ('security-key' | 'passkey' | 'pgp')[]; setupUntil: string }>;
   joinSecondPgpStart(b: { setupId: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;

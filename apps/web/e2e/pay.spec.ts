@@ -10,6 +10,7 @@ import { PAY_NOW, PAY_SECURED, PAY_SECURING } from '../src/fixtures/payBoard.js'
 import type { TradeView } from '../src/screens/trade/payTypes.js';
 import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
+import { INSIDE } from './session.js';
 
 const PORT = 4320;
 const CODE = PAY_SECURING.code;
@@ -70,7 +71,7 @@ function apply(s: Server, e: Record<string, unknown>): { status: number; json: u
 
 async function serve(page: Page, view: TradeView, before?: Server['before']): Promise<Server> {
   const s: Server = { view, posts: [], ...(before ? { before } : {}) };
-  await page.route('**/v1/account/me', (r) => r.fulfill({ json: { kind: 'trader' } }));
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: INSIDE }));
   await page.route(/\/v1\/trades\/[^/]+(\/events)?$/, async (route: Route) => {
     const req = route.request();
     if (req.method() === 'POST') {

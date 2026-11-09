@@ -16,6 +16,7 @@ import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 import { BOARD, SERVER_NOW, buyerAlertView, sellerNudgedView, sellerView } from './refundViews.js';
+import { INSIDE } from './session.js';
 
 type RefundView = TradeView;
 const PORT = 4319;
@@ -32,6 +33,10 @@ test.beforeAll(async () => {
 });
 test.afterAll(async () => {
   await server?.close();
+});
+// The room is behind the front door (owner, 8 Nov 2026): a signed-in, set-up trader (a later route wins).
+test.beforeEach(async ({ page }) => {
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: INSIDE }));
 });
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -107,7 +112,7 @@ test('parity with SellerRefund at 1280x800, in the desktop shell', async ({ page
 test('parity with the Desktop board at 1280x800', async ({ page }) => {
   // The Desktop board is the buyer's paying room (TradeTimeline, counterparty card, chat): Task
   // 23's BuyerPay in this room, with the device's own figures and deal (e2e/pay.spec.ts has the rest).
-  await page.route('**/v1/account/me', (r) => r.fulfill({ json: { kind: 'trader' } }));
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: INSIDE }));
   await page.route(`**/v1/trades/${CODE}`, (r) => json(PAY_SECURED)(r));
   await page.addInitScript((e) => {
     window.__x2fFixtureEscrow = e;

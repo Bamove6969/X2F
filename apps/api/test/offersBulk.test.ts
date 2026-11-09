@@ -150,8 +150,8 @@ describe('POST /v1/account/offers/status', () => {
     expect(results.sort((x, y) => x.id.localeCompare(y.id))).toEqual([{ id: a, status: 'paused' }, { id: b, status: 'paused' }].sort((x, y) => x.id.localeCompare(y.id)));
     expect(await statuses(p.id)).toEqual({ [a]: 'paused', [b]: 'paused', [gone]: 'removed' });
     expect(await statuses(other.id)).toEqual({ [theirs]: 'live' });
-    // Paused offers leave the public list.
-    expect(((await anon.get('/v1/offers?side=sell&method=ZELLE&currency=USD')).json() as { id: string }[]).map((o) => o.id)).not.toContain(a);
+    // Paused offers leave the list everyone else sees.
+    expect(((await other.browser.get('/v1/offers?side=sell&method=ZELLE&currency=USD')).json() as { id: string }[]).map((o) => o.id)).not.toContain(a);
 
     // And "all" turns them back on.
     expect((await setStatus(p, 'all', 'live')).every((r) => r.status === 'live' && r.refused === undefined)).toBe(true);

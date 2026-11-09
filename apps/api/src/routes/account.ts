@@ -138,10 +138,16 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
   const { accountId, sessionId } = req.auth;
   // A member's own login methods (its own login account); the account owner's are not theirs to see.
   let methodsOf = accountId;
+  // A member's own Terms acceptance (review 2026-11-08 F1); null for the account owner.
+  let memberTerms: string | null = null;
   if (req.auth.memberId !== null) {
-    const m = await deps.db.query<{ member_account_id: string }>('select member_account_id from team_members where id = $1', [req.auth.memberId]);
+    const m = await deps.db.query<{ member_account_id: string; terms_version: string | null }>(
+      'select tm.member_account_id, a.terms_version from team_members tm join accounts a on a.id = tm.member_account_id where tm.id = $1',
+      [req.auth.memberId],
+    );
     if (!m.rows[0]) throw new ApiError(401, 'not-authenticated');
     methodsOf = m.rows[0].member_account_id;
+    memberTerms = m.rows[0].terms_version;
   }
   const { rows } = await deps.db.query<{
     display_name: string;
@@ -176,7 +182,10 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     suggestions: member !== null ? [] : suggestionsFor(counts),
     logoutTimer: member !== null ? { idleHours: row.idle_hours, adjustable: false } : logoutTimerOf(row.kind, row.idle_hours),
     // Staff and owner accounts carry no Terms version (R10).
-    termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
+    // A team member is current only when both the account and their own login account are.
+    termsCurrent:
+      row.kind !== 'trader' ||
+      (row.terms_version === deps.config.termsVersion && (member === null || memberTerms === deps.config.termsVersion)),
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
     member,
   };
@@ -288,7 +297,9 @@ export function accountRoutes(app: FastifyInstance): void {
     // the one before (checkTermsSignature's 400s), with nothing else recorded about the signing.
     // Only a changed version writes: repeating the current one answers 204 and changes nothing, so
     // a session can't rewrite what was signed or when.
-    { bodyLimit: SIGNED_BODY_LIMIT, preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true }) },
+    // Review 2026-11-08 F1: a team member accepts for themselves, on their own login account; the
+    // team account's acceptance stays the account owner's (a member never accepts for the account).
+    { bodyLimit: SIGNED_BODY_LIMIT, preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true, member: 'any' }) },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const version = d.config.termsVersion;
@@ -300,9 +311,17 @@ export function accountRoutes(app: FastifyInstance): void {
       await withTx(d.db, async (db) => {
         // Review round 4: the accepting session must still be live where it writes.
         await requireLiveSessionInTx(db, req.auth, now);
-        await db.query('update accounts set terms_version = $2, terms_accepted_at = $3, terms_signature = $5 where id = $1 and kind = $4 and terms_version is distinct from $2', [
-          req.auth.accountId, version, now, 'trader', sealTermsSignature(d.config, signature, req.auth.accountId),
-        ]);
+        if (req.auth.memberId !== null) {
+          await db.query(
+            `update accounts set terms_version = $2, terms_accepted_at = $3
+              where kind = 'member' and id = (select member_account_id from team_members where id = $1)`,
+            [req.auth.memberId, version, now],
+          );
+        } else {
+          await db.query('update accounts set terms_version = $2, terms_accepted_at = $3, terms_signature = $5 where id = $1 and kind = $4 and terms_version is distinct from $2', [
+            req.auth.accountId, version, now, 'trader', sealTermsSignature(d.config, signature, req.auth.accountId),
+          ]);
+        }
       });
       return reply.code(204).send();
     },

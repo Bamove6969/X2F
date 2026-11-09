@@ -9,6 +9,7 @@
  */
 import { createAuthApi, defaultDeviceLabel, type LoginResult, type PasswordLoginResult, type PgpChallenge } from '@x2f/auth-client';
 import { goLogin } from '../../api/client.js';
+import { refreshSession } from '../../session/useSession.js';
 import { hasUnseenNews } from '../news-model.js';
 
 /** Reads the error code of a 401 without consuming the body the client still has to read. */
@@ -63,6 +64,9 @@ export function passwordLogin(loginName: string, password: string): Promise<Pass
  * Continue goes on to `returnTo`; otherwise go straight to `returnTo`.
  */
 export async function afterLogin(navigate: (to: string) => void, returnTo: string): Promise<void> {
+  // The screens behind the front door read the shared session answer: the one from before this
+  // login says signed out (session/frontDoor.tsx), so drop it before going back to `returnTo`.
+  refreshSession();
   let termsCurrent = true;
   try {
     termsCurrent = (await authApi.me()).termsCurrent;

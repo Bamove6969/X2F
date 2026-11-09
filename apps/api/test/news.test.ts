@@ -1,4 +1,5 @@
-// Plan 4 Task 28: the News inbox (owner, 2026-10-29; spec 6.6). Reading needs no session; writing is
+// Plan 4 Task 28: the News inbox (owner, 2026-10-29; spec 6.6). Reading needs a signed-in, set-up
+// trader (the front door, owner 8 Nov 2026; it needed no session before); writing is
 // the operator's CLI until Plan 4's staff screen lands (news-tripwire.test.ts).
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -15,7 +16,8 @@ import {
   editNews,
   listNews,
 } from '../src/news/store.js';
-import { testApp } from './helpers/app.js';
+import type { Browser } from './helpers/totp.js';
+import { tradeApp } from './helpers/tradeApp.js';
 import { spySql } from './helpers/sqlSpy.js';
 import { MAINTENANCE_GATE_SQL } from '../src/site/routes.js';
 
@@ -27,9 +29,13 @@ let app: FastifyInstance;
 let deps: Deps;
 let setNow: (d: Date) => void;
 let logs: string[];
+let reader: Browser;
 
 beforeAll(async () => {
-  ({ app, deps, setNow, logs } = await testApp());
+  let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
+  ({ app, deps, setNow, logs, trader } = await tradeApp());
+  setNow(T0);
+  reader = (await trader()).browser;
 });
 afterAll(async () => {
   await app.close();
@@ -42,12 +48,19 @@ beforeEach(async () => {
 const at = (d: number) => () => new Date(T0.getTime() + d * DAY);
 
 describe('GET /v1/news', () => {
-  it('works logged out: newest first, each with its posted date, and the server time', async () => {
+  it('is 401 with no data without a session (the front door, owner 8 Nov 2026)', async () => {
+    await addNews(deps.db, at(0), { title: 'Welcome', body: 'Hello from X2F.' });
+    const res = await app.inject({ method: 'GET', url: '/v1/news' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'not-authenticated' });
+  });
+
+  it('newest first, each with its posted date, and the server time', async () => {
     await addNews(deps.db, at(0), { title: 'Welcome', body: 'Hello from X2F.' });
     await addNews(deps.db, at(2), { title: 'Upgrade done', body: 'All systems are back.' });
     await addNews(deps.db, at(1), { title: 'Planned upgrade', body: 'Tomorrow at 10:00 UTC.\nTrades in escrow are safe.' });
 
-    const res = await app.inject({ method: 'GET', url: '/v1/news' });
+    const res = await reader.get('/v1/news');
     expect(res.statusCode).toBe(200);
     expect(res.headers['cache-control']).toBe('no-store');
     const body = res.json() as { items: { id: number; title: string; body: string; publishedAt: string; editedAt: string | null }[]; serverNow: string };
@@ -67,13 +80,13 @@ describe('GET /v1/news', () => {
   });
 
   it('an empty inbox is an empty list', async () => {
-    const res = await app.inject({ method: 'GET', url: '/v1/news' });
+    const res = await reader.get('/v1/news');
     expect(res.json()).toEqual({ items: [], serverNow: T0.toISOString() });
   });
 
   it(`lists at most the newest ${NEWS_LIST_LIMIT}`, async () => {
     for (let i = 0; i < NEWS_LIST_LIMIT + 3; i++) await addNews(deps.db, at(i / 100), { title: `N${i}`, body: 'b' });
-    const items = (await app.inject({ method: 'GET', url: '/v1/news' })).json().items as { title: string }[];
+    const items = (await reader.get('/v1/news')).json().items as { title: string }[];
     expect(items).toHaveLength(NEWS_LIST_LIMIT);
     expect(items[0]!.title).toBe(`N${NEWS_LIST_LIMIT + 2}`);
     expect(items.at(-1)!.title).toBe('N3');
@@ -83,9 +96,12 @@ describe('GET /v1/news', () => {
     await addNews(deps.db, at(0), { title: 'Welcome', body: 'Hello.' });
     const spy = spySql(deps.db);
     try {
-      await app.inject({ method: 'GET', url: '/v1/news' });
-      // Plan 4 Task 8's maintenance gate reads site_flags first (a read, on every /v1 route).
-      expect(spy.sql().filter((q) => q !== MAINTENANCE_GATE_SQL)).toEqual(['select id, title, body, published_at, edited_at from news order by published_at desc, id desc limit $1']);
+      await reader.get('/v1/news');
+      // Plan 4 Task 8's maintenance gate reads site_flags first (a read, on every /v1 route), and
+      // the front door's session check reads the session (and never touches it: no write).
+      const reads = spy.sql().filter((q) => q !== MAINTENANCE_GATE_SQL);
+      expect(reads.filter((q) => !/^\s*select/i.test(q))).toEqual([]);
+      expect(reads.filter((q) => !/from sessions s join accounts a/.test(q))).toEqual(['select id, title, body, published_at, edited_at from news order by published_at desc, id desc limit $1']);
     } finally {
       spy.restore();
     }
@@ -111,7 +127,7 @@ describe('GET /v1/news', () => {
   it('logs no message text', async () => {
     await addNews(deps.db, at(0), { title: 'Secret-ish title', body: 'Body text 7781' });
     logs.length = 0;
-    await app.inject({ method: 'GET', url: '/v1/news' });
+    await reader.get('/v1/news');
     expect(logs.filter((l) => l.includes('7781') || l.includes('Secret-ish'))).toEqual([]);
   });
 });

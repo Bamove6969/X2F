@@ -177,9 +177,9 @@ describe('a block stops business both ways (Task 37)', () => {
     expect(await listed(b.browser, cur)).toHaveLength(1);
     // The blocker: their own offer counts, c's too (c is not blocked).
     expect(await zelle(a.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
-    // Everyone else and logged out: unchanged.
+    // Everyone else: unchanged. Logged out: nothing at all (the front door, owner 8 Nov 2026).
     expect(await zelle(other.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
-    expect(await zelle(anon)).toMatchObject({ offers: 2, bestRate: '3000000' });
+    expect((await anon.get(`/v1/methods?side=sell&currency=${cur}`)).statusCode).toBe(401);
     await unblock(a, b);
     expect(await zelle(b.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
   });
@@ -271,16 +271,16 @@ describe('a block stops business both ways (Task 37)', () => {
     expect((await blocksBetween(deps.db, b.id, a.id)).length).toBe(2);
   });
 
-  it('a logged-out view is not a block: it cannot be identified, so it gets the coarse public presence (decision, Task 37)', async () => {
+  it('logging out does not get round a block: a logged-out view gets nothing at all (the front door, owner 8 Nov 2026; before, Task 37 accepted a coarse public view)', async () => {
     const cur = ownCurrency();
     const a = await poster();
     const b = await poster();
     const aOffer = await post(a, cur);
     await block(a, b);
-    // Floored to 5 minutes and bucketed, exactly as Task 4 shows anyone logged out; never finer.
-    const card = ((await anon.get(`/v1/offers/${aOffer}`)).json() as { poster: { lastSeenAt: string | null } }).poster;
-    expect(card.lastSeenAt).not.toBeNull();
-    expect(Date.parse(card.lastSeenAt!) % (5 * 60_000)).toBe(0);
-    expect(await listed(anon, cur)).toEqual([aOffer]);
+    for (const url of [`/v1/offers/${aOffer}`, `/v1/offers?side=sell&method=ZELLE&currency=${cur}&sort=online`]) {
+      const res = await anon.get(url);
+      expect(res.statusCode, url).toBe(401);
+      expect(res.json(), url).toEqual({ error: 'not-authenticated' });
+    }
   });
 });

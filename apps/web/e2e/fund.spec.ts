@@ -14,6 +14,7 @@ import { BOARD_TRADE as B } from '../src/fixtures/boards.js';
 import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
 import { PORT } from './playwright.config.js';
+import { INSIDE } from './session.js';
 
 const FIXTURES_PORT = PORT + 1;
 const FIXTURES = `http://127.0.0.1:${FIXTURES_PORT}`;
@@ -126,7 +127,7 @@ async function stub(page: Page, view: () => View, escrow: FixtureEscrow = VERIFI
   await page.addInitScript((e) => {
     window.__x2fFixtureEscrow = e;
   }, escrow);
-  await page.route('**/v1/account/me', (r) => r.fulfill({ json: { kind: 'trader' } }));
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: INSIDE }));
   await page.route(`**/v1/trades/${B.code}`, (r) => r.fulfill({ json: view() }));
 }
 
@@ -312,6 +313,36 @@ test.describe('TradeFund on a desktop', () => {
     await expect(page.locator('[data-escrow-address]')).toHaveText(ADDRESS);
   });
 
+  test('a non-6-aligned amount is shown in full wherever it must be sent, and equals what Copy amount carries', async ({ page, context }) => {
+    // atomicForFiat floors to the atomic unit: real amounts have 12 places (review kit round 1, finding 1).
+    const ODD = 610_529_733_574n;
+    const odd = (over: View = {}) =>
+      sellerView({ amountAtomic: ODD.toString(), funding: { sellerFundsAtomic: ODD.toString(), escrowAddress: ADDRESS, uri: moneroUri(ADDRESS, ODD), walletApp: 'cake' }, ...over });
+    const deal = { poster: 'buyer' as const, takeAmountAtomic: ODD.toString() };
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await stub(page, () => odd(), { ...VERIFIED, deal });
+    await room(page);
+    await expect(page.getByText('Send exactly this amount: 0.610529733574 XMR')).toBeVisible();
+    await expect(page.locator('.x2f-trade-quote__head .x2f-amount')).toHaveText('0.610529733574 XMR');
+    await page.getByRole('button', { name: 'Copy amount' }).click();
+    await expect(page.getByText('Amount copied.')).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('0.610529733574');
+  });
+
+  test('short by under 0.000001: "Send the rest: 0.000000733574 XMR", never 0.000000', async ({ page }) => {
+    const ODD = 610_529_733_574n;
+    const view = sellerView({
+      amountAtomic: ODD.toString(),
+      receivedAtomic: '610529000000',
+      funding: { sellerFundsAtomic: ODD.toString(), escrowAddress: ADDRESS, uri: moneroUri(ADDRESS, ODD), walletApp: 'cake' },
+    });
+    await stub(page, () => view, { ...VERIFIED, deal: { poster: 'buyer', takeAmountAtomic: ODD.toString() }, receivedAtomic: '610529000000' });
+    await room(page);
+    await expect(page.getByText('Received 0.610529 of 0.610529733574 XMR, send the rest')).toBeVisible();
+    await expect(page.getByText('Send the rest: 0.000000733574 XMR')).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('0.000000 XMR');
+  });
+
   test('at 1280x800 the room fits with no horizontal scroll and one primary', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await stub(page, () => sellerView());
@@ -428,6 +459,21 @@ for (const [width, height] of [
       await page.locator('[data-escrow-address]').scrollIntoViewIfNeeded();
       await expect(page.locator('[data-escrow-address]')).toBeInViewport();
       s = await fits();
+      expect(s.wide).toBeLessThanOrEqual(s.view);
+    });
+
+    test('a 12-place amount fits the phone, and the wallet link and hint carry all of it', async ({ page }) => {
+      const ODD = 12_610_529_733_574n;
+      const view = sellerView({
+        amountAtomic: ODD.toString(),
+        funding: { sellerFundsAtomic: ODD.toString(), escrowAddress: ADDRESS, uri: moneroUri(ADDRESS, ODD), walletApp: 'cake' },
+      });
+      await stub(page, () => view, { ...VERIFIED, deal: { poster: 'buyer', takeAmountAtomic: ODD.toString() } });
+      await room(page);
+      await expect(page.locator('.x2f-trade-quote__head .x2f-amount')).toHaveText('12.610529733574 XMR');
+      await expect(page.locator('[data-wallet-link]')).toHaveAttribute('href', moneroUri(ADDRESS, ODD));
+      await expect(page.getByText('Opens Cake Wallet with the escrow address and 12.610529733574 XMR filled in. You confirm there.')).toBeVisible();
+      const s = await page.evaluate(() => ({ wide: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
       expect(s.wide).toBeLessThanOrEqual(s.view);
     });
 
