@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { loadTradeRow } from '../src/trades/store.js';
-import { seedAccount } from './helpers/accounts.js';
+import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
@@ -78,6 +78,8 @@ const XMR_OFFER = { ...BASE, amountUnit: 'xmr', minAtomic: (1n * XMR).toString()
 const FIAT_OFFER = { ...BASE, amountUnit: 'fiat', minFiatCents: '50000', maxFiatCents: '300000' };
 
 async function post(who: Who, b: Record<string, unknown>): Promise<string> {
+  // Only vendors post offers (owner 2 Nov 2026, vendor.test.ts); the poster becomes one here.
+  await makeVendor(deps, who.id);
   const res = await who.browser.post('/v1/offers', b);
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
