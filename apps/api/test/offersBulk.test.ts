@@ -208,6 +208,25 @@ describe('POST /v1/account/offers/status', () => {
     expect(await setStatus(p, [a], 'paused')).toEqual([{ id: a, status: 'paused' }]);
   });
 
+  it('the launch cap is checked per offer as relisting checks it (launch-rules review F1)', async () => {
+    const p = await poster();
+    const a = await post(p, { currency: 'SEK' });
+    const b = await post(p, { currency: 'NOK' });
+    await setStatus(p, 'all', 'paused');
+    // An offer from before the cap: a $20,000 maximum (every currency is 1:1 with USD here).
+    await deps.db.query('update offers set max_fiat_cents = 2000000 where id = $1', [a]);
+    expect(await setStatus(p, [a, b], 'live')).toEqual([
+      { id: a, status: 'paused', refused: 'launch-cap' },
+      { id: b, status: 'live' },
+    ]);
+    expect(await statuses(p.id)).toEqual({ [a]: 'paused', [b]: 'live' });
+    // The same answer as the single relist route.
+    expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'launch-cap', capUsdCents: '500000' });
+    // At $5,000 exactly it goes on.
+    await deps.db.query('update offers set max_fiat_cents = 500000 where id = $1', [a]);
+    expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'live' }]);
+  });
+
   it('caps are checked per offer as relisting checks them; the others still switch (per-offer results)', async () => {
     const p = await poster();
     const a = await post(p, { currency: 'GBP' });

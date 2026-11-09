@@ -341,6 +341,34 @@ describe('PATCH /v1/offers/:id', () => {
     // Pausing and removing stay allowed under a hold.
     expect((await p.browser.patch(`/v1/offers/${id}`, { status: 'paused' })).statusCode).toBe(200);
   });
+
+  it('relisting checks the launch cap as posting does: an offer from before the cap, or one a rate move put above it, stays off (launch-rules review F1)', async () => {
+    const p = await poster();
+    const CAP = { error: 'launch-cap', capUsdCents: '500000' };
+    // An offer from before the cap, with a $20,000 maximum.
+    const old = await post(p, { currency: 'USD', side: 'buy' });
+    await p.browser.patch(`/v1/offers/${old}`, { status: 'paused' });
+    await deps.db.query('update offers set max_fiat_cents = 2000000 where id = $1', [old]);
+    const refused = await p.browser.patch(`/v1/offers/${old}`, { status: 'live' });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toEqual(CAP);
+    expect((await deps.db.query<{ status: string }>('select status from offers where id = $1', [old])).rows[0]!.status).toBe('paused');
+    // A euro maximum is counted in US dollars at the price now: €4,500 is $5,000 at 0.9 and relists;
+    // at a euro worth 1.0 it would be $5,555.56 (the fake keeps EUR at 0.9, so the maximum moves instead).
+    const eur = await post(p, { currency: 'EUR', maxFiatCents: '450000' });
+    await p.browser.patch(`/v1/offers/${eur}`, { status: 'paused' });
+    await deps.db.query('update offers set max_fiat_cents = 500000 where id = $1', [eur]);
+    expect((await p.browser.patch(`/v1/offers/${eur}`, { status: 'live' })).json()).toEqual(CAP);
+    await deps.db.query('update offers set max_fiat_cents = 450000 where id = $1', [eur]);
+    // No price to count it with fails closed, as posting does.
+    unpriced.add('EUR');
+    expect((await p.browser.patch(`/v1/offers/${eur}`, { status: 'live' })).json()).toEqual({ error: 'price-unavailable' });
+    unpriced.delete('EUR');
+    // Within the cap it relists as before.
+    expect((await p.browser.patch(`/v1/offers/${eur}`, { status: 'live' })).json()).toEqual({ id: eur, status: 'live' });
+    // Off the shared euro list again.
+    await p.browser.patch(`/v1/offers/${eur}`, { status: 'removed' });
+  });
 });
 
 describe('who is listed', () => {

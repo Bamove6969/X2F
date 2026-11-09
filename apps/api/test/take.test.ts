@@ -3,7 +3,7 @@ import { LAUNCH_TRADE_CAP_USD_CENTS, fiatCents, rateFor } from '@x2f/trade';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { insertTrade, loadTradeRow, rowToTrade } from '../src/trades/store.js';
+import { applyEvent, insertTrade, loadTradeRow, rowToTrade } from '../src/trades/store.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -196,17 +196,17 @@ describe('POST /v1/offers/:id/take', () => {
     expect((await deps.db.query<{ m: number }>('select pay_window_min as m from trades where code = $1', [code])).rows[0]!.m).toBe(180);
   });
 
-  it('answers with the rate and total that locked, so the device records the deal that locked', async () => {
+  it('answers with the rate, total and growth ceiling that locked, so the device records the deal that locked', async () => {
     const seller = await person();
     const buyer = await person();
     const offer = await postOffer(seller);
     market.usdCentsPerXmr = 33_100n;
     const res = await take(buyer, offer, body(buyer, tenth, 33_000n));
     expect(res.statusCode, res.body).toBe(200);
-    const out = res.json() as { code: string; centsPerXmr: string; fiatCents: string };
-    expect(Object.keys(out).sort()).toEqual(['centsPerXmr', 'code', 'fiatCents']);
-    expect(out).toMatchObject({ centsPerXmr: '33100', fiatCents: '3310' });
-    expect(rowToTrade((await loadTradeRow(deps.db, out.code))!)).toMatchObject({ lockedRate: { centsPerXmr: 33_100n }, fiatCents: 3_310n });
+    const out = res.json() as { code: string; centsPerXmr: string; fiatCents: string; maxFiatCents: string };
+    expect(Object.keys(out).sort()).toEqual(['centsPerXmr', 'code', 'fiatCents', 'maxFiatCents']);
+    expect(out).toMatchObject({ centsPerXmr: '33100', fiatCents: '3310', maxFiatCents: '500000' });
+    expect(rowToTrade((await loadTradeRow(deps.db, out.code))!)).toMatchObject({ lockedRate: { centsPerXmr: 33_100n }, fiatCents: 3_310n, maxFiatCents: 500_000n });
   });
 
   it("locks the server's rate now, never the quoted one, while it moved within 0.5%, and refuses price-changed past it", async () => {
@@ -681,6 +681,72 @@ describe('the launch cap: $5,000 per trade (owner p11-6)', () => {
     });
     expect(refusal(await take(other, eur, eurBody((XMR * 460_000n) / 29_700n)))).toEqual(CAP);
     await taken(other, eur, eurBody((XMR * 440_000n) / 29_700n));
+  });
+});
+
+describe('the growth ceiling: extra XMR never grows a trade past the launch cap (launch-rules review F1)', () => {
+  /** The trade's ceiling as the take answered it and as the row keeps it. */
+  async function ceilingOf(res: Awaited<ReturnType<typeof take>>): Promise<{ code: string; answered: string; stored: string }> {
+    expect(res.statusCode, res.body).toBe(200);
+    const out = res.json() as { code: string; maxFiatCents: string };
+    return { code: out.code, answered: out.maxFiatCents, stored: (await loadTradeRow(deps.db, out.code))!.max_fiat_cents };
+  }
+
+  it("an offer within the cap keeps its own maximum as the ceiling", async () => {
+    const seller = await person();
+    const buyer = await person();
+    const offer = await postOffer(seller, { maxFiatCents: '200000' });
+    expect(await ceilingOf(await take(buyer, offer, body(buyer, XMR)))).toMatchObject({ answered: '200000', stored: '200000' });
+    const atCap = await postOffer(seller, { side: 'buy', maxFiatCents: '500000' });
+    expect(await ceilingOf(await take(buyer, atCap, body(buyer, XMR)))).toMatchObject({ answered: '500000', stored: '500000' });
+  });
+
+  it('an over-funded trade on an offer from before the cap grows to $5,000 and no further', async () => {
+    const seller = await person();
+    const buyer = await person();
+    const offer = await postOffer(seller);
+    // A $100,000 maximum from before the cap: the trade's ceiling is $5,000 all the same.
+    await deps.db.query('update offers set max_fiat_cents = 10000000 where id = $1', [offer]);
+    const { code, answered, stored } = await ceilingOf(await take(buyer, offer, body(buyer, XMR)));
+    expect({ answered, stored }).toEqual({ answered: '500000', stored: '500000' });
+    // The seller sends 30 XMR before "I've paid": $9,900 at the locked $330. The trade stays 1 XMR.
+    await applyEvent(deps, code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system');
+    const lots = 30n * XMR;
+    const kept = await applyEvent(deps, code, { type: 'chain', receivedAtomic: lots, unlockedAtomic: lots, confirmations: 10 }, 'system');
+    expect({ amount: kept.amountAtomic, fiat: kept.fiatCents, grown: kept.grown }).toEqual({ amount: XMR, fiat: 33_000n, grown: null });
+    // 15.15 XMR and its fee ($4,999.50) is within the ceiling: it grows to that.
+    const within = (XMR * 1515n) / 100n;
+    const funds = within + within / 100n;
+    const grown = await applyEvent(deps, code, { type: 'chain', receivedAtomic: funds, unlockedAtomic: funds, confirmations: 10 }, 'system');
+    expect(grown.amountAtomic).toBe(within);
+    expect(grown.fiatCents).toBe(499_950n);
+  });
+
+  it('a fixed price far below market: the ceiling counts the XMR at market, as the take does', async () => {
+    const seller = await person();
+    const buyer = await person();
+    // $33 per XMR, a tenth of the $330 market. 15.15 XMR is $499.95 at the offer's price but
+    // $4,999.50 at market: the ceiling is the largest total at $33 no amount over $5,000 at market reaches.
+    const fixed = await postOffer(seller, { pricing: { mode: 'fixed', centsPerXmr: '3300' } });
+    const { code, answered } = await ceilingOf(await take(buyer, fixed, body(buyer, XMR, 3300n)));
+    expect(answered).toBe('49999');
+    await applyEvent(deps, code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system');
+    // 15.16 XMR is $500.28 at the offer's price, within its $5,000 maximum, but $5,002.80 at market: no growth.
+    const over = (XMR * 1516n) / 100n;
+    const overFunds = over + over / 100n;
+    expect((await applyEvent(deps, code, { type: 'chain', receivedAtomic: overFunds, unlockedAtomic: overFunds, confirmations: 10 }, 'system')).amountAtomic).toBe(XMR);
+  });
+
+  it('a euro offer from before the cap: the ceiling is $5,000 in euros at the take\'s price', async () => {
+    const seller = await person();
+    const buyer = await person();
+    const eur = await postOffer(seller, { currency: 'EUR', pricing: { mode: 'fixed', centsPerXmr: '29700' }, maxFiatCents: '450000' });
+    await deps.db.query('update offers set max_fiat_cents = 10000000 where id = $1', [eur]);
+    const res = await take(buyer, eur, {
+      amountAtomic: XMR.toString(), walletId: buyer.wallet, centsPerXmr: '29700', fiatCents: '29700',
+    });
+    // €4,500.00 is $5,000.00 at 0.9.
+    expect((await ceilingOf(res)).answered).toBe('450000');
   });
 });
 

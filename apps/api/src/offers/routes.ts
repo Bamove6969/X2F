@@ -11,7 +11,7 @@ import { getMethod, isAvailable, profileOrFallback } from '../methods/profiles.j
 import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
 import type { MarketPrices } from '../price/market.js';
-import { assertWithinLaunchCap, usdCentsFor } from '../trades/launchCap.js';
+import { assertWithinLaunchCap, launchCapRefusal, usdCentsFor } from '../trades/launchCap.js';
 import { blockedEitherWaySql } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
 import { hasPendingReview, pendingReviewSql } from '../reviews/gate.js';
@@ -93,10 +93,12 @@ export interface MyOffer {
 
 /**
  * Why one offer was not switched by `POST /v1/account/offers/status`: the posting guards of
- * relisting (`trading-paused`, `trading-hold`, `no-wallet`, `too-many-offers`, `method-unavailable`),
- * or `not-found` for an id that is not one of my live or paused offers.
+ * relisting (`trading-paused`, `trading-hold`, `no-wallet`, `too-many-offers`, `method-unavailable`,
+ * and the launch cap's `launch-cap`, or `price-unavailable` when a non-USD maximum has no price to
+ * count it with), or `not-found` for an id that is not one of my live or paused offers.
  */
-export type OfferSwitchRefusal = 'trading-paused' | 'trading-hold' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'not-found';
+export type OfferSwitchRefusal =
+  | 'trading-paused' | 'trading-hold' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'launch-cap' | 'price-unavailable' | 'not-found';
 
 /** One offer's outcome: its status after the call, and why it was not switched when it was refused. */
 export interface OfferSwitchResult {
@@ -516,13 +518,16 @@ export function offerRoutes(app: FastifyInstance): void {
       // Relisting is posting again: the same checks, in one transaction with the write (review M1).
       assertMethodAvailable(row.method_id);
       await inTransaction(deps.db, async (client) => {
-        const cur = await client.query<{ side: Side; method_id: string; currency: string }>(
-          `select side, method_id, currency from offers where id = $1 and account_id = $2 and status <> 'removed'`,
+        const cur = await client.query<{ side: Side; method_id: string; currency: string; max_fiat_cents: string }>(
+          `select side, method_id, currency, max_fiat_cents from offers where id = $1 and account_id = $2 and status <> 'removed'`,
           [id, accountId],
         );
         const m = cur.rows[0];
         if (!m) throw new ApiError(404, 'not-found');
         await assertMayPost(client, req.auth!, now, { side: m.side, methodId: m.method_id, currency: m.currency }, id);
+        // The launch cap, as posting checks it (launch-rules review F1): an offer from before the
+        // cap, or a non-USD maximum the rate has since moved above it, does not go live again.
+        assertWithinLaunchCap(usdCentsFor(m.currency, BigInt(m.max_fiat_cents), deps.prices));
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
         await auditMember(client, req.auth, { action: 'offer-relisted', detail: { offerId: id } }, now);
       });
@@ -653,7 +658,8 @@ export function offerRoutes(app: FastifyInstance): void {
    * all-or-nothing. Every offer that may switch does, every one that may not stays as it was and is
    * named with its reason; the reply is 200 even when every offer was refused. Turning on runs the
    * relist guards for each offer (paused site, trading hold, no usable wallet, the caps counted as
-   * relisting counts them, the method's availability), in PATCH's order: method, account, caps.
+   * relisting counts them, the method's availability, the launch cap), in PATCH's order: method,
+   * account, caps, launch cap.
    * Turning off has no guard: it always succeeds, under a hold, during an emergency stop and on a
    * stale Terms version too (R10 lead decision 2026-10-29); turning on needs the current Terms
    * (403 `terms-required` for the whole call). The web always sends explicit ids (review M1) in
@@ -692,8 +698,8 @@ export function offerRoutes(app: FastifyInstance): void {
       const refusedAll = status === 'live' ? await accountRefusal(client, accountId, now) : null;
       const caps = status === 'live' ? await loadOfferCaps(client) : null;
       // Every live or paused offer of mine (the caps count them all), newest first as on the list.
-      const { rows: mine } = await client.query<{ id: string; side: Side; method_id: string; currency: string; status: 'live' | 'paused' }>(
-        `select id, side, method_id, currency, status from offers where account_id = $1 and status <> 'removed'
+      const { rows: mine } = await client.query<{ id: string; side: Side; method_id: string; currency: string; max_fiat_cents: string; status: 'live' | 'paused' }>(
+        `select id, side, method_id, currency, max_fiat_cents, status from offers where account_id = $1 and status <> 'removed'
           order by created_at desc, id for update`,
         [accountId],
       );
@@ -720,6 +726,8 @@ export function offerRoutes(app: FastifyInstance): void {
             for (const x of mine) if (x.id !== id && x.side === o.side && x.method_id === o.method_id && x.currency === o.currency) same++;
             if (same >= caps!.perMarket || mine.length - 1 >= caps!.total) refused = 'too-many-offers';
           }
+          // Then the launch cap, as relisting checks it (launch-rules review F1).
+          if (refused === null) refused = launchCapRefusal(usdCentsFor(o.currency, BigInt(o.max_fiat_cents), deps.prices));
           if (refused !== null) {
             out.push({ id, status: o.status, refused });
             continue;

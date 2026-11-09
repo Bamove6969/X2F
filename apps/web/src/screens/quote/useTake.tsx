@@ -98,7 +98,12 @@ export function useTake(
           }
           updateQuote(offerId, { busy: false });
           dropIfLeft(offerId);
-          const locked: ConfirmedTrade = { ...confirmed, deal: { ...confirmed.deal, centsPerXmr: taken.centsPerXmr } };
+          // The growth ceiling the take fixed (the offer's maximum clamped to the launch cap, review
+          // F1), never above the maximum this person saw: a higher one keeps the seen maximum, and
+          // the attested deal then fails to match (deal-mismatch) instead of letting the trade grow more.
+          const seenMax = confirmed.deal.maxFiatCents;
+          const maxFiatCents = taken.maxFiatCents < seenMax ? taken.maxFiatCents : seenMax;
+          const locked: ConfirmedTrade = { ...confirmed, deal: { ...confirmed.deal, centsPerXmr: taken.centsPerXmr, maxFiatCents } };
           storeConfirmed(taken.code, locked);
           void navigate(`/trade/${encodeURIComponent(taken.code)}`, { state: { confirmed: locked } });
         },

@@ -44,7 +44,11 @@ export interface Trade {
    * fixed at take so a later change to the method's profile never moves a live trade.
    */
   payWindowMin: number;
-  /** The offer's limits at take, as fiat totals in lockedRate's currency; a grown trade stays within them. */
+  /**
+   * The offer's limits at take, as fiat totals in lockedRate's currency; a grown trade stays within
+   * them. `maxFiatCents` is the growth ceiling the API fixed at take: the offer's maximum, clamped
+   * so a grown trade stays within the launch cap (apps/api take.ts `growthCeiling`).
+   */
   minFiatCents: bigint;
   maxFiatCents: bigint;
   /**
@@ -360,7 +364,8 @@ function onChain(t: Trade, e: Extract<TradeEvent, { type: 'chain' }>, now: Date)
 /**
  * Extra XMR before "I've paid" (spec 11.1, owner 2026-10-20): when the escrow
  * holds more than the trade needs and the grown trade's fiat total, at the same
- * locked rate, stays within the offer's maximum, the amount, fee and fiat total
+ * locked rate, stays within `maxFiatCents` (the offer's maximum, clamped to the
+ * launch cap at take), the amount, fee and fiat total
  * grow to what was funded. Otherwise nothing changes and the surplus goes to
  * the seller at settlement (payoutsFor).
  *
@@ -378,7 +383,7 @@ function grow(t: Trade, now: Date): Trade {
   let amountAtomic = fromAtomic;
   if (basis > escrowPlan({ amountAtomic: fromAtomic, poster: t.poster }).sellerFundsAtomic) {
     const candidate = amountForFunds(basis, t.poster);
-    // Above the offer maximum the trade keeps the size it already has; that size is covered by basis.
+    // Above the ceiling (`maxFiatCents`) the trade keeps the size it already has; that size is covered by basis.
     if (candidate > fromAtomic) amountAtomic = fiatFor(candidate, t.lockedRate) <= t.maxFiatCents ? candidate : t.amountAtomic;
   }
   if (amountAtomic === t.amountAtomic) return t;

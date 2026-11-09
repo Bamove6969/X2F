@@ -77,7 +77,7 @@ beforeEach(() => {
     rate: '33000',
     wallets: WALLETS,
     takes: [],
-    take: (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents } }),
+    take: (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '150000' } }),
   };
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), 'http://x2f.test');
@@ -241,7 +241,7 @@ describe('BuyQuote', () => {
     expect(host.textContent).toContain('$330.00 / XMR');
     // The feed moved after the quote's last poll: the server refuses the stale rate.
     stub.rate = '34000';
-    stub.take = (body) => (body.centsPerXmr === stub.rate ? { status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents } } : { status: 409, json: { error: 'price-changed' } });
+    stub.take = (body) => (body.centsPerXmr === stub.rate ? { status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '150000' } } : { status: 409, json: { error: 'price-changed' } });
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(stub.takes).toHaveLength(1);
@@ -282,7 +282,7 @@ describe('BuyQuote', () => {
 
   it("records the deal at the rate the server locked (within 0.5% of the quote), not the quoted one", async () => {
     // The server locks its own rate now (lead decision 2026-10-29): here 0.3% above the quote.
-    stub.take = () => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: '33099', fiatCents: '41373' } });
+    stub.take = () => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: '33099', fiatCents: '41373', maxFiatCents: '150000' } });
     const { host } = await open(`${BUY}&amount=412.50`);
     pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
@@ -292,8 +292,28 @@ describe('BuyQuote', () => {
     expect((arrivedState as { confirmed: { deal: { centsPerXmr: bigint } } }).confirmed.deal.centsPerXmr).toBe(33_099n);
   });
 
+  it('records the growth ceiling the take fixed (the launch cap, review F1), never one above the maximum shown', async () => {
+    stub.take = (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '120000' } });
+    const { host } = await open(`${BUY}&amount=412.50`);
+    pick(host, 'w-cake');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')?.deal.maxFiatCents).toBe(120_000n);
+    expect((arrivedState as { confirmed: { deal: { maxFiatCents: bigint } } }).confirmed.deal.maxFiatCents).toBe(120_000n);
+  });
+
+  it('a growth ceiling above the maximum shown is not recorded: the deal keeps what the person saw', async () => {
+    stub.take = (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '9000000' } });
+    const { host } = await open(`${BUY}&amount=412.50`);
+    pick(host, 'w-cake');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')?.deal.maxFiatCents).toBe(150_000n);
+  });
+
   it('a locked rate farther than 0.5% from the quote is not recorded: no trade room, the generic refusal', async () => {
-    stub.take = () => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: '33200', fiatCents: '41500' } });
+    stub.take = () => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: '33200', fiatCents: '41500', maxFiatCents: '150000' } });
     const { host } = await open(`${BUY}&amount=412.50`);
     pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
@@ -500,7 +520,7 @@ describe('a 0-decimal currency', () => {
       if (take && init?.method === 'POST') {
         const body = JSON.parse(String(init.body)) as TakeBody;
         stub.takes.push(body);
-        return json(200, { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents });
+        return json(200, { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: '150000' });
       }
       return json(404, { error: 'not-found' });
     }) as typeof fetch;

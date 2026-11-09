@@ -9,8 +9,15 @@ import { usdCentsOf } from '../traders/stage.js';
  * `price-unavailable`), never lets it through. Above the cap: 409 `launch-cap` `{ capUsdCents }`.
  */
 export function assertWithinLaunchCap(usdCents: bigint | null): void {
-  if (usdCents === null) throw new ApiError(409, 'price-unavailable');
-  if (usdCents > LAUNCH_TRADE_CAP_USD_CENTS) throw new ApiError(409, 'launch-cap', { capUsdCents: LAUNCH_TRADE_CAP_USD_CENTS.toString() });
+  const refused = launchCapRefusal(usdCents);
+  if (refused === 'price-unavailable') throw new ApiError(409, 'price-unavailable');
+  if (refused === 'launch-cap') throw new ApiError(409, 'launch-cap', { capUsdCents: LAUNCH_TRADE_CAP_USD_CENTS.toString() });
+}
+
+/** `assertWithinLaunchCap`'s refusal as a code, for a per-offer result (My offers' Turn on); null when within. */
+export function launchCapRefusal(usdCents: bigint | null): 'price-unavailable' | 'launch-cap' | null {
+  if (usdCents === null) return 'price-unavailable';
+  return usdCents > LAUNCH_TRADE_CAP_USD_CENTS ? 'launch-cap' : null;
 }
 
 /**

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { feeFor } from '@x2f/core';
 import {
   CLIENT_EVENTS,
+  LAUNCH_TRADE_CAP_USD_CENTS,
   MAX_PAY_WINDOW_MIN,
   SELLER_CONFIRM_CANCEL_TIMEOUT_H,
   awaitingCancelConfirm,
@@ -25,6 +26,7 @@ const at = (min: number, ms = 0) => new Date(T0.getTime() + min * MIN + ms);
 const AMOUNT = 1_250_000_000_000n;
 const FUNDS = 1_262_500_000_000n; // poster seller: amount + 1%
 const RATE = { currency: 'USD', centsPerXmr: 33000n };
+const XMR = 1_000_000_000_000n;
 
 type By = 'buyer' | 'seller' | 'system';
 
@@ -1412,6 +1414,24 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     expect(g.amountAtomic).toBe(1_300_000_000_000n);
     const over = apply(apply(t, { type: 'setup-done', escrowAddress: '4E' }, 'system', at(1)), chain(1_300_020_000_000n, 1_300_020_000_000n, 10), 'system', at(2));
     expect(over.amountAtomic).toBe(AMOUNT);
+  });
+
+  test('growth stops at the launch-cap ceiling the take fixed, though the offer allows more (launch-rules review F1)', () => {
+    // An offer with a $20,000 maximum: the take clamps the trade's ceiling to $5,000 at $330/XMR.
+    const t = newTrade({ ...TAKE, poster: 'buyer', amountAtomic: XMR, maxFiatCents: LAUNCH_TRADE_CAP_USD_CENTS }, T0);
+    const f = apply(t, { type: 'setup-done', escrowAddress: '4E' }, 'system', at(1));
+    // 15.15 XMR is $4,999.50: it grows.
+    const within = (XMR * 1515n) / 100n;
+    expect(apply(f, chain(within, within, 10), 'system', at(2)).amountAtomic).toBe(within);
+    // 15.16 XMR is $5,002.80: the trade keeps its size and the surplus goes back to the seller.
+    const over = (XMR * 1516n) / 100n;
+    const kept = apply(f, chain(over, over, 10), 'system', at(2));
+    expect(kept.amountAtomic).toBe(XMR);
+    expect(kept.fiatCents).toBe(33000n);
+    expect(kept.grown).toBeNull();
+    // Grown to $4,999.50 first, a later extra past the ceiling keeps that size.
+    const grown = apply(f, chain(within, within, 10), 'system', at(2));
+    expect(apply(grown, chain(over, over, 10), 'system', at(3)).amountAtomic).toBe(within);
   });
 
   test('after I have paid the amount never changes; the surplus goes to the seller', () => {
