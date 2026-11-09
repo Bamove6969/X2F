@@ -22,6 +22,7 @@ import { fixtureLeakedList } from './helpers/leaked.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
 import { FIAT, driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
+import type { JabberSender } from '../src/jabber/sender.js';
 import { Browser, codeAt } from './helpers/totp.js';
 
 const ORIGIN = 'https://x2f.test';
@@ -49,12 +50,20 @@ const walletAction = (address: string): ConfirmAction => ({
   kind: 'add-wallet', addressHash: createHash('sha256').update(address).digest('hex'), addressEnd: addressEnd(address),
 });
 
+/** Owner rule p5-7: the Jabber set-up's test codes, by address (the class audit's rows read them). */
+const jabberCodes = new Map<string, string>();
+const jabberSender: JabberSender = {
+  async send(to, m) {
+    if (m.kind === 'test-code') jabberCodes.set(to, m.code);
+  },
+};
+
 beforeAll(async () => {
   const fixture = await fixtureLeakedList();
   cleanup = fixture.cleanup;
   leaked = fixture.list;
   let set: (d: Date) => void;
-  ({ app, deps, setNow: set, trader, logs } = await tradeApp({}, { leaked, addresses: fakeValidator }));
+  ({ app, deps, setNow: set, trader, logs } = await tradeApp({}, { leaked, addresses: fakeValidator, jabberSender }));
   setNow = (d) => {
     now = d;
     set(d);
@@ -1258,7 +1267,7 @@ describe('review round 2', () => {
       /** Everything of the account a route could write, but the calling session's own row (its touch) and one-shot tokens. */
       async function stateOf(accountId: string, caller: string): Promise<unknown> {
         const agg = (from: string) => `select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text), '[]'::jsonb) as j from ${from}`;
-        const tables = ['alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices', 'team_members', 'team_audit', 'past_reputation'];
+        const tables = ['alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices', 'team_members', 'team_audit', 'past_reputation', 'jabber_contacts'];
         const out: Record<string, unknown> = {};
         for (const t of tables) out[t] = (await deps.db.query<{ j: unknown }>(`${agg(`${t} t`)} where account_id = $1`, [accountId])).rows[0]!.j;
         out.sessions = (await deps.db.query<{ j: unknown }>(`${agg('sessions t')} where account_id = $1 and id <> $2`, [accountId, caller])).rows[0]!.j;
@@ -1273,6 +1282,16 @@ describe('review round 2', () => {
         const r = await o.b.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken });
         expect(r.statusCode, r.body).toBe(201);
         return (r.json() as { id: string }).id;
+      }
+
+      /** A trader with Jabber alerts on (owner rule p5-7). */
+      async function jabberOn() {
+        const o = await passkeyWithPassword();
+        const jid = `${unique('live')}@xmpp.example.org`;
+        expect((await o.b.post('/v1/account/jabber/test', { address: jid })).statusCode).toBe(202);
+        await new Promise((r) => setImmediate(r));
+        expect((await o.b.post('/v1/account/jabber/verify', { code: jabberCodes.get(jid)! })).statusCode).toBe(200);
+        return o;
       }
 
       type Prepared = { b: Browser; accountId: string; fire: () => Promise<LightMyRequestResponse> };
@@ -1423,6 +1442,26 @@ describe('review round 2', () => {
             message: await openpgp.createCleartextMessage({ text }), signingKeys: await openpgp.readPrivateKey({ armoredKey: key.privateKey }), date: deps.clock(),
           });
           return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/past-rep/finish', { challengeId, signed }) };
+        },
+        // Owner rule p5-7: the Jabber set-up (jabber/routes.ts `writeGate`).
+        'POST /v1/account/jabber/test': async () => {
+          const o = await passkeyWithPassword();
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/jabber/test', { address: `${unique('live')}@xmpp.example.org` }) };
+        },
+        'POST /v1/account/jabber/verify': async () => {
+          const o = await passkeyWithPassword();
+          const jid = `${unique('live')}@xmpp.example.org`;
+          expect((await o.b.post('/v1/account/jabber/test', { address: jid })).statusCode).toBe(202);
+          await new Promise((r) => setImmediate(r));
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/jabber/verify', { code: jabberCodes.get(jid)! }) };
+        },
+        'PUT /v1/account/jabber/enabled': async () => {
+          const o = await jabberOn();
+          return { b: o.b, accountId: o.id, fire: () => o.b.put('/v1/account/jabber/enabled', { on: false }) };
+        },
+        'DELETE /v1/account/jabber': async () => {
+          const o = await jabberOn();
+          return { b: o.b, accountId: o.id, fire: () => o.b.delete('/v1/account/jabber') };
         },
       };
 
