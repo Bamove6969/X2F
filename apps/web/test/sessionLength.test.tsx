@@ -213,6 +213,29 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     expect(host).toBeTruthy();
   });
 
+  it('the new token from an extend (review S-m1) needs nothing from the page: past the old end, no logout and no re-check', async () => {
+    // The server sets the new session cookie on the extend's answer; the browser swaps it. The page
+    // keeps no token of its own, so it only has to watch the new end: nothing at the old one.
+    handler = (url, init) => {
+      if (url === '/v1/confirm/password' && init?.method === 'POST') return json(200, { confirmToken: 'tok' });
+      if (url === '/v1/account/session/extend' && init?.method === 'POST') return json(200, info({ expiresAt: new Date(T0 + 8 * 3_600_000).toISOString() }));
+      return undefined;
+    };
+    render(<MemoryRouter><SessionPrompt /></MemoryRouter>);
+    act(() => publishSessionWatch({ info: info(), methods: ['password'] }));
+    tick(4 * 3_600_000 - 60_000);
+    type(document.querySelector('#confirm-password'), 'Correct-Horse-9');
+    click(document.querySelector('[data-part="confirm-password"]'));
+    await settle();
+    const sent = calls.length;
+    // Past the old end (4 h): no logout, no "You're logged out", no call at all.
+    tick(2 * 60_000);
+    await settle();
+    expect(calls.slice(sent)).toEqual([]);
+    expect(document.body.textContent).not.toContain("You're logged out");
+    expect(currentSessionWatch()?.info.expiresAt).toBe(new Date(T0 + 8 * 3_600_000).toISOString());
+  });
+
   it('extends for another of the login choices when the person picks one', async () => {
     handler = (url, init) => {
       if (url === '/v1/confirm/password' && init?.method === 'POST') return json(200, { confirmToken: 'tok' });

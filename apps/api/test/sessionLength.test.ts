@@ -201,12 +201,74 @@ describe('"Stay logged in?": extending the session', () => {
     const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id) });
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json()).toMatchObject({ lengthHours: 4, expiresAt: iso(8 * HOUR - 2 * MIN) });
-    // The same session goes on: its cookie is set again (same token, a fresh lifetime).
-    expect(res.cookies.find((c) => c.name === SESSION_COOKIE)?.value).toBe(token);
+    // The same session goes on under a new token (review S-m1), with a fresh cookie lifetime.
+    const fresh = res.cookies.find((c) => c.name === SESSION_COOKIE);
+    expect(fresh?.value).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(fresh?.value).not.toBe(token);
+    expect(fresh?.maxAge).toBe(30 * 24 * 3600);
     at(8 * HOUR - 3 * MIN);
     expect((await b.get('/v1/account/me')).statusCode).toBe(200);
     at(8 * HOUR - 2 * MIN);
     expect((await b.get('/v1/account/me')).statusCode).toBe(401);
+  });
+
+  it('issues a new token on every extend: a copied cookie dies at the old end, the browser goes on (review S-m1)', async () => {
+    const { id, b } = await trader();
+    expect((await setLength(b, 4)).statusCode).toBe(200);
+    at(4 * HOUR - 5 * MIN);
+    // Someone copied the cookie (a shared machine, a stolen profile) before the person extended.
+    const copied = new Browser(app);
+    copied.cookies = { ...b.cookies };
+    const res = await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id) });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(b.cookies[SESSION_COOKIE]).not.toBe(copied.cookies[SESSION_COOKIE]);
+    // A tab whose request still carries the old cookie is not logged out by the swap: the old token
+    // keeps the old end, so nobody sees a logout.
+    const meOld = await copied.get('/v1/account/me');
+    expect(meOld.statusCode).toBe(200);
+    expect((meOld.json() as { session: SessionInfo }).session.expiresAt).toBe(iso(4 * HOUR));
+    // A copied cookie never gets the new end, and cannot stretch itself without a proof.
+    expect(errorOf(await copied.put('/v1/account/session/length', { hours: 12 }))).toBe('confirm-required');
+    at(4 * HOUR);
+    expect((await copied.get('/v1/account/me')).statusCode).toBe(401);
+    expect((await b.get('/v1/account/me')).statusCode).toBe(200);
+    // The next extend swaps again; the token before that one is no longer kept at all.
+    const first = copied.cookies[SESSION_COOKIE]!;
+    const before = b.cookies[SESSION_COOKIE]!;
+    at(8 * HOUR - 10 * MIN);
+    expect((await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id) })).statusCode).toBe(200);
+    copied.cookies = { [SESSION_COOKIE]: before };
+    expect((await copied.get('/v1/account/me')).statusCode).toBe(200);
+    copied.cookies = { [SESSION_COOKIE]: first };
+    expect((await copied.get('/v1/account/me')).statusCode).toBe(401);
+    copied.cookies = { [SESSION_COOKIE]: before };
+    at(8 * HOUR - 5 * MIN);
+    expect((await copied.get('/v1/account/me')).statusCode).toBe(401);
+    expect((await b.get('/v1/account/me')).statusCode).toBe(200);
+  });
+
+  it('the old token never outlives the session, and a logout with it ends the session (review S-m1)', async () => {
+    const { id, b } = await trader();
+    expect((await setLength(b, 4)).statusCode).toBe(200);
+    at(4 * HOUR - 5 * MIN);
+    const copied = new Browser(app);
+    copied.cookies = { ...b.cookies };
+    expect((await b.post('/v1/account/session/extend', { confirmToken: await extendToken(b, id), hours: 4 })).statusCode).toBe(200);
+    // The session's own end comes first when it is earlier than the old token's end.
+    await deps.db.query('update sessions set expires_at = $2 where id = $1', [b.sessionId, new Date(T0.getTime() + 4 * HOUR - 3 * MIN)]);
+    at(4 * HOUR - 4 * MIN);
+    expect((await copied.get('/v1/account/me')).statusCode).toBe(200);
+    at(4 * HOUR - 3 * MIN);
+    expect((await copied.get('/v1/account/me')).statusCode).toBe(401);
+
+    // A logout sent with the old cookie (a tab that had not seen the swap) still logs the session out.
+    const c = await trader();
+    at(4 * HOUR + 2 * MIN);
+    const old = new Browser(app);
+    old.cookies = { ...c.b.cookies };
+    expect((await c.b.post('/v1/account/session/extend', { confirmToken: await extendToken(c.b, c.id) })).statusCode).toBe(200);
+    expect((await old.post('/v1/logout')).statusCode).toBe(200);
+    expect((await c.b.get('/v1/account/me')).statusCode).toBe(401);
   });
 
   it('a token is single use and bound to the session it was earned on', async () => {

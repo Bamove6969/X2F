@@ -115,12 +115,28 @@ function presentedToken(req: FastifyRequest): string | null {
 }
 
 /**
- * Sets this request's session cookie again with a fresh browser lifetime (`TRADER_COOKIE_MS`), after
- * "Stay logged in" extended the session: the same token, so the same session goes on.
+ * Review S-m1: "Stay logged in" gives the session a new token, inside the extend's transaction
+ * (`db` a client after `begin`, the account locked by `requireLiveSessionInTx`). The token before
+ * it is kept as `prev_token_hash` until `oldEnd`, the end the session had before this extend: a tab
+ * whose request still carries it (sent before the new cookie arrived) is not logged out by the swap,
+ * and a copied cookie dies at that old end instead of riding every extend. A token older than that
+ * is dropped at once. Returns `after`, which sets the new cookie (fresh `TRADER_COOKIE_MS`
+ * lifetime); the caller runs it once the transaction has committed. The session id is unchanged, so
+ * its streams, confirm tokens and device row go on.
  */
-export function refreshSessionCookie(req: FastifyRequest, reply: FastifyReply): void {
-  const token = presentedToken(req);
-  if (token !== null) void reply.setCookie(realmOf(req).cookie, token, { ...COOKIE_ATTRS, maxAge: Math.floor(TRADER_COOKIE_MS / 1000) });
+export async function rotateSessionToken(
+  db: Queryable,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  sessionId: string,
+  oldEnd: Date,
+): Promise<() => void> {
+  const token = randomBytes(32).toString('base64url');
+  await db.query(
+    'update sessions set prev_token_hash = token_hash, prev_token_until = $3, token_hash = $2 where id = $1',
+    [sessionId, tokenHash(token), oldEnd],
+  );
+  return () => void reply.setCookie(realmOf(req).cookie, token, { ...COOKIE_ATTRS, maxAge: Math.floor(TRADER_COOKIE_MS / 1000) });
 }
 
 /** The hash of the well-formed session cookie this request carries, else null (Task 16's device count). */
@@ -214,7 +230,7 @@ export async function openSession(
   let replaced: { id: string; account_id: string } | null = null;
   if (presented) {
     const old = await db.query<{ id: string; account_id: string }>(
-      'update sessions set revoked_at = $2 where token_hash = $1 and app = $3 and revoked_at is null returning id, account_id',
+      'update sessions set revoked_at = $2 where (token_hash = $1 or prev_token_hash = $1) and app = $3 and revoked_at is null returning id, account_id',
       [tokenHash(presented), now, realm.app],
     );
     replaced = old.rows[0] ?? null;
@@ -303,6 +319,8 @@ interface SessionRow {
   member_name: string | null;
   member_disabled: boolean | null;
   app: SessionRealm['app'];
+  /** Set when the request carried the token before the last extend (review S-m1): its own end. */
+  prev_until: Date | null;
 }
 
 /** Marks the preHandlers `requireSession` returns, so the app can list the routes that run with a session. */
@@ -355,16 +373,21 @@ export function requireSession(
       `select s.id, s.account_id, s.level, s.onboarding_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
               s.hold_until, a.kind, a.disabled_at, a.terms_version, s.member_id,
               (tm.removed_at is null and tm.joined_at is not null and tm.account_id = s.account_id) as member_live,
-              tm.roles as member_roles, tm.display_name as member_name, ma.disabled_at is not null as member_disabled, s.app
+              tm.roles as member_roles, tm.display_name as member_name, ma.disabled_at is not null as member_disabled, s.app,
+              case when s.token_hash = $1 then null else s.prev_token_until end as prev_until
          from sessions s join accounts a on a.id = s.account_id
          left join team_members tm on tm.id = s.member_id
          left join accounts ma on ma.id = tm.member_account_id
-        where s.token_hash = $1`,
+        where s.token_hash = $1 or s.prev_token_hash = $1`,
       [tokenHash(token)],
     );
-    const row = rows[0];
+    const found = rows[0];
     const now = deps.clock();
-    if (!row || row.revoked_at !== null) throw new ApiError(401, 'not-authenticated');
+    if (!found || found.revoked_at !== null) throw new ApiError(401, 'not-authenticated');
+    // Review S-m1: the token before the last extend lasts to the end it had then, never longer
+    // than the session itself (a later shortening or expiry ends it too).
+    const row: SessionRow =
+      found.prev_until !== null && found.prev_until.getTime() < found.expires_at.getTime() ? { ...found, expires_at: found.prev_until } : found;
     // Plan 4 Task 4: only this app's sessions (a staff session on the trader API, or the reverse).
     if (row.app !== realmOf(req).app) throw new ApiError(401, 'not-authenticated');
     // Task 18 review M9(c): a member's sessions are rows of the team account (`startSession`); a
@@ -516,7 +539,7 @@ export function logoutRoute(app: FastifyInstance, url = '/v1/logout', config: Re
     if (token) {
       const { db, clock } = req.server.deps;
       const r = await db.query<{ id: string; account_id: string }>(
-        'update sessions set revoked_at = $2 where token_hash = $1 and app = $3 and revoked_at is null returning id, account_id',
+        'update sessions set revoked_at = $2 where (token_hash = $1 or prev_token_hash = $1) and app = $3 and revoked_at is null returning id, account_id',
         [tokenHash(token), clock(), realmOf(req).app],
       );
       for (const row of r.rows) req.server.events.closeSession(row.account_id, row.id);

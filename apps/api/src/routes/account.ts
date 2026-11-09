@@ -14,7 +14,7 @@ import type { TeamRole } from '../team/perms.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
 import { gateChange, heldReply, holdUntil, pushHoldStarted, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
-import { personAccountId, refreshSessionCookie, requireSession, type SessionLevel } from '../auth/sessions.js';
+import { personAccountId, requireSession, rotateSessionToken, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
 
@@ -230,7 +230,10 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
     member,
-    session: row.kind === 'trader' && row.level === 'full' ? sessionInfo(await sessionAccountType(deps.db, accountId), row, now) : null,
+    // The end this request's token has (review S-m1: the token before an extend keeps the old end).
+    session: row.kind === 'trader' && row.level === 'full'
+      ? sessionInfo(await sessionAccountType(deps.db, accountId), { ...row, expires_at: new Date(Math.min(row.expires_at.getTime(), req.auth.expiresAt.getTime())) }, now)
+      : null,
     idleReminderMinutes: row.kind === 'trader' ? await idleReminderOf(deps.db, methodsOf) : null,
   };
 }
@@ -419,8 +422,9 @@ export function accountRoutes(app: FastifyInstance): void {
    * even when the account has an authenticator code, owner G10; a team member with their own PGP
    * key, passkey or security key), and the session lasts `hours` from now (one of the account
    * type's choices; absent, its own length, or the shortest choice if none was chosen). That time
-   * becomes the session's length (review M4). No fixed maximum. The cookie is set again with a fresh
-   * lifetime. An account in a 24-hour hold may extend (owner G8), and extending raises no alert
+   * becomes the session's length (review M4). No fixed maximum. Each extend issues a new session
+   * token (review S-m1, `rotateSessionToken`): the cookie is set to it with a fresh lifetime, and the
+   * token before it works only until the session's old end, so a copied cookie dies there. An account in a 24-hour hold may extend (owner G8), and extending raises no alert
    * (owner G9). Full trader sessions only, a team member's included; recovery sessions are refused
    * (`recovery-session`). Bad `hours` → 400 `bad-request` before the token is spent.
    */
@@ -437,8 +441,11 @@ export function accountRoutes(app: FastifyInstance): void {
       const d = deps();
       const now = d.clock();
       const hours = (req.body as { hours?: number }).hours ?? null;
-      const info = await withTx(d.db, async (db) => {
+      const { info, setCookie } = await withTx(d.db, async (db) => {
         await requireLiveSessionInTx(db, req.auth, now);
+        const cur = await db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1 for update', [req.auth.sessionId]);
+        // Review S-m1: a new token, the one before it valid only to this old end.
+        const setCookie = await rotateSessionToken(db, req, reply, req.auth.sessionId, cur.rows[0]!.expires_at);
         const { rows } = await db.query<{ length_hours: number | null; expires_at: Date }>(
           `update sessions
               set period_started_at = $2,
@@ -448,9 +455,9 @@ export function accountRoutes(app: FastifyInstance): void {
         returning length_hours, expires_at`,
           [req.auth.sessionId, now, UNCHOSEN_SESSION_HOURS, hours],
         );
-        return sessionInfo(await sessionAccountType(db, req.auth.accountId), rows[0]!, now);
+        return { info: sessionInfo(await sessionAccountType(db, req.auth.accountId), rows[0]!, now), setCookie };
       });
-      refreshSessionCookie(req, reply);
+      setCookie();
       return info;
     },
   );
