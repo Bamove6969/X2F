@@ -70,7 +70,7 @@ const ownCurrency = (): string => {
 async function post(who: Who, currency: string, centsPerXmr = '3300000'): Promise<string> {
   const res = await who.browser.post('/v1/offers', {
     side: 'sell', methodId: 'ZELLE', currency, pricing: { mode: 'fixed', centsPerXmr },
-    minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0, terms: 'Zelle only.',
+    minFiatCents: '5000', maxFiatCents: '200000', minTrades: null, terms: 'Zelle only.',
   });
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;

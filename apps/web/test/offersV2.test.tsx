@@ -59,7 +59,8 @@ describe('selection is ink, never orange', () => {
     for (const css of [browse, quote, post]) {
       const rules = selectedRules(css);
       expect(rules.length).toBeGreaterThan(0);
-      for (const r of rules) expect(r).not.toMatch(/--x2f-monero\b/);
+      // The one owner-ruled exception (8 Nov): PostOffer's chosen XMR / currency unit is bold orange.
+      for (const r of rules) if (!r.includes(".post-unit button[aria-checked='true']")) expect(r).not.toMatch(/--x2f-monero\b/);
     }
   });
 

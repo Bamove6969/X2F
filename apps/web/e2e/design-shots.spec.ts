@@ -927,8 +927,9 @@ test('61-63 CantDoThat on PostOffer, the feedback form, the thank-you', async ({
   await page.route('**/v1/offers', (r) => (r.request().method() === 'POST' ? json({ error: 'trading-hold' }, 409)(r) : r.fallback()));
   await page.route('**/v1/feedback/form', json({}, 202));
   await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+  await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+  await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
   await page.getByRole('button', { name: 'Post offer' }).click();
   const popup = page.getByRole('dialog', { name: "This offer can't be posted" });
   await expect(popup).toBeVisible();
@@ -1046,8 +1047,9 @@ test("71 the seller quote (mira.k's buy ad), a wallet picked", async ({ page }) 
 test('72 PostOffer', async ({ page }) => {
   await postApi(page);
   await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+  await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+  await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
   await expect(page.getByText("Your price follows the market")).toBeVisible();
   await shot(page, '72-postoffer');
   await shot(page, '72b-postoffer-preview', { scrollTo: page.getByText('How others will see it') });

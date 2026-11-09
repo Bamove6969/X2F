@@ -567,7 +567,7 @@ describe('during the hold', () => {
     expect(errorOf(await t.thief.delete('/v1/wallets/00000000-0000-4000-8000-000000000000'))).toBe('recovery-hold');
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-       values ($1, 'sell', 'zelle', 'USD', 'market', 0, 1000, 100000, 0, '', 'paused', $2, $2) returning id`,
+       values ($1, 'sell', 'zelle', 'USD', 'market', 0, 1000, 100000, null, '', 'paused', $2, $2) returning id`,
       [t.id, now],
     );
     expect(errorOf(await t.thief.patch(`/v1/offers/${rows[0]!.id}`, { status: 'live' }))).toBe('recovery-hold');

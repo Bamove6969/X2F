@@ -12,6 +12,8 @@ import { Icon } from '../ui/icons.js';
 import { RadioChips } from './browse/RadioChips.js';
 import { fetchMethods, fetchPrice, postOffer, type PickMethod, type PriceQuote, type Side } from './post/api.js';
 import { COUNTRIES } from './post/countries.js';
+import { UnitSwitch } from './post/UnitSwitch.js';
+import { marketUpdated, otherUnit, rowsAt } from './browse/offerAmounts.js';
 import { MY_OFFERS_PATH } from './myoffers/model.js';
 import {
   DEFAULT_FORM,
@@ -19,19 +21,20 @@ import {
   FIXED_STALE_WARNING,
   GIFT_CARD_WARNING,
   METHODS_FAILED,
-  MIN_TRADES,
+  MIN_TRADES_OPTIONS,
   POST_CURRENCIES,
   PRICE_UNAVAILABLE,
+  UNIT_HELP,
   afterPostPath,
   clearDraft,
   fixedPriceCheck,
-  formatAmount,
   formatMoney,
   formatPrice,
   loadDraft,
   marginText,
   marginWord,
   parseAmount,
+  parseRangeAmount,
   previewLine,
   priceWithMargin,
   POST_CANT_TITLE,
@@ -39,11 +42,11 @@ import {
   refusalText,
   saveDraft,
   stepMargin,
+  switchUnit,
   usdValue,
   validate,
   type FieldError,
   type FormState,
-  type MinTrades,
   type PriceMode,
 } from './post/offerForm.js';
 import './post/PostOffer.css';
@@ -170,6 +173,26 @@ function PostOfferForm() {
     setCantDo(null);
   };
   const text = (key: 'min' | 'max' | 'fixed' | 'terms') => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set(key, e.target.value);
+  // One unit per offer (lead default, 8 Nov): either box's switch swaps both, converting what is typed
+  // at your price, or clearing it with no price (review H1: a typed number never changes unit).
+  const changeUnit = (u: FormState['unit']) => {
+    setForm((f) => switchUnit(f, u, yourPrice));
+    setRefusal(null);
+    setCantDo(null);
+  };
+  const unitSwitch = (box: string) => <UnitSwitch box={box} currency={form.currency} unit={form.unit} onChange={changeUnit} />;
+  // Under each box, the other unit at your price (boards v142): "≈ $165.77 at your price (+0.5%)".
+  // COPY-UNSIGNED: "≈ … at your price (+N%)" and "≈ … at your price".
+  const otherLine = (raw: string) => {
+    const v = parseRangeAmount(raw, form.unit);
+    if (v === null || v === 0n || yourPrice === null) return null;
+    const at = form.priceMode === 'market' ? `at your price (${marginText(form.marginBps)})` : 'at your price';
+    return (
+      <span className="post-muted post-other-unit" data-part="other-unit">
+        {`${otherUnit(v, form.unit, form.currency, { currency: form.currency, centsPerXmr: yourPrice })} ${at}`}
+      </span>
+    );
+  };
 
   const market = quote ? quote.centsPerXmr : null;
   const fixedCents = useMemo(() => {
@@ -185,9 +208,14 @@ function PostOfferForm() {
   const nonUsd = form.currency !== 'USD';
   const usd = (cents: bigint) => (quote && nonUsd ? formatPrice(usdValue(cents, quote), 'USD') : null);
 
-  const min = parseAmount(form.min);
-  const max = parseAmount(form.max);
-  const range = min !== null && max !== null ? `${formatAmount(min, form.currency)} – ${formatAmount(max, form.currency)}` : 'Set your smallest and largest trade';
+  const min = parseRangeAmount(form.min, form.unit);
+  const max = parseRangeAmount(form.max, form.unit);
+  // The preview shows the range in both units at your price, as takers see it with the markup on
+  // (owner, 8 Nov); the unit you typed in is exact, the other is worked out at today's rate.
+  const rangeRows =
+    min !== null && max !== null && min > 0n && max >= min
+      ? rowsAt({ unit: form.unit, min, max }, form.currency, yourPrice === null ? null : { currency: form.currency, centsPerXmr: yourPrice })
+      : null;
   const giftCard = method?.giftCard === true;
 
   async function submit(): Promise<void> {
@@ -363,6 +391,11 @@ function PostOfferForm() {
               ) : null}
             </span>
           )}
+          {quote && marketUpdated(quote.at) !== null ? (
+            <span className="post-note" data-part="market-updated">
+              {marketUpdated(quote.at)}
+            </span>
+          ) : null}
           {form.priceMode === 'fixed' ? (
             <span className="post-caution">
               <Icon name="alert" size={20} />
@@ -378,19 +411,32 @@ function PostOfferForm() {
         </section>
 
         <div className="post-card">
-          <section className="post-two">
+          <section className="post-ranges">
             {field(
               'min',
               'Smallest trade',
-              <input id="min" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.min} onChange={text('min')} {...invalid('min')} />,
+              <>
+              <div className="post-amount">
+                <input id="min" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.min} onChange={text('min')} {...invalid('min')} />
+                {unitSwitch('Smallest trade')}
+              </div>
+              {otherLine(form.min)}
+              </>,
               'min',
             )}
             {field(
               'max',
               'Largest trade',
-              <input id="max" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.max} onChange={text('max')} {...invalid('max')} />,
+              <>
+              <div className="post-amount">
+                <input id="max" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.max} onChange={text('max')} {...invalid('max')} />
+                {unitSwitch('Largest trade')}
+              </div>
+              {otherLine(form.max)}
+              </>,
               'max',
             )}
+            <span className="post-muted post-unit-help">{UNIT_HELP}</span>
           </section>
 
           {field(
@@ -410,16 +456,17 @@ function PostOfferForm() {
 
         <section className="post-section post-card">
           <span className="x2f-section-title">Who can trade with you</span>
-          <div className="post-inline">
-            <label htmlFor="mintrades">Minimum completed trades</label>
-            <select id="mintrades" value={form.minTrades} onChange={(e) => set('minTrades', Number(e.target.value) as MinTrades)}>
-              {MIN_TRADES.map((n) => (
-                <option key={n} value={n}>
-                  {n === 0 ? 'Anyone' : `${n}+`}
-                </option>
-              ))}
-            </select>
-          </div>
+          <span className="post-label" id={`${ids}-mintrades`}>
+            Minimum completed trades
+          </span>
+          {/* Owner, 8 Nov: a fixed choice, No minimum (the default) or 5, 10, 25, 50. */}
+          <RadioChips
+            label={{ by: `${ids}-mintrades` }}
+            options={MIN_TRADES_OPTIONS}
+            value={MIN_TRADES_OPTIONS.find((o) => o.value === form.minTrades)!.id}
+            onChange={(id) => set('minTrades', MIN_TRADES_OPTIONS.find((o) => o.id === id)!.value)}
+            className="post-choices post-choices--small post-mintrades"
+          />
         </section>
 
         <section aria-label="Preview" className="post-section">
@@ -431,7 +478,24 @@ function PostOfferForm() {
                 <span className="post-mono post-big">{yourPrice !== null ? formatPrice(yourPrice, form.currency) : form.priceMode === 'fixed' ? 'Set your price' : PRICE_UNAVAILABLE}</span>
                 {yourPrice !== null && usd(yourPrice) ? <span className="post-muted">{`about ${usd(yourPrice)}`}</span> : null}
               </span>
-              <span className="post-muted">{range}</span>
+              <span className="post-preview-range">
+                {rangeRows === null ? (
+                  <span className="post-muted">Set your smallest and largest trade</span>
+                ) : (
+                  <>
+                    {rangeRows.xmr !== null ? (
+                      <span className="post-muted" data-part="preview-xmr">
+                        {`${rangeRows.xmr} XMR`}
+                      </span>
+                    ) : null}
+                    {rangeRows.fiat !== null ? (
+                      <span className="post-muted" data-part="preview-fiat">
+                        {`${rangeRows.fiat} ${form.currency}`}
+                      </span>
+                    ) : null}
+                  </>
+                )}
+              </span>
             </div>
           </div>
           <span className="post-muted">{FEE_SENTENCE}</span>

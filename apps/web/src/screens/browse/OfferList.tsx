@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
+import { Checkbox } from '../../ui/Checkbox.js';
 import { Link, useLocation, useParams } from 'react-router';
 import { Icon } from '../../ui/icons.js';
 import { ApiShapeError, currencyFrom, fetchMethods, fetchOffers, fetchPrice, formatMinor, sortOffers, type MethodRow, type Offer, type OfferSort, type Side } from './api.js';
 import { OfferCard } from './OfferCard.js';
+import { loadWithMarkup, marketUpdated, saveWithMarkup, withMarkupHint } from './offerAmounts.js';
 import { RadioChips } from './RadioChips.js';
 import type { BrowseCopy } from './SellCopy.js';
 import './browse.css';
@@ -49,7 +51,21 @@ export interface OfferListProps {
   pick?: { id: string | null; onPick: (offer: Offer) => void; onFirst: (id: string | null) => void };
 }
 
+function localStore(): Storage | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+/** COPY-UNSIGNED (owner's words, 8 Nov): the box over the offers. */
+export const WITH_MARKUP_LABEL = 'Display amounts including vendor markup';
+
 export function OfferList({ side, copy, onTrade, onMessage, onNudge, pick }: OfferListProps) {
+  // Owner, 8 Nov: off by default, remembered on this device.
+  const [withMarkup, setWithMarkup] = useState(() => loadWithMarkup(localStore()));
+  const markupId = useId();
   const { methodId = '' } = useParams();
   const { search } = useLocation();
   const currency = currencyFrom(search);
@@ -100,6 +116,29 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge, pick }: Off
             <span className="x2f-browse__muted">Price unavailable right now</span>
           ) : null}
         </div>
+        {price.kind === 'ready' && marketUpdated(price.value.at) !== null ? (
+          <span className="x2f-browse__muted x2f-browse__updated" data-part="market-updated">
+            {marketUpdated(price.value.at)}
+          </span>
+        ) : null}
+        <div className="x2f-browse__markup">
+          <Checkbox
+            id={markupId}
+            checked={withMarkup}
+            data-part="with-markup"
+            aria-describedby={`${markupId}-hint`}
+            onChange={(on) => {
+              setWithMarkup(on);
+              saveWithMarkup(localStore(), on);
+            }}
+          />
+          <span className="x2f-browse__markup-text">
+            <label htmlFor={markupId}>{WITH_MARKUP_LABEL}</label>
+            <span className="x2f-browse__muted" id={`${markupId}-hint`}>
+              {withMarkupHint(withMarkup)}
+            </span>
+          </span>
+        </div>
         <RadioChips label={{ name: 'Sort' }} options={SORT_IDS.map((id, i) => ({ id, label: copy.offerSorts[i]! }))} value={sort} onChange={setSort}>
           <span className="x2f-browse__sort-label">Sort</span>
         </RadioChips>
@@ -124,6 +163,7 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge, pick }: Off
             primary={pick ? false : o.id === primaryId}
             now={now}
             market={market}
+            withMarkup={withMarkup}
             {...(onTrade ? { onTrade } : {})}
             {...(onMessage ? { onMessage } : {})}
             {...(onNudge ? { onNudge } : {})}

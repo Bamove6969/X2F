@@ -302,6 +302,25 @@ describe('BuyQuote', () => {
     expect((arrivedState as { confirmed: { deal: { centsPerXmr: bigint } } }).confirmed.deal.centsPerXmr).toBe(33_099n);
   });
 
+  it("an XMR-set market offer: the feed ticks between quote and take, and the deal's fiat maximum is the server's, at the locked rate (review 2, I1)", async () => {
+    const XMR_OFFER = { ...GHOST, id: 'offer-xmr', rate: '1500033', amountUnit: 'xmr', minAtomic: '100000000000', maxAtomic: '1000000000000', minFiatCents: null, maxFiatCents: null };
+    stub.offers = [XMR_OFFER];
+    stub.rate = '1500033';
+    // The server locks 1 minor unit above the quote, well inside the 0.5% tolerance.
+    stub.take = (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: '1500034', fiatCents: String(fiatCents(BigInt(body.amountAtomic), { currency: 'USD', centsPerXmr: 1_500_034n })) } });
+    const { host } = await open(`${quotePath('sell', 'ZELLE', 'offer-xmr', 'USD')}&amount=0.5&unit=xmr`);
+    pick(host, 'w-cake');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    expect(stub.takes[0]).toMatchObject({ amountAtomic: '500000000000', centsPerXmr: '1500033' });
+    // The server records tradeFiatLimits(range, locked rate): fiatCents(1 XMR, 1,500,034) = 1,500,034.
+    // The escrow runtime requires the device's figure to equal it exactly, or the room fails deal-mismatch.
+    const deal = readConfirmed('K7M2-9QXA-4FTR-8WPN')?.deal;
+    expect(deal).toMatchObject({ centsPerXmr: 1_500_034n, maxFiatCents: 1_500_034n });
+    expect((arrivedState as { confirmed: { deal: unknown } }).confirmed.deal).toEqual(deal);
+  });
+
   it('a locked rate farther than 0.5% from the quote is not recorded: no trade room, the generic refusal', async () => {
     stub.take = () => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: '33200', fiatCents: '41500' } });
     const { host } = await open(`${BUY}&amount=412.50`);

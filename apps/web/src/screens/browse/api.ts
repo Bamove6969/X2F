@@ -6,6 +6,7 @@
 // 3 and 4 (with the 2026-10-24 starter-limits revision); test/browse-tripwire.test.ts marks the
 // ones still guessed. The browser never works out a stage, a cap or who may take an offer: it shows
 // `poster.stage` and `opensAt` as the API sends them.
+import type { AmountUnit } from '@x2f/trade';
 import { api } from '../../api/client.js';
 
 /** What the person browsing does with XMR. */
@@ -69,8 +70,17 @@ export interface Offer {
   /** The offer's price now, in minor units per XMR; null for a market offer while the feed is down. */
   rate: bigint | null;
   pricing: Pricing;
-  minFiatCents: bigint;
-  maxFiatCents: bigint;
+  /**
+   * The unit the poster set the range in (owner, 8 Nov: "Offer amounts in XMR or fiat"); that pair is
+   * exact. The API sends the other pair converted at the offer's rate now, or null with no rate (a
+   * market offer while the feed is down). XMR in atomic units, fiat in the currency's minor units.
+   */
+  amountUnit: AmountUnit;
+  minAtomic: bigint | null;
+  maxAtomic: bigint | null;
+  minFiatCents: bigint | null;
+  maxFiatCents: bigint | null;
+  /** The completed trades a taker needs; 0 for no minimum (the API sends null, owner 8 Nov). */
   minTrades: number;
   /** Set for a signed-in viewer whose cap is below the offer's minimum: the stage that opens it. */
   opensAt?: OpensAt;
@@ -198,6 +208,35 @@ function parsePricing(v: unknown, at: string): Pricing {
   return mode === 'market' ? { mode, marginBps: num(o, 'marginBps', at) } : { mode, centsPerXmr: big(o, 'centsPerXmr', at) };
 }
 
+/** `minTrades`: null is no minimum (owner, 8 Nov), read as 0; the key must be there. */
+export function minTradesOf(o: Obj, at: string): number {
+  if (!('minTrades' in o)) throw new ApiShapeError(`${at}.minTrades`);
+  return o.minTrades === null ? 0 : num(o, 'minTrades', at);
+}
+
+const UNITS = ['xmr', 'fiat'] as const;
+
+/**
+ * The trade size: `amountUnit` and both pairs, the poster's own pair required, the other a string or
+ * null. An answer without `amountUnit` is a fiat range (the API before 8 Nov), with no XMR pair.
+ */
+function parseAmounts(o: Obj, at: string): Pick<Offer, 'amountUnit' | 'minAtomic' | 'maxAtomic' | 'minFiatCents' | 'maxFiatCents'> {
+  if (o.amountUnit === undefined) {
+    return { amountUnit: 'fiat', minAtomic: null, maxAtomic: null, minFiatCents: big(o, 'minFiatCents', at), maxFiatCents: big(o, 'maxFiatCents', at) };
+  }
+  const amountUnit = oneOf(o, 'amountUnit', at, UNITS);
+  const out = {
+    amountUnit,
+    minAtomic: orNull(o, 'minAtomic', at, big),
+    maxAtomic: orNull(o, 'maxAtomic', at, big),
+    minFiatCents: orNull(o, 'minFiatCents', at, big),
+    maxFiatCents: orNull(o, 'maxFiatCents', at, big),
+  };
+  const [lo, hi] = amountUnit === 'xmr' ? [out.minAtomic, out.maxAtomic] : [out.minFiatCents, out.maxFiatCents];
+  if (lo === null || hi === null || lo <= 0n || hi < lo) throw new ApiShapeError(`${at}.amountUnit`);
+  return out;
+}
+
 export function parseOffers(v: unknown): Offer[] {
   return list(v, 'offers').map((item, i) => {
     const at = `offers[${i}]`;
@@ -207,9 +246,8 @@ export function parseOffers(v: unknown): Offer[] {
       poster: parsePoster(o.poster, `${at}.poster`),
       rate: orNull(o, 'rate', at, big),
       pricing: parsePricing(o.pricing, `${at}.pricing`),
-      minFiatCents: big(o, 'minFiatCents', at),
-      maxFiatCents: big(o, 'maxFiatCents', at),
-      minTrades: num(o, 'minTrades', at),
+      ...parseAmounts(o, at),
+      minTrades: minTradesOf(o, at),
     };
     if (o.opensAt !== undefined) offer.opensAt = oneOf(o, 'opensAt', at, OPENS_AT);
     return offer;

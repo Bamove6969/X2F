@@ -2,12 +2,24 @@
 // bigint minor units; the form takes only two-decimal currencies until formatFiat takes the
 // currency's exponent (Revision 2026-10-20).
 import { CANT_DO_TITLE, isCantDoCode, postCantDoText, type CantDoCode } from '../../ui/cantDoCodes.js';
+import type { AmountUnit } from '@x2f/trade';
 import { CURRENCIES } from '../browse/api.js';
 import type { PostOfferBody, PriceQuote, Side } from './api.js';
 import { isCountryCode } from './countries.js';
 
-export const MIN_TRADES = [0, 5, 10, 50] as const;
+/**
+ * "Minimum completed trades" is a fixed choice (owner, 8 Nov: "This will be 5, 10, 25, 50"); null is
+ * No minimum, the default (lead default). The API takes exactly these (apps/api/src/offers/routes.ts
+ * MIN_TRADES_CHOICES).
+ */
+export const MIN_TRADES = [null, 5, 10, 25, 50] as const;
 export type MinTrades = (typeof MIN_TRADES)[number];
+/** The segmented control's options: string ids for RadioChips. COPY-UNSIGNED: "No minimum" (owner's list, lead's label). */
+export const MIN_TRADES_OPTIONS: readonly { id: string; label: string; value: MinTrades }[] = MIN_TRADES.map((n) => ({
+  id: n === null ? 'none' : String(n),
+  label: n === null ? 'No minimum' : String(n),
+  value: n,
+}));
 export type PriceMode = 'market' | 'fixed';
 
 export interface FormState {
@@ -18,6 +30,11 @@ export interface FormState {
   marginBps: number;
   /** The fixed price per XMR as typed. */
   fixed: string;
+  /**
+   * The unit both range boxes are in (owner, 8 Nov: an XMR / currency switch at each box's right
+   * edge, XMR by default; lead default: Smallest and Largest switch together, one unit per offer).
+   */
+  unit: AmountUnit;
   min: string;
   max: string;
   terms: string;
@@ -34,10 +51,11 @@ export const DEFAULT_FORM: FormState = {
   priceMode: 'market',
   marginBps: 50,
   fixed: '',
+  unit: 'xmr',
   min: '',
   max: '',
   terms: '',
-  minTrades: 0,
+  minTrades: null,
   country: '',
 };
 
@@ -71,6 +89,67 @@ export function parseAmount(raw: string): bigint | null {
   const m = /^(\d{1,12})(?:\.(\d{1,2}))?$/.exec(s);
   if (!m) return null;
   return BigInt(m[1]!) * 100n + BigInt((m[2] ?? '').padEnd(2, '0'));
+}
+
+/**
+ * "0.5", "2", "1,000.25", "XMR 1.5" as atomic units (12 decimals at most); null for anything else.
+ * At most 8 whole digits (far above the supply): the API takes at most 20 digits of atomic units
+ * (apps/api/src/offers/routes.ts ATOMIC), so a larger amount is a field error here, not a 400 (review L2).
+ */
+export function parseXmrAmount(raw: string): bigint | null {
+  const s = raw.trim().replace(/^xmr\s*/i, '').replace(/\s*xmr$/i, '').replaceAll(',', '');
+  const m = /^(\d{1,8})(?:\.(\d{1,12}))?$/.exec(s) ?? /^()\.(\d{1,12})$/.exec(s);
+  if (!m) return null;
+  return BigInt(m[1] === '' ? '0' : m[1]!) * 1_000_000_000_000n + BigInt((m[2] ?? '').padEnd(12, '0'));
+}
+
+/** A range box's text in the form's unit: atomic units for XMR, minor units for fiat. */
+export function parseRangeAmount(raw: string, unit: AmountUnit): bigint | null {
+  return unit === 'xmr' ? parseXmrAmount(raw) : parseAmount(raw);
+}
+
+/** XMR typed in the boxes after a switch: six places (the card's), with no trailing zeros. */
+const SWITCH_XMR_PLACES = 6n;
+const ATOMIC_PER_XMR = 1_000_000_000_000n;
+
+const divUp = (n: bigint, d: bigint): bigint => (n + d - 1n) / d;
+
+/** `units` with `places` decimals as plain box text: "0.033333", "1.5", "330". */
+function decimalText(units: bigint, places: bigint): string {
+  const scale = 10n ** places;
+  const frac = (units % scale).toString().padStart(Number(places), '0').replace(/0+$/, '');
+  return frac === '' ? `${units / scale}` : `${units / scale}.${frac}`;
+}
+
+/** One box converted to `to` at `rate` (minor units per XMR): the min rounded up, the max down. */
+function convertBox(raw: string, from: AmountUnit, to: AmountUnit, rate: bigint, dir: 'up' | 'down'): string {
+  const v = parseRangeAmount(raw, from);
+  if (v === null || v === 0n) return '';
+  const div = dir === 'up' ? divUp : (n: bigint, d: bigint) => n / d;
+  if (to === 'xmr') {
+    // Minor units to millionths of an XMR.
+    return decimalText(div(v * 10n ** SWITCH_XMR_PLACES, rate), SWITCH_XMR_PLACES);
+  }
+  return decimalText(div(v * rate, ATOMIC_PER_XMR), 2n);
+}
+
+/**
+ * The form after the poster picks `to` for the range (review H1): both boxes converted at your price
+ * (`rate`, minor units per XMR), the smallest trade rounded up and the largest down, so the range
+ * never grows (except that a largest rounded below the smallest is set to the smallest); once
+ * converted, the new unit is exact. With no price, both boxes are cleared, so a
+ * number typed in one unit is never read in the other.
+ */
+export function switchUnit(f: FormState, to: AmountUnit, rate: bigint | null): FormState {
+  if (f.unit === to) return f;
+  if (rate === null || rate <= 0n) return { ...f, unit: to, min: '', max: '' };
+  const min = convertBox(f.min, f.unit, to, rate, 'up');
+  const max = convertBox(f.max, f.unit, to, rate, 'down');
+  // Equal (or nearly equal) boxes can cross after rounding: the largest is set to the smallest, so
+  // the switch never leaves an error the poster didn't cause (review 2, M2).
+  const lo = parseRangeAmount(min, to);
+  const hi = parseRangeAmount(max, to);
+  return { ...f, unit: to, min, max: lo !== null && hi !== null && lo > hi ? min : max };
 }
 
 export function stepMargin(bps: number, dir: 1 | -1): number {
@@ -148,13 +227,19 @@ export function fixedPriceCheck(fixed: bigint, market: bigint, currency: string)
 
 export function previewLine(side: Side, methodName: string, currency: string, minTrades: MinTrades): string {
   const base = `${side === 'sell' ? 'Selling XMR' : 'Buying XMR'} via ${methodName} · ${currency} · you`;
-  return minTrades === 0 ? base : `${base} · ${minTrades}+ completed trades`;
+  return minTrades === null ? base : `${base} · ${minTrades}+ completed trades`;
 }
 
 /** Where takers see the new offer: buyers browse sell ads (/buy), sellers browse buy ads (/sell). */
 export function afterPostPath(side: Side, methodId: string, currency: string): string {
   return `/${side === 'sell' ? 'buy' : 'sell'}/${encodeURIComponent(methodId)}?currency=${encodeURIComponent(currency)}`;
 }
+
+/** COPY-UNSIGNED (boards v142): the line under the range boxes. */
+export const UNIT_HELP = 'One unit for the whole offer. Traders see both, converted at your price.';
+
+/** COPY-UNSIGNED: the range boxes' error in XMR. */
+export const XMR_AMOUNT_ERROR = 'Enter an amount in XMR, like 0.5 or 2.';
 
 export type FieldError = 'method' | 'country' | 'min' | 'max' | 'fixed' | 'terms';
 
@@ -185,9 +270,9 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
   if (f.methodId === '') errors.method = 'Choose a payment method.';
   const giftCard = ctx.giftCard === true;
   if (giftCard && !isCountryCode(f.country)) errors.country = COUNTRY_REQUIRED;
-  const min = parseAmount(f.min);
-  const max = parseAmount(f.max);
-  const amountError = 'Enter an amount, like 50 or 2,000.';
+  const min = parseRangeAmount(f.min, f.unit);
+  const max = parseRangeAmount(f.max, f.unit);
+  const amountError = f.unit === 'xmr' ? XMR_AMOUNT_ERROR : 'Enter an amount, like 50 or 2,000.';
   if (min === null || min === 0n) errors.min = amountError;
   if (max === null || max === 0n) errors.max = amountError;
   // not-a-refusal: an input check on the two amounts
@@ -212,8 +297,7 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
       methodId: f.methodId,
       currency: f.currency,
       pricing: f.priceMode === 'fixed' ? { mode: 'fixed', centsPerXmr: fixed! } : { mode: 'market', marginBps: f.marginBps },
-      minFiatCents: min!,
-      maxFiatCents: max!,
+      amounts: f.unit === 'xmr' ? { amountUnit: 'xmr', minAtomic: min!, maxAtomic: max! } : { amountUnit: 'fiat', minFiatCents: min!, maxFiatCents: max! },
       minTrades: f.minTrades,
       terms,
       ...(giftCard ? { country: f.country } : {}),
@@ -286,10 +370,12 @@ export function loadDraft(storage: Storage): FormState | null {
     Number.isInteger(d.marginBps) &&
     Math.abs(d.marginBps) <= MARGIN_LIMIT_BPS &&
     str(d.fixed, 32) &&
+    (d.unit === undefined || d.unit === 'xmr' || d.unit === 'fiat') &&
     str(d.min, 32) &&
     str(d.max, 32) &&
     str(d.terms, 4000) &&
-    MIN_TRADES.includes(d.minTrades as MinTrades) &&
+    // 0 was the old default ("anyone"); it loads as No minimum (review L2).
+    (d.minTrades === 0 || (MIN_TRADES as readonly unknown[]).includes(d.minTrades)) &&
     (d.country === '' || isCountryCode(d.country));
   if (!ok) return null;
   return {
@@ -299,10 +385,12 @@ export function loadDraft(storage: Storage): FormState | null {
     priceMode: d.priceMode as PriceMode,
     marginBps: d.marginBps as number,
     fixed: d.fixed as string,
+    // A draft from before the switch was typed in fiat.
+    unit: (d.unit ?? 'fiat') as AmountUnit,
     min: d.min as string,
     max: d.max as string,
     terms: d.terms as string,
-    minTrades: d.minTrades as MinTrades,
+    minTrades: d.minTrades === 0 ? null : (d.minTrades as MinTrades),
     country: d.country as string,
   };
 }

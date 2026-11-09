@@ -3,6 +3,7 @@ import {
   BADGES,
   BadgeError,
   MIN_REVIEWS_TRUSTED,
+  TRUSTED_MIN_TRADES,
   applyChoice,
   earnedBadges,
   levelShown,
@@ -50,7 +51,7 @@ function errOf(fn: () => unknown): string {
 
 describe('BADGES catalogue', () => {
   it('uses the board meanings', () => {
-    expect(BADGES.trusted.meaning).toBe('100+ trades and 98%+ positive');
+    expect(BADGES.trusted.meaning).toBe('200+ trades and 98%+ positive');
     expect(BADGES.fast.meaning).toBe('Usually pays or releases within 10 min');
     expect(BADGES['veteran-1'].meaning).toBe('Trading on X2F for 1+ year');
     expect(BADGES.pgp.meaning).toBe('Signs in with a verified PGP key');
@@ -118,16 +119,18 @@ describe('earnedBadges', () => {
     expect(earnedBadges(f, new Date('2025-03-01T10:00:00Z'))).toContain('veteran-1');
     expect(earnedBadges(f, new Date('2028-02-29T10:00:00Z'))).toContain('veteran-3');
   });
-  it('Trusted needs 100 trades and 98%', () => {
-    expect(earnedBadges(facts({ completedTrades: 150, positivePct: 97 }), NOW)).not.toContain('trusted');
-    expect(earnedBadges(facts({ completedTrades: 150, positivePct: null }), NOW)).not.toContain('trusted');
-    expect(earnedBadges(facts({ completedTrades: 99, positivePct: 100 }), NOW)).not.toContain('trusted');
-    expect(earnedBadges(facts({ completedTrades: 100, positivePct: 98 }), NOW)).toContain('trusted');
+  it('Trusted needs 200 trades and 98% (owner p5-3, 7 Nov)', () => {
+    expect(TRUSTED_MIN_TRADES).toBe(200);
+    expect(earnedBadges(facts({ completedTrades: 250, positivePct: 97 }), NOW)).not.toContain('trusted');
+    expect(earnedBadges(facts({ completedTrades: 250, positivePct: null }), NOW)).not.toContain('trusted');
+    expect(earnedBadges(facts({ completedTrades: 100, positivePct: 100 }), NOW)).not.toContain('trusted');
+    expect(earnedBadges(facts({ completedTrades: 199, positivePct: 100 }), NOW)).not.toContain('trusted');
+    expect(earnedBadges(facts({ completedTrades: 200, positivePct: 98 }), NOW)).toContain('trusted');
   });
   it('Trusted needs at least 5 rated reviews (review M4, provisional)', () => {
     expect(MIN_REVIEWS_TRUSTED).toBe(5);
-    expect(earnedBadges(facts({ completedTrades: 100, positivePct: 100, ratedReviews: 4 }), NOW)).not.toContain('trusted');
-    expect(earnedBadges(facts({ completedTrades: 100, positivePct: 100, ratedReviews: 5 }), NOW)).toContain('trusted');
+    expect(earnedBadges(facts({ completedTrades: 200, positivePct: 100, ratedReviews: 4 }), NOW)).not.toContain('trusted');
+    expect(earnedBadges(facts({ completedTrades: 200, positivePct: 100, ratedReviews: 5 }), NOW)).toContain('trusted');
   });
   it('Clean record needs 100 completed trades and no lost dispute ever', () => {
     expect(earnedBadges(facts({ completedTrades: 150, lostDisputes: 1 }), NOW)).not.toContain('clean-record');
@@ -135,7 +138,7 @@ describe('earnedBadges', () => {
     expect(earnedBadges(facts({ completedTrades: 100 }), NOW)).toContain('clean-record');
   });
   it('a lost dispute still counts toward milestones and Trusted (R38)', () => {
-    const f = facts({ completedTrades: 100, positivePct: 99, lostDisputes: 3 });
+    const f = facts({ completedTrades: 200, positivePct: 99, lostDisputes: 3 });
     const got = earnedBadges(f, NOW);
     expect(got).toContain('trades-100');
     expect(got).toContain('trusted');

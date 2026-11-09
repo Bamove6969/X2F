@@ -59,7 +59,13 @@ const TRADER_CARD = 'Trader card from the shared kit (design gap list Job 2), no
  */
 const PAY_STEP_V2 = 'The secured pay step under the sheet in its v2 layout (design gap list Job 4, trade screens to the boards); not part of the cancel sheet (owner G56), whose copy is checked in full.';
 
+const AD_CARD_V142 =
+  'Owner #11 (8 Nov), boards v142 on wip/design-brief: the ad card shows the markup bottom-left ("+0.4%" over "Vendor markup") and the range as two rows, XMR and fiat, each with its unit; the time moved to the price row. design/x2f-app still has the earlier card.';
+
 export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: string }[]>> = {
+  BuyOffers: ['$0.10 above market', '$50 – $1,500Releases in ~8 min', '0.5% above market', '$100 – $3,000Releases in ~20 min', '0.9% above market', '$20 – $400Releases in ~30 min'].map(
+    (text) => ({ text, why: AD_CARD_V142 }),
+  ),
   BuyerPay: ['SG', 'Vendor', 'Online · replies in about 4 min', 'Online', '4', '1,284', 'trades', '99.4%', 'positive', '275.4', 'XMR traded', 'Trusted', 'Fast', '+3'].map(
     (text) => ({ text, why: TRADER_CARD }),
   ),
@@ -183,11 +189,20 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: '$20 – $200Deposit required',
       why: 'Buyer deposits were removed (plan Revision 2026-10-18, spec 2.5); the card shows its range and, when the API knows it, the typical time ("Pays in ~N min").',
     },
+    ...['0.4% above market', '$50 – $2,000Pays in ~6 min', '0.3% above market', '$100 – $5,000Pays in ~15 min'].map((text) => ({ text, why: AD_CARD_V142 })),
   ],
   PostOffer: [
     {
       text: 'Bank transfer (ACH)',
       why: 'The board names ACH differently from the catalog ("ACH bank transfer (US)", data/payment-methods.json); the board fix is a design to-do (lead, 2026-10-27).',
+    },
+    ...['Anyone', '5+', '10+', '50+'].map((text) => ({
+      text,
+      why: 'Owner, 8 Nov ("This will be 5, 10, 25, 50"): Minimum completed trades is a segmented choice, No minimum / 5 / 10 / 25 / 50; the board still draws the old select (design to-do).',
+    })),
+    {
+      text: '$50 – $2,000',
+      why: 'Owner #11 (8 Nov), boards v142: the preview shows the range in both units, each row with its unit ("$50 – $2,000 USD"); design/x2f-app still has the one-row preview.',
     },
   ],
   // Task 27's dispute boards: parts other tasks build (Plan 5's evidence and unblurred proof, Task 20's chat).

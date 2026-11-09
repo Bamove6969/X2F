@@ -346,9 +346,11 @@ test.describe('board texts', () => {
     const desktop = KNOWN_EXCEPTIONS.Desktop ?? [];
     expect(desktop.map((e) => e.text)).toContain('You pay · 62 min left');
     for (const e of desktop) expect(e.why.length).toBeGreaterThan(10);
-    // PostOffer (Task 21 review, lead 2026-10-27): the board's ACH name.
+    // PostOffer: the board's ACH name (Task 21 review, lead 2026-10-27), the old Minimum completed
+    // trades select (owner 8 Nov) and the one-row range preview (owner #11, v142). The exact list, so
+    // a new exception can't pass silently (offer units review 2, M4).
     const post = KNOWN_EXCEPTIONS.PostOffer ?? [];
-    expect(post.map((e) => e.text)).toEqual(['Bank transfer (ACH)']);
+    expect(post.map((e) => e.text)).toEqual(['Bank transfer (ACH)', 'Anyone', '5+', '10+', '50+', '$50 – $2,000']);
     for (const e of post) expect(e.why.length).toBeGreaterThan(10);
     expect(await boardTexts(page, 'PostOffer')).not.toContain('Bank transfer (ACH)');
     const texts = await boardTexts(page, 'Desktop');
