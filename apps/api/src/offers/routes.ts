@@ -108,6 +108,11 @@ export interface OfferCard {
    * to convert the minimum to US dollars (the take checks the cap again).
    */
   opensAt?: 'building' | 'graduated';
+  /**
+   * For a signed-in trader on the list: their own completed trades, the count the take picks the
+   * band by (@x2f/trade pickTier), so the quote prices the same band (J-16). Absent signed out.
+   */
+  viewerTrades?: number;
 }
 
 /** A method on a card: public without its instructions (the payment details); the poster sees them on their own offer. */
@@ -174,6 +179,8 @@ export interface MyOfferCurrency {
 /** One method of one of my offers, as posted: shared instructions, its currencies and the per-currency texts. */
 export interface MyOfferMethod {
   methodId: string;
+  /** The catalog's name for the method (the id when the catalog no longer has it), as `MyOffer.methodName`. */
+  methodName: string;
   adjustBps: number;
   instructions: string;
   currencies: string[];
@@ -989,7 +996,10 @@ export function offerRoutes(app: FastifyInstance): void {
       const f = flex.get(r.id)!;
       return toCard(r, posters.get(r.account_id)!, f, currency, f.methods.find((x) => x.methodId === method)!, amount, deps.prices, publicMethods(f, currency), completed);
     });
-    if (viewerId !== null) await markOpensAt(deps, viewerId, rows, flex, cards);
+    if (viewerId !== null) {
+      await markOpensAt(deps, viewerId, rows, flex, cards);
+      for (const c of cards) c.viewerTrades = completed;
+    }
     return cards;
   });
 
@@ -1075,7 +1085,7 @@ export function offerRoutes(app: FastifyInstance): void {
         ...amountsOf(r.amount_unit, head.tiers, head.currency, head.rate),
         tiers: head.tiers.map(copyTier),
         currencies: priced.map((c) => ({ currency: c.currency, rate: c.rate === null ? null : c.rate.toString(), tiers: c.tiers.map(copyTier) })),
-        methods: f.methods.map((m) => ({ methodId: m.methodId, adjustBps: m.adjustBps, instructions: m.instructions, currencies: [...m.currencies], instructionsByCurrency: { ...m.byCurrency } })),
+        methods: f.methods.map((m) => ({ methodId: m.methodId, methodName: getMethod(m.methodId)?.name ?? m.methodId, adjustBps: m.adjustBps, instructions: m.instructions, currencies: [...m.currencies], instructionsByCurrency: { ...m.byCurrency } })),
         status: r.status as 'live' | 'paused',
         createdAt: r.created_at.toISOString(),
       };

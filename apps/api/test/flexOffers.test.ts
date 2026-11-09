@@ -229,6 +229,12 @@ describe('browsing by currency and method', () => {
     const pp = (await list('side=sell&method=PAYPAL&currency=BHD&amount=50000', seasoned.browser)).find((c) => c.id === id)!;
     expect(pp.rate).toBe(rateFor(m, 400).centsPerXmr.toString());
     expect((await list('side=sell&method=ZELLE&currency=BHD&amount=50000')).find((c) => c.id === id)!.rate).toBe(rateFor(m, 200).centsPerXmr.toString());
+    // The signed-in viewer's own completed trades travel with the card, so the quote picks the band
+    // the take will (pickTier); a signed-out list has none.
+    expect((z as { viewerTrades?: number }).viewerTrades).toBe(5);
+    const fresh = await person(0);
+    expect(((await list('side=sell&method=ZELLE&currency=BHD', fresh.browser)).find((c) => c.id === id) as { viewerTrades?: number }).viewerTrades).toBe(0);
+    expect((await list('side=sell&method=ZELLE&currency=BHD')).find((c) => c.id === id)).not.toHaveProperty('viewerTrades');
   });
 
   it('a currency with no market price lists nothing; the offer still lists under its other currencies', async () => {

@@ -132,10 +132,12 @@ describe('GET /v1/account/offers', () => {
       // J-16: the first currency's bands, every currency priced, every method with its instructions.
       tiers: [{ min: '5000', max: '200000', marginBps: -1000, minTrades: null, methodIds: null }],
       currencies: [{ currency: 'EUR', rate: '26730', tiers: [{ min: '5000', max: '200000', marginBps: -1000, minTrades: null, methodIds: null }] }],
-      methods: [{ methodId: 'REVOLUT', adjustBps: 0, instructions: '', currencies: ['EUR'], instructionsByCurrency: {} }],
+      methods: [{ methodId: 'REVOLUT', methodName: expect.any(String), adjustBps: 0, instructions: '', currencies: ['EUR'], instructionsByCurrency: {} }],
       status: 'paused', createdAt: expect.any(String),
     });
     expect(list[1]).toMatchObject({ id: a, methodId: 'ZELLE', methodName: 'Zelle', rate: '33165', status: 'live', pricing: { mode: 'market', marginBps: 50 } });
+    // J-16: every method carries the catalog's name, so My offers can list them all.
+    expect((list[1]!.methods as { methodName: string }[]).map((m) => m.methodName)).toEqual(['Zelle']);
   });
 
   it('needs a trader session (401 logged out, 403 staff)', async () => {
