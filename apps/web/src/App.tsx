@@ -12,6 +12,7 @@ import { Maintenance } from './screens/Maintenance.js';
 import { MyOffers } from './screens/MyOffers.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
+import { Compromised, TicketThread, Tickets } from './screens/support/Support.js';
 import { PostOffer } from './screens/PostOffer.js';
 import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
@@ -227,6 +228,10 @@ export function App() {
           <Route path="/team/join" element={<MemberInvite />} />
           <Route path="/news" element={<News />} />
           <Route path="/feedback" element={<Feedback />} />
+          {/* Plan 4 Task 31 / J-14: support tickets and "My account has been compromised" (D-059). */}
+          <Route path="/support" element={<Tickets />} />
+          <Route path="/support/compromised" element={<Compromised />} />
+          <Route path="/support/:id" element={<TicketThread />} />
         </Route>
         <Route path="*" element={<Navigate to="/sell" replace />} />
       </Routes>

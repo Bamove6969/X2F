@@ -758,6 +758,10 @@ describe('the audit log covers every member action (review M3)', () => {
       'POST /v1/confirm/webauthn/finish': 'a confirm token for the calling session, extend-session only: not an account action',
       // Owner Q75: the member's own idle reminder, on their own login account.
       'PUT /v1/account/idle-reminder': "the member's own reminder preference on their own login: not an account action",
+      // J-14 (owner Q69: tickets shared across a team): every message names the member who wrote it.
+      'POST /v1/tickets': 'a support ticket shared by the team: its message records the member (ticket_messages.member_id); not an account action',
+      'POST /v1/tickets/:id/messages': 'a message on the team ticket, recording the member who wrote it; not an account action',
+      'POST /v1/tickets/:id/close': "closing the team's own support ticket: changes no account, offer, trade or wallet",
     };
     const found: string[] = [];
     const audited = new Set<string>();
