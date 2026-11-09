@@ -129,7 +129,7 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // board's "If an appeal overturns the ruling, you get a lien. You can't trade until you pay the
     // XMR back." explains a consequence before any appeal (dispute/rules.ts overturnLien). 51 -> 52
     // (Plan 4 Task 15, 6 Nov 2026): owner Q38's hourglass says the time left ("... at most",
-    // DisputeRoom.tsx), not a rule. 52 -> 53 (J-19, 9 Nov 2026: one pragma per shared line in
+    // DisputeRoom.tsx), not a rule. 52 -> 53 (J-31, 9 Nov 2026: one pragma per shared line in
     // quote/tradeTerms.ts, measured at 53 in all): the nudge line's pace ("at most once every 15
     // minutes", encouraged by the owner, p6-1) and the moderator's response time ("within 24 hours
     // at most"), which explain, not refuse.
