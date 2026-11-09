@@ -9,7 +9,8 @@
  *   newer, the server certificate checked against the account's domain. There is no plaintext stream
  *   and no STARTTLS, so there is nothing to downgrade: a server that does not speak TLS on the port
  *   fails the handshake and the send fails.
- * - SASL PLAIN, only ever inside that TLS session, then resource binding (RFC 6120).
+ * - SASL SCRAM-SHA-256, else SCRAM-SHA-1, else PLAIN (review L1; scram.ts), only ever inside that
+ *   TLS session, then resource binding (RFC 6120).
  * - The message is one of the two fixed texts (`messageText`), type `chat`, with the nickname
  *   "X2F alerts" (XEP-0172) and no other element. A ping (XEP-0199) after it confirms the server
  *   took it before the stream is closed.
@@ -18,12 +19,13 @@
  *
  * GAP (owner p5-7 build, 2026-11-08): X2F's production Jabber account and server are not set up,
  * so `X2F_XMPP_*` are unset and the set-up answers `jabber-unavailable`. Not built yet: OMEMO
- * encryption (owner ruling p11-31: mandatory), SCRAM.
+ * encryption (owner ruling p11-31: mandatory), SCRAM's -PLUS channel binding, ALPN.
  */
 import { isIP } from 'node:net';
 import { connect, type ConnectionOptions, type TLSSocket } from 'node:tls';
 import type { XmppConfig } from '../config.js';
 import { BARE_JID } from '../config.js';
+import { SCRAM_MECHANISMS, scramClient } from './scram.js';
 import { messageText, SENDER_NAME, type JabberMessage, type JabberSender } from './sender.js';
 import { socksConnect } from './socks.js';
 
@@ -88,6 +90,8 @@ class Reader {
   }
 }
 
+const SASL_NS = 'urn:ietf:params:xml:ns:xmpp-sasl';
+
 const openStream = (domain: string) =>
   `<?xml version='1.0'?><stream:stream to='${xmlEscape(domain)}' version='1.0' xml:lang='en' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>`;
 
@@ -131,10 +135,29 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
 
         write(openStream(domain));
         const features = await read.until(/<stream:features[\s\S]*?<\/stream:features>/, 'features');
-        if (!/<mechanism>PLAIN<\/mechanism>/.test(features[0])) throw new XmppError('sasl');
-        const creds = Buffer.from(`\0${local}\0${cfg.password}`, 'utf8').toString('base64');
-        write(`<auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='PLAIN'>${creds}</auth>`);
-        await read.until(/<success[\s/>]/, 'sasl');
+        const offered = new Set([...features[0].matchAll(/<mechanism>([A-Z0-9-]+)<\/mechanism>/g)].map((m) => m[1]!));
+        const scram = SCRAM_MECHANISMS.find(([name]) => offered.has(name));
+        if (scram) {
+          const client = scramClient(scram[1], local, cfg.password);
+          write(`<auth xmlns='${SASL_NS}' mechanism='${scram[0]}'>${client.first()}</auth>`);
+          const challenge = (await read.until(/<challenge\b[^>]*>([^<]*)<\/challenge>/, 'sasl'))[1]!;
+          let answer: string;
+          try {
+            answer = client.final(challenge);
+          } catch {
+            throw new XmppError('sasl');
+          }
+          write(`<response xmlns='${SASL_NS}'>${answer}</response>`);
+          const success = (await read.until(/<success\b[^>]*(?:\/>|>([^<]*)<\/success>)/, 'sasl'))[1] ?? '';
+          // The server must prove it knows the password before anything else is sent.
+          if (!client.verify(success)) throw new XmppError('sasl');
+        } else if (offered.has('PLAIN')) {
+          const creds = Buffer.from(`\0${local}\0${cfg.password}`, 'utf8').toString('base64');
+          write(`<auth xmlns='${SASL_NS}' mechanism='PLAIN'>${creds}</auth>`);
+          await read.until(/<success[\s/>]/, 'sasl');
+        } else {
+          throw new XmppError('sasl');
+        }
 
         write(openStream(domain));
         await read.until(/<stream:features[\s\S]*?<\/stream:features>/, 'features');

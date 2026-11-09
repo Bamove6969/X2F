@@ -1,6 +1,6 @@
 // Owner rule p5-7: the XMPP sender against a local fake server, reached through a fake SOCKS5 proxy
 // (owner ruling p11-31: Tor is mandatory). TLS from the first byte, the certificate checked against
-// the account's domain, no plaintext path, and only the fixed text.
+// the account's domain, no plaintext path, SCRAM before PLAIN, and only the fixed text.
 import { X509Certificate, createHash, createHmac, generateKeyPairSync, pbkdf2Sync, randomBytes, timingSafeEqual, type KeyObject } from 'node:crypto';
 import dns from 'node:dns';
 import { connect as tcpConnect, createServer as createTcpServer, type AddressInfo, type Server, type Socket } from 'node:net';
@@ -277,7 +277,7 @@ describe('xmppSender: through SOCKS5 only (Tor, owner ruling p11-31)', () => {
 });
 
 describe('xmppSender: TLS, SASL', () => {
-  it('sends the fixed sentence over TLS: PLAIN inside TLS, bind, one message from "X2F alerts", a ping, close', async () => {
+  it('sends the fixed sentence over TLS: SCRAM inside TLS, bind, one message from "X2F alerts", a ping, close', async () => {
     const s = await setup();
     await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
     const all = s.all();
@@ -287,7 +287,7 @@ describe('xmppSender: TLS, SASL', () => {
     expect(messages[0]!.replace(/ id='[^']*'/, '')).toBe(
       `<message to='mira@xmpp.example.org' type='chat'><body>${ACCOUNT_CHANGE_TEXT}</body><nick xmlns='http://jabber.org/protocol/nick'>X2F alerts</nick></message>`,
     );
-    expect(all).toContain("mechanism='PLAIN'");
+    expect(all).toContain("mechanism='SCRAM-SHA-256'");
     expect(all).toContain("<ping xmlns='urn:xmpp:ping'/>");
     await expect.poll(() => s.all()).toContain('</stream:stream>');
   });
@@ -325,14 +325,41 @@ describe('xmppSender: TLS, SASL', () => {
     expect(s.all()).toBe('');
   });
 
-  it('fails without quoting anything on a wrong password or no PLAIN mechanism; sends no message', async () => {
-    const s = await setup({ password: 'wrong' });
+  it('review L1: prefers SCRAM-SHA-256, then SCRAM-SHA-1, and uses PLAIN only when nothing else is offered', async () => {
+    const both = await setup();
+    await both.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
+    expect(both.all()).toContain("mechanism='SCRAM-SHA-256'");
+    expect(both.all()).not.toContain("mechanism='PLAIN'");
+    expect(both.all()).not.toContain(PASSWORD);
+    expect(both.all()).not.toContain(b64(Buffer.from(PASSWORD)));
+
+    const sha1 = await setup({ mechanisms: ['PLAIN', 'SCRAM-SHA-1'] });
+    await sha1.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
+    expect(sha1.all()).toContain("mechanism='SCRAM-SHA-1'");
+
+    const plain = await setup({ mechanisms: ['PLAIN'] });
+    await plain.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
+    expect(plain.all()).toContain("mechanism='PLAIN'");
+  });
+
+  it('SCRAM: a wrong password, or a server that cannot prove it knows the password, fails before any message', async () => {
+    const wrong = await setup({ password: 'wrong' });
+    const e = await wrong.sender.send('mira@xmpp.example.org', { kind: 'account-change' }).catch((x: Error) => x);
+    expect((e as Error).message).toBe('xmpp: sasl failed');
+    expect(wrong.all()).not.toContain('<message');
+    const liar = await setup({ badServerSignature: true });
+    await expect(liar.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: sasl failed');
+    expect(liar.all()).not.toContain('<message');
+  });
+
+  it('fails without quoting anything on a wrong PLAIN password or no mechanism it knows; sends no message', async () => {
+    const s = await setup({ mechanisms: ['PLAIN'], password: 'wrong' });
     const e = await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' }).catch((x: Error) => x);
     expect((e as Error).message).toBe('xmpp: sasl failed');
     expect(s.all()).not.toContain('<message');
-    const noPlain = await setup({ mechanisms: ['SCRAM-SHA-1'] });
-    await expect(noPlain.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: sasl failed');
-    expect(noPlain.all()).not.toContain('<auth');
+    const none = await setup({ mechanisms: ['DIGEST-MD5', 'SCRAM-SHA-512'] });
+    await expect(none.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: sasl failed');
+    expect(none.all()).not.toContain('<auth');
   });
 
   it('refuses a non-bare address and escapes XML', async () => {
