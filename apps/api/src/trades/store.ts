@@ -339,11 +339,11 @@ export async function applyEvent(
   by: By,
   within?: (client: pg.PoolClient, prev: Trade, next: Trade, now: Date) => Promise<void>,
   /**
-   * Runs after the trade row lock, before the machine. Returning `'recorded'` stops the event:
+   * Runs after the trade row lock, before the machine. Returning `'stop'` stops the event:
    * `before`'s own writes commit, the trade is not changed and nothing is published (a held
-   * trade's buyer-cancel, trades/held.ts).
+   * trade's buyer-cancel, or a resume another hold still blocks: trades/held.ts).
    */
-  before?: (client: pg.PoolClient, now: Date, prev: Trade) => Promise<void | 'recorded'>,
+  before?: (client: pg.PoolClient, now: Date, prev: Trade) => Promise<void | 'stop'>,
 ): Promise<Trade> {
   const client: pg.PoolClient = await deps.db.connect();
   let next: Trade;
@@ -354,7 +354,7 @@ export async function applyEvent(
       if (!row) throw new ApiError(404, 'not-found');
       const now = deps.clock();
       const prev = rowToTrade(row);
-      if (before && (await before(client, now, prev)) === 'recorded') {
+      if (before && (await before(client, now, prev)) === 'stop') {
         await client.query('commit');
         return prev;
       }

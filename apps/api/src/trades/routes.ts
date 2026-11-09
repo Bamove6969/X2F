@@ -212,7 +212,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
           // Hold model v3: a trade held by a recovery-code hold moves for nobody (trades/held.ts);
           // the partner's buyer-cancel is only recorded while coins are in escrow (owner G7, I5).
           const held = await refuseHeldTradeEvent(client, row.code, req.auth.accountId, e.type, { prev, now });
-          if (held === 'recorded') {
+          if (held === 'stop') {
             await auditMember(client, req.auth, { action: e.type as AuditAction, tradeCode: row.code }, now);
             await appendLog(client, { at: now, actor: actorOfBy(by), tradeCode: row.code, action: 'trade.buyer-cancel', detail: tradeLogDetail(eventRecord(e), 'trade.buyer-cancel') });
           }

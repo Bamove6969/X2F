@@ -109,28 +109,45 @@ export async function syncHeldTrades(deps: Pick<Deps, 'db' | 'clock'> & { publis
     // while another account's hold still holds it this row just goes; during maintenance the row
     // stays and is decided once maintenance is over; else a paused open trade is resumed, whichever
     // hold paused it (both parties held, or a pause the machine refused because the trade already was).
-    const other = await deps.db.query('select 1 from held_trades where code = $1 and account_id <> $2 and released_at is null', [r.code, r.account_id]);
-    if (other.rows.length === 0) {
-      if (maintenance) continue;
-      const t = await deps.db.query('select 1 from trades where code = $1 and paused_at is not null and closed_at is null', [r.code]);
-      if (t.rows.length > 0) {
-        try {
-          await applyEvent(store, r.code, { type: 'resume' }, 'system');
-          n++;
-        } catch (e) {
-          if (!(e instanceof ApiError) && !(e instanceof TradeRuleError)) throw e;
-        }
+    // Whether another hold still holds it is read under the trade row lock (`stillHeld` in
+    // `applyEvent`'s `before`; lead review 8 Nov minor 10: a hold starting between an unlocked check
+    // and the resume would be resumed over).
+    if (maintenance) continue;
+    const stillHeld = async (c: pg.PoolClient, keep: boolean): Promise<void | 'stop'> => {
+      const other = await c.query('select 1 from held_trades where code = $1 and account_id <> $2 and released_at is null', [r.code, r.account_id]);
+      if (other.rows.length === 0) return;
+      // Another hold took the trade meanwhile: a recorded buyer-cancel moves to its row and waits on.
+      if (keep) {
+        await c.query(
+          `update held_trades set cancel_requested_at = coalesce(cancel_requested_at, (select max(cancel_requested_at) from held_trades where code = $1))
+            where code = $1 and released_at is null`,
+          [r.code],
+        );
       }
-      // Owner G7 (lead review 8 Nov I5): the partner's buyer-cancel recorded during the hold is
-      // carried out now, as the buyer's (a dispute opened meanwhile makes the machine refuse it).
-      const asked = await deps.db.query('select 1 from held_trades where code = $1 and cancel_requested_at is not null', [r.code]);
-      if (asked.rows.length > 0) {
-        try {
-          await applyEvent(store, r.code, { type: 'buyer-cancel' }, 'buyer');
-          n++;
-        } catch (e) {
-          if (!(e instanceof ApiError) && !(e instanceof TradeRuleError)) throw e;
-        }
+      return 'stop';
+    };
+    const t = await deps.db.query<{ paused: boolean; asked: boolean }>(
+      `select (paused_at is not null and closed_at is null) as paused,
+              exists (select 1 from held_trades h where h.code = $1 and h.cancel_requested_at is not null) as asked
+         from trades where code = $1`,
+      [r.code],
+    );
+    if (t.rows[0]?.paused === true) {
+      try {
+        const after = await applyEvent(store, r.code, { type: 'resume' }, 'system', undefined, (c) => stillHeld(c, false));
+        if (after.pausedAt === null) n++;
+      } catch (e) {
+        if (!(e instanceof ApiError) && !(e instanceof TradeRuleError)) throw e;
+      }
+    }
+    // Owner G7 (lead review 8 Nov I5): the partner's buyer-cancel recorded during the hold is
+    // carried out now, as the buyer's (a dispute opened meanwhile makes the machine refuse it).
+    if (t.rows[0]?.asked === true) {
+      try {
+        await applyEvent(store, r.code, { type: 'buyer-cancel' }, 'buyer', undefined, (c) => stillHeld(c, true));
+        n++;
+      } catch (e) {
+        if (!(e instanceof ApiError) && !(e instanceof TradeRuleError)) throw e;
       }
     }
     await deps.db.query('delete from held_trades where code = $1 and account_id = $2 and released_at is not null', [r.code, r.account_id]);
@@ -177,7 +194,7 @@ export function syncHeldTradesJob(publish: TradePublisher): RetentionJob {
  *
  * Owner G7 (lead review 8 Nov I5): the partner's buyer-cancel that would start returning escrowed
  * coins (the machine's `settling`) is recorded on the trade's open rows (`cancel_requested_at`)
- * instead, and `'recorded'` is returned: the caller commits that and changes nothing else. The
+ * instead, and `'stop'` is returned: the caller commits that and changes nothing else. The
  * sync carries it out when the trade's last row goes; a dispute opened meanwhile takes its place
  * (the machine refuses the cancel then). A buyer-cancel that moves no coins (nothing funded) goes
  * through as before.
@@ -188,7 +205,7 @@ export async function refuseHeldTradeEvent(
   accountId: string,
   eventType: string,
   held?: { prev: Trade; now: Date },
-): Promise<void | 'recorded'> {
+): Promise<void | 'stop'> {
   const { rows } = await db.query<{ account_id: string }>('select account_id from held_trades where code = $1 and released_at is null', [code]);
   if (rows.length === 0) return;
   if (rows.some((r) => r.account_id === accountId)) {
@@ -205,7 +222,7 @@ export async function refuseHeldTradeEvent(
   }
   if (next.state !== 'settling') return;
   await db.query('update held_trades set cancel_requested_at = coalesce(cancel_requested_at, $2) where code = $1 and released_at is null', [code, held.now]);
-  return 'recorded';
+  return 'stop';
 }
 
 /** True when the partner's buyer-cancel of a held trade is recorded and waits for the hold's end (I5). */

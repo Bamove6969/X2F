@@ -764,6 +764,30 @@ describe('a recovery-code login', () => {
     }
   });
 
+  it('lead review 8 Nov minor 10: whether another hold still holds the trade is decided under the trade lock', async () => {
+    const seller = await ownerWithCode();
+    const buyer = await ownerWithCode();
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    const s = await driveTo(deps, trade, 'secured');
+    expect((await backupLogin(new Browser(app), seller.name, seller.code)).statusCode).toBe(200);
+    expect((await backupLogin(new Browser(app), buyer.name, buyer.code)).statusCode).toBe(200);
+    // A check outside the trade's transaction (the pool) sees no other hold, as if the buyer's hold
+    // had started just after it: the trade must still not resume.
+    const query = deps.db.query.bind(deps.db);
+    const spy = vi.spyOn(deps.db, 'query').mockImplementation(((text: unknown, ...rest: unknown[]) =>
+      typeof text === 'string' && text.includes('account_id <> $2 and released_at is null')
+        ? Promise.resolve({ rows: [], rowCount: 0 })
+        : (query as (...a: unknown[]) => unknown)(text, ...rest)) as never);
+    try {
+      expect(await endHoldByModerator(deps, seller.id, { staffId: null })).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code])).rows[0]!.p).not.toBeNull();
+    expect(await endHoldByModerator(deps, buyer.id, { staffId: null })).toBe(true);
+    expect((await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code])).rows[0]!.p).toBeNull();
+  });
+
   it('lead review item 4: a hold ending during maintenance resumes its trade once maintenance is over', async () => {
     const t = await ownerWithCode();
     const partner = await trader();
