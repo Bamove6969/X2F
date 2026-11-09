@@ -138,7 +138,8 @@ const LOCK_KEY = 'x2f-fee-sweep';
  * If the process dies or step 3 fails after the send, the attempt stays `pending`: its result is
  * unknown, so no pass sends again (`held-unfinished`) until the owner saves the sweep settings
  * again, as after a failure (`held-after-failure`, no repeat alerts every pass). One pass at a time
- * on the site: a session advisory lock held across the three steps.
+ * on the site: a session advisory lock held across the three steps; if releasing it fails, the
+ * connection is destroyed rather than returned to the pool still holding it (review F4).
  */
 export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
   const send = d.send ?? sendFeeSweepToColdWallet;
@@ -221,8 +222,15 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
     if (result.outcome === 'failed') await bestEffortPush(d, 'fee-sweep-failed');
     return result;
   } finally {
-    if (locked) await client.query('select pg_advisory_unlock(hashtext($1))', [LOCK_KEY]).catch(() => undefined);
-    client.release();
+    let unlockError: Error | undefined;
+    if (locked) {
+      await client.query('select pg_advisory_unlock(hashtext($1))', [LOCK_KEY]).catch((e: unknown) => {
+        unlockError = e instanceof Error ? e : new Error('advisory unlock failed');
+      });
+    }
+    // A connection whose unlock failed may still hold the lock: destroy it (release with an error)
+    // so every later pass is not `busy` until the pool happens to close it (review F4).
+    client.release(unlockError);
   }
 }
 

@@ -369,6 +369,40 @@ describe('the sweep pass (runFeeSweep)', () => {
     expect((await sweeps()).at(-1)).toMatchObject({ outcome: 'sent', tx_hash: txHash });
   });
 
+  // Review F4: a connection whose advisory unlock failed still holds the lock; it is destroyed, never pooled.
+  it('if releasing the pass lock fails, the connection is destroyed instead of returned to the pool', async () => {
+    const now = new Date(T0.getTime() + 1_100_000);
+    setNow(now);
+    await setSweep(10n * XMR, 3n * XMR, now);
+    balance = 1n;
+    const releases: unknown[] = [];
+    const db = new Proxy(deps.db, {
+      get(target, prop, receiver) {
+        if (prop !== 'connect') return Reflect.get(target, prop, receiver) as unknown;
+        return async () => {
+          const c = await target.connect();
+          const query = c.query.bind(c) as (...a: unknown[]) => Promise<unknown>;
+          const release = c.release.bind(c);
+          return Object.assign(c, {
+            query: (...a: unknown[]) => (typeof a[0] === 'string' && a[0].includes('pg_advisory_unlock') ? Promise.reject(new Error('connection lost')) : query(...a)),
+            release: (err?: Error | boolean) => (releases.push(err), release(err)),
+          });
+        };
+      },
+    });
+    expect(await runFeeSweep({ ...base(), db })).toEqual({ outcome: 'below-threshold' });
+    expect(releases).toHaveLength(1);
+    expect(releases[0]).toBeInstanceOf(Error);
+    // The lock went with the destroyed connection: a later pass is not busy.
+    let next: unknown;
+    for (let i = 0; i < 20; i++) {
+      next = await runFeeSweep(base());
+      if ((next as { outcome: string }).outcome !== 'busy') break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(next).toEqual({ outcome: 'below-threshold' });
+  });
+
   it('the attempts table refuses a sent row without a tx hash and a pending row with a settled time', async () => {
     const row = [T0, '5', '4', '1'];
     await expect(deps.db.query(`insert into fee_sweeps (at, balance_atomic, amount_atomic, keep_atomic, outcome) values ($1, $2, $3, $4, 'sent')`, row)).rejects.toThrow(/check/);
