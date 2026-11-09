@@ -311,7 +311,6 @@ export interface InviteView {
 interface InviteRow {
   id: string;
   account_id: string;
-  team: string;
   display_name: string;
   roles: TeamRole[];
   invite_expires_at: Date;
@@ -320,6 +319,7 @@ interface InviteRow {
 /**
  * The open invite a code names: not used, not removed, not past its time, of a live trader
  * account. Anything else → 404 `not-found` (one answer for a wrong, used and expired code).
+ * The team account is joined only to check it is live; its name is never loaded (review 6a5949a6 F6).
  * `lock` takes the row `for update` (inside a transaction).
  */
 export async function openInvite(q: Queryable, by: { code: unknown } | { id: string }, now: Date, lock = false): Promise<InviteRow> {
@@ -329,7 +329,7 @@ export async function openInvite(q: Queryable, by: { code: unknown } | { id: str
     hash = inviteHash(by.code);
   }
   const { rows } = await q.query<InviteRow>(
-    `select tm.id, tm.account_id, t.display_name as team, tm.display_name, tm.roles, tm.invite_expires_at
+    `select tm.id, tm.account_id, tm.display_name, tm.roles, tm.invite_expires_at
        from team_members tm join accounts t on t.id = tm.account_id
       where ($1::bytea is null or tm.invite_hash = $1) and ($3::uuid is null or tm.id = $3) and tm.invite_hash is not null
         and tm.removed_at is null and tm.member_account_id is null and tm.invite_expires_at > $2

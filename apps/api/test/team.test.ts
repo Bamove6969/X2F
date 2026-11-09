@@ -10,7 +10,7 @@ import { EventBus, type StreamSink } from '../src/events/bus.js';
 import { tradeEventPublisher } from '../src/events/tradePublisher.js';
 import { ACTION_ROLE, auditMember } from '../src/team/audit.js';
 import { memberAccessOf } from '../src/auth/sessions.js';
-import { purgeTeamLeftovers } from '../src/team/members.js';
+import { openInvite, purgeTeamLeftovers } from '../src/team/members.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '../src/team/perms.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
@@ -202,6 +202,10 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect(Object.keys(view.json() as object).sort()).toEqual(['displayName', 'expiresAt', 'roles']);
     expect(view.json()).toMatchObject({ displayName: `Joiner${n}x`, roles: ['trades'] });
     expect(view.body).not.toContain(owner.displayName);
+    // Review 6a5949a6 F6: the vendor's name is not even loaded, so no later spread can send it.
+    const row = await openInvite(deps.db, { code: created.invite }, deps.clock());
+    expect(Object.keys(row).sort()).toEqual(['account_id', 'display_name', 'id', 'invite_expires_at', 'roles']);
+    expect(Object.values(row)).not.toContain(owner.displayName);
 
     const k1 = await genKey();
     const k2 = await genKey();
