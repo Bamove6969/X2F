@@ -5,6 +5,8 @@ import { NAV } from '@x2f/staff';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
+import { StaffApiError } from '../src/api.js';
+import { STAFF_REFUSALS, refusalOf } from '../src/refusals.js';
 import { canFinish, INVITE_GONE, keyCheckLine } from '../src/screens/Invite.js';
 import { LOCKED_TITLE } from '../src/screens/OwnerSetup.js';
 import { button, click, fakeApi, field, refused, render, settle, typeInto } from './helpers.js';
@@ -122,7 +124,7 @@ describe('Invite', () => {
 
   it('a return visit carries on at the keys, counting what was added on the earlier visit', async () => {
     const api = fakeApi({
-      'GET /staff/v1/invites/accept/:token': { body: { ...view, resume: { keys: 1, passkeys: 0, pgp: 1, keyCheckCode: 'AB12-CD34-EF56-GH78' } } },
+      'GET /staff/v1/invites/accept/:token': { body: { ...view, resume: { keys: 1, passkeys: 1, pgp: 1, keyCheckCode: 'AB12-CD34-EF56-GH78' } } },
       'POST /staff/v1/invites/accept/:token/finish': { status: 201, body: { keyCheckCode: 'AB12-CD34-EF56-GH78' } },
     });
     await open('/invite/tok_3');
@@ -133,7 +135,10 @@ describe('Invite', () => {
     expect(document.querySelector('[data-part="key-check"]')?.textContent).toBe('Your key check code: AB12-CD34-EF56-GH78. Read it to the owner.');
   });
 
-  it('username, a security key (required for moderators) and a PGP key, then finish shows the key check code', async () => {
+  /** The key row named `name` (Security key, Passkey). */
+  const row = (name: string) => [...document.querySelectorAll('.x2f-staff-key-row')].find((r) => r.querySelector('.x2f-staff-key-row__name')?.textContent === name)!;
+
+  it('username, then all three of a security key, a PGP key and a passkey (owner G3), then finish shows the key check code', async () => {
     const api = fakeApi({
       'GET /staff/v1/invites/accept/:token': { body: view },
       'POST /staff/v1/invites/accept/:token/account': { status: 201, body: { ok: true } },
@@ -150,11 +155,13 @@ describe('Invite', () => {
     await click(button('Continue'));
     // Owner Q54: the public name goes as displayName (the API refuses a field named username).
     expect(api.calls.find((c) => c.path.endsWith('/account'))?.body).toEqual({ displayName: 'dmitri_k', loginName: 'dk-login' });
-    // A moderator gets no passkey row, and cannot finish without a security key.
-    expect(document.body.textContent).not.toContain('Passkey');
+    // Owner G3 (review 8 Nov I-4): a moderator holds all three methods, so the passkey row is shown
+    // and finish waits for every one of them.
+    expect(document.body.textContent).toContain('Moderators log in with three keys: a hardware security key, such as a YubiKey, a passkey on another device, and a PGP key.');
+    expect(row('Passkey')).toBeDefined();
     const finish = () => button('Finish')!;
     expect(finish().disabled).toBe(true);
-    await click(button('Tap key to register'));
+    await click(button('Tap key to register', row('Security key')));
     expect(api.calls.find((c) => c.path.endsWith('/key/start'))?.body).toEqual({ kind: 'security-key' });
     expect(webauthn.startRegistration).toHaveBeenCalledWith({ optionsJSON: { challenge: 'r' } });
     expect(finish().disabled).toBe(true);
@@ -164,6 +171,10 @@ describe('Invite', () => {
     expect(api.calls.find((c) => c.path.endsWith('/pgp/start'))?.body).toEqual({ publicKey: PGP_KEY });
     typeInto(field('Code from the message'), '9999');
     await click(button('Check code'));
+    // A security key and a PGP key are two factors, but not all three.
+    expect(finish().disabled).toBe(true);
+    await click(button('Tap key to register', row('Passkey')));
+    expect(api.calls.filter((c) => c.path.endsWith('/key/start')).map((c) => c.body)).toEqual([{ kind: 'security-key' }, { kind: 'passkey' }]);
     expect(finish().disabled).toBe(false);
     await click(finish());
     expect(document.querySelector('h1')?.textContent).toBe("You're on the staff");
@@ -184,10 +195,41 @@ describe('Invite', () => {
     expect(INVITE_GONE).toBe('This invite has already been used or has expired.');
   });
 
-  it('finish follows the API: a moderator needs a key; everyone needs two factors', () => {
+  it('every role sees the passkey row; a helper may finish with two factors', async () => {
+    fakeApi({ 'GET /staff/v1/invites/accept/:token': { body: { ...view, role: 'helper', resume: { keys: 0, passkeys: 0, pgp: 0, keyCheckCode: null } } } });
+    await open('/invite/tok_4');
+    expect(row('Passkey')).toBeDefined();
+    expect(document.body.textContent).toContain('Staff log in with two keys');
+  });
+
+  it('a refused finish or passkey is a CantDoThat with the staff words (owner-page3 codes)', async () => {
+    const api = fakeApi({
+      'GET /staff/v1/invites/accept/:token': { body: { ...view, resume: { keys: 1, passkeys: 1, pgp: 1, keyCheckCode: 'AB12-CD34-EF56-GH78' } } },
+      'POST /staff/v1/invites/accept/:token/finish': refused(409, 'all-three-methods-required'),
+      'POST /staff/v1/invites/accept/:token/key/start': { body: { options: { challenge: 'r' } } },
+      'POST /staff/v1/invites/accept/:token/key/finish': refused(409, 'passkey-is-security-key'),
+    });
+    await open('/invite/tok_5');
+    await click(button('Finish')!);
+    expect(cantDo()).toBe('all-three-methods-required');
+    await click(button('OK')!);
+    await click(button('Tap key to register', row('Passkey'))!);
+    expect(cantDo()).toBe('passkey-is-security-key');
+    expect(api.calls.some((c) => c.path.endsWith('/key/finish'))).toBe(true);
+    for (const code of ['all-three-methods-required', 'passkey-is-security-key', 'both-owner-keys-required'] as const) {
+      expect(refusalOf(new StaffApiError(409, code)), code).toEqual({ code, text: STAFF_REFUSALS[code] });
+    }
+  });
+
+  it('finish follows the API: a moderator or senior needs all three methods (owner G3); everyone needs two factors', () => {
     expect(canFinish('mod', { keys: 0, passkeys: 0, pgp: 2 })).toBe(false);
+    expect(canFinish('mod', { keys: 0, passkeys: 1, pgp: 2 })).toBe(false);
     expect(canFinish('senior', { keys: 1, passkeys: 0, pgp: 0 })).toBe(false);
-    expect(canFinish('senior', { keys: 1, passkeys: 0, pgp: 1 })).toBe(true);
+    expect(canFinish('senior', { keys: 1, passkeys: 0, pgp: 1 })).toBe(false);
+    expect(canFinish('senior', { keys: 1, passkeys: 0, pgp: 2 })).toBe(false);
+    expect(canFinish('senior', { keys: 1, passkeys: 1, pgp: 0 })).toBe(false);
+    expect(canFinish('senior', { keys: 1, passkeys: 1, pgp: 1 })).toBe(true);
+    expect(canFinish('mod', { keys: 2, passkeys: 1, pgp: 1 })).toBe(true);
     expect(canFinish('helper', { keys: 0, passkeys: 0, pgp: 2 })).toBe(true);
     expect(canFinish('helper', { keys: 0, passkeys: 1, pgp: 1 })).toBe(true);
     expect(canFinish('helper', { keys: 0, passkeys: 2, pgp: 0 })).toBe(false);

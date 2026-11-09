@@ -31,18 +31,22 @@ interface Added {
   pgp: number;
 }
 
-/** What the API's `finish` needs (Task 7): a moderator's attested key, and two factors (PGP + a key, or two PGP keys). */
+/**
+ * What the API's `finish` needs: owner G3 (owner-page3, review 8 Nov I-4), a moderator or senior
+ * moderator holds all three methods (an attested security key, a passkey and a PGP key; two PGP keys
+ * are not a pair for them); anyone else two factors (Task 7: PGP + a key, or two PGP keys).
+ */
 export function canFinish(role: InviteView['role'], a: Added): boolean {
-  if ((role === 'mod' || role === 'senior') && a.keys === 0) return false;
+  if (role === 'mod' || role === 'senior') return a.keys >= 1 && a.passkeys >= 1 && a.pgp >= 1;
   return (a.pgp >= 1 && a.keys + a.passkeys >= 1) || a.pgp >= 2;
 }
 
 /**
  * Invite acceptance at `/invite/:token` (Plan 4 Task 16, the API is Task 7's): the invite's role
  * and hours, a username and a private login name, then the login keys, then finish. Moderators
- * and senior moderators need an attested hardware security key; everyone logs in with two factors
- * (R1), so the keys step asks for a PGP key and a key, or two PGP keys (the plan's "a security key
- * or PGP" predates Task 7's two-factor rule). The result shows the first security key's check code
+ * and senior moderators hold all three methods (owner G3): an attested hardware security key, a
+ * passkey on another device and a PGP key. Everyone else logs in with two factors (R1): a PGP key
+ * and a key, or two PGP keys. The passkey row is shown for every role. The result shows the first security key's check code
  * to read to the owner (A8).
  */
 export function Invite() {
@@ -201,11 +205,11 @@ export function Invite() {
           </h2>
           <p className="x2f-staff-step__text">
             {moderator
-              ? 'Moderators log in with a hardware security key, such as a YubiKey, and a PGP key.'
+              ? 'Moderators log in with three keys: a hardware security key, such as a YubiKey, a passkey on another device, and a PGP key.'
               : 'Staff log in with two keys: a security key or passkey and a PGP key, or two PGP keys.'}
           </p>
           <KeyRow name="Security key" done={added.keys} onAdd={() => void addKey('security-key')} busy={busy} />
-          {!moderator ? <KeyRow name="Passkey" done={added.passkeys} onAdd={() => void addKey('passkey')} busy={busy} /> : null}
+          <KeyRow name="Passkey" done={added.passkeys} onAdd={() => void addKey('passkey')} busy={busy} />
           <div className="x2f-staff-key-row">
             <div>
               <p className="x2f-staff-key-row__name">PGP key</p>
