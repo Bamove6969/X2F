@@ -31,6 +31,13 @@ export interface ChatWorkItem {
   participants: Record<'buyer' | 'seller', { signPublic: string; boxPublic: string; proof: string }>;
 }
 
+/** A chat the API purged (`GET /internal/v1/chat-shred`): its keys here are to be destroyed. */
+export interface ChatShredOrder {
+  chat: string;
+  /** The trade the chat was linked to, or null for a pre-trade chat. */
+  trade: string | null;
+}
+
 /** One trade on the API's watch list. */
 export interface WatchItem {
   state: string;
@@ -47,6 +54,8 @@ export interface WatchItem {
 export interface Link {
   pullWork(): Promise<WorkItem[]>;
   pullChatWork(): Promise<ChatWorkItem[]>;
+  /** The API's chat shred orders; malformed items come back as `{ chat: '', trade: null }` (logged and skipped). */
+  pullChatShred(): Promise<ChatShredOrder[]>;
   postReport(report: unknown): Promise<number>;
   /** Like postReport, with the API's refusal code (`{ error }`) when it gives one. */
   report(report: unknown): Promise<{ status: number; error: string | null }>;
@@ -114,6 +123,18 @@ export function createLink(o: {
       if (res.status !== 200) throw new LinkError(res.status, 'pull chat work');
       const body = (await res.json()) as { work?: unknown };
       return Array.isArray(body.work) ? (body.work as ChatWorkItem[]) : [];
+    },
+    async pullChatShred() {
+      const res = await internal('GET', '/internal/v1/chat-shred');
+      if (res.status !== 200) throw new LinkError(res.status, 'pull chat shred');
+      const body = (await res.json()) as { orders?: unknown };
+      if (!Array.isArray(body.orders)) return [];
+      // A trade that is neither a string nor null makes the whole order bad: never read as "no trade".
+      return (body.orders as Array<{ chat?: unknown; trade?: unknown }>).map((x) =>
+        typeof x?.chat === 'string' && (x.trade === null || typeof x.trade === 'string')
+          ? { chat: x.chat, trade: x.trade }
+          : { chat: '', trade: null },
+      );
     },
     async postReport(report) {
       const res = await internal('POST', '/internal/v1/reports', report);

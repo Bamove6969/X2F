@@ -1,15 +1,25 @@
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
 import type { PartyHandle, Transport } from '@x2f/escrow';
-import { channelFor, WATCH_INTERVAL_MS, type Attestation, type ModPartyArgs } from '@x2f/trade';
+import { CHAT_AFTER_DISPUTE_DAYS, CHAT_PRETRADE_IDLE_DAYS, channelFor, WATCH_INTERVAL_MS, type Attestation, type ModPartyArgs } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { AttestRefused, attestChat, attestTrade, BadTerms } from './attest.js';
 import { loadChatIdentity, loadParty, saveChatIdentity, saveParty, walletPassword } from './keystore.js';
-import { createLink, type ChatWorkItem, type Fetch, type Link, type WorkItem } from './link.js';
+import { createLink, type ChatShredOrder, type ChatWorkItem, type Fetch, type Link, type WatchItem, type WorkItem } from './link.js';
 import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
 import { openDesk } from './desk.js';
 import { createWatcher } from './watcher.js';
+
+/**
+ * The shred pass's own clock (design 2026-11-08 section 5): no purge the API may make comes sooner
+ * than a pre-trade chat's 7 idle days after it was made, so a chat this service attested more
+ * recently is never shredded, whatever the API says.
+ */
+export const CHAT_SHRED_MIN_AGE_DAYS = CHAT_PRETRADE_IDLE_DAYS;
+/** How long a `mod_dispute_seen` row is kept after the last time the trade was seen disputed. */
+export const MOD_DISPUTE_SEEN_DAYS = CHAT_AFTER_DISPUTE_DAYS + 30;
+const DAY_MS = 86_400_000;
 
 /** The instance lock's advisory key ("x2mi"; the migrator's is "x2mo"): one moderation process per database. */
 export const MOD_INSTANCE_LOCK = 0x7832_6d69;
@@ -42,7 +52,7 @@ export async function instanceLockHeld(client: { query: (sql: string, values: un
 export { AttestRefused, attestChat, attestTrade, BadTerms, checkChatWork, checkWork, signAttestation, type Attested } from './attest.js';
 export { loadChatIdentity, saveChatIdentity, type ChatModIdentity } from './keystore.js';
 export { loadParty, migrateModeration, modSubkey, open, saveParty, seal, WALLET_PASSWORD_BYTES, walletPassword } from './keystore.js';
-export { createLink, relayCloseMessage, relayRegisterMessage, type ChatWorkItem, type Fetch, type Link, type WatchItem, type WorkItem } from './link.js';
+export { createLink, relayCloseMessage, relayRegisterMessage, type ChatShredOrder, type ChatWorkItem, type Fetch, type Link, type WatchItem, type WorkItem } from './link.js';
 export { defaultPartyIO, escrowStore, startModParty, type PartyIO } from './party.js';
 export { autoRefundStep, REFUND_UNVERIFIED_MS, type AutoRefundInputs, type AutoRefundStep } from './autoRefund.js';
 export { buyerCancelStep, type BuyerCancelInputs, type BuyerCancelStep } from './buyerCancel.js';
@@ -117,6 +127,11 @@ export interface ModerationHandle {
   tick(): Promise<string[]>;
   /** One pass over the API's chat work list (Task 20); resolves with the chats attested this pass. */
   chatTick(): Promise<string[]>;
+  /**
+   * One pass over the API's chat shred orders (design 2026-11-08 section 5, task 1); resolves with
+   * the chats whose keys are gone here and whose shred the API recorded this pass.
+   */
+  shredTick(): Promise<string[]>;
   /** One chain-watcher pass (Task 9). */
   watch(): Promise<void>;
   /** Stops the loops, then every running moderator party. */
@@ -197,13 +212,24 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   const onLockError = (): void => loseLock();
   lock.on('error', onLockError);
   const lockHeld = deps.lockHeld ?? (() => instanceLockHeld(lock));
-  const link: Link = createLink({
+  const rawLink: Link = createLink({
     apiInternalUrl: o.apiInternalUrl,
     relayAdminUrl: o.relayAdminUrl,
     signingSecret: o.signingSecret,
     fetch: deps.fetch ?? defaultFetch,
     now: () => now().getTime(),
   });
+  // Every watch list read (the watcher's and the shred pass's) records the trades it shows disputed,
+  // on this service's own clock (mod_dispute_seen): the shred pass's dispute facts. A failed record
+  // fails the read, so a pass never goes on without it.
+  const link: Link = {
+    ...rawLink,
+    pullWatch: async () => {
+      const items = await rawLink.pullWatch();
+      await recordDisputes(o.db, items, now());
+      return items;
+    },
+  };
   let io: PartyIO | undefined = deps.partyIO;
   const startParty =
     deps.startParty ??
@@ -410,6 +436,76 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     return done;
   };
 
+  /**
+   * The shred pass (design 2026-11-08 section 5, task 1): for each chat the API purged, delete its
+   * sealed mod identity and the signed attestation in one transaction, then report `chat-shredded`
+   * (the API keeps the order until it hears so, and a repeat is harmless: the deletes find nothing).
+   * The order is only a trigger. A chat is held, and asked again next pass, when this service's own
+   * records say it may still be evidence:
+   * - attested less than CHAT_SHRED_MIN_AGE_DAYS ago (`chat-shred-held-young`);
+   * - its trade seen disputed by this service within CHAT_AFTER_DISPUTE_DAYS (`chat-shred-held-dispute`);
+   * - its trade on the watch list in any state but closed (`chat-shred-held-open`), or the watch
+   *   list unreadable this pass (`chat-shred-held-unknown`).
+   */
+  const shredTick = async (): Promise<string[]> => {
+    const done: string[] = [];
+    let orders: ChatShredOrder[];
+    try {
+      orders = await link.pullChatShred();
+    } catch {
+      log({ reason: 'chat-shred-unavailable' });
+      return done;
+    }
+    if (orders.length === 0) return done;
+    const at = now();
+    let watch: Map<string, WatchItem> | null = null;
+    if (orders.some((x) => x.trade !== null)) {
+      try {
+        watch = await link.pullWatch();
+      } catch {
+        watch = null;
+      }
+    }
+    await o.db.query('delete from mod_dispute_seen where last_seen_at < $1', [new Date(at.getTime() - MOD_DISPUTE_SEEN_DAYS * DAY_MS)]);
+    for (const x of orders) {
+      const chat = normalizeTradeCode(x.chat);
+      const trade = x.trade === null ? null : normalizeTradeCode(x.trade);
+      if (chat === null || (x.trade !== null && trade === null)) {
+        log({ reason: 'bad-chat-shred' });
+        continue;
+      }
+      try {
+        const held = await shredHold(o.db, chat, trade, watch, at);
+        if (held !== null) {
+          log({ reason: `chat-shred-held-${held}` });
+          continue;
+        }
+        const client = await o.db.connect();
+        try {
+          await client.query('begin');
+          await client.query('delete from mod_chat_identities where chat = $1', [chat]);
+          await client.query('delete from signed_chats where chat = $1', [chat]);
+          await client.query('commit');
+        } catch (e) {
+          await client.query('rollback');
+          throw e;
+        } finally {
+          client.release();
+        }
+        const status = await link.postReport({ kind: 'chat-shredded', chat });
+        if (status !== 201) {
+          log({ reason: `chat-shred-report-refused-${status}` });
+          continue;
+        }
+        log({ reason: 'chat-shredded' });
+        done.push(chat);
+      } catch {
+        log({ reason: 'chat-shred-failed' });
+      }
+    }
+    return done;
+  };
+
   const intervalMs = deps.intervalMs ?? 5_000;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -420,6 +516,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     // would end the process, and the chain watcher with it.
     running = tick()
       .then(chatTick)
+      .then(shredTick)
       .catch(() => log({ reason: 'work-pass-failed' }))
       .finally(() => {
         if (!stopped) timer = setTimeout(loop, intervalMs);
@@ -463,11 +560,44 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   return {
     tick,
     chatTick,
+    shredTick,
     // Through the watcher's own queue: never a pass alongside the loop's (finding 2).
     watch: () => watcher.tick(),
     stop,
     lockLost,
   };
+}
+
+/** Records, on this service's clock, every trade the watch list shows disputed (mod_dispute_seen). */
+async function recordDisputes(db: pg.Pool, items: Map<string, WatchItem>, at: Date): Promise<void> {
+  const disputed = [...items].filter(([, w]) => w.state === 'disputed').map(([code]) => code);
+  if (disputed.length === 0) return;
+  await db.query(
+    `insert into mod_dispute_seen (trade, first_seen_at, last_seen_at)
+     select t, $2, $2 from unnest($1::text[]) t
+     on conflict (trade) do update set last_seen_at = greatest(mod_dispute_seen.last_seen_at, excluded.last_seen_at)`,
+    [disputed, at],
+  );
+}
+
+/**
+ * Why the shred pass keeps a purged chat's keys this pass, from this service's own records (and the
+ * watch list), or null when nothing holds it. See `shredTick`.
+ */
+async function shredHold(db: pg.Pool, chat: string, trade: string | null, watch: Map<string, WatchItem> | null, at: Date): Promise<'young' | 'dispute' | 'open' | 'unknown' | null> {
+  const { rows } = await db.query<{ made: Date }>(
+    `select least((select created_at from signed_chats where chat = $1), (select created_at from mod_chat_identities where chat = $1)) as made`,
+    [chat],
+  );
+  const made = rows[0]?.made ?? null;
+  if (made !== null && at.getTime() - made.getTime() < CHAT_SHRED_MIN_AGE_DAYS * DAY_MS) return 'young';
+  if (trade === null) return null;
+  const seen = await db.query('select 1 from mod_dispute_seen where trade = $1 and last_seen_at >= $2', [trade, new Date(at.getTime() - CHAT_AFTER_DISPUTE_DAYS * DAY_MS)]);
+  if (seen.rows.length > 0) return 'dispute';
+  if (watch === null) return 'unknown';
+  const item = watch.get(trade);
+  if (item !== undefined && item.state !== 'closed') return 'open';
+  return null;
 }
 
 /**
