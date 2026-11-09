@@ -58,6 +58,7 @@ const base: TradeView = {
   payBy: null,
   paidAt: null,
   confirmBy: null,
+  confirmWindowMin: 90,
   settleBy: null,
   releaseClaimedAt: null,
   pausedAt: null,

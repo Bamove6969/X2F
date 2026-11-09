@@ -12,7 +12,7 @@ import { ReleaseWarning } from './ReleaseWarning.js';
 import { setWarned, warned } from './warned.js';
 import { confirmSkipped, skipConfirm } from './confirmSkip.js';
 import { DisputeLocked } from './DisputeLocked.js';
-import { utcDate, utcDateTime } from '../../ui/dates.js';
+import { formatDate as utcDate, formatDateTime as utcDateTime } from '../../ui/dates.js';
 import { ESCROW_STOPPED, amounts, publicName, firstPerson, profileCopy, refusalCopy, type MethodInfo, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
 import './release/release.css';
 

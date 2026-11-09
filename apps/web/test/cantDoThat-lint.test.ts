@@ -127,10 +127,13 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // what blocking a login did, the advice after a block, why no place is shown, the blocked new
     // device's note, and how approval works. 50 -> 51 (C11, design review fix 2): the DisputeRuling
     // board's "If an appeal overturns the ruling, you get a lien. You can't trade until you pay the
-    // XMR back." explains a consequence before any appeal (dispute/rules.ts overturnLien). 51 -> 52
-    // (Plan 4 Task 15, 6 Nov 2026): owner Q38's hourglass says the time left ("... at most",
+    // XMR back." explains a consequence before any appeal (dispute/rules.ts overturnLien).
+    // 51 -> 53 (design results, 2 Nov): BuyerPaidWaiting's "You can't cancel after marking as paid",
+    // said ahead of time, and the Feedback anonymous hint "we can't follow up with you".
+    // 54: Refunded's "Until they pay it back, they can't trade." (design's wording 7 Nov) explains a ruling about the other trader.
+    // 55 (Plan 4 Task 15, 6 Nov 2026): owner Q38's hourglass says the time left ("... at most",
     // DisputeRoom.tsx), not a rule.
-    expect(notARefusal).toBeLessThanOrEqual(52);
+    expect(notARefusal).toBeLessThanOrEqual(55);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

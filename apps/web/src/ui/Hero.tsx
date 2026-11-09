@@ -17,14 +17,23 @@ export type HeroTone = 'caution' | 'escrow' | 'danger' | 'mod' | 'neutral' | 'te
 export function Hero({
   tone,
   label,
+  labelledBy,
+  role,
+  part,
   kind = 'trade',
   chip,
   keyMark = false,
   children,
 }: {
   tone: HeroTone;
-  /** The section's accessible name. */
-  label: string;
+  /** The section's accessible name (kit 4.5: `aria-label` or `aria-labelledby`). */
+  label?: string;
+  /** The id of the element that names the section, in place of `label`. */
+  labelledBy?: string;
+  /** `status` when the hero is a live status line (BuyerPaidWaiting). */
+  role?: 'status';
+  /** `data-part`, for the screen's own tests and fold. */
+  part?: string;
   kind?: 'trade' | 'result' | 'other';
   chip: ReactNode;
   /** The 2-of-3 key mark: trade and trade-result screens only. */
@@ -32,13 +41,61 @@ export function Hero({
   children?: ReactNode;
 }) {
   return (
-    <section className="x2f-hero" data-tone={tone} data-kind={kind} aria-label={label}>
+    <section className="x2f-hero" data-tone={tone} data-kind={kind} role={role} aria-label={labelledBy ? undefined : label} aria-labelledby={labelledBy} data-part={part}>
       <div className="x2f-hero__top">
         {chip}
         {keyMark ? <KeyMark tone={tone} /> : null}
       </div>
       {children}
     </section>
+  );
+}
+
+/** An inner divider in the hero (kit 4.1): 1 px of the tone at 25%. */
+export function HeroRule({ glance }: { glance?: string }) {
+  return <div className="x2f-hero__rule" aria-hidden="true" data-fold-glance={glance} />;
+}
+
+/**
+ * The hero's inner block of amounts (kit 4.3 Amount, 4.4 and 8.1; Refunded): a stacked amount row
+ * (14px 16px: an uppercase muted label, then the amount and its fiat, wrapping with a 10 px column
+ * gap), then key/value rows (48 px, 0 16px) under an inset surface divider.
+ */
+export function HeroAmount({
+  label,
+  amount,
+  fiat,
+  rows = [],
+  part,
+}: {
+  label: string;
+  /** The amount, an `Xmr` (mono 28/32 500 here, "XMR" 15 600). */
+  amount: ReactNode;
+  fiat?: string;
+  rows?: readonly { term: string; value: ReactNode }[];
+  part?: string;
+}) {
+  return (
+    <dl className="x2f-hero__facts" data-part={part}>
+      <div className="x2f-hero__amount">
+        <dt className="x2f-hero__facts-label">{label}</dt>
+        <dd>
+          {amount}
+          {fiat ? (
+            <>
+              {' '}
+              <span className="x2f-hero__fiat">{fiat}</span>
+            </>
+          ) : null}
+        </dd>
+      </div>
+      {rows.map((r) => (
+        <div key={r.term} className="x2f-hero__row">
+          <dt>{r.term}</dt>
+          <dd className="x2f-num">{r.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -101,7 +158,7 @@ export function HeroNumber({
 }
 
 /** A result screen's headline (kit 4.3): Familjen 32/36 (40/44 wide), then a 16/24 muted lead with digits in mono. */
-export function ResultHeadline({ title, lead, id }: { title: string; lead?: string; id?: string }) {
+export function ResultHeadline({ title, lead, id }: { title: ReactNode; lead?: ReactNode; id?: string }) {
   return (
     <div className="x2f-hero__result">
       <h1 className="x2f-hero__headline" id={id}>
@@ -109,7 +166,7 @@ export function ResultHeadline({ title, lead, id }: { title: string; lead?: stri
       </h1>
       {lead ? (
         <p className="x2f-hero__lead">
-          <MonoDigits text={lead} />
+          {typeof lead === 'string' ? <MonoDigits text={lead} /> : lead}
         </p>
       ) : null}
     </div>
@@ -178,7 +235,7 @@ export function SegmentProgress({ done, total = 10, label, head }: { done: numbe
  */
 export function KeyMark({ size = 'hero', tone }: { size?: 'hero' | 'small'; tone: HeroTone }) {
   return size === 'hero' ? (
-    <svg className="x2f-keymark" data-tone={tone} width="62" height="14" viewBox="0 0 62 14" aria-hidden="true">
+    <svg className="x2f-keymark" data-tone={tone} width="62" height="14" viewBox="0 0 62 14" aria-hidden="true" focusable="false" data-part="key-mark">
       <circle cx="7" cy="7" r="7" fill="currentColor" />
       <circle cx="31" cy="7" r="7" fill="currentColor" />
       <circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" strokeWidth="2" />

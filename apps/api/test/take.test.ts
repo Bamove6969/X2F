@@ -182,6 +182,16 @@ describe('POST /v1/offers/:id/take', () => {
     expect((await seller.browser.get(`/v1/trades/${code}`)).json()).toMatchObject({ role: 'seller', state: 'setup', fiatCents: '3333' });
   });
 
+  it("fixes the payment type's own timing at take (owner 2026-11-07 F9): SWIFT 3 days, a type with no profile the Custom one", async () => {
+    for (const [methodId, confirm] of [['SWIFT', 4320], ['SPEI', 1440], ['FASTER_PAYMENTS', 180]] as const) {
+      const seller = await person();
+      const buyer = await person();
+      const offer = await postOffer(seller, { methodId });
+      const t = rowToTrade((await loadTradeRow(deps.db, await taken(buyer, offer, body(buyer, tenth))))!);
+      expect([t.methodId, t.confirmWindowMin], methodId).toEqual([methodId, confirm]);
+    }
+  });
+
   it('answers with the rate and total that locked, so the device records the deal that locked', async () => {
     const seller = await person();
     const buyer = await person();

@@ -63,6 +63,8 @@ export async function stubBrowseApi(page: Page, o: BrowseStub): Promise<Seen> {
       ? r.fulfill({ status: 503, json: { error: 'price-unavailable' } })
       : r.fulfill({ json: { currency, centsPerXmr, exponent: 2, at: new Date().toISOString() } });
   });
+  // The Site news bell (ui/NewsBell.tsx) reads GET /v1/news, which the API serves logged out too.
+  await page.route('**/v1/news', (r) => r.fulfill({ json: { items: [], serverNow: new Date().toISOString() } }));
   await page.route('**/v1/offers?*', (r) => r.fulfill({ json: o.offers(new URL(r.request().url()).searchParams.get('currency') ?? '') }));
   await page.route('**/v1/method-suggestions', async (r) => {
     seen.suggestions.push(r.request().postDataJSON());

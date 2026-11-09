@@ -14,6 +14,8 @@ import {
   dayTime,
   HOURGLASS_LINE,
   utcDateTime,
+  waitInWords,
+  waitPart,
   disputeEntry,
   inTime,
   rulingAllowsCosign,
@@ -42,7 +44,8 @@ function trade(over: Partial<DisputeTrade> = {}): DisputeTrade {
     poster: 'seller',
     currency: 'USD',
     paidAt: iso(0),
-    confirmBy: iso(120),
+    confirmBy: iso(90),
+    confirmWindowMin: 90,
     settleBy: null,
     closedAt: null,
     dispute: null,
@@ -89,23 +92,47 @@ const at = (m: number) => () => new Date(T0 + m * MIN);
 const inRouter = (ui: React.ReactNode) => <MemoryRouter>{ui}</MemoryRouter>;
 
 describe('disputeEntry (mirrors the state machine; the server clock decides)', () => {
-  it('makes the buyer wait for the end of the confirm window, with the board explanation', () => {
-    const e = disputeEntry(trade(), new Date(T0 + 119 * MIN));
+  it("makes the buyer wait the method's confirm window from marking paid (owner 2026-11-07 F9: 90 minutes for an instant type; p9-4), with the board explanation", () => {
+    // paidAt 0, confirmBy 90: 89:59 waits, 90:00 opens.
+    const e = disputeEntry(trade(), new Date(T0 + 89 * MIN + 59_000));
     expect(e).toEqual({
       kind: 'wait',
-      until: new Date(T0 + 120 * MIN),
-      text: "You can open a dispute if the seller hasn't confirmed within 2 h of your payment.",
+      until: new Date(T0 + 90 * MIN),
+      text: "You can open a dispute if the seller hasn't confirmed within 90 minutes of your payment.",
     });
-    expect(disputeEntry(trade(), new Date(T0 + 120 * MIN))).toEqual({ kind: 'open' });
+    expect(disputeEntry(trade(), new Date(T0 + 90 * MIN))).toEqual({ kind: 'open' });
+    expect(disputeEntry(trade({ paidAt: null, confirmBy: null }), new Date(T0 + 90 * MIN))).toEqual({ kind: 'none' });
   });
 
   it("makes the seller wait for the same confirmBy in paid (owner p9-4)", () => {
-    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0 + 119 * MIN))).toEqual({
+    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0 + 89 * MIN))).toEqual({
       kind: 'wait',
-      until: new Date(T0 + 120 * MIN),
-      text: "You can open a dispute if the payment hasn't arrived within 2 h of the buyer marking it paid.",
+      until: new Date(T0 + 90 * MIN),
+      text: "You can open a dispute if the payment hasn't arrived within 90 minutes of the buyer marking it paid.",
     });
-    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0 + 120 * MIN))).toEqual({ kind: 'open' });
+    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0 + 90 * MIN))).toEqual({ kind: 'open' });
+  });
+
+  it('says each payment type\'s window in words (owner 2026-11-07 F9)', () => {
+    const text = (min: number) => (disputeEntry(trade({ confirmWindowMin: min, confirmBy: iso(min) }), new Date(T0)) as { text: string }).text;
+    expect(text(90)).toContain('within 90 minutes of');
+    expect(text(180)).toContain('within 3 hours of');
+    expect(text(1440)).toContain('within 24 hours of');
+    expect(text(2880)).toContain('within 2 days of');
+    expect(text(4320)).toContain('within 3 days of');
+    expect(text(5760)).toContain('within 4 days of');
+  });
+
+  it("reads the server's confirmBy, which maintenance moved later (owner 2026-11-06 Q10), and words the window in working time", () => {
+    // Marked paid at 0; maintenance 5 → 45 moved confirmBy from 90 to 130.
+    const paused = trade({ confirmBy: iso(130) });
+    expect(disputeEntry(paused, new Date(T0 + 90 * MIN))).toEqual({
+      kind: 'wait',
+      until: new Date(T0 + 130 * MIN),
+      text: "You can open a dispute if the seller hasn't confirmed within 90 minutes of your payment.",
+    });
+    expect(disputeEntry(paused, new Date(T0 + 129 * MIN + 59_999)).kind).toBe('wait');
+    expect(disputeEntry(paused, new Date(T0 + 130 * MIN))).toEqual({ kind: 'open' });
   });
 
   it("opens for the seller while securing or secured, never the buyer before I've paid (proto review P1), and not in funding or after release", () => {
@@ -149,13 +176,13 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
 });
 
 describe('copy helpers', () => {
-  it('writes amounts in sentences with the kit\'s 6 places (review 5), and dates as "Fri 16 Oct, 10:14"', () => {
+  it('writes amounts in sentences with the kit\'s 6 places (review 5), and dates as "16 Oct 2026, 10:14 UTC"', () => {
     expect(xmrInText('1250000000000')).toBe('1.250000');
     expect(xmrInText('1000000000000')).toBe('1.000000');
     expect(xmrInText('1234567000000')).toBe('1.234567');
     expect(xmrInText('1250000999999')).toBe('1.250000'); // cut, never rounded up
     expect(xmrInText(12_500_000_000n)).toBe('0.012500');
-    expect(dayTime(new Date('2026-10-16T10:14:00Z'), 'UTC')).toBe('Fri 16 Oct, 10:14');
+    expect(dayTime(new Date('2026-10-16T10:14:00Z'))).toBe('16 Oct 2026, 10:14 UTC');
     expect(inTime(23 * 60 * MIN + 59 * MIN)).toBe('in 23 h');
     expect(inTime(40 * MIN)).toBe('in 40 min');
   });
@@ -266,14 +293,23 @@ describe('ModeratorTag: the violet badge only inside a disputed trade', () => {
 describe('DisputeOpen', () => {
   it('explains when the buyer can open a dispute and sends nothing before then', () => {
     const onOpen = vi.fn(async () => undefined);
-    const { host } = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(30)} onOpen={onOpen} />));
-    expect(host.textContent).toContain("You can open a dispute if the seller hasn't confirmed within 2 h of your payment.");
+    // 89 min after marking paid (owner 2026-11-07 F9: an instant type's buyer may dispute from 90 min).
+    const { host } = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(89)} onOpen={onOpen} />));
+    expect(host.textContent).toContain("You can open a dispute if the seller hasn't confirmed within 90 minutes of your payment.");
     const primary = host.querySelector<HTMLButtonElement>('[data-primary]')!;
     expect(primary.textContent).toBe('Open dispute');
     expect(primary.disabled).toBe(true);
     fire(primary, new MouseEvent('click', { bubbles: true }));
     expect(onOpen).not.toHaveBeenCalled();
     expect(host.querySelector('input[type=file]')).toBeNull();
+  });
+
+  it("from 90 minutes after marking paid (confirmBy, one window for both sides, owner p9-4, F9) the buyer may open one, with the seller's-time flag", () => {
+    const open = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(90)} onOpen={vi.fn(async () => undefined)} />));
+    expect(open.host.querySelector<HTMLButtonElement>('[data-primary]')!.disabled).toBe(false);
+    expect(open.host.textContent).toContain("Seller's time to confirm ran out");
+    expect(open.host.querySelector('.dispute-wait')).toBeNull();
+    open.unmount();
   });
 
   it('sends the picked reason and the note once the window has ended', async () => {
@@ -600,5 +636,23 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     // Kit handoff 1.5: an exact figure still reads as money, 6 places at least, more only when non-zero.
     expect(xmrInTextExact('1250000000000')).toBe('1.250000');
     expect(xmrInTextExact('1250000000100')).toBe('1.2500000001');
+  });
+});
+
+describe('the buyer dispute wait, said two ways (owner F9)', () => {
+  it('waitPart is the Duration of the wait in the same units as waitInWords', () => {
+    const cases: [number, string, string][] = [
+      [90, '90 min', '90 minutes'],
+      [180, '3 h', '3 hours'],
+      [1440, '24 h', '24 hours'],
+      [2 * 1440, '2 d', '2 days'],
+      [4 * 1440, '4 d', '4 days'],
+      [1, '1 min', '1 minute'],
+    ];
+    for (const [min, part, words] of cases) {
+      const p = waitPart(min);
+      expect(`${p.n} ${p.unit}`).toBe(part);
+      expect(waitInWords(min)).toBe(words);
+    }
   });
 });

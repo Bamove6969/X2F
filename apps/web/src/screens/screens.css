@@ -74,6 +74,7 @@
   font-size: 16px;
 }
 
+/* The system's focus ring is ink, never orange (design review X3). */
 .x2f-input:focus-visible {
   outline: 2px solid var(--x2f-ink);
   outline-offset: 2px;

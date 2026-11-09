@@ -375,8 +375,8 @@ async function loadOfferCaps(db: Queryable): Promise<Record<Side, number>> {
  * Posting or relisting, inside the caller's transaction (review M1): refused while the site's
  * trading is paused (409 `trading-paused`), while the account has a trading hold (409
  * `trading-hold`), without a usable payout wallet (409 `no-wallet`, spec 6.4; a wallet still in
- * its 24-hour wait does not count), and at the account's offer caps (409 `too-many-offers`,
- * review I1; `except` is the offer being relisted).
+ * its 24-hour wait does not count), and at the account's offer cap for the offer's side (409
+ * `too-many-offers`, owner Q31; `except` is the offer being relisted).
  *
  * The account row is locked `for update` first, so one account's posts and relists run one at a
  * time (the cap cannot be raced) and a hold being inserted (its foreign key takes a key-share lock

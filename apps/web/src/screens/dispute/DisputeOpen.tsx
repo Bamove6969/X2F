@@ -44,10 +44,14 @@ export function DisputeOpen({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const noteId = useId();
-  const entry = disputeEntry(trade, now());
+  const at = now();
+  const entry = disputeEntry(trade, at);
   const allowed = entry.kind === 'open';
   const back = `/trade/${encodeURIComponent(trade.code)}`;
-  const timedOut = trade.state === 'paid' && trade.role === 'buyer' && allowed;
+  // The buyer may dispute from the trade's wait after marking paid (owner 2026-11-07 F9), often before the
+  // seller's confirm window ends: the flag says it ran out only once it has.
+  const timedOut =
+    trade.state === 'paid' && trade.role === 'buyer' && allowed && trade.confirmBy !== null && at.getTime() >= Date.parse(trade.confirmBy);
   const afterRefund = trade.state === 'refunded';
   const proofs = tradeProofs(trade);
 

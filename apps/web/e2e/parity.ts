@@ -39,6 +39,10 @@ export function boardViewport(board: string, boardsDir = BOARDS_DIR): ParityView
 /** The ratio of differing pixels at which the (reported) screenshot comparison counts as a difference. */
 export const MAX_DIFF_PIXEL_RATIO = 0.03;
 
+/** Why a board's dates differ from the page's (KNOWN_EXCEPTIONS below). */
+const DATE_FORMAT =
+  "One date format (design review M1, ui/dates.ts): the page says the same moment as '16 Oct 2026, 10:14 UTC' (times of day as '10:14 UTC'), not the board's local weekday form.";
+
 /**
  * Board texts that are known to be out of date and are not required on the page. The phone boards
  * win over the Desktop board where they disagree (lead ruling; HANDOFF: the desktop view is still
@@ -251,8 +255,13 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     { text: "sarah.v asked you for the unblurred proof. Only she will see it. satoshi_ghost won't.", why: "Plan 5 (SendUnblurred) with Plan 4's proof request." },
     { text: 'Send unblurred proof to sarah.v', why: "Plan 5 (SendUnblurred) with Plan 4's proof request." },
+    { text: 'Replied in 38 min · ruling due by Fri 16 Oct, 10:14 (in 23 h)', why: DATE_FORMAT },
+    { text: 'Fri 16 Oct, 10:14', why: DATE_FORMAT },
+    { text: "10:14 · You opened a dispute: I paid, but the seller hasn't released", why: DATE_FORMAT },
+    { text: '10:52 · Moderator sarah.v joined this dispute', why: DATE_FORMAT },
   ],
   DisputeRuling: [
+    { text: 'sarah.v · Thu 15 Oct, 14:30', why: DATE_FORMAT },
     { text: '1.25 XMR goes to you', why: 'Design kit handoff 1.5 and kit review 5 (8 Nov): prose XMR has 6 places, so the page reads 1.250000 XMR; the board predates the rule (design to re-export).' },
     {
       text: 'To Cake Wallet, address ending …k3Fz, once the appeal window closes.',

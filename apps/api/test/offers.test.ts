@@ -2,7 +2,7 @@ import { offerRate } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { rateSql } from '../src/offers/routes.js';
+import { OFFER_CAP_DEFAULTS, OFFER_CAP_KEYS, rateSql } from '../src/offers/routes.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { currentLoginTag, makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
@@ -500,6 +500,8 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
   });
 
   it('Q31: exactly 3 buying + 3 selling offers per account, a seventh refused; the owner settings move each side, relisting included', async () => {
+    expect(OFFER_CAP_DEFAULTS).toEqual({ buy: 3, sell: 3 });
+    expect(OFFER_CAP_KEYS).toEqual({ buy: 'offers_max_buy', sell: 'offers_max_sell' });
     const p = await poster();
     for (const side of ['sell', 'buy']) for (const currency of ['USD', 'EUR', 'GBP']) await post(p, { currency, side, methodId: 'REVOLUT' });
     for (const side of ['sell', 'buy']) {

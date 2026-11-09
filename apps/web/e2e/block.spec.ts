@@ -66,7 +66,8 @@ for (const viewport of PHONE_VIEWPORTS) {
       await expect(open).toBeVisible();
       await expectPhoneLayout(page);
       await open.click();
-      await expect(page.locator('[data-part="block-ask"]')).toContainText(`Block ${poster}?`);
+      // The Block board's confirm sheet (design review 64).
+      await expect(page.getByRole('dialog', { name: `Block ${poster}?` })).toBeVisible();
       await expect(page.locator('#block-ask-h')).toBeFocused();
       await expect(page.locator('[data-part="block-ask"]')).toContainText("They won't be told you blocked them.");
       await expectPhoneLayout(page);

@@ -21,7 +21,6 @@
  *   it, where Accept is `accept-cancel` then `escrow.proposeCancelSign()`.
  */
 import { useEffect, useId, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Link } from 'react-router';
 import { formatXmr } from '@x2f/trade';
 import { ApiCallError } from '../../api/client.js';
 import { getTrade } from '../../api/trade.js';
@@ -36,10 +35,10 @@ import { CancelProposalCard, SellerCancelControls } from './CancelSheet.js';
 import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
 import { buyerCancelMode, escrowChip, finishBlock, payBlock, paySecured, payTimeOver, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { PaidWaitingActions, PaidWaitingBody } from './PaidWaiting.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
-import { DisputeLocked } from './DisputeLocked.js';
 import { registerTradeScreen, type MemberScreenProps, type TradeSlot } from './TradeRoom.js';
 import { ChatButton, ChatSlot } from './TradeChatButton.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
@@ -527,9 +526,10 @@ export function BuyerPay(p: TradeScreenProps) {
     <Button variant="primary" disabled={!finishOk || finishing} aria-busy={finishing || undefined} onClick={() => void finish()}>
       Finish marking as paid
     </Button>
-  ) : (
+  ) : escrow.paidRecorded ? null : (
+    // While this device records the tap; once it has, the paid status card says so (BuyerPaidWaiting board).
     <Button variant="primary" disabled aria-live="polite">
-      {escrow.paidRecorded ? 'Marked as paid' : 'Marking as paid…'}
+      Marking as paid…
     </Button>
   );
   const cancel =
@@ -538,17 +538,9 @@ export function BuyerPay(p: TradeScreenProps) {
         Cancel trade
       </Button>
     );
-  // The buyer's dispute: none before "I've paid" (machine.ts: too-early in securing and secured;
-  // design proto review P1), then from confirmBy, the method's wait from the tap (owner F9: 90 min
-  // for instant types), shown locked with its UTC time until then (board BuyerPaidWaiting).
-  const disputeWait = paid && view.confirmBy !== null && serverClock().getTime() < Date.parse(view.confirmBy);
-  const dispute = !paid ? null : disputeWait ? (
-    <DisputeLocked until={view.confirmBy!} serverClock={serverClock} />
-  ) : (
-    <Link to={`/trade/${encodeURIComponent(view.code)}/dispute`} className="x2f-button x2f-button--danger">
-      Open dispute
-    </Link>
-  );
+  // No dispute here: none for the buyer before "I've paid" (machine.ts: too-early in securing and
+  // secured; design proto review P1). In paid it is PaidWaitingActions': from confirmBy, the
+  // method's wait from the tap (owner p9-4, F9), locked with its time until then.
   const refusal = refusalText(escrow.refusal);
   const notices = (
     <>
@@ -619,6 +611,57 @@ export function BuyerPay(p: TradeScreenProps) {
     </>
   );
 
+  // After "I've paid": the BuyerPaidWaiting board (status, the seller's confirm window, what happens
+  // next, the payment folded away; Nudge and the dispute below).
+  if (paid) {
+    const actions = (
+      <>
+        {primary}
+        <PaidWaitingActions view={view} serverClock={serverClock} wide={wide} />
+      </>
+    );
+    if (wide) {
+      return (
+        <>
+          <WideRoom view={view} method={method} title={title} chip={null}>
+            {notices}
+            <PaidWaitingBody
+              view={view}
+              escrow={escrow}
+              method={method}
+              total={total}
+              serverClock={serverClock}
+              wide
+              actions={
+                <div className="x2f-paid-actions" data-part="paid-actions">
+                  {actions}
+                </div>
+              }
+              chatAction={
+                <button type="button" className="x2f-inline-action" onClick={(e) => focusAsideChat(e.currentTarget)} data-part="paid-chat">
+                  <Icon name="chat" size={20} />
+                  Message {publicName(view.counterparty)} in chat
+                </button>
+              }
+            />
+          </WideRoom>
+          {sheets}
+        </>
+      );
+    }
+    return (
+      <div className="x2f-pay" data-layout="phone" data-screen-part="paid-waiting">
+        <TradeHeader title={title} code={view.code} method={method} backTo="/trades" action={<ChatButton view={view} />} heading />
+        <div className="x2f-pay__main">
+          {notices}
+          <PaidWaitingBody view={view} escrow={escrow} method={method} total={total} serverClock={serverClock} wide={false} chatAction={<ChatButton view={view} link />} />
+        </div>
+        <footer className="x2f-pay__footer">{actions}</footer>
+        {sheets}
+      </div>
+    );
+  }
+
   if (wide) {
     return (
       <>
@@ -634,7 +677,6 @@ export function BuyerPay(p: TradeScreenProps) {
             {primary}
             {cancel}
             <span className="x2f-room__spacer" />
-            {dispute}
           </div>
         </WideRoom>
         {sheets}
@@ -656,7 +698,6 @@ export function BuyerPay(p: TradeScreenProps) {
         {primary}
         <div className="x2f-pay__footer-row">
           {cancel ?? <span />}
-          {dispute}
         </div>
       </footer>
       {sheets}

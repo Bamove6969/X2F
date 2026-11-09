@@ -6,7 +6,7 @@
  */
 import { useEffect, useId, useState } from 'react';
 import { Button } from '../../ui/Button.js';
-import { utcDate, utcDateTime } from '../../ui/dates.js';
+import { formatDate as utcDate, formatDateTime as utcDateTime } from '../../ui/dates.js';
 import './pay.css';
 
 /** Re-renders every `ms` so a time written into the text stays true (the Countdown does this for its own). */

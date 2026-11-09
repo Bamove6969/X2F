@@ -31,6 +31,13 @@ const SHAPES = {
     </>
   ),
   check: <path d="M5 12l4 4 10-10" />,
+  // Refunded board: the XMR went back.
+  undo: (
+    <>
+      <path d="M9 14l-5-5 5-5" />
+      <path d="M4 9h11a5 5 0 010 10h-3" />
+    </>
+  ),
   shield: <path d={SHIELD} />,
   // LoginApprove board: a blocked login.
   'shield-x': (
@@ -119,6 +126,13 @@ const SHAPES = {
     <>
       <path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9" />
       <path d="M10.3 21a1.94 1.94 0 003.4 0" />
+    </>
+  ),
+  // Two ticks (News board "Mark all as read").
+  'check-double': (
+    <>
+      <path d="M2 12l5 5L18 6" />
+      <path d="M12 16l1 1 9-11" />
     </>
   ),
   // The ringing bell (SellerRefund board "Nudge mira.k").

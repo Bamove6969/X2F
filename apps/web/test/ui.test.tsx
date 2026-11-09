@@ -153,6 +153,10 @@ describe('Countdown', () => {
     expect(formatRemaining(600_000, 'clock')).toBe('10 min 0 s');
     expect(formatRemaining(1, 'clock')).toBe('1 s'); // rounded up: never 0 while time is left
     expect(formatRemaining(Number.NaN, 'clock')).toBe('0 s');
+    expect(formatRemaining(4 * 86_400_000 - 60_000, 'minutes')).toBe('3 d 23 h');
+    expect(formatRemaining(3 * 86_400_000, 'minutes')).toBe('3 d');
+    expect(formatRemaining(48 * 3_600_000, 'minutes')).toBe('48 h');
+    expect(formatRemaining(47 * 3_600_000 + 58 * 60_000, 'minutes')).toBe('47 h 58 min');
     expect(formatRemaining(90 * 60_000, 'minutes')).toBe('1 h 30 min');
     expect(formatRemaining(62 * 60_000, 'minutes')).toBe('1 h 2 min');
     expect(formatRemaining((60 + 52) * 60_000, 'minutes')).toBe('1 h 52 min');

@@ -2,8 +2,8 @@
 // Claude Design board yet (NEEDS_DESIGN_TEAM in test/team-tripwires.test.ts); the owner signs it
 // off with the board. Refusals (owner-only, a role a member lacks, the member limit, escrow
 // signing) are CantDoThat's, worded in ui/cantDoCodes.ts (teamCantDoText).
+import { formatDateTime } from '../../ui/dates.js';
 import type { TeamRole } from '@x2f/auth-client';
-import { utcDateTime } from '../../ui/dates.js';
 
 export const TEAM_PATH = '/settings/team';
 export const JOIN_PATH = '/team/join';
@@ -15,7 +15,8 @@ export function rolesText(roles: readonly TeamRole[]): string {
   return (['offers', 'trades'] as const).filter((r) => roles.includes(r)).map((r) => ROLE_WORDS[r]).join(' and ');
 }
 
-const when = (iso: string): string => utcDateTime(new Date(iso));
+/** "6 Nov 2026, 15:00 UTC" (ui/dates.ts, the one date format). */
+const when = (iso: string): string => formatDateTime(iso);
 
 /** What each audit action reads as (an unknown one is shown by its code). */
 const AUDIT_WORDS: Record<string, string> = {

@@ -100,6 +100,35 @@ test('on a phone the browse header shows logo D where the letters X2F were, and 
   await expect(page.locator('.x2f-bottom-nav')).toBeVisible();
 });
 
+// Review I3 and owner rule W-002 (News stays reachable after "Don't show me this again"): one Site
+// news bell on every screen. On a phone it sits beside the logo in Buy/Sell's header; on wide the
+// rail head carries it beside the logo (placement pending design, lead default 9 Nov) and Buy/Sell's
+// header hides its own.
+test('one Site news bell: in the browse header on a phone, in the rail head on wide (review I3, W-002)', async ({ page }) => {
+  for (const path of ['/buy', '/sell']) {
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.goto(path);
+    await expect(page.locator('.x2f-browse__header [data-part="news-bell"]')).toBeVisible();
+    await expect(page.locator('[data-part="news-bell"]:visible')).toHaveCount(1);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(page.locator('[data-shell="desktop"]')).toBeAttached();
+    // The rail's bell is the one; Buy/Sell's own header keeps it hidden there.
+    await expect(page.locator('[data-part="news-bell"]:visible')).toHaveCount(1);
+    await expect(page.locator('nav.x2f-rail .x2f-rail__head [data-part="news-bell"]')).toBeVisible();
+    // Opened straight at wide width too, and a screen reader hears one bell, not two.
+    await page.goto(path);
+    await expect(page.locator('.x2f-browse__header')).toBeVisible();
+    await expect(page.locator('[data-part="news-bell"]:visible')).toHaveCount(1);
+    await expect(page.getByRole('link', { name: /^Site news/ })).toHaveCount(1);
+  }
+  // A wide screen with no browse header still has the bell, and it opens News.
+  await page.goto('/wallets');
+  const bell = page.locator('nav.x2f-rail [data-part="news-bell"]');
+  await expect(bell).toBeVisible();
+  await expect(page.getByRole('link', { name: /^Site news/ })).toHaveCount(1);
+  await expect(bell).toHaveAttribute('href', '/news');
+});
+
 test('a terms-required answer sends the page to /terms with returnTo', async ({ page }) => {
   await page.route('**/v1/account/me', (r) => r.fulfill({ status: 403, json: { error: 'terms-required', version: '2026-10-17' } }));
   await page.goto('/sell?currency=EUR');
