@@ -440,6 +440,25 @@ describe('receiveProof: refusals around the decode and the redraw', () => {
       expect(close).toHaveBeenCalledTimes(1);
     }
   });
+
+  it('a fresh copy over RECEIVE_MAX_BYTES is render-failed before it is walked; one of exactly the cap is accepted', async () => {
+    // A sound PNG of the right size whose bulk is one text chunk: the only thing wrong is its byte count.
+    const padded = (total: number): Uint8Array => {
+      const base = png(PNG_W, PNG_H, pngRaw());
+      return png(PNG_W, PNG_H, pngRaw(), pngChunk('tEXt', new Uint8Array(total - base.length - 12)));
+    };
+    const over = padded(RECEIVE_MAX_BYTES + 1);
+    expect(over.length).toBe(RECEIVE_MAX_BYTES + 1);
+    const { d, close } = deps();
+    expect(await code(receiveProof(cleanPng(), PNG_DECL, { decode: d.decode, render: async () => over }))).toBe('render-failed');
+    expect(close).toHaveBeenCalledTimes(1);
+
+    const exact = padded(RECEIVE_MAX_BYTES);
+    expect(exact.length).toBe(RECEIVE_MAX_BYTES);
+    const out = await receiveProof(cleanPng(), PNG_DECL, { decode: deps().d.decode, render: async () => exact });
+    expect(readImageHeader(out.png)).toEqual({ mime: 'image/png', width: PNG_W, height: PNG_H });
+    expect(out.png.length).toBeLessThan(RECEIVE_MAX_BYTES);
+  });
 });
 
 describe('receiveProof: fuzz', () => {

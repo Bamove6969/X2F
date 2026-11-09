@@ -7,8 +7,9 @@
 //      cleaners) and refuses a malformed, truncated, animated or over-cap file BEFORE any decode;
 //   3. decodes it (the browser's createImageBitmap, passed in as `deps.decode`);
 //   4. draws the decoded pixels onto a fresh canvas and exports new PNG bytes (`deps.render`);
-//   5. checks that output is a well-formed PNG of the same size and drops every chunk but IHDR,
-//      PLTE, IDAT and IEND (`cleanImage`).
+//   5. checks that output is a well-formed PNG of the same size, no larger than RECEIVE_MAX_BYTES
+//      (it becomes a data: URL, which browsers cap), and drops every chunk but IHDR, PLTE, IDAT
+//      and IEND (`cleanImage`).
 // Only the bytes from step 5 are ever shown. The received bytes never reach an <img>, so anything
 // smuggled in them (trailing script bytes, a polyglot, metadata) is not in what the user sees.
 // Any failure is a ProofReceiveError; nothing here falls back to the received bytes.
@@ -27,7 +28,11 @@ export const RECEIVE_MIMES: readonly ReceiveMime[] = ['image/png', 'image/jpeg',
  * megapixels, about 27 MB of RGBA once decoded.
  */
 export const RECEIVE_MAX_SIDE = PROOF_MAX_SIDE;
-/** The cap on the received image bytes: a proof's ciphertext is at most PROOF_MAX_CIPHERTEXT (4 MiB). */
+/**
+ * The cap on the received image bytes, and on the fresh copy drawn from them: a proof's ciphertext
+ * is at most PROOF_MAX_CIPHERTEXT (4 MiB), and the copy is shown as a data: URL, so it keeps the
+ * same bound (a bank-app screenshot redraws far under it).
+ */
 export const RECEIVE_MAX_BYTES = PROOF_MAX_CIPHERTEXT;
 
 /**
@@ -37,7 +42,7 @@ export const RECEIVE_MAX_BYTES = PROOF_MAX_CIPHERTEXT;
  * - `undecodable`: the header is malformed or truncated, does not match the declared size, or the
  *   decoder failed.
  * - `render-failed`: drawing or exporting the fresh copy failed, or the copy is not a sound PNG of
- *   the same size.
+ *   the same size, or is over RECEIVE_MAX_BYTES.
  */
 export type ProofReceiveErrorCode = 'unsupported' | 'too-large' | 'undecodable' | 'render-failed';
 
@@ -358,7 +363,8 @@ export async function receiveProof(bytes: Uint8Array, declared: ReceiveDeclared,
     } catch {
       throw err('render-failed');
     }
-    if (!(out instanceof Uint8Array) || sniffImage(out) !== 'image/png') throw err('render-failed');
+    // The byte cap comes before the walk, so an oversized copy is never scanned or base64-encoded.
+    if (!(out instanceof Uint8Array) || out.length > RECEIVE_MAX_BYTES || sniffImage(out) !== 'image/png') throw err('render-failed');
     let png: Uint8Array;
     try {
       const outHead = readImageHeader(out);
