@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-08T13:22:02.636Z",
+  "choice": null,
+  "n": 3,
+  "own": "I say it works like this. So, let's say that the payment method chosen was an e-transfer, an Interac e-transfer. So, what will happen when the trade starts and the chat opens up between the two of us? I'm going to have on my side of the screen some boxes that are intentionally put there specifically for Interac payment people. So, there'll be a box that says full name, there'll be a box that says email address, there'll be a box that says phone number. And I think that's all that's mandatory with an e-transfer. But even with an e-transfer, you don't have to have both a phone number and an email address. You just have to have one or the other. So, if we are able to do our homework and find out what the required pieces of information are for each payment type, then those boxes can appear in the chat window on the person's side who is sending that payment type. And when it's the time for them to send the details, they just have to click send, and it sends it all nicely packaged over to the other person.",
+  "question": "Can a member send your payment details to a buyer?"
+}

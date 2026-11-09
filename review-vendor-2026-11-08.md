@@ -44,3 +44,33 @@ Becoming a vendor needs the account holder's own full session (members 403 `owne
 
 - p4-5 says "every account". The code closes every trader-kind account (vendors and traders) but never staff, owner or member logins. Closing the owner would be harmful, so this reading looks right; it should be confirmed.
 - p11-13 (signature erased when the account closes) is on another branch. When it lands, `closeDueAccounts` must erase the signature too.
+
+## Re-verify bb7616e2 (8 Nov 2026)
+
+Branch: origin/wip/lead-vendor at bb7616e2 (worktree agent-a3ab561473fa5e6ff, local branch vd, tree clean, nothing changed). Read `git diff d5a84e1a bb7616e2`: merge of main (8e9ea276), then 14f653be (I1), 6a3bb54e (M1, M2, M4), daf1999e (M3, M5), bb7616e2 (I1 follow-up). Ran banList.test.ts (26 passed), accountInactivity.test.ts (17 passed), methods.test.ts (42 passed). Migration 210 is used by no other origin branch and not by main.
+
+**Verdict: APPROVED.** I1 and M1-M5 are fixed. No new Critical or Important finding.
+
+**I1: fixed.** `bannableFingerprints` (bans.ts) records the primary, `proved_subkeys` and signing subkeys whose valid binding carries a valid embedded back-signature (0x19 made by the subkey over this primary and this subkey). The attacks I tried all fail:
+- *Forged or reused back-signature.* Only the holder of the subkey's private key can make one. Vera's own back-signature covers her primary, not Mallory's, so the hash differs and it can't be copied.
+- *Prove an encryption subkey that is Vera's key material.* Mallory can bind Vera's primary body as an encryption subkey (his binding is valid, and `storableKey` keeps it). But `proved` is the challenge recipient, worked out server-side with the same `getEncryptionKey(now, STRICT_CONFIG)` choice `encryptChallenge` makes, on the same key at the same `now`. Sign-up encrypts to `storable`, and login to `pasted` with `recipient` from `pasted`. If the challenge goes to Vera's material, Mallory can't decrypt it and nothing is stored. If it goes to his own subkey, Vera's is neither proved nor signed back. `recipient` lives only in the server-side payload, never the request.
+- *Use Vera's primary as his primary.* Every subkey would need Vera's binding. Unbound subkeys are never encryption keys, so there is no challenge he can answer.
+- Every path fills `proved_subkeys`: sign-up, team join (both keys), staff invite, add key (direct, confirm route, and through the hold, where `recipient` is carried in the pending change), and login refresh (merged with distinct). The three tests (none, encrypt, sign) go through the real register and login routes and check that Vera's login still returns 200 after Mallory's ban.
+
+**Key-in-use DoS: not possible, and nothing new.** `assertNoSubkeyInUse` checks only the *new* key's subkeys against existing *primary* fingerprints, and the uniqueness constraint is on the primary alone. If Mallory registers first with Vera's primary as a subkey, Vera's sign-up still succeeds: her primary isn't a primary on file, and her subkeys aren't anyone's primary. Mallory can't register a primary that is Vera's subkey material either, because that needs her private subkey for the self-signature. After Vera registers, only Mallory is hurt: his next login refresh hits `key-in-use`. The check only refuses; it never bans.
+
+**M1: fixed.** When a pass finds more than CLOSE_CAP due accounts, `auto_close_off_at` is set and one alert goes out (`switchedOff: true`). Every later pass returns 0 before it selects anything. `POST /staff/v1/site/auto-close/resume` checks `site.control`, which belongs to the owner role only (not in MOD_PERMS or senior). It accepts only an empty body, logs `site.auto-close-resumed` only when the flag changes, and is in STAFF_ROUTE_ROWS as OWNER. main.ts passes `deps` (with `config`) to `startRetention`, and the job throws without it.
+
+**M2: fixed.** `closed_account_keys` holds only `(account_id, tag_key_id, 32-byte tag, closed_at)` under the current ring key. It is written inside the close transaction before `pgp_keys` is deleted, and only `recordBan` reads it. The test checks that no fingerprint appears in the stored rows and that the key is free until a ban, then refused after one (owner G14).
+
+**M3: fixed.** A vendor's G13 check counts `usablePgp`. The test uses an expired key plus a passkey and gets 409 `last-login-method`.
+
+**M4: real.** Both lock races are real: two connections, with `pg_stat_activity` waiting on `Lock`, and the take's 404 comes from the real route. The reopen tests (refund then dispute, and late funds) count the 60 days from the final close.
+
+**M5: fixed.** Dev-setup note.
+
+Notes (not findings):
+- When an older payload has no `recipient`, `insertPgpKey` and `applyPgpKey` recompute it at write time. For a hold that waited 24 h, that can pick a different, never-proved subkey: if Mallory's own encryption subkey expired, a bound copy of Vera's could become the choice. This only affects payloads made before this deploy, and nothing calls `recordBan` yet. Safer: treat a missing recipient as `[]`.
+- Rows from before 210 have empty `proved_subkeys` until the next login refresh, so their encryption subkey isn't banned until then.
+- M1's optional "count an outage" part wasn't done. The latch covers it.
+- The resume route needs no key tap, like banner and maintenance. GET /staff/v1/site doesn't show the switch, so the owner learns of it only from the alert.

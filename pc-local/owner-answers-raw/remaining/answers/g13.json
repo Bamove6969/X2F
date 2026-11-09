@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:08:12.187Z",
+  "choice": null,
+  "n": 13,
+  "own": "Again, there's no such thing as a password-only account, so I think you mean a username and password-only vendor. And no, that would not be possible. They would have to exchange whatever strong security method they want to remove for one of the three different options for a different strong security method.",
+  "question": "Can a vendor remove its only strong login key after switching?"
+}

@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T10:04:48.035Z",
+  "choice": null,
+  "n": 60,
+  "own": "If they don't have their recovery code, they have to reach out to the owner. The owner will have to vet them, and based on the owner's decision, he will be able to help them log back in by resetting their security parameters. He will probably just give them a username and a password to log in with, and then they can set up the additional security methods.",
+  "question": "If a moderator loses their only security key, how do they recover?"
+}

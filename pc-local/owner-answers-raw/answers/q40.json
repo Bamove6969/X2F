@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T12:47:51.089Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude3 and claude2",
+  "n": 40,
+  "own": "If there is only a dispute, then the way this dispute ends dictates how the feedback lands. For example:\n- If the trade is reversed, there is no feedback.\n- If the dispute happens and it's completed and an exchange happens, then both parties will be asked to leave feedback. If they leave feedback, it will be applied.\n- If an appeal happens, then that feedback will be put on hold and removed temporarily, and then the appeal process will go through. At the end of the appeal process, whatever the decision is will determine the outcome of the feedback.\n- If they reverse everything and it's a matter, it's basically like no trade happens at all, like all moneys are reversed, then feedback is completely removed.\n- If they let it settle like a trade happened, then the feedback stays.",
+  "question": "\"Overturned\" erases a trade's reviews. What does it cover?"
+}

@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:54:07.946Z",
+  "choice": null,
+  "n": 37,
+  "own": "An incident ID sounds like it should be related to a dispute ID, and I would recommend a longer number because we don't know how many disputes we're going to get and I do not wish to run out.\n\nMaybe if possible, there could be even a rhyme or reason to an incident ID, just make it a longer set of characters. I want it to be about eight to nine characters long, and that's the incident ID.\n\nThat will be displayed to both members of the trade when the dispute is started. It'll let them know their incident number is this, it'll display at the top of the trade, and it'll obviously go to a moderator. When a moderator picks up a dispute, of course he will see the incident number as well.\n\nAs soon as a moderator accepts a dispute, instant auditing that's logged so we know who it's assigned to, that moderator's got it. We know what time he accepted it, we know what time he opened the actual trade.",
+  "question": "What does an incident ID look like, and who sees the incident pop-up?"
+}

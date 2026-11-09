@@ -1,0 +1,9 @@
+
+ RUN  v5.0.3 /home/flem/x2f-worktrees/lead-land
+
+
+ Test Files  6 passed (6)
+      Tests  134 passed (134)
+   Start at  09:13:22
+   Duration  577.45s (tests 96%, transform 2%, import 2%)
+

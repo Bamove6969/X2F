@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T12:55:38.281Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude3",
+  "n": 54,
+  "own": "It asks for a username, which is your login name, and it asks for a display name, which is the name that you are displayed to others. Your username is never shown to anybody and is as confidential as your password.",
+  "question": "First-time owner setup asks for a username and a separate private login name. The board shows one field. Which?"
+}

@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T12:41:29.553Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude3",
+  "n": 38,
+  "own": "I think when they file a dispute, an hourglass should appear with a countdown from 24 hours that indicates the maximum amount of time before a moderator will intervene, but generally it happens much quicker.\n\nGet design toward that, and then we'll touch base on the 48-hour part if the 24-hour part goes past, but it'll start with just the 24-hour counting down with a picture of the hourglass and saying what I said before.",
+  "question": "Disputes have a 24-hour goal and a 48-hour hard deadline. When do traders see the 48-hour time?"
+}

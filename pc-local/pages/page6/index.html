@@ -1,0 +1,57 @@
+<title>X2F Questions 6</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+/* Same shape as the question page: one explanation at a time, ink for the choice, orange for the recommendation. */
+:root{--bg:#f6f6f3;--panel:#fff;--fg:#17181a;--muted:#5d6066;--line:#d9d9d3;--ink:#17181a;--on:#fff;--accent:#c2500a;--bad:#a3211b;--body:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121315;--panel:#1b1d20;--fg:#f0f0ec;--muted:#a5a8ad;--line:#33363b;--ink:#f0f0ec;--on:#121315;--accent:#ff9a57;--bad:#ff8f87;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121315;--panel:#1b1d20;--fg:#f0f0ec;--muted:#a5a8ad;--line:#33363b;--ink:#f0f0ec;--on:#121315;--accent:#ff9a57;--bad:#ff8f87;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 40px}
+.wrap{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline}
+h1{font-size:18px;margin:0}.count{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--ink)}
+.save{font-size:13px;color:var(--muted);min-height:20px}.save.bad{color:var(--bad)}
+main{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.tag{font-size:13px;color:var(--muted)}h2{font-size:21px;line-height:1.3;margin:0;text-wrap:balance}
+.note{margin:0;white-space:pre-line}
+.opt{display:flex;gap:10px;text-align:left;width:100%;background:none;color:inherit;font:inherit;border:1.5px solid var(--line);border-radius:10px;padding:12px 14px;min-height:48px;cursor:pointer}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opt[aria-checked=true]{background:var(--ink);color:var(--on);border-color:var(--ink)}.opt[aria-checked=true] .rec{color:var(--on)}
+.rec{color:var(--accent);font-weight:600;white-space:nowrap}
+label{font-weight:600}textarea{width:100%;min-height:100px;font:inherit;color:inherit;background:var(--bg);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;resize:vertical}
+.nav{display:flex;justify-content:space-between;gap:8px}.btn{border:1.5px solid var(--line);background:none;color:inherit;font:inherit;font-weight:600;border-radius:10px;padding:10px 16px;min-height:44px;cursor:pointer}
+.btn.pri{background:var(--ink);color:var(--on);border-color:var(--ink)}.btn:disabled{opacity:.4;cursor:default}:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+<div class="wrap">
+<div class="top"><h1>X2F questions, page 6</h1><span class="count" id="count"></span></div>
+<div class="bar"><i id="bar"></i></div>
+<div class="save" id="save" role="status">Loading your saved answers…</div>
+<main id="card"></main>
+</div>
+<script>
+const Q=[{"s": "Security", "q": "When the seller asks for the escrow back because the buyer hasn't paid, the buyer gets a 15-minute warning. Should opening that warning count only from a strong login?", "n": "The flow today: the two accept the trade. The seller funds the escrow. The buyer then has 90 minutes to pay. If the buyer hasn't tapped \"I've paid\" after the 90 minutes and at least one nudge, the seller can ask for the escrow back.\nWhat the buyer sees then: a warning, \"The seller is asking for a refund. If you've paid, tap I've paid now.\" The buyer has 15 minutes. If the buyer opens the warning and does nothing for 15 minutes, the moderator signs the refund to the seller by itself. If the buyer never opens the warning, there is no automatic refund: a real person looks at the trade.\nThe risk: a thief who got into the buyer's account with only a username and password, working with the seller, opens the warning and waits. The real buyer never sees it. If the real buyer had already sent the money but not yet tapped \"I've paid\", the escrow goes back to the seller and the buyer has lost both.\nThe fix: only a strong login (passkey, security key or PGP key) can count as having opened the warning. From a password-only login the trade always goes to a real person instead of an automatic refund.", "o": ["Only a strong login counts; password-only logins always go to a person", "Any login counts, as built now"], "r": 0}];
+Q.forEach((x,i)=>{x.id='p6-'+(i+1);x.n0=i+1});
+let db=null,A={},pos=0,tm=null;const $=i=>document.getElementById(i);
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const done=q=>{const a=A[q.id];return !!a&&(a.choice!=null||(a.own||'').trim()!=='')};
+function status(t,b){const s=$('save');s.textContent=t;s.className='save'+(b?' bad':'')}
+function draft(s){try{if(s)localStorage.setItem('x2f-q6',JSON.stringify(A));else return JSON.parse(localStorage.getItem('x2f-q6')||'{}')}catch(e){}return {}}
+async function save(q){draft(1);if(!db){status('Saved on this device only. Tell the lead.',1);return}
+ try{await db.doc('answers/'+q.id).set({n:q.n0,question:q.q,...A[q.id]});status('Saved. The lead can read this answer.')}catch(e){status('That answer did not save. Try it again.',1)}}
+function render(){const n=Q.filter(done).length;$('count').textContent=n+'/'+Q.length+' answered';$('bar').style.width=(n/Q.length*100)+'%';
+ const c=$('card');c.replaceChildren();
+ if(pos>=Q.length){c.append(el('h2',null,n===Q.length?'All answered':n+' of '+Q.length+' answered'),el('p','note','Tell the lead you\'re done.'));const b=el('button','btn','Back');b.onclick=()=>{pos=Q.length-1;render()};c.append(b);return}
+ const q=Q[pos],cur=A[q.id];c.append(el('div','tag',q.s+' · '+(pos+1)+' of '+Q.length),el('h2',null,q.q));if(q.n)c.append(el('p','note',q.n));
+ const o=el('div','opts');o.setAttribute('role','radiogroup');o.setAttribute('aria-label','Your answer');
+ q.o.forEach((l,i)=>{const b=el('button','opt');b.type='button';b.setAttribute('role','radio');b.setAttribute('aria-checked',String(!!cur&&cur.choice===l));const t=el('span',null,l+' ');if(i===q.r)t.append(el('span','rec','(Recommended)'));b.append(t);
+  b.onclick=()=>{A[q.id]={choice:l,own:'',at:new Date().toISOString()};save(q);render();clearTimeout(tm);tm=setTimeout(()=>{pos++;render()},350)};o.append(b)});c.append(o);
+ const lb=el('label',null,'Or write your own answer');lb.htmlFor='own-'+q.id;const ta=el('textarea');ta.id='own-'+q.id;ta.placeholder='Type your full answer here';ta.value=cur&&cur.own||'';
+ let t2=null;ta.oninput=()=>{clearTimeout(t2);status('Saving…');t2=setTimeout(()=>{A[q.id]={choice:null,own:ta.value,at:new Date().toISOString()};save(q);[...o.children].forEach(b=>b.setAttribute('aria-checked','false'))},600)};c.append(lb,ta);
+ const nv=el('div','nav'),bk=el('button','btn','Back');bk.disabled=pos===0;bk.onclick=()=>{pos--;render()};const nx=el('button','btn pri',pos<Q.length-1?'Next':'Finish');nx.onclick=()=>{pos++;render()};nv.append(bk,nx);c.append(nv)}
+A=draft();render();
+(async()=>{db=window.claude?await claude.use('db').catch(()=>null):null;if(!db){status('Answers are saving on this device only. Tell the lead.',1);return}
+ try{const s=await db.collection('answers').get();(s.docs||s).forEach(d=>{const v=d.data?d.data():d;if(d.id)A[d.id]={choice:v.choice??null,own:v.own||'',at:v.at}});status('Ready. Answers save as you tap.');const f=Q.findIndex(q=>!done(q));if(f>0)pos=f;render()}catch(e){status('Could not load saved answers. New answers will still save.',1)}})();
+</script>
+

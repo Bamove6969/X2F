@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T06:35:50.407Z",
+  "choice": null,
+  "n": 14,
+  "own": "Yes, warn them, and they can still post the ad. Maybe our system should even post in the chat that our automated proof verification system detected that the trade code has been obfuscated, just to give a little heads-up to the person on the other end so they pay attention. We could be wrong, but we could be right, and this may even trigger a dispute, who knows? But we're putting the information out there, and if we got it wrong, then we're using this proof as a template to learn and improve for future proofs of this type anyway.",
+  "question": "Should the person paying be warned if their blur hides the trade code?"
+}

@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T08:00:24.053Z",
+  "blocking": true,
+  "choice": null,
+  "from": "claude2",
+  "n": 2,
+  "own": "I'm confused by this question because what should happen is if it is a seller going to the market, they choose filters and they filter by the currency and the payment method they want, and then they will be presented with offers that match those filters. When they select the offer that matches what they're looking for, the payment instructions will be provided to the buyer because the buyer who posted the ad is the one who needs the payment instructions. But there should be instructions that are posted automatically based on the payment method they chose. For example, if they chose that they wanted to be paid by an Interac e-Transfer, then it should say something like, \"Payment method chosen: Interac e-Transfer. Please post pertinent details in chat window.\" Or maybe it should just leave it at, \"Please post pertinent details in chat window,\" and then we'll leave it up to the two traders to start communicating and asking each other for the information they want. Or I'm open to feedback on this one.",
+  "question": "A vendor chooses different payment instructions per currency and leaves one currency's box empty. What should happen?"
+}

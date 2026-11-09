@@ -1,0 +1,278 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>X2F Owner Questions</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* One question at a time, like a trade step: ink for selection, orange only for the recommended mark. */
+:root{--bg:#f6f6f3;--panel:#fff;--fg:#17181a;--muted:#5d6066;--line:#d9d9d3;--ink:#17181a;--on-ink:#fff;--accent:#c2500a;--accent-bg:#fdeee3;--block:#a3211b;--block-bg:#fbe9e7;--ok:#1d6b45;
+--body:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121315;--panel:#1b1d20;--fg:#f0f0ec;--muted:#a5a8ad;--line:#33363b;--ink:#f0f0ec;--on-ink:#121315;--accent:#ff9a57;--accent-bg:#3a2415;--block:#ff8f87;--block-bg:#3b1b19;--ok:#6fd3a2;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121315;--panel:#1b1d20;--fg:#f0f0ec;--muted:#a5a8ad;--line:#33363b;--ink:#f0f0ec;--on-ink:#121315;--accent:#ff9a57;--accent-bg:#3a2415;--block:#ff8f87;--block-bg:#3b1b19;--ok:#6fd3a2;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 40px}
+.wrap{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-direction:column;gap:8px}
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{font-size:18px;font-weight:700;margin:0}
+.count{font:500 13px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ink);width:0;transition:width .2s}
+.tabs{display:flex;gap:8px;flex-wrap:wrap}
+button{font:inherit;color:inherit;cursor:pointer}
+.tab{background:none;border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:14px;min-height:36px}
+.tab[aria-pressed=true]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+.save{font-size:13px;color:var(--muted);min-height:20px}
+.save.bad{color:var(--block)}
+main{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--muted)}
+.pill{font-weight:600;font-size:12px;border-radius:999px;padding:2px 10px}
+.pill.b{background:var(--block-bg);color:var(--block)}
+.pill.l{border:1px solid var(--line)}
+.pill.w{border:1px solid var(--line)}
+h2{font-size:21px;line-height:1.3;font-weight:600;margin:0;text-wrap:balance}
+.note{margin:0;color:var(--muted)}
+.design{margin:0;padding:10px 12px;background:var(--accent-bg);border-radius:8px;font-size:15px}
+.design b{font-weight:600}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opt{display:flex;gap:10px;align-items:flex-start;text-align:left;width:100%;background:none;border:1.5px solid var(--line);border-radius:10px;padding:12px 14px;min-height:48px}
+.opt .dot{flex:none;width:18px;height:18px;margin-top:3px;border-radius:50%;border:2px solid var(--muted)}
+.opt[aria-checked=true]{border-color:var(--ink);background:var(--ink);color:var(--on-ink)}
+.opt[aria-checked=true] .dot{border-color:var(--on-ink);background:var(--on-ink);box-shadow:inset 0 0 0 3px var(--ink)}
+.opt[aria-checked=true] .rec{color:var(--on-ink)}
+.opt span.t{min-width:0}
+.rec{color:var(--accent);font-weight:600;white-space:nowrap}
+textarea{width:100%;min-height:110px;font:inherit;color:inherit;background:var(--bg);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;resize:vertical}
+.blocks{font-size:14px;color:var(--muted);margin:0}
+.nav{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.btn{border:1.5px solid var(--line);background:none;border-radius:10px;padding:10px 16px;font-weight:600;min-height:44px}
+.btn.pri{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+.btn:disabled{opacity:.4;cursor:default}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:14px;color:var(--muted)}
+.link{background:none;border:0;padding:4px 0;text-decoration:underline;font-size:14px;color:var(--muted)}
+.list{display:flex;flex-direction:column;gap:6px}
+.row{display:grid;grid-template-columns:44px minmax(0,1fr);gap:8px;background:none;border:0;border-top:1px solid var(--line);padding:10px 0;text-align:left;width:100%}
+.row small{display:block;color:var(--muted);font-size:13px}
+.row .n{font:500 13px var(--mono);color:var(--muted)}
+.row .a{color:var(--ok);font-size:14px}
+</style>
+<div class="wrap">
+<header>
+  <div class="top"><h1>X2F owner questions</h1><span class="count" id="count"></span></div>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="tabs" role="group" aria-label="Which questions">
+    <button class="tab" id="f-block" aria-pressed="true">Blocking</button>
+    <button class="tab" id="f-later" aria-pressed="false">Can wait</button>
+    <button class="tab" id="f-open" aria-pressed="false">Unanswered</button>
+    <button class="tab" id="f-list" aria-pressed="false">All answers</button>
+  </div>
+  <div class="save" id="save" role="status">Loading your saved answers…</div>
+</header>
+<main id="card"></main>
+<div class="tools" id="tools"></div>
+</div>
+<script>
+const Y=['Yes','No'], K=['Keep as built','Change it (say how below)'];
+const Q=[
+// ---------- BLOCKING
+{b:1,s:'Offers',f:'claude2',q:'When offers become market-price only, what happens to existing fixed-price offers?',n:'A fixed price turned into "market +0%" could be far from what the vendor meant.',o:['Remove them; the vendor posts again','Turn each into a market-price offer at +0%'],r:0,k:'Task 34 landing'},
+{b:1,s:'Offers',f:'claude2',q:'A vendor chooses different payment instructions per currency and leaves one currency\'s box empty. What should happen?',n:'Posting it empty means a buyer pays with no instructions. Using the shared text can show the wrong bank details.',o:['The offer can\'t be posted until the box is filled','That currency uses the shared instructions','Post it with empty instructions'],r:0,k:'Task 34 web'},
+{b:1,s:'Offers',f:'claude2',q:'The design board and the server allow different ranges. Which are right?',n:'Price margin: ±10% on the board, ±50% on the server. Extra for one payment type: -5% to +10% on the board, ±20% on the server. Amount bands per currency: 5 on the board, 10 on the server. Tightening later would break offers already posted.',o:['The server follows the board','The board follows the server'],r:0,k:'Task 34 landing'},
+{b:1,s:'Offers',f:'design',q:'Which offer form do we build?',o:['FlexOffer-Post: bands per currency, each with its own ± %','PostOffer: one price ± % per currency, simpler'],r:0,d:'FlexOffer-Post. The owner\'s band rules (whole units, next band +1, up to 5 currencies) only fit there.',k:'Building offer posting'},
+{b:1,s:'Offers',f:'design and claude2',q:'When a vendor posts an offer, do they pick payment methods first, or currencies first?',n:'Method first: a card per method, with the currencies it takes ticked inside, and instructions per currency only where they differ. Currency first: a USD | EUR switch, with methods and instructions under each currency.',o:['Method first','Currency first'],r:0,d:'Method-first, the same as claude2. Instructions belong to the method and differ by currency only sometimes (bank transfer: USD routing vs EUR IBAN). Bands stay per currency in their own section with the USD | EUR switch.',k:'The offer form and its board redraw'},
+{b:1,s:'Prices',f:'claude2',q:'Which outside price services may X2F fetch prices from?',o:['The same services\' direct pages as a backup now, and CoinPaprika once it passes a Tor check','Only the ones used today','Backup pages only, no CoinPaprika'],r:0,k:'Price feeds landing'},
+{b:1,s:'Prices',f:'claude2',q:'If two price sources disagree, how big a gap is allowed before X2F shows no price for that currency?',n:'Past the limit, no price is shown and trades in that currency wait.',o:['3%','2%','5%','No limit (today)'],r:0,k:'Price feeds landing'},
+{b:1,s:'Prices',f:'claude2',q:'May X2F use price sources that update only once a day?',o:['No, hourly or faster only','Yes, with a few days\' allowance over weekends'],r:0,k:'Price feeds landing'},
+{b:1,s:'Prices',f:'claude2',q:'Which currencies does X2F price?',o:['Keep today\'s 45','Add every currency an enabled source covers'],r:0,k:'Price feeds landing'},
+{b:1,s:'Disputes and trades',f:'claude2',q:'A buyer can open a dispute 30 minutes after marking paid. Should that 30 minutes pause during maintenance?',n:'Today it keeps running, so a buyer could dispute right after maintenance though the seller only had a few minutes. Every other trade deadline already pauses.',o:['Pause it like the others','Leave it running'],r:0,k:'Cap-dispute landing'},
+{b:1,s:'Disputes and trades',f:'claude2',q:'Is the 30-minute wait the same for every payment type, including bank wires that can take up to 24 hours?',n:'You said 30 minutes is a minimum ("others similar or longer").',o:['30 minutes for every type for now; review after launch','Longer for slow types, for example half the seller\'s confirm time'],r:0,k:'Cap-dispute landing'},
+{b:1,s:'Disputes and trades',f:'design and claude2',q:'May a trade glance (desktop list, fold cover, notifications) ever say "Pay now" before escrow is secured?',n:'Today the glance can say "Pay now" while the trade room says to wait.',o:['No, the glance always shows the trade room\'s own state','Keep a separate, earlier glance'],r:0,d:'No. The glance must mirror the trade room. Telling a buyer to pay before the coins are locked is the one mistake that loses them money. The boards already draw it this way: "Pay now" is the escrow-secured state on Desktop and the Fold boards. This is a build bug to fix, and the owner only needs to confirm the rule.',k:'The glance in the build'},
+{b:1,s:'Accounts and safety',f:'claude2 and claude3',q:'Staff are refused on the trader site. Should the owner account be refused there too?',n:'Your price-health page lives on the trader site today, so it would move to the staff site.',o:['Yes, the owner uses only the staff site','No, the owner may also use the trader site'],r:0,k:'Plan 4 Task 4'},
+{b:1,s:'Accounts and safety',f:'design',q:'After the 24 h wait, do password-only changes to login methods, wallets or team apply on their own?',o:['Apply on their own','Need a moderator or the recovery code to confirm'],r:0,d:'Apply on their own, as HoldChange shows. Anyone logged in can cancel during the 24 h, and the owner is alerted on every channel.',k:'The hold logic in the build'},
+{b:1,s:'Accounts and safety',f:'design',q:'Does a ban end on a date, or last until a moderator lifts it?',o:['Both, chosen per ban by the moderator','Timed only','Permanent only, until a moderator lifts it'],r:0,d:'Both, per ban. A moderator picks timed or permanent when banning. Ban-Notice already draws both.',k:'Ban-Notice and the moderator ban tool'},
+{b:1,s:'Accounts and safety',f:'design',q:'What does each of the four team presets switch on?',n:'Chat only: chat. Offers manager: chat and offers. Trade handler: chat, accept trades, mark paid. Everything allowed: all of it, including Release XMR.',o:['Use this mapping'],r:0,d:'The draft mapping. Keep Release XMR only in Everything allowed, with its warning.',k:'Team permissions'},
+{b:1,s:'Accounts and safety',f:'claude3',q:'Should card numbers written with commas or apostrophes be blurred on proof pictures?',n:'Today 4,111,111,111,111,111 or 4\'111\'1111\'1111\'1111 stays visible on a payment screenshot. Numbers with spaces or dashes are already blurred.',o:['Blur them on pictures only; review notes stay relaxed','Leave them visible'],r:0,k:'The three proof branches'},
+{b:1,s:'Accounts and safety',f:'design',q:'Does agreeing to the Terms count as an onboarding step?',o:['"of 5": Terms is a gate before step 1','"of 6": Terms is step 1'],r:0,d:'"of 5". Terms is a yes/no gate, not setup work.',k:'The step label on every setup screen'},
+{b:1,s:'Watcher',f:'lead',q:'Correction: the watcher code is not in main. No decision is needed.',n:'The lead got this wrong. The code merged on 30 Oct and was taken out the same day under your hold. Nothing on main runs it, and a test fails the build if anyone wires it in. The hold stays until you lift it.',o:['Understood, the hold stays'],r:0,k:'Nothing'},
+// ---------- LATER: offers
+{s:'Offers',f:'claude2',q:'Should a vendor be able to set more than one amount band per currency now?',o:['Not until Task 35; hide "Add a band"','Allow it now'],r:0},
+{s:'Offers',f:'claude2',q:'Should a team member who can\'t manage offers see an offer\'s payment instructions?',n:'This happens on main today. It is a privacy matter.',o:['Only people allowed to manage offers','Everyone on the team'],r:0},
+{s:'Offers',f:'claude2',q:'Is a gift card limited to the currency of its country?',o:Y,r:0},
+{s:'Offers',f:'claude2',q:'Are these limits right: 10 amount bands per currency, 10 payment types per offer, 1000 characters per set of instructions?',o:K,r:0},
+{s:'Offers',f:'claude2',q:'If a currency has no market price, the offer page opens without a rate and a pop-up explains when the buyer taps Trade. Is that right?',o:Y,r:0},
+{s:'Offers',f:'claude2',w:1,q:'Is this pop-up wording right?',n:'"There\'s no market price for {currency} right now, so this trade can\'t start. This is usually temporary. Try again soon, or pick another currency."',o:['Sign it off','Reject it'],r:0},
+{s:'Offers',f:'claude2',q:'Should My offers flag an offer as partly hidden when one of its currencies has no price?',o:Y,r:0},
+{s:'Offers',f:'claude2',q:'Is the minimum number of past trades per band a choice of 0, 5, 10 or 50?',o:K,r:0},
+{s:'Offers',f:'claude2',q:'Should the currency choices follow the board: USD, EUR, GBP, CAD, AUD, then "More"?',o:Y,r:0},
+{s:'Offers',f:'claude2',q:'Should My offers show the name of every payment type on an offer?',o:Y,r:0},
+{s:'Offers',f:'claude2',q:'Should the list of 109 payment types be expanded?',o:['Yes, as its own task after Task 34, with a legal check of each new type','No, keep the 109'],r:0},
+{s:'Offers',f:'claude2',w:1,q:'Is this offer cap wording right?',n:'"You can have 3 buying and 3 selling offers." and, on a paused offer, "Stayed off: over the offer limit."',o:['Sign it off','Reject it'],r:0},
+{s:'Offers',f:'claude2',q:'Should the screens say a fixed "3" until the owner\'s settings page exists?',o:Y,r:0},
+{s:'Offers',f:'claude2',q:'Should the My offers note "Each offer can cover several currencies." stay hidden until Task 34 lands?',o:Y,r:0},
+// prices
+{s:'Prices',f:'claude2',q:'Should users see which price source was used?',o:['No','Yes'],r:0},
+{s:'Prices',f:'claude2',q:'Should the owner get an alert when a currency falls back to a backup price source?',o:['Yes, owner only','No'],r:0},
+// disputes
+{s:'Disputes and trades',f:'claude2',w:1,q:'Is this seller wording right?',n:'"{buyer} can ask a moderator to step in from 30 minutes after marking paid."',o:['Sign it off','Reject it'],r:0},
+{s:'Disputes and trades',f:'claude3',q:'When does the money move after a moderator rules?',n:'Your earlier answer was at once, with a lien if an appeal reverses it, and the dispute branches are built that way.',o:['At once, with a lien covering a reversal','Only after the 48-hour appeal window closes'],r:0},
+{s:'Disputes and trades',f:'claude3',q:'Disputes have a 24-hour goal and a 48-hour hard deadline. When do traders see the 48-hour time?',o:['Only once the 24-hour goal has passed (built)','Always show both','Never show the 48-hour deadline'],r:0},
+{s:'Disputes and trades',f:'claude3',w:1,q:'The frozen-account message says it is on hold "while a dispute is open", which contradicts your rule. Use this draft?',n:'"A moderator has frozen your account. Open your dispute to see what you need to do to get it back."',o:['Use the draft','Reject it'],r:0},
+{s:'Disputes and trades',f:'claude3 and claude2',q:'"Overturned" erases a trade\'s reviews. What does it cover?',n:'The workers disagree. claude3 recommends both, because in both cases the sale did not stand. claude2 recommends appeals only, as built.',o:['Both an appeal that reverses the ruling and a later dispute that reverses a finished trade','Appeals only (as built)'],r:0},
+{s:'Disputes and trades',f:'claude3',q:'Does an overturned trade still count toward a trader\'s dollar total and completed-trade count?',n:'You said "it depends which way it\'s overturned". Today every settled trade counts, until the ruling task can tell the final outcome.',o:['The total follows the final outcome','Keep counting every settled trade'],r:0},
+// proof
+{s:'Proof pictures',f:'claude3',q:'If a payment screenshot\'s date is not recent, can the buyer send it anyway?',o:['No, ask for a fresh screenshot (built)','Allow "send anyway" with a warning'],r:0},
+{s:'Proof pictures',f:'claude3',q:'If no amount is found on the screenshot, the buyer is asked to explain. Is that required, and who reads it?',o:['Optional; the seller and any moderator see it','Required; the seller and any moderator see it','Optional, used only to improve the detector'],r:0},
+{s:'Proof pictures',f:'claude3',w:1,q:'If the buyer\'s own blur covers the trade code, show a warning?',n:'Draft: "The trade code is hidden, so the seller may not be able to match your payment." The buyer can still post.',o:['Yes, with this draft','Warn for the amount only'],r:0},
+{s:'Proof pictures',f:'claude3',q:'If no date can be read on the screenshot, what happens?',n:'Many banking apps don\'t show a date.',o:['No pop-up (built)','Ask the buyer to confirm the payment date'],r:0},
+{s:'Proof pictures',f:'claude3',w:1,q:'Disclaimer under proof uploads: keep the draft wording and placement?',o:['Keep the draft under the upload button; design places it finally','I\'ll give the wording'],r:0},
+{s:'Proof pictures',f:'claude3',q:'Should the receiver of a blurred proof get a "was this blurred correctly?" button? Build the back end now?',o:['Back end now, screens with the proof screens','Later'],r:0},
+{s:'Proof pictures',f:'claude2',q:'A card\'s "ending 1234" stays visible when 1234 equals the trade amount. OK?',o:Y,r:0},
+{s:'Proof pictures',f:'claude2',q:'Review notes allow numbers up to about 9 digits, which lets through some phone and short account numbers. A later answer refuses all personal details. Which rule wins?',o:['Refuse anything shaped like a phone or account number; allow plain amounts','Keep allowing up to 9 digits'],r:0},
+{s:'Proof pictures',f:'design',q:'Should stored blur templates also blank the trade code, amount and time, as well as names and account numbers?',o:['Yes, blank all three','Blank names and account numbers only'],r:0,d:'Yes. A template should hold no detail from any real trade.'},
+// staff
+{s:'Staff tools',f:'claude3 and claude2',q:'Should signing in to the staff site on a new computer need approval from one already signed in?',n:'You said owner and moderators can be on several computers, with approval. Not built yet.',o:['Yes, needed before the staff site opens','Not needed for staff'],r:0},
+{s:'Staff tools',f:'claude3 and claude2',q:'For the most serious staff actions (approving a ruling, adding an owner key), should the security key also need its PIN or fingerprint?',o:['PIN or fingerprint for those; a touch for everything else','A touch for everything (built)','PIN or fingerprint for every staff action'],r:0},
+{s:'Staff tools',f:'claude3 and claude2',q:'How long do we keep records of staff security-key taps?',o:['Delete unused after 24 h; keep used ones 90 days, like the ruling record','Other periods'],r:0},
+{s:'Staff tools',f:'claude3',q:'First-time owner setup asks for a username and a separate private login name. The board shows one field. Which?',n:'The same applies to staff invites. A private login name can\'t be guessed from the public name.',o:['Two fields, as built','One field for both'],r:0},
+{s:'Staff tools',f:'claude3',q:'Owner first-time setup allows 10 code tries an hour for the whole site, counting right and wrong. A stranger could use them up. Change it?',n:'Setup happens once, at launch.',o:['Keep as built','Count only wrong tries'],r:0},
+{s:'Staff tools',f:'claude3',q:'Is removing a staff member permanent?',o:['Permanent; a new invite if they come back','Reversible'],r:0},
+{s:'Staff tools',f:'claude3',q:'Maintenance notices default to "emergency" with up to 500 characters, and dispute timers pause. Keep that?',o:K,r:0},
+{s:'Staff tools',f:'claude3 and claude2',q:'Is there an upper limit on the dollar figure a moderator enters for trades on another site?',n:'A typo with extra zeros would show at once on that trader\'s offers. claude3 suggests $10,000,000.',o:['A hard cap per claim of $10,000,000','No limit (built)','Above a set amount, the owner must confirm'],r:0},
+{s:'Staff tools',f:'claude3',q:'The owner setup board shows the PGP key as "(optional)", but your earlier answer requires it. Which?',o:['Required (built)','Truly optional'],r:0},
+{s:'Staff tools',f:'claude3',q:'The staff site\'s "leave feedback" link goes to the owner\'s inbox, so moderators see nothing. Fix how?',o:['Send staff to the same feedback form traders use','Hide the link on the staff site'],r:0},
+{s:'Staff tools',f:'claude3',q:'The staff feedback list shows senders only as "Named" or "Anonymous". Should named feedback show the account?',n:'"Named" means the sender chose to be identified.',o:['Show the account name','Keep as built'],r:0},
+{s:'Staff tools',f:'claude3',q:'The owner\'s staff menu has 8 items, with Feedback before Settings and the News editor under Overview. Keep that?',o:['As built; design places them finally','Other placement'],r:0},
+// reputation
+{s:'Reviews and reputation',f:'claude3',w:1,q:'Is "$90,000+ in trades to date" the right offer card wording?',o:['As written','Reject it'],r:0},
+{s:'Reviews and reputation',f:'claude3',q:'Imported volume from other sites: one line on the offer card, or one per site?',o:['One combined line on the card, per-site breakdown on the profile','Split on the card'],r:0},
+{s:'Reviews and reputation',f:'claude3',q:'If one account\'s claim on a PGP key is revoked, may a different account then claim that key?',o:['No (built)','Yes, after a moderator checks it'],r:0},
+{s:'Reviews and reputation',f:'claude3',q:'Show the 4-point signing help on every failed claim?',o:['Yes (built)','Only on some failures'],r:0},
+// feedback
+{s:'Feedback form',f:'claude3',q:'Keep the cap of 5 feedback sends a day per person?',n:'You said "otherwise unlimited". It stops one person flooding the inbox.',o:['Keep 5 a day','Remove it; keep only the 30-second gap'],r:0},
+{s:'Feedback form',f:'claude3 and claude2',w:1,q:'Someone who sends twice within 30 seconds sees "Too many tries. Try again in 1 minute." Change it?',n:'Proposed: "You just sent feedback. You can send more in 30 seconds." The daily cap keeps "You\'ve sent 5 today. You can send more tomorrow."',o:['Use the proposed wording','Leave it as today'],r:0},
+{s:'Feedback form',f:'claude3 and claude2',q:'Team members share their team\'s feedback limits. Give each member their own?',o:['Keep shared for now','Per member'],r:0},
+// sessions and accounts
+{s:'Sessions and accounts',f:'design',q:'You said session length is a "drop-down, nothing pre-selected", but design drew four tiles. Which?',o:['Tiles, nothing pre-selected','Drop-down'],r:0,d:'Tiles, still with nothing pre-selected. This is a visual call, but it changes the owner\'s word, so we\'re asking.'},
+{s:'Sessions and accounts',f:'lead',q:'Should the session length setting on Devices change only this session?',o:['Only this session (built)','Also set a default'],r:0},
+{s:'Sessions and accounts',f:'lead',q:'If someone picks a longer session partway through, when does it apply?',o:['From the next confirm (built)','At once, which would need a proof'],r:0},
+{s:'Sessions and accounts',f:'lead',q:'Can team members extend their session with their own login methods?',o:Y,r:0},
+{s:'Sessions and accounts',f:'lead',q:'Should signup ask for the session length too?',o:['No','Yes'],r:0},
+{s:'Sessions and accounts',f:'lead',q:'Should an idle logout apply on top of the session length?',o:['No idle logout (built)','Add one'],r:0},
+{s:'Sessions and accounts',f:'lead',q:'Do vendors need anything beyond a passkey, security key or PGP key, like a number of completed trades?',o:['A key only (built)','Add a requirement'],r:0},
+{s:'Sessions and accounts',f:'lead',q:'Can a vendor switch back to trader?',o:['Not yet (built); the screen says it comes later','Allow it, and say what happens to offers and team'],r:0},
+{s:'Sessions and accounts',f:'lead',q:'Existing accounts with offers or a team but no key: what happens at the vendor change?',o:['They stay traders; offers can be paused or removed but not relisted, team kept but frozen (built)','Make them vendors anyway'],r:0},
+{s:'Sessions and accounts',f:'lead',q:'Bans: should look-alikes of a banned display name be refused too?',o:['Keep as built: exact entries only','Refuse look-alikes as well'],r:0},
+{s:'Sessions and accounts',f:'lead',q:'Should banning a vendor also ban its team members\' entries?',o:['No (built)','Yes'],r:0},
+// hold
+{s:'Account holds',f:'lead',q:'Do PGP-only sessions queue their changes like password-only ones?',o:['Yes (built, today\'s rule)','No, treat PGP as strong'],r:0},
+{s:'Account holds',f:'lead',q:'Which changes queue for 24 h?',n:'Built: all of today\'s security changes, including login name, one-device and recovery code. Wallet and member removal stay immediate.',o:['All of them (built)','Only login methods, wallets and team'],r:0},
+{s:'Account holds',f:'lead',q:'Does a later change restart the 24 h for everything waiting?',o:['Yes, one date for all (built)','Each change keeps its own 24 h'],r:0},
+{s:'Account holds',f:'lead',q:'Do submitted changes survive if the session that made them is revoked?',o:['Yes; drafts do not (built)','No, they die with the session'],r:0},
+{s:'Account holds',f:'lead',q:'Can team members see or cancel the lead account\'s waiting changes?',o:['No (built)','Yes'],r:0},
+{s:'Account holds',f:'lead',q:'Does a recovery-code login discard waiting password-only changes?',o:['Yes (built)','No'],r:0},
+{s:'Account holds',f:'lead',q:'During a hold, may the trade partner still leave the trade?',n:'Everything else is refused. Chat and disputes stay open.',o:['Yes (built)','No'],r:0},
+{s:'Account holds',f:'lead',q:'Password plus authenticator on a new device with only weak sessions open still gets in. Keep that?',n:'Only "no device at all" requires a passkey, key or PGP.',o:['Keep (built)','Require a passkey, key or PGP here too'],r:0},
+{s:'Account holds',f:'lead',q:'When a moderator ends or extends a hold, should that leave an audit record?',n:'Built: alerts only.',o:['Add an audit record','Alerts only (built)'],r:0},
+{s:'Account holds',f:'lead',q:'Is 20 waiting changes per account the right cap?',o:K,r:0},
+// looks
+{s:'Looks and wording',f:'design',q:'What does an incident ID look like, and who sees the incident pop-up?',o:['Short code like INC-7Q4K; partners only','Short code; partners and the held account','Date-based code; partners only'],r:0,d:'The short code; partners only. The held account already gets the hold notice.'},
+{s:'Looks and wording',f:'design',q:'What is the middle choice for badge visibility, between always showing and hiding?',n:'Hover and tap behave differently, and two choices are clearer.',o:['Drop the middle option','"On tap"','"On hover"'],r:0,d:'Drop it. Hover and tap behave differently, and two choices are clearer.'},
+{s:'Looks and wording',f:'design',t:1,q:'What are X2F\'s real Matrix and Telegram addresses?',n:'The boards use #x2f-help:example.org and @x2f_help as examples. Needed before launch.',o:[],d:'None. We need the real ones before launch.'},
+{s:'Looks and wording',f:'design',w:1,q:'Ban-Notice draft wording: "Message a moderator on Matrix", a new headline and an "Account banned" chip. Sign it?',n:'It said "Message the team" before. Design reverts anything rejected.',o:['Sign it off','Reject it'],r:0},
+{s:'Looks and wording',f:'claude2',q:'What colour should a link turn when the pointer is over it?',o:['The dark ink colour','Orange'],r:0},
+{s:'Looks and wording',f:'claude2',q:'What colour should "XMR" be next to an amount?',o:['Orange until design decides','Ink'],r:0},
+{s:'Looks and wording',f:'claude2',q:'Should the active Buy/Sell tab have a 2-pixel dark border?',o:Y,r:0},
+{s:'Looks and wording',f:'claude2',q:'Keep the new disabled-button and sheet-title look everywhere in the app?',o:Y,r:0},
+{s:'Looks and wording',f:'claude2',q:'Some board items aren\'t built on the offers screens: market price card, per-method icons, section counts, Site news link, Deposit row, empty-search heading. Build them?',o:['Yes, design decides the order','No'],r:0},
+{s:'Looks and wording',f:'claude2',q:'Should design confirm two new looks: the blue "information" note, and rounder corners on icon buttons?',o:Y,r:0},
+{s:'Looks and wording',f:'claude2',q:'The Devices screen needs wording for five things, such as the empty team card and "2 of 1 devices". Who writes it?',o:['Design writes them','I\'ll write them'],r:0},
+{s:'Looks and wording',f:'claude2',q:'Is it fine that a folding phone opened flat has no Back button, as on the board?',o:Y,r:0},
+{s:'Looks and wording',f:'claude2',q:'Should the fold screen\'s payment label change to the 6 Nov board\'s "Pay now"?',o:['Wait until the fold boards are final','Change it now'],r:0},
+];
+
+Q.forEach((x,i)=>{x.id='q'+(i+1);x.n0=i+1});
+let db=null, A={}, mode='block', pos=0, confirmBulk=false, timer=null;
+const $=id=>document.getElementById(id);
+const el=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt!=null)e.textContent=txt;return e};
+const LS='x2f-owner-answers';
+function local(save){try{if(save)localStorage.setItem(LS,JSON.stringify(A));else return JSON.parse(localStorage.getItem(LS)||'{}')}catch(e){}return {}}
+const answered=q=>{const a=A[q.id];return !!a&&(a.choice!=null||(a.own||'').trim()!=='')};
+const summary=a=>a.choice!=null?a.choice:'My answer: '+a.own;
+function pool(){if(mode==='block')return Q.filter(q=>q.b);if(mode==='later')return Q.filter(q=>!q.b);return Q.filter(q=>!answered(q))}
+function status(t,bad){const s=$('save');s.textContent=t;s.className='save'+(bad?' bad':'')}
+async function persist(q){
+  local(true);
+  if(!db){status('Saved on this device only. Tell the lead, so nothing is lost.',true);return}
+  try{await db.doc('answers/'+q.id).set({n:q.n0,question:q.q,from:q.f,blocking:!!q.b,...A[q.id]});status('Saved. The lead can read this answer.')}
+  catch(e){status('That answer did not save. Try it again.',true)}
+}
+function choose(q,label){A[q.id]={choice:label,own:'',at:new Date().toISOString()};persist(q);render();clearTimeout(timer);timer=setTimeout(next,350)}
+function next(){const p=pool();if(mode==='open'){pos=0}else if(pos<p.length-1)pos++;render()}
+function renderQ(q,p){
+  const c=$('card');c.replaceChildren();
+  const m=el('div','meta');
+  m.append(el('span','pill '+(q.b?'b':'l'),q.b?'Blocking':'Can wait'));
+  if(q.w)m.append(el('span','pill w','Wording'));
+  m.append(el('span',null,q.s+' · from '+q.f));c.append(m);
+  c.append(el('h2',null,q.q));
+  if(q.n)c.append(el('p','note',q.n));
+  if(q.d){const d=el('p','design');d.append(el('b',null,'Design recommends: '),document.createTextNode(q.d));c.append(d)}
+  const o=el('div','opts');o.setAttribute('role','radiogroup');o.setAttribute('aria-label','Your answer');
+  const cur=A[q.id];
+  q.o.forEach((label,i)=>{
+    const b=el('button','opt');b.type='button';b.setAttribute('role','radio');
+    b.setAttribute('aria-checked',String(!!cur&&cur.choice===label));
+    b.append(el('span','dot'));
+    const t=el('span','t',label+' ');if(i===q.r)t.append(el('span','rec','(Recommended)'));b.append(t);
+    b.onclick=()=>choose(q,label);o.append(b)});
+  c.append(o);
+  const id='own-'+q.id, l=el('label',null,'Or write your own answer');l.htmlFor=id;l.style.fontWeight='600';c.append(l);
+  const ta=el('textarea');ta.id=id;ta.placeholder='Type your full answer here';ta.value=cur&&cur.own||'';
+  let tt=null;ta.oninput=()=>{clearTimeout(tt);status('Saving…');tt=setTimeout(()=>{const v=ta.value;A[q.id]={choice:v.trim()?null:(cur&&cur.choice)||null,own:v,at:new Date().toISOString()};persist(q);[...o.children].forEach(b=>b.setAttribute('aria-checked','false'));upd()},600)};
+  c.append(ta);
+  if(q.k)c.append(el('p','blocks','Holding up: '+q.k));
+  const n=el('div','nav');
+  const bk=el('button','btn','Back');bk.disabled=pos===0;bk.onclick=()=>{pos--;render()};
+  const nx=el('button','btn pri',pos<p.length-1?'Next':'Finish');nx.onclick=()=>{if(pos<p.length-1){pos++;render()}else{setMode('list')}};
+  n.append(bk,nx);c.append(n);
+}
+function renderList(){
+  const c=$('card');c.replaceChildren();
+  const done=Q.filter(answered).length;
+  c.append(el('h2',null,done===Q.length?'Every question is answered':done+' of '+Q.length+' answered'));
+  c.append(el('p','note','Tell the lead when you\'re done, and your answers go out to the teams. Tap any row to change it.'));
+  const l=el('div','list');
+  Q.forEach(q=>{const r=el('button','row');r.type='button';r.append(el('span','n',String(q.n0)));
+    const t=el('span');t.append(document.createTextNode(q.q));
+    t.append(answered(q)?el('small','a',summary(A[q.id])):el('small',null,'Not answered'));r.append(t);
+    r.onclick=()=>{mode=q.b?'block':'later';pos=pool().indexOf(q);render()};l.append(r)});
+  c.append(l);
+}
+function upd(){const done=Q.filter(answered).length,b=Q.filter(q=>q.b),bd=b.filter(answered).length;
+  $('count').textContent=done+'/'+Q.length+' answered · blocking '+bd+'/'+b.length;$('bar').style.width=(done/Q.length*100)+'%'}
+function tools(){const t=$('tools');t.replaceChildren();
+  const left=Q.filter(q=>!answered(q)&&q.r!=null&&q.o[q.r]&&(mode==='block'?q.b:mode==='later'?!q.b:true));
+  if(mode==='list'||!left.length)return;
+  if(!confirmBulk){const b=el('button','link','Take the recommendation on the '+left.length+' unanswered here');b.onclick=()=>{confirmBulk=true;tools()};t.append(b)}
+  else{t.append(el('span',null,'Answer '+left.length+' questions with the recommendation?'));
+    const y=el('button','btn','Yes, take them');y.onclick=async()=>{confirmBulk=false;status('Saving…');for(const q of left){A[q.id]={choice:q.o[q.r],own:'',at:new Date().toISOString()};await persist(q)}pos=0;render()};
+    const n=el('button','btn','Cancel');n.onclick=()=>{confirmBulk=false;tools()};t.append(y,n)}
+}
+function render(){upd();['block','later','open','list'].forEach(m=>$('f-'+m).setAttribute('aria-pressed',String(mode===m)));
+  if(mode==='list'){renderList();tools();return}
+  const p=pool();if(!p.length){setMode('list');return}
+  if(pos>=p.length)pos=p.length-1;renderQ(p[pos],p);tools()}
+function setMode(m){mode=m;pos=0;confirmBulk=false;render()}
+['block','later','open','list'].forEach(m=>$('f-'+m).onclick=()=>setMode(m));
+A=local();render();
+(async()=>{
+  db=window.claude?await claude.use('db').catch(()=>null):null;
+  if(!db){status('Answers are saving on this device only. Tell the lead.',true);return}
+  const t=setTimeout(()=>status('Saved answers are slow to load. You can keep going.'),10000);
+  try{const s=await db.collection('answers').get();clearTimeout(t);(s.docs||s).forEach(d=>{const v=d.data?d.data():d;const id=d.id;if(id)A[id]={choice:v.choice??null,own:v.own||'',at:v.at}});status('Ready. Answers save as you tap.');render()}
+  catch(e){clearTimeout(t);status('Could not load saved answers. New answers will still save.',true)}
+})();
+</script>
+
+</body></html>

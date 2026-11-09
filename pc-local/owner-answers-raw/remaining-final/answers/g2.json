@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T07:45:28.512Z",
+  "choice": null,
+  "n": 2,
+  "own": "I'm not sure exactly what the situation here is, but if this is the seller of XMR contemplating cancelling the trade before the buyer has paid. If they've already escrowed, then they have to wait the 90 minutes and attempted at least a single nudge in order to do that. And in that case, there could be something that would say something along the lines of: If 90 minutes pass and you have received no communication from the buyer, you have the option of cancelling the trade by clicking the cancellation button which will appear at that time. If you cancel the trade, the whatever amount of Monero they escrowed will be automatically refunded back to your wallet immediately. Now, if this is someone who is wanting to cancel before they even escrow, then they can just click cancel and it will just close out the trade right away without any rhyme or reason or needing to explain. If this is the buyer or the ad poster or whatever wanting to cancel after escrow has already been fulfilled, then they have the right to do that and it will trigger a full refund to the seller of the Monero, but the trade will not cancel until all 10 confirmations complete and the money has been fully received by the original person who clicked on the ad. I hope I answered this question, but if not, let me know. And any wording you can always run by design to tweak what I said.",
+  "question": "Sign this wording for the refund screen?"
+}

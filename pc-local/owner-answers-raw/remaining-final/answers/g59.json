@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T10:02:59.814Z",
+  "choice": null,
+  "n": 59,
+  "own": "Are you asking me this question as the owner? If you're asking me as the owner, I'll have to use one of my two backup security keys to get in. If you're asking this question for someone else, then you're going to have to re-ask the question and make it clear it was for somebody else.",
+  "question": "If you lose every PGP key while logged out, how do you get back in?"
+}

@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T07:46:38.781Z",
+  "choice": null,
+  "n": 3,
+  "own": "All three are required. Two of them are required to log in on a new device, and one of them is required to log in on their existing device.",
+  "question": "Must every moderator hold all three: security key, PGP key and passkey?"
+}

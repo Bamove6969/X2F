@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:16:47.214Z",
+  "choice": null,
+  "n": 17,
+  "own": "So again, I do want our best shot at OCR here to try and read what the field is named prior to the number that's displayed. If it says phone or account or something like that, and we can discern that, we can make that judgement call, then it makes it very easy for us to determine whether to blur the proceeding information from whatever we just read. So that's going to be our go-to. And then like I said, as we keep these proofs for, I think we determined 30 days, we're going to be using each one to try and get better and better as we see the same ones coming from the same payment types, and we'll know what appears in what field and how to blur it properly.",
+  "question": "Review notes allow numbers up to about 9 digits, which lets through some phone and short account numbers. A later answer refuses all personal details. Which rule wins?"
+}

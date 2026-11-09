@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T13:22:15.671Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude3",
+  "n": 67,
+  "own": "Let's keep both feedback and tickets at a maximum of ten per day and explain to them when they try to create an eleventh that this system was put in place to help prevent spam. And you can get the design team to help word that better.",
+  "question": "Keep the cap of 5 feedback sends a day per person?"
+}

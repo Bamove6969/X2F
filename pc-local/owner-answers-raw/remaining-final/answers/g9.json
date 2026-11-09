@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:02:42.464Z",
+  "choice": null,
+  "n": 9,
+  "own": "If this is a solo person's account, you're asking if a notification should be sent to who if they decide to extend their session. Or are you saying if there's team members, the other team members should be notified that they extended their session, which honestly I don't really think they care and I don't think it's any of their business. And in the case that the team lead has set designated hours that the other team members can even be logged in, they won't be able to extend the session anyway. So no, I don't think that is something that should trigger alerts.",
+  "question": "Should extending a session send an alert?"
+}

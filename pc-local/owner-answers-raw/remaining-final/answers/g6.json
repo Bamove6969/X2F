@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T07:56:03.070Z",
+  "choice": null,
+  "n": 6,
+  "own": "Username to log in with is mandatory for every single account. They don't necessarily have to use it to get into the account, but it will be mandatory that they use it. They create one at sign up, a unique username and also a unique display name. Then they get to choose the other methods such as a password, a PGP key, a security key, or a passkey. But we will consider secure a username, PGP key, and display name. Those would be considered strong.",
+  "question": "PGP login uses the key with no username. Is that fine?"
+}

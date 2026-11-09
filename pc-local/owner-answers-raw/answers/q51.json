@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T13:16:36.060Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude3 and claude2",
+  "n": 51,
+  "own": "A moderator is going to be asked to have a minimum of a security key, a PGP key, and a passkey, and so when they log in on a new device, they will have to provide two of the three items in order to log in",
+  "question": "Should signing in to the staff site on a new computer need approval from one already signed in?"
+}

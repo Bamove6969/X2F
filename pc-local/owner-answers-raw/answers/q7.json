@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T08:09:55.549Z",
+  "blocking": true,
+  "choice": "3%",
+  "from": "claude2",
+  "n": 7,
+  "own": "",
+  "question": "If two price sources disagree, how big a gap is allowed before X2F shows no price for that currency?"
+}

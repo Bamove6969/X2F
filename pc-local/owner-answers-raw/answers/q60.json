@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T13:05:53.778Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude3",
+  "n": 60,
+  "own": "Just like team members will have granular settings, moderators of the two different hierarchies, there's the regular moderators, and we'll figure out what granular features to give to them. And then there'll be the senior moderator, and the senior moderator will automatically have access to feedback, but we'll decide if the regular moderator has that checkbox or not. And also the helper. The helper will have granular settings, and we'll decide if they have that checkbox for feedback as well.",
+  "question": "The staff site's \"leave feedback\" link goes to the owner's inbox, so moderators see nothing. Fix how?"
+}

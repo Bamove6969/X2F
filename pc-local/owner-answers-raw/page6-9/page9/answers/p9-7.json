@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-08T13:06:12.316Z",
+  "choice": null,
+  "n": 7,
+  "own": "In this situation, the buyer will have said \"I've paid,\" they will have uploaded their proof, and then the seller will check to see that they've gotten it. Once they receive it, they will mark it as complete. When they mark it complete, it automatically releases the funds or the XMR to the other person's wallet and it subtracts our 1% fee from that amount. Everything making sense?",
+  "question": "After the buyer pays, is there a time limit for the seller to release the XMR?"
+}

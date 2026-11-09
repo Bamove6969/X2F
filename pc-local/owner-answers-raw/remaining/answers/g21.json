@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:27:53.010Z",
+  "choice": null,
+  "n": 21,
+  "own": "Absolutely. If one account can't prove the key belongs to them, but a different account can prove the key belongs to them, then we obviously go with the account that has the proof.",
+  "question": "If one account's claim on a PGP key is revoked, may a different account then claim that key?"
+}

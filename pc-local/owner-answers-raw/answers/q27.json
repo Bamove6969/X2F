@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T12:18:34.070Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude2",
+  "n": 27,
+  "own": "I'd say 5, 10, 25, 50",
+  "question": "Is the minimum number of past trades per band a choice of 0, 5, 10 or 50?"
+}

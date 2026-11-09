@@ -108,3 +108,108 @@ Past `settleBy` either side may dispute a `settling` trade, and `dispute/rules.t
   - The seller's device builds `auto-refund` only while the view is settling it (`runtime.ts:1073`, `viewSupports` `:224`).
   - Policy allows the route only in `settling`/`auto-refund` with `paidAt === null` (`policy.ts:174`).
   - The buyer-cancel lists no longer include the retired state.
+
+## Re-verify 43fbbb2f
+
+- Tree: `wip/lead-trade-rules-p1` at **43fbbb2f** (same worktree, clean; nothing changed). Scope: `git diff fde037d9 43fbbb2f` (d93dc5b8 I1, 5cefa43a M1/M2).
+- Tests run (one file each): `packages/trade/test/machine.test.ts` 151 passed; `apps/api/test/watchReports.test.ts` 21 passed.
+- Deviation accepted by the lead: the trade stays `disputed` and open (`settling` auto-refund, `txHash` recorded, `settleBy`/`closedAt` null). That is the same shape as the existing refunded-then-disputed case (`onDispute` `open()` keeps `txHash`/`settling` and nulls `closedAt`), so nothing new downstream.
+
+### Verdict
+
+**CHANGES REQUIRED: one Important finding (new, opened by the fix), two Minors.** I1 as reported is fixed. In the usual race the refund is recorded, the dispute becomes after-refund in the same transaction, `seller-sends-xmr` can be ruled, and the trade no longer sits stuck. But the flip runs whatever stage the dispute is at, and that opens a new path that silently closes a case the buyer won.
+
+### R-I1 (Important): the after-refund flip also hits a dispute that already has an escrow ruling, and that case then closes with nothing owed
+
+Where:
+- `apps/api/src/internal/routes.ts:288-296` flips `after_refund = true` on any dispute that is not closed (`closed_at is null`), so also on `awaiting-approval`, `published`, `appealed` and `final`.
+- `packages/staff/src/dispute.ts:267`/`:427`: `outcomeFits` is checked only at `propose`.
+- `dispute.ts:302-317` `resolveFinal`: with `afterRefund` true and an outcome other than `seller-sends-xmr`, the case goes to `closed` with `complyBy: null`.
+- `:378`: `executed` is refused once `afterRefund` is true.
+
+How it is reached:
+- The refund was handed out before the dispute, and a hand-out is never taken back (R3-M1).
+- The seller's device is the builder. It sends the tx set when it chooses (`party.ts:297-301`), and the moderator co-signs and broadcasts whenever it arrives.
+- So a modified seller client can stall the build until a `release-to-buyer` ruling is published, which is likely, since the coins are still in escrow at ruling time. Ruling payouts are not wired yet (no producer of `executed`), so nothing can beat it.
+- The seller then sends the set. The refund lands. The watcher reports `settled` auto-refund, the API accepts it, and the dispute is flipped. At the end of the appeal window `resolveFinal` closes the case: the buyer gets no payout, no `seller-sends-xmr` order and no lien.
+- The same happens to a proposal awaiting approval: it was proposed while `afterRefund` was false and is approved after the flip.
+
+Before the fix this path stayed stuck (`settle-kind-unknown`), which was bad but visible. Now it closes quietly against the buyer.
+
+Fix (technical, lead's pick):
+- Flip only while the dispute has no ruling or proposal (`status = 'open'`, i.e. `ruling is null`).
+- Otherwise record the tx, leave `after_refund` alone, and raise the case for staff: a log/alert, or reopen it for a fresh ruling, with `seller-sends-xmr` the natural replacement for `release-to-buyer`.
+- Add an API test: dispute, `release-to-buyer` published, then `settled` auto-refund lands; the case must not close with nothing owed.
+- Pre-launch, but it defeats the buyer's main remedy under p9-2, hence Important.
+
+### R-M1 (Minor): a second, different tx on the disputed auto-refund shape closes the trade as `refunded` while the dispute is open
+
+Where: `packages/trade/src/machine.ts:518-523`. When `t.txHash` is set and `e.txHash` differs, the new branch falls through to the general case. That gives `state: 'refunded'`, `closedAt: now`, `txHash` overwritten, and it starts the closed-trade clocks with an open dispute.
+
+`settleKindFor` now names `auto-refund` for both shapes: this one, and the existing refunded-then-disputed trade from a seller's cancel. So the route no longer refuses such a report as it did before (`settle-kind-unknown`).
+
+Not reachable through today's watcher: it reports `settled` only while its own `closedAt` is null, and the state is persisted (`mod_watch`). A later sweep of late coins, which needs both traders' spend.info to count, is recorded without a report. So this is defence in depth.
+
+Fix: in that branch, `return fail('wrong-state')` for a different tx (the watcher counts it as done), and add a machine test.
+
+### R-M2 (Minor, forward note): ruling payouts on this shape will be counted as `auto-refund`
+
+Where: `watch.ts:377`, `watcher.ts:436`.
+
+`settleKindFor(disputed, auto-refund)` is `auto-refund`. So once ruling payouts are built, a seller-built escrow payout the moderator co-signs on a dispute that beat the moderator's pass would be reported and recorded as the cancel refund, and the flip would run.
+
+Today the desk co-signs nothing on a disputed trade, and an import-only sweep is proven against auto-refund minimums with both traders' spend.info, so nothing mis-records now. Tag `NEEDS_PLAN_4_RULING_PAYOUT`: ruling execution must report its own kind (`RulingKind` exists in `payouts.ts`), checked before this branch.
+
+### Checked and fine
+
+- **Repeated report.** Same tx: the machine returns `t` unchanged, the route's flip guard (`prev.txHash === null`) does not run again, and the API test asserts 201 with the trade unchanged. The desk's shadow catch-up (`desk.ts:518-520`), which feeds `settledTx` every pass, is now a no-op on this shape instead of moving the shadow to `refunded`.
+- **Forged kind.** The route accepts only the kind `settleKindFor(prev)` names under the row lock. On a disputed trade that is `auto-refund`, and only when `settling` is `auto-refund`. A `release`/`buyer-cancel` claim is 409 `settle-kind-changed`, and a disputed trade with any other `settling` (or none) is still 409 `settle-kind-unknown` (`watch.test.ts`, the second API test). The machine's own fall-through for `kind: 'release'` is reachable only by the route, which cannot name it here.
+- **Sweeps on other disputed trades.** Escalations from `settling` keep `settling`: a `spend-unshown`/`refund-unverified` system dispute on a seller's cancel gets the same handling, which is correct (the escrow is empty once the refund is shown). Disputes from `paid`/`secured` have `settling` null and are untouched.
+- **Late funds.** Late coins on this open trade come in as `chain` reports only (`late-funds` escalates only when closed or on the settling step, and a dispute is already open). Nothing changes kind.
+- **The flip.** It runs in the same `applyEvent` transaction as the trade write (`within` under the row lock, `store.ts`), only when the machine took the new branch (`prev`/`next` both `disputed`, `txHash` null to set), and only on the latest dispute (`seq = max(seq)`) that is not closed. See R-I1 for the status filter it lacks.
+- **`countTradeTotals`.** It runs only on a change to `released`/`refunded`, so this shape counts nothing. That is right: a cancelled trade is not a completed one. The old `refunded` + `dispute_by` result would have counted it as completed.
+- **Closed-trade clocks.** `closedAt` stays null, so reviews, the 30-day purge and the chat erase do not start, the same as the existing after-refund shape. The dispute's own `closed_at` governs chat retention.
+- **Web.**
+  - `DisputeRoom.tsx:142` reads `afterRefund` from the dispute view, so after the flip it drops "Locked in escrow", and `rulingAllowsCosign` refuses any co-sign on an after-refund dispute.
+  - Between the dispute and the refund landing (minutes), the room still shows "Locked in escrow" for coins already on their way back. This is cosmetic (COPY-UNSIGNED screen) and worth a design note only.
+  - `SellerCancelled.tsx` and the `machine.ts` comments now describe the usual case correctly.
+- **Tests prove it.**
+  - API test 1 fails without any of the three parts: the machine branch (state would be `refunded`), the `settleKindFor` line (409) or the flip (`afterRefund` stays false, and `publishRuling` goes through `propose` → `outcomeFits`, so `seller-sends-xmr` would throw).
+  - API test 2 is weaker than its title: its trade has `settling` null, so it would pass even if `settleKindFor` returned `t.settling` for every disputed trade. The unit test in `watch.test.ts` covers the other kinds.
+  - The repeated report does not re-assert the dispute row. Both are acceptable.
+- **M1/M2 docs.** The migration 120 pre-deploy query is in place, and the rulings-and-lessons and coordination lines are tagged. M3 is commented at `machine.ts:453-454`.
+
+## Re-verify 2199561a
+
+- Tree: `wip/lead-trade-rules-p1` at **2199561a** (same worktree, clean; nothing changed). Scope: `git show 7fa7bad6`.
+- Tests run (one file each): `packages/trade/test/machine.test.ts` 151 passed; `apps/api/test/watchReports.test.ts` 22 passed.
+
+### Verdict
+
+**APPROVED.** R-I1, R-M1 and R-M2 are closed. The branch can land.
+
+### R-I1: fixed
+
+- **The flip.** `internal/routes.ts` now selects the latest not-closed dispute `for update`, inside the same `applyEvent` transaction as the trade write. It sets `after_refund` only when `status = 'open'`. Dispute changes go through `withDispute`, which takes the same row with `for update of d`. So a concurrent `propose` serialises with the flip: it either sees `afterRefund` true at `outcomeFits`, or it commits first and the status is no longer `open`, in which case the case is escalated. There is no window where a `release-to-buyer` proposal ends up on an after-refund dispute. The lock order is trade then dispute; the dispute paths do not lock trades, so no new deadlock.
+- **Past `open`.** The tx is recorded, `after_refund` is left alone, and `appendLog` (`dispute.refund-after-ruling`, `{seq, status}`) plus `addOwnerAlert` (`dispute-refund-after-ruling`, `{trade, seq}`) both run on the same client `c`, so they are in the same transaction. The only escalation trigger is `prev.txHash === null`, so a repeated report raises nothing new (the test asserts exactly one log row).
+- **Never closes with nothing owed.** With `afterRefund` false, `resolveFinal` reaches `final` and closes only on `executedAt`. `executed` has no producer yet, and once one exists it must be its own `RulingKind` (R-M2 tripwire). Round 2 (`appealed`) follows the same `!afterRefund` path. A rejected proposal goes back to `open`/`appealed` with `afterRefund` false, so it waits again. The `close` system event has no producer in `apps/api/src`. The API test proves that after the appeal window the case is `final`, with `closed_at` null and `afterRefund` false.
+- **`appealed`: escalate rather than flip.** I accept the lead's call. It is the same safe shape: it waits, and staff are alerted.
+- **Residual (no action, already in coordination.md as Plan 4 owes):** there is no staff path yet to re-rule such a case with `seller-sends-xmr`, and the staff app has no words for the alert kind. Until then the case sits at `final`, visible to the owner. If no dispute row is found (`d === undefined`) the route returns without an alert. That cannot happen on a `disputed` trade, whose current dispute is never closed.
+
+### R-M1: fixed
+
+`machine.ts`: on the disputed auto-refund shape, a different `txHash` is now `fail('wrong-state')`. The machine test asserts it, alongside the existing same-tx no-op.
+
+### R-M2: tagged
+
+`NEEDS_PLAN_4_RULING_PAYOUT` is at `machine.ts` (`settled` branch), at `internal/routes.ts` (the flip), and in the `docs/coordination.md` line.
+
+### API test 2 (strengthened)
+
+The trade is now disputed from `settling`/`release` (`spend-unshown`). Both `auto-refund` and `release` claims get 409 `settle-kind-unknown`, and the trade and dispute are unchanged. If `settleKindFor` returned `t.settling` for every disputed trade, the `release` claim would be accepted and the `auto-refund` claim would get `settle-kind-changed`, so the test now proves its title.
+
+### Secrets in the new entries
+
+- The log detail is `{seq, status}`, and `LOG_ACTIONS` types it as `number`/`id`.
+- The alert detail is `{trade, seq}`.
+- Neither carries a txHash, address, amount, account id, IP, user agent or key.

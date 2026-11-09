@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:21:39.910Z",
+  "choice": null,
+  "n": 19,
+  "own": "Maintenance notices do not default to emergency. There may be a reason for maintenance, but it's also a possibility that we are putting it in maintenance mode because of an emergency, and that is only known internally. Whenever we put it in maintenance mode, when it's an unplanned maintenance mode, we will do our very best to give the minimal but needed information and our best guess as to when we hope to have it back up. But for actual maintenance, we will plan it and try and give 24-hour notice or what have you. And yeah, I guess you could say 500 characters is more than enough to relay a system-wide message appearing as a system-large banner across the screen that you would not be able to miss because it will be big, bright, and take up a big chunk of the screen. And yes, all disputes will be put on hold, and their times will be put on hold.",
+  "question": "Maintenance notices default to \"emergency\" with up to 500 characters, and dispute timers pause. Keep that?"
+}

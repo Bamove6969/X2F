@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T07:53:44.995Z",
+  "choice": null,
+  "n": 5,
+  "own": "P Since those are two examples of things that can have pretty far-reaching effects, I would say that if you only have a username and a password and you need to remove a wallet address or a team member, then yes, there will be a 24-hour hold before they are permanently removed.\n\nBut the wallet will instantly become not usable to have XMR sent to, or it won't be usable in a trade right away, and then within 24 hours, it will fully disappear. Because I can see the importance in why someone would take an action like that, and we can't force them to have to wait 24 hours because that could be very devastating for them.\n\nAnd the same with removing a team member who could be malicious. That team member will instantly have their access removed; they just won't be deleted for 24 hours if that's the only security methods they have.",
+  "question": "Should removing a wallet or team member also wait 24 hours when done with only a username and password?"
+}

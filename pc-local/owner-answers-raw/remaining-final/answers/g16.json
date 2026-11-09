@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:14:27.520Z",
+  "choice": null,
+  "n": 16,
+  "own": "First and foremost, our system will want to strip the date from the EXIF data, so that's the first place we are going to look for the date of the photograph. The second place will be in the screenshot itself.\n\nIf we can retrieve neither, because let's say they've already removed the EXIF data, and we cannot view the date in the photo with our automated screener, our proof screener, then a warning message will be displayed to the poster of the proof letting them know that we were unable to detect the date that this image was produced.\n\nWe are going to allow you to post it as proof, but a warning is being given to the seller with the same information. Please turn to the designer for wording there, but you know, that kind of thing. And then we'll warn the seller that we cannot independently confirm the date the image or proof was created, so please take some extra caution with this trade. But it also does not mean that it is not valid; we are just taking extra precaution by giving you this warning.",
+  "question": "If no date can be read on the screenshot, what happens?"
+}

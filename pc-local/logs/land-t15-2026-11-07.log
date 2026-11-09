@@ -1,0 +1,924 @@
+npm warn deprecated text-encoding@0.7.0: no longer maintained
+npm warn deprecated crypto-js@4.2.0: Active development of CryptoJS has been discontinued. This library is no longer maintained.
+
+added 297 packages, and audited 315 packages in 11s
+
+59 packages are looking for funding
+  run `npm fund` for details
+
+8 vulnerabilities (2 low, 4 moderate, 2 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues, run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+npm ci exit=0
+[2026-11-07 01:18:07] queued full check in /home/flem/x2f-worktrees/lead-land (git 114264ab)
+[2026-11-07 01:18:07] started
+
+> check
+> bash tools/check.sh
+
+
+> typecheck
+> npm run typecheck --workspaces --if-present
+
+
+> @x2f/accounts@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/auth-client@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/core@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/escrow@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/proof@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/protocol@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/reputation@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/staff@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/trade@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/api@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/moderation@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/node-proxy@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/relay@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/web@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/fido-mds@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/leaked@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/regtest@0.0.0 typecheck
+> tsc --noEmit
+
+
+> copy-lint
+> tsx tools/copy-lint.ts
+
+copy-lint: apps/web/src is clean
+
+> separation-check
+> tsx tools/separation-check.ts
+
+separation-check: ok
+
+> test
+> vitest run
+
+
+ RUN  v5.0.3 /home/flem/x2f-worktrees/lead-land
+
+(node:94354) Warning: Closing file descriptor 23 on garbage collection
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:94354) [DEP0137] DeprecationWarning: Closing a FileHandle object on garbage collection is deprecated. Please close FileHandle objects explicitly using FileHandle.prototype.close(). In the future, an error will be thrown if a file descriptor is closed during garbage collection.
+(node:94354) Warning: Closing file descriptor 24 on garbage collection
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2083:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 3000
+}
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2083:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 3000
+}
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2083:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 3000
+}
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2083:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 3000
+}
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2083:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 3000
+}
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2083:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 3000
+}
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2083:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 3000
+}
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2083:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 3000
+}
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2083:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 3000
+}
+Error: connect ECONNREFUSED 127.0.0.1:3000
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2083:16) {
+  errno: -111,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 3000
+}
+
+ Test Files  233 passed (233)
+      Tests  4518 passed | 1 todo (4519)
+   Start at  01:18:21
+   Duration  1360.02s (tests 89%, import 7%, transform 2%, environment 2%)
+
+    Isolate  233 workers spawned · ~443ms startup each (spawn + environment, per file)
+             at least ~14.31s faster with isolate: false — reuses workers across files instead of one per file
+
+
+> audit
+> npm audit --omit=dev
+
+# npm audit report
+
+fast-uri  3.0.0 - 3.1.8 || 4.0.0 - 4.2.2
+Severity: moderate
+fast-uri vulnerable to URI scheme spoofing via percent-encoded scheme decoding - https://github.com/advisories/GHSA-w74x-v6f9-j3xg
+fast-uri vulnerable to URI scheme spoofing via percent-encoded scheme decoding - https://github.com/advisories/GHSA-w74x-v6f9-j3xg
+fast-uri vulnerable to improper path equivalence in relative reference normalization - https://github.com/advisories/GHSA-xhq7-xmqj-769h
+fast-uri vulnerable to improper path equivalence in relative reference normalization - https://github.com/advisories/GHSA-xhq7-xmqj-769h
+fast-uri vulnerable to host confusion via unchecked WHATWG host canonicalization - https://github.com/advisories/GHSA-wjr9-j795-jxcr
+fast-uri vulnerable to host confusion via unchecked WHATWG host canonicalization - https://github.com/advisories/GHSA-wjr9-j795-jxcr
+fast-uri vulnerable to scheme injection via an unescaped first-segment colon in suffix references - https://github.com/advisories/GHSA-333x-w4r6-6crp
+fast-uri vulnerable to scheme injection via an unescaped first-segment colon in suffix references - https://github.com/advisories/GHSA-333x-w4r6-6crp
+fix available via `npm audit fix`
+node_modules/@fastify/ajv-compiler/node_modules/ajv/node_modules/fast-uri
+node_modules/ajv-formats/node_modules/fast-uri
+node_modules/fast-json-stringify/node_modules/ajv/node_modules/fast-uri
+node_modules/fast-uri
+
+follow-redirects  1.16.0 - 1.16.1
+Severity: high
+follow-redirects: Cross-realm sensitiveHeaders arrays are discarded and custom credentials can follow redirects - https://github.com/advisories/GHSA-mrwp-f3q8-3g9p
+fix available via `npm audit fix`
+node_modules/follow-redirects
+
+glob  9.0.0 - 14.0.1
+Severity: moderate
+Glob: AbortSignal cancellation bypass allows post-timeout filesystem traversal - https://github.com/advisories/GHSA-3g3m-2fjr-6pw4
+Depends on vulnerable versions of minimatch
+fix available via `npm audit fix --force`
+Will install @fastify/static@10.1.10, which is outside the stated dependency range
+node_modules/glob
+  @fastify/static  7.0.0 - 10.1.8
+  Depends on vulnerable versions of glob
+  node_modules/@fastify/static
+
+minimatch  7.0.0 - 11.0.0
+Severity: moderate
+minimatch has potential denial of service via globparts amplification - https://github.com/advisories/GHSA-g3hv-75wg-m249
+fix available via `npm audit fix --force`
+Will install @fastify/static@10.1.10, which is outside the stated dependency range
+node_modules/minimatch
+
+serialize-javascript  <7.1.3
+Serialize JavaScript: Cross-site scripting (XSS) via unescaped </script at the end of a serialized function body - https://github.com/advisories/GHSA-m5mm-p8h7-m29v
+fix available via `npm audit fix --force`
+Will install monero-ts@0.11.22, which is outside the stated dependency range
+node_modules/serialize-javascript
+  monero-ts  <=0.11.20
+  Depends on vulnerable versions of serialize-javascript
+  node_modules/monero-ts
+
+7 vulnerabilities (2 low, 4 moderate, 1 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues, run:
+  npm audit fix --force
+[2026-11-07 01:41:07] exit=0
+
+> semgrep
+> ~/.local/semgrep-venv/bin/semgrep scan --config p/typescript --config p/nodejs --config p/secrets --config tools/semgrep --error --metrics=off packages apps tools
+
+               
+               
+┌─────────────┐
+│ Scan Status │
+└─────────────┘
+  Scanning 871 files tracked by git with 123 Code rules:
+                                                                                                                        
+  Language      Rules   Files          Origin      Rules                                                                
+ ─────────────────────────────        ───────────────────                                                               
+  <multilang>      36     871          Community     121                                                                
+  ts               76     705          Custom          2                                                                
+  js               68       1                                                                                           
+  yaml              1       1                                                                                           
+                                                                                                                        
+                
+                
+┌──────────────┐
+│ Scan Summary │
+└──────────────┘
+✅ Scan completed successfully.
+ • Findings: 0 (0 blocking)
+ • Rules run: 113
+ • Targets scanned: 871
+ • Parsed lines: ~99.9%
+ • Scan was limited to files tracked by git
+ • For a detailed list of skipped files and lines, run semgrep with the --verbose flag
+Ran 113 rules on 871 files: 0 findings.
+(need more rules? `semgrep login` for additional free Semgrep Registry rules)
+
+
+A new version of Semgrep is available. See https://semgrep.dev/docs/upgrading
+If Semgrep missed a finding, please send us feedback to let us know!
+See https://semgrep.dev/docs/reporting-false-negatives/
+semgrep exit=0
+[WebServer] [plugin rolldown:vite-resolve] Module "https" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/common/HttpClient.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "http" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/common/HttpClient.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "fs" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/common/LibraryUtils.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/daemon/model/MoneroBlock.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/daemon/model/MoneroBlockHeader.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/daemon/model/MoneroKeyImage.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/daemon/model/MoneroOutput.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/model/MoneroIncomingTransfer.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/model/MoneroOutgoingTransfer.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/MoneroWallet.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/model/MoneroTxWallet.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/MoneroWalletKeys.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/model/MoneroTxQuery.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/common/GenUtils.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/daemon/model/MoneroTx.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/common/LibraryUtils.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "path" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/common/LibraryUtils.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/model/MoneroTxConfig.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/model/MoneroTransfer.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/model/MoneroAccount.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/model/MoneroTxSet.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "path" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/MoneroWalletFull.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/MoneroWalletFull.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "fs" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/MoneroWalletFull.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/model/MoneroOutputWallet.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/daemon/MoneroDaemonRpc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "child_process" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/daemon/MoneroDaemonRpc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/daemon/MoneroDaemon.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/common/MoneroUtils.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "assert" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/MoneroWalletRpc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "child_process" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/src/main/ts/wallet/MoneroWalletRpc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "fs" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/monero.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "crypto" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/monero.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin rolldown:vite-resolve] Module "path" has been externalized for browser compatibility, imported by "/home/flem/x2f-worktrees/lead-land/node_modules/monero-ts/dist/monero.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[WebServer] [plugin builtin:vite-reporter] 
+[WebServer] (!) Some chunks are larger than 500 kB after minification. Consider:
+[WebServer] - Using dynamic import() to code-split the application
+[WebServer] - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+[WebServer] - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+
+Running 505 tests using 1 worker
+
+  ✓    1 [chromium] › e2e/accepted-phone.spec.ts:99:5 › AcceptedSheet at phone sizes › 360x640: the wallet picker fits, every control is tappable, and the pick goes through (2.1s)
+  ✓    2 [chromium] › e2e/accepted-phone.spec.ts:130:5 › AcceptedSheet at phone sizes › 360x640: with no usable wallet, Add a wallet fits and is tappable (989ms)
+  ✓    3 [chromium] › e2e/accepted-phone.spec.ts:99:5 › AcceptedSheet at phone sizes › 390x844: the wallet picker fits, every control is tappable, and the pick goes through (1.1s)
+  ✓    4 [chromium] › e2e/accepted-phone.spec.ts:130:5 › AcceptedSheet at phone sizes › 390x844: with no usable wallet, Add a wallet fits and is tappable (904ms)
+  ✓    5 [chromium] › e2e/accepted-phone.spec.ts:99:5 › AcceptedSheet at phone sizes › 430x932: the wallet picker fits, every control is tappable, and the pick goes through (1.2s)
+  ✓    6 [chromium] › e2e/accepted-phone.spec.ts:130:5 › AcceptedSheet at phone sizes › 430x932: with no usable wallet, Add a wallet fits and is tappable (803ms)
+  ✓    7 [chromium] › e2e/block.spec.ts:62:5 › block on a 390x844 phone › block the poster from the quote, then unblock them from Blocked traders (1.3s)
+  ✓    8 [chromium] › e2e/block.spec.ts:99:5 › block on a 390x844 phone › Settings, Security links to Blocked traders (review M3) (755ms)
+  ✓    9 [chromium] › e2e/block.spec.ts:115:5 › block on a 390x844 phone › logged out: no block action on the quote, and Blocked traders asks to log in (969ms)
+  ✓   10 [chromium] › e2e/block.spec.ts:62:5 › block on a 360x800 phone › block the poster from the quote, then unblock them from Blocked traders (1.2s)
+  ✓   11 [chromium] › e2e/block.spec.ts:99:5 › block on a 360x800 phone › Settings, Security links to Blocked traders (review M3) (725ms)
+  ✓   12 [chromium] › e2e/block.spec.ts:115:5 › block on a 360x800 phone › logged out: no block action on the quote, and Blocked traders asks to log in (815ms)
+parity-pixels BuyMain 390x844: reported, not blocking: 22.00% of pixels differ from refs/BuyMain.png
+  ✓   13 [chromium] › e2e/browse-buy.spec.ts:22:3 › /buy (BuyMain board) › matches the BuyMain board: live sellers first, then every method A–Z (947ms)
+  ✓   14 [chromium] › e2e/browse-buy.spec.ts:40:3 › /buy (BuyMain board) › Best rate on BuyMain asks the API for the lowest-first order (733ms)
+  ✓   15 [chromium] › e2e/browse-buy.spec.ts:48:3 › /buy (BuyMain board) › a search hit list under Best rate puts the lowest rate first (733ms)
+  ✓   16 [chromium] › e2e/browse-buy.spec.ts:57:3 › /buy (BuyMain board) › the Sell tab goes to /sell in the same currency (784ms)
+parity-pixels BuyOffers 390x844: reported, not blocking: 22.34% of pixels differ from refs/BuyOffers.png
+  ✓   17 [chromium] › e2e/browse-buy.spec.ts:68:3 › /buy/:methodId (BuyOffers board) › matches the BuyOffers board (922ms)
+  ✓   18 [chromium] › e2e/browse-buy.spec.ts:86:3 › /buy/:methodId (BuyOffers board) › offers sort by Best price ascending, whatever order they arrive in (609ms)
+  ✓   19 [chromium] › e2e/browse-buy.spec.ts:97:3 › /buy/:methodId (BuyOffers board) › Online now and Most trades ask the API for their order (704ms)
+  ✓   20 [chromium] › e2e/browse-buy.spec.ts:107:3 › /buy/:methodId (BuyOffers board) › a fixed-price offer shows its difference from the market price (654ms)
+  ✓   21 [chromium] › e2e/browse-buy.spec.ts:114:3 › /buy/:methodId (BuyOffers board) › starter limits on the buy side: greyed "Opens at …" cards, New from the API stage (666ms)
+  ✓   22 [chromium] › e2e/browse-buy.spec.ts:141:3 › /buy/:methodId (BuyOffers board) › a method id from the URL is never printed (615ms)
+  ✓   23 [chromium] › e2e/browse-buy.spec.ts:149:3 › /buy/:methodId (BuyOffers board) › logged out, the buy lists render and no browse request fails (823ms)
+parity-pixels BuyMain 390x844: reported, not blocking: 22.00% of pixels differ from refs/BuyMain.png
+  ✓   24 [chromium] › e2e/browse-buy.spec.ts:174:5 › buy browse on a 390x844 phone › BuyMain: parity and phone layout (972ms)
+parity-pixels BuyOffers 390x844: reported, not blocking: 22.34% of pixels differ from refs/BuyOffers.png
+  ✓   25 [chromium] › e2e/browse-buy.spec.ts:182:5 › buy browse on a 390x844 phone › BuyOffers: parity and phone layout (975ms)
+  ✓   26 [chromium] › e2e/browse-buy.spec.ts:190:5 › buy browse on a 390x844 phone › BuyOffers with greyed starter-limit offers and the badge popover open: phone layout (1.1s)
+parity-pixels BuyMain 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+  ✓   27 [chromium] › e2e/browse-buy.spec.ts:174:5 › buy browse on a 360x800 phone › BuyMain: parity and phone layout (1.0s)
+parity-pixels BuyOffers 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+  ✓   28 [chromium] › e2e/browse-buy.spec.ts:182:5 › buy browse on a 360x800 phone › BuyOffers: parity and phone layout (793ms)
+  ✓   29 [chromium] › e2e/browse-buy.spec.ts:190:5 › buy browse on a 360x800 phone › BuyOffers with greyed starter-limit offers and the badge popover open: phone layout (770ms)
+parity-pixels Main 390x844: reported, not blocking: 24.46% of pixels differ from refs/Main.png
+  ✓   30 [chromium] › e2e/browse-sell.spec.ts:31:3 › /sell (Main board) › matches the Main board: live buyers first, then every method A–Z (887ms)
+  ✓   31 [chromium] › e2e/browse-sell.spec.ts:49:3 › /sell (Main board) › Sort asks the API for the chosen order (737ms)
+  ✓   32 [chromium] › e2e/browse-sell.spec.ts:59:3 › /sell (Main board) › a search with no match shows the board copy, and "Suggest it" posts a suggestion (785ms)
+  ✓   33 [chromium] › e2e/browse-sell.spec.ts:72:3 › /sell (Main board) › a search with matches shows "N matches" (684ms)
+  ✓   34 [chromium] › e2e/browse-sell.spec.ts:82:3 › Task 16 review fixes › switching currency never shows the old rows under the new currency (750ms)
+  ✓   35 [chromium] › e2e/browse-sell.spec.ts:101:3 › Task 16 review fixes › a method list the app cannot read says so and logs the error, unlike a network failure (665ms)
+  ✓   36 [chromium] › e2e/browse-sell.spec.ts:113:3 › Task 16 review fixes › an offer list the app cannot read says so and logs the error (605ms)
+  ✓   37 [chromium] › e2e/browse-sell.spec.ts:125:3 › Task 16 review fixes › a method id from the URL is never printed (632ms)
+  ✓   38 [chromium] › e2e/browse-sell.spec.ts:133:3 › Task 16 review fixes › every chip group is a radio group with arrow keys (Main sort, currency, offer sort) (1.1s)
+parity-pixels SellOffers 390x844: reported, not blocking: 22.02% of pixels differ from refs/SellOffers.png
+  ✓   39 [chromium] › e2e/browse-sell.spec.ts:164:3 › /sell/:methodId (SellOffers board) › matches the SellOffers board (793ms)
+  ✓   40 [chromium] › e2e/browse-sell.spec.ts:176:3 › /sell/:methodId (SellOffers board) › EUR shows only EUR offers (937ms)
+  ✓   41 [chromium] › e2e/browse-sell.spec.ts:198:3 › /sell/:methodId (SellOffers board) › logged out, the lists render and no browse request fails (862ms)
+  ✓   42 [chromium] › e2e/browse-sell.spec.ts:216:3 › /sell/:methodId (SellOffers board) › starter limits: an offer the viewer cannot take yet is greyed with "Opens at Building" (676ms)
+parity-pixels Main 390x844: reported, not blocking: 24.46% of pixels differ from refs/Main.png
+  ✓   43 [chromium] › e2e/browse-sell.spec.ts:255:5 › sell browse on a 390x844 phone › Main: parity and phone layout (865ms)
+  ✓   44 [chromium] › e2e/browse-sell.spec.ts:263:5 › sell browse on a 390x844 phone › Main with a search that has no match: phone layout (684ms)
+parity-pixels SellOffers 390x844: reported, not blocking: 22.02% of pixels differ from refs/SellOffers.png
+  ✓   45 [chromium] › e2e/browse-sell.spec.ts:271:5 › sell browse on a 390x844 phone › SellOffers: parity and phone layout (808ms)
+  ✓   46 [chromium] › e2e/browse-sell.spec.ts:279:5 › sell browse on a 390x844 phone › SellOffers with greyed starter-limit offers and the badge popover open: phone layout (709ms)
+parity-pixels Main 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+  ✓   47 [chromium] › e2e/browse-sell.spec.ts:255:5 › sell browse on a 360x800 phone › Main: parity and phone layout (838ms)
+  ✓   48 [chromium] › e2e/browse-sell.spec.ts:263:5 › sell browse on a 360x800 phone › Main with a search that has no match: phone layout (706ms)
+parity-pixels SellOffers 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+  ✓   49 [chromium] › e2e/browse-sell.spec.ts:271:5 › sell browse on a 360x800 phone › SellOffers: parity and phone layout (796ms)
+  ✓   50 [chromium] › e2e/browse-sell.spec.ts:279:5 › sell browse on a 360x800 phone › SellOffers with greyed starter-limit offers and the badge popover open: phone layout (737ms)
+  ✓   51 [chromium] › e2e/chat.spec.ts:128:1 › the room's #chat sheet: a device-bound identity, the buyer's line, and a sealed reply only the buyer and the mod open (2.9s)
+  ✓   52 [chromium] › e2e/chat.spec.ts:155:1 › another device of the account (the API holds another key) reads only the notice and the read-only line (1.6s)
+  ✓   53 [chromium] › e2e/chat.spec.ts:165:1 › two panes: the real chat sits beside the screen, and #chat focuses its composer once the chat is ready (round-2 review m3) (1.5s)
+  ✓   54 [chromium] › e2e/chat.spec.ts:176:1 › wide (1280 px): #chat opens the real chat in a sheet (round-2 review I2) (995ms)
+  -   55 [chromium] › e2e/design-shots.spec.ts:97:1 › 01-02 the new device: the 2-digit number, then let in
+  -   56 [chromium] › e2e/design-shots.spec.ts:114:1 › 03 the new device: blocked
+  -   57 [chromium] › e2e/design-shots.spec.ts:124:1 › 04 a login refused during the 24-hour hold (CantDoThat)
+  -   58 [chromium] › e2e/design-shots.spec.ts:132:1 › 05 a backup login starts the 24-hour hold
+  -   59 [chromium] › e2e/design-shots.spec.ts:168:1 › 06-07 the logged-in device: "Is this you?", a number picked, then let in
+  -   60 [chromium] › e2e/design-shots.spec.ts:182:1 › 08-10 at the device limit: the ask with its notes, then which device to log out
+  -   61 [chromium] › e2e/design-shots.spec.ts:209:1 › 11 Devices: the count against the limit and One device at a time
+  -   62 [chromium] › e2e/design-shots.spec.ts:217:1 › 11w-06w the Desktop layout (1280x800): Devices, and the "Is this you?" dialog
+  -   63 [chromium] › e2e/design-shots.spec.ts:229:1 › 12 a held backup session: the hold banner on Security
+  -   64 [chromium] › e2e/design-shots.spec.ts:236:1 › 13 a change from a one-proof login is held: "takes effect at"
+  -   65 [chromium] › e2e/design-shots.spec.ts:291:1 › 14-16 the owner invites a member: the form, the confirm, the link
+  -   66 [chromium] › e2e/design-shots.spec.ts:305:1 › 17-18 the owner's team: members and the activity log
+  -   67 [chromium] › e2e/design-shots.spec.ts:313:1 › 19 a full team: the invite control disabled with the board note (review shot 19; the popup is a server fallback)
+  -   68 [chromium] › e2e/design-shots.spec.ts:320:1 › 20 an invite from a one-proof login is refused (CantDoThat weak-session)
+  -   69 [chromium] › e2e/design-shots.spec.ts:337:1 › 21-23 a member joins: the invite, the PGP step, the second way
+  -   70 [chromium] › e2e/design-shots.spec.ts:353:1 › 24 a used or expired invite link
+  -   71 [chromium] › e2e/design-shots.spec.ts:360:1 › 25 a member opens an owner-only screen (CantDoThat owner-only)
+  -   72 [chromium] › e2e/design-shots.spec.ts:368:1 › 26 a Trades-only member: no Post offer tab (review shot 26)
+  -   73 [chromium] › e2e/design-shots.spec.ts:378:1 › 27 a Trades member's device when an offer is taken: a notice, not the accept sheet
+  -   74 [chromium] › e2e/design-shots.spec.ts:392:1 › 28-29 a member's trade room: waiting for the owner's device; Propose cancel
+  -   75 [chromium] › e2e/design-shots.spec.ts:412:1 › 30 the owner's Devices list names a member's session
+  -   76 [chromium] › e2e/design-shots.spec.ts:453:1 › 31-32 My offers: the list, then two ticked with the bar
+  -   77 [chromium] › e2e/design-shots.spec.ts:464:1 › 33-34 My offers under a trading hold: the refusal, then the lines under each offer
+  -   78 [chromium] › e2e/design-shots.spec.ts:481:1 › 31w My offers on a wide screen (1280x800): the list, then two ticked
+  -   79 [chromium] › e2e/design-shots.spec.ts:493:1 › 35 My offers: empty
+  -   80 [chromium] › e2e/design-shots.spec.ts:644:1 › 36 BuyerPay while the escrow secures
+  -   81 [chromium] › e2e/design-shots.spec.ts:650:1 › 37-39 Task 38-39: the pay warning, the two-step I've paid, marked as paid
+  -   82 [chromium] › e2e/design-shots.spec.ts:669:1 › 40-41 the seller's waiting room: Propose cancel, then the buyer's accept card
+  -   83 [chromium] › e2e/design-shots.spec.ts:691:1 › 42-43 SellerConfirm: the release warning, then the box ticked
+  -   84 [chromium] › e2e/design-shots.spec.ts:712:1 › 44-46 Task 39: the seller confirms a buyer's cancel
+  -   85 [chromium] › e2e/design-shots.spec.ts:727:1 › 47 Released (Task 24): the buyer's view
+  -   86 [chromium] › e2e/design-shots.spec.ts:735:1 › 48 the buyer's refunded trade: why, and the 48-hour Open a dispute
+  -   87 [chromium] › e2e/design-shots.spec.ts:742:1 › 49 Task 20: the encrypted chat sheet
+  -   88 [chromium] › e2e/design-shots.spec.ts:752:1 › 50 Task 20: the chat open on another device of the account
+  -   89 [chromium] › e2e/design-shots.spec.ts:767:1 › 51 an unfolded Fold (884x1104): the trade room and the real chat in two panes
+  -   90 [chromium] › e2e/design-shots.spec.ts:775:1 › 52 an unfolded Fold (884x1104): the seller's paid room with the chat pane
+  -   91 [chromium] › e2e/design-shots.spec.ts:782:1 › 53 an unfolded Fold (884x1104): the offers list (SellOffers)
+  -   92 [chromium] › e2e/design-shots.spec.ts:793:1 › 54 an unfolded Fold (884x1104): My offers
+  -   93 [chromium] › e2e/design-shots.spec.ts:808:1 › 55 a flip phone folded (360x380 cover screen): the trade card
+  -   94 [chromium] › e2e/design-shots.spec.ts:818:1 › 56 tabletop (1000x840, half folded): information on top, controls below
+  -   95 [chromium] › e2e/design-shots.spec.ts:865:1 › 57 DisputeOpen
+  -   96 [chromium] › e2e/design-shots.spec.ts:874:1 › 58 DisputeRoom
+  -   97 [chromium] › e2e/design-shots.spec.ts:893:1 › 59 DisputeRuling
+  -   98 [chromium] › e2e/design-shots.spec.ts:902:1 › 60 News
+  -   99 [chromium] › e2e/design-shots.spec.ts:915:1 › 61-63 CantDoThat on PostOffer, the feedback form, the thank-you
+  -  100 [chromium] › e2e/design-shots.spec.ts:960:1 › 64-65 block a trader from the quote; Blocked traders
+  -  101 [chromium] › e2e/design-shots.spec.ts:975:1 › 66, 68 browse, sell side: /sell, /sell/ZELLE
+  -  102 [chromium] › e2e/design-shots.spec.ts:986:1 › 67, 69 browse, buy side: /buy, /buy/ZELLE
+  -  103 [chromium] › e2e/design-shots.spec.ts:1016:1 › 70 the buyer quote, a wallet picked
+  -  104 [chromium] › e2e/design-shots.spec.ts:1024:1 › 71 the seller quote (mira.k's buy ad), a wallet picked
+  -  105 [chromium] › e2e/design-shots.spec.ts:1040:1 › 72 PostOffer
+  ✓  106 [chromium] › e2e/dispute-room.spec.ts:51:1 › the buyer's refunded trade says the payment time ran out and offers "Open a dispute" (684ms)
+  ✓  107 [chromium] › e2e/dispute-room.spec.ts:58:1 › a refund decided by a dispute says so and links to the dispute, not a new one (716ms)
+  ✓  108 [chromium] › e2e/dispute-room.spec.ts:65:1 › a disputed trade shows the dispute room inside the trade room, from GET …/dispute (822ms)
+  ✓  109 [chromium] › e2e/dispute-room.spec.ts:85:3 › the buyer's refunded view fits a 390x844 phone (785ms)
+  ✓  110 [chromium] › e2e/dispute-room.spec.ts:85:3 › the buyer's refunded view fits a 360x800 phone (719ms)
+parity-pixels DisputeOpen 390x844: reported, not blocking: 19.12% of pixels differ from refs/DisputeOpen.png
+  ✓  111 [chromium] › e2e/dispute.spec.ts:126:1 › parity with DisputeOpen at 390x844 (776ms)
+parity-pixels DisputeRoom 390x844: reported, not blocking: 30.83% of pixels differ from refs/DisputeRoom.png
+  ✓  112 [chromium] › e2e/dispute.spec.ts:135:1 › parity with DisputeRoom at 390x844 (778ms)
+parity-pixels DisputeRuling 390x844: reported, not blocking: 19.30% of pixels differ from refs/DisputeRuling.png
+  ✓  113 [chromium] › e2e/dispute.spec.ts:142:1 › parity with DisputeRuling at 390x844 (761ms)
+  ✓  114 [chromium] › e2e/dispute.spec.ts:152:1 › DisputeOpen shows the board copy and sends the reason and note (839ms)
+  ✓  115 [chromium] › e2e/dispute.spec.ts:171:1 › before the seller's confirm window ends, the buyer is told when and nothing is sent (999ms)
+  ✓  116 [chromium] › e2e/dispute.spec.ts:182:1 › the seller sees the seller's reasons (634ms)
+  ✓  117 [chromium] › e2e/dispute.spec.ts:190:1 › DisputeRoom: rose In dispute chip, locked amount, deadline line, hourglass and the join banner from the server (685ms)
+  ✓  118 [chromium] › e2e/dispute.spec.ts:207:1 › no moderator on record: no banner and no violet badge anywhere (616ms)
+  ✓  119 [chromium] › e2e/dispute.spec.ts:215:1 › DisputeRuling: the ruling card, the destination ending, evidence and the appeal sheet (801ms)
+  ✓  120 [chromium] › e2e/dispute.spec.ts:244:1 › DisputeRuling: the winner sees where the XMR goes; past the window there is no appeal button (637ms)
+  ✓  121 [chromium] › e2e/dispute.spec.ts:256:1 › an appeal refused as too late shows the refusal (738ms)
+  ✓  122 [chromium] › e2e/dispute.spec.ts:284:5 › DisputeOpen fits a 390x844 phone (694ms)
+  ✓  123 [chromium] › e2e/dispute.spec.ts:284:5 › DisputeRoom fits a 390x844 phone (670ms)
+  ✓  124 [chromium] › e2e/dispute.spec.ts:284:5 › DisputeRuling fits a 390x844 phone (711ms)
+  ✓  125 [chromium] › e2e/dispute.spec.ts:284:5 › DisputeOpen fits a 360x800 phone (717ms)
+  ✓  126 [chromium] › e2e/dispute.spec.ts:284:5 › DisputeRoom fits a 360x800 phone (668ms)
+  ✓  127 [chromium] › e2e/dispute.spec.ts:284:5 › DisputeRuling fits a 360x800 phone (729ms)
+  ✓  128 [chromium] › e2e/feedback.spec.ts:39:1 › a refusal opens CantDoThat; its feedback link leads to the form; an anonymous send gets the thank-you (1.2s)
+  ✓  129 [chromium] › e2e/feedback.spec.ts:83:1 › a named send carries the refusal code; the form works at desktop width too (715ms)
+  ✓  130 [chromium] › e2e/feedback.spec.ts:98:1 › signed out: told before typing, and the draft is kept through the log-in round trip (823ms)
+  ✓  131 [chromium] › e2e/feedback.spec.ts:139:3 › CantDoThat: swipe down from the handle on a touch screen › a 150 px swipe closes it; a 20 px one does not (1.2s)
+  ✓  132 [chromium] › e2e/feedback.spec.ts:151:1 › CantDoThat on the wide dialog: no handle, and a mouse drag over the message does not close it (967ms)
+  ✓  133 [chromium] › e2e/fold.spec.ts:108:5 › width rules (Safari on the iPhone Fold, and any browser without segments) › 390 px wide is the phone layout (677ms)
+  ✓  134 [chromium] › e2e/fold.spec.ts:108:5 › width rules (Safari on the iPhone Fold, and any browser without segments) › 599 px wide is the phone layout (707ms)
+  ✓  135 [chromium] › e2e/fold.spec.ts:108:5 › width rules (Safari on the iPhone Fold, and any browser without segments) › 600 px wide is the two layout (799ms)
+  ✓  136 [chromium] › e2e/fold.spec.ts:108:5 › width rules (Safari on the iPhone Fold, and any browser without segments) › 700 px wide is the two layout (730ms)
+  ✓  137 [chromium] › e2e/fold.spec.ts:108:5 › width rules (Safari on the iPhone Fold, and any browser without segments) › 840 px wide is the two layout (814ms)
+  ✓  138 [chromium] › e2e/fold.spec.ts:108:5 › width rules (Safari on the iPhone Fold, and any browser without segments) › 999 px wide is the two layout (1.0s)
+  ✓  139 [chromium] › e2e/fold.spec.ts:108:5 › width rules (Safari on the iPhone Fold, and any browser without segments) › 1000 px wide is the wide layout (771ms)
+  ✓  140 [chromium] › e2e/fold.spec.ts:108:5 › width rules (Safari on the iPhone Fold, and any browser without segments) › 1100 px wide is the wide layout (684ms)
+  ✓  141 [chromium] › e2e/fold.spec.ts:139:3 › width rules (Safari on the iPhone Fold, and any browser without segments) › FOLD_VIEWPORTS: every size fits with no sideways scroll, and under 1000 px every control is tappable (800ms)
+  ✓  142 [chromium] › e2e/fold.spec.ts:152:3 › width rules (Safari on the iPhone Fold, and any browser without segments) › no hinge reported: a sheet and its backdrop cover the whole screen, nothing behind it can be tapped (review I3) (776ms)
+  ✓  143 [chromium] › e2e/fold.spec.ts:174:3 › width rules (Safari on the iPhone Fold, and any browser without segments) › a Chat sheet open on the phone closes on unfold: one draft, one composer (review M3) (772ms)
+  ✓  144 [chromium] › e2e/fold.spec.ts:185:3 › width rules (Safari on the iPhone Fold, and any browser without segments) › a Chat sheet that closes on unfold hands the focus to the chat pane, not the page (round-2 review m4) (742ms)
+  ✓  145 [chromium] › e2e/fold.spec.ts:196:3 › width rules (Safari on the iPhone Fold, and any browser without segments) › the seller's waiting room keeps its one primary in two panes: Chat goes to the chat pane (review M4) (715ms)
+  ✓  146 [chromium] › e2e/fold.spec.ts:208:3 › width rules (Safari on the iPhone Fold, and any browser without segments) › the chat pane is a whole screen tall, its composer at the bottom and Send off the edge (design review 51, 52) (723ms)
+  ✓  147 [chromium] › e2e/fold.spec.ts:221:3 › a book fold open: two segments (Chrome on Android) › the gutter sits on the hinge, nothing crosses it, and a sheet stays in one pane (904ms)
+  ✓  148 [chromium] › e2e/fold.spec.ts:237:3 › a book fold open: two segments (Chrome on Android) › a hinge off the middle moves the panes with it (750ms)
+  ✓  149 [chromium] › e2e/fold.spec.ts:249:3 › a book fold open: two segments (Chrome on Android) › a screen without panes stays in the first pane, its bottom nav too (654ms)
+  ✓  150 [chromium] › e2e/fold.spec.ts:261:3 › tabletop: half folded › turns on by itself: the top half shows information only, every control and the chat are in the bottom half (920ms)
+  ✓  151 [chromium] › e2e/fold.spec.ts:311:3 › the flip cover screen › a folded posture on a small screen: the trade card first, the room still under it, the chat draft kept (984ms)
+  ✓  152 [chromium] › e2e/fold.spec.ts:344:3 › the flip cover screen › the device's own warning shows on the card: a stopped escrow (review I1) (671ms)
+  ✓  153 [chromium] › e2e/fold.spec.ts:352:3 › the flip cover screen › the room under the card keeps its Chat link: SellerRefund's Chat opens the chat sheet (round-2 review m3) (757ms)
+  ✓  154 [chromium] › e2e/fold.spec.ts:365:3 › the flip cover screen › an integrity failure shows its alert in every layout, the cover included (review I1) (728ms)
+  ✓  155 [chromium] › e2e/fold.spec.ts:392:5 › the flip cover screen › size alone is never the cover screen: a phone in split screen (412x430) keeps the phone layout (review I2) (684ms)
+  ✓  156 [chromium] › e2e/fold.spec.ts:392:5 › the flip cover screen › size alone is never the cover screen: a small desktop window (500x450) keeps the phone layout (review I2) (704ms)
+  ✓  157 [chromium] › e2e/fold.spec.ts:403:3 › the flip cover screen › the keyboard shrinking the viewport (360x640 to 360x360) keeps the phone layout and the focused input (review I2) (805ms)
+  ✓  158 [chromium] › e2e/fold.spec.ts:418:3 › folding keeps the screen, the scroll position and typed text › 840 to 390 px mid-trade: same route, same scroll, the chat draft moves behind the Chat button (847ms)
+  ✓  159 [chromium] › e2e/fold.spec.ts:438:3 › folding keeps the screen, the scroll position and typed text › a half-typed amount on the quote survives unfolding and folding (902ms)
+  ✓  160 [chromium] › e2e/fold.spec.ts:469:5 › screens with two panes: nothing across the hinge (design review 53, 54) › Fold-Offers: the list picks, the quote beside it has the one Trade (984ms)
+  ✓  161 [chromium] › e2e/fold.spec.ts:469:5 › screens with two panes: nothing across the hinge (design review 53, 54) › Fold-Offers: the list picks, the quote beside it has the one Trade (hinge reported) (862ms)
+  ✓  162 [chromium] › e2e/fold.spec.ts:507:3 › screens with two panes: nothing across the hinge (design review 53, 54) › Fold-MyOffers: the list, and the picked offer's details with its switch beside it (710ms)
+parity-pixels TradeFund 390x844: reported, not blocking: 28.54% of pixels differ from refs/TradeFund.png
+  ✓  163 [chromium] › e2e/fund.spec.ts:165:3 › TradeFund (seller, phone) › matches the TradeFund board at 390x844 (837ms)
+  ✓  164 [chromium] › e2e/fund.spec.ts:172:3 › TradeFund (seller, phone) › the wallet link is exactly moneroUri(escrowAddress, sellerFundsAtomic), and the screen says to send exactly it (803ms)
+  ✓  165 [chromium] › e2e/fund.spec.ts:182:3 › TradeFund (seller, phone) › the poster seller funds amount + 1% and sees the fee; the link carries that exact total (663ms)
+  ✓  166 [chromium] › e2e/fund.spec.ts:191:3 › TradeFund (seller, phone) › the taker seller sees no X2F fee (695ms)
+  ✓  167 [chromium] › e2e/fund.spec.ts:199:3 › TradeFund (seller, phone) › the fiat total is the quote's: fiatCents(amount, locked rate) (742ms)
+  ✓  168 [chromium] › e2e/fund.spec.ts:207:3 › TradeFund (seller, phone) › the countdown follows serverNow with the browser clock 10 min ahead (837ms)
+  ✓  169 [chromium] › e2e/fund.spec.ts:214:3 › TradeFund (seller, phone) › the hold opens the wallet on the release, once; a second hold, and a reload, do nothing more (8.0s)
+  ✓  170 [chromium] › e2e/fund.spec.ts:242:3 › TradeFund (seller, phone) › once the full amount is seen: "Escrow funded", and no address or monero: link, even after a reload (1.2s)
+  ✓  171 [chromium] › e2e/fund.spec.ts:262:3 › TradeFund (seller, phone) › short funding this device has seen: the link, QR and copy carry the remainder, never the full amount again (720ms)
+  ✓  172 [chromium] › e2e/fund.spec.ts:273:3 › TradeFund (seller, phone) › short funding this device has not seen yet: the address only, no link, QR or amount (657ms)
+  ✓  173 [chromium] › e2e/fund.spec.ts:285:3 › TradeFund (seller, phone) › Edge sellers get the Full Sync tip (663ms)
+  ✓  174 [chromium] › e2e/fund.spec.ts:295:3 › TradeFund on iPhone › iOS also gets "Open in <wallet>" as the primary (628ms)
+  ✓  175 [chromium] › e2e/fund.spec.ts:304:3 › TradeFund on a desktop › the primary is Copy address, with the QR code; there is no wallet link (686ms)
+  ✓  176 [chromium] › e2e/fund.spec.ts:313:3 › TradeFund on a desktop › at 1280x800 the room fits with no horizontal scroll and one primary (675ms)
+  ✓  177 [chromium] › e2e/fund.spec.ts:328:3 › only a verified escrow address is ever shown › a server uri pointing elsewhere is never used: the link is built from the verified address (2.5s)
+  ✓  178 [chromium] › e2e/fund.spec.ts:338:3 › only a verified escrow address is ever shown › an API address that differs from the device-derived one: "Security check failed", no address, link or QR (656ms)
+  ✓  179 [chromium] › e2e/fund.spec.ts:348:3 › only a verified escrow address is ever shown › an inflated server amount: "Security check failed", and no address, link, QR or copy (602ms)
+  ✓  180 [chromium] › e2e/fund.spec.ts:362:5 › only a verified escrow address is ever shown › setting up: no address, link or QR (631ms)
+  ✓  181 [chromium] › e2e/fund.spec.ts:362:5 › only a verified escrow address is ever shown › an error: no address, link or QR (630ms)
+  ✓  182 [chromium] › e2e/fund.spec.ts:362:5 › only a verified escrow address is ever shown › participants-mismatch: no address, link or QR (600ms)
+  ✓  183 [chromium] › e2e/fund.spec.ts:374:5 › only a verified escrow address is ever shown › the production build (Task 12 not merged: stand-in escrow) › shows setup progress and no address, link or QR, whatever the API sends (652ms)
+  ✓  184 [chromium] › e2e/fund.spec.ts:387:3 › the buyer before funding › sees "Waiting for <seller> to fund" and no address, QR code or wallet link (719ms)
+  ✓  185 [chromium] › e2e/fund.spec.ts:408:5 › at 360x640 › the seller funding room fits the phone, before and after the hold (2.7s)
+  ✓  186 [chromium] › e2e/fund.spec.ts:432:5 › at 360x640 › the buyer waiting room fits the phone (632ms)
+  ✓  187 [chromium] › e2e/fund.spec.ts:408:5 › at 390x844 › the seller funding room fits the phone, before and after the hold (2.7s)
+  ✓  188 [chromium] › e2e/fund.spec.ts:432:5 › at 390x844 › the buyer waiting room fits the phone (624ms)
+  ✓  189 [chromium] › e2e/fund.spec.ts:408:5 › at 430x932 › the seller funding room fits the phone, before and after the hold (2.5s)
+  ✓  190 [chromium] › e2e/fund.spec.ts:432:5 › at 430x932 › the buyer waiting room fits the phone (638ms)
+  ✓  191 [chromium] › e2e/login.spec.ts:69:1 › PGP login (paste key, decrypt message, paste code) lands on returnTo (799ms)
+  ✓  192 [chromium] › e2e/login.spec.ts:90:1 › PGP login: an expired code offers a new message, and a second step goes on to the security key (1.0s)
+  ✓  193 [chromium] › e2e/login.spec.ts:128:1 › password login with an authenticator step lands on the default screen (811ms)
+  ✓  194 [chromium] › e2e/login.spec.ts:149:1 › a wrong login name and a wrong password both give the one generic error (873ms)
+  ✓  195 [chromium] › e2e/login.spec.ts:167:1 › the server miss count sends the visitor off the site, even across a method switch (2.3s)
+  ✓  196 [chromium] › e2e/login.spec.ts:201:1 › an outage or a wait is not a miss: a neutral retry or the wait, and ten of them keep the visitor here (1.3s)
+  ✓  197 [chromium] › e2e/login.spec.ts:223:1 › passkey login via the virtual authenticator lands on returnTo (723ms)
+  ✓  198 [chromium] › e2e/login.spec.ts:246:1 › security-key login by login name via the virtual authenticator lands on returnTo (752ms)
+  ✓  199 [chromium] › e2e/login.spec.ts:259:1 › recovery-code backup login lands on the default screen (713ms)
+  ✓  200 [chromium] › e2e/login.spec.ts:270:1 › a wrong backup code says so on the backup screen and does not redirect (722ms)
+  ✓  201 [chromium] › e2e/login.spec.ts:282:1 › an expired session routes to /login and returns to the same screen after login (960ms)
+  ✓  202 [chromium] › e2e/login.spec.ts:304:1 › a login on a stale Terms version shows the Terms screen first (818ms)
+  ✓  203 [chromium] › e2e/login.spec.ts:318:1 › PGP login: an expired or revoked key is turned away with the reason, a wait says how long (807ms)
+  ✓  204 [chromium] › e2e/login.spec.ts:333:1 › PGP login: an expired message says so (not "wrong code") and a new message starts again (781ms)
+  ✓  205 [chromium] › e2e/login.spec.ts:347:1 › password login: too many tries says how long to wait, not that the password was wrong (700ms)
+  ✓  206 [chromium] › e2e/login.spec.ts:358:1 › security-key login: a second step that needs PGP asks for the PGP key, with the pendingId (942ms)
+  ✓  207 [chromium] › e2e/login.spec.ts:384:1 › a TOTP backup login says when changes can be made, then carries on (780ms)
+  ✓  208 [chromium] › e2e/login.spec.ts:398:1 › the TOTP backup daily cap says when to try again (764ms)
+  ✓  209 [chromium] › e2e/login.spec.ts:411:1 › new-device approval: the number shows, the poll lets it in, and Continue goes on (3.3s)
+  ✓  210 [chromium] › e2e/login.spec.ts:437:1 › new-device approval: a blocked login says so and offers a backup login (920ms)
+  ✓  211 [chromium] › e2e/login.spec.ts:456:1 › a login refused during the 24-hour hold opens CantDoThat: this login waits until the hold ends (749ms)
+  ✓  212 [chromium] › e2e/login.spec.ts:473:3 › new-device approval at 390x844: the board's screen, phone layout and 44 px targets (852ms)
+  ✓  213 [chromium] › e2e/login.spec.ts:473:3 › new-device approval at 360x800: the board's screen, phone layout and 44 px targets (864ms)
+  ✓  214 [chromium] › e2e/myOffers.spec.ts:70:1 › lists my offers with tick boxes and switches, at both phone sizes (997ms)
+  ✓  215 [chromium] › e2e/myOffers.spec.ts:131:1 › Select all only ticks; the bar turns the ticked offers on or off; a reload shows what was saved (1.3s)
+  ✓  216 [chromium] › e2e/myOffers.spec.ts:164:1 › during a trading hold: the hold popup on Turn on, then one caution notice, a Paused chip on every offer, everything that switches disabled, and Post an offer refused (1.2s)
+  ✓  217 [chromium] › e2e/myOffers.spec.ts:217:1 › a live offer hidden by a hold shows the hold state on load (725ms)
+  ✓  218 [chromium] › e2e/myOffers.spec.ts:227:1 › PostOffer links to My offers; an empty list still offers Post an offer (823ms)
+  ✓  219 [chromium] › e2e/news.spec.ts:29:1 › logged out: newest first with dates, all new, then seen on the next visit (823ms)
+  ✓  220 [chromium] › e2e/news.spec.ts:50:1 › after login, unseen news opens first and Continue goes on (1.2s)
+  ✓  221 [chromium] › e2e/news.spec.ts:74:3 › phone layout at 390x844 (600ms)
+  ✓  222 [chromium] › e2e/news.spec.ts:74:3 › phone layout at 360x800 (605ms)
+  ✓  223 [chromium] › e2e/parity-auth.spec.ts:27:3 › /login on a 390x844 phone: one primary action, no sideways scroll (645ms)
+  ✓  224 [chromium] › e2e/parity-auth.spec.ts:35:3 › /login/backup on a 390x844 phone: one primary action, no sideways scroll (724ms)
+  ✓  225 [chromium] › e2e/parity-auth.spec.ts:27:3 › /login on a 360x800 phone: one primary action, no sideways scroll (670ms)
+  ✓  226 [chromium] › e2e/parity-auth.spec.ts:35:3 › /login/backup on a 360x800 phone: one primary action, no sideways scroll (598ms)
+parity-pixels Review 390x844: reported, not blocking: 53.26% of pixels differ from refs/Review.png
+  ✓  227 [chromium] › e2e/parity.spec.ts:27:3 › expectParity: blocking checks › a page with every board text and one [data-primary] passes; the pixel diff is only reported (368ms)
+  ✓  228 [chromium] › e2e/parity.spec.ts:36:3 › expectParity: blocking checks › the pixel result is printed, so the list reporter shows it for a passing test (357ms)
+  ✓  229 [chromium] › e2e/parity.spec.ts:51:3 › expectParity: blocking checks › pages are compared in the dark colour scheme the references were shot in (186ms)
+parity-pixels Review 390x844: reported, not blocking: 53.26% of pixels differ from refs/Review.png
+  ✓  230 [chromium] › e2e/parity.spec.ts:55:3 › expectParity: blocking checks › a hidden extra [data-primary] does not count (373ms)
+parity-pixels Review 390x844: reported, not blocking: 53.26% of pixels differ from refs/Review.png
+  ✓  231 [chromium] › e2e/parity.spec.ts:60:3 › expectParity: blocking checks › fails a username given text-transform by a class, not only an inline style (348ms)
+parity-pixels Review 390x844: reported, not blocking: 53.25% of pixels differ from refs/Review.png
+  ✓  232 [chromium] › e2e/parity.spec.ts:69:3 › expectParity: blocking checks › fails a page with two [data-primary] (368ms)
+parity-pixels Review 390x844: reported, not blocking: 53.16% of pixels differ from refs/Review.png
+  ✓  233 [chromium] › e2e/parity.spec.ts:74:3 › expectParity: blocking checks › fails a page with no [data-primary] (434ms)
+parity-pixels Review 390x844: reported, not blocking: 53.16% of pixels differ from refs/Review.png
+parity-pixels Review 390x844: reported, not blocking: 53.26% of pixels differ from refs/Review.png
+  ✓  234 [chromium] › e2e/parity.spec.ts:79:3 › expectParity: blocking checks › a board with no primary action: { primary: false } requires no [data-primary] at all (476ms)
+parity-pixels Review 390x844: reported, not blocking: 53.26% of pixels differ from refs/Review.png
+  ✓  235 [chromium] › e2e/parity.spec.ts:86:3 › expectParity: blocking checks › fails a page that scrolls sideways (370ms)
+parity-pixels Review 390x844: reported, not blocking: 53.26% of pixels differ from refs/Review.png
+  ✓  236 [chromium] › e2e/parity.spec.ts:91:3 › expectParity: blocking checks › fails a username shown with text-transform (366ms)
+parity-pixels Review 390x844: reported, not blocking: 53.28% of pixels differ from refs/Review.png
+  ✓  237 [chromium] › e2e/parity.spec.ts:96:3 › expectParity: blocking checks › fails when board copy is missing or reworded, and names it (364ms)
+  ✓  238 [chromium] › e2e/parity.spec.ts:103:3 › expectParity: blocking checks › compares each element's whole text, so copy split across nodes still matches (200ms)
+  ✓  239 [chromium] › e2e/parity.spec.ts:111:3 › expectParity: blocking checks › a masked region stands in for the changing part of a text (302ms)
+  ✓  240 [chromium] › e2e/parity.spec.ts:124:3 › expectParity: blocking checks › a masked region only stands in for a value-shaped text, not real copy (281ms)
+  ✓  241 [chromium] › e2e/parity.spec.ts:135:3 › expectParity: blocking checks › a lone mask stands in only for a board value of the same kind (time, money, code) (239ms)
+  ✓  242 [chromium] › e2e/parity.spec.ts:147:3 › expectParity: blocking checks › one masked pattern cannot stand in for two different board texts (191ms)
+  ✓  243 [chromium] › e2e/parity.spec.ts:152:3 › expectParity: blocking checks › a mask inside a sentence only absorbs a value, never words around it (282ms)
+  ✓  244 [chromium] › e2e/parity.spec.ts:164:3 › expectParity: blocking checks › one mask covers one board text even when wrapper elements repeat its sentence (264ms)
+  ✓  245 [chromium] › e2e/parity.spec.ts:172:3 › expectParity: blocking checks › a board placeholder text consumes the page sentence it matched (235ms)
+  ✓  246 [chromium] › e2e/parity.spec.ts:179:3 › expectParity: blocking checks › a board placeholder checks the fixed copy around it (228ms)
+  ✓  247 [chromium] › e2e/parity.spec.ts:188:3 › expectParity: blocking checks › visually hidden text does not count as shown (sr-only clip, 0x0, off-screen) (234ms)
+  ✓  248 [chromium] › e2e/parity.spec.ts:205:3 › expectParity: blocking checks › text below the fold still counts as shown (210ms)
+  ✓  249 [chromium] › e2e/parity.spec.ts:210:3 › expectParity: blocking checks › text below the fold inside an inner scroll container still counts as shown (209ms)
+  ✓  250 [chromium] › e2e/parity.spec.ts:219:3 › expectParity: blocking checks › text moved off the right edge of a page that cannot scroll does not count as shown (208ms)
+  ✓  251 [chromium] › e2e/parity.spec.ts:226:3 › expectParity: blocking checks › text clipped inside a non-scrolling overflow:hidden box does not count as shown (195ms)
+  ✓  252 [chromium] › e2e/parity.spec.ts:234:3 › expectParity: blocking checks › a select's options are shown with their select, and are not part of the label's text (208ms)
+  ✓  253 [chromium] › e2e/parity.spec.ts:242:3 › expectParity: blocking checks › text in a hidden element does not count as shown (191ms)
+  ✓  254 [chromium] › e2e/parity.spec.ts:249:3 › board texts › board-only "Example" markers and example notes are not required (271ms)
+  ✓  255 [chromium] › e2e/parity.spec.ts:264:3 › board texts › template placeholders, scripts and branches hidden by default are left out (189ms)
+parity-pixels SetupBackup 390x844: reported, not blocking: 24.80% of pixels differ from refs/SetupBackup.png
+  ✓  256 [chromium] › e2e/parity.spec.ts:274:3 › board texts › a {{…}} board text is kept as a pattern: SetupBackup "Add {{choice}}" (368ms)
+  ✓  257 [chromium] › e2e/parity.spec.ts:285:3 › board texts › real copy that mentions "example" is kept (2ms)
+parity-pixels Empty 390x844: reported, not blocking: no reference refs/Empty.png (capture it with tools/parity/capture-refs.ts)
+  ✓  258 [chromium] › e2e/parity.spec.ts:301:5 › board texts › with a temp boards folder › expectParity fails when no board text can be read (237ms)
+  ✓  259 [chromium] › e2e/parity.spec.ts:308:5 › board texts › with a temp boards folder › text the board itself hides visually (a screen-reader-only label) is not required (205ms)
+  ✓  260 [chromium] › e2e/parity.spec.ts:323:5 › board texts › with a temp boards folder › a select's options are board texts of their own, not part of the label around the select (175ms)
+  ✓  261 [chromium] › e2e/parity.spec.ts:333:5 › board texts › with a temp boards folder › a KNOWN_EXCEPTIONS text no longer on the board throws (a stale exception) (176ms)
+  ✓  262 [chromium] › e2e/parity.spec.ts:339:3 › board texts › known Desktop-board exceptions are listed with a reason and not required (211ms)
+  ✓  263 [chromium] › e2e/parity.spec.ts:355:1 › the 1280×800 header text matches the Desktop board (628ms)
+parity-pixels Desktop 1280x800: reported, not blocking: 44.63% of pixels differ from refs/Desktop.png
+  ✓  264 [chromium] › e2e/parity.spec.ts:364:1 › expectParity at 1280x800 sets the viewport and compares the Desktop board (504ms)
+parity-pixels StaffLog 1280x900: reported, not blocking: 10.92% of pixels differ from refs/StaffLog.png
+parity-pixels ModCase 1280x1600: reported, not blocking: 56.17% of pixels differ from refs/ModCase.png
+  ✓  265 [chromium] › e2e/parity.spec.ts:372:1 › expectParity defaults to the board's canvas.json size, so a staff board is really compared (1.6s)
+parity-pixels Nope 390x844: reported, not blocking: no reference refs/Nope.png (capture it with tools/parity/capture-refs.ts)
+  ✓  266 [chromium] › e2e/parity.spec.ts:396:3 › reported pixel diff › reports a missing reference without blocking (197ms)
+parity-pixels Self 390x844: within 3% of refs/Self.png (0.00% of pixels differ)
+parity-pixels Self 390x844: reported, not blocking: 25.00% of pixels differ from refs/Self.png
+  ✓  267 [chromium] › e2e/parity.spec.ts:402:3 › reported pixel diff › is within the ratio when the page matches, and a mask covers a changed region (372ms)
+parity-pixels Self 390x844: reported, not blocking: 100.00% of pixels differ from refs/Self.png
+  ✓  268 [chromium] › e2e/parity.spec.ts:417:3 › reported pixel diff › reports a large difference without blocking (323ms)
+  ✓  269 [chromium] › e2e/parity.spec.ts:455:3 › capture-refs › refuses to run without the canvas runtime (support.js) (776ms)
+  ✓  270 [chromium] › e2e/parity.spec.ts:461:3 › capture-refs › screenshots each chosen board at its canvas.json size (2.0s)
+  ✓  271 [chromium] › e2e/parity.spec.ts:472:3 › capture-refs › records each reference in refs/manifest.json with its board hash and size, keeping other entries (1.9s)
+  ✓  272 [chromium] › e2e/parity.spec.ts:485:3 › capture-refs › fails when the runtime leaves a {{…}} placeholder in the body, writing no references (1.8s)
+  ✓  273 [chromium] › e2e/parity.spec.ts:494:3 › capture-refs › removes its staging temp folder when a board fails (1.9s)
+  ✓  274 [chromium] › e2e/parity.spec.ts:505:3 › capture-refs › fails when a board is not served with a 2xx status (1.7s)
+  ✓  275 [chromium] › e2e/parity.spec.ts:514:3 › capture-refs › fails on a page error thrown by the runtime (1.8s)
+  ✓  276 [chromium] › e2e/parity.spec.ts:521:3 › capture-refs › fails when the board reaches outside the local server (1.8s)
+parity-pixels BuyerPay 390x844: reported, not blocking: 26.30% of pixels differ from refs/BuyerPay.png
+  ✓  277 [chromium] › e2e/pay.spec.ts:114:3 › parity › BuyerPay board at 390x844: securing, 3 of 10 (1.1s)
+parity-pixels Desktop 1280x800: reported, not blocking: 9.92% of pixels differ from refs/Desktop.png
+  ✓  278 [chromium] › e2e/pay.spec.ts:120:3 › parity › Desktop board at 1280x800: escrow secured, the timeline, the counterparty and the chat (935ms)
+  ✓  279 [chromium] › e2e/pay.spec.ts:130:3 › I've paid › unticked, Yes does nothing; Not yet leaves the trade secured (964ms)
+  ✓  280 [chromium] › e2e/pay.spec.ts:145:3 › I've paid › Yes posts the device total, sends trade.paid, and shows "Marked as paid" once the device recorded it (817ms)
+  ✓  281 [chromium] › e2e/pay.spec.ts:156:3 › I've paid › an API amount outside the device range: no total, I've paid disabled, nothing posted (review I1) (657ms)
+  ✓  282 [chromium] › e2e/pay.spec.ts:166:3 › I've paid › paid on the server but never recorded on this device (a reload): Finish sends only trade.paid (review I2) (703ms)
+  ✓  283 [chromium] › e2e/pay.spec.ts:176:3 › I've paid › the trade grows while the sheet is open: total-changed, no signal, still secured, the new total asked (1.1s)
+  ✓  284 [chromium] › e2e/pay.spec.ts:203:3 › I've paid › the countdown follows the server clock with the device clock 10 min ahead (Review Focus 3) (630ms)
+  ✓  285 [chromium] › e2e/pay.spec.ts:211:3 › cancel › before I've paid, one tap cancels: buyer-cancel, then the escrow's refund with trade.cancel (748ms)
+  ✓  286 [chromium] › e2e/pay.spec.ts:220:3 › cancel › after I've paid there is no cancel at all (Revision 2026-10-29b) (649ms)
+  ✓  287 [chromium] › e2e/pay.spec.ts:228:3 › cancel › the seller's funded room has no cancel-alone control; Propose cancel gives the buyer an accept card (995ms)
+  ✓  288 [chromium] › e2e/pay.spec.ts:250:3 › the pay warning (Task 38, board Warn-IvePaid) › opens with the pay screen while the escrow confirms, in the owner's words, with the bar; I'll wait closes it (889ms)
+  ✓  289 [chromium] › e2e/pay.spec.ts:270:3 › the pay warning (Task 38, board Warn-IvePaid) › I've paid shows it before the confirm sheet; I've already paid goes on, and it never shows again for the trade (1.0s)
+  ✓  290 [chromium] › e2e/pay.spec.ts:290:1 › "Releasable in N min" at 10 confirmations before unlock (P3-I4) (663ms)
+  ✓  291 [chromium] › e2e/pay.spec.ts:346:5 › phone sizes › BuyerPay at 360x640: securing and secured fit; I've paid goes through by tapping (1.3s)
+  ✓  292 [chromium] › e2e/pay.spec.ts:370:5 › phone sizes › the pay warning and the seller's room at 360x640 fit (1.0s)
+  ✓  293 [chromium] › e2e/pay.spec.ts:346:5 › phone sizes › BuyerPay at 390x844: securing and secured fit; I've paid goes through by tapping (1.2s)
+  ✓  294 [chromium] › e2e/pay.spec.ts:370:5 › phone sizes › the pay warning and the seller's room at 390x844 fit (1.0s)
+  ✓  295 [chromium] › e2e/pay.spec.ts:346:5 › phone sizes › BuyerPay at 430x932: securing and secured fit; I've paid goes through by tapping (1.3s)
+  ✓  296 [chromium] › e2e/pay.spec.ts:370:5 › phone sizes › the pay warning and the seller's room at 430x932 fit (1.0s)
+parity-pixels PostOffer 390x844: reported, not blocking: 37.87% of pixels differ from refs/PostOffer.png
+  ✓  297 [chromium] › e2e/post.spec.ts:95:1 › parity with PostOffer at 390x844 (810ms)
+  ✓  298 [chromium] › e2e/post.spec.ts:106:1 › the board copy and the default market price (773ms)
+  ✓  299 [chromium] › e2e/post.spec.ts:131:1 › the margin steps by 0.1% (1.0s)
+  ✓  300 [chromium] › e2e/post.spec.ts:142:1 › a smallest trade above the largest is refused inline and nothing is posted (751ms)
+  ✓  301 [chromium] › e2e/post.spec.ts:156:1 › I want to and Your price are radio groups the arrow keys move through (720ms)
+  ✓  302 [chromium] › e2e/post.spec.ts:175:1 › Close returns to where the poster came from: Buy from the buy side, Sell otherwise (1.1s)
+  ✓  303 [chromium] › e2e/post.spec.ts:187:1 › when the methods do not load, the form says so and Retry loads them (701ms)
+  ✓  304 [chromium] › e2e/post.spec.ts:197:1 › Fixed shows the stale-price warning and posts pricing.mode = fixed (805ms)
+  ✓  305 [chromium] › e2e/post.spec.ts:221:1 › posting a sell ad returns to the list where buyers see it, with the offer visible (988ms)
+  ✓  306 [chromium] › e2e/post.spec.ts:241:1 › a buy ad goes to the Sell list (855ms)
+  ✓  307 [chromium] › e2e/post.spec.ts:250:1 › SBP and the other methods awaiting legal review are absent from the picker (843ms)
+  ✓  308 [chromium] › e2e/post.spec.ts:260:1 › a held user sees the API refusal as text (952ms)
+  ✓  309 [chromium] › e2e/post.spec.ts:270:1 › an account with no wallet lands on Add a wallet and returns to the filled form (1.6s)
+  ✓  310 [chromium] › e2e/post.spec.ts:288:1 › logged out, Post offer goes to setup and comes back with the form intact (1.2s)
+  ✓  311 [chromium] › e2e/post.spec.ts:312:1 › another currency shows the local price and its US-dollar value (spec 11.6) (730ms)
+  ✓  312 [chromium] › e2e/post.spec.ts:321:1 › with the price feed down, the form says so and a market offer can still be posted (739ms)
+  ✓  313 [chromium] › e2e/post.spec.ts:333:1 › a gift-card method shows the one bold warning (owner, 2026-10-21) (662ms)
+  ✓  314 [chromium] › e2e/post.spec.ts:342:1 › a gift-card offer needs the card's country and sends it as `country` (Revision 2026-10-21) (994ms)
+  ✓  315 [chromium] › e2e/post.spec.ts:363:1 › a fixed price far from the market gets a caution line, and one 50% off is refused (892ms)
+  ✓  316 [chromium] › e2e/post.spec.ts:388:3 › at 390x844 the form fits the phone (880ms)
+  ✓  317 [chromium] › e2e/post.spec.ts:388:3 › at 360x800 the form fits the phone (902ms)
+parity-pixels BuyQuote 390x844: reported, not blocking: 35.15% of pixels differ from refs/BuyQuote.png
+  ✓  318 [chromium] › e2e/quote.spec.ts:95:3 › BuyQuote › matches the BuyQuote board (823ms)
+  ✓  319 [chromium] › e2e/quote.spec.ts:103:3 › BuyQuote › a taker's quote never contains an X2F fee line or 1%, and has no Deposit row (734ms)
+  ✓  320 [chromium] › e2e/quote.spec.ts:116:3 › BuyQuote › a market offer is disabled with "Price unavailable right now" on a 503; a fixed-price offer still quotes (983ms)
+  ✓  321 [chromium] › e2e/quote.spec.ts:130:3 › BuyQuote › Trade stays disabled until a usable wallet is picked (717ms)
+  ✓  322 [chromium] › e2e/quote.spec.ts:140:3 › BuyQuote › with no wallets the primary goes to Add a wallet; back from it the quote is shown again with the new wallet picked, and a tap takes (1.0s)
+  ✓  323 [chromium] › e2e/quote.spec.ts:164:3 › BuyQuote › logged out, Trade goes to setup; Welcome's Start trading comes back in the same tab and the quote is shown again at the price now, never taken silently (1.1s)
+  ✓  324 [chromium] › e2e/quote.spec.ts:195:3 › BuyQuote › the rate the person sees is the rate that locks: a stale rate is refused price-changed, the quote re-quotes, and the fresh tap locks the new one (854ms)
+  ✓  325 [chromium] › e2e/quote.spec.ts:219:3 › BuyQuote › a crafted resume link takes nothing: the quote is filled in and waits for a tap (663ms)
+  ✓  326 [chromium] › e2e/quote.spec.ts:229:3 › BuyQuote › the quote's fiat total equals the fiatCents the trade stores (OD-5) (784ms)
+  ✓  327 [chromium] › e2e/quote.spec.ts:242:3 › BuyQuote › the take hands the trade room the device's own record of the quote shown, stored in this tab before navigating (808ms)
+  ✓  328 [chromium] › e2e/quote.spec.ts:260:3 › BuyQuote › an over-cap amount is refused with the caller's own stage only (786ms)
+  ✓  329 [chromium] › e2e/quote.spec.ts:272:3 › SellQuote › Max, the funding and refund wallet, the same rows and no fee line (851ms)
+parity-pixels BuyQuote 390x844: reported, not blocking: 35.15% of pixels differ from refs/BuyQuote.png
+  ✓  330 [chromium] › e2e/quote.spec.ts:348:5 › quotes on a 390x844 phone › BuyQuote: parity and phone layout (872ms)
+  ✓  331 [chromium] › e2e/quote.spec.ts:357:5 › quotes on a 390x844 phone › BuyQuote with no wallet (Add a wallet) and "Price unavailable right now": phone layout (666ms)
+  ✓  332 [chromium] › e2e/quote.spec.ts:365:5 › quotes on a 390x844 phone › SellQuote after Max with a wallet picked: phone layout (771ms)
+parity-pixels BuyQuote 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+  ✓  333 [chromium] › e2e/quote.spec.ts:348:5 › quotes on a 360x800 phone › BuyQuote: parity and phone layout (840ms)
+  ✓  334 [chromium] › e2e/quote.spec.ts:357:5 › quotes on a 360x800 phone › BuyQuote with no wallet (Add a wallet) and "Price unavailable right now": phone layout (684ms)
+  ✓  335 [chromium] › e2e/quote.spec.ts:365:5 › quotes on a 360x800 phone › SellQuote after Max with a wallet picked: phone layout (777ms)
+  ✓  336 [chromium] › e2e/quote.spec.ts:381:5 › phone sizes: fit and a take by tapping › BuyQuote at 390x844: fits, every control tappable, Trade takes (930ms)
+  ✓  337 [chromium] › e2e/quote.spec.ts:395:5 › phone sizes: fit and a take by tapping › BuyQuote at 390x844 with no wallet and "Price unavailable right now" still fits (904ms)
+  ✓  338 [chromium] › e2e/quote.spec.ts:403:5 › phone sizes: fit and a take by tapping › SellQuote at 390x844: fits, Max and the wallet are tappable, Trade takes (1.1s)
+  ✓  339 [chromium] › e2e/quote.spec.ts:381:5 › phone sizes: fit and a take by tapping › BuyQuote at 360x800: fits, every control tappable, Trade takes (953ms)
+  ✓  340 [chromium] › e2e/quote.spec.ts:395:5 › phone sizes: fit and a take by tapping › BuyQuote at 360x800 with no wallet and "Price unavailable right now" still fits (752ms)
+  ✓  341 [chromium] › e2e/quote.spec.ts:403:5 › phone sizes: fit and a take by tapping › SellQuote at 360x800: fits, Max and the wallet are tappable, Trade takes (996ms)
+  ✓  342 [chromium] › e2e/quote.spec.ts:381:5 › phone sizes: fit and a take by tapping › BuyQuote at 320x568: fits, every control tappable, Trade takes (1.2s)
+  ✓  343 [chromium] › e2e/quote.spec.ts:395:5 › phone sizes: fit and a take by tapping › BuyQuote at 320x568 with no wallet and "Price unavailable right now" still fits (1.0s)
+  ✓  344 [chromium] › e2e/quote.spec.ts:403:5 › phone sizes: fit and a take by tapping › SellQuote at 320x568: fits, Max and the wallet are tappable, Trade takes (1.1s)
+  ✓  345 [chromium] › e2e/quote.spec.ts:381:5 › phone sizes: fit and a take by tapping › BuyQuote at 412x915: fits, every control tappable, Trade takes (986ms)
+  ✓  346 [chromium] › e2e/quote.spec.ts:395:5 › phone sizes: fit and a take by tapping › BuyQuote at 412x915 with no wallet and "Price unavailable right now" still fits (738ms)
+  ✓  347 [chromium] › e2e/quote.spec.ts:403:5 › phone sizes: fit and a take by tapping › SellQuote at 412x915: fits, Max and the wallet are tappable, Trade takes (983ms)
+  ✓  348 [chromium] › e2e/quote.spec.ts:381:5 › phone sizes: fit and a take by tapping › BuyQuote at 430x932: fits, every control tappable, Trade takes (923ms)
+  ✓  349 [chromium] › e2e/quote.spec.ts:395:5 › phone sizes: fit and a take by tapping › BuyQuote at 430x932 with no wallet and "Price unavailable right now" still fits (734ms)
+  ✓  350 [chromium] › e2e/quote.spec.ts:403:5 › phone sizes: fit and a take by tapping › SellQuote at 430x932: fits, Max and the wallet are tappable, Trade takes (970ms)
+parity-pixels SellerRefund 390x844: reported, not blocking: 31.42% of pixels differ from refs/SellerRefund.png
+  ✓  351 [chromium] › e2e/refund.spec.ts:90:1 › parity with SellerRefund at 390x844 (874ms)
+parity-pixels SellerRefund 1280x800: reported, not blocking: sizes differ (reference 390x844, page 1280x800)
+  ✓  352 [chromium] › e2e/refund.spec.ts:99:1 › parity with SellerRefund at 1280x800, in the desktop shell (978ms)
+parity-pixels Desktop 1280x800: reported, not blocking: 9.92% of pixels differ from refs/Desktop.png
+  ✓  353 [chromium] › e2e/refund.spec.ts:105:1 › parity with the Desktop board at 1280x800 (896ms)
+  ✓  354 [chromium] › e2e/refund.spec.ts:119:1 › wide (1280x800): SellerRefund's Chat opens the chat sheet (Task 20 round-2 review I2) (813ms)
+  ✓  355 [chromium] › e2e/refund.spec.ts:133:1 › the board copy, the warning before the tap, one primary and no CSP violations (694ms)
+  ✓  356 [chromium] › e2e/refund.spec.ts:164:1 › Give 30 more min twice, then it is gone (1.2s)
+  ✓  357 [chromium] › e2e/refund.spec.ts:185:1 › each extension sends the extend signal once (711ms)
+  ✓  358 [chromium] › e2e/refund.spec.ts:193:1 › Cancel & get refund sends exactly one event, one signal and one tx set (706ms)
+  ✓  359 [chromium] › e2e/refund.spec.ts:203:1 › the relay is down at the tap: the final-alert view resumes the run, Retry finishes the tx set once the relay is back (review I1) (807ms)
+  ✓  360 [chromium] › e2e/refund.spec.ts:226:1 › a refused request-refund sends no signal and no tx set (649ms)
+  ✓  361 [chromium] › e2e/refund.spec.ts:235:1 › before payBy by the server clock nothing can be cancelled, with the device clock 10 min ahead (1.8s)
+  ✓  362 [chromium] › e2e/refund.spec.ts:251:1 › Nudge mira.k nudges by public name with the trade as context (675ms)
+  ✓  363 [chromium] › e2e/refund.spec.ts:260:1 › the buyer sees FinalAlert with the server-clock countdown, the device clock 10 min ahead (1.2s)
+  ✓  364 [chromium] › e2e/refund.spec.ts:275:1 › after 15 minutes I've paid is closed (1.2s)
+  ✓  365 [chromium] › e2e/refund.spec.ts:294:5 › seller-refund fits a 360x640 phone (771ms)
+  ✓  366 [chromium] › e2e/refund.spec.ts:294:5 › final-alert fits a 360x640 phone (680ms)
+  ✓  367 [chromium] › e2e/refund.spec.ts:294:5 › seller-refund fits a 390x844 phone (752ms)
+  ✓  368 [chromium] › e2e/refund.spec.ts:294:5 › final-alert fits a 390x844 phone (662ms)
+  ✓  369 [chromium] › e2e/refund.spec.ts:294:5 › seller-refund fits a 430x932 phone (770ms)
+  ✓  370 [chromium] › e2e/refund.spec.ts:294:5 › final-alert fits a 430x932 phone (660ms)
+parity-pixels SellerConfirm 390x844: reported, not blocking: 28.84% of pixels differ from refs/SellerConfirm.png
+  ✓  371 [chromium] › e2e/release.spec.ts:221:3 › SellerConfirm › parity with the SellerConfirm board at 390x844 (the Plan 5 proof card left out) (1.0s)
+  ✓  372 [chromium] › e2e/release.spec.ts:235:3 › SellerConfirm › the release warning (Task 38, board Warn-Release) comes first; the hold works only after "It's in my account", once per trade (1.4s)
+  ✓  373 [chromium] › e2e/release.spec.ts:260:3 › SellerConfirm › release is locked until the box is ticked, and while the escrow is not releasable (2.5s)
+  ✓  374 [chromium] › e2e/release.spec.ts:272:3 › SellerConfirm › a ticked box and a full hold post release-started once and show the released look (3.3s)
+  ✓  375 [chromium] › e2e/release.spec.ts:295:3 › SellerConfirm › when the device could not sign, says so and "Finish the release on this device" signs it (I1) (2.6s)
+  ✓  376 [chromium] › e2e/release.spec.ts:310:3 › SellerConfirm › opened in settling after THIS device asked (reload after the POST): signs once without a new hold (I1) (645ms)
+  ✓  377 [chromium] › e2e/release.spec.ts:320:3 › SellerConfirm › opened in settling that this device never asked for: signs nothing until the box and the hold (round 2 I1) (2.9s)
+  ✓  378 [chromium] › e2e/release.spec.ts:335:3 › SellerConfirm › opened in settling while the device is still signing: says so, not "Both signatures sent" (I1) (628ms)
+  ✓  379 [chromium] › e2e/release.spec.ts:343:3 › SellerConfirm › a refused release-started signs nothing and the seller can hold again (4.2s)
+  ✓  380 [chromium] › e2e/release.spec.ts:354:3 › SellerConfirm › wide (1280x800): SellerConfirm's Chat opens the chat sheet (Task 20 round-2 review I2) (710ms)
+  ✓  381 [chromium] › e2e/release.spec.ts:364:3 › SellerConfirm › "Payment not received" goes to the dispute screen (726ms)
+parity-pixels Review 390x844: reported, not blocking: 21.18% of pixels differ from refs/Review.png
+  ✓  382 [chromium] › e2e/release.spec.ts:373:3 › Released › parity with the released part of the Review board at 390x844 (poster buyer; rating cards are Plan 5) (765ms)
+  ✓  383 [chromium] › e2e/release.spec.ts:380:3 › Released › the poster buyer sees the fee row above You receive; the taker buyer sees no fee anywhere (1.1s)
+  ✓  384 [chromium] › e2e/release.spec.ts:398:3 › Released › the seller's released screen names the buyer and never the buyer's payout ending (638ms)
+  ✓  385 [chromium] › e2e/release.spec.ts:407:3 › Released › a buyer in the room while the release settles gets the count once it is released, without a reload (I2) (15.6s)
+  ✓  386 [chromium] › e2e/release.spec.ts:423:3 › Released › the explorer link opens the tx with no referrer and no opener (628ms)
+  ✓  387 [chromium] › e2e/release.spec.ts:485:5 › phone sizes › SellerConfirm at 390x844: fits, every control tappable, the box ticks by tapping and the hold releases (2.5s)
+  ✓  388 [chromium] › e2e/release.spec.ts:500:5 › phone sizes › SellerConfirm at 390x844: a touch hold of 1.7 s releases, 0.7 s does not (Minor 8) (3.5s)
+  ✓  389 [chromium] › e2e/release.spec.ts:516:5 › phone sizes › SellerConfirm at 390x844 with a 20-character display name: the hold's lines are not clipped (678ms)
+  ✓  390 [chromium] › e2e/release.spec.ts:527:5 › phone sizes › Released (poster buyer) at 390x844: fits, the fee rows and the explorer link on screen (693ms)
+  ✓  391 [chromium] › e2e/release.spec.ts:536:5 › phone sizes › Released (seller) at 390x844: fits (684ms)
+  ✓  392 [chromium] › e2e/release.spec.ts:485:5 › phone sizes › SellerConfirm at 360x800: fits, every control tappable, the box ticks by tapping and the hold releases (2.6s)
+  ✓  393 [chromium] › e2e/release.spec.ts:500:5 › phone sizes › SellerConfirm at 360x800: a touch hold of 1.7 s releases, 0.7 s does not (Minor 8) (3.5s)
+  ✓  394 [chromium] › e2e/release.spec.ts:516:5 › phone sizes › SellerConfirm at 360x800 with a 20-character display name: the hold's lines are not clipped (725ms)
+  ✓  395 [chromium] › e2e/release.spec.ts:527:5 › phone sizes › Released (poster buyer) at 360x800: fits, the fee rows and the explorer link on screen (746ms)
+  ✓  396 [chromium] › e2e/release.spec.ts:536:5 › phone sizes › Released (seller) at 360x800: fits (687ms)
+  ✓  397 [chromium] › e2e/release.spec.ts:485:5 › phone sizes › SellerConfirm at 320x568: fits, every control tappable, the box ticks by tapping and the hold releases (2.5s)
+  ✓  398 [chromium] › e2e/release.spec.ts:500:5 › phone sizes › SellerConfirm at 320x568: a touch hold of 1.7 s releases, 0.7 s does not (Minor 8) (3.5s)
+  ✓  399 [chromium] › e2e/release.spec.ts:516:5 › phone sizes › SellerConfirm at 320x568 with a 20-character display name: the hold's lines are not clipped (721ms)
+  ✓  400 [chromium] › e2e/release.spec.ts:527:5 › phone sizes › Released (poster buyer) at 320x568: fits, the fee rows and the explorer link on screen (725ms)
+  ✓  401 [chromium] › e2e/release.spec.ts:536:5 › phone sizes › Released (seller) at 320x568: fits (728ms)
+  ✓  402 [chromium] › e2e/release.spec.ts:485:5 › phone sizes › SellerConfirm at 430x932: fits, every control tappable, the box ticks by tapping and the hold releases (2.6s)
+  ✓  403 [chromium] › e2e/release.spec.ts:500:5 › phone sizes › SellerConfirm at 430x932: a touch hold of 1.7 s releases, 0.7 s does not (Minor 8) (3.5s)
+  ✓  404 [chromium] › e2e/release.spec.ts:516:5 › phone sizes › SellerConfirm at 430x932 with a 20-character display name: the hold's lines are not clipped (784ms)
+  ✓  405 [chromium] › e2e/release.spec.ts:527:5 › phone sizes › Released (poster buyer) at 430x932: fits, the fee rows and the explorer link on screen (725ms)
+  ✓  406 [chromium] › e2e/release.spec.ts:536:5 › phone sizes › Released (seller) at 430x932: fits (748ms)
+  ✓  407 [chromium] › e2e/security.spec.ts:38:1 › the security screen shows methods, the payout-wait explanation (no 24-hour toggle), devices, alerts and the logout timer (620ms)
+  ✓  408 [chromium] › e2e/security.spec.ts:52:1 › the logout timer shows the saved value, offers 2–12 hours and saves a change as idleHours (648ms)
+  ✓  409 [chromium] › e2e/security.spec.ts:69:1 › staff and owner see their fixed logout timer without a dropdown (604ms)
+  ✓  410 [chromium] › e2e/security.spec.ts:76:1 › a wrong password in the confirm sheet keeps the sheet and the action; the right one then completes it (916ms)
+  ✓  411 [chromium] › e2e/security.spec.ts:109:1 › a wrong authenticator code keeps the secret on screen and says so (846ms)
+  ✓  412 [chromium] › e2e/security.spec.ts:126:1 › with the confirm sheet open over Set a password, exactly one primary button is visible (875ms)
+  ✓  413 [chromium] › e2e/security.spec.ts:144:1 › making recovery codes opens the confirm sheet exactly once, then shows the codes (835ms)
+  ✓  414 [chromium] › e2e/security.spec.ts:167:1 › removing the last method is refused with Plan 2’s message (698ms)
+  ✓  415 [chromium] › e2e/security.spec.ts:179:1 › ending another device’s session logs it out (751ms)
+  ✓  416 [chromium] › e2e/security.spec.ts:218:1 › "Log out all team members" asks first, then ends only the team members' sessions (826ms)
+  ✓  417 [chromium] › e2e/security.spec.ts:254:1 › with an authenticator app, the confirm sheet needs the code before Confirm and always sends it (856ms)
+  ✓  418 [chromium] › e2e/security.spec.ts:280:1 › a held backup session shows a banner, and a held change says until when (712ms)
+  ✓  419 [chromium] › e2e/security.spec.ts:290:1 › removing the only login method is refused at once, without a confirm or a request (653ms)
+  ✓  420 [chromium] › e2e/security.spec.ts:312:1 › Devices shows the count against the limit; One device at a time needs confirm-it’s-you (806ms)
+  ✓  421 [chromium] › e2e/security.spec.ts:338:1 › a logged-in device asked "Is this you?" taps the number and lets the new device in (834ms)
+  ✓  422 [chromium] › e2e/security.spec.ts:363:1 › a held logout-timer change says when it takes effect and keeps the old value (652ms)
+  ✓  423 [chromium] › e2e/security.spec.ts:386:3 › Devices and sessions at 390x844: phone layout, 44 px targets, the switch and named Log out buttons (708ms)
+  ✓  424 [chromium] › e2e/security.spec.ts:408:3 › the "Is this you?" sheet at 390x844: phone layout, 44 px tiles and cards, arrow keys pick a number (871ms)
+  ✓  425 [chromium] › e2e/security.spec.ts:386:3 › Devices and sessions at 360x800: phone layout, 44 px targets, the switch and named Log out buttons (727ms)
+  ✓  426 [chromium] › e2e/security.spec.ts:408:3 › the "Is this you?" sheet at 360x800: phone layout, 44 px tiles and cards, arrow keys pick a number (913ms)
+parity-pixels SetupUsername 390x844: reported, not blocking: 14.84% of pixels differ from refs/SetupUsername.png
+parity-pixels SetupLogin 390x844: reported, not blocking: 33.75% of pixels differ from refs/SetupLogin.png
+parity-pixels SetupPgpKey 390x844: reported, not blocking: 20.27% of pixels differ from refs/SetupPgpKey.png
+parity-pixels SetupPgpChallenge 390x844: reported, not blocking: 15.70% of pixels differ from refs/SetupPgpChallenge.png
+parity-pixels SetupBackup 390x844: reported, not blocking: 14.39% of pixels differ from refs/SetupBackup.png
+parity-pixels SetupWallet 390x844: reported, not blocking: 17.61% of pixels differ from refs/SetupWallet.png
+parity-pixels SetupWelcome 390x844: reported, not blocking: 7.94% of pixels differ from refs/SetupWelcome.png
+  ✓  427 [chromium] › e2e/setup.spec.ts:150:3 › the PGP path matches every Setup board at 390x844 and Start trading resumes the take (2.2s)
+parity-pixels SetupPassword 390x844: reported, not blocking: 13.93% of pixels differ from refs/SetupPassword.png
+  ✓  428 [chromium] › e2e/setup.spec.ts:215:3 › the password path matches SetupPassword at 390x844; the leaked list is the server's answer (1.5s)
+parity-pixels SetupUsername 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+parity-pixels SetupLogin 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+parity-pixels SetupPgpKey 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+parity-pixels SetupPgpChallenge 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+parity-pixels SetupBackup 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+parity-pixels SetupWallet 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+parity-pixels SetupWelcome 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+  ✓  429 [chromium] › e2e/setup.spec.ts:150:3 › the PGP path matches every Setup board at 360x800 and Start trading resumes the take (2.1s)
+parity-pixels SetupPassword 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+  ✓  430 [chromium] › e2e/setup.spec.ts:215:3 › the password path matches SetupPassword at 360x800; the leaked list is the server's answer (1.3s)
+  ✓  431 [chromium] › e2e/setup.spec.ts:263:1 › I accept stays disabled until the Terms are scrolled to the end and ticked (778ms)
+  ✓  432 [chromium] › e2e/setup.spec.ts:289:1 › Mira.K_ shows exactly as typed after setup (password path, backup skipped) (1.3s)
+  ✓  433 [chromium] › e2e/setup.spec.ts:326:1 › the display name and login name are checked before going on (5-20, allowed characters, different) (935ms)
+  ✓  434 [chromium] › e2e/setup.spec.ts:345:1 › a taken username at register sends the person back to change it (1.1s)
+  ✓  435 [chromium] › e2e/setup.spec.ts:363:1 › a step opened without the earlier ones goes back to the Terms (601ms)
+  ✓  436 [chromium] › e2e/setup.spec.ts:374:1 › a visitor who taps Trade comes back to the same quote, amount kept, through no more than the Setup boards (1.5s)
+  ✓  437 [chromium] › e2e/setup.spec.ts:434:1 › someone who already has an account goes from the Terms to Log in, keeping returnTo (655ms)
+  ✓  438 [chromium] › e2e/setup.spec.ts:442:1 › raising the Terms version sends a logged-in trader to /terms and back to the same screen (806ms)
+  ✓  439 [chromium] › e2e/setup.spec.ts:465:1 › Start trading with no usable wallet goes to Add a wallet first, then on to the take (665ms)
+  ✓  440 [chromium] › e2e/setup.spec.ts:473:1 › a waiting wallet is not a usable one: Start trading still goes to Add a wallet (668ms)
+  ✓  441 [chromium] › e2e/setup.spec.ts:484:1 › an unsafe returnTo is never followed: Start trading lands on the default screen (646ms)
+  ✓  442 [chromium] › e2e/setup.spec.ts:495:1 › a signed-in trader who opens /setup with a wallet goes straight to returnTo (589ms)
+  ✓  443 [chromium] › e2e/setup.spec.ts:505:1 › a signed-in trader with no wallet who opens /setup lands on Link a wallet (no confirm prompt) (749ms)
+parity-pixels SetupTerms 390x844: reported, not blocking: 12.29% of pixels differ from refs/SetupTerms.png
+  ✓  444 [chromium] › e2e/setup.spec.ts:522:3 › the Terms screen matches SetupTerms at 390x844 (782ms)
+  ✓  445 [chromium] › e2e/setup.spec.ts:532:3 › the Terms screen works at 390x844: one primary action, no sideways scroll, the box scrolls (655ms)
+parity-pixels SetupTerms 360x800: reported, not blocking: sizes differ (reference 390x844, page 360x800)
+  ✓  446 [chromium] › e2e/setup.spec.ts:522:3 › the Terms screen matches SetupTerms at 360x800 (774ms)
+  ✓  447 [chromium] › e2e/setup.spec.ts:532:3 › the Terms screen works at 360x800: one primary action, no sideways scroll, the box scrolls (650ms)
+  ✓  448 [chromium] › e2e/setup.spec.ts:572:3 › review fix round › I1: a key already on another account says so, links back to the key and to Log in, and offers no endless new message (1.1s)
+  ✓  449 [chromium] › e2e/setup.spec.ts:587:3 › review fix round › I1: a second PGP key already on another account gets its own sentence on the backup step (824ms)
+  ✓  450 [chromium] › e2e/setup.spec.ts:603:3 › review fix round › I2: after a password sign-up, Back never reopens the sign-up steps or registers again (1.1s)
+  ✓  451 [chromium] › e2e/setup.spec.ts:616:3 › review fix round › I2: after a PGP sign-up, Back never reopens the key step or starts a second sign-up (1.2s)
+  ✓  452 [chromium] › e2e/setup.spec.ts:630:3 › review fix round › M5: a passkey sign-up carries both names, the device label and the accepted Terms version (988ms)
+  ✓  453 [chromium] › e2e/setup.spec.ts:672:3 › review fix round › M5: a cancelled passkey prompt says so and keeps the person on the login step (922ms)
+  ✓  454 [chromium] › e2e/setup.spec.ts:684:3 › review fix round › M6: Terms that change during setup send the person back to read them; the retry sends the version read (1.4s)
+  ✓  455 [chromium] › e2e/setup.spec.ts:714:3 › review fix round › M3: /terms reloads the version when the Terms change before I accept, and the retry posts the new one (953ms)
+  ✓  456 [chromium] › e2e/setup.spec.ts:739:3 › review fix round › M3 (review m2): Terms that move to a NEW version at accept say only "Reload"; after the reload (a page carrying the new text) I read and accept the new version (1.4s)
+  ✓  457 [chromium] › e2e/setup.spec.ts:789:3 › review fix round › M4: when the server names Terms this page does not carry, the page says to reload and I accept stays off (769ms)
+  ✓  458 [chromium] › e2e/setup.spec.ts:800:3 › review fix round › M7: an integrated address reaches the server and gets its own sentence (682ms)
+  ✓  459 [chromium] › e2e/setup.spec.ts:811:3 › review fix round › M8: the choice groups follow the radio pattern (arrow keys, one tab stop) and help text is linked (941ms)
+  ✓  460 [chromium] › e2e/shell.spec.ts:28:1 › /sell loads with zero CSP violations and zero requests to other origins (1.1s)
+  ✓  461 [chromium] › e2e/shell.spec.ts:51:1 › at 1024 px and wider the desktop shell replaces the bottom nav (583ms)
+  ✓  462 [chromium] › e2e/shell.spec.ts:58:1 › a terms-required answer sends the page to /terms with returnTo (641ms)
+  ✓  463 [chromium] › e2e/shell.spec.ts:64:1 › a no-wallet answer sends the page to /wallets?add=1 with returnTo (644ms)
+  ✓  464 [chromium] › e2e/team.spec.ts:110:3 › the owner invites at 390x844: confirm names the member, the code is only after #, copy works (998ms)
+  ✓  465 [chromium] › e2e/team.spec.ts:110:3 › the owner invites at 360x800: confirm names the member, the code is only after #, copy works (1.0s)
+  ✓  466 [chromium] › e2e/team.spec.ts:137:1 › a 4th member is refused through CantDoThat (too-many-members), from the server and from a full list (829ms)
+  ✓  467 [chromium] › e2e/team.spec.ts:153:1 › a full team: the invite control is disabled with the board note, and tapping it opens nothing (671ms)
+  ✓  468 [chromium] › e2e/team.spec.ts:237:3 › joining with a PGP key then a security-key (390x844): the code never leaves the fragment, which is cleared (931ms)
+  ✓  469 [chromium] › e2e/team.spec.ts:237:3 › joining with a PGP key then a passkey (360x800): the code never leaves the fragment, which is cleared (993ms)
+  ✓  470 [chromium] › e2e/team.spec.ts:237:3 › joining with a PGP key then a pgp (390x844): the code never leaves the fragment, which is cleared (1.1s)
+  ✓  471 [chromium] › e2e/team.spec.ts:278:1 › a used or expired link, and a garbled one, all say the invite is gone (the garbled one asks nothing) (1.7s)
+  ✓  472 [chromium] › e2e/team.spec.ts:299:1 › two browsers finishing the same invite: one wins, the other is told and stays put (1.6s)
+  ✓  473 [chromium] › e2e/team.spec.ts:324:1 › a member logs in with PGP first, then a security key; a member's passkey as the first factor is refused (1.2s)
+  ✓  474 [chromium] › e2e/team.spec.ts:397:1 › an Offers member posts an offer for the account (747ms)
+  ✓  475 [chromium] › e2e/team.spec.ts:405:1 › a Trades-only member has no Post offer tab; an Offers member has it (797ms)
+  ✓  476 [chromium] › e2e/team.spec.ts:418:3 › a Trades-only member cannot post: CantDoThat says the role does not include it (390x844) (782ms)
+  ✓  477 [chromium] › e2e/team.spec.ts:418:3 › a Trades-only member cannot post: CantDoThat says the role does not include it (360x800) (771ms)
+  ✓  478 [chromium] › e2e/team.spec.ts:431:3 › a member opening /wallets gets CantDoThat owner-only, never a blank screen (614ms)
+  ✓  479 [chromium] › e2e/team.spec.ts:431:3 › a member opening /settings/security gets CantDoThat owner-only, never a blank screen (640ms)
+  ✓  480 [chromium] › e2e/team.spec.ts:431:3 › a member opening /settings/team gets CantDoThat owner-only, never a blank screen (641ms)
+  ✓  481 [chromium] › e2e/team.spec.ts:462:3 › a Trades member's device never gets the accept sheet, only a notice (review I1, 390x844) (702ms)
+  ✓  482 [chromium] › e2e/team.spec.ts:462:3 › a Trades member's device never gets the accept sheet, only a notice (review I1, 360x800) (723ms)
+  ✓  483 [chromium] › e2e/team.spec.ts:481:1 › the owner's device still gets the accept sheet (659ms)
+  ✓  484 [chromium] › e2e/team.spec.ts:490:3 › a member's trade room waits for the owner's device: no escrow, no escrow error (390x844) (621ms)
+  ✓  485 [chromium] › e2e/team.spec.ts:490:3 › a member's trade room waits for the owner's device: no escrow, no escrow error (360x800) (627ms)
+  ✓  486 [chromium] › e2e/team.spec.ts:510:3 › a Trades member proposes a mutual cancel from the seller's room, and may open a dispute; no escrow (390x844) (715ms)
+  ✓  487 [chromium] › e2e/team.spec.ts:510:3 › a Trades member proposes a mutual cancel from the seller's room, and may open a dispute; no escrow (360x800) (699ms)
+  ✓  488 [chromium] › e2e/team.spec.ts:544:1 › the owner changes roles and removes a member; the member is then signed out; Devices names member sessions (2.0s)
+  ✓  489 [chromium] › e2e/team.spec.ts:596:1 › the activity log lists member actions newest first, and filters by member (680ms)
+  ✓  490 [chromium] › e2e/wallets.spec.ts:153:1 › the wallets screen never claims a PGP backup of the escrow key (P3-I14) (740ms)
+  ✓  491 [chromium] › e2e/wallets.spec.ts:167:1 › the list shows name, address end and status, never a balance (625ms)
+  ✓  492 [chromium] › e2e/wallets.spec.ts:176:1 › the escrow key row appears while a trade is open and disappears after it closes (740ms)
+  ✓  493 [chromium] › e2e/wallets.spec.ts:188:1 › a waiting wallet shows its status and is absent from the take picker (826ms)
+  ✓  494 [chromium] › e2e/wallets.spec.ts:233:5 › the rule popup explains what adding does for this account › first wallet (706ms)
+  ✓  495 [chromium] › e2e/wallets.spec.ts:233:5 › the rule popup explains what adding does for this account › security key only (663ms)
+  ✓  496 [chromium] › e2e/wallets.spec.ts:233:5 › the rule popup explains what adding does for this account › strong methods and a password (672ms)
+  ✓  497 [chromium] › e2e/wallets.spec.ts:233:5 › the rule popup explains what adding does for this account › password only (700ms)
+  ✓  498 [chromium] › e2e/wallets.spec.ts:247:1 › /wallets?add=1&returnTo=… opens Add a wallet and returns to returnTo after the add (822ms)
+  ✓  499 [chromium] › e2e/wallets.spec.ts:263:1 › /wallets?add=1&returnTo=… returns to returnTo after confirm-it's-you when the new wallet works at once (955ms)
+  ✓  500 [chromium] › e2e/wallets.spec.ts:280:1 › the first wallet never waits: no confirm, no wait, and the screen says so (834ms)
+  ✓  501 [chromium] › e2e/wallets.spec.ts:296:1 › several wallets are added under one confirm (1.1s)
+  ✓  502 [chromium] › e2e/wallets.spec.ts:325:1 › a batch that waits shows one shared wait for all of its wallets (1.1s)
+  ✓  503 [chromium] › e2e/wallets.spec.ts:351:1 › labels: neutral names are suggested and the screen warns against naming where money came from (923ms)
+  ✓  504 [chromium] › e2e/wallets.spec.ts:373:1 › the Save footer stays pinned on a 390x844 phone while the add form scrolls (review item 8) (966ms)
+parity-pixels Wallet 390x844: reported, not blocking: 29.29% of pixels differ from refs/Wallet.png
+  ✓  505 [chromium] › e2e/wallets.spec.ts:391:1 › parity with the Wallet board (937ms)
+
+  51 skipped
+  454 passed (7.7m)
+playwright exit=0
+CHECK-DONE

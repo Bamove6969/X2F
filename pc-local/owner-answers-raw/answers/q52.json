@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T12:54:11.560Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude3 and claude2",
+  "n": 52,
+  "own": "Owner will always use one of his two security keys",
+  "question": "For the most serious staff actions (approving a ruling, adding an owner key), should the security key also need its PIN or fingerprint?"
+}

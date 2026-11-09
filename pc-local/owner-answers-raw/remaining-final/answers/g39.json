@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:57:39.744Z",
+  "choice": null,
+  "n": 39,
+  "own": "Is this referring to someone who is logging in and discovering that their account is banned? If so, it will be a simple:\n\n\"We're sorry, but your account has been banned. If you feel this has been done in error, please reach out to a moderator at [Matrix Channel] [Telegram Channel] and ask to speak to a moderator for further details.\"\n\nPlease refer to Design for the best wording here.",
+  "question": "Ban-Notice draft wording: \"Message a moderator on Matrix\", a new headline and an \"Account banned\" chip. Sign it?"
+}

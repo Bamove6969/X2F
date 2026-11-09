@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-08T13:00:11.054Z",
+  "choice": null,
+  "n": 5,
+  "own": "That is an accurate statement. All trades chat communications are end-to-end encrypted and will only become unencrypted when a dispute is triggered. So this also means we have to determine which encryption method we are going to use. I know there's the Signal method and the Telegram encryption method, so I think Signal is one of the better and free-licensed end-to-end encryption methods. And we need to be able to figure out how to incorporate it so when a dispute is triggered, it automatically becomes unencrypted. So I guess like an encryption key is kept somewhere. The moderator is going to be able to see everything. They're going to be able to see timestamps. They're going to be able to see the full communications between the two parties. They're going to be able to see the proof if the proof has been posted. They're going to be able to ask questions of both parties, and both parties need to cooperate, otherwise they risk having a ruling against them. And anything else that could be of help to the moderator that we haven't thought of will be",
+  "question": "What can a moderator see, and from when?"
+}

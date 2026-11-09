@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:09:32.202Z",
+  "choice": null,
+  "n": 14,
+  "own": "Yes, if they decide to open a new account, they can reuse their PGP key, passkey, or security key, no problem, because that belongs to them. They will unfortunately have to come up with a new username and new display name because their old account is closed.",
+  "question": "May someone whose account auto-closed reuse their key or names on a new account?"
+}

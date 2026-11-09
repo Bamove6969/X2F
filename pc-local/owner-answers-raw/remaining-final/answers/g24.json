@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:31:58.473Z",
+  "choice": null,
+  "n": 24,
+  "own": "Are you saying that if someone decides to extend their session length that they'll be logged in for partway through the time they chose originally? If that's the question, then whatever the new time they choose will begin immediately.\n\nSo if they are 3 hours through a 6-hour session and they decide to choose to extend it by 6 hours, it'll be extended by 6 hours from the point they're at right now.",
+  "question": "If someone picks a longer session partway through, when does it apply?"
+}

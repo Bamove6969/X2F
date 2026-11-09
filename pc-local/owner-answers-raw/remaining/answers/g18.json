@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:18:36.358Z",
+  "choice": null,
+  "n": 18,
+  "own": "I don't understand the question here because anytime a security key is used, there's a tap involved. So, are you saying anytime a staff member uses their security key, it's logged? Because there's nothing special about tap, because tap is always being used. But anyways, in the audit logs, yes, there will be anytime they use login methods, it'll be recorded for the owner's audit information. We just need to determine how that will be structured, and we haven't gotten there yet.",
+  "question": "How long do we keep records of staff security-key taps?"
+}

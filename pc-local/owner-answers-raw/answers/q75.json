@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T13:26:47.501Z",
+  "blocking": false,
+  "choice": null,
+  "from": "lead",
+  "n": 75,
+  "own": "I think in their own personal settings, they should be able to turn on idle session reminder, if they want it on or off, and what interval they would like to be reminded at. Because some would not like that at all because they like to go all night. Some, for security purposes, would like to have that reminder.",
+  "question": "Should an idle logout apply on top of the session length?"
+}

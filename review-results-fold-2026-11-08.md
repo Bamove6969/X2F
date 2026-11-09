@@ -99,3 +99,37 @@ Read-only review against origin/main. No code changed, and no tests were run: th
 | results with fold | The same 5 conflicts (PayWarning was deleted through results' merge of main). |
 
 Suggested order: trade-rules-p1 first. Then results, rebuilt on p1's model, with R-I1, R-I2 and R-I4 fixed. Then only the quote-pane part of fold, on top of main.
+
+## Re-verify 99d80281 (lead-design-results rebuilt on trade-rules-p1 2199561a)
+Read-only, in worktree agent-a2c4c2aba4e77494e (local `dr` = origin/wip/lead-design-results = 99d80281; 2199561a is an ancestor). Tests run: web buyerPay.test.tsx 85/85, web disputeSlot.test.tsx 17/17, api profiles.test.ts 43/43.
+
+**Verdict: APPROVED.** R-I1 to R-I4 are fixed, and so are R-m1, R-m2, R-m4, R-m5 and R-m6. R-m3 goes to design, as planned. Nothing from p1 was reverted.
+
+- **R-I1, fixed.** PaidWaiting.tsx:118-119 takes the amount from `amounts(view, escrow).buyerReceivesAtomic`, the escrow this device accepted. Step 2 ("When they release, X goes to your wallet") and the "For" row both use it. With no device amount, no amount is shown ("the XMR"). buyerPay.test:1009 covers a poster buyer: the API says 999 XMR and the device says 1.25, so the room shows 1.237500 XMR in both places.
+- **R-I2, fixed.** `NUDGE_AGAIN_MS = 15 * MIN_MS`, the line says "15 min", and a test pins it to 15 * 60_000.
+- **R-I3, fixed. One model: p1's `confirmBy`.**
+  - Migration 118 is gone. Nothing anywhere mentions `buyer_dispute_*`, `disputeWaitMin` or `buyerDisputeWait`. `disputeOpensAt(view)` is just `confirmBy`.
+  - `disputeEntry` lets either side open from `confirmBy`. The API view carries `confirmWindowMin` (the column exists, so no migration), and the screens use it for the window's length, never `confirmBy − paidAt` (R-m1).
+  - The 10 new profiles against F1 with owner F9 and G50: Interac, SEPA Instant, PayPal, Venmo, PIX and UPI are each 90 (F9 instant). Faster Payments is 180 (F1: 3 h). Domestic wire is 1440 (24 h). SWIFT is 4320 (F1: 48-72 h, the top of the range). OTHER_GIFT_CARD is 45 (G50).
+  - The 8 launch profiles fit too: Zelle, Cash App and Revolut 90; Wise, SEPA and Custom 1440; ACH 2880; cash by mail 5760. **No profile breaks F1 or F9.**
+  - The 45-minute floor applies only when `method.giftCard`, and the loader enforces giftCard ⇔ group "Gift cards & vouchers". Every other method keeps 90. `tradeProfile()` picks the method's own profile, then OTHER_GIFT_CARD for any gift card, then CUSTOM.
+  - p1's `newTrade` accepts anything from 1 to 5760, so 45 passes.
+- **R-I4, fixed.** Refunded.tsx has no final-alert rows: for `auto-refund` it shows only "Time to pay ended" at `payBy`. Nothing in apps/web reads `finalAlert*`; the only matches are p1's retired-field tests and the desk migration.
+- **R-m2, maintenance, fixed in the paid room.**
+  - PaidWaitingActions' `open` needs `!paused`. While paused it shows "Available after the maintenance".
+  - The ended hero says "once the maintenance is over" (:186-188).
+- **"The seller" in results, done.** Refunded uses `N = 'the seller'` for the story, the timeline and the dispute card. The buyer's own cancel is p1's sentence. `refundReason` in rules.ts never names the seller either.
+- **Merge check: no p1 reverts.**
+  - `git diff 2199561a HEAD --stat` changes nothing in packages/trade.
+  - In apps/api it changes 9 files (+199/−92), all explainable:
+    - profiles.ts: the 10 new profiles, `tradeProfile`, the gift-card floor;
+    - take.ts: uses `tradeProfile`;
+    - view.ts: `confirmWindowMin`;
+    - offers/routes.ts: C2-A1's 3-per-side cap, owner 1 Nov, which replaces per-market 3 and total 20;
+    - the matching tests.
+  - On the web, the changes against p1 are additions. BuyerPay's p1 inline dispute moved into PaidWaitingActions, which keeps the same `confirmBy` rule. SellerConfirm and DisputeLocked only rename their dates imports.
+
+### Minor (none blocks landing)
+- RV-m1: DisputeOpen.tsx:51-52 has a stale comment from the two-clock model: "may dispute from the trade's wait…, often before the seller's confirm window ends". With one window, `allowed` already implies `at >= confirmBy`, so the extra check is redundant but harmless. Reword the comment.
+- RV-m2 (inherited from p1, not a regression): during maintenance, the seller's SellerConfirm (`confirmEnded`, :352-366) and the /dispute page (`disputeEntry` has no pause input) still offer Open dispute. The machine refuses it with `wrong-state`, so the user gets a refusal instead of a hidden button. Do it as a p1 follow-up: pass `pausedAt` into `disputeEntry`.
+- RV-n1: the Refunded page header is still "Buying from <name>". That is the page title, the same as p1's, not result text, so it doesn't break the 29 Oct rule as worded. Flag it to the owner only if he wants the name gone from the whole page.

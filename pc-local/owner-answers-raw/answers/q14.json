@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T08:18:28.064Z",
+  "blocking": true,
+  "choice": null,
+  "from": "design",
+  "n": 14,
+  "own": "Agree with design, but also let's be careful. There's no such thing as password only, it is username and password at minimum.",
+  "question": "After the 24 h wait, do password-only changes to login methods, wallets or team apply on their own?"
+}

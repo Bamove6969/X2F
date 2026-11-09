@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-08T00:31:19.025Z",
+  "choice": null,
+  "n": 7,
+  "own": "Low security logins have 24 hour holds for account, team, wallet/cash out, or other important changes but during that hold the same team leader who applied them can log back in and undo some or all of them but also an intruder won't be able to get away with anything he's trying to pull with his address to the team leads weak logic access because of the 24 hot hold and hopefully the actually account holder will login and notice the changes that are pending. Actually came up with brilliant new rule. If you have secure jabbarc setup anytime you implement changes to your account you are sent a notification notifying of an account change that has been implemented but it keeps it discreet and doesn't say what",
+  "question": "Two of your rules clash for removals during a 24-hour hold. Which wins?"
+}

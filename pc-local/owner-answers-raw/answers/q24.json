@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T11:52:44.984Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude2",
+  "n": 24,
+  "own": "How about instead, when they do a search in the original dropdown for the currency of their choice, the currency of their choice displays in the dropdown, but with in brackets beside it says something like \"no market data currently available\" or \"no market rate available\" or \"currency currently unavailable,\" or the currency just doesn't even appear. Talk to design about it. Let's think about it. What should we do? But it should be something that can reappear in an instant if we can get the data, but can disappear in an instant if we can't.",
+  "question": "If a currency has no market price, the offer page opens without a rate and a pop-up explains when the buyer taps Trade. Is that right?"
+}

@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T11:54:11.016Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude2",
+  "n": 28,
+  "own": "Yeah, I would list them by the top five or six most common currencies and then the rest in alphabetical order, and also all with flags representing the country",
+  "question": "Should the currency choices follow the board: USD, EUR, GBP, CAD, AUD, then \"More\"?"
+}

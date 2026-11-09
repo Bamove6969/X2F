@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:44:37.892Z",
+  "choice": null,
+  "n": 32,
+  "own": "A recovery code serves one purpose. It is an emergency way to log into your account if you lose access to all other methods. So it should be a very long sequence of alphanumeric and symbols, or it should be a series of maybe five different words, like a mnemonic or something like a seed.\n\nSo no, it will not overwrite your username and password. It will not overwrite the 24-hour hold for username and password changes. It's just for use for getting them into the account and then giving them an opportunity to set up security methods again. But this is something for a team lead only or a moderator.",
+  "question": "Does a recovery-code login discard waiting password-only changes?"
+}

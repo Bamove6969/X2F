@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T12:44:26.796Z",
+  "blocking": false,
+  "choice": "No, ask for a fresh screenshot (built)",
+  "from": "claude3",
+  "n": 42,
+  "own": "",
+  "question": "If a payment screenshot's date is not recent, can the buyer send it anyway?"
+}

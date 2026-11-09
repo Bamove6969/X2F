@@ -1,0 +1,12 @@
+- [x2f multi-agent project](x2f-multi-agent-project.md) — repo, accounts + launchers (claude2 = claude2 launcher), START: ~/x2f-comms/LEAD-HANDOFF-2026-11-07.md (checkpoint, in-flight table), then LEAD-HANDOFF-2026-11-06.md in the comms worktree
+- [1Password CLI on WSL](op-cli-wsl-setup.md) — op symlinked to Windows op.exe, auth via desktop app
+- [x2f machine rebuild 2026-10-26](x2f-machine-2026-10-26.md) — toolchain, comms folder, check results
+- [Owner wants many agents](feedback-many-agents.md) — 8+ in parallel, within reason, produce merges
+- [Chain of command](feedback-chain-of-command.md) — workers report to the lead only; lead is the owner's single contact
+- [OpenMonero parity](project-openmonero-parity.md) — owner wants every OpenMonero feature, better and simpler
+- [Ghostty + tmux launchers](x2f-ghostty-tmux-launchers.md) — desktop shortcuts → Ghostty → tmux; past breakages and what to check first
+- [No important calls without owner](feedback-no-important-calls.md) — ask before deciding money/security/privacy/user-facing rules; technical calls OK
+- [Model routing](feedback-model-routing.md) — lead picks Sonnet for mechanical helpers, Opus for reviews/security/building
+- [Lead role](feedback-lead-role.md) — review, security, delegate, land; batch questions; owner only answers
+- [Owner comments to design](feedback-owner-comments-to-design.md) — forward every prototype comment verbatim to design as it arrives
+- [Worker accounts end 21 Nov](project-worker-accounts-end.md) — claude2/claude3 close 2026-11-21; move their queues to own helpers on the 19th/20th

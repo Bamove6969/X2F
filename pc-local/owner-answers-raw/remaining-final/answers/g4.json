@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T07:48:39.495Z",
+  "choice": null,
+  "n": 4,
+  "own": "All security key methods require a tap. And obviously only an owner can be doing anything to do with an owner account, and that will require him producing both security keys if he's going to be making any major changes like changing one of his keys or something like that.",
+  "question": "Should permanently removing a staff member, or an owner key, need a security key tap?"
+}

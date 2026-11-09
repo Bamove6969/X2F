@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:30:21.893Z",
+  "choice": null,
+  "n": 23,
+  "own": "Nothing preselected, but it is a dropdown and you select if you are a trader between 2, 4, 8, and 12 hours, let's say. And if you are a vendor, you can select between 2, 6, 12, or 24 hours.",
+  "question": "You said session length is a \"drop-down, nothing pre-selected\", but design drew four tiles. Which?"
+}

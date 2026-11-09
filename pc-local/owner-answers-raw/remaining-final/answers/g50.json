@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T09:45:05.104Z",
+  "choice": null,
+  "n": 50,
+  "own": "Once the provider of the gift card has handed over the details, the person who has escrowed the Monero has 45 minutes to check the validity of the gift card. To ensure the gift card provider doesn't get scammed, they should provide video proof. We should allow for video proof, not just photo proof. This video proof should show them actually logging into the gift card and showing the details right before sending the proof, and then uploading the video. That way, if they get screwed by the other person, the moderator can help them.",
+  "question": "How long does the buyer get to redeem a gift card code?"
+}

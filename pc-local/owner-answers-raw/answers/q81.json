@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T13:29:35.019Z",
+  "blocking": false,
+  "choice": null,
+  "from": "lead",
+  "n": 81,
+  "own": "PGP will include a username and PGP, so it will be considered strong. Therefore, it won't have a hold time.",
+  "question": "Do PGP-only sessions queue their changes like password-only ones?"
+}

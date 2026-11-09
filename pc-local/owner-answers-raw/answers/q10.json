@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T08:12:31.301Z",
+  "blocking": true,
+  "choice": null,
+  "from": "claude2",
+  "n": 10,
+  "own": "I'm making a judgement call and changing it from 30 minutes to 60 minutes. And if there is a maintenance that happens, then the clock is put on pause, and that does not affect the time that the person who posted the ad has to react.",
+  "question": "A buyer can open a dispute 30 minutes after marking paid. Should that 30 minutes pause during maintenance?"
+}

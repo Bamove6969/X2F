@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:47:05.037Z",
+  "choice": null,
+  "n": 34,
+  "own": "If someone does a username, password, TOTP, and display name, then that will be considered strong",
+  "question": "Password plus authenticator on a new device with only weak sessions open still gets in. Keep that?"
+}

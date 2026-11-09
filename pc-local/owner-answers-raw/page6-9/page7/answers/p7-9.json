@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-08T13:39:54.077Z",
+  "choice": null,
+  "n": 9,
+  "own": "I don't think there is any reason a team member should be denied or punished to use a less secure method of authentication because their team leader or team owner decided to, so they are entitled to use whatever login methods they have. But if the main agent only has a username and password and display name to log in with, then there's going to be a 24-hour hold. Even if team members have been granted the ability to make changes and they make some changes using their more secure login method, unfortunately, because of the main agent's reluctance to upgrade their authentication, that 24-hour hold is going to be imposed. Hopefully, that will encourage them to increase their security.",
+  "question": "What login does a member need to end a 24-hour hold early?"
+}

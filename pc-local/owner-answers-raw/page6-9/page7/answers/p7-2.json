@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-08T13:17:22.813Z",
+  "choice": null,
+  "n": 2,
+  "own": "Simple enough, each box, when they click on it to say they've completed the task, a second message will pop up and say, \"Are you sure you are ready to say you have transferred the funds?\" or \"Are you sure you are ready to confirm that you've received the payment?\" which will trigger the releasing of the XMR or something like that.\n\nBut on the second pop-up, there'll be a little checkbox that they can click that says, \"Do not show me this warning again.\" So they are the ones that can decide that they don't need to be reminded, that they can do it with one click. Some people will not check that because they'll always want to have that two-click to make sure that they didn't accidentally click on it.",
+  "question": "Which boxes should ask for your confirmation before they turn on?"
+}

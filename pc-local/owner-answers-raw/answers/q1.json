@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T07:57:03.896Z",
+  "blocking": true,
+  "choice": null,
+  "from": "claude2",
+  "n": 1,
+  "own": "We decided against fixed priced offers. Until we receive feedback from people stating otherwise, all offers are going to be market + whatever percentage.",
+  "question": "When offers become market-price only, what happens to existing fixed-price offers?"
+}

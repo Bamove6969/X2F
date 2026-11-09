@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T12:35:59.178Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude2",
+  "n": 35,
+  "own": "In my notifications, there can be a notification about that, but it also should be an automated thing where that is now a selectable option in the dropdowns for currencies again with no message saying it's not available or whatever. A notification should go in my notifications about it being back online.",
+  "question": "Should the owner get an alert when a currency falls back to a backup price source?"
+}

@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T13:12:52.007Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude3",
+  "n": 43,
+  "own": "Since our system knows the exact amount that it's looking for, hopefully it can use OCR and detect the amount. But if it falsely says the amount's not there and the buyer insists that it is, if our system says amount not detected, post anyways, the buyer can say yes and post it anyways as proof. But then our system will also be compiling a list of the proofs for a short period of time and it'll be getting better hopefully at detecting any ones that it's gotten wrong. But the buyer will be allowed to post it anyway.",
+  "question": "If no amount is found on the screenshot, the buyer is asked to explain. Is that required, and who reads it?"
+}

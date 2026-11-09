@@ -1,0 +1,57 @@
+<title>X2F Questions 5</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+/* Same shape as the question page: one explanation at a time, ink for the choice, orange for the recommendation. */
+:root{--bg:#f6f6f3;--panel:#fff;--fg:#17181a;--muted:#5d6066;--line:#d9d9d3;--ink:#17181a;--on:#fff;--accent:#c2500a;--bad:#a3211b;--body:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121315;--panel:#1b1d20;--fg:#f0f0ec;--muted:#a5a8ad;--line:#33363b;--ink:#f0f0ec;--on:#121315;--accent:#ff9a57;--bad:#ff8f87;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121315;--panel:#1b1d20;--fg:#f0f0ec;--muted:#a5a8ad;--line:#33363b;--ink:#f0f0ec;--on:#121315;--accent:#ff9a57;--bad:#ff8f87;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:16px/1.5 var(--body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 40px}
+.wrap{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline}
+h1{font-size:18px;margin:0}.count{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--ink)}
+.save{font-size:13px;color:var(--muted);min-height:20px}.save.bad{color:var(--bad)}
+main{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.tag{font-size:13px;color:var(--muted)}h2{font-size:21px;line-height:1.3;margin:0;text-wrap:balance}
+.note{margin:0;white-space:pre-line}
+.opt{display:flex;gap:10px;text-align:left;width:100%;background:none;color:inherit;font:inherit;border:1.5px solid var(--line);border-radius:10px;padding:12px 14px;min-height:48px;cursor:pointer}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opt[aria-checked=true]{background:var(--ink);color:var(--on);border-color:var(--ink)}.opt[aria-checked=true] .rec{color:var(--on)}
+.rec{color:var(--accent);font-weight:600;white-space:nowrap}
+label{font-weight:600}textarea{width:100%;min-height:100px;font:inherit;color:inherit;background:var(--bg);border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;resize:vertical}
+.nav{display:flex;justify-content:space-between;gap:8px}.btn{border:1.5px solid var(--line);background:none;color:inherit;font:inherit;font-weight:600;border-radius:10px;padding:10px 16px;min-height:44px;cursor:pointer}
+.btn.pri{background:var(--ink);color:var(--on);border-color:var(--ink)}.btn:disabled{opacity:.4;cursor:default}:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+<div class="wrap">
+<div class="top"><h1>X2F questions, page 5</h1><span class="count" id="count"></span></div>
+<div class="bar"><i id="bar"></i></div>
+<div class="save" id="save" role="status">Loading your saved answers…</div>
+<main id="card"></main>
+</div>
+<script>
+const Q=[{"s": "Wording policy", "q": "Design has a large backlog of unsigned wording (hundreds of lines across the screens, Settings and the FAQ). How do you want to sign it?", "n": "Going line by line would take you hours. Most of it is ordinary screen text: buttons, labels, help lines.\nOur suggestion: design's wording counts as signed, except anything about money, fees, bans, disputes, holds or security. Those lines come to you on a page. You can still change any line later.", "o": ["Design's wording is signed, except money, fees, bans, disputes, holds and security, which come to me", "Send me every line, grouped by screen", "Design's wording is all signed; I'll flag what I don't like"], "r": 0}, {"s": "Sign these", "q": "Sign this wording for the buyer's Cancel confirmation?", "n": "Title: \"Cancelling is final\"\nBody: \"The 1.250000 XMR goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap I've paid instead.\"\nThe \"Did you pay before you cancelled?\" card also comes off the Refunded screen.", "o": ["Signed as written", "Change it (write below)"], "r": 0}, {"s": "Badges", "q": "What should earn the \"Trusted\" badge?", "n": "The boards had \"100+ trades\", but then a trader with 212 trades at 99% would have it, and design's example didn't. Design now suggests \"500+ trades and 98%+ positive\". This is a rule, so it's yours.", "o": ["500+ trades and 98%+ positive", "100+ trades and 98%+ positive", "250+ trades and 98%+ positive"], "r": 0}, {"s": "Wording", "q": "The Support screen's headline says \"Ask a team member\", meaning X2F staff. But \"team\" now means a vendor's team. Reword it?", "n": "Someone on a vendor's team could think it means asking their own teammates.", "o": ["\"Ask X2F support\"", "\"Ask a moderator\"", "Keep \"Ask a team member\""], "r": 0}, {"s": "Sign these", "q": "Sign these short lines?", "n": "Team screen: \"Every permission.\" (for a member allowed everything), and counts shown as \"of 31\" permissions.\nProfile visibility: \"Counts X2F trades only; imported volume shows on its own line.\" / \"Imported from LocalMonero: $48,000+\" (in dollars, per your ruling) / \"Your X2F total so far\".\nWaiting changes: \"Changes waiting for you\" / \"Time left\" / \"Submitted by\" / \"Apply on their own\" / \"Logged out now · removed in 24 h\".", "o": ["Signed", "Change some (write below)"], "r": 0}, {"s": "Gift cards", "q": "Here's the top 30 gift card list you asked for, plus \"Other\". Approve it?", "n": "No site publishes a clean \"top 30 by volume\", so this combines Bitrefill Canada's popular cards (a crypto gift card store, so the same kind of buyers) with what Paxful says trades most.\n1 Amazon · 2 Apple · 3 Google Play · 4 Uber · 5 Uber Eats · 6 DoorDash · 7 Walmart · 8 Best Buy · 9 Home Depot · 10 Steam · 11 PlayStation · 12 Xbox · 13 IKEA · 14 Sephora · 15 Starbucks · 16 Airbnb · 17 Roblox · 18 Nintendo eShop · 19 Visa prepaid · 20 Mastercard prepaid · 21 Instacart · 22 Air Canada · 23 Petro-Canada · 24 Esso · 25 SkipTheDishes · 26 Sobeys · 27 Winners · 28 Lululemon · 29 Tim Hortons · 30 Target · plus Other.\nHome Hardware isn't on any list I could find, and Razer Gold (in the app now) dropped out. Canadian Tire wasn't found either.", "o": ["Approve; swap Target for Home Hardware", "Approve as listed", "Approve, and also add Home Hardware and Canadian Tire (32 + Other)"], "r": 2}, {"s": "Holds", "q": "Two of your rules clash for removals during a 24-hour hold. Which wins?", "n": "Rule G57: removing a wallet or team member takes effect at once, and becomes final after 24 hours.\nRule g65: a change you cancel (untick) during the wait never happens, so nothing needs restoring.\nFor removals, those can't both be true. Design recommends holding removals for the 24 hours like every other change, so the row reads \"Removed in 23 h 12 min\". A thief with a stolen password then can't instantly strip the owner's wallets or team.", "o": ["Hold removals for 24 hours like everything else", "Removals happen at once, and cancelling restores them"], "r": 0}];
+Q.forEach((x,i)=>{x.id='p5-'+(i+1);x.n0=i+1});
+let db=null,A={},pos=0,tm=null;const $=i=>document.getElementById(i);
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const done=q=>{const a=A[q.id];return !!a&&(a.choice!=null||(a.own||'').trim()!=='')};
+function status(t,b){const s=$('save');s.textContent=t;s.className='save'+(b?' bad':'')}
+function draft(s){try{if(s)localStorage.setItem('x2f-q5',JSON.stringify(A));else return JSON.parse(localStorage.getItem('x2f-q5')||'{}')}catch(e){}return {}}
+async function save(q){draft(1);if(!db){status('Saved on this device only. Tell the lead.',1);return}
+ try{await db.doc('answers/'+q.id).set({n:q.n0,question:q.q,...A[q.id]});status('Saved. The lead can read this answer.')}catch(e){status('That answer did not save. Try it again.',1)}}
+function render(){const n=Q.filter(done).length;$('count').textContent=n+'/'+Q.length+' answered';$('bar').style.width=(n/Q.length*100)+'%';
+ const c=$('card');c.replaceChildren();
+ if(pos>=Q.length){c.append(el('h2',null,n===Q.length?'All answered':n+' of '+Q.length+' answered'),el('p','note','Tell the lead you\'re done.'));const b=el('button','btn','Back');b.onclick=()=>{pos=Q.length-1;render()};c.append(b);return}
+ const q=Q[pos],cur=A[q.id];c.append(el('div','tag',q.s+' · '+(pos+1)+' of '+Q.length),el('h2',null,q.q));if(q.n)c.append(el('p','note',q.n));
+ const o=el('div','opts');o.setAttribute('role','radiogroup');o.setAttribute('aria-label','Your answer');
+ q.o.forEach((l,i)=>{const b=el('button','opt');b.type='button';b.setAttribute('role','radio');b.setAttribute('aria-checked',String(!!cur&&cur.choice===l));const t=el('span',null,l+' ');if(i===q.r)t.append(el('span','rec','(Recommended)'));b.append(t);
+  b.onclick=()=>{A[q.id]={choice:l,own:'',at:new Date().toISOString()};save(q);render();clearTimeout(tm);tm=setTimeout(()=>{pos++;render()},350)};o.append(b)});c.append(o);
+ const lb=el('label',null,'Or write your own answer');lb.htmlFor='own-'+q.id;const ta=el('textarea');ta.id='own-'+q.id;ta.placeholder='Type your full answer here';ta.value=cur&&cur.own||'';
+ let t2=null;ta.oninput=()=>{clearTimeout(t2);status('Saving…');t2=setTimeout(()=>{A[q.id]={choice:null,own:ta.value,at:new Date().toISOString()};save(q);[...o.children].forEach(b=>b.setAttribute('aria-checked','false'))},600)};c.append(lb,ta);
+ const nv=el('div','nav'),bk=el('button','btn','Back');bk.disabled=pos===0;bk.onclick=()=>{pos--;render()};const nx=el('button','btn pri',pos<Q.length-1?'Next':'Finish');nx.onclick=()=>{pos++;render()};nv.append(bk,nx);c.append(nv)}
+A=draft();render();
+(async()=>{db=window.claude?await claude.use('db').catch(()=>null):null;if(!db){status('Answers are saving on this device only. Tell the lead.',1);return}
+ try{const s=await db.collection('answers').get();(s.docs||s).forEach(d=>{const v=d.data?d.data():d;if(d.id)A[d.id]={choice:v.choice??null,own:v.own||'',at:v.at}});status('Ready. Answers save as you tap.');const f=Q.findIndex(q=>!done(q));if(f>0)pos=f;render()}catch(e){status('Could not load saved answers. New answers will still save.',1)}})();
+</script>
+

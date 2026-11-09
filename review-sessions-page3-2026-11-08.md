@@ -75,3 +75,60 @@ How it merges with main: content conflicts in all 7 files it touches (.github/wo
 I checked each suppression in the branch for whether it hides a real issue. None does. Each regex is built from constants (HEADINGS, NAME_LABELS through `alternation`), from a number (`exponent`) or from escaped test text, and SHA-1 is only the HIBP lookup key. The codePattern one is the weakest, which is why main's escaped version is the one to keep. Recommendation: close the branch.
 
 Note for the lead (main, not these branches): `.npmrc` `min-release-age=7` is weaker than the binding 14-day rule (rulings, Toolchain). npm's floor is 7 days, while the rule asks 14 for every dependency. Either set it to 14 or note that the 14 days stay a manual check.
+
+---
+
+## Re-verify 2213ae8a (wip/third-owner-page3): APPROVED
+
+Worktree agent-a7cf3edc7272187d6, HEAD 2213ae8a (= origin/wip/third-owner-page3, local branch name `p3`), tree clean, nothing changed. Fixes are 4 commits on top of merge 2f9aa34a; that merge touches auth/staff only with two `nosemgrep` comments (attestation.ts, leaked.ts). Tests run: apps/api/test/staff/login.test.ts and apps/api/test/staff/account.test.ts, 52/52 pass. members.test.ts and methods.test.ts not run (load limit); read only.
+
+- **P-I1: fixed.** `add-pgp-key` (account.ts inTx) and `remove-method` for every method type now call `consumeSecondOwnerTap` when `role === 'owner'`.
+  - Same key replayed: refused. Reusing the same tapId fails because `consumeKeyTap` is a single conditional UPDATE on `used_at is null`. A second, fresh tap by the same key fails because the stored `credential_id` values match (409 `both-owner-keys-required`). Both cases are tested for add and for remove.
+  - First tap on failure: everything runs in one `withTx` (pgpAddKeyRoutesAt: lock, inTx, applyPgpKey; DELETE: lock, taps, checks, applyRemoval). A missing or bad second tap rolls back the first, so it is left unused, still bound to the intent and session, and gone after 2 minutes. That gives an attacker nothing, and nothing gets stored.
+  - Other routes that write owner methods: I checked every write to pgp_keys and webauthn_credentials.
+    - The owner security-key add (ownerKeys.ts) already needed both taps.
+    - The trader-site add and remove routes, and hold-end `applyChange`, sit behind trader `requireSession`, which refuses staff-app sessions on the trader API (`row.app !== realm.app`).
+    - Invite accept and team join never make owner credentials.
+    - The login-time PGP armor refresh only merges material for the same fingerprint. That needs the primary key's signature, so it is unchanged and not a path.
+    - G59 (owner backup-key recovery) and G60 (owner reset of staff) are not built on this branch. When they land, they must keep both owner keys for any change to owner methods (or be the owner's G59 rule). Lead: please flag this to whoever builds them.
+- **P-I2: fixed.** `pgpPairRule` returns true for mod and senior. In `completeLogin` it sets `{ pgpPair: false }` for kind staff before both the first step (`needsAfter` → `['security-key','passkey']`) and the second step (`pairAllowed` refuses PGP+PGP). The trader branch returns before this, so the `else if` → `if` change is safe. Both staff mounts pass it: `/staff/v1/login/security-key` and `/staff/v1/login/pgp`. They are the only staff login mounts. A second step on a trader mount gets 401, because `kinds` excludes staff and the pending row is bound to the `app`.
+  - WebAuthn first, then PGP: this is a key+PGP or passkey+PGP pair. That is two different methods, so it is correctly allowed. The option goes through on that path too.
+  - Helpers keep the two-PGP pair, and the helper test passes. Members are unaffected (`kind === 'staff'` only). The role is read fresh at the second step.
+- **P-m1: fixed as far as attestation `none` allows.** A staff passkey whose AAGUID is non-zero and on the staff allowlist gets 409 `passkey-is-security-key`. (`isAllowed(..,'packed',..)` is only there to get past the `fmt !== 'none'` guard.)
+  - **Stated plainly:** a staff passkey is registered with attestation `none`, so its AAGUID is the client's word. A client that forges or zeroes the AAGUID gets the same YubiKey through as a "passkey". Some browsers zero it under `none` on their own, which the spec allows. The check catches the honest common case only. Also, only the staff allowlist is checked, not the owner list (nit).
+  - **Owner question (recommended):** should staff passkeys require attestation? Requesting `direct` alone does not close the gap, because a hostile client can still answer with fmt `none`. Closing it means refusing every staff passkey without a verified certificate chain. That rules out synced phone and password-manager passkeys (iCloud, Google), which give no usable attestation. Only an allowlisted hardware passkey of a second model would then be accepted. That is a user-facing security rule, so it is the owner's call. Context for him: only the moderator can do this to their own account, and the PIN is still needed. My suggestion is to accept best-effort and document it, unless the owner wants hardware-only passkeys for moderators.
+- **P-m2: fixed.**
+  - switch-on: `holdsAllThree` is checked inside the tx before `consumeKeyTap`, so a refusal (409 `all-three-methods-required`) leaves the tap unused.
+  - `listMembers` gives `missingMethods` for mod and senior (attested key, PGP, passkey), and `[]` for everyone else and for invites. Its counts match `holdsAllThree`.
+  - Nit (pre-existing, both places): the PGP count includes revoked or expired keys, so a moderator whose only PGP key has expired shows as complete. Not blocking.
+- **P-m3: fixed.** `packages/staff/tsconfig.tsbuildinfo` is deleted and `*.tsbuildinfo` is gitignored.
+- **P-m4: fixed.** The R1 amendment by G3 is in rulings-and-lessons.md (known device; never two PGP keys for a moderator; owner and helpers always use two), and the `completeLogin` and methods.ts comments are updated. Nit: the line is labelled R1 and sits between R30 and R31.
+
+Verdict: **APPROVED** for merge. Open items:
+1. The owner question on P-m1 above.
+2. G59 and G60, when built, must keep G4's two-key rule.
+
+## Re-verify c8c84e7f (sessions S-m1..S-m4, 8 Nov 2026)
+
+Read-only re-check of `git diff 52a45fb7 c8c84e7f`, session parts only (commits 5234b2da, 978a2bb3, 28ef1109, 4daa49b5, 64b8238b). The worktree HEAD is c8c84e7f, which is `origin/wip/lead-sessions`. Note: the worktree's local branch is named `ls`, and the local `wip/lead-sessions` ref is stale at 1971a424. Tests run: `apps/api/test/sessionLength.test.ts` passed 34/34, and `apps/api/test/sessions.test.ts` passed 28/28.
+
+- **S-m1: fixed.**
+  - **Old token's lifetime.** `prev_token_until` is set to the session's `expires_at` read `for update` before the extend. `requireSession` caps the presented old token at `min(prev_token_until, expires_at)`. So the old token never outlives the old end, and a later shortening, expiry or revoke ends it too. `/me` (overview) and the event stream (`req.auth.expiresAt`) both use that capped end.
+  - **Can an attacker force a rotation?** No. Extend needs a confirm token (`requireConfirm`, `extend-session`), so the person must re-prove a login method. A cookie alone cannot rotate or extend. Rotation does not help an old token: it gets no new end, and each extend drops anything older than the previous token.
+  - **Logout and a new login.** Both revoke by `token_hash = $1 or prev_token_hash = $1` (`logoutRoute`, `openSession`). So either token ends the whole session and its streams.
+  - **Routes that still match only one hash.** Only approval.ts: the "own session" check, `devicesInUse` and `makeRoom`. It does not matter for security, because it fails closed. A login that presents the old token inside its short window is treated as a new device, and `openSession` still revokes that session. Worst case is UX: the device limit could log out one other session, or list this browser in the `logged-out-by-new-device` alert. This needs a browser that kept the old cookie after the new Set-Cookie, so it is rare. Nit, not blocking. Confirm tokens are bound to `session_id`, so they are unaffected.
+  - **Two extends at once.** They run one after the other: `requireLiveSessionInTx` takes the account lock, then `select … for update` on the session. Each needs its own single-use confirm token. If the responses arrive out of order, the browser can keep the first new token. That token is now the previous one and stays valid until the first extend's end, which is about the same as the second's. The next extend recovers. Benign.
+  - **Cookie attributes.** Unchanged: `COOKIE_ATTRS`, `maxAge = TRADER_COOKIE_MS`. The cookie is set only after the transaction commits.
+  - **Migration 314.** `prev_token_hash` is unique, and a check constraint pairs it with `prev_token_until`. Fine.
+- **S-m2: fixed.** The post-attach check returns `expires_at`, and the stream's lifetime uses the earlier of that and `req.auth.expiresAt`. A shortening after the check finds the attached stream and closes it (M1). This also caps a stream opened with the old token at its old end.
+- **S-m3 (G25): fixed for the normal path.**
+  - **Server-side logout.** Start trading calls `POST /v1/logout`, which revokes the session row on the server (by either token), not just the client state. If that call fails, the next login revokes the session the cookie names (`openSession`), and Log in does not skip itself for a live session.
+  - **returnTo.** It comes from `returnToFrom` (that is, `safeReturnTo`), and `startTradingPath` runs `safeReturnTo` again on the nested `/wallets?add=1&returnTo=…`. Login reads it through `returnToFrom`. An over-long nested value falls back to the default. No open redirect.
+  - **Setup order.** Backup and first wallet come before Welcome and still run in the sign-up session and its 30-minute window. Logout happens only on Start trading. Someone already logged in who opened setup to add a wallet stays logged in.
+  - **Residual nit, not blocking.** `registered` is in-memory setup state. If the page is reloaded on Welcome, or the tab is closed before Start trading, the sign-up session is not ended and runs its unchosen 2 hours, as it did before this fix. If the owner wants G25 to hold even then, Welcome could key off the server's `onboarding_until` or first-session flag instead of client state.
+- **S-m4: recorded.** There are TODO comments on `PUT session/length` and `POST session/extend`. It still has to be carried onto the team working-hours task (p7-11).
+
+Verdict: **APPROVED** for merge. Open items, none blocking:
+1. The S-m3 reload/close nit above.
+2. The approval.ts old-token nit.
+3. Copy S-m4 onto the working-hours task.

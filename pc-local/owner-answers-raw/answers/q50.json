@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T12:52:49.319Z",
+  "blocking": false,
+  "choice": null,
+  "from": "design",
+  "n": 50,
+  "own": "Trade code, amount, and time should never be blurred. Those are important things to have on the proof. Names and account numbers can be blurred as they are personal and confidential information.",
+  "question": "Should stored blur templates also blank the trade code, amount and time, as well as names and account numbers?"
+}

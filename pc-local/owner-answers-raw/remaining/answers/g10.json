@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:03:46.747Z",
+  "choice": null,
+  "n": 10,
+  "own": "There is no such thing as a password-only account. There is a username and password account. And yes, they can extend the session if they are someone who only has a username and password, or even if they have beyond that, they could still extend it with their username and password.",
+  "question": "Is one login method enough to extend a session?"
+}

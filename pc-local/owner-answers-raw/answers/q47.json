@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T13:14:53.580Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude3",
+  "n": 47,
+  "own": "Yes, I think in the first couple months of the system, on every proof that is posted, it'll ask, \"Was this proof posted with confidential information blurred correctly?\" or ask design for help in wording that. And if they say no, it'll ask them for comment and say, \"Please help us improve the system,\" or something like that, and then they can fill in their comments. And that will go right into feedback for the people we designate that can receive the feedback. But then after a couple of months, it'll slow down where it just starts asking every tenth person or every twentieth person.",
+  "question": "Should the receiver of a blurred proof get a \"was this blurred correctly?\" button? Build the back end now?"
+}

@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T10:01:01.320Z",
+  "choice": null,
+  "n": 58,
+  "own": "Since I explained before that I want changes to appear on the screen as a visual where it shows on the left what they were before you made the changes and the effect they are going to have after you made the changes. So when a team member made the changes who only has a username and password but has been granted the ability to make some minor changes, so that triggered a 24-hour hold before the changes came into effect. And then the team lead logged in who has the strong login abilities. I want it to somehow be on the screen or notify them that there are changes that have been applied or requested, and it shows them the same type of format. And it shows them the countdown to when those changes are going to take into effect, 23 hours and 12 minutes. And they can choose to just click approve now or cancel all or make changes, and they can make changes.",
+  "question": "When a strong login ends a hold early, do queued changes get cancelled or approved?"
+}

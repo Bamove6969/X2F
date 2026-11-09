@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T08:16:38.353Z",
+  "blocking": true,
+  "choice": null,
+  "from": "design and claude2",
+  "n": 12,
+  "own": "I agree with the design. Even if it is a trusted seller and they've traded a thousand times, we're trying to avoid disputes. So therefore, to maximise avoiding the minimum amount of disputes, we need to enforce policies that make sense. So yes, they cannot say paid until the full escrow has been funded. Unless, of course, we hear back from feedback and people complain and they want it changed, then we can revisit that.",
+  "question": "May a trade glance (desktop list, fold cover, notifications) ever say \"Pay now\" before escrow is secured?"
+}

@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T08:33:43.542Z",
+  "choice": null,
+  "n": 25,
+  "own": "I think once they're finished signing up, it takes them back to the login screen where they now get to test their login credentials with what they set up the account with.\n\nSo, it takes them right back to the very beginning screen after they set up the account as though they're not even logged in. They log in, and then it asks for their session length.",
+  "question": "Should signup ask for the session length too?"
+}

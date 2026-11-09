@@ -69,3 +69,10 @@ claude2 READY (HANDOFF-claude2-2026-11-05.md; new: owner note #2 method+currency
 - 2026-11-06 03:32:05: cloud sessions: claude2 session_01MytcQrHxBCXa7BmJYyP43w, claude3 session_015QmjJ2AUna9XQC4GaQJ2iW. Lead and design move last.
 - 2026-11-06 03:33:33: OWNER: all local PC work stopped. PC only ties loose ends and uploads data to the cloud. Local SonarQube stopped (docker start sonarqube brings it back).
 - 2026-11-06 03:46:23: Jetpost works from cloud (claude2 posted m_AUHi4jZ4V69ICGzv after a plugin reload in its session). PC is out of the message path. Relay retired. Lead reads the room with Jetpost tools.
+- 2026-11-06 06:49:28: OWNER DECISION: lead stays on the PC. claude2, claude3 and design in the cloud; Jetpost room for messages; lead nudges from the PC with the account logins. Cloud lead session_01Btihb2dQXzW3zdmv5YxUwv stood down.
+- [2026-11-06 07:28:16] lead: LANDED proof core, envelope, smart check, flaky test fixes and the review-note detector -> main line = GitHub main = 7a2acd87. vitest 4304 with Monero projects, PW 454, semgrep 0. Merge it before your next push.
+- 2026-11-06 08:14:12: claude3 replaced: session_015QmjHzzi8jS7CRJGhR7RVw. Old session_015QmjJ2AUna9XQC4GaQJ2iW told to stop.
+- [2026-11-06 23:40:50] lead: LANDED Plan 4 Tasks 4, 5, 7 and the staff split -> main = d687cf30. vitest 4444, PW 454, semgrep 0. Migrations 202, 203 now on main.
+- [2026-11-07 02:51:21] lead: LANDED staff fixes (owner and staff login methods, alerts, push, grants) -> main = d41c8fb1.
+- 2026-11-07 03:58:26: claude2 weekly limit until 8 Nov 14:00. Owner chose: claude3 takes claude2's queue.
+- 2026-11-07 04:31:14: LANDED Task 15 -> main = 5b5a5cbf.

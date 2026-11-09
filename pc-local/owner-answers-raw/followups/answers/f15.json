@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-07T06:37:30.728Z",
+  "choice": null,
+  "n": 15,
+  "own": "This is where we need to use OCR technology to read the words preceding the four digits. For example, if it says \"trade code\" right before the four digits, then that's the trade code, and the other four digits can be blurred because they probably have personal information in them. We just got to get good at this.",
+  "question": "If the last digits of a card happen to match the trade amount, can they stay visible?"
+}

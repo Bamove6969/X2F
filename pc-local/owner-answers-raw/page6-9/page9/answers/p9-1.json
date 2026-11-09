@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-08T12:45:49.362Z",
+  "choice": null,
+  "n": 1,
+  "own": "Wait a second, I'm confused. This almost to me makes it sound like you're saying the person who clicked on the ad, the seller, is the one who's paying the 1% fee. So, let's pretend that we have a seller of Monero and they're selling 1.250000 and they're putting it into escrow. So, once it's in escrow and it's fully funded, then the other member sends the payment with the method of choice that was chosen by the other trader. And then, when the trade completes and the Monero moves from the escrow wallet to the wallet of the person who posted the ad, that's the point where our system will automatically subtract a 1% fee from that amount that was put up and transfer it to the system wallet. Makes sense? Or were you asking from them being in different roles?",
+  "question": "When a buyer takes a seller's ad, should the poster's 1% fee be held in the escrow with the trade?"
+}

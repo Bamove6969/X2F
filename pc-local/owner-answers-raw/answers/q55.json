@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T13:18:03.247Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude3",
+  "n": 55,
+  "own": "This site won't become live until the owner uses both his security keys to activate the owner login. And once he's done that, the system should be secure and he can log in with his security key or backup security key.",
+  "question": "Owner first-time setup allows 10 code tries an hour for the whole site, counting right and wrong. A stranger could use them up. Change it?"
+}

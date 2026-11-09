@@ -1,0 +1,95 @@
+[2026-11-08 15:37:18] queued full check in /home/flem/x2f-worktrees/lead-land (git 1ffa1930)
+[2026-11-08 15:37:18] started
+
+> check
+> bash tools/check.sh
+
+
+> typecheck
+> npm run typecheck --workspaces --if-present
+
+
+> @x2f/accounts@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/auth-client@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/core@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/escrow@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/proof@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/protocol@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/reputation@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/staff@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/trade@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/api@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/moderation@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/node-proxy@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/relay@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/web@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/fido-mds@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/leaked@0.0.0 typecheck
+> tsc --noEmit
+
+
+> @x2f/regtest@0.0.0 typecheck
+> tsc --noEmit
+
+
+> copy-lint
+> tsx tools/copy-lint.ts
+
+copy-lint: apps/web/src is clean
+
+> separation-check
+> tsx tools/separation-check.ts
+
+separation-check: ok
+
+> test
+> vitest run
+
+
+ RUN  v5.0.3 /home/flem/x2f-worktrees/lead-land
+

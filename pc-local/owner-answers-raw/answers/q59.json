@@ -1,0 +1,9 @@
+{
+  "at": "2026-11-06T13:19:23.407Z",
+  "blocking": false,
+  "choice": null,
+  "from": "claude3",
+  "n": 59,
+  "own": "PGP key will be mandatory, but you will only be able to log in with the combination of a PGP key and a security key. This is for the owner we're talking about, nobody else.",
+  "question": "The owner setup board shows the PGP key as \"(optional)\", but your earlier answer requires it. Which?"
+}
