@@ -28,7 +28,10 @@ export type AlertKind =
   | 'price-source-failing'
   | 'price-source-recovered'
   | 'market-prices-paused'
-  | 'market-prices-resumed';
+  | 'market-prices-resumed'
+  // Owner only: a seller's cancel refund landed after an escrow ruling was proposed or published
+  // on the buyer's dispute; the case needs a person to re-rule (re-verify 43fbbb2f, R-I1).
+  | 'dispute-refund-after-ruling';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,
