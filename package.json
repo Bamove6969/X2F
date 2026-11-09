@@ -20,7 +20,8 @@
     "check": "bash tools/check.sh",
     "demo": "X2F_DEMO=1 tsx tools/demo/demo.ts",
     "demo:stop": "tsx tools/demo/stop.ts",
-    "demo:code": "tsx tools/demo/codes.ts"
+    "demo:code": "tsx tools/demo/codes.ts",
+    "demo:reply": "tsx tools/demo/reply.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.1",

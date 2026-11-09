@@ -102,6 +102,38 @@ What is **real**: the XMR prices. The API asks the public price sources (spec 11
 internet, as in production, so offers quote live market rates. Without internet, market-priced
 offers cannot be taken (409 `price-unavailable`).
 
+## Comments on the running demo
+
+The gateway adds one script tag (`/__demo/notes.js`) to the app's HTML, so anyone with the demo open
+can leave comments the way one does on a shared page: tap **Comment** (bottom-left, drag it if it is
+in the way), tap the spot, type, Send. A numbered pin stays on that spot for that screen; tapping it
+opens the thread, where you can add to it or **Resolve** it. A red mark on a pin means a new reply.
+Nothing in `apps/` or the production build knows about this: it is `tools/demo/` only, and the app's
+Content-Security-Policy is unchanged (one same-origin script; styles through the DOM's style objects).
+
+Everything is kept next to each other, outside `.demo/`, so a demo restart does not wipe it:
+
+| File in `~/x2f-comms/` | What |
+| --- | --- |
+| `demo-notes.jsonl` | Comments, and follow-ups (those have `parentId`) |
+| `demo-replies.jsonl` | Replies, by `noteId` |
+| `demo-resolved.jsonl` | Resolved threads, by `noteId` |
+
+To answer a comment, on this machine only (there is no HTTP route for replies):
+
+```sh
+npm run demo:reply <comment id> "Thanks, changing it"
+```
+
+The page picks it up within 15 seconds. `DEMO_NOTES_FILE` moves the three files.
+
+A comment records the text, the screen (path, short hash, `data-screen`), the viewport, the tap as
+pixels and percent, a CSS-style path of the tapped element and up to 120 characters of its visible
+text. It never reads a form field, cookie or token; on wallet, setup, login and security screens the
+tapped text is left out, and long address- or key-like strings are replaced with `[hidden]`.
+`POST /__demo/notes` is same-origin only, JSON only, 4 KB at most, 30 writes a minute. `/__demo/*`
+never reaches the API (`tools/test/demo-notes.test.ts`).
+
 ## The guards
 
 - **`X2F_DEMO` must be exactly `1`.** Every demo process (`demo.ts`, the gateway, the moderator,

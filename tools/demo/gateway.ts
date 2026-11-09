@@ -7,11 +7,11 @@
  * and reaches it on 127.0.0.1 like any local client.
  */
 import { readFileSync } from 'node:fs';
-import http, { type IncomingMessage, type ServerResponse } from 'node:http';
+import http from 'node:http';
 import https from 'node:https';
-import net from 'node:net';
-import type { Duplex } from 'node:stream';
+import { createGateway, type Route } from './gateway-core.js';
 import { assertDemo } from './guard.js';
+import { createNotesHandler, notesFiles } from './notes-server.js';
 
 // X2F_DEMO=1 and a regtest daemon on 127.0.0.1, before anything listens.
 await assertDemo(process.env, process.env.DEMO_MONEROD_RPC ?? '');
@@ -39,59 +39,12 @@ function isTailscaleIp(ip: string): boolean {
   return m !== null && Number(m[1]) >= 64 && Number(m[1]) <= 127 && Number(m[2]) <= 255 && Number(m[3]) <= 255;
 }
 
-type Target = { port: number; path: string; node: boolean };
-type Route = (url: string) => Target;
-
-/** The node proxy's paths (apps/node-proxy server.ts), so one host name with no port can carry both origins. */
-const NODE_PATHS = new Set(['/json_rpc', '/getblocks.bin', '/getblocks_by_height.bin', '/gethashes.bin', '/get_o_indexes.bin', '/getouts.bin', '/get_outs.bin', '/get_transaction_pool_hashes.bin', '/get_output_distribution.bin', '/get_transactions', '/sendrawtransaction', '/get_height', '/get_info', '/is_key_image_spent', '/get_transaction_pool']);
-
-/** The web origin: the node's RPC paths, the API, and the relay under /relay. */
-const web: Route = (url) => {
-  if (NODE_PATHS.has(url.split('?')[0] ?? url)) return { port: NODE, path: url, node: true };
-  if (url === '/relay' || url.startsWith('/relay/') || url.startsWith('/relay?')) return { port: RELAY, path: url.slice('/relay'.length) || '/', node: false };
-  return { port: API, path: url, node: false };
-};
-/** The node origin: everything to the node proxy, path unchanged. */
-const node: Route = (url) => ({ port: NODE, path: url, node: true });
-
-const handle = (route: Route) => (req: IncomingMessage, res: ServerResponse): void => {
-  const t = route(req.url ?? '/');
-  const headers = { ...req.headers };
-  // The node proxy accepts one exact origin (the web build's): a request from another demo origin
-  // is passed on as the primary one, and its CORS answer is given back to the origin that asked.
-  const from = typeof headers.origin === 'string' ? headers.origin : null;
-  const known = t.node && from !== null && ORIGINS.has(from);
-  if (known) headers.origin = PRIMARY;
-  const up = http.request({ host: '127.0.0.1', port: t.port, path: t.path, method: req.method, headers }, (r) => {
-    const out = { ...r.headers };
-    if (known && out['access-control-allow-origin'] === PRIMARY) out['access-control-allow-origin'] = from;
-    res.writeHead(r.statusCode ?? 502, out);
-    r.pipe(res);
-  });
-  up.on('error', () => {
-    if (!res.headersSent) res.writeHead(502, { 'content-type': 'application/json' });
-    res.end('{"error":"demo-gateway-upstream"}');
-  });
-  req.pipe(up);
-};
-
-const upgrade = (route: Route) => (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
-  const t = route(req.url ?? '/');
-  const up = net.connect(t.port, '127.0.0.1', () => {
-    const lines = [`${req.method} ${t.path} HTTP/1.1`];
-    for (let i = 0; i < req.rawHeaders.length; i += 2) lines.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`);
-    up.write(`${lines.join('\r\n')}\r\n\r\n`);
-    if (head.length > 0) up.write(head);
-    up.pipe(socket);
-    socket.pipe(up);
-  });
-  const end = () => {
-    up.destroy();
-    socket.destroy();
-  };
-  up.on('error', end);
-  socket.on('error', end);
-};
+const demo = createNotesHandler({
+  files: notesFiles(process.env),
+  origins: ORIGINS,
+  clientJs: readFileSync(new URL('./notes.js', import.meta.url)),
+});
+const { web, node, handle, upgrade } = createGateway({ api: API, relay: RELAY, node: NODE, primary: PRIMARY, origins: ORIGINS, demo });
 
 function serve(route: Route, port: number, host: string, tls: { key: Buffer; cert: Buffer } | null): void {
   const srv = tls ? https.createServer(tls, handle(route)) : http.createServer(handle(route));
