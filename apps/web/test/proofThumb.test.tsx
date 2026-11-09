@@ -6,7 +6,7 @@
 import { act } from 'react';
 import { crc32, deflateSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
-import { RECEIVE_MAX_BYTES, type ReceiveDeps, readImageHeader } from '@x2f/proof';
+import { RECEIVE_MAX_BYTES, type ReceiveDeclared, type ReceiveDeps, readImageHeader } from '@x2f/proof';
 import { showableProof } from '../src/proof/receive.js';
 import { PROOF_REFUSED_BODY, PROOF_REFUSED_TITLE, ProofThumb } from '../src/screens/proof/ProofThumb.js';
 import { render } from './render.js';
@@ -77,20 +77,22 @@ describe('ProofThumb', () => {
     expect(host.querySelector('[data-part="proof-refused"]')).toBeNull();
   });
 
-  const refusals: [string, Uint8Array, string, Partial<ReceiveDeps>][] = [
-    ['truncated', RECEIVED.subarray(0, 30), 'image/png', {}],
-    ['wrong magic', latin1('<svg onload="alert(1)"/>'), 'image/png', {}],
-    ['declared type not allowed', RECEIVED, 'image/svg+xml', {}],
-    ['oversized header', png(3000, 1, [0, 0, 0]), 'image/png', {}],
-    ['polyglot tail', Buffer.concat([RECEIVED, latin1('<script>alert(1)</script>')]), 'image/png', {}],
-    ['decoder fails', RECEIVED, 'image/png', { decode: async () => Promise.reject(new DOMException('bad', 'InvalidStateError')) }],
-    ['decoder throws synchronously', RECEIVED, 'image/png', { decode: () => { throw new Error('boom'); } }],
-    ['canvas fails', RECEIVED, 'image/png', { render: async () => Promise.reject(new Error('no canvas')) }],
-    ['redrawn copy over the byte cap', RECEIVED, 'image/png', { render: async () => REDRAWN_HUGE }],
+  const PNG_4x3: ReceiveDeclared = { mime: 'image/png', width: 4, height: 3 };
+  const refusals: [string, Uint8Array, ReceiveDeclared, Partial<ReceiveDeps>][] = [
+    ['truncated', RECEIVED.subarray(0, 30), PNG_4x3, {}],
+    ['wrong magic', latin1('<svg onload="alert(1)"/>'), PNG_4x3, {}],
+    ['declared type not allowed', RECEIVED, { ...PNG_4x3, mime: 'image/svg+xml' }, {}],
+    ['oversized header', png(3000, 1, [0, 0, 0]), { mime: 'image/png', width: 3000, height: 1 }, {}],
+    ['declared size unlike the header', RECEIVED, { mime: 'image/png', width: 4, height: 4 }, {}],
+    ['polyglot tail', Buffer.concat([RECEIVED, latin1('<script>alert(1)</script>')]), PNG_4x3, {}],
+    ['decoder fails', RECEIVED, PNG_4x3, { decode: async () => Promise.reject(new DOMException('bad', 'InvalidStateError')) }],
+    ['decoder throws synchronously', RECEIVED, PNG_4x3, { decode: () => { throw new Error('boom'); } }],
+    ['canvas fails', RECEIVED, PNG_4x3, { render: async () => Promise.reject(new Error('no canvas')) }],
+    ['redrawn copy over the byte cap', RECEIVED, PNG_4x3, { render: async () => REDRAWN_HUGE }],
   ];
-  for (const [name, bytes, mime, over] of refusals) {
+  for (const [name, bytes, declared, over] of refusals) {
     it(`${name}: a refusal, no image, no crash`, async () => {
-      const { host } = render(<ProofThumb bytes={bytes} declared={{ mime }} alt="Payment proof" deps={deps(over)} />);
+      const { host } = render(<ProofThumb bytes={bytes} declared={declared} alt="Payment proof" deps={deps(over)} />);
       await settle();
       expect(host.querySelector('img')).toBeNull();
       const notice = host.querySelector('[data-part="proof-refused"]')!;

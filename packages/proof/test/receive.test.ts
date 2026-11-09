@@ -15,6 +15,7 @@ import {
   RECEIVE_MAX_BYTES,
   RECEIVE_MAX_SIDE,
   type ReceiveBitmap,
+  type ReceiveDeclared,
   type ReceiveDeps,
   type ReceiveMime,
   readImageHeader,
@@ -207,6 +208,20 @@ async function code(p: Promise<unknown>): Promise<string> {
 }
 
 const PNG_DECL = { mime: 'image/png', width: PNG_W, height: PNG_H } as const;
+/** An envelope for an input refused before its size is compared: the size is required, its value moot. */
+const decl = (mime: string, width = PNG_W, height = PNG_H): ReceiveDeclared => ({ mime, width, height });
+/** The envelope for a fuzzed input: its own header's size when that parses (so the decode is reached), else the seed's. */
+function declaredFor(b: Uint8Array, mime: ReceiveMime, seed: Uint8Array): ReceiveDeclared {
+  for (const src of [b, seed]) {
+    try {
+      const h = readImageHeader(src);
+      return { mime, width: h.width, height: h.height };
+    } catch {
+      // not a readable header: try the seed
+    }
+  }
+  return decl(mime);
+}
 
 // ---------------------------------------------------------------------------------------------
 
@@ -266,7 +281,7 @@ describe('receiveProof: a valid image', () => {
 
   it('a side of exactly RECEIVE_MAX_SIDE is accepted', async () => {
     expect(RECEIVE_MAX_SIDE).toBe(2600);
-    const out = await receiveProof(riff(vp8l(RECEIVE_MAX_SIDE, 1)), { mime: 'image/webp' }, deps().d);
+    const out = await receiveProof(riff(vp8l(RECEIVE_MAX_SIDE, 1)), { mime: 'image/webp', width: RECEIVE_MAX_SIDE, height: 1 }, deps().d);
     expect(out.width).toBe(2600);
   });
 });
@@ -275,7 +290,7 @@ describe('receiveProof: refusals before any decode', () => {
   it('refuses a declared type other than PNG, JPEG or WebP', async () => {
     for (const mime of ['image/gif', 'image/svg+xml', 'text/html', 'application/pdf', 'image/heic', 'IMAGE/PNG', '']) {
       const { d, decode } = deps();
-      expect(await code(receiveProof(cleanPng(), { mime }, d)), mime).toBe('unsupported');
+      expect(await code(receiveProof(cleanPng(), decl(mime), d)), mime).toBe('unsupported');
       expect(decode).not.toHaveBeenCalled();
     }
   });
@@ -296,7 +311,7 @@ describe('receiveProof: refusals before any decode', () => {
       [latin1('RIFF\0\0\0\0WEBQVP8L'), 'image/webp'],
     ] as const) {
       const { d, decode } = deps();
-      expect(await code(receiveProof(bytes, { mime }, d))).toBe('unsupported');
+      expect(await code(receiveProof(bytes, decl(mime), d))).toBe('unsupported');
       expect(decode).not.toHaveBeenCalled();
     }
   });
@@ -313,7 +328,7 @@ describe('receiveProof: refusals before any decode', () => {
     ] as const) {
       for (let n = 0; n < bytes.length; n++) {
         const { d, decode } = deps();
-        const c = await code(receiveProof(bytes.subarray(0, n), { mime }, d));
+        const c = await code(receiveProof(bytes.subarray(0, n), decl(mime), d));
         expect(['undecodable', 'unsupported'], `${mime} cut at ${n}`).toContain(c);
         expect(decode).not.toHaveBeenCalled();
       }
@@ -334,11 +349,11 @@ describe('receiveProof: refusals before any decode', () => {
     ];
     for (const [bytes, mime] of cases) {
       const { d, decode } = deps();
-      expect(await code(receiveProof(bytes, { mime }, d))).toBe('too-large');
+      expect(await code(receiveProof(bytes, decl(mime), d))).toBe('too-large');
       expect(decode).not.toHaveBeenCalled();
     }
     const { d, decode } = deps();
-    expect(await code(receiveProof(new Uint8Array(RECEIVE_MAX_BYTES + 1).fill(0x89), { mime: 'image/png' }, d))).toBe('too-large');
+    expect(await code(receiveProof(new Uint8Array(RECEIVE_MAX_BYTES + 1).fill(0x89), decl('image/png'), d))).toBe('too-large');
     expect(decode).not.toHaveBeenCalled();
   });
 
@@ -359,7 +374,7 @@ describe('receiveProof: refusals before any decode', () => {
     ];
     for (const [bytes, mime] of cases) {
       const { d, decode } = deps();
-      expect(await code(receiveProof(bytes, { mime }, d))).toBe('undecodable');
+      expect(await code(receiveProof(bytes, decl(mime), d))).toBe('undecodable');
       expect(decode).not.toHaveBeenCalled();
     }
   });
@@ -372,7 +387,7 @@ describe('receiveProof: refusals before any decode', () => {
       [riff(vp8x(4, 4), webpChunk('ANIM', new Uint8Array(6)), webpChunk('ANMF', new Uint8Array(16))), 'image/webp'],
     ] as const) {
       const { d, decode } = deps();
-      expect(await code(receiveProof(bytes, { mime }, d))).toBe('unsupported');
+      expect(await code(receiveProof(bytes, decl(mime), d))).toBe('unsupported');
       expect(decode).not.toHaveBeenCalled();
     }
   });
@@ -393,7 +408,15 @@ describe('receiveProof: refusals before any decode', () => {
       [webpGrown, 'image/webp'],
     ] as const) {
       const { d, decode } = deps();
-      expect(await code(receiveProof(bytes, { mime }, d))).toBe('undecodable');
+      expect(await code(receiveProof(bytes, decl(mime), d))).toBe('undecodable');
+      expect(decode).not.toHaveBeenCalled();
+    }
+  });
+
+  it('an envelope without a size is refused before decode: the size match is never skipped', async () => {
+    for (const declared of [{ mime: 'image/png' }, { mime: 'image/png', width: PNG_W }, { mime: 'image/png', height: PNG_H }]) {
+      const { d, decode } = deps();
+      expect(await code(receiveProof(cleanPng(), declared as unknown as ReceiveDeclared, d)), JSON.stringify(declared)).toBe('undecodable');
       expect(decode).not.toHaveBeenCalled();
     }
   });
@@ -510,7 +533,7 @@ describe('receiveProof: fuzz', () => {
         const { d, close, opened } = deps();
         let c: string;
         try {
-          const out = await receiveProof(b, { mime }, d);
+          const out = await receiveProof(b, declaredFor(b, mime, src), d);
           c = 'accepted';
           const h = readImageHeader(out.png);
           expect(h.mime).toBe('image/png');
@@ -536,7 +559,7 @@ describe('receiveProof: fuzz', () => {
       const tail = Uint8Array.from({ length: 1 + Math.floor(r() * 64) }, () => 0x20 + Math.floor(r() * 0x5f));
       const [, src, mime] = seeds[i % seeds.length]!;
       const { d, decode } = deps();
-      expect(await code(receiveProof(concat(src, tail), { mime }, d))).toBe('undecodable');
+      expect(await code(receiveProof(concat(src, tail), decl(mime), d))).toBe('undecodable');
       expect(decode).not.toHaveBeenCalled();
     }
   });

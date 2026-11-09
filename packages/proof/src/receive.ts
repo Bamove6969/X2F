@@ -321,11 +321,15 @@ export interface ReceiveDeps {
   render(bitmap: ReceiveBitmap, width: number, height: number): Promise<Uint8Array>;
 }
 
-/** What the sender's envelope says about the image (`proof.attached`: mime, width, height). */
+/**
+ * What the sender's envelope says about the image (`proof.attached`: mime, width, height). All
+ * three are required, as in the envelope, so the header-against-envelope size check is never
+ * skipped by a caller that left the size out.
+ */
 export interface ReceiveDeclared {
   mime: string;
-  width?: number | undefined;
-  height?: number | undefined;
+  width: number;
+  height: number;
 }
 
 export interface ReceivedProof {
@@ -347,7 +351,7 @@ export async function receiveProof(bytes: Uint8Array, declared: ReceiveDeclared,
   if (sniffImage(bytes) !== mime) throw err('unsupported');
   const head = readImageHeader(bytes);
   if (head.width > RECEIVE_MAX_SIDE || head.height > RECEIVE_MAX_SIDE) throw err('too-large');
-  if ((declared.width !== undefined && declared.width !== head.width) || (declared.height !== undefined && declared.height !== head.height)) throw bad();
+  if (declared.width !== head.width || declared.height !== head.height) throw bad();
 
   let bitmap: ReceiveBitmap;
   try {
