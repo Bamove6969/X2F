@@ -19,6 +19,9 @@ beforeAll(async () => {
   mkdirSync(join(root, 'assets'));
   writeFileSync(join(root, 'assets', 'app-1a2b.js'), 'console.log(1)');
   writeFileSync(join(root, '.env'), 'SECRET=1');
+  writeFileSync(join(root, 'assets', '.env.js'), 'DOTFILE-SECRET');
+  mkdirSync(join(root, '.vite'));
+  writeFileSync(join(root, '.vite', 'manifest.json'), '{"dot":"dir"}');
   ({ app, close } = await staffApps({}, { webRoot: root }));
 });
 afterAll(async () => {
@@ -53,6 +56,9 @@ describe('the staff web app on the staff origin', () => {
     expect([400, 404]).toContain((await app.inject({ method: 'GET', url: '/assets/%E0%A4%A' })).statusCode);
     expect((await app.inject({ method: 'GET', url: '/assets/a%00.js' })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: '/assets/..%5C..%5Cpackage.json' })).statusCode).toBe(404);
+    // A percent-encoded leading dot is still a dot file (the URL parser leaves %2E followed by letters alone).
+    expect((await app.inject({ method: 'GET', url: '/assets/%2Eenv.js' })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/%2Evite/manifest.json' })).statusCode).toBe(404);
     const api = await app.inject({ method: 'GET', url: '/staff/v1/nothing-here' });
     expect(api.statusCode).toBe(404);
     expect(api.body).not.toContain('X2F Staff');
@@ -80,5 +86,7 @@ describe('fileUnderRoot', () => {
     expect(fileUnderRoot(root, '/assets/%E0%A4%A')).toBeNull();
     expect(fileUnderRoot(root, '/assets/a%00.js')).toBeNull();
     expect(fileUnderRoot(root, '/assets/..%5Cx')).toBeNull();
+    expect(fileUnderRoot(root, '/assets/%2Eenv.js')).toBeNull();
+    expect(fileUnderRoot(root, '/.vite/manifest.json')).toBeNull();
   });
 });

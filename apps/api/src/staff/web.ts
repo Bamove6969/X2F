@@ -14,7 +14,8 @@ import { PUBLIC_LOGIN } from './login.js';
  */
 export async function serveStaffWeb(app: FastifyInstance, root: string): Promise<void> {
   // `serve: false`: no routes of its own (each staff route must declare a perm); only sendFile.
-  await app.register(fastifyStatic, { root, serve: false, index: false, serveDotFiles: false });
+  // `dotfiles: 'ignore'`: @fastify/send refuses dot files itself (a second layer under fileUnderRoot).
+  await app.register(fastifyStatic, { root, serve: false, index: false, serveDotFiles: false, dotfiles: 'ignore' });
   // nosemgrep: javascript.express.security.audit.express-res-sendfile.express-res-sendfile -- literal file name under `root`, no request input
   const page = (_req: FastifyRequest, reply: FastifyReply) => reply.sendFile('index.html');
   app.get('/', { config: PUBLIC_LOGIN }, page);
@@ -35,8 +36,8 @@ export async function serveStaffWeb(app: FastifyInstance, root: string): Promise
 
 /**
  * The request path as a file path relative to `root`, or null when it does not name a file
- * strictly inside `root`: undecodable percent-escapes, `..` or `.` segments, an empty name, a
- * NUL byte, or anything that resolves to `root` itself or outside it.
+ * strictly inside `root`: undecodable percent-escapes, dot segments or dot files (encoded or not),
+ * an empty name, a NUL byte, or anything that resolves to `root` itself or outside it.
  */
 export function fileUnderRoot(root: string, requestPath: string): string | null {
   let decoded: string;
@@ -47,7 +48,8 @@ export function fileUnderRoot(root: string, requestPath: string): string | null 
   }
   if (decoded.includes('\0')) return null;
   const segments = decoded.split('/').filter((s) => s !== '');
-  if (segments.length === 0 || segments.some((s) => s === '.' || s === '..' || s.includes('\\'))) return null;
+  // Any segment starting with a dot: `.`, `..` and dot files alike (also when the dot was %2E-encoded).
+  if (segments.length === 0 || segments.some((s) => s.startsWith('.') || s.includes('\\'))) return null;
   const rootAbs = nodePath.resolve(root);
   const fileAbs = nodePath.resolve(rootAbs, ...segments);
   if (!fileAbs.startsWith(rootAbs + nodePath.sep)) return null;
