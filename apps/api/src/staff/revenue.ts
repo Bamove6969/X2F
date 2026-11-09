@@ -77,24 +77,31 @@ async function loadFacts(q: Queryable, code: string): Promise<TradeFacts | undef
   return rows[0];
 }
 
-/** Adds one booking to the day's row and marks the trade, once per trade and kind. Returns whether it booked. */
-async function book(q: Queryable, a: { code: string; kind: 'fee' | 'owed'; feeAtomic: bigint; usdCents: bigint; currency: string; at: Date }): Promise<boolean> {
+/**
+ * Adds one booking to the day's row and marks the trade, once per trade, kind and debt (`debtId`, ''
+ * for a trade's own fee). The row's `trades` counts each trade once per kind: a second debt the
+ * same trade collects adds its amount, not another trade (the `exists` reads the markers as they
+ * were before this statement). Returns whether it booked.
+ */
+async function book(q: Queryable, a: { code: string; kind: 'fee' | 'owed'; debtId: string; feeAtomic: bigint; usdCents: bigint; currency: string; at: Date }): Promise<boolean> {
   if (a.feeAtomic <= 0n) return false;
   const { rows } = await q.query<{ booked: boolean }>(
     `with mark as (
-       insert into revenue_booked (trade_code, kind, fee_atomic, booked_at) values ($1, $2, $3, $6)
+       insert into revenue_booked (trade_code, kind, debt_id, fee_atomic, booked_at) values ($1, $2, $7, $3, $6)
        on conflict do nothing returning trade_code
      ), add as (
        insert into revenue_ledger (day, currency, kind, trades, fee_atomic, usd_estimate_cents)
-       select ($6::timestamptz at time zone 'UTC')::date, $5, $2, 1, $3, $4 from mark
+       select ($6::timestamptz at time zone 'UTC')::date, $5, $2,
+              case when exists (select 1 from revenue_booked where trade_code = $1 and kind = $2) then 0 else 1 end, $3, $4
+         from mark
        on conflict (day, currency, kind) do update set
-         trades = revenue_ledger.trades + 1,
+         trades = revenue_ledger.trades + excluded.trades,
          fee_atomic = revenue_ledger.fee_atomic + excluded.fee_atomic,
          usd_estimate_cents = revenue_ledger.usd_estimate_cents + excluded.usd_estimate_cents
        returning 1
      )
      select exists (select 1 from add) as booked`,
-    [a.code, a.kind, a.feeAtomic.toString(), a.usdCents.toString(), a.currency, a.at],
+    [a.code, a.kind, a.feeAtomic.toString(), a.usdCents.toString(), a.currency, a.at, a.debtId],
   );
   return rows[0]?.booked === true;
 }
@@ -114,7 +121,7 @@ export async function bookTradeRevenue(q: Queryable, code: string, kind?: FeeOut
   const fee = feeOutputAtomic(kind ?? t.settling, t.poster, BigInt(t.fee_atomic));
   const take = BigInt(t.grown_from_atomic ?? t.amount_atomic);
   return book(q, {
-    code, kind: 'fee', feeAtomic: fee, currency: t.locked_currency, at: t.closed_at,
+    code, kind: 'fee', debtId: '', feeAtomic: fee, currency: t.locked_currency, at: t.closed_at,
     usdCents: usdEstimateCents(fee, t.usd_cents === null ? null : BigInt(t.usd_cents), take),
   });
 }
@@ -122,17 +129,22 @@ export async function bookTradeRevenue(q: Queryable, code: string, kind?: FeeOut
 /**
  * SEAM for Plan 4 Task 12's `fees_owed` (J-06): books an owed fee as revenue when it is collected,
  * on the collecting trade (`code`, whose fee output carried `collectedAtomic` on top of its own
- * fee), on the day `at` it was collected, under that trade's market. Call it in the transaction
- * that raises `fees_owed.collected_atomic`. Idempotent per collecting trade; zero books nothing.
- * The outstanding total stays in `fees_owed` and is listed apart (`revenueReport`).
+ * fee), on the day `at` it was collected, under that trade's market. Call it once per collected
+ * debt (`debtId`, the `fees_owed` row's id), in the release transaction that raises
+ * `fees_owed.collected_atomic`: the collecting trade must already be `released` (it throws
+ * otherwise, so a take-time or cancelled trade never books revenue that was not paid). Idempotent
+ * per collecting trade and debt (review F5); zero books nothing. The outstanding total stays in
+ * `fees_owed` and is listed apart (`revenueReport`).
  */
-export async function bookOwedFeeCollected(q: Queryable, a: { code: string; collectedAtomic: bigint; at: Date }): Promise<boolean> {
+export async function bookOwedFeeCollected(q: Queryable, a: { code: string; debtId: string; collectedAtomic: bigint; at: Date }): Promise<boolean> {
   if (a.collectedAtomic < 0n) throw new RangeError('collected amount must not be negative');
+  if (typeof a.debtId !== 'string' || a.debtId === '' || a.debtId.length > 64) throw new RangeError('debtId must name the collected debt');
   const t = await loadFacts(q, a.code);
   if (!t) throw new RangeError('unknown trade');
+  if (t.state !== 'released') throw new Error('the collecting trade is not released');
   const take = BigInt(t.grown_from_atomic ?? t.amount_atomic);
   return book(q, {
-    code: a.code, kind: 'owed', feeAtomic: a.collectedAtomic, currency: t.locked_currency, at: a.at,
+    code: a.code, kind: 'owed', debtId: a.debtId, feeAtomic: a.collectedAtomic, currency: t.locked_currency, at: a.at,
     usdCents: usdEstimateCents(a.collectedAtomic, t.usd_cents === null ? null : BigInt(t.usd_cents), take),
   });
 }

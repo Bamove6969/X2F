@@ -22,15 +22,19 @@ create table revenue_ledger (
   primary key (day, currency, kind)
 );
 
--- 2. revenue_booked: what each trade already added (idempotent per trade and kind). It holds the
---    trade code and the amount only, no account, and goes with its trade (on delete cascade): when
---    the purge removes the trade, the code is gone and the ledger's amounts stay.
+-- 2. revenue_booked: what each trade already added (idempotent per trade, kind and debt). It holds
+--    the trade code and the amount only, no account, and goes with its trade (on delete cascade):
+--    when the purge removes the trade, the code is gone and the ledger's amounts stay. `debt_id` is
+--    '' for a trade's own fee and names the collected debt (Task 12's `fees_owed` row) for an owed
+--    fee, so one collecting trade can book several debts, each once (review F5).
 create table revenue_booked (
   trade_code text not null references trades (code) on delete cascade,
   kind text not null check (kind in ('fee', 'owed')),
+  debt_id text not null default '' check (length(debt_id) <= 64),
   fee_atomic numeric(30, 0) not null check (fee_atomic > 0),
   booked_at timestamptz not null,
-  primary key (trade_code, kind)
+  primary key (trade_code, kind, debt_id),
+  check ((kind = 'fee') = (debt_id = ''))
 );
 
 create function revenue_ledger_add_only() returns trigger

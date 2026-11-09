@@ -172,16 +172,16 @@ describe('booking through the trade store', () => {
     const next = await trade({ to: 'released', poster: 'buyer', usdCents: 33_000n });
     const owed = 7_000_000_000n;
     const at = new Date('2026-03-05T11:00:00Z');
-    expect(await withClient((c) => bookOwedFeeCollected(c, { code: next.code, collectedAtomic: owed, at }))).toBe(true);
-    expect(await withClient((c) => bookOwedFeeCollected(c, { code: next.code, collectedAtomic: owed, at }))).toBe(false);
-    expect(await withClient((c) => bookOwedFeeCollected(c, { code: next.code, collectedAtomic: 0n, at }))).toBe(false);
+    expect(await withClient((c) => bookOwedFeeCollected(c, { code: next.code, debtId: 'debt-1', collectedAtomic: owed, at }))).toBe(true);
+    expect(await withClient((c) => bookOwedFeeCollected(c, { code: next.code, debtId: 'debt-1', collectedAtomic: owed, at }))).toBe(false);
+    expect(await withClient((c) => bookOwedFeeCollected(c, { code: next.code, debtId: 'debt-0', collectedAtomic: 0n, at }))).toBe(false);
     const fee = escrowPlan({ amountAtomic: XMR, poster: 'buyer' }).feeAtomic;
     expect(await ledgerDay('2026-03-05')).toEqual([
       { kind: 'fee', currency: 'USD', trades: 1, fee_atomic: fee.toString(), usd_estimate_cents: '330' },
       { kind: 'owed', currency: 'USD', trades: 1, fee_atomic: owed.toString(), usd_estimate_cents: '231' },
     ]);
     expect(await booked(next.code)).toEqual([{ kind: 'fee', fee_atomic: fee.toString() }, { kind: 'owed', fee_atomic: owed.toString() }]);
-    await expect(withClient((c) => bookOwedFeeCollected(c, { code: next.code, collectedAtomic: -1n, at }))).rejects.toThrow(RangeError);
+    await expect(withClient((c) => bookOwedFeeCollected(c, { code: next.code, debtId: 'debt-9', collectedAtomic: -1n, at }))).rejects.toThrow(RangeError);
   });
 });
 
@@ -269,5 +269,36 @@ describe('GET /staff/v1/revenue (owner only)', () => {
       const res = await new StaffBrowser(app).withSession((await insertSession(deps, id, 'staff')).token).get('/staff/v1/revenue');
       expect({ role, status: res.statusCode, error: errorOf(res) }).toEqual({ role, status: 403, error: 'forbidden' });
     }
+  });
+});
+
+describe('owed fees collected (the Task 12 seam, review F5)', () => {
+  // One collecting trade can settle several debts; each is booked once (keyed by the debt).
+  it('several owed fees collected by one trade: each debt is booked once, the trade counts as one collection', async () => {
+    setNow(new Date('2026-06-07T10:00:00Z'));
+    const next = await trade({ to: 'released', poster: 'seller', usdCents: 33_000n });
+    const at = new Date('2026-06-07T11:00:00Z');
+    const a = 2_000_000_000n;
+    const b = 3_000_000_000n;
+    expect(await withClient((c) => bookOwedFeeCollected(c, { code: next.code, debtId: 'debt-a', collectedAtomic: a, at }))).toBe(true);
+    expect(await withClient((c) => bookOwedFeeCollected(c, { code: next.code, debtId: 'debt-b', collectedAtomic: b, at }))).toBe(true);
+    expect(await withClient((c) => bookOwedFeeCollected(c, { code: next.code, debtId: 'debt-a', collectedAtomic: a, at }))).toBe(false);
+    expect((await ledgerDay('2026-06-07')).filter((r) => r.kind === 'owed')).toEqual([
+      { kind: 'owed', currency: 'USD', trades: 1, fee_atomic: (a + b).toString(), usd_estimate_cents: (66n + 99n).toString() },
+    ]);
+    expect((await booked(next.code)).filter((r) => r.kind === 'owed').map((r) => r.fee_atomic).sort()).toEqual([a.toString(), b.toString()]);
+  });
+
+  it('refuses to book an owed fee on a collecting trade that is not released', async () => {
+    setNow(new Date('2026-06-07T12:00:00Z'));
+    const open = await trade({ to: 'secured' });
+    const at = new Date('2026-06-07T12:30:00Z');
+    await expect(withClient((c) => bookOwedFeeCollected(c, { code: open.code, debtId: 'debt-c', collectedAtomic: XMR / 100n, at }))).rejects.toThrow(/not released/);
+    const refunded = await trade({ to: 'settling' });
+    await applyEvent(deps, refunded.code, { type: 'escalate' }, 'system');
+    await applyEvent(deps, refunded.code, { type: 'settled', kind: 'auto-refund', txHash: tx() }, 'system');
+    await expect(withClient((c) => bookOwedFeeCollected(c, { code: refunded.code, debtId: 'debt-d', collectedAtomic: XMR / 100n, at }))).rejects.toThrow(/not released/);
+    expect(await booked(open.code)).toEqual([]);
+    expect(await booked(refunded.code)).toEqual([]);
   });
 });
