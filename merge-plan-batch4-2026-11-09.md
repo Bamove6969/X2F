@@ -32,7 +32,7 @@ New migration files per branch (vs main):
 - moderation: none on any branch (007, 008 only on land-3)
 
 Land-3 owns 120, 121, 123, 204, 208, moderation 007, 008. The carried 120/121/204 files on J-04/J-17/J-14 are byte-identical blobs to land-3's (checked by blob id), so NO number clash and no file conflict on the SQL.
-Pending numbers: 016 (`wip/lead-hold-v3`), 345/350/355/450 are unique on origin. 124, 125 (launch-rules), 332 (jabber), 440 (flex-offers) exist on no origin branch I could find under apps/api/migrations (those branches have no such file yet, or the files are unpushed or elsewhere): no clash visible, recheck when they land.
+Pending numbers: 016 (`wip/lead-hold-v3`), 345/350/355/450 are unique on origin. 124, 125 (launch-rules), 332 (jabber), 490 (flex-offers; renumbered 9 Nov) exist on no origin branch I could find under apps/api/migrations (those branches have no such file yet, or the files are unpushed or elsewhere): no clash visible, recheck when they land.
 Verdict: no clashes. Each branch's `apps/api/test/schema.test.ts` migration lists will conflict (mechanical, see below); after the merges the lists must contain 120, 121, 123, 204, 208 and 345, 350, 355, 450 in numeric order (the test is the check).
 
 ## Conflicts against land-3 (be73600a)
@@ -108,3 +108,7 @@ OWNER/LEAD QUESTION (J-17): confirm the Q31 per-side cap (6 Nov) and land-3's Ne
 After each merge, the schema.test.ts migration list must be re-sorted and then typechecked. Suggested order of the schema list additions: 120 121 123 204 208 (land-3), then 345, 350, 355, 450.
 
 Not run: tests, typecheck (nothing was checked out or merged; all results are from merge-tree only).
+
+## Lead note, 9 Nov 22:30 UTC
+- flex-offers 513370d1 re-verified APPROVED for landing. Its merge with launch-rules (fb99c0de) is a logic rewrite, not mechanical: launch-rules' post/relist/bulk-relist/take $5,000 checks read four `offers` columns that migration 490 drops. The $5,000 check must cover each currency's top band; relist with an unpriced currency waits on owner p11-95. Give that merge its own helper and review after batch 3 lands; until then flex-offers and launch-rules do not land together.
+- Also ready for batch 4: signup-rules 7bd9532a, revenue-ledger 64fc8c56 (+R1-R3 fixes pending), trade-copy e47e8e43, proof-receive fcb3990b, hold-v3-port 2d058320 (merge main first), pay-details 873b891e (security review running).
