@@ -783,3 +783,8 @@ The owner asked design to treat his 12 comments as a brief for the whole app and
   - SelfDestruct(+W): "blurred automatically" → "removed by our privacy tool".
 - Canvas v161. Not drawn yet: p11-4 (approve a new device from a logged-in device, plus a Jabber notice). LoginApprove already covers it, so I'll check the board against his words next.
 - **p11-4 LoginApprove:** the board already covers approving from a logged-in device: the pop-up, the number match, Yes/No, and the 3-device limit. I added the Jabber notice to "Where do I approve it?" step 1: "If you turned on Jabber alerts, we've sent you a message there too." Build: send an OMEMO Jabber alert for each new-device request when alerts are on. No height change. Canvas v162.
+
+## 9 Nov 2026: "privacy tool" sweep finished + dispute warning on wide — READY, COPY-UNSIGNED
+- Every trader-facing mention of automatic blurring now says "our privacy tool" / "hidden" (staff: "the privacy tool"). "Unblurred copy/proof" is now "original copy" on: ProofBlur-Wide, SellerConfirm notes, BuyerPaidWaiting(+W), ModCase ("Request the original proof"), ModQueue, FAQ(+W), DisputeRoom ("Send original copy to sarah.v"), DisputeOpen, DisputeRuling, OfferAd(+W), Fold-Trade/Desktop proof hint ("Our privacy tool hides private details for you to check next."), StaffLog. "Add blur" / "Remove blur" stay (uploader's own boxes).
+- Desktop + Fold-Trade: `dispute: none|opened` tweak as on BuyerPay (p11-16): I've paid paused + red caption; centred "Don't send any payment" modal on wide.
+- Heights: ProofBlur-Wide 1903→1959 (sent 1780); Desktop 1618→1692; Fold-Trade opened 1057; DisputeRoom sent 1711; ProofBlur 3933→3895. Canvas v163.

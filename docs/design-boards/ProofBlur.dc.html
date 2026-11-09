@@ -263,7 +263,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <li>After the first month the plain &quot;Send to satoshi_ghost&quot; footer returns (owner Q47: then every <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span>th to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">20</span>th proof).</li>
         <li>Renamed in trader-facing text: the caution title, the protection line, the encrypted-copy line (&quot;original copy&quot;), the Show this? sheet (&quot;Hidden by: Our privacy tool&quot;, &quot;Keep it hidden&quot;), the add-only notice, the sent banner and the proof row (&quot;details hidden&quot;).</li>
         <li>Design call, lead to confirm: &quot;Add blur&quot;, &quot;Remove blur&quot; and the hints about blurs you added keep the word blur, because they are the uploader&#39;s own boxes, not the privacy tool&#39;s.</li>
-        <li>ProofBlur-Wide is not changed in this pass (another designer has it).</li>
+        
       </ul>
       <span style="color: var(--ink-muted);">Preview with the privacyCheck tweak. Showing: {{privacyCheckName}}</span>
     </aside>
@@ -356,7 +356,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["review","drawing","removing","preview","sent"],"default":"review"},"removeAuto":{"editor":"enum","options":["add-only","confirm-to-show"],"default":"add-only"},"protect":{"editor":"enum","options":["warn","no-warning"],"default":"warn"},"date":{"editor":"enum","options":["found","missing"],"default":"found"},"privacyCheck":{"editor":"enum","options":["first-month","later"],"default":"first-month"},"$preview":{"width":390,"height":3933}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["review","drawing","removing","preview","sent"],"default":"review"},"removeAuto":{"editor":"enum","options":["add-only","confirm-to-show"],"default":"add-only"},"protect":{"editor":"enum","options":["warn","no-warning"],"default":"warn"},"date":{"editor":"enum","options":["found","missing"],"default":"found"},"privacyCheck":{"editor":"enum","options":["first-month","later"],"default":"first-month"},"$preview":{"width":390,"height":3895}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -387,7 +387,7 @@ class Component extends DCLogic {
     const push = (boxes, extra) => set(Object.assign({ boxes: boxes, hist: c.hist.concat([c.boxes]) }, extra || {}));
 
     // Board = 844 px phone screen + the design-notes block under it (measured, night, fonts loaded).
-    const NOTES_H = 2747;
+    const NOTES_H = 2709;
     const dateMissing = this.props.date === 'missing';
     // The date callout sits in the footer, so the phone screen grows by its height.
     // privacyCheck (owner, 8 Nov): in the first month the uploader is asked every time, in the footer, before sending.

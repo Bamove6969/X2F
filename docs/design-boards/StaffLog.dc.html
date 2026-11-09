@@ -34,7 +34,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <div style="width: 100%; display: flex; flex-direction: column; gap: 24px;">
       <section style="display: flex; flex-direction: column; gap: 4px;">
         <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Activity log</h1>
-        <p style="margin: 0; max-width: 720px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Every staff action and every step of every trade. Entries can't be edited or deleted by anyone. Opening a dispute chat or an unblurred proof always appears here.</p>
+        <p style="margin: 0; max-width: 720px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Every staff action and every step of every trade. Entries can't be edited or deleted by anyone. Opening a dispute chat or the original copy of a proof always appears here.</p>
       </section>
       <section aria-label="Log entries" style="display: flex; flex-direction: column; gap: 16px; padding: 20px 0 8px; border-radius: 16px; background: var(--surface);">
         <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 20px;">
@@ -97,7 +97,7 @@ class Component extends DCLogic {
       ['Today 09:31', A, 'dmitri_k', 'Moderator', 'Proposed a ruling: release 1.800000 XMR to the buyer (above the limit, waiting for your approval)'],
       ['Today 09:20', B, 'mira.k', 'Buyer', "Tapped I've paid and uploaded proof"],
       ['Today 09:12', A, 'dmitri_k', 'Moderator', 'Opened the trade chat'],
-      ['Today 08:55', A, 'dmitri_k', 'Moderator', 'Requested the unblurred payment proof'],
+      ['Today 08:55', A, 'dmitri_k', 'Moderator', 'Requested the original copy of the proof'],
       ['Today 08:47', B, 'system', '', 'Escrow secured after 10 confirmations'],
       ['Today 08:40', A, 'system', '', 'Dispute opened by the buyer; assigned to dmitri_k'],
       ['Today 08:25', B, 'satoshi_ghost', 'Seller', 'Funded the escrow with 1.250000 XMR'],

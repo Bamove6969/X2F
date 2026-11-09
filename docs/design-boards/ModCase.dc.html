@@ -144,7 +144,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <section aria-labelledby="pf-title" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
             <h2 id="pf-title" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Payment proof</h2>
             <div style="display: flex; gap: 14px;">
-              <div role="img" aria-label="Buyer's Zelle screenshot, partly blurred" style="width: 88px; height: 120px; flex-shrink: 0; border-radius: 12px; background: var(--surface-raised); display: flex; flex-direction: column; gap: 8px; padding: 10px; box-sizing: border-box;">
+              <div role="img" aria-label="Buyer's Zelle screenshot, some details hidden" style="width: 88px; height: 120px; flex-shrink: 0; border-radius: 12px; background: var(--surface-raised); display: flex; flex-direction: column; gap: 8px; padding: 10px; box-sizing: border-box;">
                 <span style="height: 8px; width: 60%; border-radius: 999px; background: var(--line);"></span>
                 <span style="height: 14px; width: 80%; border-radius: 4px; background: var(--ink);"></span>
                 <span style="height: 8px; width: 100%; border-radius: 999px; background: var(--line); filter: blur(3px);"></span>
@@ -153,11 +153,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               <div style="display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 20px;">
                 <span style="display: flex; gap: 8px; color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>Shows <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$1,320.00</span>, the right amount</span></span>
                 <span style="display: flex; gap: 8px; color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>Note says <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">7RWD-3MXE-KQ84-HN2T</span></span></span>
-                <span style="display: flex; gap: 8px; color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg><span>Sender name blurred by harbor_lin</span></span>
+                <span style="display: flex; gap: 8px; color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg><span>Sender name hidden by harbor_lin</span></span>
               </div>
             </div>
             <sc-if value="{{notAsked}}" hint-placeholder-val="{{true}}">
-              <button type="button" onClick="{{ask}}" style="height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Request unblurred proof</button>
+              <button type="button" onClick="{{ask}}" style="height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Request the original proof</button>
               <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">The request is written to the activity log. Only you will see the copy.</span>
             </sc-if>
             <sc-if value="{{asked}}" hint-placeholder-val="{{false}}">

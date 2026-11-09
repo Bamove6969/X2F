@@ -194,7 +194,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <div id="faq-keeps" role="region" aria-labelledby="faq-keeps-b" class="ans">
           <p style="margin: 0;">No IP addresses, and no name, phone number or email address.</p>
           <p style="margin: 0;">Chats are deleted after <span class="mono">30</span> days and disputes after <span class="mono">90</span> days.</p>
-          <p style="margin: 0;">During a trade X2F keeps an encrypted, unblurred copy of your payment proof that only a moderator can open, and only if there is a dispute. It is deleted when the trade is over.</p>
+          <p style="margin: 0;">During a trade X2F keeps an encrypted original copy of your payment proof that only a moderator can open, and only if there is a dispute. It is deleted when the trade is over.</p>
         </div>
         </sc-if>
       </li>
@@ -202,8 +202,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <h3 style="margin: 0;"><button type="button" class="q" id="faq-proofs-b" aria-expanded="{{q.proofs.on}}" aria-controls="faq-proofs" onClick="{{q.proofs.toggle}}"><span>What about payment proofs?</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{q.proofs.chev}}"><path d="M6 9l6 6 6-6"/></svg></button></h3>
         <sc-if value="{{q.proofs.open}}" hint-placeholder-val="{{false}}">
         <div id="faq-proofs" role="region" aria-labelledby="faq-proofs-b" class="ans">
-          <p style="margin: 0;">Before upload, your phone strips the photo&#39;s metadata and blurs private details such as account numbers and names.</p>
-          <p style="margin: 0;">You check the result and can add more blur. You can&#39;t remove the automatic blur. The seller sees the blurred version.</p>
+          <p style="margin: 0;">Before upload, your phone strips the photo&#39;s metadata. Our privacy tool hides private details such as account numbers and names.</p>
+          <p style="margin: 0;">You check the result and can add more blur. What our privacy tool hid stays hidden. The seller sees it with your private details hidden.</p>
         </div>
         </sc-if>
       </li>
