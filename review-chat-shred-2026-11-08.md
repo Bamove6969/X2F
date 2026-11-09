@@ -250,3 +250,33 @@
   - API `123_chat_shred.sql` clashes with `123_pay_window.sql` on `wip/lead-launch-rules`.
   - Moderation `007_chat_shred.sql` clashes with `007_internal.sql` on `origin/wip/third-p4-task11`.
   - Both migrations here are unreleased and were edited in place. Renumber whichever lands second.
+
+## Re-verify 0d7e65f8 -> 7bbda3ab (N1, N2, migration renumber; cloud lead reviewer, 9 Nov)
+
+- **Scope:** `git diff 0d7e65f8 7bbda3ab` (commits `90af6b81` N1 + N2, `7bbda3ab` migration 007 -> 008). Worktree /home/user/X2F/.claude/worktrees/chat-shred-2, clean.
+- **Tests:** moderation `test/shred.test.ts` **13/13 pass** (Docker works again; this also clears the "did not run" condition of the previous re-verify for this file). api `test/chat.test.ts` was not in this brief and was not run.
+
+### Verdict
+
+**APPROVED.** N1 and N2 are closed. The fix adds no new way to skip a hold. The renumbered migration does not depend on `007_internal`.
+
+### N1: closed
+- **The fix:** apps/moderation/src/main.ts:465. A link row is deleted only when its own 90 days are past (`last_seen_at < cutoff`) *and* its trade has no `mod_dispute_seen` row (`not exists ... d.trade = m.trade`).
+- **Why this closes the 90-day scenario:**
+  - In the same pass, dispute rows are deleted first with the same `cutoff` (main.ts:461-462).
+  - `shredHold` holds on `last_seen_at >= at - CHAT_AFTER_DISPUTE_DAYS` (main.ts:662), and `MOD_DISPUTE_SEEN_DAYS = CHAT_AFTER_DISPUTE_DAYS` (main.ts:24).
+  - So a dispute row that still exists after the delete is exactly one that still holds. While the dispute row exists, the link cannot be deleted, so the link stays a candidate. An order `{chat: C, trade: null}`, or one naming another closed trade, gets `held-dispute`.
+  - This holds whether the dispute is kept fresh by `disputed` items with `chat: null` or by moderation's own escalations (main.ts:582ff), because both write the same table.
+- **No new hold-skip:** the change only keeps rows longer and never deletes more than before. A kept link can only add a candidate (`dispute`) or a `mismatch` hold (main.ts:663-664), and both are holds. The shred's own delete of the link (main.ts:492) is unchanged and runs only after `shredHold` returned null.
+- **Still bounded:** a link outlives its 90 days only while its trade's dispute row exists. That row goes 90 days after the dispute was last seen. The link then goes on the next pass whose pull succeeds. `mod_dispute_seen.trade` is the primary key, so the `not exists` is an index lookup.
+- **Test:** shred.test.ts:329. It fails without the fix, by my reading: at day 100 + 1 ms the link (last seen day 10) would be deleted, so `trade: null` gets no candidates and `other` (released) passes every hold, and both orders shred. With the fix both are `held-dispute`, the link and the identity survive, and both rows go together at day 220.
+  - Nit (no action): the clock in this test goes backwards. The disputes are recorded at day 130 and the shred runs at day 100, so `last_seen_at` is ahead of `now`. The assertions still prove the point (the link is 90 days old and is kept). A monotonic version would record the disputes at days 50 and 90 only.
+
+### N2: closed
+- `COPY-UNSIGNED` is now on `MISSING_LINE` (apps/web/src/chat/ChatPanel.tsx:50) and on the `" Sent <time>."` suffix (ChatPanel.tsx:228). The wording is unchanged. Both still need the owner's copy pass.
+
+### Migration 007 -> 008: fine
+- `7bbda3ab` is a pure rename (no content change). `git grep` finds no other reference to `007_chat_shred` or `008_chat_shred`.
+- `origin/wip/third-p4-task11:apps/moderation/migrations/007_internal.sql` creates only `used_log_entries` and `mod_chat_seq`. `008_chat_shred.sql` creates only `mod_dispute_seen`, `mod_chat_trade` and an index on `mod_chat_trade`. The table sets are disjoint, neither file references the other's tables, and there are no foreign keys between them.
+- The runner (apps/moderation/src/keystore.ts:56-75) applies every file not yet in `mod_schema_migrations`, in name order, not "everything above the highest applied". So a database that got 008 before Task 11 lands will still apply 007_internal later, with no problem.
+- Only caveat (not a finding): a dev or test database that already applied the old `007_chat_shred.sql` would try 008 and fail on `create table mod_dispute_seen`. Neither migration is released, so recreate such databases.
