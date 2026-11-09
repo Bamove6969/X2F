@@ -15,6 +15,7 @@ import { ownerKeyRoutes } from './ownerKeys.js';
 import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from '../push/send.js';
 import { staffAccountRoutes } from './account.js';
 import { staffFeedbackRoutes } from './feedback.js';
+import { staffFeeSweepRoutes } from './feeSweep.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffPastRepRoutes } from './pastrep.js';
@@ -153,6 +154,8 @@ export async function buildStaffApi(
   staffFeedbackRoutes(app);
   // Plan 4 Task 32: the owner's revenue totals from the internal revenue ledger (earnings.read).
   staffRevenueRoutes(app);
+  // B-006 / Plan 4 Task 9: the fee wallet's sweep settings (settings.write; the send waits on Plan 6).
+  staffFeeSweepRoutes(app);
 
   return app;
 }

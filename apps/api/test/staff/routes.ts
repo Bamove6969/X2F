@@ -98,4 +98,7 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
   // Plan 4 Task 32: the owner's revenue totals (the internal revenue ledger).
   { method: 'GET', url: '/staff/v1/revenue', perm: 'earnings.read', allowed: OWNER },
+  // B-006: the fee wallet's sweep settings (a body that changes nothing needs no tap).
+  { method: 'GET', url: '/staff/v1/fee-sweep', perm: 'settings.write', allowed: OWNER },
+  { method: 'PUT', url: '/staff/v1/fee-sweep', perm: 'settings.write', allowed: OWNER, body: { thresholdAtomic: null, floatAtomic: null, coldAddress: null, tapId: '00000000-0000-4000-8000-000000000000' } },
 ];

@@ -28,7 +28,10 @@ export type AlertKind =
   | 'price-source-failing'
   | 'price-source-recovered'
   | 'market-prices-paused'
-  | 'market-prices-resumed';
+  | 'market-prices-resumed'
+  // Owner only: the fee wallet's sweep to the cold wallet (B-006, Plan 4 Task 9).
+  | 'fee-sweep-due'
+  | 'fee-sweep-failed';
 
 /**
  * Records an alert for the account. `detail` must never carry an IP address, user agent, secret,
