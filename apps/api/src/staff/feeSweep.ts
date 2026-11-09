@@ -132,7 +132,8 @@ const LOCK_KEY = 'x2f-fee-sweep';
  *    (`treasury.swept` or `treasury.sweep-failed`) and on a failure alerts the owner again
  *    (`fee-sweep-failed`).
  * Step 1 reads the settings `for share`, so a concurrent save waits for it; the lock ends with
- * step 1's commit. Just before the send the settings are read again `for share` in a separate short
+ * step 1's commit, and the wallet's balance is read before the transaction so a hung wallet RPC
+ * never holds it (review R3). Just before the send the settings are read again `for share` in a separate short
  * transaction: if the settings were saved since step 1 (`fee_sweep_set_at` moved, the sweep is off
  * or the address differs), nothing is sent and the attempt is settled `failed` (`settings-changed`,
  * review F2 and R2: a sweep sized from an old float would leave the hot wallet short). Nothing is
@@ -155,13 +156,16 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
     locked = (await client.query<{ ok: boolean }>('select pg_try_advisory_lock(hashtext($1)) as ok', [LOCK_KEY])).rows[0]?.ok === true;
     if (!locked) return { outcome: 'busy' };
 
-    // Step 1: decide and record the attempt.
+    // Step 1: decide and record the attempt. The wallet is asked first, before the transaction: a
+    // slow or hung wallet RPC must never hold the settings share lock, which would block every
+    // owner settings save until it returned (review R3).
+    const unlockedAtomic = await d.wallet.unlockedAtomic();
     const now = d.clock();
     await client.query('begin');
     let started: { id: string; coldAddress: string; setAt: Date | null; plan: Extract<FeeSweepPlan, { due: true }> };
     try {
       const cfg = await getFeeSweepConfig(client, { forShare: true });
-      const plan = planFeeSweep(cfg, await d.wallet.unlockedAtomic());
+      const plan = planFeeSweep(cfg, unlockedAtomic);
       if (!plan.due) {
         await client.query('rollback');
         return { outcome: plan.reason };

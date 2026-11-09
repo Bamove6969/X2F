@@ -351,7 +351,24 @@ describe('the sweep pass (runFeeSweep)', () => {
     expect(sent).toEqual([{ coldAddress: COLD, amountAtomic: 9n * XMR }]);
   });
 
-  it('step 1 reads the settings under a share lock: a concurrent settings write waits for it', async () => {
+  // A concurrent owner's save, tried from a second connection with a short lock timeout: null when
+  // it went through at once, the 55P03 error when it had to wait on the pass's share lock.
+  const trySettingsWrite = async (at: Date): Promise<unknown> => {
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      await c.query("set local lock_timeout = '200ms'");
+      const outcome = await c.query('update settings set fee_sweep_set_at = $1', [at]).then(() => null, (e: unknown) => e);
+      await c.query('rollback');
+      return outcome;
+    } finally {
+      c.release();
+    }
+  };
+
+  // Review R3: the wallet RPC runs before step 1's transaction, so a slow or hung wallet never holds
+  // the settings share lock and never blocks the owner's saves.
+  it('the wallet balance is read outside step 1: a settings write during the wallet RPC does not wait', async () => {
     const now = new Date(T0.getTime() + 900_000);
     setNow(now);
     await setSweep(10n * XMR, 3n * XMR, now);
@@ -360,21 +377,44 @@ describe('the sweep pass (runFeeSweep)', () => {
       ...base(),
       wallet: {
         unlockedAtomic: async () => {
-          // Step 1's transaction is open here, after it read the settings.
-          const c = await deps.db.connect();
-          try {
-            await c.query('begin');
-            await c.query("set local lock_timeout = '200ms'");
-            writeError = await c.query('update settings set fee_sweep_set_at = $1', [now]).then(() => null, (e: unknown) => e);
-            await c.query('rollback');
-          } finally {
-            c.release();
-          }
+          writeError = await trySettingsWrite(now);
           return 1n;
         },
       },
     });
     expect(res).toEqual({ outcome: 'below-threshold' });
+    expect(writeError).toBeNull();
+  });
+
+  it('step 1 holds the settings share lock from its read to its commit: a concurrent settings write waits for it', async () => {
+    const now = new Date(T0.getTime() + 950_000);
+    setNow(now);
+    await setSweep(10n * XMR, 3n * XMR, now);
+    balance = 13n * XMR;
+    let writeError: unknown = 'not tried';
+    // The pass's own connection, with the held-attempt check (the first query after the `for share`
+    // read, inside step 1's transaction) hooked once to try the concurrent write. Everything but
+    // `connect` runs on the real pool (`pool.query` calls `this.connect` with a callback).
+    const db = new Proxy(deps.db, {
+      get(target, prop) {
+        if (prop !== 'connect') {
+          const v = Reflect.get(target, prop) as unknown;
+          return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+        }
+        return async () => {
+          const c = await target.connect();
+          const query = c.query.bind(c) as (...a: unknown[]) => Promise<unknown>;
+          const release = c.release.bind(c);
+          const hooked = (...a: unknown[]) =>
+            writeError === 'not tried' && typeof a[0] === 'string' && a[0].includes('select outcome, at from fee_sweeps')
+              ? trySettingsWrite(now).then((e) => ((writeError = e), query(...a)))
+              : query(...a);
+          // The hook leaves with the connection: the pooled client is handed back as it was.
+          return Object.assign(c, { query: hooked, release: (err?: Error | boolean) => (delete (c as { query?: unknown }).query, release(err)) });
+        };
+      },
+    });
+    expect(await runFeeSweep({ ...base(), db, send: async () => ({ txHash: '78'.repeat(32) }) })).toMatchObject({ outcome: 'sent' });
     expect(writeError).toMatchObject({ code: '55P03' });
   });
 
