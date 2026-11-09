@@ -58,3 +58,33 @@ Reviewer: independent helper, read-only. Range 0c6f3f16..8e5f3b06 (10 commits, 1
 - **Q-B1: what "the dispute closes" means when an appeal follows (R40 48 h appeal window).** Does the clock start at the ruling, or at the end of the appeal or appeal window? p11-11 says only "the day the dispute closes". The code (c0af884b) uses `disputes.closed_at`. Recommendation: say "closed_at, which an appeal reopens" if that is what Plan 4 writes, or ask the owner.
 - **Q-B2: the reach of p11-26.** The spec, R42 and HANDOFF now say "nothing below that blocks trades, offers **or logins** stays". That drops "no approving new logins or devices during the hold". Approving a new device is arguably itself "a change being made" (a security change), so the owner may not have meant to lift it. Recommendation: keep "no approving new devices" as part of "the changes being made" until the lead confirms, along with the recovery-code question already flagged.
 - **Q-B3: whether moderators have passwords** (D6). Is p11-19's "username, password" literal (staff passwords become allowed for moderators), or the owner's shorthand? Recommendation: ask the owner. Until then, record p11-19 as "security key optional when PGP + passkey are held" and leave "staff cannot use passwords" standing.
+
+## Re-verify 308d87ea
+
+Reviewer: independent helper, read-only. Fix commit 308d87ea ("rule sweep fixes after review (D1-D11)") on top of the reviewed range; the docs-rules worktree HEAD equals origin/wip/lead-docs-rules. Docs only, no tests. The fix commit touches no files under apps/, so migration 110 is unchanged from the reviewed state (comment lines already updated before).
+
+**Verdict: APPROVED.** D1 to D9 and D11 are closed. D10 is closed except one date left in HANDOFF l.191 (a nit, below). Q-B1 to Q-B3 are questions for the lead and owner; the commit leaves them unanswered on purpose and the docs now record them as open. Neither the nit nor the open questions blocks landing.
+
+- **D1 closed.** Spec l.183: "counted from the day the dispute closes (owner p11-11, 2026-11-09; was: from the moment someone presses the dispute button)". The garbled phrase is gone.
+- **D2 closed.**
+  - Plan 3 l.1098 now says `disputes.closed_at`.
+  - Plan 4 l.1140 says "counted from `closed_at` ... (was: from the dispute button, `opened_at`)" and the tests "change to day 89 / day 91 from the closing".
+  - Plan 4 l.1156 says `closed_at`, and Task 23 "counted from `closed_at`".
+  - coordination l.584 now names a dispute-closed fact (`disputes.closed_at`) in `ChatRetentionFacts`.
+  - Plan 7 l.35 says "90 days after `disputes.closed_at`".
+  - A grep finds no "from the button" left. The remaining `opened_at` hits are about timers and the column's definition, not retention.
+- **D3 closed.** Plan 3 l.789 now ends "not 30 days after the trade closes".
+- **D4 closed.** R36 (rulings l.105) and Plan 4 l.1156 say "Nothing is purged while any dispute on the trade is open." The "still open at day 90" wording is gone; Plan 7 l.35 says "never while its dispute is still open".
+- **D5 closed.** R42 (rulings l.115), Plan 2 l.113 and spec l.53 now mark "the hold covers the whole account" as struck through and "superseded 2026-11-09 by owner p11-26: the hold holds only the changes being made".
+- **D6 closed.** Spec l.614 now reads: staff other than moderators cannot use passwords; "A moderator's password is never the only login: it counts only together with a PGP key and a passkey." The p11-19 note flags "password" as the lead's literal reading and points to Q-B3 for the owner.
+- **D7 closed.** Plan 3 l.9, l.1093 and l.1133 and coordination l.442 now say "built on `wip/lead-offer-rules` (batch 3), not yet on main" or "landing before Task 34". No "built on main" claim remains for the 3+3 cap.
+- **D8 closed.** Plan 3 l.10 and l.1127 and spec l.11 now say the 5 and 10 limits are on the Task 34 branch `wip/second-p3-task34-web`, not on main.
+- **D9 closed.** Plan 3 l.11 and l.235, and HANDOFF l.264, say the 3% is measured from the median as the code does, pending review O1. HANDOFF l.191 gives only "more than 3%" (the median reading appears in the later HANDOFF decided list at l.264, so the three documents agree).
+- **D10 closed, with one nit.** coordination l.354, l.407, l.442 and l.443 and HANDOFF l.219 say "owner Q31, 6 Nov". **Nit still open:** HANDOFF l.191 still reads "(owner Q7, 2026-11-09; was 5%)". Change it to "owner Q7, 6 Nov (recorded 2026-11-09)" when convenient.
+- **D11 closed.** dev-setup: "J-03 (branch `wip/second-price-gap`; the fourth-source branch `wip/second-price-feeds` is rebased as part of it)".
+
+Notes carried from the first review, not numbered findings:
+- **Q-B1 (what "closes" means when an appeal follows) is still open.** The docs say `disputes.closed_at` and Plan 4 l.1109 says it landed on main in c0af884b. The question for the lead, whether an appeal reopens `closed_at`, is not answered in the text.
+- **Q-B2 (does p11-26 lift "no approving new devices") is still open.** Spec l.52 now says "nothing below that blocks trades, offers or logins stays. Whether the recovery-code hold changes too is awaiting the lead." It does not say what happens to "no approving new logins or devices".
+- **Q-B3 is recorded as open** in spec l.614 (see D6).
+- **R36 still says** "the dispute-after-refund window is OPEN pending the owner's answer (question A; lead recommends 30 days)" (pre-existing, not introduced here). Spec l.171 and Plan 3 l.1242 still carry the same open-conflict text next to the 48 h and 72 h bullets. Suggested for a later sweep only.

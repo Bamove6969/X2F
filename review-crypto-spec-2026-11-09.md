@@ -86,3 +86,32 @@ Reviewer: independent helper, read-only. Files: docs/public/x2f-crypto-spec.md (
 ## Owner questions
 
 None new. The grant amounts, the proposer's identity and the licence are already marked [OWNER] in the drafts. C1's wording is for the lead to fix, not an owner choice, because it is a factual correction.
+
+## Re-verify d7fbdbdb
+
+Reviewer: independent helper, read-only. Fix commit d7fbdbdb (one commit over d902281a) in worktree crypto-spec; origin/wip/lead-crypto-spec equals HEAD. Files read at head: docs/public/x2f-crypto-spec.md (287 lines), docs/grants/monero-ccs.md, nlnet.md, otf-red-team-lab.md. Docs only, no tests.
+
+**Verdict: APPROVED.** All ten findings are closed. One optional item left as it was (the env var name, see "Not a finding").
+
+- **C1 closed.**
+  - Spec l.13 now says no X2F server alone, and neither the API nor the relay with one trader, can move coins. It says the moderation service holds one share, and that its share plus any one trader's share is the threshold. If the service is compromised and the attacker is a party or colludes with one, that trade's escrow is at risk.
+  - Spec l.113 says the refund-only rules bind an honest service, not a compromised one. Spec §9 item 1 (l.259) is added.
+  - CCS l.17, NLnet l.25 and l.28, and OTF l.26 and l.29 now say "the API or relay cannot" or "alone cannot", each followed by the same plain statement of the limit.
+- **C2 closed.** CCS l.28 and NLnet l.50 now say "Today ... only two automatic refunds ... Its key never signs alone: it always co-signs with a trader. Dispute rulings (planned) ... will require a staff security-key signature." No "act alone" remains in the grants. Spec l.59 and l.113 say the same.
+- **C3 closed.** Spec l.95: "On a release, the fee output is exactly 1% of the trade. Cancels and refunds ..." (the sentence continues with the no-fee statement).
+- **C4 closed.** Spec l.233: "For disputed trades the 90 days count from the dispute closing (owner ruling, 2026-11-09)." The table at l.222 agrees.
+- **C5 closed.** Spec l.34 and l.211 say user IDs are stripped only from v6 keys and that v4 keys keep theirs, which often hold a real name and email. Spec l.15 adds that a pasted key may carry a name or email. The grant lines "does not identify" (NLnet l.26, OTF l.27) are left as they were and stay true, because the database is encrypted.
+- **C6 closed.**
+  - Proofs: NLnet l.16 and OTF l.16 now say "(library built, not yet wired into the app)". CCS l.58 says the library is built but not wired.
+  - Deletion: CCS l.20 and OTF l.17 say chats and addresses are deleted on a schedule and whole-trade deletion is being built. CCS l.59, NLnet l.61 and OTF l.54 say it is not built.
+- **C7 closed.**
+  - The "every recent P2P venue has closed or been attacked" sentence is gone (CCS "Why this matters" l.22-26 no longer has it).
+  - The RetoSwap/Haveno causal claim is gone from CCS and NLnet. A grep for RetoSwap and Haveno finds only NLnet l.45, which is now an [OWNER/CITE] placeholder saying the designs are not verified from the repository.
+  - CCS l.12 carries "[CITE: link to LocalMonero's closure notice]". That link is a placeholder for the owner to fill.
+- **C8 closed.** Spec l.214: "TOTP cannot be an account's only login method; used alone it is a weak login, and security changes then wait 24 hours."
+- **C9 closed.** Spec l.34 and l.215 say login names are held as HMAC tags, or sealed while a sign-up waits in its challenge (`login-seal` subkey).
+- **C10 closed.** Spec l.108 is now a labelled "Assumption for the auditor" about wallet2 binding the decoded destinations to the signed transaction, and §9 item 8 (l.266) lists it as not yet verified for monero-ts 0.11.16.
+
+Not a finding: `MOD_KEYSTORE_KEY` still appears three times in the spec (l.36 and l.163, and one more in the same area). It is a name, not a value; the first review called it acceptable and optional. The owner may still prefer "the keystore key".
+
+Placeholders still open for the owner before sending (marked in the drafts, not review findings): LocalMonero closure link (CCS l.12), Haveno/Bisq comparison (NLnet l.45), grant amounts, proposer identity, licence.
