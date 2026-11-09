@@ -82,3 +82,6 @@ The new public route gives away nothing but the Terms version and costs what the
 - `TermsStep.tsx:103`: "Staff sign the Terms too. Read them to the end. If you agree to X2F's rules and terms, tick the box, sign your name and continue."
 - `TermsStep.tsx:30`: "Continue" (the step's button; also substituted into the trader's help line at `:179`).
 - `Invite.tsx:204`: "1. Terms of Service"; `:214`: "2. Your names"; `:236`: "3. Your login keys" (renumbered).
+
+## Lead note, 23:55 UTC
+Minors 1-3 applied: ceb749b7 (setup.css via main.tsx + one-door tripwire test), 73985260 (GET /staff/v1/terms exact-body test), 3ff7ae47 (signature erased at invite cancel, and by a retention sweep one hour after expiry). Head 3ff7ae47 pushed; goes into batch 4. Lead accepts the one-hour grace (matches purgeExpired).
