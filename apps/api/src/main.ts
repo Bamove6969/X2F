@@ -26,6 +26,8 @@ import { daemonConfirmations, monerodUrlFromEnv } from './trades/chain.js';
 import { ownerAlertSink } from './push/ownerAlert.js';
 import { staffListenFromEnv, startStaffApi } from './staff/main.js';
 import { assertOneSiteFlagsRow } from './site/flags.js';
+import { startOutbox } from './jabber/outbox.js';
+import { xmppSender } from './jabber/xmpp.js';
 
 function port(raw: string | undefined): number {
   if (raw === undefined || raw === '') return 8080;
@@ -82,6 +84,9 @@ const deps: Deps = {
   prices,
   // Task 26: shared context from real trades (Task 6), open chats (Task 20), delivery over Task 19's SSE and Web Push (nudge/wiring.ts).
   nudges: productionNudgeWiring(db),
+  // Owner rule p5-7: Jabber account-change notices, only when X2F_XMPP_* name X2F's sending account
+  // (GAP: the production account and server are not set up; unset, the set-up answers jabber-unavailable).
+  ...(config.xmpp ? { jabberSender: xmppSender(config.xmpp) } : {}),
 };
 
 // One scheduler for every purge job (X-12); the list is in retentionJobs.ts.
@@ -95,6 +100,10 @@ onAlert = ownerAlertSink({ db, clock, push: app.push });
 const stopHolds = startRetention(deps, [settleDueHolds(config, app.events, app.log)], 60_000);
 // Plan 4 Task 10: every 30 s, appeal windows close and maintenance shifts dispute deadlines (A7).
 const stopDisputeTimers = startDisputeTimers(deps, app.events);
+// Owner rule p5-7: queued Jabber notices go out every 5 s, after the change committed (counts-only logs).
+const stopJabber = deps.jabberSender
+  ? startOutbox({ db, clock, config, sender: deps.jabberSender }, (e) => app.log.info(e, 'jabber outbox'))
+  : async () => undefined;
 alertLog = app.log;
 prices.start();
 if (web) await serveWeb(app, web);
@@ -139,6 +148,7 @@ const shutdown = async () => {
   if (staff) await staff.close();
   await stopHolds();
   await stopDisputeTimers();
+  await stopJabber();
   await timers.stop(); // lets a pass in flight finish before the pool closes
   await stopRetention(); // lets a purge in flight finish before the pool closes
   await prices.stop();

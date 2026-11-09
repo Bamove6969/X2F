@@ -6,7 +6,9 @@ import { createServer as createTlsServer, type TLSSocket } from 'node:tls';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ACCOUNT_CHANGE_TEXT } from '../src/jabber/sender.js';
 import { xmlEscape, xmppSender } from '../src/jabber/xmpp.js';
+import { loadConfig } from '../src/config.js';
 import { certificate } from './helpers/der.js';
+import { VAPID_ENV } from './helpers/vapid.js';
 
 const YEAR = 365 * 86_400_000;
 const p256 = () => generateKeyPairSync('ec', { namedCurve: 'P-256' });
@@ -152,5 +154,48 @@ describe('xmppSender', () => {
     const s = await fakeServer();
     await expect(sender(s.port, s.root).send("mira@x.org'/><evil", { kind: 'account-change' })).rejects.toThrow('xmpp: address check failed');
     expect(xmlEscape(`<a href="x">'&'</a>`)).toBe('&lt;a href=&quot;x&quot;&gt;&apos;&amp;&apos;&lt;/a&gt;');
+  });
+});
+
+describe('config: X2F_JABBER_KEYS and X2F_XMPP_* (both optional; the production account is a GAP)', () => {
+  const k = (fill: number) => `1:${Buffer.alloc(32, fill).toString('base64')}`;
+  const BASE = {
+    X2F_ORIGINS: 'https://x2f.test', X2F_RP_ID: 'x2f.test', DATABASE_URL: 'postgres://u:p@127.0.0.1:5432/x2f',
+    X2F_LEAKED_LIST_PATH: '/srv/x2f/leaked.bin', X2F_SERVER_KEY: Buffer.alloc(32, 7).toString('base64'), X2F_MONERO_NETWORK: 'stagenet',
+    X2F_TERMS_VERSION: '2026-10-17', X2F_PGP_SIGNING_KEY_PATH: '/srv/x2f/signing.asc', X2F_PGP_SIGNING_FINGERPRINT: 'a'.repeat(40),
+    X2F_PASSWORD_PEPPERS: k(1), X2F_RECOVERY_CODE_KEYS: k(2), X2F_TOTP_KEYS: k(3), X2F_LOGIN_NAME_KEYS: k(4), ...VAPID_ENV,
+  };
+
+  it('off by default: no ring, no sending account, no credential anywhere', () => {
+    const c = loadConfig(BASE);
+    expect(c.jabberKeys).toBeNull();
+    expect(c.xmpp).toBeNull();
+  });
+
+  it('reads the account with defaults (host = the domain, direct-TLS port 5223)', () => {
+    const c = loadConfig({ ...BASE, X2F_JABBER_KEYS: k(9), X2F_XMPP_JID: 'x2f-alerts@xmpp.example.org', X2F_XMPP_PASSWORD: 'pw' });
+    expect(c.jabberKeys?.current).toBe(1);
+    expect(c.xmpp).toEqual({ jid: 'x2f-alerts@xmpp.example.org', password: 'pw', host: 'xmpp.example.org', port: 5223 });
+  });
+
+  it('refuses half a set-up, a bad address or port, and a ring that shares a key; errors never quote values', () => {
+    const bad: Array<[Record<string, string>, RegExp]> = [
+      [{ X2F_XMPP_JID: 'x2f-alerts@xmpp.example.org', X2F_XMPP_PASSWORD: 'pw' }, /X2F_JABBER_KEYS is missing/],
+      [{ X2F_JABBER_KEYS: k(9), X2F_XMPP_JID: 'x2f-alerts@xmpp.example.org' }, /X2F_XMPP_PASSWORD is missing/],
+      [{ X2F_JABBER_KEYS: k(9), X2F_XMPP_PASSWORD: 'secret-pw' }, /X2F_XMPP_PASSWORD .*X2F_XMPP_JID/],
+      [{ X2F_JABBER_KEYS: k(9), X2F_XMPP_JID: 'X2F@Example', X2F_XMPP_PASSWORD: 'pw' }, /X2F_XMPP_JID is malformed/],
+      [{ X2F_JABBER_KEYS: k(9), X2F_XMPP_JID: 'a@b.org', X2F_XMPP_PASSWORD: 'pw', X2F_XMPP_PORT: '0' }, /X2F_XMPP_PORT/],
+      [{ X2F_JABBER_KEYS: k(4) }, /X2F_JABBER_KEYS .*separate/],
+    ];
+    for (const [over, re] of bad) {
+      let message = '';
+      try {
+        loadConfig({ ...BASE, ...over });
+      } catch (e) {
+        message = (e as Error).message;
+      }
+      expect(message, JSON.stringify(over)).toMatch(re);
+      expect(message).not.toContain('secret-pw');
+    }
   });
 });
