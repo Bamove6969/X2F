@@ -29,4 +29,11 @@ describe('ui.css', () => {
     expect(rule('.x2f-bottom-nav__tab')).toContain('height: var(--x2f-tab-height)');
     expect(rule('.x2f-bottom-nav')).toContain('padding-bottom: env(safe-area-inset-bottom');
   });
+
+  it('a ticked card that is switched off keeps its dashed "off" border (review 7)', () => {
+    const css = readFileSync(fileURLToPath(new URL('../src/ui/ui.css', import.meta.url)), 'utf8');
+    const at = css.indexOf(".x2f-select-card[data-on='false'][data-selected='true'] {");
+    expect(at).toBeGreaterThan(css.indexOf(".x2f-select-card[data-selected='true'] {"));
+    expect(css.slice(at, css.indexOf('}', at))).toContain('border-style: dashed;');
+  });
 });

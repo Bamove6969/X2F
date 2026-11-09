@@ -150,25 +150,20 @@ export function isCancelRefund(settling: SettleKind | null, dispute: DisputeTrad
 }
 
 /**
- * An XMR amount inside a sentence, as the boards write it ("1.25 XMR"): six decimals with the
- * trailing zeros dropped, keeping at least two. Amounts shown on their own use `Amount` (six).
+ * An XMR amount inside a sentence ("1.250000 XMR"): the kit's 6 places, trailing zeros kept, cut and
+ * never rounded up (design kit handoff 1.5, kit review 5), like amounts shown on their own.
  */
 export function xmrInText(atomic: string | bigint): string {
-  const six = formatXmr(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
-  const [whole, frac = ''] = six.split('.');
-  const kept = frac.replace(/0+$/, '').padEnd(2, '0');
-  return `${whole}.${kept}`;
+  return formatXmr(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
 }
 
 /**
  * As xmrInText, but for an amount a side must send (review kit round 1, finding 1): exact to the
- * atomic unit (formatXmrExact), so 0.610529733574 is never written as 0.610529. Trailing zeros are
- * dropped the same way, keeping at least two: an aligned amount still reads "1.25".
+ * atomic unit (formatXmrExact), so 0.610529733574 is never written as 0.610529. Like every XMR
+ * figure (design kit handoff 1.5) it keeps at least 6 places: an aligned amount reads "1.250000".
  */
 export function xmrInTextExact(atomic: string | bigint): string {
-  const exact = formatXmrExact(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
-  const [whole, frac = ''] = exact.split('.');
-  return `${whole}.${frac.replace(/0+$/, '').padEnd(2, '0')}`;
+  return formatXmrExact(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
