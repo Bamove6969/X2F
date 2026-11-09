@@ -279,13 +279,49 @@ describe('a username + password session: changes are staged, reviewed, submitted
     expect(await alertsOf(t.id, 'hold-changes-applied')).toEqual([{ applied: ['password'], dropped: [] }]);
   });
 
-  it('a later submission moves the date of every waiting change to 24 h after it (one date on the banner)', async () => {
+  it('lead review 8 Nov I4: each waiting change keeps its own date; a later submission never moves an earlier one', async () => {
     const t = await passwordTrader();
     const a = ((await changePassword(t.b, t.id)).json() as { changeId: string }).changeId;
     expect((await submit(t.b, [a])).statusCode).toBe(200);
+    const aDue = in24h();
     later(5 * HOUR);
-    const b = ((await addWallet(t.b, t.id)).json() as { changeId: string }).changeId;
-    expect((await submit(t.b, [b])).json()).toEqual({ status: 'queued', count: 2, takesEffectAt: in24h() });
+    // A thief's small change every few hours no longer holds the owner's change back.
+    const thief = await secondSession(t);
+    const b = ((await addWallet(thief, t.id)).json() as { changeId: string }).changeId;
+    expect((await submit(thief, [b])).json()).toEqual({ status: 'queued', count: 2, takesEffectAt: in24h() });
+    const bDue = in24h();
+    const v = await holdView(t.b);
+    // The banner's date is the next change to apply; each item carries its own.
+    expect(v.changes.takesEffectAt).toBe(aDue);
+    expect(v.changes.items.map((i) => [i.id, (i as { takesEffectAt?: string }).takesEffectAt])).toEqual([[a, aDue], [b, bDue]]);
+    expect(((await t.b.get('/v1/account/me')).json() as { pendingChanges: unknown }).pendingChanges).toEqual({ count: 2, takesEffectAt: aDue });
+    setNow(new Date(aDue));
+    await settleDueChanges(deps.config, app.events).run(deps.db, now);
+    expect(await alertsOf(t.id, 'hold-changes-applied')).toEqual([{ applied: ['password'], dropped: [] }]);
+    expect((await deps.db.query<{ id: string }>('select id from hold_changes where account_id = $1', [t.id])).rows.map((r) => r.id)).toEqual([b]);
+    // Tidy: the wallet change goes too.
+    await deps.db.query('delete from hold_changes where account_id = $1', [t.id]);
+  });
+
+  it("lead review 8 Nov I4, owner g64: the owner's older username-and-password session ends the thief's newer one, never the other way; logged", async () => {
+    const t = await passwordTrader();
+    later(60_000);
+    const thief = await secondSession(t);
+    const ownerSession = await sessionOf(t.b);
+    const thiefSession = await sessionOf(thief);
+    // The thief (newer) cannot end the owner's (older) session.
+    expect((await thief.delete(`/v1/account/sessions/${ownerSession}`)).json()).toEqual({ error: 'weak-session' });
+    expect((await t.b.get('/v1/account/me')).statusCode).toBe(200);
+    // The owner (older) ends the thief's: his waiting change stays cancellable by the owner.
+    expect((await t.b.delete(`/v1/account/sessions/${thiefSession}`)).statusCode).toBe(204);
+    expect((await thief.get('/v1/account/me')).statusCode).toBe(401);
+    expect(await alertsOf(t.id, 'sessions-ended')).toEqual([{ count: 1, reason: 'older-session' }]);
+    // Never a newer strong session (a passkey login opened after the owner's weak one).
+    const o = await ownerWithPasskey();
+    later(60_000);
+    const strong = new Browser(app);
+    expect((await passkeyLogin(strong, o.auth)).json()).toEqual({ status: 'ok' });
+    expect((await o.b.delete(`/v1/account/sessions/${await sessionOf(strong)}`)).json()).toEqual({ error: 'weak-session' });
   });
 
   it('submitting needs the exact staged ids of this session; drafts die with the session that staged them', async () => {

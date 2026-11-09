@@ -117,10 +117,12 @@ export const HOLD_COPY = {
   // The waiting (submitted) changes (owner g65): one view of every change and its effect, a
   // countdown, each ticked; untick to cancel one, or cancel them all. A cancelled change never applies.
   waitingTitle: 'Waiting changes',
-  banner: (n: number, iso: string) => `${n === 1 ? '1 change takes' : `${n} changes take`} effect on ${utcDateTime(new Date(iso))}`,
+  // COPY-UNSIGNED (lead review 8 Nov I4): each waiting change keeps its own date, so the banner names the next one.
+  banner: (n: number, iso: string) =>
+    n === 1 ? `1 change takes effect on ${utcDateTime(new Date(iso))}` : `${n} changes waiting. The next takes effect on ${utcDateTime(new Date(iso))}`,
   countdownLead: 'Time left',
   applies: (iso: string) => `Applies ${utcDateTime(new Date(iso))}`,
-  // Owner p5-7: a removal applies at the same time as the rest, nothing early.
+  // Owner p5-7: a removal waits its 24 hours like the rest, nothing early.
   removes: (iso: string) => `Removed ${utcDateTime(new Date(iso))}`,
   from: (device: string) => `From ${device}`,
   fromHere: 'From this device',

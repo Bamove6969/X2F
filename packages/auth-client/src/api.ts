@@ -53,11 +53,11 @@ export interface HoldChangeSummary {
 export interface HoldView {
   /** The account's hold (a recovery-code login's), while one runs. */
   accountHold: { until: string; reason: string } | null;
-  /** Every waiting (submitted) change of the account, one date for all. */
+  /** Every waiting (submitted) change of the account, each with its own date (lead review 8 Nov I4); `takesEffectAt` is the next one. */
   changes: {
     count: number;
     takesEffectAt: string | null;
-    items: Array<HoldChangeSummary & { id: string; createdAt: string; submittedAt: string; by: string | null; mine: boolean }>;
+    items: Array<HoldChangeSummary & { id: string; createdAt: string; submittedAt: string; takesEffectAt?: string; by: string | null; mine: boolean }>;
   };
   /** This session's drafts, to review and submit. */
   drafts: Array<HoldChangeSummary & { id: string; createdAt: string }>;

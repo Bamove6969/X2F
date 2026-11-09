@@ -371,7 +371,9 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
             {waiting.map((c) => {
               const w = changeWords(c, names);
               const removal = c.kind === 'remove-wallet' || c.kind === 'team-remove';
-              const effect = due !== null ? [removal ? C.removes(due) : C.applies(due)] : [];
+              // Each waiting change has its own date (lead review 8 Nov I4).
+              const at = c.takesEffectAt ?? due;
+              const effect = at !== null ? [removal ? C.removes(at) : C.applies(at)] : [];
               const from = isMember ? null : c.mine ? C.fromHere : c.by !== null ? C.from(c.by) : null;
               const meta = [...effect, from].filter((m): m is string => m !== null);
               const kept = !unticked.has(c.id);

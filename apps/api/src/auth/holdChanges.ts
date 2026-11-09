@@ -9,8 +9,10 @@
  *   (hold.ts) stores it here as a draft of that session (202 `{ status: 'staged', changeId }`). The
  *   session reviews its drafts (`GET /v1/account/hold`) and submits them together.
  * - **Submitting** (`POST /v1/account/hold/changes/submit { ids }`, exactly the drafts the session
- *   reviewed): the changes wait; every waiting change of the account now takes effect 24 h after
- *   this submission (one date for the banner). Nobody is logged out and trading goes on. The owner
+ *   reviewed): the changes wait; each takes effect 24 h after its own submission, and a later
+ *   submission never moves an earlier one (lead review 8 Nov I4: a thief's small change every 23 h
+ *   held the owner's own change back for ever). The banner shows the next date to come. Nobody is
+ *   logged out and trading goes on. The owner
  *   is told at once on every channel: alert `hold-changes-submitted` `{ count, changes,
  *   takesEffectAt }` (the list of changes) and a push to every device (Jabber later).
  * - **Cancelling:** any logged-in session of the account owner, a username-and-password one included
@@ -163,10 +165,10 @@ export async function settleChangesInTx(db: Queryable, s: SettleDeps, accountId:
   return rows.length;
 }
 
-/** The waiting (submitted) changes' count and date, or null: the banner's data. */
+/** The waiting (submitted) changes' count and the next date one applies, or null: the banner's data. */
 export async function pendingSummary(db: Queryable, accountId: string): Promise<{ count: number; takesEffectAt: string } | null> {
   const { rows } = await db.query<{ n: number; due: Date | null }>(
-    'select count(*)::int as n, max(due_at) as due from hold_changes where account_id = $1 and submitted_at is not null',
+    'select count(*)::int as n, min(due_at) as due from hold_changes where account_id = $1 and submitted_at is not null',
     [accountId],
   );
   const r = rows[0]!;
@@ -176,8 +178,9 @@ export async function pendingSummary(db: Queryable, accountId: string): Promise<
 /**
  * Inside a transaction with the account locked: submits exactly `ids`, which must all be drafts of
  * `sessionId` (else 409 `changes-changed`: the list the user reviewed is not the list there is).
- * Every waiting change of the account then takes effect 24 h from now. Alert
- * `hold-changes-submitted` `{ count, changes, takesEffectAt }` names what was submitted now.
+ * They take effect 24 h from now; the account's earlier waiting changes keep their own dates (lead
+ * review 8 Nov I4). Alert `hold-changes-submitted` `{ count, changes, takesEffectAt }` names what
+ * was submitted now and when it applies. Returns the account's waiting count and this submission's date.
  */
 export async function submitChanges(db: Queryable, accountId: string, sessionId: string, ids: string[], now: Date): Promise<{ count: number; takesEffectAt: string }> {
   const { rows } = await db.query<ChangeRow>(
@@ -189,10 +192,10 @@ export async function submitChanges(db: Queryable, accountId: string, sessionId:
   const due = new Date(now.getTime() + HOLD_MS);
   const methods = await methodIds(db, accountId);
   await db.query('update hold_changes set submitted_at = $2, methods_before = $3, due_at = $4 where id = any($1::uuid[])', [ids, now, methods, due]);
-  await db.query('update hold_changes set due_at = $2 where account_id = $1 and submitted_at is not null', [accountId, due]);
   const total = (await pendingSummary(db, accountId))!;
-  await addAlert(db, accountId, 'hold-changes-submitted', { count: total.count, changes: rows.map((r) => describeChange(r.change)), takesEffectAt: total.takesEffectAt }, now);
-  return total;
+  const out = { count: total.count, takesEffectAt: due.toISOString() };
+  await addAlert(db, accountId, 'hold-changes-submitted', { count: rows.length, changes: rows.map((r) => describeChange(r.change)), takesEffectAt: out.takesEffectAt }, now);
+  return out;
 }
 
 /**
@@ -254,7 +257,7 @@ export async function approveChanges(db: Queryable, s: SettleDeps, accountId: st
 
 /** `GET /v1/account/hold`'s list: the waiting changes (any session's) and the calling session's drafts. */
 export async function listChanges(db: Queryable, accountId: string, sessionId: string): Promise<{
-  changes: { count: number; takesEffectAt: string | null; items: Array<ChangeSummary & { id: string; createdAt: string; submittedAt: string; by: string | null; mine: boolean }> };
+  changes: { count: number; takesEffectAt: string | null; items: Array<ChangeSummary & { id: string; createdAt: string; submittedAt: string; takesEffectAt: string; by: string | null; mine: boolean }> };
   drafts: Array<ChangeSummary & { id: string; createdAt: string }>;
 }> {
   const { rows } = await db.query<ChangeRow & { device_label: string | null }>(
@@ -264,14 +267,15 @@ export async function listChanges(db: Queryable, accountId: string, sessionId: s
     [accountId, sessionId],
   );
   const waiting = rows.filter((r) => r.submitted_at !== null);
-  const due = waiting.reduce<Date | null>((m, r) => (m === null || r.due_at!.getTime() > m.getTime() ? r.due_at : m), null);
+  // The next date one applies (each keeps its own, lead review 8 Nov I4).
+  const due = waiting.reduce<Date | null>((m, r) => (m === null || r.due_at!.getTime() < m.getTime() ? r.due_at : m), null);
   return {
     changes: {
       count: waiting.length,
       takesEffectAt: due?.toISOString() ?? null,
       items: waiting.map((r) => ({
         id: r.id, ...describeChange(r.change), createdAt: r.created_at.toISOString(), submittedAt: r.submitted_at!.toISOString(),
-        by: r.device_label, mine: r.session_id === sessionId,
+        takesEffectAt: r.due_at!.toISOString(), by: r.device_label, mine: r.session_id === sessionId,
       })),
     },
     drafts: rows.filter((r) => r.submitted_at === null).map((r) => ({ id: r.id, ...describeChange(r.change), createdAt: r.created_at.toISOString() })),

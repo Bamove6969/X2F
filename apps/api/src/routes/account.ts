@@ -12,6 +12,7 @@ import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
 import { changesWait, pendingSummary } from '../auth/holdChanges.js';
 import { revealDue } from '../auth/recovery.js';
+import { waits, type LoginStrength } from '../auth/strength.js';
 import { gateChange, stagedReply, holdUntil, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
 import { STAFF_IDLE_HOURS, deadline, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
 
@@ -451,12 +452,30 @@ export function accountRoutes(app: FastifyInstance): void {
         const { rows } = await db.query('select 1 from sessions where id = $1 and account_id = $2', [id, req.auth.accountId]);
         if (rows.length === 0) throw new ApiError(404, 'not-found');
         // Review round 2 N-I3, round 3 R3-M2 (lead decision 2026-10-30): a session whose login waits
-        // may log out only itself, never any other session, hold or not (403 `weak-session`): the
-        // owner's weak phone keeps its session, and with it the push subscription that carries the
-        // hold's warning.
-        if (id !== req.auth.sessionId && weakOf(caller, now)) throw weakRefusal();
+        // may not log out an older or a stronger session (403 `weak-session`): the owner's weak
+        // phone keeps its session, and with it the push subscription that carries the hold's
+        // warning. Owner g64 (lead review 8 Nov I4): it may end the account owner's own
+        // username-and-password sessions that are NEWER than itself, so the real owner's older
+        // session kicks out a thief's, and the thief's newer one never kicks the owner (as R4-M1
+        // for backup sessions). Alert `sessions-ended` `{ count: 1, reason: 'older-session' }`.
+        let kicked = false;
+        if (id !== req.auth.sessionId && weakOf(caller, now)) {
+          const t = await db.query<{ created_at: Date; strength: LoginStrength | null; level: string; member_id: string | null }>(
+            'select created_at, strength, level, member_id from sessions where id = $1 and revoked_at is null', [id],
+          );
+          const target = t.rows[0];
+          if (!target || req.auth.memberId !== null || target.level !== 'full' || target.member_id !== null || !waits(target.strength) || target.created_at.getTime() <= caller.created_at.getTime()) {
+            throw weakRefusal();
+          }
+          kicked = true;
+        }
         const r = await db.query('update sessions set revoked_at = $2 where id = $1 and revoked_at is null', [id, now]);
-        return (r.rowCount ?? 0) > 0;
+        const ended = (r.rowCount ?? 0) > 0;
+        if (ended && kicked) {
+          await addAlert(db, req.auth.accountId, 'sessions-ended', { count: 1, reason: 'older-session' }, now);
+          req.log.info({ reason: 'weak-session-ended-newer' }, 'session ended');
+        }
+        return ended;
       });
       // Its streams end once the revocation has committed.
       if (ended) req.server.events.closeSession(req.auth.accountId, id);

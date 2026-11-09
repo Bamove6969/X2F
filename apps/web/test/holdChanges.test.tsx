@@ -164,7 +164,7 @@ describe('AccountChanges: the drafts in one review, then one submit', () => {
     expect(byPart(host, 'changes-status')!.textContent).toBe(HOLD_COPY.submitted(DUE));
     // Now they wait, with their date.
     expect(byPart(host, 'change-drafts')).toBeNull();
-    expect(byPart(host, 'waiting-when')!.textContent).toBe(`2 changes take effect on ${utcDateTime(new Date(DUE))}`);
+    expect(byPart(host, 'waiting-when')!.textContent).toBe(`2 changes waiting. The next takes effect on ${utcDateTime(new Date(DUE))}`);
   });
 
   it('a list changed elsewhere (409 changes-changed) says so and loads the list again', async () => {
@@ -415,7 +415,7 @@ describe("owner p4-8: a team member's view of the lead's hold (HoldMember board,
     );
     await settle();
     expect(byPart(host, 'changes-banner-member')!.textContent).toBe(`${MEMBER_HOLD_COPY.banner} ${MEMBER_HOLD_COPY.bannerLink}`);
-    expect(host.textContent).not.toContain('changes take');
+    expect(host.textContent).not.toContain('changes waiting');
   });
 });
 
@@ -428,7 +428,7 @@ describe('the shell: banner and change cap', () => {
       </MemoryRouter>,
     );
     await settle();
-    expect(byPart(host, 'changes-banner-pending')!.textContent).toBe(`3 changes take effect on 8 Nov 2026, 15:00 UTC ${HOLD_COPY.review}`);
+    expect(byPart(host, 'changes-banner-pending')!.textContent).toBe(`3 changes waiting. The next takes effect on 8 Nov 2026, 15:00 UTC ${HOLD_COPY.review}`);
     expect(byPart(host, 'changes-banner-pending')!.querySelector('a')!.getAttribute('href')).toBe(CHANGES_PATH);
   });
 
