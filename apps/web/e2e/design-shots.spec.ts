@@ -664,7 +664,7 @@ test('37 owner G56: Cancelling is final', async ({ page }) => {
   await openRoom(page, PAY_SECURING, { warned: false });
   await expect(page.getByRole('alertdialog')).toHaveCount(0);
   await page.getByRole('button', { name: 'Cancel trade' }).click();
-  const final = page.getByRole('dialog', { name: 'Cancelling is final' });
+  const final = page.getByRole('dialog', { name: 'Cancelling is likely final' });
   await expect(final).toBeVisible();
   await shot(page, '37-trade-cancel-final');
   await final.getByRole('button', { name: 'Keep trading' }).click();

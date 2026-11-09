@@ -35,6 +35,7 @@ export function SessionLengthField({
   onChange,
   disabled = false,
   hints = true,
+  askHint,
 }: {
   choices: readonly number[];
   value: number | null;
@@ -42,6 +43,8 @@ export function SessionLengthField({
   disabled?: boolean;
   /** The two hints under the field (the login question and Devices); "Stay logged in?" leaves them out. */
   hints?: boolean;
+  /** Devices (G-007): its own second hint, naming the length picked, in place of the login question's. */
+  askHint?: string;
 }) {
   const id = useId();
   return (
@@ -72,7 +75,7 @@ export function SessionLengthField({
       {hints ? (
         <>
           <p className="x2f-fine">{C.sleepHint}</p>
-          <p className="x2f-fine">{C.askHint}</p>
+          <p className="x2f-fine">{askHint ?? C.askHint}</p>
         </>
       ) : null}
     </div>

@@ -688,3 +688,176 @@
     position: static;
   }
 }
+
+/* "What applies to you" (j31a section 1; BuyQuote / SellQuote / OfferAd boards): a surface card,
+   a 40 px tile and the title, then the three groups on surface-raised, divided by 1 px of surface. */
+.x2f-wa {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--x2f-space-5);
+  border-radius: var(--x2f-radius-lg);
+  background: var(--x2f-surface);
+}
+
+.x2f-wa__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.x2f-wa__tile {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+}
+
+.x2f-wa__head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.x2f-wa__sub {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-wa__groups {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-wa__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: 12px 14px;
+}
+
+.x2f-wa__group + .x2f-wa__group {
+  border-top: 1px solid var(--x2f-surface);
+}
+
+.x2f-wa__group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-wa__group-title {
+  margin: 0;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-wa__count {
+  font-family: var(--x2f-font-mono);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-wa__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-wa__line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink);
+}
+
+.x2f-wa__dot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  margin-top: 8px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-ink-muted);
+}
+
+.x2f-wa__mono {
+  font-family: var(--x2f-font-mono);
+}
+
+.x2f-wa__toggle {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  margin-left: -2px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: var(--x2f-radius-md);
+  background: transparent;
+  color: var(--x2f-monero-ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.x2f-wa__toggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+/* Courtesy sheet (j31a section 2): body 16/24, a 44 px tick row on surface-raised, then Got it. */
+.x2f-courtesy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+}
+
+.x2f-courtesy__text {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--x2f-ink);
+}
+
+.x2f-courtesy__tick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  font-size: 15px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.x2f-courtesy__tick input {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--x2f-ink);
+}

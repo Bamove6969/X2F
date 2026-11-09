@@ -43,6 +43,10 @@ const MIRA_BUYS = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, d
 
 async function stubApi(page: Page, s: Stub): Promise<Seen> {
   const seen: Seen = { takes: [], storedFiatCents: [], walletPosts: [] };
+  // These flows are about the take and the room it opens: the courtesy sheet between them (T-039,
+  // quote/courtesy.ts) is ticked off, as after "Don't show this again". Its own tests are in
+  // test/quoteScreen.test.tsx.
+  await page.addInitScript(() => window.localStorage.setItem('x2f.courtesy-sheet.off', '1'));
   await page.route('**/v1/account/me', (r) =>
     s.signedIn ? r.fulfill({ json: { displayName: 'viewer_1', ...INSIDE, methods: ['pgp'] } }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
   );

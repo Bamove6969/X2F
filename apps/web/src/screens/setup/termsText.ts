@@ -34,6 +34,8 @@ export const KEY_POINTS: readonly string[] = [
   'Disputed trades are kept up to 90 days, cleaned by our privacy tool, to train our moderators.',
   'No IP addresses are logged.',
   'We answer lawful warrants with the little we have.',
+  // S-043 (owner p4-6, build spec j33a section 1, 9 Nov): the 60-day rule, last, saying why. COPY-UNSIGNED
+  'X2F is built to last, for people who trade regularly, so an account not signed into for 60 days is closed.',
 ];
 
 /** The heading of the section the tick box's "Privacy Policy" points at. */

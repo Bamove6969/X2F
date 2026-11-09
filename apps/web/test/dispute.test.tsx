@@ -385,6 +385,17 @@ describe('DisputeRoom', () => {
     expect(after.host.querySelector('[aria-label="Moderator joined"]')?.textContent).toContain('Moderator sarah.v joined this dispute');
     expect(after.host.textContent).toContain('Replied in 38 min');
   });
+
+  it("D-069: once a moderator joins, the card asks both sides to answer the moderator, in ink, under the read-access line", () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const { host } = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={dispute({ moderator: { name: 'sarah.v', joinedAt: iso(168) } })} serverClock={at(200)} />));
+    const card = host.querySelector('[aria-label="Moderator joined"]')!;
+    const line = card.querySelector('[data-part="cooperate"]')!;
+    // The board's "She may ask ..." with "They", as the line above (the app can't know a moderator's gender).
+    expect(line.textContent).toBe("They may ask either of you questions. Please answer them here: if someone doesn't help, the ruling can go against them.");
+    expect(line.classList.contains('dispute-muted')).toBe(false);
+    expect(line.previousElementSibling?.textContent).toContain('They can read this whole chat');
+  });
 });
 
 describe('which dispute screen a trade gets (fix round I1)', () => {

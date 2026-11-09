@@ -120,3 +120,20 @@ export function useTradeChat(): ComponentType<TradeChatProps> | null {
     () => chat,
   );
 }
+
+/**
+ * Whether the buyer has added a payment proof to this trade (T-079, build spec j31a section 4):
+ * 'attached', 'none' (the proof slot can take one and there is none), or 'unavailable' (no proof
+ * slot yet: Plan 5's proof pipeline installs the source). Only 'none' asks "Mark paid without proof?".
+ */
+export type ProofState = 'attached' | 'none' | 'unavailable';
+let proofSource: ((code: string) => ProofState) | null = null;
+
+/** Installs where the trade's proof state comes from (Plan 5's proof slot, or a test); null removes it. */
+export function setProofSource(s: ((code: string) => ProofState) | null): void {
+  proofSource = s;
+}
+
+export function proofStateOf(code: string): ProofState {
+  return proofSource ? proofSource(code) : 'unavailable';
+}

@@ -65,6 +65,10 @@ const NO_DISPUTE_BEFORE_PAID =
   'Design proto review P1 (8 Nov): the buyer gets no dispute before "I\'ve paid" (the machine refuses it, too-early); the board, drawn before that, still shows Open dispute on the unpaid pay step.';
 const PAY_STEP_V2 = 'The secured pay step under the sheet in its v2 layout (design gap list Job 4, trade screens to the boards); not part of the cancel sheet (owner G56), whose copy is checked in full.';
 
+/** Build spec j31a section 3 (owner p5-2, T-049, 9 Nov): drawn on wip/design-brief b5bb4faa; this repo's copy of the board predates it. */
+const CANCEL_T049 =
+  'T-049 (owner p5-2, build spec j31a section 3, boards on wip/design-brief b5bb4faa): the sheet reads "Cancelling is likely final" and its body no longer names the seller. design/x2f-app still has the 7 Nov board.';
+
 const AD_CARD_V142 =
   'Owner #11 (8 Nov), boards v142 on wip/design-brief: the ad card shows the markup bottom-left ("+0.4%" over "Vendor markup") and the range as two rows, XMR and fiat, each with its unit; the time moved to the price row. design/x2f-app still has the earlier card.';
 
@@ -92,6 +96,10 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     ...['61', 'min', 'of 90 min · ends 1 Nov 2026, 15:21 UTC', '90', '1 Nov 2026, 15:21 UTC', '$412.50', 'for 1.250000 XMR', '1.250000', 'XMR'].map(
       (text) => ({ text, why: PAY_STEP_V2 }),
     ),
+    ...[
+      'Cancelling is final',
+      "The 1.250000 XMR goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap I've paid instead.",
+    ].map((text) => ({ text, why: CANCEL_T049 })),
     {
       text: '•••-•••-4471',
       why: 'The board\'s masked "Zelle to" value is an example; what the row shows is still open for the owner (board note "Open · owner to choose"), and the page shows the seller\'s details the fixture serves.',

@@ -17,6 +17,9 @@ import { TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
 import { useQuoteKept } from './quoteKept.js';
 import { useTake } from './useTake.js';
 import { WalletPicker, walletName } from './WalletPicker.js';
+import { WhatApplies } from './WhatApplies.js';
+import { CourtesySheet } from './CourtesySheet.js';
+import { courtesyOff } from './courtesy.js';
 import './quote.css';
 
 // The quote screen both sides share (plan Task 18). BuyQuote (a buyer taking a sell ad) follows the
@@ -144,7 +147,13 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const [picked, setPicked] = useState<string | null>(params.get('wallet'));
 
   const { market, refresh: refreshMarket } = useMarket(currency);
-  const { signedIn, state, take } = useTake(offerId, refreshMarket);
+  // T-039: once the take went through, the courtesy sheet shows before the trade room, until ticked off.
+  const [toRoom, setToRoom] = useState<(() => void) | null>(null);
+  const beforeRoom = useCallback((go: () => void) => {
+    if (courtesyOff()) go();
+    else setToRoom(() => go);
+  }, []);
+  const { signedIn, state, take } = useTake(offerId, refreshMarket, beforeRoom);
   const session = useSession();
   const myName = session.status === 'signed-in' ? ((session.me as { displayName?: string }).displayName ?? null) : null;
   // Task 37: once the person blocks the poster, this offer is gone for them (the take would 404).
@@ -429,6 +438,8 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
         <Notice tone="info">
           {copy.footnote(poster)}
         </Notice>
+        {/* j31a section 1: the quote's reader is always the taker (a sell ad's taker buys). */}
+        <WhatApplies role={copy.adSide === 'sell' ? 'buyer-taker' : 'seller-taker'} />
         {signedIn === true && myName !== null && myName !== poster ? (
           <BlockAction displayName={poster} onBlocked={() => keep({ blockedPoster: true })} />
         ) : null}
@@ -467,6 +478,14 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
         )}
         <span className="x2f-quote__fine x2f-quote__fine--center">Taking an offer is free. No X2F fee is added.</span>
       </footer>
+      <CourtesySheet
+        open={toRoom !== null}
+        onDone={() => {
+          const go = toRoom;
+          setToRoom(null);
+          go?.();
+        }}
+      />
     </div>
   );
 }

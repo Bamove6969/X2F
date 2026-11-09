@@ -791,14 +791,15 @@ describe('the buyer while waiting for funding (design proto review P1, 8 Nov)', 
     expect(host.textContent).toContain('If satoshi_ghost doesn\'t fund it in time, the trade is cancelled. You can cancel at any time before then.');
   });
 
-  it('Cancel trade asks once ("Cancelling is final", nothing funded yet), then posts buyer-cancel with no escrow step', async () => {
+  it('Cancel trade asks once ("Cancelling is likely final", nothing funded yet: the trade amount is named), then posts buyer-cancel with no escrow step', async () => {
     current = buyerView();
     const buyerCancel = vi.fn(async () => undefined);
     setTradeEscrowHook(() => verified({ buyerCancel }));
     const host = await room();
     await act(async () => button(host, 'Cancel trade')!.click());
     const sheet = document.querySelector<HTMLElement>('[data-sheet="cancel-final"]')!;
-    expect(sheet.textContent).toContain("satoshi_ghost hasn't funded the escrow yet, so nothing needs to go back. This trade closes. Don't send any money.");
+    // Lead, batch 4: trade-copy's J-31 sheet (T-049) over the 8 Nov proto-review P1 "hasn't funded yet" line; design confirming.
+    expect(sheet.textContent).toContain('The 1.250000 XMR in escrow is returned and this trade closes.');
     const confirm = [...sheet.querySelectorAll('button')].find((b) => b.textContent === 'Cancel trade')!;
     await act(async () => confirm.click());
     await flush();
@@ -813,7 +814,8 @@ describe('the buyer while waiting for funding (design proto review P1, 8 Nov)', 
     const host = await room();
     await act(async () => button(host, 'Cancel trade')!.click());
     const sheet = document.querySelector<HTMLElement>('[data-sheet="cancel-final"]')!;
-    expect(sheet.textContent).toContain('The 1.250000 XMR goes back to satoshi_ghost');
+    // Lead, batch 4: the escrow-held figure (0.6 XMR received so far), trade-copy's T-049 wording.
+    expect(sheet.textContent).toContain('The 0.600000 XMR in escrow is returned and this trade closes.');
     await act(async () => [...sheet.querySelectorAll('button')].find((b) => b.textContent === 'Cancel trade')!.click());
     await flush();
     expect(posted).toEqual([{ path: `/v1/trades/${CODE}/events`, body: { type: 'buyer-cancel' } }]);

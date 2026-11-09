@@ -192,7 +192,9 @@ describe('SignaturePad', () => {
 // to move whenever the words do. Editing the Terms fails here until TERMS_TEXT_VERSION (and the
 // server's X2F_TERMS_VERSION) moves too; then put the new version and hash in this pin.
 describe('the Terms text is pinned to its version', () => {
-  const PIN = { version: '2026-11-09', sha256: 'fa32ddddee4dd3fabb41fe562184ee93bcce15d4eae9a5070c30e5b03f86e2fc' };
+  // lead: folded pre-launch, p11-118: trade-copy's 60-day key point (S-043) joins the 2026-11-09 text
+  // (nobody has signed it yet; owner p11-42 approved that version), so the hash moves and the version stays.
+  const PIN = { version: '2026-11-09', sha256: 'e021ddd3baba1fe4238f9d40562354f90078c1cb5c4ac609e13377c882bf91e2' };
 
   it('has not changed without a new version', () => {
     const text = JSON.stringify({ TERMS_DRAFT_NOTE, KEY_POINTS, PRIVACY_HEADING, TERMS });

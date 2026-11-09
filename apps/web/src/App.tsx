@@ -12,6 +12,7 @@ import { Maintenance } from './screens/Maintenance.js';
 import { MyOffers } from './screens/MyOffers.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
+import { AccountFrozenRoute, FROZEN_PATH } from './screens/account/AccountFrozen.js';
 import { PostOffer } from './screens/PostOffer.js';
 import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
@@ -234,6 +235,8 @@ export function App() {
             <Route path="/settings/account-type" element={<AccountType />} />
             <Route path="/news" element={<News />} />
             <Route path="/feedback" element={<Feedback />} />
+            {/* D-016: the frozen-account notice, until the API says an account is frozen (NEEDS_API_FROZEN_STATE). */}
+            <Route path={FROZEN_PATH} element={<AccountFrozenRoute />} />
           </Route>
         </Route>
         {/* The front door: open to anyone (FRONT_DOOR in session/frontDoor.tsx lists the same paths). */}

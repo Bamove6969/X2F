@@ -134,8 +134,11 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 53 -> 56 (results-port db357970, batch 4): design results' BuyerPaidWaiting "You can't cancel
     // after marking as paid", said ahead of time, the Feedback anonymous hint "we can't follow up with
     // you", and Refunded's "Until they pay it back, they can't trade." (design's wording 7 Nov), which
-    // explains a ruling about the other trader.
-    expect(notARefusal).toBeLessThanOrEqual(56);
+    // explains a ruling about the other trader. 56 -> 58 (trade-copy e47e8e43, J-31, 9 Nov 2026: one
+    // pragma per shared line in quote/tradeTerms.ts, two lines): the nudge line's pace ("at most once every 15
+    // minutes", encouraged by the owner, p6-1) and the moderator's response time ("within 24 hours
+    // at most"), which explain, not refuse.
+    expect(notARefusal).toBeLessThanOrEqual(58);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

@@ -11,6 +11,15 @@
   line-height: 24px;
 }
 
+.x2f-warn__text strong {
+  font-weight: 600;
+}
+
+/* CancelRequest board (j31a section 3): the XMR unit after the amount, 600 in monero-ink. */
+.x2f-warn__xmr {
+  color: var(--x2f-monero-ink);
+}
+
 .x2f-warn__text--strong {
   font-weight: 600;
 }
