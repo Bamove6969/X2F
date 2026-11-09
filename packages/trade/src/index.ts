@@ -102,6 +102,30 @@ export {
   type RangeCheck,
 } from './offerRange.js';
 export {
+  BAND_DIFFER_DEFAULT,
+  BAND_MIN_TRADES,
+  MAX_ADJUST_BPS,
+  MAX_BANDS,
+  MAX_CURRENCIES,
+  MAX_METHODS,
+  bandsDiffer,
+  bandsToTiers,
+  checkBands,
+  headlineTier,
+  pickTier,
+  tierHolds,
+  tierRange,
+  tierRate,
+  type Band,
+  type BandDifference,
+  type BandsRefusal,
+  type MinTrades,
+  type TakeSizes,
+  type Tier,
+  type TierPick,
+} from './flexOffer.js';
+export { TOP_CURRENCIES, currencyChoices, currencyFlag, type CurrencyChoice } from './currencyChoices.js';
+export {
   SIGNAL_MAX_ADDRESS,
   SIGNAL_SENDERS,
   SIGNAL_TYPES,
