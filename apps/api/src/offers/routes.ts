@@ -57,7 +57,7 @@ import { accountTypeOf, assertVendor } from '../routes/accountType.js';
  * `side` is the ads' own side, what the poster does with XMR: someone buying XMR browses
  * `side=sell`. Amounts and prices are decimal strings (bigints), fiat in the currency's minor units.
  *
- * Flexible offers (J-16, rebuilt from claude2's Task 34; @x2f/trade flexOffer.ts; migration 440):
+ * Flexible offers (J-16, rebuilt from claude2's Task 34; @x2f/trade flexOffer.ts; migration 490):
  * an offer lists up to 5 currencies (`offer_currencies`), each with up to 3 price bands
  * (`offer_tiers`), and up to 5 payment methods (`offer_methods`), each offered in some or all of
  * those currencies with instructions per method and, where they differ, per currency

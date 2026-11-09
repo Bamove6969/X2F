@@ -24,7 +24,7 @@ export interface TradeSides {
   buyerPayout: string | null;
   sellerRefund: string | null;
   sellerWalletApp: string | null;
-  /** J-16 (440): the chosen method's instructions for the chosen currency, locked at take; '' when absent. */
+  /** J-16 (490): the chosen method's instructions for the chosen currency, locked at take; '' when absent. */
   methodInstructions?: string;
 }
 
@@ -36,7 +36,7 @@ export interface TradeRow {
   seller_account_id: string;
   buyer_account_id: string;
   method_id: string;
-  /** J-16 (440): the chosen method's instructions, locked at take. */
+  /** J-16 (490): the chosen method's instructions, locked at take. */
   method_instructions: string;
   amount_atomic: string;
   fee_atomic: string;

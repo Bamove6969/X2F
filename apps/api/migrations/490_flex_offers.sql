@@ -1,7 +1,7 @@
 -- J-16, Plan 3 Tasks 34/35: flexible offers (owner 29 Oct; several currencies 2 Nov; the numbers of
 -- 6 Nov Q23: at most 3 bands per currency and 5 payment types per offer). Rebuilt from claude2's
 -- Task 34 migration (117_flex_offers on wip/second-p3-task34 c2d1006c) on top of offer units (324),
--- minimum-trades choices (315) and market-only offers (345). Numbered 440 (440-449 free for J-16).
+-- minimum-trades choices (315) and market-only offers (345). Numbered 490 (490-499 reserved for J-16; 440-449 are J-07's).
 --
 -- One offer lists up to 5 currencies, each with its own price bands by amount, and up to 5 payment
 -- methods, each offered in some or all of those currencies (@x2f/trade flexOffer.ts). The offer

@@ -1,8 +1,8 @@
 // Migrations that rewrite existing offers: 315 (owner 8 Nov: "Minimum completed trades" is no
 // minimum, 5, 10, 25 or 50; any other value goes down to the next lower allowed one), 345 (J-02: no
-// new fixed-price offer) and 440 (J-16: flexible offers move each offer's currency, range, margin,
-// rule and method into their own tables). The 315 and 345 tests stop before 440, which drops the
-// columns they read; 440's own test checks what becomes of them.
+// new fixed-price offer) and 490 (J-16: flexible offers move each offer's currency, range, margin,
+// rule and method into their own tables). The 315 and 345 tests stop before 490, which drops the
+// columns they read; 490's own test checks what becomes of them.
 import { copyFile, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -68,7 +68,7 @@ describe('migration 315: minimum completed trades is no minimum, 5, 10, 25 or 50
       const ids = new Map<string, number | null>();
       for (const [before, after] of cases) ids.set(await offer(db, a, before), after);
       await db.query(`alter table offers add constraint offers_min_trades_check check (min_trades >= 0)`);
-      await migrateUpTo(db, '440');
+      await migrateUpTo(db, '490');
       const { rows } = await db.query<{ id: string; min_trades: number | null }>('select id, min_trades from offers');
       expect(rows).toHaveLength(cases.length);
       for (const r of rows) expect(r.min_trades, r.id).toBe(ids.get(r.id));
@@ -96,7 +96,7 @@ describe('migration 345: no new fixed-price offer (owner Q1, 6 Nov: market ± % 
         [a],
       );
       const legacy = rows[0]!.id;
-      await migrateUpTo(db, '440');
+      await migrateUpTo(db, '490');
       const kept = await db.query(`select price_mode, fixed_cents_per_xmr::text, margin_bps, status from offers where id = $1`, [legacy]);
       expect(kept.rows).toEqual([{ price_mode: 'fixed', fixed_cents_per_xmr: '34000', margin_bps: null, status: 'live' }]);
       await offer(db, a, 5);
@@ -116,9 +116,9 @@ describe('migration 345: no new fixed-price offer (owner Q1, 6 Nov: market ± % 
   });
 });
 
-describe('migration 440: flexible offers (J-16)', () => {
+describe('migration 490: flexible offers (J-16)', () => {
   it('every offer becomes one currency, one band in its own unit, one method with no instructions; the moved columns are gone', async () => {
-    await migratedBefore('440', async (db) => {
+    await migratedBefore('490', async (db) => {
       const a = await account(db);
       const ins = async (cols: string, vals: string): Promise<string> =>
         (await db.query<{ id: string }>(`insert into offers (account_id, side, ${cols}, terms, status, created_at, updated_at) values ($1, 'sell', ${vals}, '', 'live', now(), now()) returning id`, [a])).rows[0]!.id;

@@ -43,7 +43,7 @@ export function flexBody(b: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
-/** An offer's rows written straight to the database (migration 440's shape): one currency, one band, one method. */
+/** An offer's rows written straight to the database (migration 490's shape): one currency, one band, one method. */
 export interface RawOffer {
   accountId: string;
   side: 'sell' | 'buy';
