@@ -14,10 +14,13 @@ Source: docs/copy-unsigned-by-screen.md on origin/wip/design-brief (8 Nov 2026).
 | wording/batch-08 | 8 screens: Alerts, Profile, ProfileVisibility, BadgeSettings, Feedback, Team, MemberPermissions, TeamRefusal | 78 |
 | wording/batch-09 | 8 screens: TeamChat, ModQueue, ModCase, StaffLog, StaffPerformance, StaffSettings, Support, FAQ | 94 |
 | wording/batch-10 | 18 screens: TradeChat, SetupPassword, SetupBackup, FlexOffer-Post, MyOffers, BuyOffers, BuyQuote, DisputeRoom, SetupTerms, CancelRequest, BuyerPay, AccountFrozen, HoldChange, HoldMember, RecoveryCode, Alerts, Team, CantDoThat | 108 |
+| wording/batch-11 | 41 screens: StaffLogin, StaffPgpProof, StaffKeyTap, StaffRefusals, StaffShell, StaffInvite, StaffOwnerSetup, StaffNews, StaffFeedback, BuyerPay, CancelFinalSheet, DisputeLocked, DisputeEntry, PaidConfirmSheet, ReleaseWarning, SellerConfirm, SellerCancelled, SellerCancelConfirm, SellerRefund, TradeFund, BuyerFundEnded, RefundedSlot, TradeGlance, SettleWait, DisputeOpen, DisputeRoom, DisputeScreen, DisputeRuling, DisputeRefusals, TradeChat, Landing, TradeStepper, JoinTeam, TeamMemberRoom, StaffBan, Maintenance, News, SessionExtend, IdleReminder, CantDoThat, MyOffers | 117 |
 
-Total: 888 questions across 10 batches.
+Total: 1005 questions across 11 batches.
 
 Batch 10's source is not the design-brief file: it is the COPY-UNSIGNED strings on the helper branches pay-details (J-08 chat payment-detail boxes), signup-rules (password meter, recovery codes), flex-offers (bands, currencies, no rate), trade-copy (trade room drop-ins, AccountFrozen, courtesy sheet), hold-v3-port (hold notices) and revenue-ledger (fee sweep alerts), as of 9 Nov 2026, less the strings already on batches 1 to 9.
+
+Batch 11's source is the COPY-UNSIGNED strings on main (58f3d186, batch 3 landed) that are not on pages 1 to 10, as of 9 Nov 2026: the whole staff-web app (Login, Invite, OwnerSetup, NewsEditor, Feedback, StaffShell, PgpProof, KeyTapDialog, refusals), the batch 3 trade screens (BuyerPay's "Time to pay is over" and PayOverNote, CancelFinalSheet, DisputeLocked, SellerCancelled, SellerCancelConfirm, SellerConfirm, SellerRefund, TradeFund's buyer view, PaidConfirmSheet, ReleaseWarning, TradeGlance, settle wait), DisputeSlot and the dispute rules (p9-4), chat-shred-2's gap lines, the front-door Landing, teamCopy's JoinTeam, and the trader-side CantDoThat refusal texts, News, Maintenance and session words. Not yet on any page: the other files marked COPY-UNSIGNED (offer lists and cards, My offers model, offer form hints, badges and reviews, proof-check card lines, Devices, account type, block, auth refusals, ApproveOnDevice, old TEAM_COPY, PGP errors, past-reputation help); they are for a batch 12.
 
 ## Published 9 Nov 2026 (owner's links; answers in each page's db, collection `answers`, ids w0N-k)
 - batch 1: https://claude.ai/artifact/VrpbfX9muKFJGvVvUSVnV8 (59)
@@ -30,3 +33,4 @@ Batch 10's source is not the design-brief file: it is the COPY-UNSIGNED strings 
 - batch 8: https://claude.ai/artifact/88sBS68UYjAFJHfn31XxXn (78)
 - batch 9: https://claude.ai/artifact/NjwNvrNWCgJtmbAWS4ex24 (94)
 - batch 10: https://claude.ai/artifact/DCEgkieSJHfgXPfKjyQDAL (108)
+- batch 11: https://claude.ai/artifact/TiYPXbKfSoJLnpequbxpgk (117)
