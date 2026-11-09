@@ -90,3 +90,85 @@ A database error in the booking rolls back the whole `settled` event. This fails
 
 ## Owner or lead questions
 - F1: how should the owner clear a held (pending or failed) sweep? Recommendation: a separate tapped "resume after checking the wallet" action that names the attempt, with an identical settings save leaving the hold in place.
+
+## Re-verify 64fc8c56
+
+- Branch: wip/lead-revenue-ledger, worktree `.claude/worktrees/revenue-ledger`, head **64fc8c56**. Commits verified: 56d50652 (merge of origin/main 22b379e8, F7), c01fef44 (F2), 27e2d374 (F3), 37c565af (F4), 70b363ce (F5), 64fc8c56 (F1 comment).
+- Reviewer: independent security re-verifier, read-only on code. I changed nothing but this section.
+
+### Verdict
+
+**APPROVED WITH MINOR.** Every finding F1 to F7 is closed or correctly deferred, no test was weakened (the test diffs since 91c1af68 are additions only, plus the `debtId` argument the F5 fix requires), the merge keeps the booking inside the settlement transaction, and the routes stay owner-only and tapped. Four minor findings (R1 to R4), all before Plan 6 wires the send; none blocks landing.
+
+### Tests run (serialised runner, single files, on 64fc8c56)
+
+- `apps/api/test/staff/feeSweep.test.ts`: 1 file, **22 passed**, 0 failed (17 before, plus the five F2/F3/F4 tests).
+- `apps/api/test/staff/revenue.test.ts`: 1 file, **29 passed**, 0 failed (27 before, plus the two F5 tests).
+- `apps/api/test/schema.test.ts`: 1 file, **73 passed**, 0 failed (the three migration lists now carry main's 017 to 325 and then 430, 431).
+- `npx tsc -p apps/api --noEmit`: exit 0.
+
+### Findings F1 to F7, one by one
+
+- **F1 (resume rule): deferred correctly.** 64fc8c56 adds a four-line comment at `feeSweep.ts:164-167` naming owner question p11-77 and freezing the rule as built. No behaviour change, no test change. The question stays open for the owner (below).
+- **F2 (stale settings at the send): closed, with R1 and R2.** Step 1 reads the row `for share` (`feeSweep.ts:157`, `getFeeSweepConfig(..., { forShare: true })`), so a concurrent PUT's `for update` (`changeFeeSweep` line 344, `changeSettings` in `settings.ts:139`) waits; the test proves it with `lock_timeout` → 55P03. `settingsStillAllow` (lines 245-255) re-reads `for share` in a short transaction right before the send and fails the attempt `settings-changed` when the sweep is off or the address differs; two tests cover the address change and the switch-off, and both assert `sent` is empty, the row is `failed` with no tx hash, the owner alert and the log carry the reason. The next pass then sends to the new address (tested). See R1 for the window that remains and R2 for what the re-read does not compare.
+- **F3 (push failure leaves the row pending): closed.** `bestEffortPush` (lines 257-261) swallows a push error; both pushes go through it. The test makes `push.send` throw and asserts the attempt still settles (`failed not-wired`, then `sent` after a re-save). The in-app alert is written before the push either way. No counter was added (the review suggested one); information only.
+- **F4 (locked connection back to the pool): closed.** The `finally` (lines 229-238) catches the unlock error and calls `client.release(unlockError)`, which destroys the connection. The test proxies the pool so `pg_advisory_unlock` rejects, asserts `release` was called once with an Error, and then that a later pass is not `busy`.
+- **F5 (owed-fee seam): closed.** See section (4) below.
+- **F6 (Info, Task 14): unchanged**, as expected.
+- **F7 (merge): closed.** See section (3) below.
+
+### (2) The F2 window, exactly
+
+Lock timeline of a due pass: step 1 holds `settings` `for share` from line 157 to the commit at line 178 (across `wallet.unlockedAtomic()`, see R3). The lock is gone after the commit. `bestEffortPush` runs unlocked. `settingsStillAllow` takes `for share` again (line 248) and releases it at its own commit (line 249). Then `send(...)` runs at line 199 with **no lock and no transaction**, by design ("the send never runs inside an open transaction").
+
+So the owner's change is caught whenever his PUT commits before line 249 (the re-read either waits for his `for update` to commit and then sees the new row, or sees it already committed). The window that remains is **from the commit at line 249 to the moment the wallet has broadcast the transaction inside `send`**: a few microseconds of JavaScript plus the wallet RPC's build, sign and relay time (seconds on Monero). A PUT that acquires `for update` in that window commits the new address while the coins go to the old one. No database-side check can close it, because the send is already in flight; only holding the share lock across the send would (the owner's save would then wait those seconds, and a hung RPC would block every settings save, see R3).
+
+Acceptable pre-launch: yes. Today `send` is the tripwire and throws before any transfer, so the window cannot move coins. Even when wired, the exposure is bounded to one sweep's excess (balance less float), the destination is the address the owner tapped last, and the race needs his save to land inside a seconds-long window of a pass that happens to be sending. The code comments overstate the protection ("under the same lock", lines 133-134 and 186): the re-read is under *a* lock in a separate short transaction, and nothing is held across the send. Plan 6 should pick (a) hold the share lock across the send with a bounded RPC timeout, or (b) keep the window and say so in the comment; either is defensible, (b) is simpler. Recorded as R1.
+
+### (3) The merge resolution in `trades/store.ts`
+
+`applyEvent` (lines 378-385 at head) runs, on the one locked-row `client` inside `begin` ... `commit`: `update trades`, `insert trade_events`, `openSystemDispute` (escalate only), then on a state change to `released` or `refunded` `countTradeTotals` and `bookTradeRevenue` in one block, then main's `countActionTimes` on `released`, then `within`, then `appendLog` last (the log lock is taken only for the tail), then `commit`. Any throw rolls everything back (`catch` → `rollback`). Both imports are present. The diff against main (22b379e8) is only the import and the five-line block; the diff against the branch parent (91c1af68) is only main's import and `countActionTimes` line. Nothing else in `store.ts` changed.
+
+No double booking on retry: a retried `settled` event after a rollback finds no `revenue_booked` row (it rolled back too) and books once; a retried event after a commit is refused by the machine (`released` is not in `SETTLED_FROM`) and, if it somehow reached the block, hits the `(trade_code, 'fee', '')` primary key. `countActionTimes` is idempotent by its own `trade_totals_counted (code, 'action-times')` marker, so the ordering (ledger before action times) only decides which failure rolls the other back, and both fail closed together. Correct.
+
+### (4) F5: the owed-fee seam
+
+- Migration 430 (new on this branch, not on main, so changing it in place is fine): `revenue_booked` primary key is now `(trade_code, kind, debt_id)`, `debt_id text not null default ''` with `length(debt_id) <= 64`, and `check ((kind = 'fee') = (debt_id = ''))`. So a trade's own fee is exactly one row with `debt_id = ''`, and an owed booking must name a debt. `fee_atomic > 0` matches `book`'s early return on zero.
+- `bookOwedFeeCollected` (`revenue.ts:139-150`) refuses a negative amount (RangeError), an empty or over-long `debtId` (RangeError), an unknown trade (RangeError), and **throws unless `state = 'released'`**. The test books on a `secured` trade and on an `auto-refund` `refunded` trade and asserts both throw `/not released/` and no marker exists.
+- Idempotent per (collecting trade, debt): the `insert ... on conflict do nothing` marker gates the ledger insert. Two debts on one trade both book (tested: amounts add, `trades` stays 1 because the `exists` subquery reads the markers as of the statement's snapshot, so the first debt's marker is not visible to the second's `case`), and a repeat of the same debt books nothing (tested).
+- Paths I looked for and did not find: nothing but `bookOwedFeeCollected` writes `kind = 'owed'`; `bookTradeRevenue` always passes `debtId: ''` and `kind: 'fee'`, so the two kinds cannot collide; no caller exists yet (Task 12 will be the only one). A debt partly collected by two different trades is two rows with two amounts, which is correct, not a double booking. The marker is cascaded with its trade, so after a purge a replay cannot happen (the trade is gone).
+- What the seam does not and cannot check: that `collectedAtomic` is what the release's payout set actually carried to the fee wallet, and that `debtId` is a real `fees_owed` row (no FK, the table does not exist yet). Task 12 must call it in the release transaction with the amount the payout set sends. Documented in the function's comment; information only.
+
+### (5) Deadlock between step 1's share lock and the owner's save
+
+Lock sets: the owner's PUT (`/staff/v1/fee-sweep` or `/staff/v1/settings`, one `withTx`) takes `settings` row `for update`, then updates `key_taps` (consume) and `settings`, then the log advisory xact lock in `appendLog`. Step 1 takes the session advisory lock `x2f-fee-sweep` (never contended by the PUT), then `settings` `for share`, then inserts `fee_sweeps` and `alerts` (select on `accounts`); it never touches `key_taps` or the log lock. Step 3 (`withTx` on a second pool connection) updates `fee_sweeps`, inserts `alerts`, then takes the log lock; it never touches `settings`. `settingsStillAllow` takes only `settings` `for share`. There is no pair of resources taken in opposite order, so no deadlock; a PUT blocked on the share lock holds no lock itself. A second pass is `busy`, never a second share lock. Trade settlements take the log lock and never `settings`, so they are not involved. The only liveness hazard is R3 (the share lock held across the wallet RPC).
+
+### (6) What a malicious staff or team member could do through these routes
+
+- `GET /staff/v1/revenue` is `earnings.read`; `GET`/`PUT /staff/v1/fee-sweep` are `settings.write`. After the merge `roles.ts` still gives both only to `owner`, `GRANTABLE_PERMS` is still `['tickets.handle', 'feedback.read']`, and `can()` ignores a stored grant outside that list, so a senior, mod or helper cannot be granted either perm even by a corrupted `staff_members.grants` row. The route matrix (`test/staff/routes.ts:101-104`) pins all three rows to `OWNER`, and both suites assert 403 for the other roles.
+- The tap: `tapPermOf('fee-sweep')` is still `settings.write`, so a non-owner cannot even start a fee-sweep tap (403 `forbidden` at `keyTap.ts:516`). `consumeKeyTap` binds the tap to the actor's account, the exact canonical intent (all three values), one use, the 2-minute TTL, the starting session and a security key still registered to the account. A staff member cannot use the owner's tap, and the owner's own tap for other values is refused (tested).
+- Team members (trader-side `team_members`) never reach the staff app: every route here is behind `requireStaff`, which loads `staff_members` on each request.
+- Input: the PUT body must have exactly the four keys; amounts are decimal strings of at most 30 digits; the address is 95 base58 characters and then checked by the wallet (`addresses.check`), so no injection or SSRF vector through the address. The revenue query refuses unknown keys and interpolates only fixed literals.
+- Data a non-owner could learn: nothing. The cold address is returned only to the owner; `settings.changed` logs the address field without its value; `fee_sweeps`, the alerts and the ledger hold amounts only; `treasury.*` log entries are owner-only. A moderator with `log.read.cases` sees no treasury or settings entries.
+- What the owner alone can do that matters: point the sweep at any valid address, with a tap. That is the design. An attacker holding the owner's session and one of his registered security keys could redirect the sweep; that is the existing owner-account threat model (G4's two-key rule covers key changes, not settings), not new to this branch.
+
+### Minor findings
+
+#### R1 (Minor; Plan 6): the send itself runs outside the share lock, and the comments say otherwise
+- Exact window in section (2): from the commit at `feeSweep.ts:249` to the wallet's broadcast inside `send` (line 199). A PUT that commits in that window changes the address after the pass decided to send to the old one.
+- Acceptable pre-launch (the send is the tripwire). Before Plan 6 wires it: either hold the share lock across the send with a bounded RPC timeout, or keep the window and fix the comments at lines 133-134 and 186 ("under the same lock" → "in a separate short transaction; nothing is held across the send"). Lead's call; I recommend keeping the window and fixing the comment.
+
+#### R2 (Minor; Plan 6): the re-read compares the address and the on/off state only, not `set_at`, the threshold or the float
+- `settingsStillAllow` (line 250) returns true while `thresholdAtomic !== null && coldAddress === started.coldAddress`. If the owner raised the float mid-pass (wants the hot wallet to keep more), the pass still sends the amount sized from the old float, so the hot wallet ends below the new float. The coins go to the owner's own tapped address, so this is a sizing miss, not a loss.
+- The review asked for a `set_at` comparison. One line: `now.setAt?.getTime() === started.setAt?.getTime()` (return `setAt` from step 1), which fails the attempt on any save. Suggested before the send is wired.
+
+#### R3 (Minor; Plan 6): step 1 holds the share lock across the wallet RPC
+- `wallet.unlockedAtomic()` (line 158) is awaited inside the step-1 transaction, after the `for share` read. A hung or slow wallet RPC holds the share lock, and every owner settings save (`/staff/v1/fee-sweep` and `/staff/v1/settings`, both `for update` on the one `settings` row) waits until the RPC returns or its connection drops. Today the wallet is a test stub.
+- Fix: read the balance before `begin` (it does not depend on the settings; `planFeeSweep` combines both after), or give the RPC a timeout. Two-line change, no behaviour change otherwise.
+
+#### R4 (Info): the F1 question is open and the hold tests still bypass the API
+- The F1 rule is frozen by comment pending p11-77; the tests still lift the hold with a direct `update settings` (`setSweep`), so the "save the settings again" path through the PUT remains untested until the owner's answer settles what that path is. Nothing to do now.
+
+### Owner or lead questions
+- p11-77 (F1) is unchanged: how a held (pending or failed) sweep resumes. Recommendation stands: a separate tapped "resume after checking the wallet" action that names the attempt.
+- R1: hold the share lock across the send, or accept the seconds-long window and say so. Recommendation: accept and fix the comment.
