@@ -205,6 +205,8 @@ export function tradeView(over: Record<string, unknown> = {}): Record<string, un
     maxFiatCents: '50000',
     settling: null,
     paidAt: null,
+    // The time to pay the API sends with every trade (owner p9-6); the attestation below signs the same.
+    payWindowMin: 90,
     ...over,
   };
 }

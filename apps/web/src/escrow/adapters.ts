@@ -35,8 +35,9 @@ export interface EscrowTradeView {
   paidAt: string | null;
   /**
    * The buyer's time to pay in minutes the view shows (owner p9-6), or null when the view has none
-   * (an older API) or not a whole number of minutes from 1 to MAX_PAY_WINDOW_MIN. The attested
-   * `payWindowMin` must equal it when it is there (runtime.ts, `wrong-terms`).
+   * or not a whole number of minutes from 1 to MAX_PAY_WINDOW_MIN. The runtime refuses null
+   * (`deal-mismatch`: the web and the API ship together, so only a lying API leaves it out), and
+   * the attested `payWindowMin` must equal it (runtime.ts, `wrong-terms`).
    */
   payWindowMin: number | null;
 }

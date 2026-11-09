@@ -549,14 +549,20 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (this.rec.ownAddress === null || this.rec.ownAddress === '') return this.fail('deal-mismatch');
       // The time to pay the API's trade view shows on this device (the buyer's countdown): the
       // attested one, which the moderation service's refund guard runs on, must be the same
-      // (`wrong-terms`). Read on every start, as the stored attestation is checked again. A view
-      // without it (an older API) leaves the attested value checked for shape only.
+      // (`wrong-terms`). Read on every start, as the stored attestation is checked again. The web
+      // and the API ship together, so a view without a valid one fails closed (launch-rules review
+      // F2): only a lying API leaves it out. The first value this device saw is kept in its record,
+      // and a later view that shows another one is refused too, so it cannot be changed afterwards.
       const shown = await this.retry(async () => {
         const v = parseTradeView(await deps.api.getTrade(this.code));
         if (!v) throw new Error('unreadable trade view');
         return v.payWindowMin;
       });
       if (shown === undefined || this.stopped) return;
+      // A deal mismatch: not kept as failed, found again on the next start (as `fail` says).
+      if (shown === null) return this.fail('deal-mismatch');
+      const pinned = this.rec.payWindowMin ?? null;
+      if (pinned !== null && pinned !== shown) return this.fail('deal-mismatch');
       try {
         await verifyAttestation(
           att.attestation as Attestation,
@@ -564,13 +570,18 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           deps.config.modSigningPublic,
           {
             trade: this.code, role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic, deal: this.rec.deal, ownAddress: this.rec.ownAddress,
-            ...(shown === null ? {} : { payWindowMin: shown }),
+            payWindowMin: shown,
           },
         );
       } catch (e) {
         // stop: no terms, no party, no funding address
         this.fail(e instanceof AttestationError && e.code === 'wrong-terms' ? 'deal-mismatch' : 'participants-mismatch');
         return;
+      }
+      // The first time to pay that verified, kept for every later start.
+      if (pinned === null) {
+        this.rec.payWindowMin = shown;
+        await this.persist();
       }
       const attestation = att.attestation as Attestation;
       this.participants = attestation.participants;

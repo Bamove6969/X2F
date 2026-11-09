@@ -183,6 +183,52 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     expect(ok.parties.calls.map((c) => c.role).sort()).toEqual(['buyer', 'seller']);
   });
 
+  it('a trade view without a time to pay fails closed: deal-mismatch on both devices, nothing set up (launch-rules review F2)', async () => {
+    // The web and the API ship together: only a lying API leaves the field out (or sends 0).
+    for (const payWindowMin of [undefined, 0, '90']) {
+      const t = await setup({ view: tradeView({ payWindowMin }) });
+      const buyer = await t.mk('buyer');
+      const seller = await t.mk('seller');
+      await buyer.runtime.start(CODE);
+      await seller.runtime.start(CODE);
+      expect(await buyer.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+      expect(await seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+      expect(t.parties.calls).toEqual([]);
+      expect(t.hub.opened).toEqual([]);
+      // Not kept as failed, and nothing pinned: checked again on the next start.
+      const rec = await buyer.store.load(CODE);
+      expect(rec?.failed ?? null).toBeNull();
+      expect(rec?.payWindowMin ?? null).toBeNull();
+      await buyer.runtime.stopAll();
+      await seller.runtime.stopAll();
+    }
+  });
+
+  it('the first time to pay that verified is kept on the device; a later view and attestation that agree on another are refused (launch-rules review F2)', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await buyer.status((s) => s.phase === 'ready');
+    expect((await buyer.store.load(CODE))?.payWindowMin).toBe(90);
+    await buyer.runtime.stopAll();
+    await seller.runtime.stopAll();
+    // The API now lies consistently: a 24-hour view and an attestation of 24 hours. Even with the
+    // stored attestation gone (so only the pinned value can tell), the device refuses it.
+    const rec = (await buyer.store.load(CODE))!;
+    await buyer.store.save({ ...rec, attestation: null });
+    t.state.view = tradeView({ payWindowMin: 1440 });
+    t.state.tamper = (a) => ({ ...a, terms: { ...a.terms!, payWindowMin: 1440 } });
+    const again = await device('buyer', { api: t.api.forRole('buyer'), hub: t.hub, parties: t.parties, modPublic: t.mod.publicHex, idb: buyer.idb });
+    running.push(again);
+    const calls = t.parties.calls.length;
+    await again.runtime.resumeAll();
+    expect(await again.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    expect(t.parties.calls.length).toBe(calls);
+    expect((await again.store.load(CODE))?.payWindowMin).toBe(90);
+  });
+
   it('a counterparty trade.terms address that differs from the attestation is ignored, never adopted; the attested one is, and the device still settles', async () => {
     const t = await setup();
     // A stand-in seller: its identity is registered, then it signs terms with an address the mod did not attest.
