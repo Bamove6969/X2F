@@ -304,7 +304,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     const p = await poster();
     for (const minTrades of [null, 5, 10, 25, 50]) {
       const id = await post(p, { currency: 'AUD', minTrades });
-      const one = (await anon.get(`/v1/offers/${id}`)).json() as { minTrades: unknown };
+      const one = (await viewer.get(`/v1/offers/${id}`)).json() as { minTrades: unknown };
       expect(one.minTrades).toBe(minTrades);
       await p.browser.patch(`/v1/offers/${id}`, { status: 'removed' });
     }

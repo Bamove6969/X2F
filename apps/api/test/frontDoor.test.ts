@@ -9,7 +9,7 @@ import type { Deps } from '../src/app.js';
 import { OWN_DATA_READS, OWN_DATA_WRITES, PUBLIC_ROUTES, runsInside } from '../src/auth/frontDoor.js';
 import { runsWithSession } from '../src/auth/sessions.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { seedAccount } from './helpers/accounts.js';
+import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
@@ -165,9 +165,11 @@ describe('marketplace reads are behind the front door', () => {
       `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Main', $2, $3, $3)`,
       [p.id, `addr-${Math.random()}`, new Date(deps.clock().getTime() - 86_400_000)],
     );
+    // Only vendors post offers (owner 2 Nov 2026); no minimum is null (owner 8 Nov: 5, 10, 25 or 50).
+    await makeVendor(deps, p.id);
     const posted = await p.browser.post('/v1/offers', {
       side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-      minFiatCents: '1000', maxFiatCents: '100000', minTrades: 0, terms: 'Zelle only.',
+      minFiatCents: '1000', maxFiatCents: '100000', minTrades: null, terms: 'Zelle only.',
     });
     expect(posted.statusCode, posted.body).toBe(201);
     const id = (posted.json() as { id: string }).id;

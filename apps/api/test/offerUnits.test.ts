@@ -36,6 +36,12 @@ let app: FastifyInstance;
 let deps: Deps;
 let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
 let anon: Browser;
+/**
+ * Browsing is behind the front door (owner, 8 Nov 2026: requireInside; logged out gets 401): the
+ * lists and offers are read by a bystander, a Graduated trader with no ties to the posters (so no
+ * starter cap marks `opensAt` on the cards).
+ */
+let viewer: Browser;
 type Who = Awaited<ReturnType<typeof trader>> & { wallet: string };
 
 beforeAll(async () => {
@@ -45,6 +51,7 @@ beforeAll(async () => {
   await deps.db.query(
     `insert into owner_settings (key, value, updated_at) values ('building_min_trades', 1, now()), ('graduated_min_trades', 2, now())`,
   );
+  viewer = (await person()).browser;
 });
 afterAll(async () => {
   await app.close();
@@ -86,7 +93,7 @@ async function post(who: Who, b: Record<string, unknown>): Promise<string> {
 }
 
 type Card = Record<string, unknown> & { id: string };
-async function card(id: string, who: Browser = anon): Promise<Card> {
+async function card(id: string, who: Browser = viewer): Promise<Card> {
   const res = await who.get('/v1/offers?side=sell&method=ZELLE&currency=USD');
   expect(res.statusCode, res.body).toBe(200);
   return (res.json() as Card[]).find((c) => c.id === id)!;
@@ -113,7 +120,7 @@ describe('posting and listing in the poster\'s unit', () => {
     const { rows } = await deps.db.query('select amount_unit, min_atomic, max_atomic, min_fiat_cents, max_fiat_cents from offers where id = $1', [id]);
     expect(rows[0]).toEqual({ amount_unit: 'xmr', min_atomic: '1000000000000', max_atomic: '5000000000000', min_fiat_cents: null, max_fiat_cents: null });
     // The single-offer route and My offers say the same.
-    expect((await anon.get(`/v1/offers/${id}`)).json()).toMatchObject({ amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: '33825' });
+    expect((await viewer.get(`/v1/offers/${id}`)).json()).toMatchObject({ amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: '33825' });
     const mine = ((await p.browser.get('/v1/account/offers')).json() as Card[]).find((o) => o.id === id);
     expect(mine).toMatchObject({ amountUnit: 'xmr', minAtomic: '1000000000000', maxAtomic: '5000000000000', minFiatCents: '33825', maxFiatCents: '169125' });
   });
