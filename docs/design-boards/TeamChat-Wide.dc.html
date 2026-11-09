@@ -78,11 +78,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <div style="display: flex; align-items: center; gap: 12px;">
               <span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 48px; height: 48px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; font-family: 'Familjen Grotesk', sans-serif; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; background: var(--team); border: 2px solid var(--team); color: var(--ground);">DA</span>
               <span style="display: flex; flex-direction: column; flex-grow: 1;">
-                <span style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 16px; line-height: 24px; font-weight: 700;">desk_ana</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>Team member</span></span>
+                <span style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 16px; line-height: 24px; font-weight: 700;">desk_ana</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>Assistant 1</span></span>
                 <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> replies · last at <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:23 UTC</span></span>
               </span>
             </div>
-            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">mira.k sees “Team satoshi_ghost member: desk_ana” on each reply. Every reply is also in your audit log.</p>
+            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">mira.k sees “satoshi_ghost Assistant 1” on each reply, never desk_ana’s name. Every reply is also in your audit log.</p>
           </section>
         </sc-if>
       </main>
@@ -110,7 +110,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               <div style="{{m.wrapStyle}}"><sc-if value="{{m.personAv}}" hint-placeholder-val="{{true}}"><span aria-hidden="true" style="{{m.avStyle}}">{{m.init}}</span></sc-if><sc-if value="{{m.teamAv}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); border: 2px solid var(--team); color: var(--ground);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></span></sc-if><div style="{{m.rowStyle}}">
                 <span style="{{m.metaStyle}}">
                   <span style="{{m.whoStyle}}">{{m.who}}</span>
-              <sc-if value="{{m.tagTeam}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>Team member</span></sc-if>
+              <sc-if value="{{m.tagTeam}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>{{m.tagText}}</span></sc-if>
               <sc-if value="{{m.tagVendor}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-muted);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9l1.5-5h13L20 9"/><path d="M4 9h16v2a3 3 0 01-5.3 1.9A3 3 0 0112 14a3 3 0 01-2.7-1.1A3 3 0 014 11z"/><path d="M5.5 14v6h13v-6"/></svg>Vendor</span></sc-if>
               <sc-if value="{{m.hasTeamOf}}" hint-placeholder-val="{{false}}"><span style="color: var(--team); font-weight: 600;">{{m.teamOf}}</span></sc-if>
                   <span>·</span>
@@ -133,7 +133,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":1280,"height":1220}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":1280,"height":1132}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { draft: '', sent: [] }; }
   componentDidUpdate(prev) { if (prev.viewer !== this.props.viewer) this.setState({ draft: '', sent: [] }); }
@@ -146,12 +146,14 @@ class Component extends DCLogic {
     const s = this.state;
     const lead = this.props.viewer === 'lead';
     // Measured height: the chat column is the tallest thing on this screen.
-    const H = (lead ? 1132 : 1220) + s.sent.length * 76;
+    const H = 1132 + s.sent.length * 76; // p11-25: both viewers measure 1132 since the shorter label
     const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
 
     // Owner, 2 Nov: a team member's replies get their own colour (--team) so it's very obvious a team member is replying.
-    // Owner, 28 Oct 13:41 (head designer ruling, 9 Nov): messages are labelled "Team <account display name> member: <member name>",
-    // so the partner sees "Team satoshi_ghost member: desk_ana". Replaces "Team member", never the name. COPY-UNSIGNED.
+    // Owner p11-25, 9 Nov (replaces the 28 Oct "Team <display> member: <name>" label and the "Team member" tag):
+    // the partner sees "<lead's display name> Assistant <n>", numbered in the order the lead added the members
+    // (satoshi_ghost Assistant 1, satoshi_ghost Assistant 2). The member's own name is never shown to the partner.
+    // The lead sees the member's name plus an "Assistant 1" tag, so he knows which label is whose. COPY-UNSIGNED.
     const me = lead ? 'vendor' : 'partner';
     const MSG = [
       { k: 'sys', t: '14:02', text: 'Escrow funded. 0.500000 XMR is locked for this trade.' },
@@ -182,15 +184,15 @@ class Component extends DCLogic {
       if (m.k === 'sys') return { isSys: true, isNotice: false, isMsg: false, t: m.t, text: m.text };
       if (m.k === 'notice') return {
         isSys: false, isNotice: true, isMsg: false, t: m.t,
-        text: lead ? 'desk_ana replied for you.' : 'desk_ana from Team satoshi_ghost is replying.',
-        hasSub: lead, sub: 'mira.k sees “Team satoshi_ghost member: desk_ana”.'
+        text: lead ? 'desk_ana replied for you.' : 'satoshi_ghost Assistant 1 is replying.',
+        hasSub: lead, sub: 'mira.k sees “satoshi_ghost Assistant 1”, not desk_ana.'
       };
-      const base = { isSys: false, isNotice: false, isMsg: true, t: m.t, text: m.text, metaStyle: meta, tagTeam: false, tagVendor: false, hasTeamOf: false, teamOf: '', whoStyle: 'color: var(--ink-muted);' };
+      const base = { isSys: false, isNotice: false, isMsg: true, t: m.t, text: m.text, metaStyle: meta, tagTeam: false, tagVendor: false, hasTeamOf: false, teamOf: '', tagText: '', whoStyle: 'color: var(--ink-muted);' };
       if (m.k === 'member') {
-        // Partner: people icon + "Team satoshi_ghost member: desk_ana", left. Lead: DA avatar + name, right (sent from your account).
+        // Partner: people icon + "satoshi_ghost Assistant 1", left. Lead: name + "Assistant 1" tag, right (sent from your account).
         return Object.assign(base, {
           rowStyle: row(lead), wrapStyle: wrap(lead, '94%'), personAv: false, teamAv: !lead, init: '', avStyle: '', bubbleStyle: BUB.team + (lead ? 'border-radius: 12px 12px 4px 12px;' : 'border-radius: 12px 12px 12px 4px;'),
-          tagTeam: true, hasTeamOf: !lead, teamOf: 'Team satoshi_ghost member: desk_ana',
+          tagTeam: lead, tagText: 'Assistant 1', hasTeamOf: !lead, teamOf: 'satoshi_ghost Assistant 1',
           who: lead ? 'desk_ana' : '',
           whoStyle: lead ? 'color: var(--ink); font-weight: 600;' : 'display: none;'
         });

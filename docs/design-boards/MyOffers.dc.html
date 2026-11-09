@@ -83,7 +83,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
                 <span style="{{c.codeStyle}}">{{c.code}}</span>
                 <sc-if value="{{c.off}}" hint-placeholder-val="{{false}}">
                   <svg style="flex-shrink: 0; color: var(--caution);" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><path d="M12 20h.01"/><path d="M3 3l18 18"/></svg>
-                  <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;">no rate right now</span>
+                  <span style="font-size: 12px; line-height: 16px; font-weight: 600; color: var(--caution); white-space: nowrap;">Not available</span>
                 </sc-if>
               </span>
             </sc-for>
@@ -98,7 +98,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <sc-if value="{{o.showNoRate}}" hint-placeholder-val="{{false}}">
               <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.55a11 11 0 0114.08 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><path d="M12 20h.01"/><path d="M3 3l18 18"/></svg>
-                Not live · no rate
+                Can’t go live
               </span>
             </sc-if>
             <sc-if value="{{onHold}}" hint-placeholder-val="{{false}}">
@@ -148,11 +148,16 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (F4)</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
         <li>Every offer shows its currencies as small chips (flag and code). A currency with a market rate is a plain chip.</li>
-        <li>One currency has no rate: its chip is struck through, with a caution outline and a signal-off icon, and one caution line under the chips says so. The other currencies stay live.</li>
-        <li>No currency has a rate: the offer can’t go live. It shows a caution chip “Not live · no rate” and one line; the switch stays on and the rest of the card dims to 70%.</li>
+        <li>One currency has no rate: its chip is struck through, with a caution outline, a signal-off icon and the words “Not available” (O-022, 9 Nov), and one caution line under the chips says so. The other currencies stay live.</li>
+        <li>No currency has a rate: the offer can’t go live. It shows a caution chip “Can’t go live” (was “Not live · no rate”, O-022, 9 Nov) and one line; the switch stays on and the rest of the card dims to 70%.</li>
         <li>Nothing for the vendor to do: when the rate comes back, the currency (or the offer) goes live by itself; nothing for the vendor to do. X2F’s owner is notified when a currency drops or comes back (owner Q35).</li>
         <li>Preview with the rate tweak (all, one-missing, none). The chip label and the two caution lines are draft copy.</li>
       </ul>
+    </aside>
+    <aside aria-label="Decided by design: the screen name" style="display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (O-023, F5): design&#39;s call, 9 Nov</span>
+      <span style="font-weight: 600;">The screen stays “My offers”, as in the rail and on every board that links here.</span>
+      <span>Picked over My listings / My ads / My posts: an “offer” is the word used everywhere else in X2F (Post an offer, BuyOffers, OfferAd).</span>
     </aside>
     <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;">Craft pass, 7 Nov: three stat tiles under the title (on, selling, buying; computed from the offers). Edit gets a chevron. COPY-UNSIGNED: "on", "selling", "buying".</p>
     <aside aria-label="Decided by the owner: payment types drop-down and frozen account wording" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
@@ -163,7 +168,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"hold":{"editor":"enum","options":["off","on"],"default":"off"},"rate":{"editor":"enum","options":["all","one-missing","none"],"default":"all"},"payTypes":{"editor":"enum","options":["closed","open"],"default":"closed"},"$preview":{"width":390,"height":2783}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"hold":{"editor":"enum","options":["off","on"],"default":"off"},"rate":{"editor":"enum","options":["all","one-missing","none"],"default":"all"},"payTypes":{"editor":"enum","options":["closed","open"],"default":"closed"},"$preview":{"width":390,"height":2969}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -179,7 +184,7 @@ class Component extends DCLogic {
     // F4 (owner, 7 Nov): currencies with no market rate. "one-missing": o1 also covers ARS, which has no rate.
     // "none": o3 is an ARS-only offer and ARS has no rate, so it can't go live.
     const rate = ['one-missing', 'none'].includes(this.props.rate) ? this.props.rate : 'all';
-    const H = { all: [2783, 2945], 'one-missing': [2825, 2987], none: [2863, 3025] };
+    const H = { all: [2969, 3131], 'one-missing': [3045, 3207], none: [3049, 3211] };
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + (H[rate][hold ? 1 : 0] + (this.props.payTypes === 'open' ? 89 : 0)) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     const OFFERS = [

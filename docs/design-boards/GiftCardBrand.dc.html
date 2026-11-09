@@ -101,10 +101,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </section>
     </sc-if>
 
-    <div role="note" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
-      <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Cards must be bought in the last <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> days and show their full value. Range cards (e.g. a Visa <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">200–500</span>) need video proof.</p>
-    </div>
+    <section aria-labelledby="g-rules" data-m="gift-rules" style="display: flex; flex-direction: column; padding: 12px 20px; border-radius: 16px; background: var(--surface);">
+      <h2 id="g-rules" style="margin: 0; padding: 4px 0 4px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Gift card rules</h2>
+      <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;">
+        <li style="display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 0; font-size: 15px; line-height: 22px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>Bought in the last <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> days</span></li>
+        <li style="display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--surface-raised); font-size: 15px; line-height: 22px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg><span>Full value only. Range cards (e.g. Visa <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$200–$500</span>) need a video.</span></li>
+        <li style="display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--surface-raised); font-size: 15px; line-height: 22px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></svg><span>The seller has <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">45</span> min to check the card.</span></li>
+        <li style="display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--surface-raised); font-size: 15px; line-height: 22px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Brands on this list only, or Other.</span></li>
+      </ul>
+    </section>
   </main>
 
   <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
@@ -119,6 +124,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-weight: 600;">Gift card rules</span>
       <ul style="margin: 0; padding-left: 18px;"><li>The person holding the escrow has <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">45</span> min to check the card once its details are handed over.</li><li>Photo or video proof; video is encouraged (log in, show the details, then send).</li><li>Cards bought within the last <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> days.</li><li>Full written value only; range cards (e.g. Visa <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$200–$500</span>) may be partial and always need the video.</li><li>In the trade (drawn 9 Nov): the video option on ProofBlur (giftCard tweak; required for range cards) and the 45 min check timer on SellerConfirm (situation=gift-card).</li><li>"Other" is kept as a brand choice.</li></ul>
     </aside>
+    <aside aria-label="Decided by the owner: gift card rules in the app" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (T-058, F13)</span>
+      <span style="font-weight: 600;">Easy, clear gift card rules for both sides: a 4-row list instead of the caution sentence.</span>
+      <span>Rows: 30 days · full value (range cards need a video) · 45 min to check · brands on the list or Other. Same rows wherever gift-card rules show. COPY-UNSIGNED.</span>
+    </aside>
     <aside aria-label="Decided by the owner: the brand list is final" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (p5-6)</span>
       <span style="font-weight: 600;">The brand list is final: the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> researched brands plus Home Hardware and Canadian Tire, and Other.</span>
@@ -126,11 +136,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </aside>
     <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>Brand tile.</strong> No logos and no brand colours: the names are trademarks. Each row carries the neutral 40 px icon tile with the brand's two initials set like the avatar kit (Familjen Grotesk 15/700 on surface-raised). "Other" is the one row with a glyph, the generic card. This tile is new to the kit; reuse it wherever a brand is shown (offer ad, trade header, dispute evidence).</p>
     <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>Where it opens.</strong> From Post an offer, step <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span>, when the payment method drop-down is set to "Gift card"; and from a gift-card offer when the buyer chooses which card they will pay with. The picked row follows the selection rule: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> px ink ring on surface-raised, check on the right, never orange. Typing in the search field filters every group; an empty result points to "Other".</p>
-    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Every visible sentence on this board is COPY-UNSIGNED: "Pick one brand for this offer.", "Search brands", "Most used", "All brands", "Other", "A brand that isn't in the list", "Brand name", "Shown on your offer exactly as you type it.", "No brand matches … Pick Other and type the name.", the caution lines, "Use this brand", "Pick a brand first." Tweaks: picked (amazon | other | none), theme.</p>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Every visible sentence on this board is COPY-UNSIGNED: "Pick one brand for this offer.", "Search brands", "Most used", "All brands", "Other", "A brand that isn't in the list", "Brand name", "Shown on your offer exactly as you type it.", "No brand matches … Pick Other and type the name.", the "Gift card rules" rows, "Use this brand", "Pick a brand first." Tweaks: picked (amazon | other | none), theme.</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"picked":{"editor":"enum","options":["amazon","other","none"],"default":"amazon"},"$preview":{"width":390,"height":3494}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"picked":{"editor":"enum","options":["amazon","other","none"],"default":"amazon"},"$preview":{"width":390,"height":3801}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -147,7 +157,7 @@ class Component extends DCLogic {
     const s = this.state;
     const picked = s.base === propPick && s.picked ? s.picked : propPick;
     // Measured natural heights (night) per variant; the root switches so no variant clips.
-    const HEIGHTS = { amazon: 3494, other: 3616, none: 3520 };
+    const HEIGHTS = { amazon: 3801, other: 3923, none: 3827 };
     const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + HEIGHTS[propPick] + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     // Brand list, final (owner, 7 Nov, p5-6): the 30 researched brands plus Home Hardware and Canadian Tire; Other stays. Initials only: names are trademarks.

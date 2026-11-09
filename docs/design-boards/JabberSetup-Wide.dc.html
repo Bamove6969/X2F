@@ -37,7 +37,7 @@ h1,h2,h3{text-wrap:balance}
         <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Settings</span>
         <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Secure Jabber alerts</h1>
         <sc-if value="{{showLead}}" hint-placeholder-val="{{true}}">
-        <p style="margin: 4px 0 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">One short message to your Jabber address every time your account changes.</p>
+        <p style="margin: 4px 0 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Short, encrypted messages to your Jabber address for the events you pick.</p>
         </sc-if>
       </div>
     </div>
@@ -48,7 +48,7 @@ h1,h2,h3{text-wrap:balance}
       <div style="display: flex; flex-direction: column; gap: 8px;">
         <label id="js-addr-l" for="js-jid" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Your Jabber address</label>
         <input id="js-jid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="email" placeholder="name@xmpp.example.org" value="{{jid}}" onChange="{{setJid}}" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px;">
-        <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Any XMPP server works. We never send details, only that a change happened.</p>
+        <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Any XMPP server works. Your Jabber app must support OMEMO and connect through Tor.</p>
       </div>
         </section>
         </sc-if>
@@ -66,8 +66,25 @@ h1,h2,h3{text-wrap:balance}
         <section aria-labelledby="js-done-t" style="display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 24px; text-align: center; border-radius: 16px; background: var(--surface);">
       <span style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg></span>
       <h2 id="js-done-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Jabber alerts are on</h2>
-      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Every account change now sends one short message to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">{{jidMasked}}</span>.</p>
+      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">The events you picked now send a short, encrypted message to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink); white-space: nowrap;">{{jidMasked}}</span>.</p>
         </section>
+        </sc-if>
+        <sc-if value="{{isEvents}}" hint-placeholder-val="{{false}}">
+        <section aria-labelledby="js-ev-t" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px;"><h2 id="js-ev-t" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Which events send an alert</h2><span style="flex-shrink: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Sample list</span></div>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Tick what&#39;s worth a Jabber message. You can change this any time.</p>
+      </div>
+      <sc-for list="{{evGroups}}" as="g" hint-placeholder-count="2">
+        <div role="group" aria-labelledby="{{g.hid}}" style="display: flex; flex-direction: column;">
+          <h3 id="{{g.hid}}" style="margin: 0 0 4px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{g.title}}</h3>
+          <sc-for list="{{g.items}}" as="e" hint-placeholder-count="3">
+            <label for="{{e.cid}}" style="{{e.rowStyle}}"><input id="{{e.cid}}" type="checkbox" checked="{{e.on}}" onChange="{{e.toggle}}" style="width: 22px; height: 22px; margin: 0; flex-shrink: 0; accent-color: var(--ink);"><span>{{e.label}}</span></label>
+          </sc-for>
+        </div>
+      </sc-for>
+      <p role="status" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{evOn}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{evTotal}}</span> events send an alert</p>
+    </section>
         </sc-if>
       </div>
       <div style="display: flex; flex-direction: column; gap: 24px;">
@@ -81,10 +98,13 @@ h1,h2,h3{text-wrap:balance}
         <span aria-hidden="true" style="position: relative; display: flex; flex-shrink: 0; width: 32px; height: 32px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); border: 2px solid var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: -0.01em;">X2F</span>
         <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: flex-start;">
           <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="color: var(--ink); font-weight: 600;">X2F alerts</span> · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">7 Nov 2026, 15:00 UTC</span></span>
-          <p style="margin: 0; padding: 10px 14px; font-size: 15px; line-height: 22px; border-radius: 12px 12px 12px 4px; background: var(--surface-raised);">An account change was made on your X2F account.</p>
+          <p style="margin: 0; padding: 10px 14px; font-size: 15px; line-height: 22px; border-radius: 12px 12px 12px 4px; background: var(--surface-raised);">A new device logged in to your X2F account.</p>
         </div>
       </div>
         </section>
+        </sc-if>
+        <sc-if value="{{isEvents}}" hint-placeholder-val="{{false}}">
+        <section aria-label="Always OMEMO and Tor" style="display: flex; gap: 10px; align-items: flex-start; padding: 14px 16px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px; color: var(--ink);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span><span style="font-weight: 600;">Always OMEMO, always Tor.</span> Every alert is end-to-end encrypted with OMEMO and sent over Tor. There&#39;s no switch for either: an alert sent in the clear could show someone that you trade on X2F.</span></section>
         </sc-if>
       </div>
     </div>
@@ -95,8 +115,12 @@ h1,h2,h3{text-wrap:balance}
       <sc-if value="{{isVerify}}" hint-placeholder-val="{{false}}">
       <button type="button" onClick="{{turnOn}}" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Turn on</button>
       </sc-if>
+      <sc-if value="{{isEvents}}" hint-placeholder-val="{{false}}">
+      <button type="button" onClick="{{saveEvents}}" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Save</button>
+      </sc-if>
       <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
       <a href="Alerts-Wide.dc.html" style="display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Done</a>
+      <button type="button" onClick="{{editEvents}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 20px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Change which events</button>
       <button type="button" onClick="{{turnOff}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 20px; border: 0; border-radius: 12px; background: transparent; color: var(--danger); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Turn off</button>
       </sc-if>
     </div>
@@ -106,36 +130,50 @@ h1,h2,h3{text-wrap:balance}
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 168px 48px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2><p style="margin: 0; font-size: 13px; line-height: 18px;">Header: logo D (owner, 8 Nov, page 8); in the wide rail the page name sits under the logo so it never cuts off (comment #2).</p>
     <p style="margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink);">Showing: {{stepName}}</p>
-    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Opens from the Secure Jabber (XMPP) section on Alerts. Three steps with the step tweak: address, verify, done. Compact header as on Alerts; the field card and the callout are one card; the done step is the Results kit done_state over a Chat kit preview of the exact message. Turn off is a danger tertiary, never a primary.</p>
-    <aside aria-label="Decided by the owner: optional secure Jabber alerts" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (p5-7)</span><span style="font-weight: 600;">An optional secure Jabber (XMPP) notification for account changes</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Optional. Off until the user adds a Jabber address and proves it with a test message.</li><li>Every change. Login methods, team, wallets or cash-out, settings and holds each send one message.</li><li>Discreet. One short message per change: &quot;An account change was made on your X2F account.&quot;</li><li>No details. Nothing in the message says what changed, and there is no link to it.</li></ul></aside>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Opens from the Secure Jabber (XMPP) section on Alerts. Four steps with the step tweak: address, verify, events, done. Compact header as on Alerts; the field card and the callout are one card; the done step is the Results kit done_state over a Chat kit preview of the exact message. Turn off is a danger tertiary, never a primary.</p>
+    <aside aria-label="Decided by the owner: pick events; OMEMO and Tor required" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 9 Nov (p11-27, p11-31)</span><span style="font-weight: 600;">A Jabber settings page where the user picks which events send an alert. OMEMO and Tor are mandatory.</span><ul><li>New step events (tweak step events), between verify and done, and reached again from done (&quot;Change which events&quot;) and from the Events row on Alerts.</li><li>SAMPLE events, all ticked by default: Trades: &quot;A new trade starts&quot;, &quot;The buyer marks the payment as sent&quot;, &quot;XMR is released&quot;, &quot;A dispute is opened or a moderator joins&quot;. Account: &quot;A new login or a new device&quot;, &quot;A team member logs in for the first time&quot;, &quot;Login methods, wallets, team or settings change&quot;. The owner picks the final list on page 13 (p11-32); the &quot;Sample list&quot; label goes when he does.</li><li>No off switch for OMEMO or Tor (p11-31). Box: &quot;Always OMEMO, always Tor. Every alert is end-to-end encrypted with OMEMO and sent over Tor. There&#39;s no switch for either: an alert sent in the clear could show someone that you trade on X2F.&quot;</li><li>Open for the lead: with chosen events, a message names the kind of event (sample &quot;A new device logged in to your X2F account.&quot;), never amounts, names or wallets. p5-7 said messages name nothing; please confirm with the owner.</li></ul></aside>
+    <aside aria-label="Decided by the owner: optional secure Jabber alerts" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (p5-7)</span><span style="font-weight: 600;">An optional secure Jabber (XMPP) notification for account changes</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Optional. Off until the user adds a Jabber address and proves it with a test message.</li><li>Every change (replaced 9 Nov by p11-27: the user picks the events; account changes are one of them, on by default).</li><li>Discreet. One short message per change: &quot;An account change was made on your X2F account.&quot;</li><li>No details. Nothing in the message says what changed, and there is no link to it.</li></ul></aside>
     <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 18px;">
       <span style="font-weight: 600; color: var(--ink);">Why no details</span>
-      <p style="margin: 0; color: var(--ink-muted);">A Jabber account can be read by others: the server that hosts it, anyone with the device, or anyone who gets the password. So the message never names the change, the wallet or the person. It only tells you to go and look; the change itself stays in X2F, behind your login. OMEMO is recommended, not required, because the message gives nothing away even in the clear.</p>
+      <p style="margin: 0; color: var(--ink-muted);">A Jabber account can be read by others: the server that hosts it, anyone with the device, or anyone who gets the password. So the message never names the change, the wallet or the person. It only tells you to go and look; the change itself stays in X2F, behind your login. OMEMO and Tor are both required (owner, 9 Nov, p11-31): there is no off switch for either.</p>
     </div>
     <div style="display: flex; flex-direction: column; gap: 4px; font-size: 13px; line-height: 18px;">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">COPY-UNSIGNED</span>
-      <p style="margin: 0; color: var(--ink-muted);">Every visible sentence on this board and the Alerts section is design&#39;s draft, not signed off. Alerts: &quot;Secure Jabber (XMPP)&quot; · &quot;Account change alerts&quot; · &quot;Get one short message for every change to your account, with no details in it. Needs a Jabber account; OMEMO encryption recommended.&quot; · &quot;Address&quot; · &quot;Not set up&quot; · &quot;Last message 7 Nov 2026, 15:00 UTC&quot;. Here: &quot;Secure Jabber alerts&quot; · &quot;One short message to your Jabber address every time your account changes.&quot; · &quot;Your Jabber address&quot; · &quot;name@xmpp.example.org&quot; · &quot;Any XMPP server works. We never send details, only that a change happened.&quot; · &quot;X2F&#39;s address is x2f-alerts@xmpp.x2f.example &mdash; add it to your contacts so the message isn&#39;t filtered.&quot; · &quot;Send a test message&quot; · &quot;Enter the code from the test message&quot; · &quot;Sent to mira…@xmpp.example.org. It can take a minute to arrive.&quot; · &quot;Resend&quot; · &quot;Sent again&quot; · &quot;Turn on&quot; · &quot;Jabber alerts are on&quot; · &quot;Every account change now sends one short message to mira…@xmpp.example.org.&quot; · &quot;What you&#39;ll receive&quot; · &quot;X2F alerts&quot; · &quot;An account change was made on your X2F account.&quot; · &quot;Done&quot; · &quot;Turn off&quot;. The addresses and the time are examples.</p>
+      <p style="margin: 0; color: var(--ink-muted);">Every visible sentence on this board and the Alerts section is design&#39;s draft, not signed off. Alerts: &quot;Secure Jabber (XMPP)&quot; · &quot;Jabber alerts&quot; · &quot;Short, encrypted messages for the events you pick. Always OMEMO and Tor; neither can be turned off.&quot; · &quot;Address&quot; · &quot;Events&quot; · &quot;7 of 7 on&quot; · &quot;Not set up&quot; · &quot;Last message 7 Nov 2026, 15:00 UTC&quot;. Here: &quot;Secure Jabber alerts&quot; · &quot;Short, encrypted messages to your Jabber address for the events you pick.&quot; · &quot;Your Jabber address&quot; · &quot;name@xmpp.example.org&quot; · &quot;Any XMPP server works. Your Jabber app must support OMEMO and connect through Tor.&quot; · &quot;X2F&#39;s address is x2f-alerts@xmpp.x2f.example &mdash; add it to your contacts so the message isn&#39;t filtered.&quot; · &quot;Send a test message&quot; · &quot;Enter the code from the test message&quot; · &quot;Sent to mira…@xmpp.example.org. It can take a minute to arrive.&quot; · &quot;Resend&quot; · &quot;Sent again&quot; · &quot;Turn on&quot; · &quot;Jabber alerts are on&quot; · &quot;The events you picked now send a short, encrypted message to mira…@xmpp.example.org.&quot; · &quot;Change which events&quot; · &quot;Which events send an alert&quot; · &quot;Sample list&quot; · &quot;Tick what&#39;s worth a Jabber message. You can change this any time.&quot; · &quot;Trades&quot; · &quot;Account&quot; · &quot;7 of 7 events send an alert&quot; · &quot;Save&quot; · &quot;What you&#39;ll receive&quot; · &quot;X2F alerts&quot; · &quot;A new device logged in to your X2F account.&quot; · &quot;Done&quot; · &quot;Turn off&quot;. The addresses and the time are examples.</p>
     </div>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "step": {"editor": "enum", "options": ["address", "verify", "done"], "default": "address"}, "$preview": {"width": 1280, "height": 1401}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "step": {"editor": "enum", "options": ["address", "verify", "events", "done"], "default": "address"}, "$preview": {"width": 1280, "height": 1687}}'>
 class Component extends DCLogic {
-  constructor(props) { super(props); this.state = { base: null, step: null, jid: '', code: '', resent: false }; }
+  constructor(props) { super(props); this.state = { base: null, step: null, jid: '', code: '', resent: false, off: {} }; }
   renderVals() {
     const THEMES = {
       night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const STEPS = ['address', 'verify', 'done'];
+    const STEPS = ['address', 'verify', 'events', 'done'];
     const propStep = STEPS.indexOf(this.props.step) >= 0 ? this.props.step : 'address';
     const s = this.state;
     const step = s.base === propStep && s.step ? s.step : propStep;
+    // Owner p11-27 (9 Nov): the user picks which events send a Jabber alert. SAMPLE list; the owner's final list comes on page 13 (p11-32).
+    const EVENTS = [
+      { id: 'trade', g: 'Trades', label: 'A new trade starts' },
+      { id: 'paid', g: 'Trades', label: 'The buyer marks the payment as sent' },
+      { id: 'release', g: 'Trades', label: 'XMR is released' },
+      { id: 'dispute', g: 'Trades', label: 'A dispute is opened or a moderator joins' },
+      { id: 'login', g: 'Account', label: 'A new login or a new device' },
+      { id: 'member', g: 'Account', label: 'A team member logs in for the first time' },
+      { id: 'change', g: 'Account', label: 'Login methods, wallets, team or settings change' }
+    ];
+    const evRow = (i) => 'display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 4px 0; font-size: 15px; line-height: 20px; cursor: pointer;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '');
+    const evGroups = ['Trades', 'Account'].map((g) => ({ title: g, hid: 'js-ev-' + g.toLowerCase(), items: EVENTS.filter((e) => e.g === g).map((e, i) => ({ cid: 'js-ev-' + e.id, label: e.label, on: !s.off[e.id], rowStyle: evRow(i), toggle: () => this.setState({ off: Object.assign({}, this.state.off, { [e.id]: !this.state.off[e.id] }) }) })) }));
+    const evOn = EVENTS.filter((e) => !s.off[e.id]).length;
     const go = (next) => this.setState({ base: propStep, step: next, resent: false });
     // Wide screen height per step (measured, night) + the design-notes block under it (Compromised pattern).
-    const HEIGHTS = { address: 800, verify: 800, done: 800 };
-    const NOTES_H = 601;
+    const HEIGHTS = { address: 800, verify: 800, events: 882, done: 800 };
+    const NOTES_H = 887;
     const frameH = HEIGHTS[step];
     const frameStyle = 'position: relative; flex-shrink: 0; min-height: 800px; height: ' + frameH + 'px; display: flex; overflow: hidden;';
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + (frameH + NOTES_H) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
@@ -145,7 +183,7 @@ class Component extends DCLogic {
     const jidMasked = at > 0 ? jid.slice(0, Math.min(4, at)) + '…' + jid.slice(at) : 'mira…@xmpp.example.org';
     return {
       rootStyle, frameStyle,
-      stepName: { address: 'your address', verify: 'enter the code', done: 'alerts are on' }[step],
+      stepName: { address: 'your address', verify: 'enter the code', events: 'pick events', done: 'alerts are on' }[step],
       isAddress: step === 'address',
       isVerify: step === 'verify',
       isDone: step === 'done',
@@ -158,7 +196,11 @@ class Component extends DCLogic {
       sendTest: () => go('verify'),
       resend: () => this.setState({ resent: true }),
       resendLabel: s.resent ? 'Sent again' : 'Resend',
-      turnOn: () => go('done'),
+      turnOn: () => go('events'),
+      saveEvents: () => go('done'),
+      editEvents: () => go('events'),
+      isEvents: step === 'events',
+      evGroups, evOn: String(evOn), evTotal: String(EVENTS.length),
       turnOff: () => go('address')
     };
   }

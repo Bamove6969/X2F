@@ -131,8 +131,8 @@ h1,h2,h3{text-wrap:balance}
         <div style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box;">
           <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><path d="M12 7.5l3 1.2v2.4c0 1.6-1.2 2.8-3 3.4-1.8-.6-3-1.8-3-3.4V8.7z"/></svg></span>
           <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0;">
-            <span id="al-xmpp-l" style="font-size: 16px; line-height: 22px; font-weight: 600;">Account change alerts</span>
-            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Get one short message for every change to your account, with no details in it. Needs a Jabber account; OMEMO encryption recommended.</span>
+            <span id="al-xmpp-l" style="font-size: 16px; line-height: 22px; font-weight: 600;">Jabber alerts</span>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Short, encrypted messages for the events you pick. Always OMEMO and Tor; neither can be turned off.</span>
           </span>
           <sc-if value="{{xmpp.setUp}}" hint-placeholder-val="{{false}}"><button type="button" role="switch" aria-checked="{{xmpp.on}}" aria-labelledby="al-xmpp-l" onClick="{{xmpp.toggle}}" style="display: flex; align-items: center; justify-content: center; width: 60px; height: 44px; flex-shrink: 0; margin-right: -4px; padding: 0; border: 0; background: transparent; cursor: pointer;"><span aria-hidden="true" style="{{xmpp.track}}"><span style="{{xmpp.knob}}"></span></span></button></sc-if>
         </div>
@@ -143,6 +143,7 @@ h1,h2,h3{text-wrap:balance}
               <span style="{{xmpp.valStyle}}">{{xmpp.value}}</span>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg>
             </a>
+            <sc-if value="{{xmpp.setUp}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="display: block; height: 1px; margin: 0 14px; background: var(--surface);"></span><a href="JabberSetup.dc.html" aria-label="Events: 7 of 7 send an alert, change them" style="display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px; box-sizing: border-box; border-radius: 12px; color: var(--ink); text-decoration: none;"><span style="flex-grow: 1; white-space: nowrap; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Events</span><span style="flex-shrink: 0; white-space: nowrap; font-size: 15px; line-height: 20px; font-weight: 500; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">7</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">7</span> on</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg></a></sc-if>
           </div>
           <sc-if value="{{xmpp.setUp}}" hint-placeholder-val="{{false}}">
             <p style="margin: 0; padding: 0 2px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Last message <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">7 Nov 2026, 15:00 UTC</span></p>
@@ -201,7 +202,7 @@ h1,h2,h3{text-wrap:balance}
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "device": {"editor": "enum", "options": ["android", "iphone", "computer"], "default": "computer"}, "jabber": {"editor": "enum", "options": ["off", "on"], "default": "off"}, "$preview": {"width": 1280, "height": 1046}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "device": {"editor": "enum", "options": ["android", "iphone", "computer"], "default": "computer"}, "jabber": {"editor": "enum", "options": ["off", "on"], "default": "off"}, "$preview": {"width": 1280, "height": 1034}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { push: true, alarm: true, sound: 'default', volume: 80, playing: false, battery: false, jabber: true, xmpp: true, jid: '', testSent: false, saved: false }; }
   renderVals() {
@@ -213,7 +214,7 @@ class Component extends DCLogic {
     // Secure Jabber (XMPP) account alerts: the jabber tweak switches the set-up state; root height per variant (Compromised pattern).
     const xmppSetUp = this.props.jabber === 'on';
     const isAndroidDev = (['android', 'iphone', 'computer'].indexOf(this.props.device) >= 0 ? this.props.device : 'computer') === 'android';
-    const HEIGHTS = { 'off-android': 1364, 'off-other': 1046, 'on-android': 1390, 'on-other': 1072 };
+    const HEIGHTS = { 'off-android': 1346, 'off-other': 1034, 'on-android': 1421, 'on-other': 1103 }; // 9 Nov: Jabber copy (p11-27, p11-31) + Events row
     const rootH = HEIGHTS[(xmppSetUp ? 'on' : 'off') + '-' + (isAndroidDev ? 'android' : 'other')];
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + rootH + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     const sw = (on, toggle) => ({

@@ -48,7 +48,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg></span>
         <div style="display: flex; flex-direction: column; gap: 4px;">
         <h2 id="rh-why" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your recovery code was used to log in</h2>
-        <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">So your account is on a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h hold. If someone stole your recovery code, this stops them from taking over your account.</p>
+        <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">So your account is on a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h hold while our security team reviews it. If someone stole your recovery code, this stops them from taking over your account.</p>
+        <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">If you turned on Jabber alerts, we&#39;ve sent you one about this too.</p>
         </div>
       </section>
 
@@ -80,7 +81,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <section aria-labelledby="rh-contact" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <h2 id="rh-contact" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Ask us to remove the hold</h2>
-          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Message us on Matrix or Telegram. We&#39;ll ask you to confirm it&#39;s you over secure Jabber, through Tor. Once that&#39;s done, the hold can be removed.</p>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Message our security team on Matrix or Telegram. They&#39;ll ask you to confirm it&#39;s you over secure Jabber, through Tor. Once that&#39;s done, the hold can be removed.</p>
         </div>
         <div style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
           <a href="#" style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 14px; box-sizing: border-box; border-radius: 12px; color: var(--ink); text-decoration: none;">
@@ -189,6 +190,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-weight: 600;">On a trader account, a password with an authenticator code counts as strong, so it can end the hold early too. Vendors still need a passkey, security key or PGP key (G13).</span>
       <span style="color: var(--ink-muted);">COPY-UNSIGNED.</span>
     </aside>
+    <aside aria-label="Decided by the owner: the recovery-session message" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, N50, drawn 9 Nov (S-025)</span>
+      <span style="font-weight: 600;">The recovery-session message says: a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h hold, the security team reviews it, where to reach them (Matrix, Telegram), and that a Jabber alert went out if alerts are on.</span>
+      <span style="color: var(--ink-muted);">Build: send the OMEMO Jabber alert over Tor when the recovery code is used, only if the person turned alerts on. Handles are placeholders. COPY-UNSIGNED.</span>
+    </aside>
     <aside aria-label="Open for the owner: support addresses" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · text to come</span>
       <span style="font-weight: 600;">The Matrix and Telegram support addresses are not decided.</span>
@@ -197,7 +203,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["can-end-early","wait"],"default":"can-end-early"},"step":{"editor":"enum","options":["hold","pick-method","ended"],"default":"hold"},"$preview":{"width":1280,"height":1479}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["can-end-early","wait"],"default":"can-end-early"},"step":{"editor":"enum","options":["hold","pick-method","ended"],"default":"hold"},"$preview":{"width":1280,"height":1597}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { stage: null, used: 'key', left: 85267 }; }
   componentDidMount() {

@@ -52,6 +52,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <span style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; flex-grow: 1; min-width: 0;"><span style="font-size: 17px; line-height: 22px; font-weight: 600;">desk_ana</span><span style="display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; background: color-mix(in srgb, var(--team) 14%, transparent); color: var(--team);"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 19v-1a4 4 0 00-4-4H6a4 4 0 00-4 4v1"/><circle cx="9" cy="7" r="3.5"/><path d="M22 19v-1a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>Team member</span></span>
         </div>
         <p role="status" style="margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); font-size: 15px; line-height: 22px; font-weight: 600;">In <span class="mono" style="font-weight: 500;">{{typesOnN}}</span> of <span class="mono" style="font-weight: 500;">{{typesN}}</span> types · <span class="mono" style="font-weight: 500;">{{allowedN}}</span> of <span class="mono" style="font-weight: 500;">{{totalN}}</span> things allowed</p>
+        <p style="display: flex; gap: 8px; align-items: flex-start; margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3M14 9l2 2"/></svg><span>desk_ana has their own recovery code. Only they can see it.</span></p>
       </section>
 
       <section aria-labelledby="mp-pre-h" style="display: flex; flex-direction: column; gap: 12px; padding: 16px 20px 20px; border-radius: 16px; background: var(--surface);">
@@ -155,7 +156,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </div>
       <div style="padding-top: 8px;">
           <div role="group" aria-label="Save" style="display: flex; flex-direction: column; gap: 12px;">
-              <p style="display: flex; gap: 8px; margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Saving needs your passkey, security key or PGP key. With just a username and password, the change waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h.</span></p>
+              <p style="display: flex; gap: 8px; margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>{{saveLine}}</span></p>
               <sc-if value="{{hasNote}}" hint-placeholder-val="{{false}}">
                 <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span style="font-size: 14px; line-height: 20px;">{{note}}</span></div>
               </sc-if>
@@ -176,6 +177,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <aside class="dn" aria-label="Decided by the owner: trade-size band"><span class="dn-k">Decided · owner, 8 Nov (p7-4)</span><span style="font-weight: 600;">Each member has a trade-size band, From and To, that limits every trade action they have.</span><span>From and To in XMR by default, with PostOffer&#39;s unit switch (XMR / USD, both boxes together); the other unit under each box. The status line states the band in XMR.</span></aside>
     <aside class="dn" aria-label="Decided by the owner: disputes and notes"><span class="dn-k">Decided · owner, 8 Nov (p7-7, p7-8)</span><span style="font-weight: 600;">"Disputes" lets a member see everything in a dispute and reply to the moderator. Notes on traders are two boxes.</span><ul><li>p7-7: "Reply in a dispute" becomes "Disputes", with the hint "See everything in a dispute and reply to the moderator." "Open a dispute" stays its own box.</li><li>p7-8: "See the trader&#39;s profile notes" becomes "View notes on traders" and "Add notes on traders". No delete; the hint says each note shows who added it and when. Chat now has <span class="mono">8</span> boxes.</li></ul></aside>
     <aside class="dn" aria-label="Decided by the owner: working hours"><span class="dn-k">Decided · owner, 8 Nov (p7-11)</span><span style="font-weight: 600;">Working hours: "Any time" (default) or "Set a schedule".</span><span>The schedule opens StaffList&#39;s login-hours control as it is: day chips (2 px ink ring when on), From / to in 24-hour UTC, time-zone select, and its line about the window closing. Example <span class="mono">trades-on-schedule</span> shows Mon–Fri, 09:00–17:00 UTC.</span></aside>
+    <aside class="dn" aria-label="Decided by the owner: weak-login edits start after 24 h; members own their recovery codes"><span class="dn-k">Decided · owner, 9 Nov (p11-21, p11-28)</span><span style="font-weight: 600;">A lead with just a username and password can still save a member&#39;s settings; they start after 24 h. Members get their own recovery codes.</span><span>Tweak login: strong | username-password. Weak: Save skips the key check and shows &quot;Saved. desk_ana’s new settings start in 24 h, at 3 Nov 2026, 14:05 UTC. Until then they keep their current ones.&quot; Footer line, strong: &quot;Saving needs your passkey, security key or PGP key, and the new settings start at once. From just a username and password they start 24 h after you save.&quot;; weak: &quot;You’re logged in with just a username and password. You can save, but desk_ana’s new settings start 24 h after you save. With a passkey, security key or PGP key they start at once.&quot; Under the member: &quot;desk_ana has their own recovery code. Only they can see it.&quot; COPY-UNSIGNED, 9 Nov: all of these.</span></aside>
     <aside class="dn" aria-label="Decided by the owner: members may use any login"><span class="dn-k">Decided · owner, 8 Nov (p7-9, reversal)</span><span style="font-weight: 600;">Members may use any login method, stronger than the lead&#39;s included.</span><span>The footer line "Members can&#39;t use a stronger login than the team lead&#39;s." is removed. The 24 h line stays.</span></aside>
     <aside class="dn" aria-label="Decided by the owner: Team permissions are granular: member types with checkboxes"><span class="dn-k">Decided · owner, 6 Nov (Q16) · 7 Nov (p4-8)</span><span style="font-weight: 600;">Member types with checkboxes; Holds and waiting changes is the fifth type.</span><ul><li>Holds (p4-8) off by default; without them a member only sees that a hold is on.</li><li>Counts now: Chat <span class="mono">8</span>, Offers <span class="mono">8</span>, Trades <span class="mono">7</span>, Records <span class="mono">7</span>, Holds <span class="mono">3</span> = <span class="mono">33</span>, on Team, TeamRefusal, MemberApproval and HoldMember.</li></ul></aside>
     <aside class="dn" aria-label="Anticipated by design"><span class="dn-k">Anticipated · design, 8 Nov</span><span>"Starting set" sits next to Manager as a second chip, so the lead can go back to set A in one tap (follows p7-5 and p7-12). "Bigger or smaller trades wait for you." follows p7-4 (the owner said the band limits; design says what happens outside it, as TP4 A did). The market-rate freshness line follows the owner&#39;s comment 3 ("is that the actual rate?").</span></aside>
@@ -200,7 +202,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"example":{"editor":"enum","options":["new-member","manager","offers-and-chat","everything","trades-on-schedule"],"default":"new-member"},"$preview":{"width":1280,"height":4175}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"example":{"editor":"enum","options":["new-member","manager","offers-and-chat","everything","trades-on-schedule"],"default":"new-member"},"login":{"editor":"enum","options":["strong","username-password"],"default":"strong"},"$preview":{"width":1280,"height":4435}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.seed(props.example); }
   seed(ex) {
@@ -231,7 +233,7 @@ class Component extends DCLogic {
   START() { return { chat: ['cRead', 'cReply', 'cNudge'], offers: ['oSee'], trades: ['tDecline', 'tDispute', 'tDReply'], records: ['rHist', 'rLog', 'rReviews'] }; }
   MANAGER() { return { chat: ['cRead', 'cReply', 'cPay', 'cProof', 'cNudge', 'cNotesView', 'cNotesAdd', 'cBlock'], offers: ['oSee', 'oToggle', 'oPrice', 'oBands', 'oPay', 'oCur', 'oPost'], trades: ['tAccept', 'tDecline', 'tPaid', 'tCancel', 'tDispute', 'tDReply', 'tFeedback'], records: ['rHist', 'rLog', 'rReviews', 'rReply', 'rTickets'] }; }
   componentDidUpdate(prev) {
-    if (prev.example !== this.props.example) this.setState(this.seed(this.props.example));
+    if (prev.example !== this.props.example || prev.login !== this.props.login) this.setState(this.seed(this.props.example));
   }
   renderVals() {
     const THEMES = {
@@ -239,6 +241,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const weak = this.props.login === 'username-password';
     const rootCss = (H) => THEMES[theme] + "position: relative; width: 1280px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     const s = this.state;
 
@@ -354,7 +357,7 @@ class Component extends DCLogic {
     // Board height = measured content height (night, fonts loaded): closed cards, presets, band, hours (Any time)
     // + each open card's rows in 2 columns (a line is 44, or HINT when either box has a hint) + the off hint / desc + the schedule panel + the saved note.
     const ROW = 44, HINT = 78, PANEL = 13, OFFHINT = 34, SCHED = 218;
-    let H = 3339;
+    let H = 3599; // 9 Nov: +260 recovery-code line, footer line and notes
     types.forEach((t) => {
       if (!t.open) return;
       let lines = 0, h = 0;
@@ -373,7 +376,9 @@ class Component extends DCLogic {
       clean: !dirty,
       saveStyle: 'display: flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (dirty ? 'background: var(--monero); color: var(--on-monero); cursor: pointer;' : 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
       // Owner, 2 Nov: changing permissions needs a passkey, security key or PGP key; with just a username and password, team changes wait 24 h.
-      save: () => { if (dirty) this.setState({ verify: true }); },
+      // Owner p11-21 (9 Nov): a username-and-password lead can still save; the member's new settings start after 24 h, with no key check.
+      save: () => { if (!dirty) return; if (weak) this.setState({ saved: { on: s.on, ticks: s.ticks, hours: s.hours, band: s.band }, note: 'Saved. desk_ana’s new settings start in 24 h, at 3 Nov 2026, 14:05 UTC. Until then they keep their current ones.' }); else this.setState({ verify: true }); },
+      saveLine: weak ? 'You’re logged in with just a username and password. You can save, but desk_ana’s new settings start 24 h after you save. With a passkey, security key or PGP key they start at once.' : 'Saving needs your passkey, security key or PGP key, and the new settings start at once. From just a username and password they start 24 h after you save.',
       verifying: s.verify && dirty,
       verifyText: 'Saving lets desk_ana do ' + allowed + ' of ' + total + ' things. Saving needs your passkey, security key or PGP key.',
       methods: ['Use my passkey', 'Use my security key', 'Use my PGP key'].map((label) => ({ label, use: () => this.setState({ verify: false, saved: { on: this.state.on, ticks: this.state.ticks, hours: this.state.hours, band: this.state.band }, note: 'Saved. desk_ana can now do ' + allowed + ' of ' + total + ' things.' }) })),

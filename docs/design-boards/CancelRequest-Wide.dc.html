@@ -212,8 +212,8 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <sc-if value="{{sheetOpen}}" hint-placeholder-val="{{true}}">
     <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center;">
       <section role="alertdialog" aria-modal="true" aria-labelledby="crw-sheet-title" style="width: 480px; box-sizing: border-box; padding: 32px; border-radius: 16px; background: var(--surface); border: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
-        <h2 id="crw-sheet-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Cancelling is final</h2>
-        <p style="margin: 0; font-size: 16px; line-height: 24px;">The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap <span style="font-weight: 600;">I've paid</span> instead.</p>
+        <h2 id="crw-sheet-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Cancelling is likely final</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span> in escrow is returned and this trade closes. Be sure before you cancel. Don't send any money after you cancel. Already paid? Don't cancel: tap <span style="font-weight: 600;">I've paid</span> instead.</p>
         <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px;">
           <button type="button" onClick="{{closeSheet}}" style="height: 48px; padding: 0 20px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Keep trading</button>
           <button type="button" onClick="{{confirmCancel}}" style="height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 1px solid var(--danger); border-radius: 12px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Cancel trade</button>
@@ -243,9 +243,9 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="color: var(--ink-muted);">This board is rule (c), the buyer&#39;s side. The confirm sheet now says where all the XMR goes and when the trade closes. Seller cancel (b) is on SellerRefund.</span>
     </aside>
     <aside aria-label="Decided by the owner: cancelling is final" style="display: flex; flex-direction: column; gap: 6px; max-width: 720px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G56)</span>
-      <span style="font-weight: 600;">Cancelling is final. The confirm sheet is the one warning: cancel before you pay, never after.</span>
-      <span>Sheet title "Cancelling is final"; body "The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> XMR goes back to satoshi_ghost and this trade closes. Don't send any money after you cancel. If you've already paid, don't cancel: tap I've paid instead." The danger-confirm button stays. The "Did you pay before you cancelled?" dispute card is gone from the returning and cancelled steps here and from Refunded (buyer cancelled): a buyer who paid taps I've paid instead of cancelling.</span>
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 7 Nov (G56) and 8 Nov (p5-2, T-049)</span>
+      <span style="font-weight: 600;">Cancelling is likely final. The confirm sheet is the one warning: cancel before you pay, never after. It names no one (p5-2).</span>
+      <span>COPY-UNSIGNED, 9 Nov: sheet title "Cancelling is likely final"; body "The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> XMR in escrow is returned and this trade closes. Be sure before you cancel. Don't send any money after you cancel. Already paid? Don't cancel: tap I've paid instead." The danger-confirm button stays. The "Did you pay before you cancelled?" dispute card is gone from the returning and cancelled steps here and from Refunded (buyer cancelled): a buyer who paid taps I've paid instead of cancelling.</span>
     </aside>
     <aside aria-label="Open: what the buyer sees as the seller's Zelle ID" style="display: flex; flex-direction: column; gap: 6px; max-width: 720px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">Open · owner to choose</span>
@@ -258,7 +258,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["buyer-confirms","returning","cancelled"],"default":"buyer-confirms"},"side":{"editor":"enum","options":["buyer","seller"],"default":"buyer"},"$preview":{"width":1280,"height":2121}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["buyer-confirms","returning","cancelled"],"default":"buyer-confirms"},"side":{"editor":"enum","options":["buyer","seller"],"default":"buyer"},"$preview":{"width":1280,"height":2139}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { view: null, key: '', sheet: true }; }
   renderVals() {
@@ -280,7 +280,7 @@ class Component extends DCLogic {
     const go = (v, extra) => this.setState(Object.assign({ view: v, key, sheet: false }, extra || {}));
 
     // Measured heights per view (design notes included).
-    const H = { ask: 2121, returningBuyer: 2121, returningSeller: 2195, doneBuyer: 2121, doneSeller: 2121 }[view] || 2121;
+    const H = { ask: 2139, returningBuyer: 2139, returningSeller: 2213, doneBuyer: 2139, doneSeller: 2139 }[view] || 2139;
     const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     // Digits in running text are set in mono (craft pass); words stay in body text.

@@ -934,3 +934,74 @@ Each board has a "Decided · owner" aside naming the ids. New tweaks are listed 
 - Fold-Cover 392/368.
 
 Canvas v166. The audit register (docs/owner-answers-audit/) is now drawn except the items listed as waiting for the owner or lead.
+
+## 9 Nov 2026: lead jobs J-31, J-32, J-33 + owner p11-17..40 drawn — READY, COPY-UNSIGNED, build-ready
+**Build specs** (exact copy, states, sizes, entry points) are in docs/build-specs/:
+- spec-j31a: trade rules, pay, cancel;
+- spec-j31b: dispute, chat, proof, gift cards, offers;
+- spec-j33a: signup, security, notices;
+- spec-j33b: team and alerts;
+- spec-staff2: staff and the new boards;
+- spec-j31*: the earlier stage boards.
+
+J-34 rulings: docs/design-rulings-J34-2026-11-09.md (28d45d74). Canvas v167.
+
+**J-31 trade room**
+- T-080/T-034: the per-reader rule lists are now identical on BuyQuote, SellQuote(+W) and OfferAd(+W):
+  - fee lines show only to posters;
+  - the courtesy line shows only to takers;
+  - the nudge line is in every role.
+- T-039: courtesy sheet "Trading with more than one person?" [opening courtesy].
+- T-049: CancelRequest "Cancelling is likely final"; it no longer names the seller.
+- T-044: confirmed.
+- T-079: BuyerPay keeps the owner's own words: "proof is usually what decides which side wins".
+- D-069: DisputeRoom has the "answer the moderator" line.
+- p11-37: refunding state with confirmations [escrow refunding].
+- p11-25: TeamChat shows "satoshi_ghost Assistant 1".
+- P-011: ProofBlur "Before you send" box plus "How proof is checked".
+- T-058: GiftCardBrand rules card.
+- P-030: drawn earlier, SellerConfirm [situation short].
+
+**J-32 offers**
+- O-019/O-020/O-021: currency menu tags no-rate currencies (does not hide them), with a tap explanation [currencyMenu no-rate-tapped].
+- O-022: MyOffers "Can't go live" / "Not available".
+- O-023: the screen stays "My offers".
+- O-024 / O-035 / 3 bands: drawn earlier, confirmed.
+- SellQuote(+W): Deposit row dropped (G-005).
+
+**J-33 accounts, staff, notices**
+- p11-24 SetupTerms: Terms → separate Site-rules tick → signature → "Continue creating your account".
+- S-043: 60-day line explains that X2F is for regular traders.
+- S-015 SignupSecurity: strength-chart copy, including "Armored vault!" and the fake-rock tip.
+- S-025 RecoveryHold: security review plus Jabber.
+- p11-36 RecoveryCode / Login-Backup: "Your old recovery code is burned" + "Make a new recovery code".
+- D-016: **new AccountFrozen(+W)**.
+- D-020 Ban-Notice and G-013 Support: already matched.
+- p11-21/26/27/28/31:
+  - MemberApproval: no approval; lead notice plus Jabber; members save their own recovery code.
+  - Team / MemberPermissions: a change from a weak login starts in 24 h.
+  - HoldMember: only the change waits.
+  - Alerts / JabberSetup: pick events (sample list); OMEMO and Tor always on.
+- G-007: Devices, the five wordings.
+- Staff:
+  - p11-19 StaffList: PGP + passkey + either a security key or username/password.
+  - D-041 StaffSettings: clock-out sheet ("Closing the app doesn't clock you out").
+  - **new StaffLogin** (known / new device 2-of-3 / first-login welcome D-046).
+  - **new StaffImportVerify** (F16/F17/Q58: 100,000 USD cap in XMR, 4-point help).
+  - **new OwnerKeys** (G4: both taps).
+
+**Head-designer calls on flags, for the next design pass**
+- Alerts has two Jabber sections; merge them into JabberSetup.
+- Jabber messages name the event kind only: no amounts, names or trade codes.
+- The Team intro line wrongly says members need a passkey, security key or PGP key; any login is allowed (p7-9).
+- Staff first login should sign the terms first (p11-14).
+
+**For the owner's page**
+- Losing an owner security key makes "both taps" impossible; how does the owner recover?
+- p9-8: the first-month privacy-tool check line in the rule lists still reads "[lead writes the wording]".
+
+**Pre-existing height mismatches, not new**
+- MemberApproval(+W): fixed frame.
+- Ban-Notice-Wide.
+- ProofBlur sent.
+- BuyerPay dispute variant.

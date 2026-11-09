@@ -76,6 +76,13 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               <sc-if value="{{curNoRateHint}}" hint-placeholder-val="{{false}}">
                 <p style="margin: 0; padding: 4px 10px 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{curNoRateText}}</p>
               </sc-if>
+              <sc-if value="{{curInfoOn}}" hint-placeholder-val="{{false}}">
+                <div role="alertdialog" aria-labelledby="cur-nr-t" aria-describedby="cur-nr-b" data-m="no-rate-popup" style="display: flex; flex-direction: column; gap: 6px; margin: 0 2px 2px; padding: 12px 14px 8px; border-radius: 12px; background: var(--surface-raised); border: 1px solid var(--line);">
+                  <span id="cur-nr-t" style="display: flex; align-items: center; gap: 8px; font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>No rate for {{curInfoCode}} right now</span>
+                  <p id="cur-nr-b" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">{{curInfoText}}</p>
+                  <button type="button" onClick="{{closeCurInfo}}" style="align-self: flex-end; height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Got it</button>
+                </div>
+              </sc-if>
             </div>
           </sc-if>
         </span>
@@ -221,11 +228,16 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q28, Q24)</span>
       <span style="font-weight: 600;">Q28: currencies list the six most-used first (USD, EUR, GBP, CAD, AUD, JPY), then the rest A to Z, each with a flag. Q24: a currency with no market rate stays in the list, greyed, with "No rate right now", and comes back the moment a rate does (design call, as on OfferAd and FlexOffer-Post).</span>
     </aside>
+    <aside aria-label="Decided by design: the no-rate explainer" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (O-021 Q25, O-020 Q24): design&#39;s call</span>
+      <span style="font-weight: 600;">Tag, not hide: a no-rate currency stays greyed with &quot;No rate right now&quot;, and tapping it explains why.</span>
+      <span>Tweak currencyMenu=no-rate-tapped: a small box opens inside the list, &quot;No rate for ARS right now&quot;, one line, and &quot;Got it&quot;. COPY-UNSIGNED.</span>
+    </aside>
     <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>Currency drop-down, 9 Nov.</strong> The native select is now the same list as OfferAd: a trigger (flag chip, code, chevron) opening a panel with a search field, the top six, a divider, then A to Z (scrolls). Flag chips are placeholders for real flags. Tweak <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">currencyMenu</span>: closed, open, search (typed "peso": MXN can be picked, ARS is greyed, and a line under the list says why). Picking a currency here only closes the list; the card's figures aren't redrawn per currency. COPY-UNSIGNED: "Search currencies", "No rate right now", "X2F has no market rate for ARS right now, so it can't be picked. It comes back as soon as a rate does."</p>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"methodPicker":{"editor":"enum","options":["closed","open"],"default":"closed"},"currencyMenu":{"editor":"enum","options":["closed","open","search"],"default":"closed"},"$preview":{"width":390,"height":6732}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"methodPicker":{"editor":"enum","options":["closed","open"],"default":"closed"},"currencyMenu":{"editor":"enum","options":["closed","open","search","no-rate-tapped"],"default":"closed"},"$preview":{"width":390,"height":6900}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -237,7 +249,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 6732px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 6900px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     // [name, group, example USD sellers, example best (lowest) USD rate]. Names: Haveno's method list (data/payment-methods.json).
     const data = [
       ["Uphold", "Payment apps", 0, 0.00],
@@ -412,7 +424,9 @@ class Component extends DCLogic {
 }
 // Taker's currency drop-down (owner, 6 Nov, Q28 + Q24): the six most-used first, a divider, the rest A to Z, every row
 // with a flag. A currency with no market rate stays listed, greyed, can't be picked, and carries "No rate right now"; it
-// comes back the moment a rate does. Tweak currencyMenu: closed (default), open, search (typed "peso").
+// comes back the moment a rate does. Tweak currencyMenu: closed (default), open, search (typed "peso"), no-rate-tapped.
+// O-021/O-020 (9 Nov, design call): tagged, not hidden. Tapping a greyed row opens a small explainer inside the panel
+// ("No rate for ARS right now" + Got it); the row still can't be picked.
 {
   const CUR_ALL = [['USD', 'US dollar'], ['EUR', 'Euro'], ['GBP', 'British pound'], ['CAD', 'Canadian dollar'], ['AUD', 'Australian dollar'], ['JPY', 'Japanese yen'],
     ['ARS', 'Argentine peso', true], ['BRL', 'Brazilian real'], ['CHF', 'Swiss franc'], ['INR', 'Indian rupee'], ['MXN', 'Mexican peso'], ['NZD', 'New Zealand dollar'], ['PLN', 'Polish zloty'], ['SEK', 'Swedish krona']];
@@ -422,7 +436,9 @@ class Component extends DCLogic {
   Component.prototype.renderVals = function () {
     const v = curBase.call(this);
     const st = this.state || {};
-    const open = st.curOpen == null ? (this.props.currencyMenu === 'open' || this.props.currencyMenu === 'search') : !!st.curOpen;
+    const tapped = this.props.currencyMenu === 'no-rate-tapped';
+    const open = st.curOpen == null ? (this.props.currencyMenu === 'open' || this.props.currencyMenu === 'search' || tapped) : !!st.curOpen;
+    const info = st.curInfo === undefined ? (tapped ? 'ARS' : null) : st.curInfo;
     const q = (st.curQuery == null ? (this.props.currencyMenu === 'search' ? 'peso' : '') : st.curQuery).trim().toLowerCase();
     const sel = st.curSel || 'USD';
     const hit = (c) => !q || c[0].toLowerCase().indexOf(q) >= 0 || c[1].toLowerCase().indexOf(q) >= 0;
@@ -431,7 +447,7 @@ class Component extends DCLogic {
       return { code: c[0], name: c[1], flag: CUR_FLAG[c[0]], sel: on, noRate: off,
         ariaSel: on ? 'true' : 'false', ariaDis: off ? 'true' : 'false',
         style: 'display: flex; align-items: center; gap: 10px; width: 100%; height: 48px; padding: 0 10px; box-sizing: border-box; border-radius: 6px; flex-shrink: 0; font-family: inherit; font-size: 15px; line-height: 20px; text-align: left; ' + (on ? 'border: 2px solid var(--ink); background: var(--surface-raised); color: var(--ink); cursor: pointer;' : off ? 'border: 2px solid transparent; background: transparent; color: var(--ink-muted); cursor: not-allowed;' : 'border: 2px solid transparent; background: transparent; color: var(--ink); cursor: pointer;'),
-        pick: off ? () => {} : () => this.setState({ curSel: c[0], curOpen: false }) };
+        pick: off ? () => this.setState({ curInfo: c[0] }) : () => this.setState({ curSel: c[0], curOpen: false, curInfo: null }) };
     };
     const top = CUR_ALL.filter((c) => CUR_TOP6.indexOf(c[0]) >= 0 && hit(c)).map(row);
     const rest = CUR_ALL.filter((c) => CUR_TOP6.indexOf(c[0]) < 0 && hit(c)).sort((a, b) => a[0].localeCompare(b[0])).map(row);
@@ -441,9 +457,12 @@ class Component extends DCLogic {
       curCode: sel, curFlag: CUR_FLAG[sel], curTop: top, curRest: rest,
       hasCurTop: top.length > 0, hasCurRest: rest.length > 0, curDivider: top.length > 0 && rest.length > 0,
       curQuery: q, onCurQuery: (e) => this.setState({ curQuery: e.target.value }),
-      curNoRateHint: greyed.length > 0,
+      curNoRateHint: greyed.length > 0 && !info,
+      curInfoOn: open && !!info, curInfoCode: info || '',
+      curInfoText: info ? 'We can’t get a market price for the ' + (CUR_ALL.filter((c) => c[0] === info)[0] || ['', info])[1] + ' at the moment, so it can’t be picked. It comes back on its own as soon as a price does.' : '',
+      closeCurInfo: () => this.setState({ curInfo: null }),
       curNoRateText: greyed.length ? 'X2F has no market rate for ' + greyed.map((o) => o.code).join(', ') + ' right now, so it can’t be picked. It comes back as soon as a rate does.' : '',
-      toggleCur: () => this.setState({ curOpen: !open })
+      toggleCur: () => this.setState({ curOpen: !open, curInfo: null })
     });
   };
 }

@@ -147,11 +147,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center;">
       <section role="dialog" aria-modal="true" aria-labelledby="rc-rem-t" aria-describedby="rc-rem-d" style="width: 480px; box-sizing: border-box; padding: 28px; border-radius: 16px; background: var(--surface); border: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
         <span aria-hidden="true" style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 10h8M8 14h5"/></svg></span>
-        <h2 id="rc-rem-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Write down your new recovery code</h2>
-        <p id="rc-rem-d" style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">You used your recovery code. Go to Security and write down your new one.</p>
+        <h2 id="rc-rem-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Your old recovery code is burned</h2>
+        <p id="rc-rem-d" style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">You used it to get back in, so it won&#39;t work again. Make a new one in Security settings and keep it somewhere only you&#39;d look.</p>
         <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px;">
           <button type="button" onClick="{{later}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Remind me later</button>
-          <a href="#" style="display: flex; align-items: center; justify-content: center; min-width: 160px; height: 48px; padding: 0 24px; box-sizing: border-box; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 16px; font-weight: 600; text-decoration: none;">Go to Security</a>
+          <a href="#" style="display: flex; align-items: center; justify-content: center; min-width: 160px; height: 48px; padding: 0 24px; box-sizing: border-box; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 16px; font-weight: 600; text-decoration: none;">Make a new recovery code</a>
         </div>
       </section>
     </div>
@@ -183,15 +183,20 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-weight: 600;">Is &quot;Remind me later&quot; allowed?</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
         <li>Yes, the user can put it off</li>
-        <li>No, the only way on is Go to Security</li>
+        <li>No, the only way on is Make a new recovery code</li>
       </ul>
       <span style="color: var(--ink-muted);">Shown here only so the owner can see it. If allowed, when it comes back is also not decided.</span>
       <span style="color: var(--ink-muted);">Applies to step: reminder, the Remind me later button.</span>
     </aside>
+    <aside aria-label="Decided by the owner: a used recovery code is burned" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; max-width: 720px; box-sizing: border-box; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 9 Nov (p11-36)</span>
+      <span style="font-weight: 600;">After a recovery code is used, tell the person it is burned and send them to make a new one in Security settings.</span>
+      <span style="color: var(--ink-muted);">Link text: &quot;Make a new recovery code&quot; (opens Settings, Security, recovery code). COPY-UNSIGNED.</span>
+    </aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["show","check","done","reminder"],"default":"show"},"entry":{"editor":"enum","options":["empty","partial","mismatch","match"],"default":"empty"},"$preview":{"width":1280,"height":1737}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["show","check","done","reminder"],"default":"show"},"entry":{"editor":"enum","options":["empty","partial","mismatch","match"],"default":"empty"},"$preview":{"width":1280,"height":1835}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props); }
   preset(p) {

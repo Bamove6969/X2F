@@ -75,7 +75,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <sc-if value="{{isReady}}" hint-placeholder-val="{{false}}">
       <div role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
         <svg style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>
-        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h hold is over. The recovery code you used no longer works. Replace it in Settings once you are back in.</p>
+        <div style="display: flex; flex-direction: column; gap: 0; min-width: 0;">
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h hold is over. The recovery code you used is now burned: it won&#39;t work again. Once you&#39;re back in, make a new one in Security settings.</p>
+          <a href="Settings.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; color: var(--monero-ink); font-size: 15px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px;">Make a new recovery code</a>
+        </div>
       </div>
       <section aria-labelledby="bk-new-t" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
         <h2 id="bk-new-t" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Add a new way to log in</h2>
@@ -109,10 +112,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 32px 48px 40px; border-top: 1px solid var(--line);">
     <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2><p style="margin: 0; font-size: 13px; line-height: 18px;">Header: logo D (owner, 8 Nov, page 8); before login the logo stands alone, centred, with no page name (comment #2).</p>
     <aside aria-label="Decided: recovery code" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span><span style="font-weight: 600;">Each account has one 16-character recovery code.</span><span style="color: var(--ink-muted);">After it's used, the next successful login reminds the owner to write down the new code in Security.</span></aside>
+    <aside aria-label="Decided by the owner: a used recovery code is burned" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 9 Nov (p11-36)</span>
+      <span style="font-weight: 600;">After a recovery code is used, tell the person it is burned and send them to make a new one in Security settings.</span>
+      <span style="color: var(--ink-muted);">Link text: &quot;Make a new recovery code&quot; (opens Settings, Security, recovery code). COPY-UNSIGNED.</span>
+    </aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["enter", "held", "ready"], "default": "enter"}, "$preview": {"width": 1280, "height": 1189}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["enter", "held", "ready"], "default": "enter"}, "$preview": {"width": 1280, "height": 1287}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { stage: null, uname: 'nightowl_44', pick: 'pgp' }; }
   componentDidUpdate(prev) { if (prev.view !== this.props.view) this.setState({ stage: null }); }
