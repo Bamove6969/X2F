@@ -106,6 +106,7 @@ function view(over: View = {}): View {
     closedAt: null,
     cancelConfirmedAt: null,
     cancelConfirmableAt: null,
+    sellerNudgedAt: null,
     nextDeadline: '2026-10-25T13:52:00.000Z',
     serverNow: NOW,
     ...over,

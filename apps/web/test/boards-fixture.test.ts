@@ -15,7 +15,9 @@ describe('board fixtures', () => {
     expect(board('TradeFund')).toContain(`Selling to ${t.buyer}`);
     expect(board('BuyerPay')).toContain(`Buying from ${t.seller}`);
     for (const name of ['TradeFund', 'BuyerPay', 'SellerConfirm', 'SellerRefund', 'DisputeOpen', 'DisputeRoom', 'DisputeRuling', 'Desktop']) {
-      expect(board(name), name).toContain(`Trade ${t.code} · ${t.method.name}`);
+      // The refreshed boards put the code in its own mono span: compare the text, not the markup.
+      const text = board(name).replace(/<[^>]*>/g, '').replace(/\s+/g, ' ');
+      expect(text, name).toContain(`Trade ${t.code} · ${t.method.name}`);
     }
     for (const name of ['TradeFund', 'Review', 'Desktop']) expect(board(name), name).toContain(`${xmr(t.amountAtomic)}`);
     for (const name of ['TradeFund', 'BuyerPay', 'SellerConfirm', 'Desktop']) expect(board(name), name).toContain(usd(t.fiatCents));

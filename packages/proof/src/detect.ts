@@ -271,8 +271,9 @@ export function codePattern(normalized: string): RegExp {
     if (c === '0') return '[0Oo]';
     if (c === '1') return '[1IiLl]';
     if (/[A-Z]/.test(c)) return `[${c}${c.toLowerCase()}]`;
-    return c;
+    return c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   });
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- every character is a class built here or escaped above
   return new RegExp(`${B}${chars.join('[ -]?')}${E}`, 'g');
 }
 
@@ -519,8 +520,10 @@ const SETS = Object.values(NAME_LABELS);
 const LABEL = alternation(SETS.flatMap((s) => [...s.labels]));
 const ANY_LABEL = alternation(SETS.flatMap((s) => [...s.labels, ...s.colonOnly]));
 /** A label at the start of the line, with or without a colon; a colon-only label with its colon. */
+// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- built from the constant NAME_LABELS lists, each label escaped by alternation()
 const LABEL_START = new RegExp(`^\\s*(?:(?:${LABEL})(?=\\s|:|$)|(?:${ANY_LABEL}) ?(?=:))(?: ?:)?\\s*`, 'iu');
 /** A label later in the line, only with a colon (`Status: done  From: Jane Doe`, French `Nom : Jean`). */
+// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- built from the constant NAME_LABELS lists, each label escaped by alternation()
 const LABEL_COLON = new RegExp(`(?<![\\p{L}\\p{N}])(?:${ANY_LABEL}) ?:\\s*`, 'giu');
 
 /** Where the name starts after a label in this line: its index, `'next'` for a lone label, or -1. */
