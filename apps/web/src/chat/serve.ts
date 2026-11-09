@@ -21,13 +21,28 @@ const CODE = /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/;
 function failure(e: unknown): ChatFailure {
   if (e instanceof ChatSendFailed) return e.code;
   const status = (e as { status?: unknown })?.status;
-  if (status === 404) return 'not-found';
+  // 410 chat-purged (the engine has erased the device's copy) shows as the closed chat, like a 404.
+  if (status === 404 || status === 410) return 'not-found';
   return 'unavailable';
 }
 
-/** Answers the page's chat messages with `engine` (made once `makeEngine` resolves). */
+/**
+ * Answers the page's chat messages with `engine` (made once `makeEngine` resolves). The first time
+ * an engine is made, it sweeps the device's stored chats for purged ones (design 2026-11-08
+ * section 5: erase on purge), in the background; a failed sweep is tried on the next start.
+ */
 export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>): void {
   let engine: Promise<ChatEngine> | null = null;
+  let swept = false;
+  const make = (): Promise<ChatEngine> => {
+    const p = makeEngine();
+    void p.then((eng) => {
+      if (swept) return;
+      swept = true;
+      return eng.sweep();
+    }).catch(() => undefined);
+    return p;
+  };
   port.addEventListener('message', (e) => {
     const m = e.data as Partial<ToChatWorker> | null;
     if (typeof m !== 'object' || m === null || (m.t !== 'chat-sync' && m.t !== 'chat-send') || typeof m.id !== 'number') return;
@@ -35,7 +50,7 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
     void (async () => {
       try {
         if (typeof m.chat !== 'string' || !CODE.test(m.chat)) throw Object.assign(new Error('bad chat'), { status: 404 });
-        engine ??= makeEngine();
+        engine ??= make();
         const eng = await engine;
         let snapshot: ChatSnapshot;
         if (m.t === 'chat-send') {
