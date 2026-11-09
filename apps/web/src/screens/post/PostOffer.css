@@ -356,3 +356,45 @@
 .post-submit {
   width: 100%;
 }
+
+/* J-16 (Plan 3 Tasks 34/35): the picked currencies, a currency's bands, the payment methods.
+   DESIGN: placement and spacing are the lead's interim until design's FlexOffer-Post pass (J-32). */
+.post-picked {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+}
+
+.post-band,
+.post-method {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding-top: var(--x2f-space-4);
+  border-top: 1px solid var(--x2f-surface-raised);
+}
+
+.post-band:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.post-band-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.post-stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-3);
+}
+
+.post-check {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  min-height: 44px;
+}
