@@ -64,17 +64,26 @@ function show(el: React.ReactNode, api: SetupApi) {
 
 describe('S-014: the password strength meter', () => {
   it('words the strength of what is typed so far: Weak, Medium, Strong; nothing before typing', () => {
-    expect(passwordStrength('', false)).toBeNull();
-    expect(passwordStrength('abc', false)).toBe('weak');
-    expect(passwordStrength('abcdefghijkl', false)).toBe('weak');
+    expect(passwordStrength('', 'clear')).toBeNull();
+    expect(passwordStrength('abc', 'clear')).toBe('weak');
+    expect(passwordStrength('abcdefghijkl', 'clear')).toBe('weak');
     // 4 of the 5 rules: no number.
-    expect(passwordStrength('Correct-Horse', false)).toBe('medium');
+    expect(passwordStrength('Correct-Horse', 'clear')).toBe('medium');
     // 3 of the 5 rules: too short and no symbol.
-    expect(passwordStrength('Horse9', false)).toBe('medium');
-    expect(passwordStrength('Correct-Horse-9', false)).toBe('strong');
+    expect(passwordStrength('Horse9', 'clear')).toBe('medium');
+    expect(passwordStrength('Correct-Horse-9', 'clear')).toBe('strong');
     // A password on the leaked list is weak, whatever it looks like.
-    expect(passwordStrength('Correct-Horse-9', true)).toBe('weak');
-    expect(passwordStrength(`Aa1!${'x'.repeat(300)}`, false)).not.toBe('strong');
+    expect(passwordStrength('Correct-Horse-9', 'leaked')).toBe('weak');
+    expect(passwordStrength(`Aa1!${'x'.repeat(300)}`, 'clear')).not.toBe('strong');
+  });
+
+  // Review S4 (signup-rules review, 9 Nov): only the server knows the leaked list, so Strong is
+  // never claimed before it has answered.
+  it('a password meeting every rule reads Checking…, never Strong, until the server has answered', () => {
+    expect(passwordStrength('Correct-Horse-9', 'unchecked')).toBe('checking');
+    expect(passwordStrength('Correct-Horse', 'unchecked')).toBe('medium');
+    expect(passwordStrength('abc', 'unchecked')).toBe('weak');
+    expect(passwordStrength('', 'unchecked')).toBeNull();
   });
 
   it('updates live as the person types, and only Strong (typed twice) can be set', () => {
@@ -92,7 +101,8 @@ describe('S-014: the password strength meter', () => {
     expect(byPart(host, 'password-meter')!.textContent).toBe('Strength: Medium');
     expect(byPart(host, 'password-set')!.hasAttribute('disabled')).toBe(true);
     type(pw, 'Correct-Horse-9');
-    expect(byPart(host, 'password-meter')!.textContent).toBe('Strength: Strong');
+    expect(byPart(host, 'password-meter')!.textContent).toBe('Strength: Checking…');
+    expect(byPart(host, 'password-meter')!.getAttribute('data-level')).toBe('checking');
     expect(byPart(host, 'password-set')!.hasAttribute('disabled')).toBe(true);
     type(again, 'Correct-Horse-9');
     expect(byPart(host, 'password-set')!.hasAttribute('disabled')).toBe(false);
@@ -102,12 +112,15 @@ describe('S-014: the password strength meter', () => {
     const host = show(<Password />, setup());
     type(host.querySelector<HTMLInputElement>('#pw')!, 'Correct-Horse-9');
     type(host.querySelector<HTMLInputElement>('#pw2')!, 'Correct-Horse-9');
+    // Before the server has answered, the leaked password is not called Strong (review S4).
+    expect(byPart(host, 'password-meter')!.textContent).toBe('Strength: Checking…');
+    expect(host.textContent).not.toContain('Strong');
     click(byPart(host, 'password-set'));
     await flush();
     expect(byPart(host, 'password-meter')!.textContent).toBe('Strength: Weak');
     expect(byPart(host, 'password-set')!.hasAttribute('disabled')).toBe(true);
     type(host.querySelector<HTMLInputElement>('#pw')!, 'Correct-Horse-10');
-    expect(byPart(host, 'password-meter')!.textContent).toBe('Strength: Strong');
+    expect(byPart(host, 'password-meter')!.textContent).toBe('Strength: Checking…');
   });
 });
 

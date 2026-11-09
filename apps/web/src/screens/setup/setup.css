@@ -561,6 +561,10 @@
   background: var(--x2f-ink-muted);
 }
 
+.x2f-start__meter[data-level='checking'] .x2f-start__meter-bar[data-on='true'] {
+  background: var(--x2f-ink-muted);
+}
+
 .x2f-start__meter[data-level='strong'] .x2f-start__meter-bar[data-on='true'] {
   background: var(--x2f-escrow);
 }
