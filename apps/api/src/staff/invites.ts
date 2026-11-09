@@ -239,7 +239,7 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     const now = deps.clock();
     await withTx(deps.db, async (c) => {
       await lockInvite(c, req, accountId);
-      await insertPgpKey(c, deps.config, { accountId, fingerprint: proved.fingerprint, armored: proved.armored, now });
+      await insertPgpKey(c, deps.config, { accountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved });
     });
     return reply.code(201).send({ ok: true });
   });

@@ -108,6 +108,8 @@ export const KEY_EXPIRED = 'That key has expired. Extend it in your PGP app, the
 // not-a-refusal: the pasted key itself is revoked
 export const KEY_REVOKED = 'That key has been revoked, so it cannot be used to log in. Use a key that is still valid.';
 export const STEP_EXPIRED = 'That step has expired. Start again.';
+/** 409 `key-unavailable` (owner 2 Nov 2026): a key on the ban list; never said why. COPY-UNSIGNED */
+export const KEY_UNAVAILABLE = 'That key is not accepted on X2F. Use a different key.';
 /** 409 `security-key-limit` (FU-A review I2): the account already holds the most security keys allowed. */
 // cant-do-that-todo: shown inline by Security (add a key) through refusalText
 export const SECURITY_KEY_LIMIT = 'You already have 5 security keys, the most an account can hold. Remove one to add another.';
@@ -128,6 +130,7 @@ export function refusalText(e: unknown, fallback: string, o: { expired?: string;
   if (r.status === 429) return waitSentence(r.retryAfterSeconds, o.now);
   if (r.code === 'key-expired') return KEY_EXPIRED;
   if (r.code === 'key-revoked') return KEY_REVOKED;
+  if (r.code === 'key-unavailable') return KEY_UNAVAILABLE;
   if (r.code === 'challenge-expired') return o.expired ?? STEP_EXPIRED;
   // cant-do-that-todo: shown inline by Security (add a key) through refusalText
   if (r.code === 'security-key-limit') return SECURITY_KEY_LIMIT;

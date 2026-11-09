@@ -118,6 +118,11 @@ export type ApiErrorCode =
   | 'forbidden'
   | 'too-many-members'
   | 'member-cannot-sign'
+  // Owner 2 Nov 2026: Trader and Vendor accounts (only a vendor posts offers or has a team; the
+  // switch needs a passkey, security key or PGP key), and the ban list (a banned PGP key).
+  | 'not-vendor'
+  | 'vendor-needs-key'
+  | 'key-unavailable'
   // Plan 4, Task 4: staff login hours (a login, or an open session, outside the window).
   | 'outside-login-hours'
   // Plan 4, Task 7: staff invites and the owner's protections.

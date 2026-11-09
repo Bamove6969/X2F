@@ -396,18 +396,23 @@ export async function removeMethod(
  * account's method); 409 `last-login-method` when what is left would not log in (`leavesLogin`).
  */
 async function removable(db: Queryable, config: Config, accountId: string, type: string, id: string, now: Date) {
-  const acct = await db.query<{ kind: AccountKind }>('select kind from accounts where id = $1 for update', [accountId]);
+  const acct = await db.query<{ kind: AccountKind; account_type: string }>('select kind, account_type from accounts where id = $1 for update', [accountId]);
   const kind = acct.rows[0]?.kind;
   if (kind === undefined) throw new ApiError(401, 'not-authenticated');
   const found = await findMethod(db, accountId, type, id);
   if (found === null) throw new ApiError(404, 'not-found');
-  // Staff and the owner have no reset (R2): only keys a login challenge can go to count.
-  const usable = kind === 'trader' ? null : await usablePgpIds(db, config, accountId, now);
+  // Staff and the owner have no reset (R2): only keys a login challenge can go to count. A vendor's
+  // G13 check below counts them too (security review 8 Nov M3: an expired key logs no one in).
+  const vendor = acct.rows[0]!.account_type === 'vendor';
+  const usable = kind === 'trader' && !vendor ? null : await usablePgpIds(db, config, accountId, now);
   const counts = await countsOf(db, accountId);
   const after: Counts = { ...counts, usablePgp: usable?.size ?? counts.pgp };
   for (const [k, n] of Object.entries(found.less) as Array<[keyof Counts, number]>) after[k] -= n;
   if (found.type === 'pgp' && (usable === null || usable.has(id))) after.usablePgp -= 1;
   if (!leavesLogin(kind, after)) throw new ApiError(409, 'last-login-method');
+  // Owner G13 (7 Nov): a vendor never goes back to a password-only login. Its last passkey,
+  // security key or PGP key can only be exchanged: add the new one, then remove the old.
+  if (vendor && after.usablePgp + after.keys + after.passkeys === 0) throw new ApiError(409, 'last-login-method');
   return found;
 }
 

@@ -8,6 +8,7 @@ import { ApiCallError } from '../src/api/client.js';
 import { stepPath } from '../src/screens/setup/kit.js';
 import { passwordRules } from '../src/screens/setup/Password.js';
 import { groupFingerprint } from '../src/screens/setup/PgpKey.js';
+import { KEY_UNAVAILABLE } from '../src/screens/auth/refusals.js';
 import { KEY_IN_USE, nameError, setupError, termsChanged } from '../src/screens/setup/register.js';
 import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 import { TERMS } from '../src/screens/setup/termsText.js';
@@ -129,6 +130,9 @@ describe('setupError (review fix round M1, M2, I1)', () => {
   });
   it('names a key already on another account, with the key-in-use links', () => {
     expect(setupError(new AuthApiError(409, 'key-in-use'), fallback)).toEqual({ text: KEY_IN_USE, keyInUse: true });
+    // Lead review 2026-11-06 item 1: a banned key is refused only at the finish now, so the screen
+    // offers a different key, never a new message (it would end the same way) nor Log in.
+    expect(setupError(new AuthApiError(409, 'key-unavailable'), fallback)).toEqual({ text: KEY_UNAVAILABLE, keyRefused: true });
   });
   it('gives honest waits for slow-down and busy', () => {
     expect(setupError(new AuthApiError(429, 'slow-down', { retryAfterSeconds: 120 }), fallback).text).toBe('Too many tries. Try again in 2 minutes.');

@@ -12,6 +12,7 @@ import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { MODERATION_STUB, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedStaff, seedTap } from './helpers/staffApp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, driveTo, fakeAddress, markSellerNudged, seedTrade } from './helpers/trades.js';
+import { makeVendor } from './helpers/accounts.js';
 
 const T0 = new Date('2026-11-02T12:00:00Z');
 const MIN = 60_000;
@@ -83,6 +84,8 @@ describe('emergency stop', () => {
   it('needs a tap for emergency-stop; while stopped, take and post refuse trading-paused and existing trades go on; resume needs its own tap', async () => {
     setNow(T0);
     const seller = await person();
+    // Only a vendor posts offers (account types, owner 2 Nov).
+    await makeVendor(deps, seller.id);
     const buyer = await person();
     const posted = await seller.browser.post('/v1/offers', OFFER);
     expect(posted.statusCode, posted.body).toBe(201);
@@ -171,6 +174,19 @@ describe('banner', () => {
     // Removing no banner logs nothing.
     expect((await owner.send('DELETE', '/staff/v1/site/banner')).statusCode).toBe(204);
     expect((await logEntries(deps, 'site.banner-removed')).length).toBe(1);
+  });
+});
+
+describe('the 60-day close switch (security review 8 Nov M1)', () => {
+  it('POST /staff/v1/site/auto-close/resume turns the close back on and logs it; when it is on, it changes and logs nothing', async () => {
+    await deps.db.query('update site_flags set auto_close_off_at = $1', [T0]);
+    const res = await owner.post('/staff/v1/site/auto-close/resume', {});
+    expect([res.statusCode, res.json()]).toEqual([200, { autoClose: 'on' }]);
+    expect((await deps.db.query('select auto_close_off_at from site_flags')).rows).toEqual([{ auto_close_off_at: null }]);
+    expect((await logEntries(deps, 'site.auto-close-resumed')).length).toBe(1);
+    expect((await owner.post('/staff/v1/site/auto-close/resume', {})).statusCode).toBe(200);
+    expect((await logEntries(deps, 'site.auto-close-resumed')).length).toBe(1);
+    expect(errorOf(await owner.post('/staff/v1/site/auto-close/resume', { on: true }))).toBe('bad-request');
   });
 });
 

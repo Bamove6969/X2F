@@ -6,6 +6,7 @@ import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { hasPendingReview } from '../src/reviews/gate.js';
 import { loadTradeRow } from '../src/trades/store.js';
+import { makeVendor } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
@@ -74,6 +75,8 @@ const OFFER = {
 };
 
 async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<string> {
+  // Owner 2 Nov 2026: only vendor accounts post offers.
+  await makeVendor(deps, who.id);
   const res = await who.browser.post('/v1/offers', { ...OFFER, ...over });
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;

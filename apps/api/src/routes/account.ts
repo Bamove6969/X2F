@@ -40,6 +40,11 @@ export interface AccountOverview {
   /** Task 17: the end of the account's 24-hour hold while one runs (any session of the account), else null. */
   accountHoldUntil: string | null;
   /**
+   * Owner 2 Nov 2026: 'trader' (takes offers) or 'vendor' (posts offers, may have team members,
+   * pays the 1% fee). For a team member, the type of the account they work for.
+   */
+  accountType: 'trader' | 'vendor';
+  /**
    * Plan 2 Task 18: set when the caller is a team member (the overview is then of the account
    * they work for, with their own login methods); null for the account owner.
    */
@@ -203,8 +208,9 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     hold_until: Date | null;
     length_hours: number | null;
     expires_at: Date;
+    account_type: 'trader' | 'vendor';
   }>(
-    `select a.display_name, a.legacy_login_name, a.kind, a.terms_version, s.level, s.hold_until, s.length_hours, s.expires_at
+    `select a.display_name, a.legacy_login_name, a.kind, a.terms_version, s.level, s.hold_until, s.length_hours, s.expires_at, a.account_type
        from accounts a join sessions s on s.account_id = a.id
       where a.id = $1 and s.id = $2`,
     [accountId, sessionId],
@@ -229,6 +235,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     // Staff and owner accounts carry no Terms version (R10).
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
+    accountType: row.account_type,
     member,
     // The end this request's token has (review S-m1: the token before an extend keeps the old end).
     session: row.kind === 'trader' && row.level === 'full'

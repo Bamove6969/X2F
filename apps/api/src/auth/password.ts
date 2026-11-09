@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from 'node:crypto';
-import { checkPassword, normalizePassword, type AccountKind } from '@x2f/accounts';
+import { checkPassword, needsStrongConfirm, normalizePassword, type AccountKind } from '@x2f/accounts';
 import argon2 from 'argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
@@ -198,7 +198,7 @@ async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
   const names = await assertNewNames(deps.db, rawDisplay, rawLogin);
   await assertNewPassword(deps, password);
   // A taken display name answers before the expensive hash; a taken login name only at create.
-  await assertDisplayNameFree(deps.db, names);
+  await assertDisplayNameFree(deps.db, names, deps.config);
   const { hash, pepperId } = await hashPassword(deps.config, password);
 
   const now = deps.clock();
@@ -273,6 +273,9 @@ async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {
   ensureDeviceCookie(req, reply);
   const { password } = strings(req.body, ['password'] as const);
   const action = parseConfirmAction((req.body as Record<string, unknown>).action);
+  // Owner 2 Nov 2026: some actions only a passkey, security key or PGP key may confirm (switching
+  // to a vendor account). Refused before any password work, so nothing is counted or spent.
+  if (needsStrongConfirm(action)) throw new ApiError(403, 'method-not-allowed');
   const totp = (req.body as Record<string, unknown>).totp;
   if (totp !== undefined && typeof totp !== 'string') throw new ApiError(400, 'bad-request');
   // Owner G10 (7 Nov 2026): the password alone is enough to stay logged in, even with an

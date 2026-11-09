@@ -47,6 +47,10 @@ import {
   type PriceMode,
 } from './post/offerForm.js';
 import './post/PostOffer.css';
+import { accountTypeOf } from '../session/member.js';
+import { useSession } from '../session/useSession.js';
+import { NOT_VENDOR_CODE, NOT_VENDOR_POST_TEXT } from '../ui/cantDoCodes.js';
+import { ACCOUNT_TYPE_COPY, ACCOUNT_TYPE_PATH } from './settings/accountTypeCopy.js';
 
 /** Re-asks the feed this often, so "right now" stays true while the form is open. */
 const PRICE_REFRESH_MS = 60_000;
@@ -133,7 +137,7 @@ function useMethods(): [Methods, () => void] {
   return [methods, () => setAttempt((n) => n + 1)];
 }
 
-export function PostOffer() {
+function PostOfferForm() {
   const location = useLocation();
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(() => initialForm(location.search));
@@ -451,5 +455,24 @@ export function PostOffer() {
         </Button>
       </footer>
     </div>
+  );
+}
+
+/**
+ * Owner 2 Nov 2026: only vendor accounts post offers. A signed-in trader (or a member of a trader
+ * account) gets the not-vendor refusal and the way to Settings > Account type instead of the form;
+ * everyone else gets the form (signed out: it sends them to setup and back, as before).
+ */
+export function PostOffer() {
+  const session = useSession();
+  const navigate = useNavigate();
+  if (accountTypeOf(session) !== 'trader') return <PostOfferForm />;
+  return (
+    <main className="x2f-screen" data-screen="post-not-vendor">
+      <Link className="x2f-button x2f-button--primary" to={ACCOUNT_TYPE_PATH} data-primary="" data-part="account-type">
+        {ACCOUNT_TYPE_COPY.switchButton}
+      </Link>
+      <CantDoThat title={POST_CANT_TITLE} body={NOT_VENDOR_POST_TEXT} from={NOT_VENDOR_CODE} onClose={() => void navigate('/sell')} />
+    </main>
   );
 }

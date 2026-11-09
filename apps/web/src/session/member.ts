@@ -26,6 +26,18 @@ export function memberOf(session: Session): TeamMemberSession | null {
  */
 export function mayPostOffers(session: Session): boolean {
   if (session.status === 'loading') return false;
+  // Owner 2 Nov 2026: only vendor accounts post offers (a member works for the account's type).
+  if (accountTypeOf(session) === 'trader') return false;
   const m = memberOf(session);
   return m === null || m.roles.includes('offers');
+}
+
+/**
+ * Owner 2 Nov 2026: the signed-in account's type, 'trader' or 'vendor'; null when signed out,
+ * loading, or the API sent none (an older build: the API still refuses a trader's post).
+ */
+export function accountTypeOf(session: Session): 'trader' | 'vendor' | null {
+  if (session.status !== 'signed-in') return null;
+  const t = (session.me as { accountType?: unknown }).accountType;
+  return t === 'trader' || t === 'vendor' ? t : null;
 }

@@ -74,7 +74,7 @@ export type HoldReason = 'weak-change' | 'weak-new-device' | 'weak-backup-login'
 export type PendingChange =
   | { kind: 'password'; hash: string; pepperId: number }
   | { kind: 'totp'; secretEnc: string; step: number }
-  | { kind: 'pgp'; fingerprint: string; keyEnc: string }
+  | { kind: 'pgp'; fingerprint: string; keyEnc: string; recipient?: string | null }
   | { kind: 'webauthn'; credential: StoredCredential; label: string }
   | { kind: 'recovery-codes'; keyId: number; hashes: string[] }
   | { kind: 'remove-method'; type: MethodType; id: string }
@@ -202,7 +202,7 @@ async function applyChange(db: Queryable, config: Config, accountId: string, c: 
       await applyTotp(db, accountId, Buffer.from(c.secretEnc, 'base64'), c.step, now);
       return false;
     case 'pgp':
-      await applyPgpKey(db, accountId, c.fingerprint, Buffer.from(c.keyEnc, 'base64'), now);
+      await applyPgpKey(db, config, accountId, c.fingerprint, Buffer.from(c.keyEnc, 'base64'), now, c.recipient);
       return false;
     case 'webauthn':
       await applyCredential(db, accountId, c.credential, c.label, now);
@@ -503,6 +503,8 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'POST /v1/team/invites',
   'PATCH /v1/team/members/:id',
   'DELETE /v1/team/members/:id',
+  // Owner 2 Nov 2026: switching to a vendor account (routes/accountType.ts; the lock is the account's).
+  'PUT /v1/account/type',
   // Plan 5 Task 10 review round 1 M3: the claim insert re-checks the session and the hold under the
   // account lock (as Task 18's ownerWriteGate).
   'POST /v1/account/past-rep/finish',
@@ -593,6 +595,8 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   // TODO(owner 1 Nov: removal queues until hold end, wire to hold_changes when recovery rules land);
   // refused until then (see team/members.ts `ownerWriteGate`).
   'DELETE /v1/team/members/:id',
+  // Owner 2 Nov 2026: switching to a vendor account waits out a hold (checked again under the lock).
+  'PUT /v1/account/type',
   // Plan 5 Task 10 (owner 1 Nov: during a hold the account is offline to everyone). Listing and
   // removing one's own claims stay open.
   'POST /v1/account/past-rep/start',
