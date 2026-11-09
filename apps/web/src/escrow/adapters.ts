@@ -4,7 +4,7 @@
  * The attestation, its terms check, the check words and the identity proof come from
  * `@x2f/trade` (Task 8).
  */
-import { SETTLE_KINDS, type SettleKind, type TradeState } from '@x2f/trade';
+import { MAX_PAY_WINDOW_MIN, SETTLE_KINDS, type SettleKind, type TradeState } from '@x2f/trade';
 
 function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -33,6 +33,12 @@ export interface EscrowTradeView {
   /** GUESS (Task 2's Trade field): who has a mutual-cancel proposal standing, if anyone. */
   cancelProposedBy: 'buyer' | 'seller' | null;
   paidAt: string | null;
+  /**
+   * The buyer's time to pay in minutes the view shows (owner p9-6), or null when the view has none
+   * (an older API) or not a whole number of minutes from 1 to MAX_PAY_WINDOW_MIN. The attested
+   * `payWindowMin` must equal it when it is there (runtime.ts, `wrong-terms`).
+   */
+  payWindowMin: number | null;
 }
 
 const big = (v: unknown): bigint | null => (typeof v === 'string' && /^(?:0|[1-9]\d{0,30})$/.test(v) ? BigInt(v) : null);
@@ -61,6 +67,8 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
     settling,
     cancelProposedBy: v.cancelProposedBy === 'buyer' || v.cancelProposedBy === 'seller' ? v.cancelProposedBy : null,
     paidAt: typeof v.paidAt === 'string' ? v.paidAt : null,
+    payWindowMin:
+      typeof v.payWindowMin === 'number' && Number.isSafeInteger(v.payWindowMin) && v.payWindowMin >= 1 && v.payWindowMin <= MAX_PAY_WINDOW_MIN ? v.payWindowMin : null,
   };
 }
 

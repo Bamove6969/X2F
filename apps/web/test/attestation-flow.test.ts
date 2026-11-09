@@ -158,6 +158,31 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     expect(t.parties.settles).toEqual([]);
   });
 
+  it("an attested time to pay other than the one the trade view shows (owner p9-6): deal-mismatch on both devices, nothing set up; the same one goes ahead", async () => {
+    // The view shows a 24-hour method (cash by mail); the attestation signs the 90-minute default,
+    // so the moderation service would co-sign the seller's refund long before the buyer's time is up.
+    const t = await setup({ view: tradeView({ payWindowMin: 1440 }) });
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    expect(await buyer.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    expect(await seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    expect(t.parties.calls).toEqual([]);
+    expect((await buyer.store.load(CODE))?.failed ?? null).toBeNull(); // not kept: checked again on the next start
+    await buyer.runtime.stopAll();
+    await seller.runtime.stopAll();
+    // The view and the attestation agree: the trade goes ahead.
+    const ok = await setup({ view: tradeView({ payWindowMin: 90 }) });
+    const b2 = await ok.mk('buyer');
+    const s2 = await ok.mk('seller');
+    await b2.runtime.start(CODE);
+    await s2.runtime.start(CODE);
+    await b2.status((s) => s.phase === 'ready');
+    await s2.status((s) => s.phase === 'ready');
+    expect(ok.parties.calls.map((c) => c.role).sort()).toEqual(['buyer', 'seller']);
+  });
+
   it('a counterparty trade.terms address that differs from the attestation is ignored, never adopted; the attested one is, and the device still settles', async () => {
     const t = await setup();
     // A stand-in seller: its identity is registered, then it signs terms with an address the mod did not attest.

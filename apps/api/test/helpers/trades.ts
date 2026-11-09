@@ -51,6 +51,8 @@ export async function seedTrade(
     sellerId: string; buyerId: string; poster: 'seller' | 'buyer'; amountAtomic?: bigint; offerId?: string; methodId?: string; usdCents?: bigint;
     /** The offer's fiat limits in cents (default 1,000 to 100,000); a test of large or tiny amounts widens them. */
     minFiatCents?: bigint; maxFiatCents?: bigint;
+    /** The trade's time to pay in minutes (default TIMERS.payMin, 90). */
+    payWindowMin?: number;
   } & Partial<TradeSides>,
 ): Promise<SeededTrade> {
   const offerId = a.offerId ?? (await seedOffer(deps, a.poster === 'seller' ? a.sellerId : a.buyerId, a.poster));
@@ -65,6 +67,7 @@ export async function seedTrade(
       amountAtomic: a.amountAtomic ?? AMOUNT,
       lockedRate: RATE,
       confirmWindowMin: 120,
+      ...(a.payWindowMin === undefined ? {} : { payWindowMin: a.payWindowMin }),
       minFiatCents: a.minFiatCents ?? 1_000n,
       maxFiatCents: a.maxFiatCents ?? 100_000n,
     },

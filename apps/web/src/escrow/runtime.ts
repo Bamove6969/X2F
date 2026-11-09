@@ -459,7 +459,12 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         this.rec = loaded;
         // A deal mismatch kept by a record from before the fix of 2026-10-26 (one bad view or
         // trade.terms stopped the device for good) is dropped: it is checked again below.
-        if (loaded.failed === 'deal-mismatch') loaded.failed = null;
+        if (loaded.failed === 'deal-mismatch') {
+          loaded.failed = null;
+          // Stored at once (best effort, as before it was only dropped in memory), so the record no
+          // longer says stopped while this run waits on the API below.
+          await this.persist().catch(() => undefined);
+        }
         if (loaded.failed) return this.fail(loaded.failed, { integrity: true }); // stopped for good before: stays stopped
       }
       else {
@@ -542,12 +547,25 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (!att || this.stopped) return;
       // Fail closed: no own address means nothing this device could sign terms for.
       if (this.rec.ownAddress === null || this.rec.ownAddress === '') return this.fail('deal-mismatch');
+      // The time to pay the API's trade view shows on this device (the buyer's countdown): the
+      // attested one, which the moderation service's refund guard runs on, must be the same
+      // (`wrong-terms`). Read on every start, as the stored attestation is checked again. A view
+      // without it (an older API) leaves the attested value checked for shape only.
+      const shown = await this.retry(async () => {
+        const v = parseTradeView(await deps.api.getTrade(this.code));
+        if (!v) throw new Error('unreadable trade view');
+        return v.payWindowMin;
+      });
+      if (shown === undefined || this.stopped) return;
       try {
         await verifyAttestation(
           att.attestation as Attestation,
           att.sig,
           deps.config.modSigningPublic,
-          { trade: this.code, role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic, deal: this.rec.deal, ownAddress: this.rec.ownAddress },
+          {
+            trade: this.code, role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic, deal: this.rec.deal, ownAddress: this.rec.ownAddress,
+            ...(shown === null ? {} : { payWindowMin: shown }),
+          },
         );
       } catch (e) {
         // stop: no terms, no party, no funding address
