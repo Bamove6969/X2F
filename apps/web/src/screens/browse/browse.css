@@ -272,6 +272,40 @@ a.x2f-method:last-of-type {
   color: var(--x2f-ink-muted);
 }
 
+/* All payment methods folded into one row (design review 8 Nov, item 7); opened, the rows hang
+   under it as one card. */
+.x2f-browse__all-toggle {
+  width: 100%;
+  border: 0;
+  border-radius: var(--x2f-radius-lg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.x2f-browse__all-toggle:focus-visible {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: -2px;
+}
+
+.x2f-browse__all-toggle[aria-expanded='true'] {
+  border-radius: var(--x2f-radius-lg) var(--x2f-radius-lg) 0 0;
+}
+
+.x2f-browse__all-toggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+.x2f-browse__all-toggle + .x2f-browse__rows a.x2f-method:first-of-type {
+  border-top: 1px solid var(--x2f-surface-raised);
+  border-radius: 0;
+}
+
+.x2f-browse__rows {
+  display: flex;
+  flex-direction: column;
+}
+
 .x2f-method__text {
   display: flex;
   flex-direction: column;
