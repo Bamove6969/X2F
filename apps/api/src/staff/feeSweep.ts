@@ -130,11 +130,14 @@ const LOCK_KEY = 'x2f-fee-sweep';
  * 3. a second transaction settles the attempt (`sent` with its tx hash, or `failed`), logs it
  *    (`treasury.swept` or `treasury.sweep-failed`) and on a failure alerts the owner again
  *    (`fee-sweep-failed`).
- * Step 1 reads the settings `for share`, so a concurrent save waits for it. Just before the send
- * the settings are read again under the same lock: if the cold address changed or the sweep was
- * turned off since step 1, nothing is sent and the attempt is settled `failed` (`settings-changed`,
- * review F2). The phone pushes are best-effort: a push error is swallowed, so it never stops the
- * pass or leaves the attempt pending (review F3; the in-app alert is written either way).
+ * Step 1 reads the settings `for share`, so a concurrent save waits for it; the lock ends with
+ * step 1's commit. Just before the send the settings are read again `for share` in a separate short
+ * transaction: if the cold address changed or the sweep was turned off since step 1, nothing is
+ * sent and the attempt is settled `failed` (`settings-changed`, review F2). Nothing is held across
+ * the send itself (review R1, accepted): a save that commits between that re-read's commit and the
+ * wallet's broadcast is not seen, so the coins go to the address the pass re-read, seconds earlier.
+ * The phone pushes are best-effort: a push error is swallowed, so it never stops the pass or leaves
+ * the attempt pending (review F3; the in-app alert is written either way).
  * If the process dies or step 3 fails after the send, the attempt stays `pending`: its result is
  * unknown, so no pass sends again (`held-unfinished`) until the owner saves the sweep settings
  * again, as after a failure (`held-after-failure`, no repeat alerts every pass). One pass at a time
@@ -183,8 +186,9 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
     }
     await bestEffortPush(d, 'fee-sweep-due');
 
-    // Step 2: the settings again, under lock, right before the send (review F2); then the send,
-    // outside any transaction.
+    // Step 2: the settings again, `for share` in a separate short transaction, right before the send
+    // (review F2); then the send, outside any transaction and under no lock (review R1: the window
+    // between the re-read's commit and the broadcast is accepted).
     const { plan } = started;
     const failed = (reason: FeeSweepFailReason) => ({ outcome: 'failed' as const, amountAtomic: plan.amountAtomic, keepAtomic: plan.keepAtomic, reason });
     let result: Extract<FeeSweepResult, { outcome: 'sent' | 'failed' }>;
