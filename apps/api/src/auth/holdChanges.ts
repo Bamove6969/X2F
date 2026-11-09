@@ -4,7 +4,8 @@
  *
  * - **Staging:** a change by a session whose login waits (`waits(strength)`: a username and password
  *   with nothing stronger; a PGP key login is strong, owner 6 Nov 2026 Q81) to its login methods, payout wallets, login name,
- *   security settings, recovery code or a team member's permissions is not applied: `gateChange`
+ *   security settings, recovery code or a team member's permissions, or its removal of a payout
+ *   wallet or a team member (owner p5-7: removals included, nothing applies early), is not applied: `gateChange`
  *   (hold.ts) stores it here as a draft of that session (202 `{ status: 'staged', changeId }`). The
  *   session reviews its drafts (`GET /v1/account/hold`) and submits them together.
  * - **Submitting** (`POST /v1/account/hold/changes/submit { ids }`, exactly the drafts the session
@@ -58,6 +59,8 @@ export interface ChangeSummary {
   idleHours?: number;
   memberId?: string;
   roles?: string[];
+  /** A wallet removed (owner p5-7): its label. */
+  label?: string;
 }
 
 export function describeChange(c: PendingChange): ChangeSummary {
@@ -74,6 +77,10 @@ export function describeChange(c: PendingChange): ChangeSummary {
       return { kind: c.kind, idleHours: c.idleHours };
     case 'team-roles':
       return { kind: c.kind, memberId: c.memberId, roles: [...c.roles] };
+    case 'remove-wallet':
+      return { kind: c.kind, label: c.label, addressEnds: [c.addressEnd] };
+    case 'team-remove':
+      return { kind: c.kind, memberId: c.memberId };
     default:
       return { kind: c.kind };
   }
@@ -179,15 +186,28 @@ export async function submitChanges(db: Queryable, accountId: string, sessionId:
  * cancel (404, as an unknown id). Alert `hold-changes-cancelled` `{ count, changes }` when a waiting
  * change went. Returns how many went.
  */
-export async function cancelChanges(db: Queryable, accountId: string, sessionId: string, id: string | null, now: Date): Promise<number> {
+export async function cancelChanges(
+  db: Queryable,
+  accountId: string,
+  sessionId: string,
+  id: string | null,
+  now: Date,
+  o: { member?: string } = {},
+): Promise<number> {
+  // Owner p4-8: a member with hold rights cancels waiting changes only, never the lead's drafts.
   const { rows } = await db.query<ChangeRow>(
     `delete from hold_changes
-      where account_id = $1 and ($3::uuid is null or ((submitted_at is not null or session_id = $2) and id = $3))
+      where account_id = $1 and ($4::boolean is false or submitted_at is not null)
+        and ($3::uuid is null or ((submitted_at is not null or session_id = $2) and id = $3))
       returning *`,
-    [accountId, sessionId, id],
+    [accountId, sessionId, id, o.member !== undefined],
   );
   const waiting = rows.filter((r) => r.submitted_at !== null).sort((a, b) => Number(a.seq) - Number(b.seq));
-  if (waiting.length > 0) await addAlert(db, accountId, 'hold-changes-cancelled', { count: waiting.length, changes: waiting.map((r) => describeChange(r.change)) }, now);
+  if (waiting.length > 0) {
+    await addAlert(db, accountId, 'hold-changes-cancelled', {
+      count: waiting.length, changes: waiting.map((r) => describeChange(r.change)), ...(o.member !== undefined ? { member: o.member } : {}),
+    }, now);
+  }
   return rows.length;
 }
 

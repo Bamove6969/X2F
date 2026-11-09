@@ -4,13 +4,15 @@
  *
  * 1. **A username-and-password session's changes wait 24 h** (holdChanges.ts): a session whose
  *    login waits (`waits(strength)`: a username and password with nothing stronger; a PGP key login
- *    is strong, owner 6 Nov 2026 Q81, strength.ts) changing its login methods, payout wallets, login name, security settings, recovery code or a
- *    team member's permissions (`SECURITY_CHANGE_ROUTES`, `PATCH /v1/team/members/:id`) gets each
- *    change staged (`gateChange`, 202 `{ status: 'staged', changeId }`), reviews them and submits
- *    them; they apply 24 h after the latest submission. Nobody is logged out, trades and offers go
- *    on, no `account_holds` row. Any logged-in session of the account owner cancels them; a login
- *    with a passkey, security key or PGP key held before the submission discards them; the owner
- *    is alerted (in-app and push; Jabber later) with the list.
+ *    is strong, owner 6 Nov 2026 Q81, strength.ts) changing its login methods, payout wallets, login
+ *    name, security settings, recovery code, a team member's permissions or removing a wallet or a
+ *    team member (owner p5-7: removals included, so nothing applies early; `SECURITY_CHANGE_ROUTES`,
+ *    `PATCH` and `DELETE /v1/team/members/:id`) gets each change staged (`gateChange`, 202 `{
+ *    status: 'staged', changeId }`), reviews them and submits them; they apply 24 h after the latest
+ *    submission. Nobody is logged out, trades and offers go on, no `account_holds` row. Any
+ *    logged-in session of the account owner cancels them (all, or one at a time: g65); a strong
+ *    login may approve them now (G58); a member the lead gave hold rights sees, cancels or approves
+ *    them (p4-8, holdRoutes.ts); the owner is alerted (in-app and push; Jabber later) with the list.
  * 2. **A recovery-code login holds the account 24 h** (`account_holds`, reason `recovery-code`;
  *    recovery.ts `backupSession`, all in the login's transaction): every session of the account
  *    (the owner's and the team members') is logged out, waiting changes are discarded, open trades
@@ -63,7 +65,7 @@ import { ApiError } from '../errors.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
 import { applyLoginName, applyLogoutTimer, applyOneDevice } from '../routes/account.js';
-import { applyWallets, type PendingWallet } from '../wallets/routes.js';
+import { applyWalletRemoval, applyWallets, type PendingWallet } from '../wallets/routes.js';
 import type { ConfirmMethod } from './confirm.js';
 import { applyRemoval } from './methods.js';
 import { applyPassword } from './password.js';
@@ -72,7 +74,7 @@ import { applyRecoveryCodes } from './recovery.js';
 import { waits, type LoginStrength } from './strength.js';
 import { applyTotp } from './totp.js';
 import { applyCredential, type StoredCredential } from './webauthn.js';
-import { applyRoles } from '../team/members.js';
+import { applyMemberRemoval, applyRoles } from '../team/members.js';
 import type { TeamRole } from '../team/perms.js';
 import { releaseHeldTrades, syncHeldTrades } from '../trades/held.js';
 import type { TradePublisher } from '../trades/store.js';
@@ -102,7 +104,15 @@ export type PendingChange =
   /** Review round 2 N-I4 (lead decision 2026-10-30): payout wallets added by a session whose login waits; `method` is the confirm's. */
   | { kind: 'wallets'; items: PendingWallet[]; method: ConfirmMethod | null }
   /** Model v3: a team member's permissions changed by a username-and-password session. */
-  | { kind: 'team-roles'; memberId: string; roles: TeamRole[] };
+  | { kind: 'team-roles'; memberId: string; roles: TeamRole[] }
+  /**
+   * Owner p5-7 (7 Nov 2026, replacing G5): a payout wallet removed by a username-and-password
+   * session; it stays usable until the change applies. `label` and `addressEnd` (the last 6
+   * characters, never the address) name it in the review list and the alerts.
+   */
+  | { kind: 'remove-wallet'; walletId: string; label: string; addressEnd: string }
+  /** Owner p5-7: a team member removed by a username-and-password session; they keep their access until it applies. */
+  | { kind: 'team-remove'; memberId: string };
 
 export interface Hold {
   startedAt: Date;
@@ -252,6 +262,14 @@ export async function applyChange(db: Queryable, s: SettleDeps, accountId: strin
       return false;
     case 'team-roles': {
       const ended = await applyRoles(db, accountId, c.memberId, c.roles, now);
+      for (const id of ended) s.events?.closeSession(accountId, id);
+      return false;
+    }
+    case 'remove-wallet':
+      await applyWalletRemoval(db, accountId, c.walletId, now);
+      return false;
+    case 'team-remove': {
+      const ended = await applyMemberRemoval(db, accountId, c.memberId, now);
       for (const id of ended) s.events?.closeSession(accountId, id);
       return false;
     }
@@ -498,6 +516,8 @@ export const SECURITY_CHANGE_ROUTES: readonly string[] = [
   // waits (a username and password; a PGP key login is strong since Q81) is staged like the rest,
   // whatever the confirm method.
   'POST /v1/wallets',
+  // Owner p5-7 (7 Nov 2026): removals wait too, so nothing applies early.
+  'DELETE /v1/wallets/:id',
 ];
 
 /**
@@ -525,7 +545,6 @@ export const LIVE_SESSION_TRADING_ROUTES: readonly string[] = [
 export const LIVE_SESSION_ROUTES: readonly string[] = [
   ...SECURITY_CHANGE_ROUTES,
   ...LIVE_SESSION_TRADING_ROUTES,
-  'DELETE /v1/wallets/:id',
   'POST /v1/account/approvals/:id',
   'DELETE /v1/account/sessions/:id',
   'DELETE /v1/account/recovery-sessions/:id',

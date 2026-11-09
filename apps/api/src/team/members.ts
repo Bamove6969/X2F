@@ -21,7 +21,7 @@ import { createAccount, type NewNames } from '../accounts.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
-import { HOLD_MS, holdInTx, holdRefusal, requireLiveSessionInTx, weakOf, weakRefusal, type LiveSession, type SettleDeps } from '../auth/hold.js';
+import { holdInTx, holdRefusal, requireLiveSessionInTx, weakRefusal, type LiveSession, type SettleDeps } from '../auth/hold.js';
 import { waits } from '../auth/strength.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
@@ -146,8 +146,8 @@ export interface Caller {
  * Hold model v3 (owner 2 Nov 2026): during an account hold (a recovery-code login) every session of
  * the account is logged out, so no owner session is left to ask; the 1 Nov wish that a removal
  * asked for during a hold waits for its end has no case left. A role change by a username-and-
- * password session is staged and waits 24 h (routes/team.ts, `gateChange`). A removal by one takes
- * access away at once and its login account is kept 24 h before it is deleted (owner G5, 7 Nov).
+ * password session is staged and waits 24 h (routes/team.ts, `gateChange`). A removal by one is staged
+ * too and the member keeps their access until it applies (owner p5-7, 7 Nov, replacing G5).
  */
 async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { strong: boolean }): Promise<LiveSession> {
   const live = await requireLiveSessionInTx(c, caller, now);
@@ -212,28 +212,44 @@ export async function removeMember(
   deps: Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeSession'> },
   caller: Caller,
   memberId: string,
-): Promise<void> {
+  /**
+   * Owner p5-7 (7 Nov 2026, replacing G5): the route's `gateChange`, run after the member is found.
+   * When it stages the removal (a username-and-password session) nothing else is written: the
+   * member keeps their access until the change applies 24 h after it is submitted.
+   */
+  gate: (c: Queryable) => Promise<{ changeId: string } | null> = async () => null,
+): Promise<{ changeId: string } | null> {
   const { accountId } = caller;
   const now = deps.clock();
-  const ended = await inTransaction(deps.db, async (c) => {
-    const live = await ownerWriteGate(c, caller, now, { strong: false });
-    // Owner G5 (7 Nov): from a session whose changes wait (just a username and password) access goes
-    // at once, but the member's login account is kept 24 h before it is deleted (purgeTeamLeftovers).
-    const keepUntil = weakOf(live, now) ? new Date(now.getTime() + HOLD_MS) : null;
-    const { rows } = await c.query<{ member_account_id: string | null }>(
-      `update team_members set removed_at = $3, invite_hash = null, login_kept_until = $4
-        where id = $1 and account_id = $2 and removed_at is null returning member_account_id`,
-      [memberId, accountId, now, keepUntil],
-    );
-    const row = rows[0];
-    if (!row) throw new ApiError(404, 'not-found');
-    if (row.member_account_id !== null && keepUntil === null) await deleteMemberLogin(c, row.member_account_id);
-    const s = await c.query<{ id: string }>('update sessions set revoked_at = $2 where member_id = $1 and revoked_at is null returning id', [
-      memberId, now,
-    ]);
-    return s.rows.map((r) => r.id);
+  const out = await inTransaction(deps.db, async (c) => {
+    await ownerWriteGate(c, caller, now, { strong: false });
+    const found = await c.query('select 1 from team_members where id = $1 and account_id = $2 and removed_at is null', [memberId, accountId]);
+    if (found.rows.length === 0) throw new ApiError(404, 'not-found');
+    const staged = await gate(c);
+    if (staged !== null) return { staged, ended: [] as string[] };
+    return { staged: null, ended: await applyMemberRemoval(c, accountId, memberId, now) };
   });
-  for (const id of ended) deps.events.closeSession(accountId, id);
+  for (const id of out.ended) deps.events.closeSession(accountId, id);
+  return out.staged;
+}
+
+/**
+ * The removal write (the route's, or a waiting one applied when its 24 h are up): the row is
+ * marked removed, the invite code dies, the member's login account is deleted and every session
+ * of theirs is revoked. Returns those sessions (the caller closes their streams after commit).
+ * 404 `not-found` when the member was removed meanwhile (a waiting removal is then dropped).
+ */
+export async function applyMemberRemoval(c: Queryable, accountId: string, memberId: string, now: Date): Promise<string[]> {
+  const { rows } = await c.query<{ member_account_id: string | null }>(
+    `update team_members set removed_at = $3, invite_hash = null
+      where id = $1 and account_id = $2 and removed_at is null returning member_account_id`,
+    [memberId, accountId, now],
+  );
+  const row = rows[0];
+  if (!row) throw new ApiError(404, 'not-found');
+  if (row.member_account_id !== null) await deleteMemberLogin(c, row.member_account_id);
+  const s = await c.query<{ id: string }>('update sessions set revoked_at = $2 where member_id = $1 and revoked_at is null returning id', [memberId, now]);
+  return s.rows.map((r) => r.id);
 }
 
 /** Deletes a member's login account (only ever a `member` row); the cascade takes its login methods and `team_members` keeps a null. */
@@ -313,12 +329,9 @@ export const purgeTeamLeftovers: RetentionJob = {
           where removed_at is null and joined_at is null and invite_expires_at <= $1`,
         [now],
       );
-      // A login kept 24 h after a password-only removal (owner G5) goes once that time is up.
       const gone = await c.query(
         `delete from accounts a where a.kind = 'member'
-          and not exists (select 1 from team_members tm where tm.member_account_id = a.id
-                            and (tm.removed_at is null or tm.login_kept_until > $1))`,
-        [now],
+          and not exists (select 1 from team_members tm where tm.member_account_id = a.id and tm.removed_at is null)`,
       );
       return (closed.rowCount ?? 0) + (gone.rowCount ?? 0);
     });

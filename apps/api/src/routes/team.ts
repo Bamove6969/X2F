@@ -204,7 +204,10 @@ export function teamRoutes(app: FastifyInstance): void {
     '/v1/team/members/:id',
     { preHandler: [owner, checkId, requireNotHeld, requireConfirm((req) => ({ kind: 'team-remove', memberId: idParam(req) }))] },
     async (req, reply) => {
-      await removeMember({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req));
+      // Owner p5-7: from a username-and-password session the removal is staged (202) and waits 24 h.
+      const staged = await removeMember({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), (c) =>
+        gateChange(c, req, { kind: 'team-remove', memberId: idParam(req) }));
+      if (staged !== null) return reply.code(202).send(stagedReply(staged));
       return reply.code(204).send();
     },
   );

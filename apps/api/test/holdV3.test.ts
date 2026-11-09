@@ -363,6 +363,63 @@ describe('a username + password session: changes are staged, reviewed, submitted
     expect((await passwordLogin(new Browser(app), t.name, NEW_PASSWORD)).statusCode).not.toBe(401);
   });
 
+  it('owner p5-7 (replacing G5): a wallet removal is staged and the wallet stays usable until it applies; cancelled, it never does', async () => {
+    const t = await passwordTrader();
+    // A wallet usable now (seeded: the account's first wallet would be added at once anyway).
+    const address = fakeAddress();
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Main', $2, $3, $3) returning id`,
+      [t.id, address, new Date(now.getTime() - HOUR)],
+    );
+    const walletId = rows[0]!.id;
+    // Read from the table: the session may have idled out over the 24 h.
+    const usable = async () => (await deps.db.query<{ id: string }>(
+      'select id from wallets where account_id = $1 and removed_at is null and usable_from <= $2 order by created_at, id', [t.id, now],
+    )).rows.map((w) => w.id);
+    const r = await t.b.delete(`/v1/wallets/${walletId}`);
+    expect(r.statusCode).toBe(202);
+    const changeId = (r.json() as { changeId: string }).changeId;
+    expect(await usable()).toEqual([walletId]);
+    expect((await holdView(t.b)).drafts).toEqual([expect.objectContaining({ id: changeId, kind: 'remove-wallet', label: 'Main', addressEnds: [addressEnd(address)] })]);
+    expect((await submit(t.b, [changeId])).statusCode).toBe(200);
+    later(HOLD_MS - 1000);
+    await settleDueChanges(deps.config, app.events).run(deps.db, now);
+    expect(await usable()).toEqual([walletId]);
+    later(1000);
+    await settleDueChanges(deps.config, app.events).run(deps.db, now);
+    expect(await usable()).toEqual([]);
+    expect(await alertsOf(t.id, 'hold-changes-applied')).toEqual([{ applied: ['remove-wallet'], dropped: [] }]);
+    expect(await alertsOf(t.id, 'wallet-removed')).toEqual([{ app: 'cake', label: 'Main', addressEnd: addressEnd(address) }]);
+    // A second wallet's removal, cancelled: it never applies.
+    const w2 = (await deps.db.query<{ id: string }>(
+      `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Spare', $2, $3, $3) returning id`,
+      [t.id, fakeAddress(), new Date(now.getTime() - HOUR)],
+    )).rows[0]!.id;
+    expect((await passwordLogin(t.b, t.name)).json()).toEqual({ status: 'ok' });
+    const c2 = ((await t.b.delete(`/v1/wallets/${w2}`)).json() as { changeId: string }).changeId;
+    expect((await submit(t.b, [c2])).statusCode).toBe(200);
+    expect((await t.b.delete(`/v1/account/hold/changes/${c2}`)).statusCode).toBe(204);
+    later(2 * HOLD_MS);
+    await settleDueChanges(deps.config, app.events).run(deps.db, now);
+    expect(await usable()).toEqual([w2]);
+    // An unknown wallet is 404 and stages nothing.
+    expect((await passwordLogin(t.b, t.name)).json()).toEqual({ status: 'ok' });
+    expect(errorOf(await t.b.delete('/v1/wallets/00000000-0000-4000-8000-000000000000'))).toBe('not-found');
+    expect((await holdView(t.b)).drafts).toEqual([]);
+  });
+
+  it('a strong session removes a wallet at once, as before', async () => {
+    const t = await ownerWithPasskey();
+    const b = new Browser(app);
+    expect((await passkeyLogin(b, t.auth)).statusCode).toBe(200);
+    const walletId = (await deps.db.query<{ id: string }>(
+      `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Main', $2, $3, $3) returning id`,
+      [t.id, fakeAddress(), new Date(now.getTime() - HOUR)],
+    )).rows[0]!.id;
+    expect((await b.delete(`/v1/wallets/${walletId}`)).statusCode).toBe(204);
+    expect(((await b.get('/v1/wallets')).json() as unknown[])).toEqual([]);
+  });
+
   it('one waiting change can be cancelled by id', async () => {
     const t = await passwordTrader();
     const a = ((await changePassword(t.b, t.id)).json() as { changeId: string }).changeId;
@@ -591,6 +648,20 @@ describe('a recovery-code login', () => {
     // The partner cannot move a held trade forward; leaving an unfunded one stays possible.
     expect(errorOf(await partner2.browser.post(`/v1/trades/${funded.code}/events`, { type: 'mark-paid', fiatCents: FIAT.toString() }))).toBe('counterparty-unavailable');
     expect(errorOf(await partner.browser.post(`/v1/trades/${unfunded.code}/events`, { type: 'fund-started' }))).toBe('counterparty-unavailable');
+  });
+
+  it('lead review minor: a take that raced the login (its trade has no held row) is held by the minute job', async () => {
+    const seller = await ownerWithCode();
+    const buyer = await ownerWithCode();
+    expect((await backupLogin(new Browser(app), seller.name, seller.code)).statusCode).toBe(200);
+    // A trade that committed after the login's holdTrades (the race), funded so it must be paused.
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    const s = await driveTo(deps, trade, 'secured');
+    expect((await deps.db.query('select 1 from held_trades where code = $1', [s.code])).rowCount).toBe(0);
+    await syncHeldTradesJob(noPublish).run(deps.db, now);
+    const row = await deps.db.query<{ action: string; paused: string }>('select action, paused from held_trades where code = $1', [s.code]);
+    expect(row.rows).toEqual([{ action: 'pause', paused: 'paused' }]);
+    expect((await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code])).rows[0]!.p).not.toBeNull();
   });
 
   it('lead review item 4: both parties held, the trade resumes when the second hold ends, whichever ends first', async () => {

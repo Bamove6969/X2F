@@ -13,9 +13,10 @@ alter table account_holds add constraint account_holds_reason_check
 -- key login is strong since the owner's Q81, part 5 below): staged as drafts (`submitted_at` null) for the session to review, then
 -- submitted together, then applied 24 h after the account's latest submission (`due_at`, one date
 -- for every waiting change). Stored as the change's own table stores it (a password hash, a sealed
--- secret, a public key, code hashes): never a plain secret. A login with a passkey, security key or
--- PGP key in `methods_before` (the account's methods at submission) discards them; any logged-in
--- session of the account owner cancels them.
+-- secret, a public key, code hashes, a removed wallet's label and address end): never a plain
+-- secret. Any logged-in session of the account owner cancels them, all or one at a time (g65); a
+-- strong login may approve them now (G58); `methods_before` records the account's methods at
+-- submission.
 create table hold_changes (
   id uuid primary key default gen_random_uuid(),
   -- The order the changes were made in (applied, listed and alerted in it).
@@ -104,7 +105,10 @@ update login_approvals set strength = 'strong' where strength = 'pgp-single';
 alter table login_approvals drop constraint login_approvals_strength_check;
 alter table login_approvals add constraint login_approvals_strength_check check (strength in ('strong', 'weak-single'));
 
--- Owner G5 (7 Nov): a team member removed by a session whose changes wait (just a username and
--- password) loses access at once; their login account is kept until this time, then deleted
--- (purgeTeamLeftovers). Null: deleted at the removal.
-alter table team_members add column login_kept_until timestamptz;
+-- 6. Owner p4-8 (7 Nov 2026): the "Holds and waiting changes" rights a lead may grant a member
+-- (team/perms.ts `HOLD_RIGHTS`): see the waiting changes, untick or cancel them, end the wait.
+-- (Owner p5-7 replaced G5: a removal by a username-and-password session waits 24 h like every
+-- other change, so no member login is kept past a removal any more.)
+alter table team_members drop constraint team_members_roles_check;
+alter table team_members add constraint team_members_roles_check
+  check (roles <@ '{offers,trades,hold-see,hold-cancel,hold-end}'::text[] and cardinality(roles) >= 1);

@@ -126,9 +126,36 @@ export async function syncHeldTrades(deps: Pick<Deps, 'db' | 'clock'> & { publis
   return n;
 }
 
-/** Every minute (main.ts): `syncHeldTrades` for every account, so a pause or resume missed after a commit still happens. */
+/**
+ * Lead hold v3 review, minor: a take of a held account's offer can pass its unlocked poster check
+ * and commit after the login's `holdTrades`, leaving an open trade with no row. Every open trade of
+ * an account in a running recovery-code hold that has none gets one here (as `holdTrades` would
+ * have written it); the sync then pauses or cancels it. Returns the rows added.
+ */
+export async function catchUpHeldTrades(db: Queryable, now: Date): Promise<number> {
+  const { rowCount } = await db.query(
+    `insert into held_trades (code, account_id, action, held_at)
+     select t.code, h.account_id,
+            case when t.state in ('setup', 'funding') and t.received_atomic = 0 and t.fund_started_at is null then 'cancel' else 'pause' end,
+            $1
+       from account_holds h
+       join trades t on (t.seller_account_id = h.account_id or t.buyer_account_id = h.account_id) and t.closed_at is null
+      where h.reason = 'recovery-code' and h.hold_until > $1
+     on conflict (code, account_id) do nothing`,
+    [now],
+  );
+  return rowCount ?? 0;
+}
+
+/** Every minute (main.ts): held rows a racing take missed (`catchUpHeldTrades`), then `syncHeldTrades` for every account, so a pause or resume missed after a commit still happens. */
 export function syncHeldTradesJob(publish: TradePublisher): RetentionJob {
-  return { name: 'syncHeldTrades', run: (db, now) => syncHeldTrades({ db, clock: () => now, publish }) };
+  return {
+    name: 'syncHeldTrades',
+    run: async (db, now) => {
+      await catchUpHeldTrades(db, now);
+      return syncHeldTrades({ db, clock: () => now, publish });
+    },
+  };
 }
 
 /**

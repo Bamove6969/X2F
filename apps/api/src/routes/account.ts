@@ -41,6 +41,11 @@ export interface AccountOverview {
   accountHoldUntil: string | null;
   /** Hold model v3: the account's changes waiting their 24 h (the banner "N changes take effect on <date>"), else null. */
   pendingChanges: { count: number; takesEffectAt: string } | null;
+  /**
+   * Owner p4-8: for a team member, while the lead's changes wait, when they take effect (the
+   * member's banner "A hold is on"; no count, nothing listed); null otherwise and for the lead.
+   */
+  teamHold: { takesEffectAt: string } | null;
   /** Hold model v3: this session's changes are staged and wait 24 h (the pop-up warns before the first one). */
   changesWait: boolean;
   /** Hold model v3: a recovery code replaced a used one and this session may show it once (`POST /v1/account/recovery-code/reveal`). */
@@ -80,6 +85,12 @@ export interface MethodCounts {
   totp: boolean;
   /** Recovery codes not yet used. */
   recoveryCodes: number;
+}
+
+/** Owner p4-8: the lead's waiting changes as a member's banner sees them: only the date. */
+async function teamHoldOf(db: Queryable, accountId: string): Promise<{ takesEffectAt: string } | null> {
+  const p = await pendingSummary(db, accountId);
+  return p === null ? null : { takesEffectAt: p.takesEffectAt };
 }
 
 /**
@@ -186,6 +197,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
     pendingChanges: member !== null ? null : await pendingSummary(deps.db, accountId),
+    teamHold: member === null ? null : await teamHoldOf(deps.db, accountId),
     changesWait: member !== null ? false : await changesWait(req),
     recoveryCodeToShow: member !== null ? false : await revealDue(deps.db, accountId, sessionId, deps.clock()),
     member,

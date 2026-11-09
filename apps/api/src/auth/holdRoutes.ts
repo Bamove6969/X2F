@@ -12,11 +12,23 @@
  * - `DELETE /v1/account/hold/changes` and `DELETE /v1/account/hold/changes/:id` → 204: any session
  *   of the account owner, a username-and-password one included, cancels the waiting changes (or one of
  *   them, or one of its own drafts); 404 for nothing to cancel by that id.
+ * - `POST /v1/account/hold/changes/approve { ids }`: a strong login applies those waiting changes now (G58).
+ *
+ * Team members (owner p4-8, 7 Nov 2026; the HoldMember board): the lead grants the "Holds and
+ * waiting changes" rights (team/perms.ts). Every member reads `GET /v1/account/hold` with `rights`
+ * and `lead` (the team's name): without a right (`none`, the default) it says only that a hold is
+ * on (`changes.takesEffectAt`, no count, no list); `see` lists the waiting changes; `cancel` also
+ * unticks or cancels them (never the lead's drafts); `end` also approves them now, from a strong
+ * login. Each member action writes a team audit row (G35). Submitting stays the lead's.
+ *
  * Every write re-checks its session under the account lock (`requireLiveSessionInTx`,
- * `LIVE_SESSION_ROUTES`). Team members get 403 `owner-only` (`requireSession`'s default).
+ * `LIVE_SESSION_ROUTES`).
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { auditMember } from '../team/audit.js';
+import { holdRightOf } from '../team/perms.js';
 import { holdInTx, holdRefusal, lockAccount, requireLiveSessionInTx, requireNotHeld, settleOf, weakOf, weakRefusal, withTx } from './hold.js';
 import { HOLD_CHANGE_ACTIONS_PER_DAY, approveChanges, cancelChanges, changesWait, holdActionsKey, listChanges, settleChangesInTx, submitChanges } from './holdChanges.js';
 import { dailyCap } from './throttle.js';
@@ -33,21 +45,29 @@ function idsOf(req: FastifyRequest): string[] {
   return (ids as string[]).map((i) => i.toLowerCase());
 }
 
+const actor = (req: FastifyRequest) => ({ accountId: req.auth.accountId, memberId: req.auth.memberId });
+
 export function holdRoutes(app: FastifyInstance): void {
-  app.get('/v1/account/hold', { preHandler: requireSession({ allowRecovery: true, allowHeld: true, kinds: ['trader'] }) }, async (req) => {
+  // Owner p4-8: every member reads the view; what it holds follows their hold right.
+  const holdReader = requireSession({ allowRecovery: true, allowHeld: true, kinds: ['trader'], member: 'any' });
+  app.get('/v1/account/hold', { preHandler: holdReader }, async (req) => {
     const deps = req.server.deps;
-    const { accountId, sessionId } = req.auth;
+    const { accountId, sessionId, memberId } = req.auth;
     const now = deps.clock();
     const hold = await withTx(deps.db, async (db) => {
       await lockAccount(db, accountId);
       await settleChangesInTx(db, settleOf(req), accountId, now);
       return holdInTx(db, settleOf(req), accountId, now);
     });
-    return {
-      accountHold: hold === null ? null : { until: hold.holdUntil.toISOString(), reason: hold.reason },
-      ...(await listChanges(deps.db, accountId, sessionId)),
-      changesWait: await changesWait(req),
-    };
+    const accountHold = hold === null ? null : { until: hold.holdUntil.toISOString(), reason: hold.reason };
+    const list = await listChanges(deps.db, accountId, sessionId);
+    if (memberId === null) return { accountHold, ...list, changesWait: await changesWait(req) };
+    const rights = holdRightOf(req.auth.memberRoles);
+    const lead = (await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [accountId])).rows[0]?.display_name ?? '';
+    const changes = rights === 'none'
+      ? { count: 0, takesEffectAt: list.changes.takesEffectAt, items: [] }
+      : { ...list.changes, items: list.changes.items.map((i) => ({ ...i, mine: false })) };
+    return { accountHold, changes, drafts: [], changesWait: false, rights, lead };
   });
 
   app.post('/v1/account/hold/changes/submit', { preHandler: [requireSession({ kinds: ['trader'] }), requireNotHeld] }, async (req) => {
@@ -68,7 +88,9 @@ export function holdRoutes(app: FastifyInstance): void {
   });
 
   // Owner G58 (7 Nov): a strong session approves waiting changes now (a weak one 403 weak-session).
-  app.post('/v1/account/hold/changes/approve', { preHandler: [requireSession({ kinds: ['trader'] }), requireNotHeld] }, async (req) => {
+  // Owner p4-8: a member with the "End a hold" right too, from their own strong login.
+  const holdEnder = requireSession({ kinds: ['trader'], member: 'hold-end' });
+  app.post('/v1/account/hold/changes/approve', { preHandler: [holdEnder, requireNotHeld] }, async (req) => {
     const ids = idsOf(req);
     const deps = req.server.deps;
     const now = deps.clock();
@@ -78,35 +100,42 @@ export function holdRoutes(app: FastifyInstance): void {
       if (weakOf(live, now)) throw weakRefusal();
       const hold = await holdInTx(db, settleOf(req), req.auth.accountId, now);
       if (hold !== null) throw holdRefusal(hold.holdUntil);
-      return approveChanges(db, settleOf(req), req.auth.accountId, ids, now);
+      const settled = await approveChanges(db, settleOf(req), req.auth.accountId, ids, now);
+      await auditMember(db, actor(req), { action: 'hold-changes-approved', detail: { count: settled } }, now);
+      return settled;
     });
     if (n > 0) void req.server.push.send(req.auth.accountId, 'alert').catch(() => undefined);
     return { status: 'applied' as const, count: n };
   });
 
-  const cancel = async (req: FastifyRequest, id: string | null): Promise<void> => {
+  /** Cancels (all, or `id`) under the account lock; `audit` writes the member's team audit row in the same transaction. */
+  const cancel = async (req: FastifyRequest, id: string | null, audit: (db: Queryable, n: number) => Promise<void>): Promise<void> => {
     const deps = req.server.deps;
     const now = deps.clock();
     await dailyCap(deps, holdActionsKey(req.auth.accountId), HOLD_CHANGE_ACTIONS_PER_DAY);
     const n = await withTx(deps.db, async (db) => {
       await requireLiveSessionInTx(db, req.auth, now);
       await settleChangesInTx(db, settleOf(req), req.auth.accountId, now);
-      return cancelChanges(db, req.auth.accountId, req.auth.sessionId, id, now);
+      const member = req.auth.memberId !== null ? { member: req.auth.memberName ?? '' } : {};
+      const gone = await cancelChanges(db, req.auth.accountId, req.auth.sessionId, id, now, member);
+      if (gone > 0) await audit(db, gone);
+      return gone;
     });
     if (id !== null && n === 0) throw new ApiError(404, 'not-found');
     if (n > 0) void req.server.push.send(req.auth.accountId, 'alert').catch(() => undefined);
   };
   // A recovery session cancels too, during its hold (owner G32: the recovery-code login keeps the
-  // waiting changes; cancelling only takes power away).
-  const cancelOpts = { preHandler: requireSession({ kinds: ['trader'], allowRecovery: true, allowHeld: true }) };
-  app.delete('/v1/account/hold/changes', cancelOpts, async (req, reply) => {
-    await cancel(req, null);
+  // waiting changes; cancelling only takes power away). Owner p4-8: a member with the "Untick or
+  // cancel waiting changes" right (or "End a hold") cancels waiting changes, never the lead's drafts.
+  const holdCanceller = requireSession({ kinds: ['trader'], allowRecovery: true, allowHeld: true, member: 'hold-cancel' });
+  app.delete('/v1/account/hold/changes', { preHandler: holdCanceller }, async (req, reply) => {
+    await cancel(req, null, (db, n) => auditMember(db, actor(req), { action: 'hold-changes-cancelled', detail: { count: n } }, req.server.deps.clock()));
     return reply.code(204).send();
   });
-  app.delete('/v1/account/hold/changes/:id', cancelOpts, async (req, reply) => {
+  app.delete('/v1/account/hold/changes/:id', { preHandler: holdCanceller }, async (req, reply) => {
     const id = (req.params as { id?: unknown }).id;
     if (typeof id !== 'string' || !UUID.test(id)) throw new ApiError(404, 'not-found');
-    await cancel(req, id.toLowerCase());
+    await cancel(req, id.toLowerCase(), (db, n) => auditMember(db, actor(req), { action: 'hold-changes-cancelled', detail: { count: n } }, req.server.deps.clock()));
     return reply.code(204).send();
   });
 }
