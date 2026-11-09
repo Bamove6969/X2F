@@ -67,7 +67,8 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
   },
   {
     table: 'pgp_keys', accountColumn: 'account_id', ops: ALL,
-    changes: ['id', 'account_id', 'fingerprint', 'created_at'],
+    // proved_subkeys (210) is set once with the key and never updated: a change if it ever were (lead default, owner p11-119).
+    changes: ['id', 'account_id', 'fingerprint', 'created_at', 'proved_subkeys'],
     bookkeeping: { armored_enc: 'the refreshed key stored at login (same fingerprint)', last_used_at: 'every login' },
   },
   {
@@ -90,7 +91,9 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
   },
   {
     table: 'trading_holds', accountColumn: 'account_id', ops: ALL,
-    changes: ['id', 'account_id', 'created_at', 'lifted_at'],
+    // 208's freeze columns (kind, reason, side, who placed or lifted it, the dispute) are changes like the
+    // rest of a hold (lead default, owner p11-119).
+    changes: ['id', 'account_id', 'created_at', 'lifted_at', 'kind', 'reason', 'side', 'placed_by', 'lifted_by', 'dispute_code', 'dispute_seq'],
     bookkeeping: {},
   },
   {
