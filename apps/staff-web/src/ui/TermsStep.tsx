@@ -21,7 +21,6 @@ import type { TermsSignature } from '@x2f/auth-client';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { staffTerms } from '../api.js';
 import { Button, KEY_POINTS, PRIVACY_HEADING, SignaturePad, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from './kit.js';
-import '../../../web/src/screens/setup/setup.css';
 import './staff.css';
 
 /** How close to the bottom (in CSS pixels) counts as the end, for rounding on zoomed screens (as the trader's). */

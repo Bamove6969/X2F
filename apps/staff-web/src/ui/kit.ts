@@ -6,7 +6,9 @@
  * kit can move to a shared package later by changing this file alone.
  *
  * The auth and settings screens' field, card and code-list styles (`x2f-field`, `x2f-input`,
- * `x2f-card`, `x2f-codes`) are apps/web's screens.css, loaded by main.tsx with the tokens.
+ * `x2f-card`, `x2f-codes`) are apps/web's screens.css, and the Terms box and signature pad's are
+ * its setup.css; both are loaded by main.tsx with the tokens, the one other place that imports
+ * from apps/web (test/oneDoor.test.ts fails on any other).
  */
 export { Button } from '../../../web/src/ui/Button.js';
 export { CantDoThat } from '../../../web/src/ui/CantDoThat.js';
