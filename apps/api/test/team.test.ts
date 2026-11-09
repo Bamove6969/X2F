@@ -278,7 +278,7 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     const banned = await genKey();
     await recordBannedValues(deps.db, deps.config, { kind: 'pgp-fingerprint', values: [banned.fingerprint.toLowerCase()], accountId: null, now: deps.clock() });
     const b = new Browser(app);
-    const s1 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: banned.publicKey });
+    const s1 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: banned.publicKey, acceptedTerms: deps.config.termsVersion });
     expect(s1.statusCode, s1.body).toBe(200);
     const c1 = s1.json() as { challengeId: string; encryptedMessage: string };
     const f1 = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: codeOf(await decrypt(c1.encryptedMessage, banned.privateKey, undefined, deps.clock())) });
@@ -290,7 +290,7 @@ describe('the member sign-up (two factors, the staff rule)', () => {
 
     // The second PGP factor goes through insertPgpKey as well.
     const k1 = await genKey();
-    const s2 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: k1.publicKey });
+    const s2 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: k1.publicKey, acceptedTerms: deps.config.termsVersion });
     const c2 = s2.json() as { challengeId: string; encryptedMessage: string };
     const f2 = await b.post('/v1/team/join/finish', { challengeId: c2.challengeId, code: codeOf(await decrypt(c2.encryptedMessage, k1.privateKey, undefined, deps.clock())) });
     expect(f2.statusCode, f2.body).toBe(201);
@@ -737,6 +737,8 @@ describe('the audit log covers every member action (review M3)', () => {
     const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
     const dp = await driveTo(deps, d.trade, 'paid');
     setNow(dp.confirmBy!);
+    // The confirm window (2 hours) outlasts the member's session: log in again at its end.
+    expect((await m.browser.post('/t/login', { accountId: m.loginId })).statusCode).toBe(200);
     const opened = await m.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'a private note' });
     expect(opened.statusCode, opened.body).toBe(200);
     // A moderator's round-1 ruling, through the dispute machine (Plan 4 Task 12 is not built yet).

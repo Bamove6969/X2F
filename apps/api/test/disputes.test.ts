@@ -103,6 +103,7 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect(await disputeRow(t.code)).toBeUndefined();
     expect(await eventTypes(t.code)).not.toContain('open-dispute');
     setNow(at(120 * MIN));
+    await relogin(seller);
     expect((await seller.browser.post(dispute(t.code), { reason: 'paid', note: '' })).statusCode).toBe(200);
     expect(await disputeRow(t.code)).toMatchObject({ opened_by: 'seller' });
   });

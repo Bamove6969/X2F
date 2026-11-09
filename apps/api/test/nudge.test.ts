@@ -880,6 +880,10 @@ describe('the seller\'s nudge unlocks the refund (owner G2, g66; migration 119)'
     const buyer = await trader();
     const s = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
     const secured = await driveTo(deps, s.trade, 'secured');
+    // The time to pay outlasts the seller's first session (2 hours): log in again at its end; the
+    // loop's 90 minutes fit in the new one.
+    setNow(secured.payBy!);
+    expect((await seller.b.post('/t/login', { accountId: seller.id })).statusCode).toBe(200);
     await withRealWiring(async () => {
       for (let i = 0; i < 6; i++) {
         setNow(new Date(secured.payBy!.getTime() + i * NUDGE_GAP_MS));
