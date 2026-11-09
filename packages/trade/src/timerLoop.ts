@@ -40,23 +40,33 @@ const reasonOf = (e: unknown): string => (e instanceof TradeRuleError ? e.code :
  *   would write nothing).
  * - A `lapsed` trade still holding funds whose lapse refund was not settled within
  *   `lapseCosignMin` (strictly after lapsedAt + 30 min) → `escalate` (P3-I6, OD-2).
+ * - `held` (J-14, owner D-059): codes of trades whose buyer or seller account is locked by a "My
+ *   account has been compromised" ticket. A held open trade is paused at `now` and stays paused
+ *   (never resumed, never ticked), with or without maintenance, until it is no longer held; then the
+ *   rules above resume it.
  * At most one event per trade per pass. A trade the state machine refuses is skipped and returned
  * in `skipped` with its rule code, and the pass goes on.
  */
-export function timerEvents(trades: readonly Trade[], maintenanceSince: Date | null, now: Date): TimerPass {
+export function timerEvents(trades: readonly Trade[], maintenanceSince: Date | null, now: Date, held: ReadonlySet<string> = new Set()): TimerPass {
   checkDate(now);
   if (maintenanceSince !== null) checkDate(maintenanceSince);
   const events: TimerEvent[] = [];
   const skipped: TimerPass['skipped'] = [];
   for (const t of trades) {
     try {
-      const e = decide(t, maintenanceSince, now);
+      const e = held.has(t.code) ? holdEvent(t, now) : decide(t, maintenanceSince, now);
       if (e !== null) events.push(e);
     } catch (err) {
       skipped.push({ code: t.code, reason: reasonOf(err) });
     }
   }
   return { events, skipped };
+}
+
+/** A held trade: paused at once if it has a timer and is not paused yet, else nothing. */
+function holdEvent(t: Trade, now: Date): TimerEvent | null {
+  if ((t.closedAt !== null && !awaitingCancelConfirm(t)) || t.pausedAt !== null) return null;
+  return { code: t.code, event: { type: 'pause' }, at: now };
 }
 
 function decide(t: Trade, maintenanceSince: Date | null, now: Date): TimerEvent | null {

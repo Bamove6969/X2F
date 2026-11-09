@@ -131,6 +131,29 @@ describe('timer loop decisions (Task 9, pure)', () => {
     expect(resumed!.setupBy).toEqual(at(35)); // 15 + 20 min pause
   });
 
+  // J-14 (owner D-059): a trade of an account locked by a "My account has been compromised" ticket
+  // is paused at once and stays paused (all timers stop) until staff unlock the account, whatever
+  // maintenance does.
+  test('a held trade (its account is locked) is paused, never resumed, never ticked, and resumes once it is no longer held', () => {
+    const open = secured();
+    const held = new Set([open.code]);
+    expect(decide([open], null, at(5), held).events).toEqual([{ code: open.code, event: { type: 'pause' }, at: at(5) }]);
+    const paused = sys(open, { type: 'pause' }, at(5));
+    // Maintenance off: an ordinary paused trade would resume; a held one does not.
+    expect(decide([paused], null, at(200), held).events).toEqual([]);
+    // Maintenance on, then off again: still nothing for the held trade, even far past payBy.
+    expect(decide([paused], at(100), at(300), held).events).toEqual([]);
+    expect(decide([paused], null, at(400), held).events).toEqual([]);
+    // Unlocked (no longer held): it resumes and its deadlines move by the whole pause.
+    expect(decide([paused], null, at(400)).events).toEqual([{ code: paused.code, event: { type: 'resume' }, at: at(400) }]);
+    const resumed = sys(paused, { type: 'resume' }, at(400));
+    expect(resumed.payBy).toEqual(at(2 + TIMERS.payMin + 395));
+    // A closed trade has no timer, held or not.
+    const closed = sys(taken('ZZZZ2345EFGH6789'), { type: 'tick' }, at(60));
+    expect(closed.closedAt).not.toBeNull();
+    expect(decide([closed], null, at(61), new Set([closed.code])).events).toEqual([]);
+  });
+
   test('maintenance on for 20 min moves payBy by 20 min and no tick fires meanwhile', () => {
     let trades = [secured()];
     const payBy = trades[0]!.payBy!;
