@@ -38,7 +38,8 @@ export function startDetached(name: string, cmd: string, args: string[], env: Re
     detached: true,
     stdio: ['ignore', log, log],
     // A clean environment: PATH and HOME only, plus what the process needs.
-    env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...env },
+    // NODE_EXTRA_CA_CERTS passes through so the API's price fetches work behind a TLS-inspecting proxy.
+    env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...(process.env.NODE_EXTRA_CA_CERTS ? { NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS } : {}), ...env },
   });
   child.unref();
   if (child.pid === undefined) throw new Error(`could not start ${name}`);
