@@ -162,3 +162,4 @@ Landing order after audit batch 2: job1a + job1b together (BuyerPay overlap: onI
 - revenue-ledger F1-F7 done at 64fc8c56 (main merged); security re-verify next.
 - trade-copy M1/M2/L1 done at e47e8e43; re-verify next.
 - Page 11 now at 99 questions.
+- 21:55 UTC: J-23 security note committed 9154196b on wip/lead-multi-device (pushed), docs only. Finding: the 24 h hold on a new device has no code left after hold-v3-port; the real gap is chat keys on a second device. Build waits for p12-5 (6-digit code), hold-v3-port and jabber landing, and design's look at the note. Owner questions p11-100..107.
