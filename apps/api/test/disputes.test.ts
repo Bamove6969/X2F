@@ -103,6 +103,8 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect(await disputeRow(t.code)).toBeUndefined();
     expect(await eventTypes(t.code)).not.toContain('open-dispute');
     setNow(at(120 * MIN));
+    // Two hours on, the seller's unchosen session length (main, owner 2 Nov) has ended: log in again.
+    await relogin(seller);
     expect((await seller.browser.post(dispute(t.code), { reason: 'paid', note: '' })).statusCode).toBe(200);
     expect(await disputeRow(t.code)).toMatchObject({ opened_by: 'seller' });
   });

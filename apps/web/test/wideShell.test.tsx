@@ -55,7 +55,8 @@ describe('DesktopRail (SellQuote-Wide, Settings-Wide and the other *-Wide boards
   it('has the logo as the home link, the page name under it, then the six pages in board order', () => {
     const host = rail('/sell');
     const nav = host.querySelector('nav[aria-label="Main"].x2f-rail')!;
-    const home = nav.querySelector('.x2f-rail__head > a[aria-label="X2F home"]')!;
+    // The logo sits in .x2f-brand beside the Site news bell (review I3; merge 71e30222).
+    const home = nav.querySelector('.x2f-rail__head > .x2f-brand > a[aria-label="X2F home"]')!;
     expect(home.getAttribute('href')).toBe('/sell');
     expect(home.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
     expect(nav.querySelector('.x2f-rail__page')!.textContent).toBe('Find a trade');

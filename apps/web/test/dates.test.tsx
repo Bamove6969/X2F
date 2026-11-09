@@ -108,10 +108,11 @@ describe('durations: digits mono, units in the body face', () => {
     expect(host.querySelector('[role="timer"] .x2f-duration')).not.toBeNull();
   });
 
-  it('a clock Countdown stays "28:42", all mono', () => {
+  // Main's kit 1.5 timer parts (2af5a10b; lead 8 Nov: the kit wins) write a clock as "28 min 42 s".
+  it('a clock Countdown reads "28 min 42 s" (the kit\'s timer parts), not a Duration', () => {
     const now = Date.UTC(2026, 10, 1, 14, 5);
     const { host } = render(<Countdown deadline={new Date(now + 1722_000)} serverClock={() => new Date(now)} />);
-    expect(host.textContent).toBe('28:42');
+    expect(host.textContent).toBe('28 min 42 s');
     expect(host.querySelector('.x2f-duration')).toBeNull();
   });
 });

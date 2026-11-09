@@ -708,6 +708,8 @@ describe('the audit log covers every member action (review M3)', () => {
     const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
     const dp = await driveTo(deps, d.trade, 'paid');
     setNow(dp.confirmBy!);
+    // The confirm window outlasts the member's unchosen session length (main, owner 2 Nov): log in again.
+    expect((await m.browser.post('/t/login', { accountId: m.loginId })).statusCode).toBe(200);
     const opened = await m.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'a private note' });
     expect(opened.statusCode, opened.body).toBe(200);
     // A moderator's round-1 ruling, through the dispute machine (Plan 4 Task 12 is not built yet).

@@ -883,6 +883,8 @@ describe('the seller\'s nudge unlocks the refund (owner G2, g66; migration 119)'
     await withRealWiring(async () => {
       for (let i = 0; i < 6; i++) {
         setNow(new Date(secured.payBy!.getTime() + i * NUDGE_GAP_MS));
+        // The time to pay outlasts the seller's unchosen session length (main, owner 2 Nov): log in again.
+        expect((await seller.b.post('/t/login', { accountId: seller.id })).statusCode).toBe(200);
         expect((await nudge(seller, buyer.name, s.code)).statusCode, `nudge ${i}`).toBe(202);
         setNow(new Date(secured.payBy!.getTime() + i * NUDGE_GAP_MS + NUDGE_GAP_MS - 1));
         expect((await nudge(seller, buyer.name, s.code)).statusCode, `too soon ${i}`).toBe(429);
