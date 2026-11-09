@@ -26,18 +26,20 @@ describe('displayRate: the rate amounts are shown at', () => {
     expect(displayRate({ mode: 'market', marginBps: -100 }, 'USD', MARKET, true)).toEqual(usd(32_670n));
   });
 
-  it('without the markup: the market price, for a fixed-price offer too', () => {
+  it('without the markup: the market price', () => {
     expect(displayRate(PLUS_2_5, 'USD', MARKET, false)).toEqual(MARKET);
-    const fixed: Pricing = { mode: 'fixed', centsPerXmr: 35_000n };
-    expect(displayRate(fixed, 'USD', MARKET, true)).toEqual(usd(35_000n));
-    expect(displayRate(fixed, 'USD', MARKET, false)).toEqual(MARKET);
+    expect(displayRate({ mode: 'market', marginBps: -5_000 }, 'USD', MARKET, false)).toEqual(MARKET);
   });
 
-  it('null with no market price, except a fixed price with the markup; a market in another currency is none', () => {
+  it('there is no fixed price (owner Q1): a fixed pricing is refused, never shown at its own rate', () => {
+    const fixed = { mode: 'fixed', centsPerXmr: 35_000n } as unknown as Pricing;
+    expect(() => displayRate(fixed, 'USD', MARKET, true)).toThrow(RangeError);
+    expect(() => displayRate(fixed, 'USD', null, true)).toThrow(RangeError);
+  });
+
+  it('null with no market price, with or without the markup; a market in another currency is none', () => {
     expect(displayRate(PLUS_2_5, 'USD', null, true)).toBeNull();
     expect(displayRate(PLUS_2_5, 'USD', null, false)).toBeNull();
-    expect(displayRate({ mode: 'fixed', centsPerXmr: 35_000n }, 'USD', null, true)).toEqual(usd(35_000n));
-    expect(displayRate({ mode: 'fixed', centsPerXmr: 35_000n }, 'USD', null, false)).toBeNull();
     expect(displayRate(PLUS_2_5, 'USD', { currency: 'EUR', centsPerXmr: 30_000n }, false)).toBeNull();
   });
 });
