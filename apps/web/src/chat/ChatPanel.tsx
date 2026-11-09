@@ -50,7 +50,7 @@ import { BlockAction } from '../screens/settings/BlockAction.js';
 import { useTradeLive } from '../screens/trade/seams.js';
 import { ChatFailed, chatClient, openOfferChat, openTradeChat, type ChatFailure, type ChatSnapshot } from './client.js';
 import { useChatLive } from './live.js';
-import { publishPaySnapshot } from './payDetailsFeed.js';
+import { panelPublishing, publishPaySnapshot } from './payDetailsFeed.js';
 import './chat.css';
 
 /** The spec 6.6 notice, word for word (P3-M2). */
@@ -176,6 +176,8 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
   useTradeLive(tradeCode ?? '', () => {
     if (tradeCode) void sync();
   });
+  // While this panel is open it publishes every snapshot, so the trade room's feed pauses its own poll (review M5).
+  useEffect(() => (tradeCode ? panelPublishing(tradeCode) : undefined), [tradeCode]);
 
   // Keep the list at its newest line.
   const lineCount = snap?.lines.length ?? 0;

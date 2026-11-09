@@ -9,7 +9,8 @@
  * It syncs the chat itself, through the same worker engine the panel uses, so the card fills even
  * while the phone's chat sheet is closed: on subscribe, on the chat's live event and on a timer.
  * An open ChatPanel for the same trade also hands in each snapshot it gets (`publishPaySnapshot`),
- * so the card follows the panel at once.
+ * so the card follows the panel at once; while such a panel is open (`panelPublishing`) the feed's
+ * own timer pauses, so the chat is polled once per interval, not twice (pay-details review M5).
  */
 import { payFieldsFor } from '@x2f/trade';
 import type { PaymentDetail, PaymentDetailsSource } from '../screens/trade/paySeams.js';
@@ -38,6 +39,25 @@ export function payRowsOf(snap: ChatSnapshot): PaymentDetail[] | null {
 const norm = (c: string): string => c.replace(/-/g, '').toUpperCase();
 const listeners = new Map<string, Set<(d: PaymentDetail[] | null) => void>>();
 const latest = new Map<string, PaymentDetail[] | null>();
+/** How many open panels are publishing for each trade. */
+const panels = new Map<string, number>();
+
+/**
+ * An open ChatPanel for `tradeCode` is syncing its chat and publishing every snapshot: the feed's
+ * own poll for that trade pauses until the returned release is called (the panel's unmount).
+ */
+export function panelPublishing(tradeCode: string): () => void {
+  const key = norm(tradeCode);
+  panels.set(key, (panels.get(key) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const n = (panels.get(key) ?? 1) - 1;
+    if (n <= 0) panels.delete(key);
+    else panels.set(key, n);
+  };
+}
 
 /** An open panel's snapshot for `tradeCode`: the card follows it at once. */
 export function publishPaySnapshot(tradeCode: string, snap: ChatSnapshot): void {
@@ -73,7 +93,10 @@ export const chatPaymentDetailsSource: PaymentDetailsSource = (code, onDetails) 
       if (!live) return;
       chat = c;
       offLive = onChatLive(c, () => void sync());
-      timer = setInterval(() => void sync(), PAY_FEED_POLL_MS);
+      // Paused while a panel for this trade polls the same chat and publishes (review M5).
+      timer = setInterval(() => {
+        if (!panels.has(key)) void sync();
+      }, PAY_FEED_POLL_MS);
       return sync();
     })
     .catch(() => {

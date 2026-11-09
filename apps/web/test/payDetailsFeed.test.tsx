@@ -4,10 +4,13 @@
  * in the trade's encrypted chat (closing paySeams.ts's GAP). The feed syncs the chat through the
  * worker's engine itself, so the card fills even while the chat sheet is closed.
  */
+import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setChatClient, type ChatClient, type ChatSnapshot } from '../src/chat/client.js';
 import { emitChatLive } from '../src/chat/live.js';
-import { PAY_FEED_POLL_MS, chatPaymentDetailsSource, payRowsOf, publishPaySnapshot } from '../src/chat/payDetailsFeed.js';
+import { ChatPanel } from '../src/chat/ChatPanel.js';
+import { PAY_FEED_POLL_MS, chatPaymentDetailsSource, panelPublishing, payRowsOf, publishPaySnapshot } from '../src/chat/payDetailsFeed.js';
+import { render } from './render.js';
 
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
 const CHAT = 'Q2W3-E4R5-T6Y7-U8I9';
@@ -98,6 +101,49 @@ describe('chatPaymentDetailsSource', () => {
     // Another trade's panel is not this card's.
     publishPaySnapshot('AAAA-BBBB-CCCC-DDDD', snap({ lines: [line('9', 'seller', { ...PAY, fields: [{ key: 'name', value: 'Other' }, { key: 'email', value: 'o@x.ca' }] })] }));
     expect(on).toHaveBeenLastCalledWith(ROWS);
+    off();
+  });
+
+  it("review M5 (pay details): the feed's own poll pauses while a panel for the same trade is publishing, and follows the panel's snapshots instead; another trade's panel does not pause it", async () => {
+    const on = vi.fn();
+    const off = chatPaymentDetailsSource(CODE, on);
+    await tick();
+    const n = client.sync.mock.calls.length;
+    const release = panelPublishing(CODE);
+    const other = panelPublishing('AAAA-BBBB-CCCC-DDDD');
+    vi.advanceTimersByTime(PAY_FEED_POLL_MS * 3);
+    await tick();
+    expect(client.sync.mock.calls.length).toBe(n);
+    publishPaySnapshot(CODE, snap({ lines: [line('1', 'seller')] }));
+    expect(on).toHaveBeenLastCalledWith(ROWS);
+    // The panel closes: the poll goes on.
+    release();
+    release();
+    vi.advanceTimersByTime(PAY_FEED_POLL_MS);
+    await tick();
+    expect(client.sync.mock.calls.length).toBe(n + 1);
+    other();
+    off();
+  });
+
+  it('review M5 (pay details): an open ChatPanel for the trade is such a panel: while it is mounted only it polls the chat; once it unmounts the feed polls again', async () => {
+    const on = vi.fn();
+    const off = chatPaymentDetailsSource(CODE, on);
+    await tick();
+    const panel = render(<ChatPanel chat={CHAT} name="Sam" tradeCode={CODE} />);
+    await act(tick);
+    const n = client.sync.mock.calls.length;
+    // One poll interval (the panel's ready poll and the feed's are the same 15 s): the panel's sync alone.
+    await act(async () => {
+      vi.advanceTimersByTime(PAY_FEED_POLL_MS);
+      await tick();
+    });
+    expect(client.sync.mock.calls.length).toBe(n + 1);
+    panel.unmount();
+    const m = client.sync.mock.calls.length;
+    vi.advanceTimersByTime(PAY_FEED_POLL_MS);
+    await tick();
+    expect(client.sync.mock.calls.length).toBe(m + 1);
     off();
   });
 
