@@ -2,12 +2,13 @@
 // Owner 2 Nov 2026: Settings > Account type (Trader and Vendor), Post offer for traders, and the
 // confirm sheet for become-vendor (no password), against a stubbed API.
 import { act } from 'react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfirmSheet } from '../src/screens/auth/ConfirmSheet.js';
 import { PostOffer } from '../src/screens/PostOffer.js';
 import { AccountType, hasVendorKey } from '../src/screens/settings/AccountType.js';
 import { ACCOUNT_TYPE_COPY } from '../src/screens/settings/accountTypeCopy.js';
+import { BehindTheDoor } from '../src/session/frontDoor.js';
 import { accountTypeOf, mayPostOffers } from '../src/session/member.js';
 import { refreshSession, type Session } from '../src/session/useSession.js';
 import { fire, render } from './render.js';
@@ -132,6 +133,32 @@ describe('Settings > Account type', () => {
     expect(byPart(host, 'no-switch-back')?.textContent).toBe(ACCOUNT_TYPE_COPY.noSwitchBack);
     expect(byPart(host, 'inactive-closes')?.textContent).toBe(ACCOUNT_TYPE_COPY.inactiveCloses);
     expect(host.textContent).not.toContain('comes later');
+  });
+});
+
+describe('Settings > Account type behind the front door', () => {
+  it('the "now a vendor account" status line survives the session re-check after the switch (gate change 5b3b38c5)', async () => {
+    typeReply = { status: 200, body: { ok: true } };
+    const { host } = render(
+      <MemoryRouter initialEntries={['/settings/account-type']}>
+        <Routes>
+          <Route element={<BehindTheDoor />}>
+            <Route path="/settings/account-type" element={<AccountType />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(byPart(host, 'type-name')?.textContent).toBe('Trader');
+    me = { ...me, accountType: 'vendor' };
+    click(byPart(host, 'switch'));
+    await settle();
+    click(byPart(document, 'switch-confirm'));
+    await settle();
+    await settle();
+    expect(calls.find((c) => c.url === '/v1/account/type')?.method).toBe('PUT');
+    expect(byPart(host, 'said')?.textContent).toBe(ACCOUNT_TYPE_COPY.switched);
+    expect(byPart(host, 'type-name')?.textContent).toBe('Vendor');
   });
 });
 
