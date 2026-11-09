@@ -7,7 +7,7 @@
 import { AuthApiError, registerWithWebAuthn, type PgpChallenge, type WebAuthnKind } from '@x2f/auth-client';
 import { ApiCallError } from '../../api/client.js';
 import { authApi, deviceLabel } from '../auth/authApi.js';
-import { refusalText } from '../auth/refusals.js';
+import { KEY_UNAVAILABLE, refusalText } from '../auth/refusals.js';
 
 export interface Names {
   displayName: string;
@@ -69,6 +69,8 @@ export interface SetupError {
   text: string;
   names?: true;
   keyInUse?: true;
+  /** 409 `key-unavailable` at the finish (a key on the ban list, never named as such): link to the key screen only. */
+  keyRefused?: true;
 }
 
 /** The password rules in the board's words, for a 400 `password-weak` `{ missing }`. */
@@ -99,6 +101,7 @@ export function setupError(e: unknown, fallback: string, o: { expired?: string }
   if (names !== null) return { text: names, names: true };
   const code = errorCode(e);
   if (code === 'key-in-use') return { text: KEY_IN_USE, keyInUse: true };
+  if (code === 'key-unavailable') return { text: KEY_UNAVAILABLE, keyRefused: true };
   if (e instanceof AuthApiError || e instanceof ApiCallError) {
     if (e.status === 503 && code === 'busy') return { text: `X2F is busy right now. Try again in ${minutes(e.retryAfterSeconds)}.` };
     if (code === 'password-weak' && e instanceof AuthApiError && e.missing !== undefined && e.missing.length > 0) {

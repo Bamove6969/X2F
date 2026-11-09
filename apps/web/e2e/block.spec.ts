@@ -103,7 +103,6 @@ for (const viewport of PHONE_VIEWPORTS) {
         ['**/v1/account/methods', [{ type: 'password', id: 'password', label: 'Password', createdAt: null, lastUsedAt: null }]],
         ['**/v1/account/sessions', []],
         ['**/v1/account/alerts', []],
-        ['**/v1/account/security/logout-timer', { idleHours: 12, adjustable: true }],
       ] as const) {
         await page.route(path, (r) => r.fulfill({ json: body }));
       }

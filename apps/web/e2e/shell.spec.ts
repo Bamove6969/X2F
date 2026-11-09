@@ -63,15 +63,52 @@ test('Buy and Sell show one Site news bell on the phone and on the Desktop layou
     await expect(page.locator('[data-part="news-bell"]:visible')).toHaveCount(1);
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(page.locator('[data-shell="desktop"]')).toBeAttached();
-    // The desktop header's bell is the one; Buy/Sell's own header keeps it hidden there.
+    // The rail's bell is the one; Buy/Sell's own header keeps it hidden there.
     await expect(page.locator('[data-part="news-bell"]:visible')).toHaveCount(1);
-    await expect(page.locator('.x2f-desktop__header [data-part="news-bell"]')).toBeVisible();
+    await expect(page.locator('.x2f-rail [data-part="news-bell"]')).toBeVisible();
     // Opened straight at desktop width too, and a screen reader hears one bell, not two.
     await page.goto(path);
     await expect(page.locator('.x2f-browse__header')).toBeVisible();
     await expect(page.locator('[data-part="news-bell"]:visible')).toHaveCount(1);
     await expect(page.getByRole('link', { name: /^Site news/ })).toHaveCount(1);
   }
+});
+
+// Job 3 (design review 8 Nov 2026, items 2 and 3): wide is the 240 px rail with logo D, never a
+// stretched phone layout.
+test('at 1440x900 the page sits beside a 240 px rail with logo D and is at most 720 px wide', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/sell');
+  const rail = page.locator('[data-shell="desktop"] > nav.x2f-rail[aria-label="Main"]');
+  await expect(rail).toBeVisible();
+  const box = (await rail.boundingBox())!;
+  expect([box.x, box.width]).toEqual([0, 240]);
+  await expect(rail.getByRole('link', { name: 'X2F home' }).locator('svg.x2f-logo')).toBeVisible();
+  await expect(rail.locator('a.x2f-rail__link')).toHaveText(['Trade', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
+  await expect(rail.locator('a[aria-current="page"]')).toHaveText('Trade');
+  // The browse header does not repeat the logo beside the rail.
+  await expect(page.locator('.x2f-browse__logo')).toBeHidden();
+  const screen = (await page.locator('.x2f-browse').boundingBox())!;
+  expect(screen.x).toBe(240 + 48);
+  expect(screen.width).toBeLessThanOrEqual(720);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1440);
+});
+
+test('at 1280x800 before login the logo is centred and there is no rail', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/login');
+  await expect(page.locator('[data-shell="desktop"][data-wide-frame="centred"]')).toBeAttached();
+  await expect(page.locator('nav.x2f-rail')).toHaveCount(0);
+  const logo = (await page.locator('header.x2f-wide-top svg[role="img"][aria-label="X2F"]').boundingBox())!;
+  expect(Math.abs(logo.x + logo.width / 2 - 640)).toBeLessThanOrEqual(1);
+  expect(logo.height).toBe(32);
+});
+
+test('on a phone the browse header shows logo D where the letters X2F were, and no rail', async ({ page }) => {
+  await page.goto('/sell');
+  await expect(page.locator('.x2f-browse__logo svg[role="img"][aria-label="X2F"]')).toBeVisible();
+  await expect(page.locator('nav.x2f-rail')).toHaveCount(0);
+  await expect(page.locator('.x2f-bottom-nav')).toBeVisible();
 });
 
 test('a terms-required answer sends the page to /terms with returnTo', async ({ page }) => {

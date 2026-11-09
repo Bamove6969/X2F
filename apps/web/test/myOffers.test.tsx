@@ -24,7 +24,7 @@ type Raw = Record<string, unknown> & { id: string; status: string };
 const RAW: Raw[] = [
   {
     id: A, side: 'sell', methodId: 'ZELLE', methodName: 'Zelle', currency: 'USD', rate: '33165',
-    pricing: { mode: 'market', marginBps: 50 }, minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0,
+    pricing: { mode: 'market', marginBps: 50 }, minFiatCents: '5000', maxFiatCents: '200000', minTrades: null,
     status: 'live', createdAt: '2026-10-29T10:00:00.000Z',
   },
   {
@@ -34,7 +34,7 @@ const RAW: Raw[] = [
   },
   {
     id: C, side: 'sell', methodId: 'AMAZON_GC', methodName: 'Amazon gift card', currency: 'USD', rate: null,
-    pricing: { mode: 'market', marginBps: -100 }, minFiatCents: '2500', maxFiatCents: '10000', minTrades: 0,
+    pricing: { mode: 'market', marginBps: -100 }, minFiatCents: '2500', maxFiatCents: '10000', minTrades: null,
     country: 'US', status: 'paused', createdAt: '2026-10-29T08:00:00.000Z',
   },
 ];
@@ -127,6 +127,9 @@ describe('the model', () => {
     expect(offers.map((o) => [o.id, o.status, o.rate])).toEqual([[A, 'live', 33165n], [B, 'paused', 30000n], [C, 'paused', null], ['x', 'live', 33165n]]);
     expect(offers[2]!.country).toBe('US');
     expect(offers[3]!.hidden).toBe('trading-hold');
+    // No minimum is null on the wire (owner, 8 Nov), 0 in the model.
+    expect(offers.map((o) => o.minTrades)).toEqual([0, 5, 0, 0]);
+    expect(() => parseMyOffers([{ ...RAW[0], minTrades: '5' }])).toThrow();
     expect(() => parseMyOffers([{ ...RAW[0], hidden: 'nope' }])).toThrow();
     expect(() => parseMyOffers([{ ...RAW[0], status: 'removed' }])).toThrow();
     expect(() => parseMyOffers([{ ...RAW[0], minFiatCents: 5000 }])).toThrow();

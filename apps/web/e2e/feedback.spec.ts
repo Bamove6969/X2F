@@ -39,8 +39,9 @@ async function noSideScroll(page: Page): Promise<void> {
 test('a refusal opens CantDoThat; its feedback link leads to the form; an anonymous send gets the thank-you', async ({ page }) => {
   const sent = await stub(page);
   await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+  await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+  await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
   await page.getByRole('button', { name: 'Post offer' }).click();
 
   const popup = page.getByRole('dialog', { name: "This offer can't be posted" });
@@ -118,8 +119,9 @@ test.describe('CantDoThat: swipe down from the handle on a touch screen', () => 
   async function openPopup(page: Page) {
     await stub(page);
     await page.goto('/post?method=ZELLE');
-    await page.getByLabel('Smallest trade').fill('$50');
-    await page.getByLabel('Largest trade').fill('$2,000');
+    await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+    await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+    await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
     await page.getByRole('button', { name: 'Post offer' }).click();
     const popup = page.getByRole('dialog', { name: "This offer can't be posted" });
     await expect(popup).toBeVisible();
@@ -150,8 +152,9 @@ test('CantDoThat on the wide dialog: no handle, and a mouse drag over the messag
   await stub(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+  await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+  await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
   await page.getByRole('button', { name: 'Post offer' }).click();
   const popup = page.getByRole('dialog', { name: "This offer can't be posted" });
   await expect(popup).toBeVisible();

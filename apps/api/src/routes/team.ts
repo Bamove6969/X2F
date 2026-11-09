@@ -12,7 +12,9 @@
  * - The three writes re-check the session is live (401) and, owner 2026-10-30, are refused during a
  *   24-hour hold (403 `recovery-hold` `{ holdUntil }`, before the confirm token is spent). Owner
  *   1 Nov 2026 (landing review I1): an invite or a role change needs a strong session, at any time
- *   (403 `weak-session`, before the confirm token is spent); a removal does not.
+ *   (403 `weak-session`, before the confirm token is spent); a removal does not. Owner 2 Nov 2026:
+ *   team members are for vendor accounts only, so an invite or a role change by a trader account
+ *   is 403 `not-vendor` (first, before the confirm token is spent; again under the lock).
  * - `GET /v1/team/audit?from&to&member` → the audit log, newest first.
  *
  * The member's side (no session; every answer gives the browser a device cookie, and every step
@@ -42,6 +44,7 @@ import { requireSession, startSession } from '../auth/sessions.js';
 import { waits, type LoginStrength } from '../auth/strength.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, WEBAUTHN_TTL_MS } from '../auth/webauthn.js';
 import { listAudit } from '../team/audit.js';
+import { requireVendor } from './accountType.js';
 import {
   type Caller,
   checkMemberLoginName,
@@ -169,7 +172,7 @@ export function teamRoutes(app: FastifyInstance): void {
 
   app.post(
     '/v1/team/invites',
-    { preHandler: [owner, checkInvite, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-invite', name: input(req).name!.name, roles: input(req).roles.join(',') }))] },
+    { preHandler: [owner, checkInvite, requireVendor, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-invite', name: input(req).name!.name, roles: input(req).roles.join(',') }))] },
     async (req, reply) => {
       const deps = req.server.deps;
       const { name, roles } = input(req);
@@ -180,7 +183,7 @@ export function teamRoutes(app: FastifyInstance): void {
 
   app.patch(
     '/v1/team/members/:id',
-    { preHandler: [owner, checkRoles, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
+    { preHandler: [owner, checkRoles, requireVendor, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
     async (req) => setRoles({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), input(req).roles),
   );
 
@@ -248,7 +251,7 @@ export function teamRoutes(app: FastifyInstance): void {
     const setup = await inTransaction(deps.db, async (c) => {
       const m = await startMember(c, deps.config, {
         inviteId, names, now,
-        addKey: (memberAccountId) => insertPgpKey(c, deps.config, { accountId: memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now }),
+        addKey: (memberAccountId) => insertPgpKey(c, deps.config, { accountId: memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved }),
       });
       const { rows } = await c.query<{ id: string }>(
         `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
@@ -335,7 +338,7 @@ export function teamRoutes(app: FastifyInstance): void {
     await inTransaction(deps.db, async (c) => {
       await useSetup(c, setup.id, now);
       // A second, different key: the same fingerprint is `key-in-use` (two PGP factors need disjoint keys).
-      await insertPgpKey(c, deps.config, { accountId: setup.memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now });
+      await insertPgpKey(c, deps.config, { accountId: setup.memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved });
       await finishMember(c, setup.memberAccountId, now);
     });
     // Landing review M1: two PGP keys were just proven, so the member's first session is strong.

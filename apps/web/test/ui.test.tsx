@@ -444,7 +444,8 @@ describe('BottomNav', () => {
 });
 
 describe('DesktopShell', () => {
-  it('has the board header and nav, and renders its children', () => {
+  // Job 3 replaced the top bar with the *-Wide boards' left rail (test/wideShell.test.tsx).
+  it('has the left rail and renders its children', () => {
     const { host } = render(
       <MemoryRouter initialEntries={['/trade/K7M29QXA4FTR8WPN']}>
         <DesktopShell>
@@ -454,9 +455,9 @@ describe('DesktopShell', () => {
     );
     expect(host.querySelector('[data-shell="desktop"]')).not.toBeNull();
     const nav = host.querySelector('nav[aria-label="Main"]')!;
-    expect([...nav.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['Buy', 'Sell', 'My trades', 'Wallets']);
-    expect(nav.querySelector('a[aria-current="page"]')!.textContent).toBe('My trades');
-    expect(host.textContent).toContain('X2F');
+    expect([...nav.querySelectorAll('a.x2f-rail__link')].map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
+    expect(nav.querySelector('a[aria-current="page"]')!.textContent).toBe('Trade');
+    expect(nav.querySelector('svg')).not.toBeNull();
     expect(host.textContent).toContain('room');
   });
 });

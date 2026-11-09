@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router';
+import { tradeFiatLimits, type OfferRange } from '@x2f/trade';
 import { ApiCallError, safeReturnTo } from '../../api/client.js';
 import { useSession } from '../../session/useSession.js';
 import { takeOffer, type TakeRequest } from './api.js';
@@ -16,7 +17,8 @@ import { dropIfLeft, readQuote, updateQuote, useQuoteKept } from './quoteKept.js
 // for a fresh tap. The take answers with the rate that locked; the device checks it is within that
 // 0.5% of what the person saw (a fixed price: equal, as the server checks), else it records nothing
 // and says the trade could not start. Then it opens the trade room with the device's own record of
-// what was confirmed (confirmed.ts), its deal at the rate that locked: stored in this tab first,
+// what was confirmed (confirmed.ts), its deal at the rate that locked (the rate, and the fiat maximum
+// worked out again at that rate, as the server records it): stored in this tab first,
 // then carried as `{ state: { confirmed } }`. 403 terms-required and 409 no-wallet are sent on by the API client
 // (Task 13) with this page as `returnTo`.
 //
@@ -58,6 +60,13 @@ export interface TakeArgs {
   walletId: string | null;
   confirmed: ConfirmedTrade | null;
   /**
+   * The offer's own range (quoteModel `quoteRange`). The deal's `maxFiatCents` is worked out again
+   * from it at the rate that locked (review 2, I1): for an XMR-set offer the server records
+   * `tradeFiatLimits(range, locked rate)`, and the escrow runtime fails `deal-mismatch` unless the
+   * device's figure equals it exactly.
+   */
+  range: OfferRange;
+  /**
    * `resumeHref` is called only when the person is sent away: it records the pending take and
    * returns this quote with the amount and `resume=<nonce>`.
    */
@@ -98,7 +107,11 @@ export function useTake(
           }
           updateQuote(offerId, { busy: false });
           dropIfLeft(offerId);
-          const locked: ConfirmedTrade = { ...confirmed, deal: { ...confirmed.deal, centsPerXmr: taken.centsPerXmr } };
+          const at = { currency: confirmed.deal.currency, centsPerXmr: taken.centsPerXmr };
+          const locked: ConfirmedTrade = {
+            ...confirmed,
+            deal: { ...confirmed.deal, centsPerXmr: taken.centsPerXmr, maxFiatCents: tradeFiatLimits(a.range, at).maxFiatCents },
+          };
           storeConfirmed(taken.code, locked);
           void navigate(`/trade/${encodeURIComponent(taken.code)}`, { state: { confirmed: locked } });
         },

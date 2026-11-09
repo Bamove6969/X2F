@@ -5,6 +5,7 @@ import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { assertNotBlocked, blockedEitherWay, blocksBetween, hasBlocked } from '../src/traders/blocks.js';
 import { applyEvent } from '../src/trades/store.js';
+import { makeVendor } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
@@ -48,6 +49,8 @@ type Who = Awaited<ReturnType<typeof trader>>;
 /** A trader with a usable payout wallet, so they can post. */
 async function poster(): Promise<Who> {
   const t = await trader();
+  // Owner 2 Nov 2026: only vendors post.
+  await makeVendor(deps, t.id);
   const now = deps.clock();
   await deps.db.query(
     `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'Main', $2, $3, $4)`,
@@ -67,7 +70,7 @@ const ownCurrency = (): string => {
 async function post(who: Who, currency: string, centsPerXmr = '3300000'): Promise<string> {
   const res = await who.browser.post('/v1/offers', {
     side: 'sell', methodId: 'ZELLE', currency, pricing: { mode: 'fixed', centsPerXmr },
-    minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0, terms: 'Zelle only.',
+    minFiatCents: '5000', maxFiatCents: '200000', minTrades: null, terms: 'Zelle only.',
   });
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;

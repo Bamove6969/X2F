@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { keyCheckCode, type LoginHours } from '@x2f/staff';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { recordBannedValues } from '../../src/bans.js';
 import { verifyLogChain } from '../../src/log/verify.js';
 import { codeOf, decrypt, genKey, type Pair } from '../helpers/pgpKeys.js';
 import type { SoftAuthenticator } from '../helpers/softAuthenticator.js';
@@ -10,7 +11,8 @@ import { SESSION_COOKIE, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, log
 import { seedAccount } from '../helpers/accounts.js';
 import { driveTo, seedTrade } from '../helpers/trades.js';
 import { applyEvent } from '../../src/trades/store.js';
-import { attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
+import { KEY_AAGUID, addPgpKey, attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
+import { createSoftAuthenticator } from '../helpers/softAuthenticator.js';
 
 const MON_NOON = new Date('2026-11-02T12:00:00Z');
 const HOUR = 3_600_000;
@@ -66,8 +68,11 @@ async function addInvitePgp(b: StaffBrowser, token: string, pair: Pair) {
   return b.post(acceptUrl(token, '/pgp/finish'), { challengeId, code });
 }
 
-/** A whole sign-up: names, a security key (unless `noKey`), one PGP key (two with `twoPgp`), finish. */
-async function signUp(token: string, o: { noKey?: boolean; twoPgp?: boolean } = {}) {
+/**
+ * A whole sign-up: names, a security key (unless `noKey`), one PGP key (two with `twoPgp`), a passkey
+ * with `passkey` (owner G3: a moderator holds all three), finish.
+ */
+async function signUp(token: string, o: { noKey?: boolean; twoPgp?: boolean; passkey?: boolean } = {}) {
   const b = invitee();
   const names = await pickNames(b, token);
   expect(names.res.statusCode, names.res.body).toBe(201);
@@ -75,6 +80,7 @@ async function signUp(token: string, o: { noKey?: boolean; twoPgp?: boolean } = 
   if (!o.noKey) expect((await addInviteKey(b, token, key)).statusCode).toBe(201);
   expect((await addInvitePgp(b, token, await genKey())).statusCode).toBe(201);
   if (o.twoPgp) expect((await addInvitePgp(b, token, await genKey())).statusCode).toBe(201);
+  if (o.passkey) expect((await addInviteKey(b, token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
   const finish = await b.post(acceptUrl(token, '/finish'), {});
   return { b, key, finish, ...names };
 }
@@ -102,10 +108,10 @@ describe('invites', () => {
     const view = await invitee().get(acceptUrl(inv.token));
     expect(view.json()).toEqual({ role: 'mod', hours: OFFICE, expiresAt: inv.expiresAt });
 
-    const s = await signUp(inv.token);
+    const s = await signUp(inv.token, { passkey: true });
     expect(s.finish.statusCode, s.finish.body).toBe(201);
     const id = await accountOf(s.loginName);
-    const { rows: cred } = await t.deps.db.query<{ public_key: Buffer }>('select public_key from webauthn_credentials where account_id = $1', [id]);
+    const { rows: cred } = await t.deps.db.query<{ public_key: Buffer }>("select public_key from webauthn_credentials where account_id = $1 and kind = 'security-key'", [id]);
     expect(s.finish.json()).toEqual({ keyCheckCode: keyCheckCode(new Uint8Array(cred[0]!.public_key)) });
     const { rows: m } = await t.deps.db.query('select role, hours, has_security_key, switched_off_at from staff_members where account_id = $1', [id]);
     expect(m).toEqual([{ role: 'mod', hours: OFFICE, has_security_key: true, switched_off_at: null }]);
@@ -153,14 +159,38 @@ describe('invites', () => {
     const m = await signUp(mod.token, { noKey: true, twoPgp: true });
     expect(m.finish.statusCode).toBe(409);
     expect(errorOf(m.finish)).toBe('security-key-required');
-    // Still open: adding a key now finishes.
+    // Still open: with a key, a moderator still needs all three (owner G3); adding a passkey finishes.
     expect((await addInviteKey(m.b, mod.token, t.newKey())).statusCode).toBe(201);
+    const noPasskey = await m.b.post(acceptUrl(mod.token, '/finish'), {});
+    expect([noPasskey.statusCode, errorOf(noPasskey)]).toEqual([409, 'all-three-methods-required']);
+    expect((await addInviteKey(m.b, mod.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
     expect((await m.b.post(acceptUrl(mod.token, '/finish'), {})).statusCode).toBe(201);
 
     const helper = await createInvite('helper');
     const h = await signUp(helper.token, { noKey: true, twoPgp: true });
     expect(h.finish.statusCode, h.finish.body).toBe(201);
     expect(h.finish.json()).toEqual({ keyCheckCode: null });
+  });
+
+  it('owner G3 (review P-m1): a passkey that reports a security-key model is refused (passkey-is-security-key)', async () => {
+    const mod = await createInvite('mod');
+    const b = invitee();
+    expect((await pickNames(b, mod.token)).res.statusCode).toBe(201);
+    expect((await addInviteKey(b, mod.token, t.newKey())).statusCode).toBe(201);
+    // The same model registered again as a resident passkey: with the attestation stripped (the
+    // AAGUID still reported), or with the full attestation statement.
+    const stripped = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: KEY_AAGUID, none: true } });
+    for (const key of [stripped, t.newKey()]) {
+      const res = await addInviteKey(b, mod.token, key, 'passkey');
+      expect([res.statusCode, errorOf(res)]).toEqual([409, 'passkey-is-security-key']);
+    }
+    const { rows } = await t.deps.db.query<{ kind: string }>(
+      "select w.kind from webauthn_credentials w join staff_invites i on i.account_id = w.account_id where i.id = $1",
+      [mod.inviteId],
+    );
+    expect(rows.map((r) => r.kind)).toEqual(['security-key']);
+    // Another device (a phone's passkey, no allowlisted AAGUID) is accepted.
+    expect((await addInviteKey(b, mod.token, t.newKey({ passkey: true }), 'passkey')).statusCode).toBe(201);
   });
 
   it('every staff login is two factors: one PGP key alone gets two-factors-required', async () => {
@@ -218,6 +248,26 @@ describe('invites', () => {
   });
 });
 
+describe('a banned PGP key on a staff invite (lead review 2026-11-06 item 1)', () => {
+  it('pgp/start answers as for any key (no answer before proof); pgp/finish reaches insertPgpKey and refuses 409 key-unavailable', async () => {
+    // A day earlier: the owner's tap starts here stay out of the later tests' 10-minute window (in memory).
+    t.setNow(new Date(MON_NOON.getTime() - 86_400_000));
+    const inv = await createInvite('mod');
+    const b = invitee();
+    expect((await pickNames(b, inv.token)).res.statusCode).toBe(201);
+    const pair = await genKey();
+    await recordBannedValues(t.deps.db, t.deps.config, { kind: 'pgp-fingerprint', values: [pair.fingerprint.toLowerCase()], accountId: null, now: t.deps.clock() });
+    const start = await b.post(acceptUrl(inv.token, '/pgp/start'), { publicKey: pair.publicKey });
+    expect(start.statusCode, start.body).toBe(200);
+    const { challengeId, encryptedMessage } = start.json();
+    const code = codeOf(await decrypt(encryptedMessage, pair.privateKey, undefined, t.deps.clock()));
+    const finish = await b.post(acceptUrl(inv.token, '/pgp/finish'), { challengeId, code });
+    expect(finish.statusCode, finish.body).toBe(409);
+    expect(finish.json()).toEqual({ error: 'key-unavailable' });
+    expect((await t.deps.db.query('select 1 from pgp_keys where fingerprint = $1', [pair.fingerprint.toLowerCase()])).rowCount).toBe(0);
+  });
+});
+
 describe('members', () => {
   it('lists staff and waiting invites', async () => {
     const mod = await staffWithKeys(t, { role: 'mod', hours: OFFICE });
@@ -228,12 +278,18 @@ describe('members', () => {
     expect(rows).toContainEqual({
       accountId: mod.id, inviteId: null, displayName: `D${mod.loginName}`, role: 'mod', status: 'active', hours: OFFICE,
       joinedAt: MON_NOON.toISOString(), lastActiveAt: MON_NOON.toISOString(), openCases: 0, expiresAt: null,
+      // Owner G3 (review P-m2): this moderator holds only a security key so far.
+      missingMethods: ['pgp', 'passkey'],
     });
     expect(rows).toContainEqual({
       accountId: null, inviteId: inv.inviteId, displayName: null, role: 'helper', status: 'waiting', hours: OFFICE,
-      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt,
+      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt, missingMethods: [],
     });
-    expect(rows.find((r) => r.accountId === owner.id)).toMatchObject({ role: 'owner', status: 'active', hours: 'any' });
+    expect(rows.find((r) => r.accountId === owner.id)).toMatchObject({ role: 'owner', status: 'active', hours: 'any', missingMethods: [] });
+    await addPgpKey(t.deps, mod.id);
+    await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
+    const after = (await owner.browser.get('/staff/v1/members')).json().members as Array<Record<string, unknown>>;
+    expect(after.find((r) => r.accountId === mod.id)).toMatchObject({ missingMethods: [] });
   });
 
   it('switch-off takes effect at once; past log entries stay and the chain verifies', async () => {
@@ -270,6 +326,14 @@ describe('members', () => {
   it('switch-on needs a tap bound to the person and their role', async () => {
     const mod = await staffWithKeys(t, { role: 'mod' });
     await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {});
+    // Owner G3 (review P-m2): a moderator who lacks a method (one who joined before G3) is not
+    // switched on, and the tap stays unused.
+    const early = await tap(owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' });
+    const refused = await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, { tapId: early });
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'all-three-methods-required']);
+    expect((await t.deps.db.query('select used_at from key_taps where id = $1', [early])).rows).toEqual([{ used_at: null }]);
+    await addPgpKey(t.deps, mod.id);
+    await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
     expect(errorOf(await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, {}))).toBe('tap-invalid');
     const wrongRole = await tap(owner, { kind: 'switch-on', accountId: mod.id, role: 'senior' });
     expect(errorOf(await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, { tapId: wrongRole }))).toBe('tap-invalid');
@@ -291,13 +355,18 @@ describe('members', () => {
     expect(errorOf(await mod.browser.get('/staff/v1/me'))).toBe('outside-login-hours');
   });
 
-  it('sets a role with a tap; a moderator role needs a security key', async () => {
+  it('sets a role with a tap; a moderator role needs a security key, a senior all three methods (owner G3)', async () => {
     const helperOnlyPgp = await seedStaff(t.deps, { role: 'helper' });
     await t.deps.db.query('update staff_members set has_security_key = false where account_id = $1', [helperOnlyPgp.id]);
     const up = await tap(owner, { kind: 'set-role', accountId: helperOnlyPgp.id, role: 'mod' });
     expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${helperOnlyPgp.id}/role`, { role: 'mod', tapId: up }))).toBe('security-key-required');
 
     const mod = await staffWithKeys(t, { role: 'mod' });
+    // Owner G3: a senior holds all three methods; this moderator has only a security key so far.
+    const early = await tap(owner, { kind: 'set-role', accountId: mod.id, role: 'senior' });
+    expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'senior', tapId: early }))).toBe('all-three-methods-required');
+    await addPgpKey(t.deps, mod.id);
+    await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
     expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'senior' }))).toBe('tap-invalid');
     const wrong = await tap(owner, { kind: 'set-role', accountId: mod.id, role: 'helper' });
     expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'senior', tapId: wrong }))).toBe('tap-invalid');
@@ -309,9 +378,15 @@ describe('members', () => {
     expect(errorOf(await owner.browser.send('PUT', `/staff/v1/members/${mod.id}/role`, { role: 'owner', tapId }))).toBe('bad-request');
   });
 
-  it('removes a staff member: switched off for good, gone from the list', async () => {
+  it('removes a staff member with a tap bound to them (owner G4): switched off for good, gone from the list', async () => {
     const mod = await staffWithKeys(t, { role: 'mod' });
-    const res = await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`);
+    // No tap, or a tap for someone else: refused, nothing removed.
+    expect(errorOf(await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`))).toBe('tap-invalid');
+    const otherTap = await tap(owner, { kind: 'remove-staff', accountId: owner.id });
+    expect(errorOf(await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`, { tapId: otherTap }))).toBe('tap-invalid');
+    expect((await mod.browser.get('/staff/v1/me')).statusCode).toBe(200);
+    const removeTap = await tap(owner, { kind: 'remove-staff', accountId: mod.id });
+    const res = await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`, { tapId: removeTap });
     expect(res.statusCode, res.body).toBe(204);
     expect(errorOf(await mod.browser.get('/staff/v1/me'))).toBe('not-authenticated');
     const { token } = await insertSession(t.deps, mod.id, 'staff');
@@ -358,6 +433,8 @@ describe('owner Q54: the public name is displayName; a field named username is r
 
 describe('per-person grants (owner Q60)', () => {
   it('the owner ticks feedback for a moderator with a tap bound to the exact list; the moderator then reads feedback', async () => {
+    // 11 minutes on: the owner's earlier tap starts (in memory, 20 per 10 minutes) are out of the window.
+    t.setNow(new Date(MON_NOON.getTime() + 11 * 60_000));
     const mod = await staffWithKeys(t, { role: 'mod' });
     expect((await mod.browser.get('/staff/v1/feedback')).statusCode).toBe(403);
     const put = (grants: unknown, tapId?: string) => owner.browser.send('PUT', `/staff/v1/members/${mod.id}/grants`, { grants, ...(tapId ? { tapId } : {}) });

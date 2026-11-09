@@ -1,5 +1,5 @@
 // Settings → Security (Task 30): the login methods with the last-method guard, the new
-// payout-wallet wait explanation (no opt-in toggle), the logout-timer dropdown, remote device
+// payout-wallet wait explanation (no opt-in toggle), no logout-timer card (retired for the session length, 2 Nov), remote device
 // log-out, and the one confirm sheet for an action-bound confirm (here: making recovery codes).
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
@@ -27,7 +27,6 @@ async function base(page: Page, o: { methods?: unknown[]; sessions?: unknown[]; 
   await page.route('**/v1/account/methods', json(o.methods ?? [{ type: 'password', id: 'password', label: 'Password', createdAt: null, lastUsedAt: null }]));
   await page.route('**/v1/account/sessions', json(o.sessions ?? []));
   await page.route('**/v1/account/alerts', json(o.alerts ?? []));
-  await page.route('**/v1/account/security/logout-timer', json(o.timer ?? { idleHours: 12, adjustable: true }));
 }
 
 /** Visible elements carrying data-primary (Task 15: exactly one per state). */
@@ -35,7 +34,7 @@ async function visiblePrimaries(page: Page): Promise<number> {
   return page.locator('[data-primary]').evaluateAll((els) => els.filter((e) => (e as HTMLElement).checkVisibility()).length);
 }
 
-test('the security screen shows methods, the payout-wait explanation (no 24-hour toggle), devices, alerts and the logout timer', async ({ page }) => {
+test('the security screen shows methods, the payout-wait explanation (no 24-hour toggle), devices and alerts (no logout timer: session length, owner 2 Nov 2026)', async ({ page }) => {
   await base(page, { methods: [{ type: 'passkey', id: 'k1', label: 'Passkey', createdAt: null, lastUsedAt: null }] });
   await page.goto('/settings/security');
 
@@ -46,31 +45,7 @@ test('the security screen shows methods, the payout-wait explanation (no 24-hour
   // C2-D1: Devices is its own screen; Security links to it.
   await expect(page.locator('[data-part="devices-link"] a[href="/settings/devices"]')).toHaveText('Devices and sessions');
   await expect(page.locator('[data-part="alerts"]')).toBeVisible();
-  await expect(page.locator('[data-part="logout-timer-select"]')).toHaveValue('12');
-});
-
-test('the logout timer shows the saved value, offers 2–12 hours and saves a change as idleHours', async ({ page }) => {
-  await base(page, { timer: { idleHours: 4, adjustable: true } });
-  let saved: unknown = null;
-  await page.route('**/v1/account/security/logout-timer', async (r) => {
-    if (r.request().method() !== 'PUT') return r.fallback();
-    saved = JSON.parse(r.request().postData() ?? '{}');
-    await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ idleHours: 6, adjustable: true }) });
-  });
-  await page.goto('/settings/security');
-
-  await expect(page.locator('[data-part="logout-timer-select"]')).toHaveValue('4');
-  await expect(page.locator('[data-part="logout-timer-select"] option')).toHaveCount(6);
-  await page.selectOption('[data-part="logout-timer-select"]', '6');
-  await expect(page.locator('[data-part="logout-timer-status"]')).toHaveText('Saved.');
-  expect(saved).toEqual({ idleHours: 6 });
-});
-
-test('staff and owner see their fixed logout timer without a dropdown', async ({ page }) => {
-  await base(page, { timer: { idleHours: 2, adjustable: false } });
-  await page.goto('/settings/security');
-  await expect(page.locator('[data-part="logout-timer"]')).toContainText('2 hours');
-  await expect(page.locator('[data-part="logout-timer-select"]')).toHaveCount(0);
+  await expect(page.locator('[data-part="logout-timer"]')).toHaveCount(0);
 });
 
 test('a wrong password in the confirm sheet keeps the sheet and the action; the right one then completes it', async ({ page }) => {
@@ -356,20 +331,6 @@ test('a logged-in device asked "Is this you?" taps the number and lets the new d
   expect(decision).toEqual({ choice: 47 });
   await sheet.locator('[data-part="approve-ok"]').click();
   await expect(page.locator('[role="dialog"]')).toHaveCount(0);
-});
-
-// Plan 2 Task 17: a change made from a login with one way of proving it's you answers 202 held:
-// the screen says when it takes effect and does not show it as done.
-test('a held logout-timer change says when it takes effect and keeps the old value', async ({ page }) => {
-  await base(page);
-  await page.route('**/v1/account/security/logout-timer', async (r) => {
-    if (r.request().method() === 'PUT') return json({ status: 'held', holdUntil: '2099-01-02T15:00:00.000Z' }, 202)(r);
-    return json({ idleHours: 12, adjustable: true })(r);
-  });
-  await page.goto('/settings/security');
-  await page.selectOption('[data-part="logout-timer-select"]', '2');
-  await expect(page.locator('[data-part="logout-timer-status"]')).toContainText('This change takes effect at');
-  await expect(page.locator('[data-part="logout-timer-select"]')).toHaveValue('12');
 });
 
 // C2-D1: the LoginApprove and Devices boards at phone sizes: no sideways scroll, every control

@@ -4,6 +4,7 @@ import type { FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { personAccountId } from './sessions.js';
 
 /** A confirm token lives 5 minutes; at exactly 5:00 it is refused. */
 export const CONFIRM_TTL_MS = 5 * 60_000;
@@ -79,6 +80,46 @@ export async function redeemConfirm(
   if (!row) throw new ApiError(403, 'confirm-invalid');
   return row.method;
 }
+
+/**
+ * The confirm actions a team member may prove with their own login methods (owner, Q73, 6 Nov 2026:
+ * "Stay logged in?"). Every other confirm stays the account owner's (Task 18: `owner-only`).
+ */
+export const MEMBER_CONFIRM_ACTIONS: ReadonlySet<ConfirmAction['kind']> = new Set<ConfirmAction['kind']>(['extend-session']);
+
+/**
+ * Whose login methods a confirm route checks: the account's, or for a team member's session (only
+ * for MEMBER_CONFIRM_ACTIONS, else 403 `owner-only`) the member's own login account, never the
+ * account owner's. The token is still issued to the session and the team account it belongs to.
+ */
+export async function confirmerOf(
+  db: Queryable,
+  auth: { accountId: string; memberId: string | null; kind: string },
+  action: ConfirmAction,
+): Promise<{ accountId: string; kind: 'member' | null }> {
+  if (auth.memberId === null) return { accountId: auth.accountId, kind: null };
+  if (!MEMBER_CONFIRM_ACTIONS.has(action.kind)) throw new ApiError(403, 'owner-only');
+  return { accountId: await personAccountId(db, auth), kind: 'member' };
+}
+
+/**
+ * Review M5: "Stay logged in?" must work for a session on old Terms (the extend route sets
+ * `allowStaleTerms`, as `me` and the session length do), so the confirm routes set it too and this
+ * preHandler, placed after `requireSession({ allowStaleTerms: true })` on the routes whose body names
+ * the action (password, PGP and WebAuthn start), keeps R10 for every other action: a trader on a
+ * stale Terms version gets 403 `terms-required` `{ version }` unless the action is `extend-session`.
+ * The finish routes need no check: they redeem a challenge one of these starts issued, and every
+ * route that spends a token checks the Terms itself.
+ */
+export const staleTermsOnlyToExtend: preHandlerAsyncHookHandler = async function (req) {
+  const body = req.body;
+  const action = body !== null && typeof body === 'object' ? (body as { action?: unknown }).action : undefined;
+  if (action !== null && typeof action === 'object' && (action as { kind?: unknown }).kind === 'extend-session') return;
+  if (req.auth.kind !== 'trader') return;
+  const deps = req.server.deps;
+  const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [req.auth.accountId]);
+  if (rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
+};
 
 type ActionOf = ConfirmAction | ((req: FastifyRequest) => ConfirmAction | Promise<ConfirmAction>);
 

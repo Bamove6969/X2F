@@ -216,7 +216,7 @@ describe('POST /v1/feedback/form', () => {
 
   it(`takes ${FEEDBACK_FORM_DAILY} a day per account, named or not, then 429 until midnight UTC; the count is not stored`, async () => {
     setNow(new Date('2026-12-01T15:30:00Z'));
-    const { b } = await login('chatty1');
+    const { b, id } = await login('chatty1');
     const { b: other } = await login('chatty2');
     for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) {
       // One send per FEEDBACK_FORM_MIN_GAP_S per person: space them out.
@@ -233,6 +233,9 @@ describe('POST /v1/feedback/form', () => {
     expect((await other.post('/v1/feedback/form', { kind: 'feedback', text: 'other', anonymous: true })).statusCode).toBe(202);
     expect(await rows()).toHaveLength(FEEDBACK_FORM_DAILY + 1);
     setNow(new Date('2026-12-02T00:00:01Z'));
+    // That session has ended (session length, owner 2 Nov 2026: 2 hours until one is chosen), so log in
+    // again: the daily count is per account, not per session.
+    expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
     expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'next day', anonymous: true })).statusCode).toBe(202);
   });
 

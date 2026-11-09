@@ -5,8 +5,9 @@ import { pgpAddKeyRoutesAt } from '../auth/pgp.js';
 import { ApiError } from '../errors.js';
 import { pushRoutesAt } from '../push/routes.js';
 import { requireStaff } from './guard.js';
-import { consumeKeyTap } from './keyTap.js';
+import { consumeKeyTap, consumeSecondOwnerTap } from './keyTap.js';
 import { attestedKeyCount, body, idParam, log, tapIdOf } from './members.js';
+import { THREE_METHOD_ROLES } from './login.js';
 
 // Lead re-review 6 Nov, items 1 and 2: staff and the owner are refused on the trader site (owner
 // Q19, Q13), so their own account work moves here (perm `self`, every role, own account only):
@@ -15,11 +16,14 @@ import { attestedKeyCount, body, idParam, log, tapIdOf } from './members.js';
 // - `POST /staff/v1/account/pgp/start { publicKey }` → a challenge to the new key;
 //   `POST /staff/v1/account/pgp/finish { challengeId, code, tapId }` → `{ fingerprint }`: the code
 //   proves the key, a tap `add-pgp-key` (bound to the fingerprint) by one of the person's security
-//   keys confirms it, the key is stored and `staff.method-added` logged, in one transaction.
-// - `DELETE /staff/v1/account/methods/:type/:id { tapId }` (pgp, security-key, passkey) → 204: a
-//   tap `remove-method` confirms; the account's login rule must still hold afterwards (409
-//   `last-login-method`), and the owner keeps two security keys (409 `owner-needs-two-keys`); every
-//   other session ends (as on the trader site) and `staff.method-removed` is logged.
+//   keys confirms it, the key is stored and `staff.method-added` logged, in one transaction. The
+//   owner sends `secondTapId` too: a tap for the same intent by his other key (owner G4; 409
+//   `both-owner-keys-required` without it or from the same key).
+// - `DELETE /staff/v1/account/methods/:type/:id { tapId, secondTapId? }` (pgp, security-key,
+//   passkey) → 204: a tap `remove-method` confirms (the owner: both owner keys, owner G4); the
+//   account's login rule must still hold afterwards (409 `last-login-method`), and the owner keeps
+//   two security keys (409 `owner-needs-two-keys`); every other session ends (as on the trader
+//   site) and `staff.method-removed` is logged.
 // - `GET /staff/v1/account/sessions` and `DELETE /staff/v1/account/sessions/:id` → the account's
 //   live sessions (both sites) and ending one (no tap: it only takes power away).
 // - `GET /staff/v1/account/alerts` and `POST /staff/v1/account/alerts/:id/seen`.
@@ -39,9 +43,12 @@ export function staffAccountRoutes(app: FastifyInstance): void {
     config: opts.config,
     preHandler: [...opts.preHandler],
     async inTx(c, req, fingerprint) {
-      await consumeKeyTap(c, tapIdOf(body(req)), req.staff.accountId, { kind: 'add-pgp-key', fingerprint: fingerprint.toLowerCase() }, req.server.deps.clock(), {
-        sessionId: req.auth.sessionId,
-      });
+      const intent = { kind: 'add-pgp-key' as const, fingerprint: fingerprint.toLowerCase() };
+      const now = req.server.deps.clock();
+      const first = await consumeKeyTap(c, tapIdOf(body(req)), req.staff.accountId, intent, now, { sessionId: req.auth.sessionId });
+      // Owner G4 (review P-I1): the owner's PGP key is one of his login keys, so adding one is tapped
+      // by both owner security keys (else one stolen key plus a live session could take the account).
+      if (req.staff.role === 'owner') await consumeSecondOwnerTap(c, body(req).secondTapId, first, intent, now, { sessionId: req.auth.sessionId });
       await log(c as Parameters<typeof log>[0], req, 'staff.method-added', { method: 'pgp' });
     },
   });
@@ -57,7 +64,8 @@ export function staffAccountRoutes(app: FastifyInstance): void {
     const now = clock();
     await withTx(db, async (c) => {
       await lockAccount(c, me);
-      await consumeKeyTap(c, tapId, me, { kind: 'remove-method', methodType, methodId: id }, now, { sessionId: req.auth.sessionId });
+      const intent = { kind: 'remove-method' as const, methodType, methodId: id };
+      const first = await consumeKeyTap(c, tapId, me, intent, now, { sessionId: req.auth.sessionId });
       if (methodType === 'security-key') {
         const { rows } = await c.query("select 1 from webauthn_credentials where id = $1 and account_id = $2 and kind = 'security-key' and attested", [id, me]);
         const keys = rows.length > 0 ? await attestedKeyCount(c, me) : Infinity;
@@ -65,6 +73,22 @@ export function staffAccountRoutes(app: FastifyInstance): void {
         // Lead review 7 Nov I-2: a moderator or senior moderator taps rulings with a security key;
         // without one they could never tap again.
         if ((req.staff.role === 'mod' || req.staff.role === 'senior') && keys <= 1) throw new ApiError(409, 'security-key-required');
+      }
+      // Owner G4 (review P-I1): removing any of the owner's login methods (a security key or a PGP
+      // key) is tapped by both owner keys.
+      if (req.staff.role === 'owner') {
+        await consumeSecondOwnerTap(c, body(req).secondTapId, first, intent, now, { sessionId: req.auth.sessionId });
+      }
+      // Owner G3 (7 Nov): a moderator or senior keeps all three methods; one of a kind may go only
+      // while another of that kind stays.
+      if (THREE_METHOD_ROLES.includes(req.staff.role)) {
+        const sameKind = methodType === 'pgp'
+          ? (await c.query<{ n: number }>('select count(*)::int as n from pgp_keys where account_id = $1', [me])).rows[0]!.n
+          : (await c.query<{ n: number }>(
+              `select count(*)::int as n from webauthn_credentials where account_id = $1 and kind = $2 and (kind <> 'security-key' or attested)`,
+              [me, methodType],
+            )).rows[0]!.n;
+        if (sameKind <= 1) throw new ApiError(409, methodType === 'security-key' ? 'security-key-required' : 'all-three-methods-required');
       }
       await applyRemoval(c, config, me, methodType, id, req.auth.sessionId, now);
       // Keep staff_members.has_security_key true to what is stored (202's column).

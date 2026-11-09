@@ -25,7 +25,8 @@ export interface BadgeInfo {
 export const FEATURED_SLOTS = 2;
 
 // P5-A13 thresholds.
-export const TRUSTED_MIN_TRADES = 100;
+// Owner, 7 Nov (p5-3): "Trusted badge: 200+ trades and 98%+ positive."
+export const TRUSTED_MIN_TRADES = 200;
 export const TRUSTED_MIN_PCT = 98;
 /**
  * PROVISIONAL (review M4, lead 2026-10-30): owner to confirm (owner q12). Trusted also needs this many
@@ -53,7 +54,7 @@ export const BADGES: Record<CatalogueId, BadgeInfo> = {
   // COPY-UNSIGNED: the 3- and 5-year labels and meanings (P5-A12).
   'veteran-3': { label: 'Veteran · 3 years', meaning: 'Trading on X2F for 3+ years', icon: 'Star', tone: 'escrow' },
   'veteran-5': { label: 'Veteran · 5 years', meaning: 'Trading on X2F for 5+ years', icon: 'Star', tone: 'escrow' },
-  trusted: { label: 'Trusted', meaning: '100+ trades and 98%+ positive', icon: 'ShieldCheck', tone: 'escrow' },
+  trusted: { label: 'Trusted', meaning: '200+ trades and 98%+ positive', icon: 'ShieldCheck', tone: 'escrow' },
   fast: { label: 'Fast', meaning: 'Usually pays or releases within 10 min', icon: 'Zap', tone: 'escrow' },
   // COPY-UNSIGNED: Clean record's meaning (spec 5.4 wording, no board line).
   'clean-record': { label: 'Clean record', meaning: '100 trades with no lost disputes', icon: 'BadgeCheck', tone: 'escrow' },

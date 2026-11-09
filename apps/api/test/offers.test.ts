@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { OFFER_CAP_DEFAULTS, OFFER_CAP_KEYS, rateSql } from '../src/offers/routes.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { currentLoginTag, seedAccount } from './helpers/accounts.js';
+import { currentLoginTag, makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { seedReviews, seedTrade } from './helpers/trades.js';
@@ -64,17 +64,18 @@ async function addWallet(accountId: string, usable = true): Promise<void> {
   );
 }
 
-/** A trader with one usable payout wallet. */
+/** A vendor (owner 2 Nov 2026: only vendors post) with one usable payout wallet. */
 async function poster(): Promise<Who> {
   const t = await trader();
   await addWallet(t.id);
+  await makeVendor(deps, t.id);
   return t;
 }
 
 /** Tests share one database: most use a currency of their own to keep their lists apart. */
 const BODY = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 50 },
-  minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0, terms: 'Zelle only from an account in your own name.',
+  minFiatCents: '5000', maxFiatCents: '200000', minTrades: null, terms: 'Zelle only from an account in your own name.',
 };
 
 async function post(who: Who, over: Record<string, unknown> = {}): Promise<string> {
@@ -116,13 +117,18 @@ describe('POST /v1/offers and GET /v1/offers', () => {
         id,
         poster: {
           displayName: p.displayName, completedTrades: 0, online: true, lastSeenAt: deps.clock().toISOString(),
-          typicalMinutes: null, positivePct: null, badges: [], stage: 'starter', tradedOverXmr: null, imported: [],
+          // A starter carries New (spec 5.4; traderTrust.test.ts has the rest of the trust row).
+          typicalMinutes: null, positivePct: null, badges: ['new'], stage: 'starter', tradedOverXmr: null, imported: [],
         },
         rate: null,
         pricing: { mode: 'market', marginBps: 50 },
+        // A fiat range; no rate now, so no XMR figures (offerUnits.test.ts covers both units).
+        amountUnit: 'fiat',
+        minAtomic: null,
+        maxAtomic: null,
         minFiatCents: '5000',
         maxFiatCents: '200000',
-        minTrades: 0,
+        minTrades: null,
       },
     ]);
     // The private login name is never in a public answer (spec 6.1, FU-A). The database holds only
@@ -233,6 +239,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
 
   it('no usable wallet → 409 no-wallet, also with one waiting (24-hour) wallet only', async () => {
     const t = await trader();
+    await makeVendor(deps, t.id);
     const none = await t.browser.post('/v1/offers', BODY);
     expect(none.statusCode).toBe(409);
     expect(none.json()).toEqual({ error: 'no-wallet' });
@@ -259,6 +266,12 @@ describe('POST /v1/offers and GET /v1/offers', () => {
       { minFiatCents: '50.00' },
       { maxFiatCents: '1'.repeat(16) },
       { minTrades: 7 },
+      // Owner, 8 Nov: no minimum is null; 0, 1, 100 and strings are not choices.
+      { minTrades: 0 },
+      { minTrades: 1 },
+      { minTrades: 100 },
+      { minTrades: '5' },
+      { minTrades: 25.5 },
       { terms: 'x'.repeat(4001) },
       { terms: 'bidi ‮ override' },
       { extra: true },
@@ -271,6 +284,19 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     expect((await p.browser.post('/v1/offers', noMethod)).statusCode).toBe(400);
     // Newlines in the terms are fine.
     await post(p, { terms: 'Line one.\nLine two.', minTrades: 50 });
+  });
+
+  it('minimum completed trades is a fixed choice: no minimum (null), 5, 10, 25 or 50 (owner, 8 Nov)', async () => {
+    const p = await poster();
+    for (const minTrades of [null, 5, 10, 25, 50]) {
+      const id = await post(p, { currency: 'AUD', minTrades });
+      const one = (await anon.get(`/v1/offers/${id}`)).json() as { minTrades: unknown };
+      expect(one.minTrades).toBe(minTrades);
+      await p.browser.patch(`/v1/offers/${id}`, { status: 'removed' });
+    }
+    // The key is required: leaving it out is not "no minimum".
+    const { minTrades: _t, ...noMin } = BODY;
+    expect((await p.browser.post('/v1/offers', noMin)).statusCode).toBe(400);
   });
 
   it('a gift-card offer must name the card country, and carries it (Revision 2026-10-27)', async () => {

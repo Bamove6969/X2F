@@ -42,5 +42,9 @@ export {
   addressHash,
   addressesHash,
   describeAction,
+  STRONG_ONLY_ACTIONS,
+  needsStrongConfirm,
 } from './confirmAction.js';
-export { DEFAULT_IDLE_HOURS, IDLE_HOURS, type IdleHours, isIdleHours } from './logoutTimer.js';
+export {
+  IDLE_REMINDER_MINUTES, SESSION_CHOICE_WINDOW_MS, SESSION_PROMPT_MS, type SessionAccountType, UNCHOSEN_SESSION_HOURS, isIdleReminderMinutes, isSessionHours, sessionHoursFor,
+} from './sessionLength.js';

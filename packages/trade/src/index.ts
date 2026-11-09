@@ -92,6 +92,17 @@ export {
   type ChatRetentionFacts,
 } from './chat.js';
 export {
+  AMOUNT_UNITS,
+  displayRate,
+  rangeAllows,
+  rangeInBoth,
+  tradeFiatLimits,
+  type AmountUnit,
+  type OfferRange,
+  type RangeBoth,
+  type RangeCheck,
+} from './offerRange.js';
+export {
   SIGNAL_MAX_ADDRESS,
   SIGNAL_SENDERS,
   SIGNAL_TYPES,

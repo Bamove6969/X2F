@@ -37,8 +37,19 @@ test.describe('/sell (Main board)', () => {
     await expect(live.getByRole('button', { name: 'Payment method: Zelle' })).toHaveAttribute('aria-haspopup', 'dialog');
     await expect(live.locator('a')).toHaveCount(1);
     await expect(live.getByRole('link', { name: 'Zelle 34 buyers paying in USD · up to $331.20' })).toHaveAttribute('href', '/sell/ZELLE?currency=USD');
-    const rest = page.locator('section', { has: page.getByRole('heading', { name: 'All payment methods' }) }).locator('a [data-part="name"]');
+    // The methods with no buyers are folded into one row until opened (design review 8 Nov, item 7).
+    const all = page.locator('section', { has: page.getByRole('heading', { name: 'All payment methods' }) });
+    const rest = all.locator('a [data-part="name"]');
+    await expect(rest).toHaveCount(0);
+    const toggle = all.getByRole('button', { name: /more payment methods/ });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toContainText('No USD buyers right now · post an offer');
+    expect((await toggle.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(rest.first()).toBeVisible();
     const names = await rest.allTextContents();
+    expect(names.length).toBeGreaterThan(50);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'en')));
     expect(names).not.toContain('Zelle');
     await expect(page.getByRole('searchbox', { name: 'Search payment methods' })).toHaveAttribute('placeholder', `Search ${CATALOG.length} payment methods`);

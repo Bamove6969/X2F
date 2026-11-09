@@ -121,7 +121,8 @@ export function createSoftAuthenticator(o: {
   backedUp: boolean;
   userVerified: boolean;
   userPresent?: boolean;
-  attestation?: 'none' | { aaguid: string; ca: TestCa } | { aaguid: string; self: true };
+  /** `{ aaguid, none: true }`: fmt `none` (no statement) that still reports `aaguid`, as browsers may. */
+  attestation?: 'none' | { aaguid: string; ca: TestCa } | { aaguid: string; self: true } | { aaguid: string; none: true };
 }): SoftAuthenticator {
   const { privateKey, publicKey } = p256();
   // 64 bytes, the length of a YubiKey's non-discoverable credential ID (as the server's decoys).
@@ -173,7 +174,9 @@ export function createSoftAuthenticator(o: {
       ]);
       let fmt = 'none';
       let attStmt = new Map<string, CborValue>();
-      if (att !== 'none' && 'self' in att) {
+      if (att !== 'none' && 'none' in att) {
+        // No statement: fmt stays 'none'.
+      } else if (att !== 'none' && 'self' in att) {
         // Self attestation: signed by the credential key itself, no certificate chain.
         const sig = sign('sha256', Buffer.concat([authData, sha256(clientDataJSON)]), { key: privateKey, dsaEncoding: 'der' });
         fmt = 'packed';
