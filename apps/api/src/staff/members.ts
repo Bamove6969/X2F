@@ -19,7 +19,9 @@ import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
 //   removes power): `accounts.disabled_at` and `switched_off_at` set and logged in one transaction,
 //   then every session ended (`endAllSessions` with the app's bus). Already off: 409 `wrong-state`.
 // - `POST /staff/v1/members/:id/switch-on { tapId }` (tap `switch-on`, bound to the person and
-//   their current role) → `{ status: 'active' }`.
+//   their current role) → `{ status: 'active' }`. A moderator or senior must hold all three methods
+//   (owner G3; 409 `all-three-methods-required`, the tap left unused).
+//   `GET /staff/v1/members` lists, per moderator and senior, the methods they still lack (`missingMethods`).
 // - `PUT /staff/v1/members/:id/hours { hours }` → `{ hours }` (`validateHours`; 400 `bad-request`).
 // - `PUT /staff/v1/members/:id/role { role, tapId }` (tap `set-role`) → `{ role }`. A senior or mod
 //   role needs an attested security key (409 `security-key-required`): they rule or approve.
@@ -131,14 +133,23 @@ export interface MemberRow {
   lastActiveAt: string | null;
   openCases: number;
   expiresAt: string | null;
+  /**
+   * Owner G3 (review P-m2): the methods a moderator or senior moderator lacks of the three (an
+   * attested security key, a PGP key, a passkey), so the owner can follow up with those who joined
+   * before G3; empty for everyone else and for invites.
+   */
+  missingMethods: Array<'security-key' | 'pgp' | 'passkey'>;
 }
 
 export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]> {
   const { rows: staff } = await db.query<{
     account_id: string; display_name: string; role: StaffRole; hours: unknown; switched_off_at: Date | null; joined_at: Date; last_active: Date | null;
-    open_cases: number;
+    open_cases: number; keys: number; pgp: number; passkeys: number;
   }>(
     `select m.account_id, a.display_name, m.role, m.hours, m.switched_off_at, m.joined_at,
+            (select count(*)::int from webauthn_credentials w where w.account_id = m.account_id and w.kind = 'security-key' and w.attested) as keys,
+            (select count(*)::int from pgp_keys p where p.account_id = m.account_id) as pgp,
+            (select count(*)::int from webauthn_credentials w where w.account_id = m.account_id and w.kind = 'passkey') as passkeys,
             (select max(s.last_seen_at) from sessions s where s.account_id = m.account_id and s.app = 'staff') as last_active,
             (select count(*)::int from disputes d where d.assignee = m.account_id and d.status = any($1::text[])) as open_cases
        from staff_members m join accounts a on a.id = m.account_id
@@ -158,10 +169,13 @@ export async function listMembers(db: Queryable, now: Date): Promise<MemberRow[]
       accountId: r.account_id, inviteId: null, displayName: r.display_name, role: r.role,
       status: r.switched_off_at === null ? 'active' : 'switched-off', hours: r.hours,
       joinedAt: r.joined_at.toISOString(), lastActiveAt: r.last_active?.toISOString() ?? null, openCases: r.open_cases, expiresAt: null,
+      missingMethods: THREE_METHOD_ROLES.includes(r.role)
+        ? [...(r.keys > 0 ? [] : ['security-key' as const]), ...(r.pgp > 0 ? [] : ['pgp' as const]), ...(r.passkeys > 0 ? [] : ['passkey' as const])]
+        : [],
     })),
     ...invites.map((r): MemberRow => ({
       accountId: null, inviteId: r.id, displayName: r.display_name, role: r.role, status: 'waiting', hours: r.hours,
-      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: r.expires_at.toISOString(),
+      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: r.expires_at.toISOString(), missingMethods: [],
     })),
   ];
 }
@@ -198,6 +212,8 @@ export function staffMemberRoutes(app: FastifyInstance): void {
     await withTx(db, async (c) => {
       const target = await lockTarget(c, id);
       if (!target.switchedOff) throw new ApiError(409, 'wrong-state');
+      // Owner G3 (review P-m2): a moderator or senior is switched on only holding all three methods.
+      if (THREE_METHOD_ROLES.includes(target.role) && !(await holdsAllThree(c, id))) throw new ApiError(409, 'all-three-methods-required');
       await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'switch-on', accountId: id, role: target.role as InvitableRole }, now, { sessionId: req.auth.sessionId });
       await c.query('update accounts set disabled_at = null where id = $1', [id]);
       await c.query('update staff_members set switched_off_at = null where account_id = $1', [id]);

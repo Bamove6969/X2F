@@ -235,12 +235,18 @@ describe('members', () => {
     expect(rows).toContainEqual({
       accountId: mod.id, inviteId: null, displayName: `D${mod.loginName}`, role: 'mod', status: 'active', hours: OFFICE,
       joinedAt: MON_NOON.toISOString(), lastActiveAt: MON_NOON.toISOString(), openCases: 0, expiresAt: null,
+      // Owner G3 (review P-m2): this moderator holds only a security key so far.
+      missingMethods: ['pgp', 'passkey'],
     });
     expect(rows).toContainEqual({
       accountId: null, inviteId: inv.inviteId, displayName: null, role: 'helper', status: 'waiting', hours: OFFICE,
-      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt,
+      joinedAt: null, lastActiveAt: null, openCases: 0, expiresAt: inv.expiresAt, missingMethods: [],
     });
-    expect(rows.find((r) => r.accountId === owner.id)).toMatchObject({ role: 'owner', status: 'active', hours: 'any' });
+    expect(rows.find((r) => r.accountId === owner.id)).toMatchObject({ role: 'owner', status: 'active', hours: 'any', missingMethods: [] });
+    await addPgpKey(t.deps, mod.id);
+    await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
+    const after = (await owner.browser.get('/staff/v1/members')).json().members as Array<Record<string, unknown>>;
+    expect(after.find((r) => r.accountId === mod.id)).toMatchObject({ missingMethods: [] });
   });
 
   it('switch-off takes effect at once; past log entries stay and the chain verifies', async () => {
@@ -277,6 +283,14 @@ describe('members', () => {
   it('switch-on needs a tap bound to the person and their role', async () => {
     const mod = await staffWithKeys(t, { role: 'mod' });
     await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {});
+    // Owner G3 (review P-m2): a moderator who lacks a method (one who joined before G3) is not
+    // switched on, and the tap stays unused.
+    const early = await tap(owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' });
+    const refused = await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, { tapId: early });
+    expect([refused.statusCode, errorOf(refused)]).toEqual([409, 'all-three-methods-required']);
+    expect((await t.deps.db.query('select used_at from key_taps where id = $1', [early])).rows).toEqual([{ used_at: null }]);
+    await addPgpKey(t.deps, mod.id);
+    await registerKey(t.app, mod.id, t.newKey({ passkey: true }), { passkey: true });
     expect(errorOf(await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, {}))).toBe('tap-invalid');
     const wrongRole = await tap(owner, { kind: 'switch-on', accountId: mod.id, role: 'senior' });
     expect(errorOf(await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, { tapId: wrongRole }))).toBe('tap-invalid');
