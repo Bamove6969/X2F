@@ -4,7 +4,7 @@
 import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fiatCents } from '@x2f/trade';
+import { GIFT_CARD_TERMS, GIFT_CARD_TERMS_VERSION, fiatCents } from '@x2f/trade';
 import { BuyQuote } from '../src/screens/quote/BuyQuote.js';
 import { SellQuote } from '../src/screens/quote/SellQuote.js';
 import { readConfirmed } from '../src/screens/quote/confirmed.js';
@@ -59,6 +59,8 @@ interface Api {
   takes: TakeBody[];
   /** When set, a take's answer waits for it (a take still in flight). */
   gate?: Promise<void>;
+  /** The method is a gift card (J-17): the quote shows the taker's tick-box terms. */
+  giftCard?: boolean;
 }
 
 let stub: Api;
@@ -82,7 +84,7 @@ beforeEach(() => {
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), 'http://x2f.test');
     if (url.pathname === '/v1/offers') return json(200, stub.offers);
-    if (url.pathname === '/v1/methods') return json(200, { live: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 1, bestRate: '33000' }], all: [] });
+    if (url.pathname === '/v1/methods') return json(200, { live: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: stub.giftCard === true, offers: 1, bestRate: '33000' }], all: [] });
     if (url.pathname === '/v1/price') {
       const currency = url.searchParams.get('currency');
       return stub.price === 'ok' ? json(200, { currency, centsPerXmr: stub.rate, exponent: 2, at: '2026-10-24T00:00:00.000Z', usdCentsPerXmr: stub.rate }) : json(503, { error: 'price-unavailable' });
@@ -162,6 +164,42 @@ function pick(host: HTMLElement, walletId: string): void {
 }
 
 const BUY = quotePath('sell', 'ZELLE', 'offer-ghost', 'USD');
+
+describe('a gift-card quote (J-17, F13 tick-box terms)', () => {
+  const boxes = (host: HTMLElement) => [...host.querySelectorAll<HTMLInputElement>('[data-part="gift-card-terms"] input[type="checkbox"]')];
+
+  it('the buyer (who sends the card) ticks every sender term before Trade; the take carries the terms version', async () => {
+    stub.giftCard = true;
+    const { host } = await open(`${BUY}&amount=412.50`);
+    pick(host, 'w-cake');
+    const ticks = boxes(host);
+    expect(ticks.map((b) => b.closest('[data-term]')?.getAttribute('data-term'))).toEqual([...GIFT_CARD_TERMS.sender]);
+    expect(primary(host).disabled).toBe(true);
+    for (const b of ticks.slice(0, -1)) fire(b, new MouseEvent('click', { bubbles: true }));
+    expect(primary(host).disabled).toBe(true);
+    fire(ticks.at(-1)!, new MouseEvent('click', { bubbles: true }));
+    expect(primary(host).disabled).toBe(false);
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    expect((stub.takes[0] as unknown as Record<string, unknown>).giftCardTerms).toBe(GIFT_CARD_TERMS_VERSION);
+  });
+
+  it('the seller taking a buy ad ticks the checker terms', async () => {
+    stub.giftCard = true;
+    const { host } = await open(quotePath('buy', 'ZELLE', 'offer-ghost', 'USD'));
+    expect(boxes(host).map((b) => b.closest('[data-term]')?.getAttribute('data-term'))).toEqual([...GIFT_CARD_TERMS.checker]);
+  });
+
+  it('no tick boxes and no terms version on any other method', async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    expect(boxes(host)).toEqual([]);
+    pick(host, 'w-cake');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes[0]).not.toHaveProperty('giftCardTerms');
+  });
+});
 
 describe('BuyQuote', () => {
   it('design v2 (offers batch 3): the title is the kit screen title, the footnote the kit info Notice', async () => {
