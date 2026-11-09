@@ -39,6 +39,8 @@ create index tickets_closed on tickets (closed_at) where closed_at is not null;
 -- to the trader); a team member's message names the member.
 create table ticket_messages (
   id uuid primary key default gen_random_uuid(),
+  -- The thread's order (two messages can share a moment).
+  seq bigint generated always as identity unique,
   ticket_id uuid not null references tickets (id) on delete cascade,
   author text not null check (author in ('trader', 'staff')),
   staff_id uuid references accounts (id) on delete set null,
@@ -49,7 +51,7 @@ create table ticket_messages (
   check (author = 'trader' or member_id is null)
 );
 
-create index ticket_messages_ticket on ticket_messages (ticket_id, at, id);
+create index ticket_messages_ticket on ticket_messages (ticket_id, seq);
 
 -- D-059: the lock a compromised ticket puts on an account (full lockout). While a row has no
 -- `unlocked_at`: `accounts.disabled_at` is set (so every login, session, offer listing, take and

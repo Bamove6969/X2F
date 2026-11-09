@@ -41,15 +41,37 @@ import { dailyCap } from '../auth/throttle.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { HIDDEN } from '../feedback/form.js';
+import type { RetentionJob } from '../retention.js';
 import type { TradePublisher } from '../trades/store.js';
 import { afterLock, placeLock, type PlacedLock, LOCKABLE_KINDS } from './lock.js';
 
 export { TICKETS_DAILY, TICKET_CATEGORIES };
 
+const DAY_MS = 86_400_000;
+
+/**
+ * Days a closed ticket is kept (plan Task 30: `TICKET_KEEP_DAYS`, owner to decide; default 90). A
+ * ticket naming a trade is kept while the trade is (trade retention), and goes the first purge after
+ * both. An open ticket is never purged; a compromised one closes only after its lock is lifted.
+ */
+export const TICKET_KEEP_DAYS = 90;
+
+export const purgeTickets: RetentionJob = {
+  name: 'purgeTickets',
+  async run(db: pg.Pool, now: Date): Promise<number> {
+    const { rowCount } = await db.query(
+      `delete from tickets t
+        where t.status = 'closed' and t.closed_at <= $1
+          and (t.trade_code is null or not exists (select 1 from trades where code = t.trade_code))`,
+      [new Date(now.getTime() - TICKET_KEEP_DAYS * DAY_MS)],
+    );
+    return rowCount ?? 0;
+  },
+};
+
 /** Compromised-form sends per typed login name per UTC day (its HMAC tag; a lead default). */
 export const COMPROMISED_PER_NAME_DAILY = 3;
 
-const DAY_MS = 86_400_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type TicketStatus = 'open' | 'answered' | 'closed';
@@ -127,7 +149,7 @@ export async function ticketMessages(q: Queryable, ticketId: string): Promise<Ar
   const { rows } = await q.query<{ author: 'trader' | 'staff'; member_name: string | null; staff_id: string | null; body: string; at: Date }>(
     `select m.author, tm.display_name as member_name, m.staff_id, m.body, m.at
        from ticket_messages m left join team_members tm on tm.id = m.member_id
-      where m.ticket_id = $1 order by m.at, m.id`,
+      where m.ticket_id = $1 order by m.seq`,
     [ticketId],
   );
   return rows.map((r) => ({ author: r.author, memberName: r.member_name, staffId: r.staff_id, body: r.body, at: r.at.toISOString() }));
