@@ -15,7 +15,7 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { purgeChats } from '../src/chat/retention.js';
+import { CHAT_PURGED_MARK_DAYS, purgeChats } from '../src/chat/retention.js';
 import { CHAT_OPEN_BUCKET, CHAT_POST_BUCKET } from '../src/limits.js';
 import { buildInternalListener } from '../src/internal/routes.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
@@ -758,6 +758,80 @@ describe('purgeChats', () => {
     expect(await exists(r.chat)).toBe(false);
     expect((await deps.db.query('select 1 from chat_envelopes where chat = $1', [r.chat])).rows).toHaveLength(0);
     expect(RETENTION_JOBS.map((j) => j.name)).toContain('purgeChats');
+  });
+});
+
+describe('the purge leaves a shred order for moderation and a purged mark for devices (design 5, tasks 1 and 2)', () => {
+  /** A ready chat linked to an undisputed trade that closed at `now`, then purged 31 days later. */
+  async function purgedTradeChat(): Promise<Ready & { trade: string; purgedAt: Date }> {
+    const r = await readyChat();
+    const t = await seedTrade(deps, { sellerId: r.poster.id, buyerId: r.taker.id, poster: 'seller' });
+    await deps.db.query(`update trades set state = 'released', closed_at = $2 where code = $1`, [t.code, now]);
+    await deps.db.query('update chats set trade_code = $2 where code = $1', [r.chat, t.code]);
+    await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 0));
+    const purgedAt = new Date(now.getTime() + 31 * DAY);
+    await purgeChats(deps.db, purgedAt);
+    expect((await deps.db.query('select 1 from chats where code = $1', [r.chat])).rows).toHaveLength(0);
+    return { ...r, trade: t.code, purgedAt };
+  }
+  const orders = async (): Promise<Array<{ chat: string; trade: string | null; purgedAt: string }>> => {
+    const res = await signedInject('GET', '/internal/v1/chat-shred');
+    expect(res.statusCode).toBe(200);
+    return (res.json() as { orders: Array<{ chat: string; trade: string | null; purgedAt: string }> }).orders;
+  };
+
+  it('a purged chat is on the shred list with its trade code until moderation reports it shredded; a repeat report is still done', async () => {
+    const r = await purgedTradeChat();
+    expect(await orders()).toContainEqual({ chat: r.chat, trade: r.trade, purgedAt: r.purgedAt.toISOString() });
+    const done = await signedInject('POST', '/internal/v1/reports', { kind: 'chat-shredded', chat: r.chat });
+    expect(done.statusCode).toBe(201);
+    expect((await orders()).map((o) => o.chat)).not.toContain(r.chat);
+    expect((await signedInject('POST', '/internal/v1/reports', { kind: 'chat-shredded', chat: r.chat })).statusCode).toBe(201);
+  });
+
+  it('a pre-trade chat is ordered shredded too, with no trade', async () => {
+    const r = await readyChat();
+    const purgedAt = new Date(now.getTime() + 8 * DAY);
+    await purgeChats(deps.db, purgedAt);
+    expect(await orders()).toContainEqual({ chat: r.chat, trade: null, purgedAt: purgedAt.toISOString() });
+  });
+
+  it('the shred list and report are signed like every internal route, and the report takes exactly { kind, chat }', async () => {
+    const unsigned = await internal.inject({ method: 'GET', url: '/internal/v1/chat-shred' });
+    expect(unsigned.statusCode).toBe(401);
+    for (const body of [{ kind: 'chat-shredded' }, { kind: 'chat-shredded', chat: 'nope' }, { kind: 'chat-shredded', chat: newTradeCode(), extra: 1 }]) {
+      expect((await signedInject('POST', '/internal/v1/reports', body)).statusCode).toBe(400);
+    }
+  });
+
+  it("a former member gets 410 chat-purged on every chat route (the device erases its copy); anyone else, and an unknown chat, still 404", async () => {
+    const r = await purgedTradeChat();
+    const stranger = await trader();
+    for (const who of [r.taker, r.poster]) {
+      const answers = [
+        await who.b.get(`/v1/chats/${r.chat}`),
+        await who.b.get(`/v1/chats/${r.chat}/envelopes?after=0`),
+        await who.b.get(`/v1/chats/${r.chat}/attestation`),
+        await who.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 1)),
+        await who.b.post(`/v1/chats/${r.chat}/identity`, identityBody(r.chat, 'buyer')),
+      ];
+      expect(answers.map((a) => a.statusCode)).toEqual([410, 410, 410, 410, 410]);
+      expect(answers[0]!.json()).toEqual({ error: 'chat-purged' });
+    }
+    expect((await stranger.b.get(`/v1/chats/${r.chat}`)).statusCode).toBe(404);
+    expect((await r.taker.b.get(`/v1/chats/${newTradeCode()}`)).statusCode).toBe(404);
+  });
+
+  it('the mark names neither the chat nor its members, and goes CHAT_PURGED_MARK_DAYS after the purge', async () => {
+    const r = await purgedTradeChat();
+    const { rows } = await deps.db.query<{ tag: Buffer; purged_at: Date }>('select tag, purged_at from chat_purged_marks where purged_at = $1', [r.purgedAt]);
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    const dump = rows.map((m) => m.tag.toString('hex') + m.tag.toString('latin1')).join('');
+    for (const secret of [r.chat, r.taker.id, r.poster.id, r.chat.replace(/-/g, '')]) expect(dump).not.toContain(secret);
+    await purgeChats(deps.db, new Date(r.purgedAt.getTime() + CHAT_PURGED_MARK_DAYS * DAY));
+    expect((await r.taker.b.get(`/v1/chats/${r.chat}`)).statusCode).toBe(410);
+    await purgeChats(deps.db, new Date(r.purgedAt.getTime() + CHAT_PURGED_MARK_DAYS * DAY + 1));
+    expect((await r.taker.b.get(`/v1/chats/${r.chat}`)).statusCode).toBe(404);
   });
 });
 
