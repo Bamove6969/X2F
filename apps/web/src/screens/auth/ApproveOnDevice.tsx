@@ -18,7 +18,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { ApprovalPoll, ApprovalWait } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
-import { formatRemaining } from '../../ui/Countdown.js';
+import { remainingParts, remainingWords, TimeParts } from '../../ui/Countdown.js';
 import { Disclosure } from '../../ui/Disclosure.js';
 import { FlowScreen } from '../../ui/FlowScreen.js';
 import { Icon, StatusIcon } from '../../ui/icons.js';
@@ -29,10 +29,6 @@ export const POLL_MS = 2000;
 
 type Stage = 'waiting' | 'in' | 'blocked' | 'expired';
 
-/** The board's countdown form: "04:59" (mm:ss, mono). */
-export function mmss(ms: number): string {
-  return formatRemaining(ms, 'clock').padStart(5, '0');
-}
 
 export function ApproveOnDevice({
   wait,
@@ -206,7 +202,11 @@ export function ApproveOnDevice({
       <p className="x2f-icon-line" data-tone="caution" data-part="approve-countdown" data-mask="clock">
         <Icon name="clock" size={20} />
         <span>
-          Waiting for approval. This ends in <span className="x2f-num">{mmss(left)}</span>.
+          Waiting for approval. This ends in{' '}
+          <span className="x2f-countdown" role="timer" aria-label={remainingWords(remainingParts(left, 'clock'))}>
+            <TimeParts parts={remainingParts(left, 'clock')} />
+          </span>
+          .
         </span>
       </p>
       <Disclosure summary="Where do I approve it?" part="approve-where">

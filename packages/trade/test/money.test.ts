@@ -113,6 +113,33 @@ describe('formatXmr and formatFiat', () => {
     expect(formatXmr(-12_500_000_000n)).toBe('-0.012500');
   });
 
+  // Design kit handoff 1.5: every XMR string is /^\d+\.\d{6}$/, money is never rounded up.
+  test('kit: always exactly 6 places, trailing zeros kept', () => {
+    for (const a of [0n, 1n, 999_999n, 1_000_000n, 1_250_000_000_000n, 275_400_000_000_000n, 10n ** 18n]) {
+      expect(formatXmr(a)).toMatch(/^\d+\.\d{6}$/);
+    }
+    expect(formatXmr(1_250_000_000_000n)).toBe('1.250000');
+    expect(formatXmr(1_000_000_000_000n)).toBe('1.000000');
+  });
+
+  test('kit: digits past the sixth are cut, never rounded (half, nine and just-under cases)', () => {
+    expect(formatXmr(1_250_000_500_000n)).toBe('1.250000'); // exactly half of the 6th place
+    expect(formatXmr(1_250_000_999_999n)).toBe('1.250000'); // would round up to 1.250001
+    expect(formatXmr(999_999_999_999n)).toBe('0.999999'); // would round up to 1.000000
+    expect(formatXmr(1_262_500_000_000n)).toBe('1.262500');
+  });
+
+  test('kit: very small amounts', () => {
+    expect(formatXmr(1n)).toBe('0.000000'); // one atomic unit is below the 6th place
+    expect(formatXmr(999_999n)).toBe('0.000000');
+    expect(formatXmr(1_000_000n)).toBe('0.000001'); // the smallest amount 6 places can show
+  });
+
+  test('kit: very large amounts stay exact past Number precision', () => {
+    expect(formatXmr(18_446_744_073_709_551_615n)).toBe('18446744.073709'); // 2^64 - 1 atomic
+    expect(formatXmr(9_007_199_254_740_993_000_000n)).toBe('9007199254.740993');
+  });
+
   test('fiat', () => {
     expect(formatFiat(41250n, 'USD')).toBe('$412.50');
     expect(formatFiat(5n, 'USD')).toBe('$0.05');

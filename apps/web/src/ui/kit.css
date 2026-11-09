@@ -1,0 +1,574 @@
+/* Design kit components (design kit handoff, 8 Nov 2026, with the head designer's rulings).
+   Colours are tokens only; tints are color-mix of a token. No shadows. */
+
+.x2f-digits {
+  font-family: var(--x2f-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.x2f-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- 2.1 Avatar (ruling 2: initials 13/15/18, dot 10/12/14 with a 2 px ring) ---- */
+.x2f-avatar {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--x2f-surface-raised);
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+  font-family: var(--x2f-font-display);
+  font-size: 15px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  --x2f-avatar-dot: 12px;
+  --x2f-avatar-ring: var(--x2f-surface);
+}
+
+.x2f-avatar[data-size='48'] {
+  width: 48px;
+  height: 48px;
+  font-size: 18px;
+  --x2f-avatar-dot: 14px;
+}
+
+.x2f-avatar[data-size='32'] {
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
+  --x2f-avatar-dot: 10px;
+}
+
+/* Inside an inner block the avatar takes the surface, so it keeps an edge. */
+.x2f-avatar[data-on='raised'] {
+  border-color: var(--x2f-surface);
+  background: var(--x2f-surface);
+  --x2f-avatar-ring: var(--x2f-surface-raised);
+}
+
+.x2f-avatar[data-trusted='true'] {
+  border-color: color-mix(in srgb, var(--x2f-escrow) 70%, transparent);
+}
+
+.x2f-avatar[data-muted='true'] {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-avatar[data-kind='team'] {
+  border-color: var(--x2f-team);
+  background: var(--x2f-team);
+  color: var(--x2f-ground);
+}
+
+.x2f-avatar[data-kind='x2f'] {
+  font-size: 11px;
+}
+
+.x2f-avatar__dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: var(--x2f-avatar-dot);
+  height: var(--x2f-avatar-dot);
+  border: 2px solid var(--x2f-avatar-ring);
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-escrow);
+}
+
+.x2f-avatar__blocked {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: flex;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--x2f-surface);
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-danger);
+  color: var(--x2f-surface);
+}
+
+/* ---- 2.2 Role tags (ruling 15: one small-label family) ---- */
+.x2f-tag {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--x2f-space-1);
+  height: 20px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border-radius: var(--x2f-radius-sm);
+  background: color-mix(in srgb, var(--x2f-ink) 8%, transparent);
+  color: var(--x2f-ink-muted);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.x2f-tag[data-role='team'] {
+  background: color-mix(in srgb, var(--x2f-team) 14%, transparent);
+  color: var(--x2f-team);
+}
+
+.x2f-tag[data-role='mod'] {
+  background: color-mix(in srgb, var(--x2f-mod) 14%, transparent);
+  color: var(--x2f-mod);
+}
+
+.x2f-tag[data-tone='escrow'] {
+  background: color-mix(in srgb, var(--x2f-escrow) 14%, transparent);
+  color: var(--x2f-escrow);
+}
+
+/* ---- 2.3 Moderator tile ---- */
+.x2f-modtile {
+  display: flex;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--x2f-radius-md);
+  background: color-mix(in srgb, var(--x2f-mod) 16%, transparent);
+  color: var(--x2f-mod);
+}
+
+.x2f-modtile[data-size='48'] {
+  width: 48px;
+  height: 48px;
+}
+
+.x2f-modtile[data-size='32'] {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--x2f-radius-tile);
+}
+
+.x2f-modtile[data-pending='true'] {
+  border: 1px solid var(--x2f-line);
+  background: transparent;
+  color: var(--x2f-ink-muted);
+}
+
+/* ---- 2.4 Identity row ---- */
+.x2f-ident {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-3);
+  min-width: 0;
+}
+
+.x2f-ident__text,
+.x2f-compact-trader__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.x2f-ident__name-row {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  min-width: 0;
+}
+
+.x2f-ident__name-row[data-wrap='true'] {
+  flex-wrap: wrap;
+  gap: 2px var(--x2f-space-2);
+}
+
+.x2f-ident__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--x2f-ink);
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.x2f-ident[data-size='40'] .x2f-ident__name,
+.x2f-ident__name[data-size='40'] {
+  font-size: 16px;
+}
+
+.x2f-ident__name[data-mod='true'] {
+  color: var(--x2f-mod);
+}
+
+.x2f-ident__name[data-muted='true'] {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-ident__meta {
+  position: relative;
+  color: var(--x2f-ink-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.x2f-ident__meta .x2f-digits {
+  color: var(--x2f-ink);
+}
+
+.x2f-ident__online {
+  color: var(--x2f-escrow);
+  font-weight: 600;
+}
+
+/* ---- 2.5 Stat tiles: value over label (the label comes first for screen readers) ---- */
+.x2f-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.x2f-stat {
+  display: flex;
+  flex-direction: column-reverse;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 0;
+  padding: var(--x2f-space-2) var(--x2f-space-3);
+  border-radius: var(--x2f-radius-tile);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-stat__v {
+  margin: 0;
+  color: var(--x2f-ink);
+  font-family: var(--x2f-font-mono);
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.x2f-stat__l {
+  color: var(--x2f-ink-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* ---- 2.6 Trader card, 2.7 compact block ---- */
+.x2f-trader-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-3);
+  padding: var(--x2f-space-5);
+  border-radius: var(--x2f-radius-lg);
+  background: var(--x2f-surface);
+}
+
+.x2f-compact-trader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-3);
+  min-width: 0;
+}
+
+.x2f-compact-trader__top {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-3);
+  min-width: 0;
+}
+
+.x2f-compact-trader__text {
+  flex-grow: 1;
+  gap: 2px;
+}
+
+/* ---- 2.8 Recipient row: the amount starts under the name (48 avatar + 12 gap) ---- */
+.x2f-recipient {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: calc(var(--x2f-space-3) + 2px) 0;
+  border-top: 1px solid var(--x2f-surface-raised);
+  border-bottom: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-recipient__amount {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  padding-left: 60px;
+}
+
+.x2f-recipient__xmr {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--x2f-space-1);
+  white-space: nowrap;
+}
+
+.x2f-recipient__xmr .x2f-digits {
+  font-size: 16px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.x2f-recipient__unit {
+  color: var(--x2f-monero-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.x2f-recipient__fiat {
+  color: var(--x2f-ink-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.x2f-recipient__fiat .x2f-digits {
+  color: var(--x2f-ink);
+}
+
+/* ---- 3.2 Badge seal ---- */
+.x2f-seal {
+  display: flex;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid color-mix(in srgb, var(--x2f-tone) 55%, transparent);
+  border-radius: var(--x2f-radius-md);
+  background: color-mix(in srgb, var(--x2f-tone) 16%, var(--x2f-surface-raised));
+  color: var(--x2f-tone);
+}
+
+.x2f-seal[data-size='28'] {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+}
+
+.x2f-seal[data-size='22'] {
+  width: 22px;
+  height: 22px;
+  border-width: 1px;
+  border-radius: var(--x2f-radius-pill);
+}
+
+.x2f-seal__num {
+  font-family: var(--x2f-font-mono);
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.x2f-seal[data-size='28'] .x2f-seal__num {
+  font-size: 9.5px;
+}
+
+.x2f-seal[data-size='22'] .x2f-seal__num {
+  font-size: 8px;
+}
+
+/* The family tone of a badge (kit 3.1): reputation, speed, security and milestones, newcomer. */
+[data-tone='escrow'] {
+  --x2f-tone: var(--x2f-escrow);
+}
+
+[data-tone='caution'] {
+  --x2f-tone: var(--x2f-caution);
+}
+
+[data-tone='ink'] {
+  --x2f-tone: var(--x2f-ink);
+}
+
+[data-tone='ink-muted'] {
+  --x2f-tone: var(--x2f-ink-muted);
+}
+
+/* ---- 3.3 Chip and 3.4 "+N": a 30 px pill inside a 44 px button ---- */
+.x2f-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.x2f-chip-row__more {
+  position: relative;
+  display: inline-flex;
+}
+
+.x2f-chip-k {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  margin: -7px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.x2f-chip-k:focus-visible {
+  outline: none;
+}
+
+.x2f-chip-k__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 11px 0 4px;
+  border: 1px solid color-mix(in srgb, var(--x2f-tone) 32%, transparent);
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.x2f-chip-k:hover .x2f-chip-k__pill,
+.x2f-chip-k:focus-visible .x2f-chip-k__pill {
+  border-color: color-mix(in srgb, var(--x2f-tone) 60%, transparent);
+}
+
+.x2f-chip-k:focus-visible .x2f-chip-k__pill,
+.x2f-chip-k:focus-visible .x2f-more-k {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+}
+
+.x2f-more-k {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x2f-space-1);
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 10px 0 11px;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.x2f-more-k[data-open='true'] {
+  padding: 0 9px 0 10px;
+  border: 2px solid var(--x2f-ink);
+}
+
+/* ---- 3.5 Badge row and list ---- */
+.x2f-badge-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-badge-list[data-gap='14'] {
+  gap: calc(var(--x2f-space-3) + 2px);
+}
+
+.x2f-badge-row {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-3);
+}
+
+.x2f-badge-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.x2f-badge-row__name {
+  color: var(--x2f-ink);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.x2f-badge-row__meaning,
+.x2f-badge-row__earned {
+  color: var(--x2f-ink-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.x2f-badge-row__earned {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* ---- 3.7 Desktop hover card (ruling 4) ---- */
+.x2f-badge-card {
+  position: absolute;
+  top: calc(100% + 14px);
+  left: -24px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--x2f-space-3) + 2px);
+  width: 340px;
+  box-sizing: border-box;
+  padding: var(--x2f-space-4);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-badge-card::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 36px;
+  width: 12px;
+  height: 12px;
+  border-top: 1px solid var(--x2f-line);
+  border-left: 1px solid var(--x2f-line);
+  background: var(--x2f-surface-raised);
+  transform: rotate(45deg);
+}
+
+.x2f-badge-card__label {
+  color: var(--x2f-ink-muted);
+  font-size: var(--x2f-body-size);
+  line-height: var(--x2f-body-line);
+}
+
+.x2f-badge-card__label .x2f-digits {
+  color: var(--x2f-ink);
+}

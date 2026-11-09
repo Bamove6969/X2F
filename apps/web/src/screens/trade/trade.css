@@ -75,10 +75,11 @@
 
 .x2f-trade-title {
   margin: 0;
-  font-family: var(--x2f-title-family);
-  font-size: var(--x2f-title-size);
-  line-height: var(--x2f-title-line);
-  font-weight: var(--x2f-title-weight);
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: var(--x2f-screen-title-weight);
+  letter-spacing: var(--x2f-screen-title-tracking);
   overflow-wrap: anywhere;
 }
 
