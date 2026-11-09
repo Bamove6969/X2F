@@ -51,10 +51,10 @@ const buyerRefunded = (over: Partial<TradeView> = {}) =>
 test('the buyer\'s refunded trade says the payment time ran out and offers "Open a dispute"', async ({ page }) => {
   await openRoom(page, buyerRefunded());
   await expect(page.getByRole('heading', { name: 'Payment time ran out' })).toBeVisible();
-  // The time-ran-out lead: the owner's Decision 7 wording naming the seller (review M2), and while
-  // the dispute card shows, the line that points to it.
+  // The time-ran-out lead: the owner's Decision 7 wording, saying "the seller", never the name (lead
+  // 8 Nov, 99d80281), and while the dispute card shows, the line that points to it.
   await expect(
-    page.getByText(/^Payment time ran out, \S+ cancelled; everything in escrow went back to the original owner\. X2F took nothing from you\. If you already sent the payment, open a dispute below\.$/),
+    page.getByText(/^Payment time ran out, the seller cancelled; everything in escrow went back to the original owner\. X2F took nothing from you\. If you already sent the payment, open a dispute below\.$/),
   ).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open dispute', exact: true })).toHaveAttribute('href', `/trade/${CODE}/dispute`);
 });

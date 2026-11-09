@@ -418,8 +418,9 @@ for (const viewport of PHONE_VIEWPORTS) {
     await expect(f(page).country).toBeVisible();
     await expectPhoneLayout(page);
     await expect(f(page).post).toBeInViewport({ ratio: 1 });
-    // Typed fields are 16 px; the board's "Minimum completed trades" select is 15 px.
-    const typed = await page.locator('input, textarea').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
+    // Typed fields are 16 px; the board's "Minimum completed trades" select is 15 px. Tick boxes and
+    // radios take no typing (the gift-card terms' boxes, J-17), so phones don't zoom into them.
+    const typed = await page.locator('input:not([type=checkbox]):not([type=radio]), textarea').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
     expect(typed.length).toBeGreaterThan(0);
     for (const s of typed) expect(s).toBeGreaterThanOrEqual(16);
     const selects = await page.locator('select').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
