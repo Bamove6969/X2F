@@ -122,7 +122,7 @@ export function staffTicketRoutes(app: FastifyInstance): void {
     const status = statusOf(req, ['open', 'closed']);
     const order = status === 'closed' ? 'desc' : 'asc';
     const { rows } = await req.server.deps.db.query<TicketRow & { display_name: string | null; locked: boolean }>(
-      `select t.*, a.display_name,
+      `select t.*, case when a.kind = 'member' then null else a.display_name end as display_name,
               exists (select 1 from account_locks l where l.account_id = t.account_id and l.unlocked_at is null) as locked
          from tickets t left join accounts a on a.id = t.account_id
         where t.kind = 'compromised' and (t.status = 'closed') = $1

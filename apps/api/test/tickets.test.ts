@@ -292,6 +292,11 @@ describe('"My account has been compromised" (D-059): full lockout', () => {
     expect([401, 403]).toContain((await m.b.get('/v1/tickets')).statusCode);
     expect((await deps.db.query('select 1 from sessions where member_id = $1 and revoked_at is null', [m.id])).rowCount).toBe(0);
     expect((await owner.b.get('/v1/tickets')).statusCode).toBe(200);
+    // Staff see a member's login as "a team member login" (its display name is a placeholder nobody sees).
+    const senior = await staff('senior');
+    const row = (await senior.b.get('/staff/v1/compromised')).json().tickets.find((t: { locked: boolean; displayName: string | null; matched: boolean }) => t.matched && t.locked && t.displayName === null);
+    expect(row).toBeDefined();
+    expect(JSON.stringify((await senior.b.get('/staff/v1/compromised')).json())).not.toContain('placeholder');
   });
 
   it('only a senior moderator or the owner, with a key tap, lifts the lock; the ticket cannot close while locked; trades resume', async () => {
