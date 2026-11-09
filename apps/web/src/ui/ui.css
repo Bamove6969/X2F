@@ -647,8 +647,8 @@
   box-sizing: border-box;
 }
 
-[data-wide-frame='rail'] > .x2f-desktop__body > :is(:has(.x2f-room), :has(.x2f-columns)),
-[data-wide-frame='rail'] > .x2f-desktop__body > .x2f-panes > [data-pane='main'] > :is(.x2f-quote, :has(.x2f-room), :has(.x2f-columns)) {
+[data-wide-frame='rail'] > .x2f-desktop__body > :is(.x2f-flow[data-look='page'], :has(.x2f-room), :has(.x2f-columns), :has(.x2f-flow[data-look='page'])),
+[data-wide-frame='rail'] > .x2f-desktop__body > .x2f-panes > [data-pane='main'] > :is(.x2f-quote, :has(.x2f-room), :has(.x2f-columns), :has(.x2f-flow[data-look='page'])) {
   max-width: 944px;
 }
 

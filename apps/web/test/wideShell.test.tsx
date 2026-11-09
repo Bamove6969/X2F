@@ -170,7 +170,7 @@ describe('the wide frame CSS (no stretched phone layout)', () => {
 
   it('content is at most 720 px, or 944 px (two columns) for the screens that lay out two', () => {
     expect(rule(ui, "[data-wide-frame='rail'] > .x2f-desktop__body > .x2f-panes > [data-pane='main'] > *")).toMatch(/max-width: 720px;/);
-    expect(ui).toMatch(/\[data-pane='main'\] > :is\(\.x2f-quote, :has\(\.x2f-room\), :has\(\.x2f-columns\)\) \{\s*max-width: 944px;/);
+    expect(ui).toMatch(/\[data-pane='main'\] > :is\(\.x2f-quote, :has\(\.x2f-room\), :has\(\.x2f-columns\), :has\(\.x2f-flow\[data-look='page'\]\)\) \{\s*max-width: 944px;/);
   });
 
   it('the wide quote is two columns, 560 and 360, with Trade at the top of the second', () => {
