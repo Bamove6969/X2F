@@ -325,6 +325,32 @@ describe('the sweep pass (runFeeSweep)', () => {
     expect((await sweeps()).at(-1)).toMatchObject({ outcome: 'failed' });
   });
 
+  // Review R2: any settings save after step 1 stops the send (`fee_sweep_set_at` moved), not only an
+  // address change or a switch-off: a sweep sized from the old float would leave the hot wallet short.
+  it('the owner raises the float mid-pass: nothing is sent at the old size, the attempt is failed (settings-changed), the next pass uses the new float', async () => {
+    const now = new Date(T0.getTime() + 850_000);
+    setNow(now);
+    await setSweep(10n * XMR, 3n * XMR, now);
+    balance = 13n * XMR;
+    const sent: unknown[] = [];
+    const res = await runFeeSweep({
+      ...base(),
+      push: { send: async () => {
+        await deps.db.query('update settings set fee_sweep_float_atomic = $1, fee_sweep_set_at = $2', [(4n * XMR).toString(), new Date(now.getTime() + 5_000)]);
+        return true;
+      } },
+      send: async (a) => (sent.push(a), { txHash: '56'.repeat(32) }),
+    });
+    expect(res).toEqual({ outcome: 'failed', amountAtomic: 10n * XMR, keepAtomic: 3n * XMR, reason: 'settings-changed' });
+    expect(sent).toEqual([]);
+    expect((await sweeps()).at(-1)).toMatchObject({ outcome: 'failed', tx_hash: null });
+    expect((await ownerAlerts('fee-sweep-failed')).at(-1)).toMatchObject({ reason: 'settings-changed' });
+    // The save came after the attempt, so it lifts the hold: the next pass is sized from the new float.
+    setNow(new Date(now.getTime() + 30_000));
+    expect(await runFeeSweep({ ...base(), send: async (a) => (sent.push(a), { txHash: '56'.repeat(32) }) })).toMatchObject({ outcome: 'sent', amountAtomic: 9n * XMR, keepAtomic: 4n * XMR });
+    expect(sent).toEqual([{ coldAddress: COLD, amountAtomic: 9n * XMR }]);
+  });
+
   it('step 1 reads the settings under a share lock: a concurrent settings write waits for it', async () => {
     const now = new Date(T0.getTime() + 900_000);
     setNow(now);

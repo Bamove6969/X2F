@@ -112,9 +112,10 @@ export type FeeSweepResult =
 
 /**
  * Why an attempt failed. `not-wired`: the Plan 6 tripwire; `send-error`: the send threw or returned
- * no tx hash; `settings-changed`: the owner changed the cold address or turned the sweep off after
- * the pass started, so it did not send (review F2); `settings-unread`: the settings could not be
- * read again before the send, so it did not send. Only `send-error` follows a send call.
+ * no tx hash; `settings-changed`: the owner saved the sweep settings after the pass started (a new
+ * address, the sweep off, or any other save: `fee_sweep_set_at` moved), so it did not send (review
+ * F2, R2); `settings-unread`: the settings could not be read again before the send, so it did not
+ * send. Only `send-error` follows a send call.
  */
 export type FeeSweepFailReason = 'not-wired' | 'send-error' | 'settings-changed' | 'settings-unread';
 
@@ -132,10 +133,12 @@ const LOCK_KEY = 'x2f-fee-sweep';
  *    (`fee-sweep-failed`).
  * Step 1 reads the settings `for share`, so a concurrent save waits for it; the lock ends with
  * step 1's commit. Just before the send the settings are read again `for share` in a separate short
- * transaction: if the cold address changed or the sweep was turned off since step 1, nothing is
- * sent and the attempt is settled `failed` (`settings-changed`, review F2). Nothing is held across
- * the send itself (review R1, accepted): a save that commits between that re-read's commit and the
- * wallet's broadcast is not seen, so the coins go to the address the pass re-read, seconds earlier.
+ * transaction: if the settings were saved since step 1 (`fee_sweep_set_at` moved, the sweep is off
+ * or the address differs), nothing is sent and the attempt is settled `failed` (`settings-changed`,
+ * review F2 and R2: a sweep sized from an old float would leave the hot wallet short). Nothing is
+ * held across the send itself (review R1, accepted): a save that commits between that re-read's
+ * commit and the wallet's broadcast is not seen, so the coins go to the address the pass re-read,
+ * seconds earlier.
  * The phone pushes are best-effort: a push error is swallowed, so it never stops the pass or leaves
  * the attempt pending (review F3; the in-app alert is written either way).
  * If the process dies or step 3 fails after the send, the attempt stays `pending`: its result is
@@ -155,7 +158,7 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
     // Step 1: decide and record the attempt.
     const now = d.clock();
     await client.query('begin');
-    let started: { id: string; coldAddress: string; plan: Extract<FeeSweepPlan, { due: true }> };
+    let started: { id: string; coldAddress: string; setAt: Date | null; plan: Extract<FeeSweepPlan, { due: true }> };
     try {
       const cfg = await getFeeSweepConfig(client, { forShare: true });
       const plan = planFeeSweep(cfg, await d.wallet.unlockedAtomic());
@@ -179,7 +182,7 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
       // COPY-UNSIGNED: the owner's alert texts (Claude Design words the StaffSettings "Fee wallet" section).
       await addOwnerAlert(client, 'fee-sweep-due', { ...amountsOf(plan), message: 'The fee wallet reached your threshold: moving the excess to your cold wallet' }, now);
       await client.query('commit');
-      started = { id: rows[0]!.id, coldAddress: cfg.coldAddress!, plan };
+      started = { id: rows[0]!.id, coldAddress: cfg.coldAddress!, setAt: cfg.setAt, plan };
     } catch (e) {
       await client.query('rollback');
       throw e;
@@ -192,7 +195,7 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
     const { plan } = started;
     const failed = (reason: FeeSweepFailReason) => ({ outcome: 'failed' as const, amountAtomic: plan.amountAtomic, keepAtomic: plan.keepAtomic, reason });
     let result: Extract<FeeSweepResult, { outcome: 'sent' | 'failed' }>;
-    const recheck = await settingsStillAllow(client, started.coldAddress).then(
+    const recheck = await settingsStillAllow(client, started).then(
       (ok): FeeSweepFailReason | null => (ok ? null : 'settings-changed'),
       (): FeeSweepFailReason => 'settings-unread',
     );
@@ -243,15 +246,17 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
 }
 
 /**
- * Step 2's check (review F2): reads the settings `for share` in a short transaction on the pass's
- * connection; true while the sweep is still on and the cold address is the one step 1 read.
+ * Step 2's check (review F2, R2): reads the settings `for share` in a short transaction on the
+ * pass's connection; true while the sweep is still on, the cold address is the one step 1 read and
+ * the settings were not saved since (`fee_sweep_set_at` unchanged: every save moves it, so a new
+ * float or threshold stops the send too, as the attempt was sized from the old ones).
  */
-async function settingsStillAllow(client: pg.PoolClient, coldAddress: string): Promise<boolean> {
+async function settingsStillAllow(client: pg.PoolClient, started: { coldAddress: string; setAt: Date | null }): Promise<boolean> {
   await client.query('begin');
   try {
     const now = await getFeeSweepConfig(client, { forShare: true });
     await client.query('commit');
-    return now.thresholdAtomic !== null && now.coldAddress === coldAddress;
+    return now.thresholdAtomic !== null && now.coldAddress === started.coldAddress && (now.setAt?.getTime() ?? null) === (started.setAt?.getTime() ?? null);
   } catch (e) {
     await client.query('rollback').catch(() => undefined);
     throw e;
