@@ -25,7 +25,7 @@ import { syncHeldTradesJob } from '../src/trades/held.js';
 import { applyEvent, noPublish } from '../src/trades/store.js';
 import { siteMaintenanceSince, startTimers } from '../src/trades/timers.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
-import { accountIdByLoginName } from './helpers/accounts.js';
+import { accountIdByLoginName, makeVendor } from './helpers/accounts.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
 import { FIAT, driveTo, seedTrade } from './helpers/trades.js';
@@ -284,8 +284,8 @@ describe('a username + password session: changes are staged, reviewed, submitted
     const a = ((await changePassword(t.b, t.id)).json() as { changeId: string }).changeId;
     expect((await submit(t.b, [a])).statusCode).toBe(200);
     const aDue = in24h();
-    later(5 * HOUR);
-    // A thief's small change every few hours no longer holds the owner's change back.
+    later(HOUR); // inside the unchosen 2-hour session length (batch 2), so t.b is still logged in
+    // A thief's small change an hour later no longer holds the owner's change back.
     const thief = await secondSession(t);
     const b = ((await addWallet(thief, t.id)).json() as { changeId: string }).changeId;
     expect((await submit(thief, [b])).json()).toEqual({ status: 'queued', count: 2, takesEffectAt: in24h() });
@@ -849,7 +849,12 @@ describe('a recovery-code login', () => {
     const t = await ownerWithCode();
     const partner = await trader();
     const { trade } = await seedTrade(deps, { sellerId: partner.id, buyerId: t.id, poster: 'seller' });
-    const s = await driveTo(deps, trade, 'secured');
+    // Batch 3's dispute rules (design review P1, owner p9-4, 8 Nov): either side disputes only once
+    // the payment method's time from "I've paid" is over. Past it, so only the hold refuses here.
+    // The confirm time (120 min) outlives the unchosen 2-hour session (batch 2): the partner takes 4 hours at login.
+    expect((await partner.browser.put('/v1/account/session/length', { hours: 4 })).statusCode).toBe(200);
+    const s = await driveTo(deps, trade, 'paid');
+    setNow(new Date(s.confirmBy!.getTime() + 60_000));
     const rec = new Browser(app);
     expect((await backupLogin(rec, t.name, t.code)).statusCode).toBe(200);
     expect((await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code])).rows[0]!.p).not.toBeNull();
@@ -953,17 +958,20 @@ describe('a recovery-code login', () => {
     expect(row.rows[0]).toEqual({ state: 'secured', settling: null });
   });
 
-  it('lead review 8 Nov I5: a recorded buyer-cancel gives way to a dispute; the moderator decides', async () => {
+  it('lead review 8 Nov I5 with batch 3\'s dispute rules: a buyer whose cancel is recorded cannot dispute before "I\'ve paid"; the cancel is carried out at the hold\'s end', async () => {
+    // Batch 3 (design review P1, 8 Nov): the buyer disputes only after "I've paid", and buyer-cancel
+    // only comes before it, so a trader can no longer open a dispute over a recorded cancel (the
+    // held seller is refused by the hold). held.ts still lets a dispute take the cancel's place.
     const t = await ownerWithCode();
     const partner = await trader();
     const { trade } = await seedTrade(deps, { sellerId: t.id, buyerId: partner.id, poster: 'buyer' });
     const s = await driveTo(deps, trade, 'secured');
     expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
     expect((await partner.browser.post(`/v1/trades/${s.code}/events`, { type: 'buyer-cancel' })).statusCode).toBe(200);
-    expect((await partner.browser.post(`/v1/trades/${s.code}/dispute`, { reason: 'silent', note: 'The seller went quiet.' })).statusCode).toBe(200);
+    expect(errorOf(await partner.browser.post(`/v1/trades/${s.code}/dispute`, { reason: 'silent', note: 'The seller went quiet.' }))).toBe('too-early');
     expect(await endHoldByModerator(deps, t.id, { staffId: null })).toBe(true);
     const row = await deps.db.query<{ state: string; settling: string | null }>('select state, settling from trades where code = $1', [s.code]);
-    expect(row.rows[0]).toEqual({ state: 'disputed', settling: null });
+    expect(row.rows[0]).toEqual({ state: 'settling', settling: 'buyer-cancel' });
   });
 
   it("a trade marked for cancelling that the machine no longer lets cancel (Fund escrow tapped meanwhile) is paused instead, by the minute job", async () => {
@@ -993,7 +1001,7 @@ describe('a recovery-code login', () => {
     const t = await ownerWithCode();
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-       values ($1, 'sell', 'zelle', 'USD', 'market', 0, 1000, 100000, 0, '', 'live', $2, $2) returning id`,
+       values ($1, 'sell', 'zelle', 'USD', 'market', 0, 1000, 100000, null, '', 'live', $2, $2) returning id`,
       [t.id, now],
     );
     expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
@@ -1065,6 +1073,8 @@ describe('a new device with nothing logged in to approve it', () => {
 describe('team member permissions from a password-only session', () => {
   it('a role change is staged like the other changes (202 staged), not refused', async () => {
     const t = await passwordTrader();
+    // Batch 2 (owner 2 Nov 2026): team members are for vendor accounts only.
+    await makeVendor(deps, t.id);
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, created_at)
        values ($1, 'Ann', 'ann', '{offers}', $2, $2) returning id`,

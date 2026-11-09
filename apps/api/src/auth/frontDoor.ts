@@ -51,6 +51,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/approvals': 'my own pending new-device login approvals',
   'GET /v1/account/approvals/:id': 'one of my own pending new-device login approvals',
   'GET /v1/account/blocks': 'the traders I blocked',
+  'GET /v1/account/hold': "my own account's hold, waiting changes and my session's drafts (hold model v3; a team member only by the hold rights, never the lead's device names)",
   'GET /v1/account/methods': 'my own login methods',
   'GET /v1/account/nudges': 'my own nudge setting',
   'GET /v1/account/offers': 'my own offers (read on stale Terms too, to turn them off)',
@@ -116,6 +117,12 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'DELETE /v1/account/push': 'drops my own push subscriptions',
   'POST /v1/account/alerts/:id/seen': 'marks one of my own alerts seen',
   'POST /v1/account/terms': 'my own acceptance of the current Terms (a member: their own login account)',
+  // Hold model v3: my own account's changes waiting their 24 h, and its replaced recovery code.
+  'POST /v1/account/hold/changes/submit': "submits my own session's drafts; answers their count and date",
+  'POST /v1/account/hold/changes/approve': "approves my own account's waiting changes now (a strong session); answers the outcome",
+  'DELETE /v1/account/hold/changes': "cancels my own account's waiting changes; no data back",
+  'DELETE /v1/account/hold/changes/:id': "cancels one of my own account's waiting changes; no data back",
+  'POST /v1/account/recovery-code/reveal': "shows my own account's new recovery code once, to the session allowed to read it",
   // Settings and social rows (my own account).
   'PUT /v1/account/nudges': 'my own nudge setting',
   'POST /v1/account/blocks': 'a block row of mine; no data back (404 for a name that is not a trader)',
