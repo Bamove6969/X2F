@@ -10,7 +10,7 @@ import { Icon } from '../../ui/icons.js';
 import { Notice } from '../../ui/Notice.js';
 import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
 import type { ConfirmedTrade } from './confirmed.js';
-import { STAGE_NAMES, amountText, currencySign, dealMaxFiat, formatMinor, maxText, quote, quoteExponent, rangeText, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
+import { STAGE_NAMES, amountText, currencySign, dealMaxFiat, formatMinor, maxText, quote, quoteExponent, quoteRange, rangeText, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
 import { claimTake, rememberTake } from './pendingTake.js';
 import { TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
 import { useQuoteKept } from './quoteKept.js';
@@ -399,7 +399,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
           <Button
             variant="primary"
             disabled={!canTrade}
-            onClick={() => ok && take({ quote: { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents }, walletId: pickedWallet?.id ?? null, confirmed, resumeHref })}
+            onClick={() => ok && take({ quote: { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents }, walletId: pickedWallet?.id ?? null, confirmed, range: quoteRange(o), resumeHref })}
           >
             Trade
           </Button>
