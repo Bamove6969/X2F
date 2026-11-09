@@ -238,6 +238,13 @@ async function moderation(fetch: Fetch, logs: string[] = []) {
 const running: ModerationHandle[] = [];
 afterEach(async () => {
   await Promise.all(running.splice(0).map((h) => h.stop()));
+  // Every test shares this database, and a pass watches every watching row. A closed trade an
+  // earlier test left with its channels open (late coins, or the API's close alone) would be resumed
+  // by the next test's instance with a fresh fakeParty that shows no coins, read as "never got a
+  // coin", and closed into THAT test's relay record: whichever test first runs a pass absorbs it, so
+  // a failed or filtered test moved the closes into the I2 tests. Rows stay (no re-insert from
+  // signed_terms); they are just no longer watched.
+  await db.query('update mod_watch set watching = false');
 });
 
 /** A trade attested by `m`, its party started, ready() resolved with ESCROW and setup-done reported. */
