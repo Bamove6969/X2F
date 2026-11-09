@@ -9,6 +9,7 @@
 import { expect, test, type Browser, type CDPSession, type Page, type Request, type Route } from '@playwright/test';
 import { sellerView } from './refundViews.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
+import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 
 const LOCAL = `http://localhost:${process.env.X2F_E2E_PORT ?? 4317}`;
 /** A 32-byte invite code, base64url (43 characters), as the API makes them. */
@@ -181,9 +182,10 @@ async function joinApi(page: Page, o: { invite?: { status: number; body: unknown
   await page.route('**/v1/account/me', (r) => (signedIn ? json(memberMe(['trades']))(r) : json({ error: 'not-authenticated' }, 401)(r)));
   await page.route('**/v1/team/invite', (r) => {
     record(r);
-    const a = o.invite ?? { status: 200, body: { team: 'Calcium', displayName: 'Aurora', roles: ['trades'], expiresAt: LATER } };
+    const a = o.invite ?? { status: 200, body: { displayName: 'Aurora', roles: ['trades'], expiresAt: LATER } };
     return json(a.body, a.status)(r);
   });
+  await page.route('**/v1/terms', json({ version: TERMS_TEXT_VERSION }));
   await page.route('**/v1/team/join/start', (r) => (record(r), json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: LATER })(r)));
   await page.route('**/v1/team/join/finish', (r) => {
     record(r);
@@ -218,6 +220,17 @@ async function joinApi(page: Page, o: { invite?: { status: number; body: unknown
   return seen;
 }
 
+/** Reads the Terms box to its end, ticks and accepts (as setup.spec does). */
+async function acceptTerms(page: Page): Promise<void> {
+  await expect(page.locator('[data-screen="team-join-terms"]')).toBeVisible();
+  await page.locator('[data-part="terms-text"]').evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+    el.dispatchEvent(new Event('scroll'));
+  });
+  await page.check('[data-part="terms-tick"]');
+  await page.click('[data-part="terms-accept"]');
+}
+
 async function proveFirstKey(page: Page): Promise<void> {
   await page.getByLabel('Your private login name').fill('aurora_login');
   await page.locator('#join-key').fill(FAKE_KEY);
@@ -240,7 +253,10 @@ for (const [second, viewport] of [['security-key', '390x844'], ['passkey', '360x
       const all = watchRequests(page);
       const seen = await joinApi(page);
       await page.goto(`${LOCAL}/team/join#${CODE}`);
-      await expect(page.locator('[data-part="invite-who"]')).toHaveText('Calcium invited you as Aurora, for Trades.');
+      // Review 2026-11-08 F1: the member signs the Terms first; F3: the invite never names the vendor.
+      await acceptTerms(page);
+      await expect(page.locator('[data-part="invite-who"]')).toHaveText('You are invited to a team as Aurora, for Trades.');
+      await expect(page.locator('main')).not.toContainText('Calcium');
       expect(page.url()).not.toContain('#');
       expect(await page.evaluate(() => location.hash)).toBe('');
       await expectPhoneLayout(page);
@@ -261,7 +277,7 @@ for (const [second, viewport] of [['security-key', '390x844'], ['passkey', '360x
       // Signed in as the member: the app's home.
       await expect(page).toHaveURL(/\/sell$/);
       expect(seen.bodies['/v1/team/invite']).toEqual([{ invite: CODE }]);
-      expect(seen.bodies['/v1/team/join/start']).toEqual([{ invite: CODE, loginName: 'aurora_login', publicKey: FAKE_KEY.trim() }]);
+      expect(seen.bodies['/v1/team/join/start']).toEqual([{ invite: CODE, loginName: 'aurora_login', publicKey: FAKE_KEY.trim(), acceptedTerms: TERMS_TEXT_VERSION }]);
       if (second === 'pgp') {
         expect(seen.bodies['/v1/team/join/second/pgp/finish']).toEqual([{ setupId: 's1', challengeId: 'c2', code: '87654321', deviceLabel: expect.any(String) }]);
       } else {
@@ -307,6 +323,8 @@ test('two browsers finishing the same invite: one wins, the other is told and st
     await joinApi(b.page, { finish });
     await a.page.goto(`/team/join#${CODE}`);
     await b.page.goto(`/team/join#${CODE}`);
+    await acceptTerms(a.page);
+    await acceptTerms(b.page);
     await proveFirstKey(a.page);
     await expect(a.page.locator('[data-part="join-second"]')).toBeVisible();
     await proveFirstKey(b.page);

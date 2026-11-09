@@ -197,11 +197,23 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     const b = new Browser(app);
     const view = await b.post('/v1/team/invite', { invite: created.invite });
     expect(view.statusCode, view.body).toBe(200);
-    expect(view.json()).toMatchObject({ team: owner.displayName, displayName: `Joiner${n}x`, roles: ['trades'] });
+    // Review 2026-11-08 F3: whoever holds the link, before joining, learns only what the invite
+    // asks of them; the vendor is named only once they are inside.
+    expect(Object.keys(view.json() as object).sort()).toEqual(['displayName', 'expiresAt', 'roles']);
+    expect(view.json()).toMatchObject({ displayName: `Joiner${n}x`, roles: ['trades'] });
+    expect(view.body).not.toContain(owner.displayName);
 
     const k1 = await genKey();
     const k2 = await genKey();
-    const s1 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `joinlogin${n}`, publicKey: k1.publicKey });
+    // Review 2026-11-08 F1: the member signs the Terms (the current version) before anything is made.
+    for (const acceptedTerms of [undefined, '2020-01-01']) {
+      const refused = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `joinlogin${n}`, publicKey: k1.publicKey, acceptedTerms });
+      expect(refused.statusCode, refused.body).toBe(400);
+      expect(refused.json()).toEqual({ error: 'terms-not-accepted', version: deps.config.termsVersion });
+    }
+    const s1 = await b.post('/v1/team/join/start', {
+      invite: created.invite, loginName: `joinlogin${n}`, publicKey: k1.publicKey, acceptedTerms: deps.config.termsVersion,
+    });
     expect(s1.statusCode, s1.body).toBe(200);
     const c1 = s1.json() as { challengeId: string; encryptedMessage: string };
     const code1 = codeOf(await decrypt(c1.encryptedMessage, k1.privateKey, undefined, deps.clock()));
@@ -237,9 +249,18 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     // every member login, login.ts), not the single PGP key's `pgp-single`.
     const first = await deps.db.query<{ strength: string }>('select strength from sessions where id = $1', [await sessionId(b)]);
     expect(first.rows[0]!.strength).toBe('strong');
-    const me = (await b.get('/v1/account/me')).json() as { displayName: string; member: unknown };
+    const me = (await b.get('/v1/account/me')).json() as { displayName: string; member: unknown; termsCurrent: boolean };
     expect(me.displayName).toBe(owner.displayName);
     expect(me.member).toEqual({ name: `Joiner${n}x`, roles: ['trades'] });
+    // The member's own login account carries the Terms they signed, and they are inside.
+    expect(me.termsCurrent).toBe(true);
+    const signed = await deps.db.query<{ terms_version: string | null; terms_accepted_at: Date | null }>(
+      'select a.terms_version, a.terms_accepted_at from team_members tm join accounts a on a.id = tm.member_account_id where tm.id = $1',
+      [created.id],
+    );
+    expect(signed.rows[0]!.terms_version).toBe(deps.config.termsVersion);
+    expect(signed.rows[0]!.terms_accepted_at).not.toBeNull();
+    expect((await b.get('/v1/news')).statusCode).toBe(200);
     const alerts = (await owner.browser.get('/v1/account/alerts')).json() as { kind: string }[];
     expect(alerts.map((a) => a.kind)).toContain('team-member-joined');
     expect(((await owner.browser.get('/v1/team')).json() as { members: { status: string }[] }).members[0]!.status).toBe('active');
@@ -714,6 +735,7 @@ describe('the audit log covers every member action (review M3)', () => {
     const EXEMPT: Record<string, string> = {
       'POST /v1/feedback/form': 'anonymous by design (Plan 5 Task 21): not an account action, and a row would tie the member to the text',
       'POST /v1/trades/:code/identity': 'refused to every member (ownerDeviceOnly, member-cannot-sign) until Plan 3 Task 42',
+      'POST /v1/account/terms': "the member's own agreement to the Terms, written to their own login account (review 2026-11-08 F1); it changes nothing of the team account",
     };
     const found: string[] = [];
     const audited = new Set<string>();

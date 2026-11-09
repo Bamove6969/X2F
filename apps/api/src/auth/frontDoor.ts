@@ -34,6 +34,49 @@ export async function insideAccount(app: FastifyInstance, req: FastifyRequest, r
   return req.auth?.accountId ?? null;
 }
 
+/** True when a route's preHandler (one hook or a list) includes `requireInside`. */
+export function runsInside(preHandler: unknown): boolean {
+  const hooks = Array.isArray(preHandler) ? preHandler : [preHandler];
+  return hooks.includes(requireInside);
+}
+
+/**
+ * Every GET route behind a session that is not `requireInside`, with the reason it may be: each
+ * answers only the caller's own account, trades, chats or settings, never other traders' data
+ * (review 2026-11-08 F2). `test/frontDoor.test.ts` fails when a session-guarded GET is neither.
+ */
+export const OWN_DATA_READS: Readonly<Record<string, string>> = {
+  'GET /v1/account/me': "who I am: my display name, login methods, session level and Terms state (read on stale Terms and recovery to route me)",
+  'GET /v1/account/alerts': 'my own security alerts',
+  'GET /v1/account/approvals': 'my own pending new-device login approvals',
+  'GET /v1/account/approvals/:id': 'one of my own pending new-device login approvals',
+  'GET /v1/account/blocks': 'the traders I blocked',
+  'GET /v1/account/methods': 'my own login methods',
+  'GET /v1/account/nudges': 'my own nudge setting',
+  'GET /v1/account/offers': 'my own offers (read on stale Terms too, to turn them off)',
+  'GET /v1/account/past-rep': 'my own imported past reputation',
+  'GET /v1/account/profile/traded-total': 'my own traded-total display setting',
+  'GET /v1/account/push': 'my own push subscription state and the VAPID public key',
+  'GET /v1/account/security/devices': 'my own trusted devices',
+  'GET /v1/account/security/logout-timer': 'my own logout timer',
+  'GET /v1/account/sessions': 'my own sessions',
+  'GET /v1/chats': 'my own chats',
+  'GET /v1/chats/:chat': 'one of my own chats (participants only)',
+  'GET /v1/chats/:chat/attestation': 'one of my own chats (participants only)',
+  'GET /v1/chats/:chat/envelopes': 'one of my own chats (participants only)',
+  'GET /v1/events': 'my own live events (per account and per trade, no marketplace broadcast)',
+  'GET /v1/reviews/pending': 'reviews I still owe for my own trades',
+  'GET /v1/team': "my own team's members (account owner only)",
+  'GET /v1/team/audit': "my own team's audit log (account owner only)",
+  'GET /v1/trades/:code': 'one of my own trades (participants only)',
+  'GET /v1/trades/:code/attestation': 'one of my own trades (participants only)',
+  'GET /v1/trades/:code/confirmations': 'one of my own trades (participants only)',
+  'GET /v1/trades/:code/dispute': 'one of my own trades (participants only)',
+  'GET /v1/trades/:code/review': 'one of my own trades (participants only)',
+  'GET /v1/wallets': 'my own payout wallets',
+  'GET /v1/wallets/rule': 'my own wallet rule',
+};
+
 /**
  * Every trader API route that runs without a session, with the reason it must. Each one serves the
  * front door: logging in, creating an account, getting back in, the Terms text to read before

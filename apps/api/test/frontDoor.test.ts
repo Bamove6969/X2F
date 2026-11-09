@@ -6,7 +6,7 @@
 import type { FastifyInstance, RouteOptions } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { PUBLIC_ROUTES } from '../src/auth/frontDoor.js';
+import { OWN_DATA_READS, PUBLIC_ROUTES, runsInside } from '../src/auth/frontDoor.js';
 import { runsWithSession } from '../src/auth/sessions.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -81,6 +81,12 @@ const READS: { url: string; inside: number }[] = [
   { url: '/v1/news', inside: 200 },
 ];
 
+/** `GET /v1/offers/:id` for `/v1/offers/<uuid>?x`: the route a READS url names. */
+function routeOf(url: string): string {
+  const path = url.split('?')[0]!;
+  return `GET ${path.replace(MISSING_OFFER, ':id')}`;
+}
+
 describe('the route list', () => {
   it('every route without a session guard is a front-door route with a recorded reason, and every listed one exists', async () => {
     await app.ready();
@@ -92,6 +98,23 @@ describe('the route list', () => {
     }
     expect([...open].sort()).toEqual(Object.keys(PUBLIC_ROUTES).sort());
     for (const [route, why] of Object.entries(PUBLIC_ROUTES)) expect(why.length, route).toBeGreaterThan(5);
+  });
+
+  // Review 2026-11-08 F2: "some session" is not the front door. Every read behind a session either
+  // runs behind `requireInside` (and is then checked below, logged out, half set up and on a
+  // recovery session) or answers only the caller's own data, with the reason recorded.
+  it('every session-guarded read is behind requireInside or is listed as own-data-only with a reason; READS covers every requireInside read', async () => {
+    await app.ready();
+    const inside = new Set<string>();
+    const own = new Set<string>();
+    for (const r of registered) {
+      if (r.url.startsWith('/t/') || !runsWithSession(r.preHandler)) continue;
+      const methods = [r.method].flat().filter((m) => m === 'GET');
+      for (const m of methods) (runsInside(r.preHandler) ? inside : own).add(`${m} ${r.url}`);
+    }
+    expect([...own].sort()).toEqual(Object.keys(OWN_DATA_READS).sort());
+    for (const [route, why] of Object.entries(OWN_DATA_READS)) expect(why.length, route).toBeGreaterThan(5);
+    expect([...inside].sort()).toEqual([...new Set(READS.map((r) => routeOf(r.url)))].sort());
   });
 });
 
@@ -140,6 +163,69 @@ describe('marketplace reads are behind the front door', () => {
       expect(res.body, url).not.toContain(p.displayName);
       expect(res.body, url).toBe('{"error":"not-authenticated"}');
     }
+  });
+});
+
+// Review 2026-11-08 F1: a team member signs the agreement too ("No one gets to make it past the front
+// door ... without signing an agreement"). Their own login account carries the Terms version they
+// accepted; the team account's acceptance is the account owner's and never stands in for theirs.
+describe('a team member signs the Terms themselves', () => {
+  /** A joined member of a fresh team account, logged in, whose own login account accepted `terms`. */
+  async function memberOn(terms: string | null) {
+    const owner = await trader();
+    const tag = Math.random().toString(36).slice(2, 10);
+    const loginId = await seedAccount(deps, { loginName: `ml${tag}`, displayName: `m-${tag}-placeholder`, kind: 'member', termsVersion: terms });
+    const now = deps.clock();
+    await deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, $2, $3, $4, $5, $6, $5, $5)`,
+      [owner.id, `Mem${tag}`, `mem${tag}`, ['offers', 'trades'], now, loginId],
+    );
+    const browser = new Browser(app);
+    expect((await browser.post('/t/login', { accountId: loginId })).statusCode).toBe(200);
+    return { owner, loginId, browser };
+  }
+
+  it('a member on old Terms (or none) gets terms-required on every marketplace read, though the team account is current', async () => {
+    for (const terms of [null, '2020-01-01']) {
+      const m = await memberOn(terms);
+      for (const { url } of READS) {
+        const res = await m.browser.get(url);
+        expect(res.statusCode, url).toBe(403);
+        expect(res.json(), url).toEqual({ error: 'terms-required', version: deps.config.termsVersion });
+      }
+      const me = (await m.browser.get('/v1/account/me')).json() as { termsCurrent: boolean };
+      expect(me.termsCurrent).toBe(false);
+      // The site view is the outside one.
+      expect((await m.browser.get('/v1/site')).json()).toEqual({ maintenance: null });
+    }
+  });
+
+  it('the member accepts the Terms on their own login account and is inside; the team account row is untouched', async () => {
+    const m = await memberOn('2020-01-01');
+    const before = await deps.db.query<{ terms_accepted_at: Date | null }>('select terms_accepted_at from accounts where id = $1', [m.owner.id]);
+    const wrong = await m.browser.post('/v1/account/terms', { version: '2020-01-01' });
+    expect(wrong.statusCode).toBe(400);
+    const ok = await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion });
+    expect(ok.statusCode, ok.body).toBe(204);
+    const rows = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [m.loginId]);
+    expect(rows.rows[0]!.terms_version).toBe(deps.config.termsVersion);
+    const after = await deps.db.query<{ terms_accepted_at: Date | null }>('select terms_accepted_at from accounts where id = $1', [m.owner.id]);
+    expect(after.rows[0]!.terms_accepted_at?.toISOString()).toBe(before.rows[0]!.terms_accepted_at?.toISOString());
+    for (const { url, inside } of READS) expect((await m.browser.get(url)).statusCode, url).toBe(inside);
+    expect(((await m.browser.get('/v1/account/me')).json() as { termsCurrent: boolean }).termsCurrent).toBe(true);
+  });
+
+  it('a member on the current Terms is still outside while the team account is on old Terms (the owner accepts for the account)', async () => {
+    const m = await memberOn(deps.config.termsVersion);
+    await deps.db.query('update accounts set terms_version = $2 where id = $1', [m.owner.id, '2020-01-01']);
+    for (const { url } of READS) expect((await m.browser.get(url)).statusCode, url).toBe(403);
+    expect(((await m.browser.get('/v1/account/me')).json() as { termsCurrent: boolean }).termsCurrent).toBe(false);
+    // The member's acceptance is theirs only: it does not accept for the account.
+    expect((await m.browser.post('/v1/account/terms', { version: deps.config.termsVersion })).statusCode).toBe(204);
+    const team = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [m.owner.id]);
+    expect(team.rows[0]!.terms_version).toBe('2020-01-01');
+    expect((await m.browser.get('/v1/news')).statusCode).toBe(403);
   });
 });
 

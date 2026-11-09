@@ -1,8 +1,10 @@
 /**
  * Joining a team (Plan 2 Task 18; spec 6.7): the page an invite link opens (`/team/join#<code>`).
- * The code is read from the fragment (never sent in a URL to the server) and then dropped from the
- * address bar. The person picks a private login name and proves a PGP key, then adds a second
- * factor: a security key, a passkey or a second PGP key (the staff rule, lead default). The second
+ * The invite never names the team account (review 2026-11-08 F3): the vendor is named once the
+ * member is inside. The code is read from the fragment (never sent in a URL to the server) and then dropped from the
+ * address bar. The person first reads and accepts the Terms (review 2026-11-08 F1: nobody gets
+ * past the front door without signing the agreement, a team member included), then picks a private
+ * login name and proves a PGP key, then adds a second factor: a security key, a passkey or a second PGP key (the staff rule, lead default). The second
  * step starts their first session, and the page goes to the app.
  *
  * No Claude Design board yet (NEEDS_DESIGN_TEAM in test/team-tripwires.test.ts): kit parts and
@@ -14,6 +16,7 @@ import { startRegistration } from '@simplewebauthn/browser';
 import { AuthApiError, type PgpChallenge, type TeamInviteView } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { JOIN_COPY as C } from '../settings/teamCopy.js';
+import { TermsScreen } from '../setup/Terms.js';
 import { refreshSession } from '../../session/useSession.js';
 import { authApi, deviceLabel } from './authApi.js';
 import { isExpired, refusalText } from './refusals.js';
@@ -141,6 +144,8 @@ export function MemberInvite() {
   const [code] = useState(() => (typeof window === 'undefined' ? null : inviteFromHash(window.location.hash)));
   const [invite, setInvite] = useState<TeamInviteView | null | 'gone'>(null);
   const [loginName, setLoginName] = useState('');
+  /** The Terms version the member accepted on this page; null until then. */
+  const [terms, setTerms] = useState<string | null>(null);
   const [setup, setSetup] = useState<{ setupId: string; setupUntil: string } | null>(null);
   const [second, setSecond] = useState<Second>('choose');
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +191,20 @@ export function MemberInvite() {
     }
   };
 
+  // A live invite: the Terms come first, before any name or key.
+  if (invite !== null && invite !== 'gone' && code !== null && terms === null) {
+    return (
+      <TermsScreen
+        screen="team-join-terms"
+        title={C.title}
+        intro={C.termsIntro}
+        onAccept={async (version) => {
+          setTerms(version);
+        }}
+      />
+    );
+  }
+
   return (
     <main className="x2f-screen" data-screen="team-join">
       <h1 className="x2f-screen__title">{C.title}</h1>
@@ -199,7 +218,7 @@ export function MemberInvite() {
         <>
           <section className="x2f-card" data-part="invite">
             <p className="x2f-sheet__body" data-part="invite-who">
-              {C.invited(invite.team, invite.displayName, invite.roles)}
+              {C.invited(invite.displayName, invite.roles)}
             </p>
             <p className="x2f-note">{C.twoFactors}</p>
           </section>
@@ -225,7 +244,7 @@ export function MemberInvite() {
               <PgpProof
                 keyLabel={C.keyLabel}
                 primaryLabel={C.confirmKey}
-                start={(publicKey) => authApi.joinStart({ invite: code, loginName: loginName.trim(), publicKey })}
+                start={(publicKey) => authApi.joinStart({ invite: code, loginName: loginName.trim(), publicKey, acceptedTerms: terms! })}
                 finish={async (challengeId, c) => {
                   const r = await authApi.joinFinish({ challengeId, code: c });
                   setSetup({ setupId: r.setupId, setupUntil: r.setupUntil });

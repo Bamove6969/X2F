@@ -382,9 +382,17 @@ const requireTrader = requireSession({ kinds: ['trader'], member: 'offers' });
 const requireTraderStaleOk = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers' });
 
 /** 403 `terms-required` `{ version }`, as requireSession answers, for a trader on a stale Terms version. */
-async function assertTermsCurrent(deps: Deps, accountId: string): Promise<void> {
-  const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [accountId]);
+async function assertTermsCurrent(deps: Deps, auth: { accountId: string; memberId: string | null }): Promise<void> {
+  const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [auth.accountId]);
   if (rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
+  // A team member's own acceptance too (review 2026-11-08 F1, as requireSession checks it).
+  if (auth.memberId !== null) {
+    const m = await deps.db.query<{ terms_version: string | null }>(
+      'select a.terms_version from team_members tm join accounts a on a.id = tm.member_account_id where tm.id = $1',
+      [auth.memberId],
+    );
+    if (m.rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
+  }
 }
 /**
  * `/v1/methods`' live-offer counts (Task 3's `LiveOfferStats`), from the offers anyone may see, counted by the database;
@@ -471,7 +479,7 @@ export function offerRoutes(app: FastifyInstance): void {
     if (typeof status !== 'string' || !(STATUSES as readonly string[]).includes(status)) throw bad();
     // Pausing and removing work on stale Terms (R10 lead decisions 2026-10-29: shutting off never
     // waits for new Terms); relisting does not.
-    if (status === 'live') await assertTermsCurrent(deps, req.auth!.accountId);
+    if (status === 'live') await assertTermsCurrent(deps, req.auth!);
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
     const { rows } = await deps.db.query<{ account_id: string; status: OfferStatus; method_id: string }>(
       'select account_id, status, method_id from offers where id = $1',
@@ -655,7 +663,7 @@ export function offerRoutes(app: FastifyInstance): void {
     } else throw bad();
     const accountId = req.auth!.accountId;
     // Turning off works on stale Terms (R10 lead decision 2026-10-29); turning on does not.
-    if (status === 'live') await assertTermsCurrent(deps, accountId);
+    if (status === 'live') await assertTermsCurrent(deps, req.auth!);
     // Task 17: no offer goes on during the account's 24-hour hold (403 `recovery-hold` for the whole call).
     if (status === 'live') {
       const until = await holdUntil(deps, accountId, req.server.events);

@@ -297,9 +297,12 @@ export const purgeTeamLeftovers: RetentionJob = {
 // ---------------------------------------------------------------------------------------------
 // The member's side: an invite and the sign-up
 
+/**
+ * What an open invite shows whoever holds its code, before they join: the name the account owner
+ * gave them, their roles and the deadline. Never the team account's name (review 2026-11-08 F3:
+ * nothing behind the front door, the vendor's name included, reaches someone not yet inside).
+ */
 export interface InviteView {
-  /** The team account's public display name. */
-  team: string;
   displayName: string;
   roles: TeamRole[];
   expiresAt: string;
@@ -340,7 +343,7 @@ export async function openInvite(q: Queryable, by: { code: unknown } | { id: str
 }
 
 export function inviteView(r: InviteRow): InviteView {
-  return { team: r.team, displayName: r.display_name, roles: r.roles, expiresAt: r.invite_expires_at.toISOString() };
+  return { displayName: r.display_name, roles: r.roles, expiresAt: r.invite_expires_at.toISOString() };
 }
 
 /**
@@ -365,12 +368,13 @@ export async function checkMemberLoginName(db: Queryable, raw: unknown): Promise
 export async function startMember(
   c: Queryable,
   config: Config,
-  a: { inviteId: string; names: NewNames; now: Date; addKey: (memberAccountId: string) => Promise<void> },
+  a: { inviteId: string; names: NewNames; now: Date; terms: string; addKey: (memberAccountId: string) => Promise<void> },
 ): Promise<{ memberId: string; memberAccountId: string; teamId: string; setupUntil: Date }> {
   const invite = await openInvite(c, { id: a.inviteId }, a.now, true);
   // FU-D: the login name is stored only as its keyed tag (createAccount); the display name is the
   // random placeholder `memberNames` made, never shown.
-  const memberAccountId = await createAccount(c, config, { ...a.names, kind: 'member', termsVersion: null, now: a.now });
+  // The member's own acceptance of the Terms (review 2026-11-08 F1), checked by `assertTermsAccepted`.
+  const memberAccountId = await createAccount(c, config, { ...a.names, kind: 'member', termsVersion: a.terms, now: a.now });
   await a.addKey(memberAccountId);
   const setupUntil = new Date(Math.max(invite.invite_expires_at.getTime(), a.now.getTime() + SETUP_MIN_MS));
   await c.query('update team_members set member_account_id = $2, invite_hash = null, invite_expires_at = $3 where id = $1', [
