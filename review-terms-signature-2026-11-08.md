@@ -101,3 +101,74 @@ Finding 1 stops the branch passing `npm run check`, so it cannot land as it stan
 - `SignaturePad.tsx`: "Sign here"; "Clear"; "Type your name to sign" (button and field label); "Draw instead"; aria-label "Signature box".
 
 No new error text is shown: the `signature-*` codes are marked as input checks in `cantDoCodes.ts` and fall back to each screen's existing message.
+
+## Re-verify e07cb506 (cloud lead reviewer, 9 Nov)
+
+- Branch: wip/lead-terms-signature, head e07cb506 (7 commits on 909f87fb; front-door 6a5949a6 merged in at ece0ec1d). Read-only review.
+- Owner answers applied: p11-13 (erase at close), p11-14 (everyone with a login signs), p11-15 and p11-9 (design wording), Terms version 2026-11-09.
+
+### Verdict: APPROVED WITH MINOR (one merge-gate fix belongs to front-door)
+
+The mechanics are correct. Members sign at join/finish and at a Terms re-accept, and the signature is sealed to their own login account. Staff sign at the invite account step. A bad member signature leaves the join code usable. Staff removal erases the signature, and member removal and expired sign-ups delete the row, so it goes with it. The merge keeps front-door's member-Terms behaviour. The version bump is consistent. Nothing below blocks this branch on security grounds. R1, R2 and R3 should be fixed or tracked before the 60-day close and Task 16 land. Prior finding 4(c) (the Terms text never mentions the signature) is still open and needs the owner, the lawyer and design (R4).
+
+### Tests run (serialised runner, this worktree)
+- `apps/api/test/team.test.ts`: 41 passed.
+- `apps/api/test/staff/members.test.ts`: 22 passed.
+- `apps/api/test/frontDoor.test.ts`: 19 passed.
+- `tsc -p apps/api --noEmit` and `tsc -p apps/web --noEmit`: clean.
+- `npm run copy-lint`: 1 problem, `Landing.tsx:25` (see "Copy-lint failure" below).
+- Not run: `termsSignature.test.ts` (I read the tripwire instead), web vitest and Playwright. Those changes are mechanical stubs, also only read.
+
+### Checked and sound
+- **Erase on close, every path on this branch.**
+  - Staff removal (`staff/members.ts:268`) calls `eraseTermsSignature` inside the removal transaction. Switch-off keeps the signature, which is right because switch-off can be undone. A test covers both cases and checks that only the removed person's signature goes.
+  - Member removal (`team/members.ts:238` `deleteMemberLogin`) and `purgeTeamLeftovers` (`:290`) delete the `member` account row, so the signature goes with it.
+  - No `accounts.closed_at` exists on this branch, and there is no trader deletion route or moderator disable write in `apps/api/src`.
+  - The tripwire regex in `termsSignature.test.ts` matches the 60-day close statement on wip/lead-vendor (`update accounts a set disabled_at = $1, closed_at = $1, ...`, inside a template literal with no backtick in between). The tripwire is file-level and only matches the `closed_at =` form; see R3.
+- **Members.**
+  - `join/finish` runs `checkTermsSignature` before `checkTeamJoinCode`, so a missing or invalid signature returns 400 and the same code still works. The test proves this for both errors.
+  - The version comes from the challenge payload. The signature is sealed by `createAccount` to the new member account id. The test opens it under that id and checks that opening it under the team owner's id throws.
+  - On re-accept (`routes/account.ts`, member branch), the account id comes from `team_members` by `req.auth.memberId`, with `kind = 'member'` and `terms_version is distinct from $2`. Repeating the current version answers 204 and changes nothing, as for a trader. Tested.
+  - `sessions.ts` still requires `member_terms_version` to be current, so the bump makes existing members sign.
+- **Staff.** `assertTermsAccepted` runs at `/staff/v1/invites/accept/:token/account`, after the invite lookup and before names are checked or anything is written. The tests cover all four 400s and confirm nothing is made. `bodyLimit` is raised to `SIGNED_BODY_LIMIT`. The `NewAccountTerms` union now forces version and signature for every kind except `owner`, and the `@ts-expect-error` cases in `login-tags.test.ts` lock that in.
+- **Merge resolution.** `POST /v1/account/terms` keeps front-door's `member: 'any'`, the member's own-account write and the trader write. It adds the signature, the body limit and the distinct-version guard to both. `assertTermsVersion` (version only) is used at `join/start`, where front-door had the two-argument `assertTermsAccepted`, and at `join/finish` alongside the new signature check. Behaviour is unchanged apart from the member signature and the member's write now only happening on a version change (deliberate, consistent with finding 5).
+- **Version bump.** Web `TERMS_TEXT_VERSION`, the e2e `TERMS_VERSION`, the text-hash pin in `termsSignature.test.tsx` and `docs/dev-setup.md` all read 2026-11-09. The API test fixtures stay at 2026-10-17, and nothing ties them to the web constant:
+  - no API, package or tools test imports `termsText`;
+  - no e2e starts the real API;
+  - the remaining `2026-10-17` strings in web tests (`frontDoor.test.tsx`, `client.test.ts`, `shell.spec.ts`) are routing or refusal stubs that never accept.
+  - Deploys must set `X2F_TERMS_VERSION=2026-11-09` (docs say so).
+- **Parity exceptions.** The three `SetupTerms` entries (`parity.ts`) apply to that board only, name the newer canvas version and why, and drop texts that are still on the 26 Oct board mirror (`boardTexts` throws if an exception goes stale). No security effect.
+
+### Copy-lint failure on Landing.tsx:25 (front-door's)
+- The line came in with front-door. It is identical at 6a5949a6 and still unfixed at origin/wip/lead-front-door eb2a86bb.
+- Rule: neither an apostrophe nor an exclamation mark. It is the refusal rule in `tools/copy-lint.ts`: `REFUSAL_WORDS` matches `can’t`, so "X2F can’t move them alone." is judged a refusal that must go through `CantDoThat` or carry a pragma. It is a promise, not a refusal.
+- Fix (on front-door, then re-merge): add `// not-a-refusal: a promise about the escrow, not a rule that stops the user` on the line above in `LANDING_COPY.promises`. Then raise the ratchet in `apps/web/test/cantDoThat-lint.test.ts` from `<= 52` to `<= 53` with a dated reason; the tree has 52 pragmas today, so without the raise that test fails. Rewording instead would be a copy change for design and the owner.
+
+### Findings
+
+**R1. Minor (lands with wip/lead-vendor): a closed team account leaves its members' logins and their signatures behind.**
+- Once the 60-day close lands, `closeDueAccounts` closes `kind = 'trader'` rows only. A vendor's `team_members` rows stay live, so `purgeTeamLeftovers` never deletes their `member` login accounts, and their sealed signatures stay. Those members can no longer act (the team account is disabled), but their logins are not closed and nothing erases their signatures. p11-13 says erase at close. The tripwire passes, because the same file erases the trader's own signature.
+- Fix, when lead-vendor merges: in the same transaction, mark the team's members removed (`removed_at`) and delete their member login rows, or call `eraseTermsSignature` for each. Also extend the tripwire or add a test that a closed team account leaves no member signature.
+
+**R2. Minor: an abandoned staff invite leaves a disabled staff account holding a signature, for good.**
+- `/account` now stores a signature on a disabled half-made staff account. If the invite is then cancelled (`DELETE /staff/v1/invites/:id`) or expires before `finish`, nothing deletes or erases that account. No sweep touches `staff_invites`. Before this branch the row held only names; now it also holds the person's signature.
+- Fix: on cancel, and in a retention sweep for invites expired with `account_id` set and `used_at` null, erase the signature (or delete the half-made account if nothing references it).
+
+**R3. Minor: the close tripwire is narrow.**
+- It checks per file, not per statement: a file that erases anywhere passes all its closes.
+- It recognises a close only by `update accounts ... closed_at =`. A permanent close written another way would be missed: a column-list `set (..., closed_at) = (...)`, a SQL function, or a ban that only sets `disabled_at`.
+- Acceptable as a tripwire. Better: a DB test that runs each close job or route and asserts `terms_signature is null`. Do that when the 60-day close lands.
+
+**R4. Minor (owner, lawyer, design; prior finding 4(c) still open): the Terms text never says a signature is taken, kept, or erased at close.**
+- Section 7 (`termsText.ts:97`) still says X2F doesn't "ask for your name", while the new design copy says "sign your name" twice: the SetupTerms intro and the pad baseline "Sign your name here with your finger or mouse." The typed fallback still reads "Type your name to sign". `autoComplete` is now `off`, which is good.
+- This is the owner's own p11-15 wording, so it is not reverted here. But it now asks for the very name the Terms say X2F never collects, and the version was bumped without disclosing the signature.
+- Recommendation for the next Terms edit: say in section 6 that a signature is kept sealed and erased when the account closes. Say in section 7 (or in the pad's help line) that the signature need not be a real name.
+
+**R5. Minor (lead or owner question): staff sign at the invite only, never again at a Terms change.**
+- `sessions.ts` enforces `terms-required` only when `kind = 'trader'`, which covers traders and members. Staff with an older version, and staff created before this branch with a null version, are never asked again. p11-14 says "everyone who gets a login signs".
+- If staff should re-sign at a version change, the staff API needs a re-accept route and a check. Owner question.
+- The staff web invite page does not send the Terms yet. It is guarded by the `NEEDS_P4_TASK16` tripwire. Until Task 16 adds the Terms step, a staff invite cannot be completed (400 `terms-not-accepted`): it fails closed.
+
+**R6. Info.**
+- `join/finish` and the staff `/account` step spend a `register` budget token before the signature check. A bad signature costs a token but not the code. That matches the trader register routes.
+- The owner's own account has no signature by design (`NewAccountTerms` `owner`). p11-14 reads "everyone", so the lead may want the owner to confirm this.
