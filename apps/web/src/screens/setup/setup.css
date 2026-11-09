@@ -711,3 +711,8 @@
   font-size: 17px;
   line-height: 26px;
 }
+
+/* SetupTerms board (S-043): the numbers in the key points are set in mono. */
+.x2f-terms__num {
+  font-family: var(--x2f-font-mono);
+}

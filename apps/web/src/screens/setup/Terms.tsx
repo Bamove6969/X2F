@@ -133,7 +133,10 @@ function TermsScreen({
       <SetupIntro title="Terms of Service">{intro}</SetupIntro>
       <ul className="x2f-terms__points" aria-label="Key points">
         {KEY_POINTS.map((k) => (
-          <li key={k}>{k}</li>
+          <li key={k}>
+            {/* The board sets the numbers in mono ("1%", "60"). */}
+            {k.split(/(\b\d+%?)/).map((part, i) => (i % 2 === 1 ? <span key={i} className="x2f-terms__num">{part}</span> : part))}
+          </li>
         ))}
       </ul>
       <div className="x2f-terms" ref={box} onScroll={checkEnd} tabIndex={0} role="region" aria-label="Full Terms of Service" data-part="terms-text">
