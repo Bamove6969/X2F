@@ -40,7 +40,7 @@ export interface TradeRow {
   locked_cents_per_xmr: string;
   fiat_cents: string;
   confirm_window_min: number;
-  /** Migration 123 (owner p9-6): the method's time to pay, fixed at take. */
+  /** Migration 124 (owner p9-6): the method's time to pay, fixed at take. */
   pay_window_min: number;
   min_fiat_cents: string;
   max_fiat_cents: string;
