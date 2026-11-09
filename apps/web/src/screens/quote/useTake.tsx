@@ -56,11 +56,12 @@ export const isPriceChanged = (e: unknown): boolean => e instanceof ApiCallError
 
 export interface TakeArgs {
   /** The quote as shown: amount, rate and total. */
-  quote: Pick<TakeRequest, 'amountAtomic' | 'centsPerXmr' | 'fiatCents'>;
+  quote: Pick<TakeRequest, 'amountAtomic' | 'centsPerXmr' | 'fiatCents' | 'methodId' | 'currency'>;
   walletId: string | null;
   confirmed: ConfirmedTrade | null;
   /**
-   * The offer's own range (quoteModel `quoteRange`). The deal's `maxFiatCents` is worked out again
+   * The range the quote priced (quoteModel `quote`'s `range`: J-16, the band's; else the offer's
+   * own, `quoteRange`). The deal's `maxFiatCents` is worked out again
    * from it at the rate that locked (review 2, I1): for an XMR-set offer the server records
    * `tradeFiatLimits(range, locked rate)`, and the escrow runtime fails `deal-mismatch` unless the
    * device's figure equals it exactly.

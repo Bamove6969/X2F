@@ -12,6 +12,7 @@ import {
   offerRate,
   posterRole,
   rangeAllows,
+  rateFor,
   tradeFiatLimits,
   type AmountUnit,
   type OfferRange,
@@ -46,6 +47,24 @@ export interface QuoteOffer {
   minTrades: number;
   /** Set by the API for a signed-in viewer whose cap is below the offer's minimum (Revision 2026-10-24). */
   opensAt?: OpensAt;
+  /** J-16: the method the person browsed by, the one the take sends; its price change over a band's price. */
+  methodId: string;
+  adjustBps: number;
+  /**
+   * J-16: the listed currency's bands offered with `methodId` (covered ranges in `amountUnit`'s minor
+   * units); [] for an answer from before J-16, which the quote prices from `pricing` and the range.
+   */
+  tiers: QuoteTier[];
+  /** The signed-in viewer's completed trades (the API's count, which the take picks the band by); null when unknown. */
+  viewerTrades: number | null;
+}
+
+/** One band as the quote reads it (J-16, @x2f/trade Tier): both ends included, in `amountUnit`'s minor units. */
+export interface QuoteTier {
+  min: bigint;
+  max: bigint;
+  marginBps: number;
+  minTrades: number | null;
 }
 
 /**
@@ -101,6 +120,8 @@ export type Quote =
       usdCents: bigint | null;
       /** The rate's US-dollar value per XMR beside a non-USD trade; null for USD or with no feed. */
       usdPerXmrCents: bigint | null;
+      /** The range the take checks and the trade records: the band's (J-16), or the offer's own before J-16. */
+      range: OfferRange;
     };
 
 const XMR_DECIMALS = 12;
@@ -130,6 +151,10 @@ export function quote(i: { offer: QuoteOffer; market: MarketNow | null; text: st
 
   const typed = parseAmount(text, unit, quoteExponent(offer, market));
   if (typed === null || typed === 0n) return { kind: 'enter', rate };
+  if (offer.tiers.length > 0 && market !== null) {
+    const banded = inTier(offer, { currency: offer.currency, centsPerXmr: market.centsPerXmr }, typed, unit);
+    if (banded !== null) return okQuote(offer, market, banded.rate, banded.amountAtomic, banded.range);
+  }
   const range = quoteRange(offer);
   let amountAtomic = unit === 'fiat' ? atomicForFiat(typed, rate) : typed;
   // Fiat typed on an XMR range: the card shows each bound as its fiat total (rounded half up), and
@@ -140,11 +165,51 @@ export function quote(i: { offer: QuoteOffer; market: MarketNow | null; text: st
     if (amountAtomic > range.max && fiatCents(range.max, rate) === typed) amountAtomic = range.max;
   }
   if (amountAtomic === 0n) return { kind: 'too-low', rate };
-  const total = fiatCents(amountAtomic, rate);
   // The take's own check, in the poster's unit, at the rate now (review M1).
   const fits = rangeAllows(range, amountAtomic, rate);
   if (fits !== 'ok') return { kind: fits, rate };
+  // J-16: inside the bands' envelope but in no band at its own price (the edge between two bands
+  // priced apart): the take would refuse it, so it is not quoted.
+  if (offer.tiers.length > 0) return { kind: 'too-high', rate };
+  return okQuote(offer, market, rate, amountAtomic, range);
+}
 
+/**
+ * The band a typed amount trades in (J-16, as the API's take: @x2f/trade pickTier): of the bands
+ * offered with the method, those holding it at their own price (market + band margin + method
+ * change), of those the ones whose rule the viewer meets (all of them when none: the take then
+ * refuses `not-enough-trades`, worded by takeErrors), the best for the taker: a sell ad's lowest
+ * margin, a buy ad's highest, the first on a tie. Null when no band holds it.
+ */
+function inTier(offer: QuoteOffer, market: Price, typed: bigint, unit: Unit): { rate: Price; amountAtomic: bigint; range: OfferRange } | null {
+  const holding: { tier: QuoteTier; rate: Price; amountAtomic: bigint; range: OfferRange }[] = [];
+  for (const tier of offer.tiers) {
+    let rate: Price;
+    try {
+      rate = rateFor(market, tier.marginBps + offer.adjustBps);
+    } catch {
+      continue;
+    }
+    let amountAtomic = unit === 'fiat' ? atomicForFiat(typed, rate) : typed;
+    const range: OfferRange = { unit: offer.amountUnit, min: tier.min, max: tier.max };
+    // As for the offer's own range (review M1): fiat typed on an XMR band whose bound totals exactly that is the bound.
+    if (unit === 'fiat' && range.unit === 'xmr') {
+      if (amountAtomic < range.min && fiatCents(range.min, rate) === typed) amountAtomic = range.min;
+      if (amountAtomic > range.max && fiatCents(range.max, rate) === typed) amountAtomic = range.max;
+    }
+    if (amountAtomic > 0n && rangeAllows(range, amountAtomic, rate) === 'ok') holding.push({ tier, rate, amountAtomic, range });
+  }
+  if (holding.length === 0) return null;
+  const done = offer.viewerTrades ?? 0;
+  const open = holding.filter((h) => (h.tier.minTrades ?? 0) <= done);
+  const pool = open.length > 0 ? open : holding;
+  let best = pool[0]!;
+  for (const h of pool) if (offer.side === 'buy' ? h.tier.marginBps > best.tier.marginBps : h.tier.marginBps < best.tier.marginBps) best = h;
+  return best;
+}
+
+function okQuote(offer: QuoteOffer, market: MarketNow | null, rate: Price, amountAtomic: bigint, range: OfferRange): Quote {
+  const total = fiatCents(amountAtomic, rate);
   // The US-dollar figures are the trade's own figures (at the offer's rate, the margin
   // included) converted at the exchange rate the feed implies, usdCentsPerXmr / centsPerXmr: never
   // the raw market XMR/USD, which would leave out the margin (Task 18 review, item 3).
@@ -158,6 +223,7 @@ export function quote(i: { offer: QuoteOffer; market: MarketNow | null; text: st
     sellerFundsAtomic: escrowPlan({ amountAtomic, poster: posterRole(offer.side) }).sellerFundsAtomic,
     usdCents: toUsd ? toUsd(total) : null,
     usdPerXmrCents: toUsd ? toUsd(rate.centsPerXmr) : null,
+    range,
   };
 }
 
@@ -235,9 +301,12 @@ export function maxText(o: QuoteOffer, unit: Unit, rate: Price, exponent: number
   return unit === 'xmr' ? xmrText(r.max) : amountText(fiatCents(r.max, rate), 'fiat', rate, exponent);
 }
 
-/** The fiat maximum the trade records at `rate` (@x2f/trade tradeFiatLimits), for the trade room's deal. */
-export function dealMaxFiat(o: QuoteOffer, rate: Price): bigint {
-  return tradeFiatLimits(quoteRange(o), rate).maxFiatCents;
+/**
+ * The fiat maximum the trade records at `rate` (@x2f/trade tradeFiatLimits), for the trade room's
+ * deal: of `range`, the band the quote picked (J-16: the take records the band's limits), else the offer's.
+ */
+export function dealMaxFiat(o: QuoteOffer, rate: Price, range: OfferRange = quoteRange(o)): bigint {
+  return tradeFiatLimits(range, rate).maxFiatCents;
 }
 
 export const STAGE_NAMES: Record<Stage, string> = { starter: 'Starter', building: 'Building', graduated: 'Graduated' };

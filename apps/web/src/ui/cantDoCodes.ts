@@ -400,6 +400,8 @@ export const MY_OFFERS_HIDDEN = {
   'trading-hold': 'On, hidden while your account has a trading hold',
   'review-pending': 'On, hidden until you rate your last trade', // COPY-UNSIGNED (Plan 5 Task 3 review M3)
   'method-unavailable': "On, hidden: this payment method isn't available right now",
+  // COPY-UNSIGNED (J-16; Task 34 review M4): none of the offer's currencies has a market price now.
+  'no-price': 'On, hidden: no market price for its currencies right now',
 } as const;
 export type MyOffersHidden = keyof typeof MY_OFFERS_HIDDEN;
 

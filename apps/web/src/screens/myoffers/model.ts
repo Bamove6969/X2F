@@ -58,14 +58,14 @@ export function turnOnPopup(results: readonly SwitchResult[], before: readonly M
   return { kind: 'some', ...top, ids: refused.map((r) => r.id) };
 }
 
-/** The board's title line: "Selling XMR · USD". */
+/** The board's title line: "Selling XMR · USD"; with several currencies (J-16) "Selling XMR · USD, CAD". COPY-UNSIGNED: the comma list. */
 export function offerTitle(o: MyOffer): string {
-  return `${o.side === 'sell' ? 'Selling XMR' : 'Buying XMR'} · ${o.currency}`;
+  return `${o.side === 'sell' ? 'Selling XMR' : 'Buying XMR'} · ${o.currencies.join(', ')}`;
 }
 
-/** The method line: "Zelle", or "Amazon gift card (US)" for a gift card. */
+/** The method line: "Zelle", "Amazon gift card (US)" for a gift card; with several (J-16) "Zelle, PayPal". COPY-UNSIGNED: the comma list. */
 export function offerMethods(o: MyOffer): string {
-  return `${o.methodName}${o.country ? ` (${o.country})` : ''}`;
+  return `${o.methodNames.join(', ')}${o.country ? ` (${o.country})` : ''}`;
 }
 
 /** The price line in two parts, as the board: ["+0.5%", "follows the market"] (every offer is market ± %, owner Q1). */
