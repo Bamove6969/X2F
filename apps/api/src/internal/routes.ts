@@ -20,6 +20,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { ApiError } from '../errors.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 
 /**
@@ -312,10 +313,11 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   // an open trade also counts as paused as soon as `site_flags.maintenance_since` is set, before the
   // timer loop's next pass writes its `paused_at`, so the moderator decides nothing in that gap.
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; state: TradeState; settling: SettleKind | null; paused_at: Date | null; final_alert_at: Date | null; seen: Date | null; site_paused: boolean }>(
+    const { rows } = await o.db.query<{ code: string; state: TradeState; settling: SettleKind | null; paused_at: Date | null; final_alert_at: Date | null; seen: Date | null; site_paused: boolean; lock_held: boolean }>(
       `select t.code, t.state, t.settling, t.paused_at, t.final_alert_at,
               case when t.final_alert_delivered is true then t.final_alert_seen_at end as seen,
-              (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused
+              (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused,
+              ${tradeHeldSql('t')} as lock_held
          from trades t
          join trade_attestations a on a.code = t.code
         where t.closed_at is null or t.closed_at > $1
@@ -327,7 +329,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         trade: r.code,
         state: r.state,
         settleKind: settleKindFor({ state: r.state, settling: r.settling }),
-        paused: r.paused_at !== null || r.site_paused,
+        // J-14 (D-059): a trade of a locked account counts as paused from the lock's commit on.
+        paused: r.paused_at !== null || r.site_paused || r.lock_held,
         finalAlertSeenAt: r.seen ? r.seen.toISOString() : null,
         finalAlertAt: r.final_alert_at ? r.final_alert_at.toISOString() : null,
       })),

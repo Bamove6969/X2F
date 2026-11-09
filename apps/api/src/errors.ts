@@ -57,6 +57,11 @@ export type ApiErrorCode =
   // Plan 3, Task 6: the trade events route and the state machine's refusals.
   | 'event-not-allowed'
   | 'wrong-state'
+  // J-14: support tickets (one open per account, D-055) and the compromised-account lock (D-059).
+  | 'ticket-open'
+  | 'ticket-closed'
+  | 'account-locked'
+  | 'trade-held'
   | 'wrong-party'
   | 'too-early'
   | 'too-late'

@@ -14,6 +14,7 @@ import { ownerKeyRoutes } from './ownerKeys.js';
 import { keyTapRoutes } from './keyTap.js';
 import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from '../push/send.js';
 import { staffAccountRoutes } from './account.js';
+import { staffTicketRoutes } from '../tickets/staffRoutes.js';
 import { staffFeedbackRoutes } from './feedback.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
@@ -156,6 +157,8 @@ export async function buildStaffApi(
   staffPastRepRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
+  // Plan 4 Task 30 / J-14: support tickets and compromised-account tickets (D-055, D-057, D-059).
+  staffTicketRoutes(app);
   // Plan 4 Task 16: the staff web app's pages, last, so every API route above wins.
   if (deps.staffWebRoot !== undefined) await serveStaffWeb(app, deps.staffWebRoot);
 

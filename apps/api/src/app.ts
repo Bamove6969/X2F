@@ -42,6 +42,7 @@ import { EventBus, type EventBusOptions } from './events/bus.js';
 import { eventRoutes, type EventStreamOptions } from './events/routes.js';
 import { tradeEventPublisher } from './events/tradePublisher.js';
 import { pushRoutes } from './push/routes.js';
+import { ticketRoutes } from './tickets/traderRoutes.js';
 import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from './push/send.js';
 
 // Interface-only stubs, filled in by the task named on each; their shapes follow the plan text.
@@ -335,6 +336,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   teamRoutes(app);
   // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.
   feedbackRoutes(app);
+  // Plan 4 Task 30 / J-14: support tickets and the "My account has been compromised" form (D-059).
+  ticketRoutes(app, { publish: tradePublish });
 
   return app;
 }

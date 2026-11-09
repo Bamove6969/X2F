@@ -367,8 +367,9 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
       exactKeys(r, ['kind', 'accountId', 'role']);
       return { kind: r.kind, accountId: match(r, 'accountId', UUID).toLowerCase(), role: oneOf(r, 'role', INVITABLE) };
     case 'remove-staff':
+    case 'unlock-account':
       exactKeys(r, ['kind', 'accountId']);
-      return { kind: 'remove-staff', accountId: match(r, 'accountId', UUID).toLowerCase() };
+      return { kind: r.kind, accountId: match(r, 'accountId', UUID).toLowerCase() };
     case 'add-pgp-key':
       exactKeys(r, ['kind', 'fingerprint']);
       return { kind: 'add-pgp-key', fingerprint: match(r, 'fingerprint', FINGERPRINT).toLowerCase() };
@@ -445,6 +446,8 @@ export function tapPermOf(i: KeyTapIntent): Perm | 'owner' {
       return 'staff.manage';
     case 'settings':
       return 'settings.write';
+    case 'unlock-account':
+      return 'accounts.freeze';
     case 'add-owner-key':
       return 'owner';
     case 'add-pgp-key':

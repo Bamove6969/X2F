@@ -159,6 +159,10 @@ export const LOG_ACTIONS = {
   // Support tickets (Task 30): never the text.
   'ticket.replied': { ticketId: 'id' },
   'ticket.closed': { ticketId: 'id' },
+  // J-14 (D-059): a "My account has been compromised" ticket locked the account (by the system, at
+  // the sender's word), and a senior moderator or the owner lifted the lock. Ids only.
+  'account.locked': { accountId: 'uuid', ticketId: 'id' },
+  'account.unlocked': { accountId: 'uuid' },
   'training.copy-saved': {},
   'log.checkpoint': { id: 'id', hash: 'hex64' },
 } as const satisfies Record<string, Schema>;

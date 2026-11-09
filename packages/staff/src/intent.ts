@@ -58,6 +58,8 @@ export type KeyTapIntent =
   // Owner Q60/Q16: the per-person checkboxes (`grants`, sorted), set by the owner with a tap.
   | { kind: 'set-grants'; accountId: string; grants: string[] }
   | { kind: 'remove-method'; methodType: 'pgp' | 'security-key' | 'passkey'; methodId: string }
+  // J-14 (D-059): lifting a "My account has been compromised" lock (a senior moderator or the owner).
+  | { kind: 'unlock-account'; accountId: string }
   | {
       kind: 'ruling';
       step: 'propose' | 'approve';
@@ -82,6 +84,7 @@ export const KEY_TAP_KINDS = [
   'add-pgp-key',
   'remove-method',
   'set-grants',
+  'unlock-account',
   'ruling',
 ] as const satisfies readonly KeyTapIntent['kind'][];
 
