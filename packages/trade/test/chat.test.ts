@@ -2,6 +2,7 @@ import { newTradeCode } from '@x2f/core';
 import { describe, expect, it } from 'vitest';
 import {
   CHAT_AFTER_CLOSE_DAYS,
+  CHAT_AFTER_DISPUTE_DAYS,
   CHAT_BODY_MAX_BYTES,
   CHAT_PRETRADE_IDLE_DAYS,
   ChatEnvelopeError,
@@ -158,35 +159,90 @@ describe('chatIdentityProofBytes', () => {
 describe('chatPurgeDue (purgeChats retention rule)', () => {
   const t0 = new Date('2026-10-01T00:00:00Z');
   const at = (days: number): Date => new Date(t0.getTime() + days * DAY);
-  const pre = { tradeClosedAt: null, tradeLinked: false, disputeOpen: false, createdAt: t0, lastMessageAt: null };
+  const pre = { tradeClosedAt: null, tradeLinked: false, disputeOpen: false, disputed: false, disputeClosedAt: null, createdAt: t0, lastMessageAt: null };
+  const justAfter = (d: Date): Date => new Date(d.getTime() + 1);
 
-  it('uses the plan numbers', () => {
+  it('uses the owner\'s numbers (8 Nov: 30 days, 90 after a dispute) and leaves the 7 idle days alone', () => {
     expect(CHAT_PRETRADE_IDLE_DAYS).toBe(7);
-    expect(CHAT_AFTER_CLOSE_DAYS).toBe(90);
+    expect(CHAT_AFTER_CLOSE_DAYS).toBe(30);
+    expect(CHAT_AFTER_DISPUTE_DAYS).toBe(90);
   });
 
   it('a pre-trade chat goes after 7 days without a message (counted from the last one)', () => {
     expect(chatPurgeDue(pre, at(7))).toBe(false);
-    expect(chatPurgeDue(pre, new Date(at(7).getTime() + 1))).toBe(true);
+    expect(chatPurgeDue(pre, justAfter(at(7)))).toBe(true);
     const talked = { ...pre, lastMessageAt: at(5) };
     expect(chatPurgeDue(talked, at(12))).toBe(false);
-    expect(chatPurgeDue(talked, new Date(at(12).getTime() + 1))).toBe(true);
+    expect(chatPurgeDue(talked, justAfter(at(12)))).toBe(true);
   });
 
   it('a chat linked to an open trade is never purged, however quiet', () => {
     expect(chatPurgeDue({ ...pre, tradeLinked: true }, at(400))).toBe(false);
   });
 
-  it('a closed trade keeps its chat for 90 days after close', () => {
+  describe('a trade that was never disputed', () => {
     const closed = { ...pre, tradeLinked: true, tradeClosedAt: at(10) };
-    expect(chatPurgeDue(closed, at(100))).toBe(false);
-    expect(chatPurgeDue(closed, new Date(at(100).getTime() + 1))).toBe(true);
+
+    it('keeps its chat for exactly 30 days after it closes, not the 90 of a disputed one', () => {
+      expect(chatPurgeDue(closed, at(39))).toBe(false);
+      expect(chatPurgeDue(closed, at(40))).toBe(false);
+      expect(chatPurgeDue(closed, justAfter(at(40)))).toBe(true);
+      expect(chatPurgeDue(closed, at(41))).toBe(true);
+    });
   });
 
-  it('retention keeps a disputed chat past 90 days', () => {
-    const disputed = { ...pre, tradeLinked: true, tradeClosedAt: at(10), disputeOpen: true };
-    expect(chatPurgeDue(disputed, at(1000))).toBe(false);
-    expect(chatPurgeDue({ ...pre, disputeOpen: true }, at(1000))).toBe(false);
+  describe('a trade that had a dispute', () => {
+    const closed = { ...pre, tradeLinked: true, tradeClosedAt: at(10), disputed: true, disputeClosedAt: at(10) };
+
+    it('keeps its chat for exactly 90 days after the dispute closes, and past the 30 of an undisputed one', () => {
+      expect(chatPurgeDue(closed, at(40))).toBe(false);
+      expect(chatPurgeDue(closed, justAfter(at(40)))).toBe(false);
+      expect(chatPurgeDue(closed, at(100))).toBe(false);
+      expect(chatPurgeDue(closed, justAfter(at(100)))).toBe(true);
+    });
+
+    it('counts from the dispute closing, not from when the trade closed', () => {
+      // The trade settled at day 10, the appeal ran, the dispute closed at day 50.
+      const appealed = { ...closed, disputeClosedAt: at(50) };
+      expect(chatPurgeDue(appealed, at(100))).toBe(false);
+      expect(chatPurgeDue(appealed, at(140))).toBe(false);
+      expect(chatPurgeDue(appealed, justAfter(at(140)))).toBe(true);
+    });
+
+    it('a dispute opened inside the 30 days stops the 30-day erasure (the owner\'s rule)', () => {
+      // Refunded at day 10, disputed at day 20, closed at day 25.
+      const late = { ...closed, tradeClosedAt: at(10), disputeClosedAt: at(25) };
+      expect(chatPurgeDue(late, justAfter(at(40)))).toBe(false);
+      expect(chatPurgeDue(late, at(115))).toBe(false);
+      expect(chatPurgeDue(late, justAfter(at(115)))).toBe(true);
+    });
+
+    it('never counts from before the trade closed: the later of the two is the start', () => {
+      const earlier = { ...closed, tradeClosedAt: at(20), disputeClosedAt: at(5) };
+      expect(chatPurgeDue(earlier, at(110))).toBe(false);
+      expect(chatPurgeDue(earlier, justAfter(at(110)))).toBe(true);
+    });
+
+    it('never goes while a dispute is open, however long ago the trade closed', () => {
+      // Round 1 published: coins moved, the trade closed, the 48-hour appeal window is running.
+      expect(chatPurgeDue({ ...closed, disputeOpen: true, disputeClosedAt: null }, at(1000))).toBe(false);
+      // Appealed, or a later escalation (seq 2) with an earlier dispute already closed.
+      expect(chatPurgeDue({ ...closed, disputeOpen: true }, at(1000))).toBe(false);
+      expect(chatPurgeDue({ ...pre, disputeOpen: true }, at(1000))).toBe(false);
+      expect(chatPurgeDue({ ...pre, tradeLinked: true, tradeClosedAt: null, disputeOpen: true, disputed: true }, at(1000))).toBe(false);
+    });
+
+    it('fails closed: disputed but with no close time (final, complying, or a row out of step) is kept', () => {
+      expect(chatPurgeDue({ ...closed, disputeClosedAt: null }, at(1000))).toBe(false);
+    });
+
+    it('a corrupt dispute close time keeps the chat', () => {
+      expect(chatPurgeDue({ ...closed, disputeClosedAt: new Date('x') }, at(1000))).toBe(false);
+    });
+
+    it('a chat on an open trade stays even if an earlier dispute closed long ago', () => {
+      expect(chatPurgeDue({ ...closed, tradeClosedAt: null }, at(1000))).toBe(false);
+    });
   });
 
   it('fails closed (keeps the chat) on any invalid date, in both branches', () => {
@@ -203,5 +259,7 @@ describe('chatPurgeDue (purgeChats retention rule)', () => {
     expect(chatPurgeDue({ ...closed, tradeClosedAt: corrupt }, at(1000))).toBe(false);
     expect(chatPurgeDue({ ...closed, createdAt: corrupt }, at(1000))).toBe(false);
     expect(chatPurgeDue({ ...closed, lastMessageAt: corrupt }, at(1000))).toBe(false);
+    // A corrupt dispute time on a trade never disputed is still a corrupt row.
+    expect(chatPurgeDue({ ...closed, disputeClosedAt: corrupt }, at(1000))).toBe(false);
   });
 });

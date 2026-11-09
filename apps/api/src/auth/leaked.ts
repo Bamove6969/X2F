@@ -21,6 +21,7 @@ export async function openLeakedList(path: string): Promise<LeakedList> {
   return {
     async has(password: string): Promise<boolean> {
       // SHA-1 because that is the format Have I Been Pwned publishes; it is a lookup key, not a password hash.
+      // nosemgrep: javascript.node-stdlib.cryptography.crypto-weak-algorithm.crypto-weak-algorithm -- HIBP lookup format, not password storage
       const target = createHash('sha1').update(normalizePassword(password), 'utf8').digest();
       const buf = Buffer.alloc(RECORD);
       let lo = 0;
