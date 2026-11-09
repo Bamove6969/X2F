@@ -68,7 +68,7 @@ export const SAMPLE_CALLS: { [K in keyof AuthApi]: Parameters<AuthApi[K]> } = {
   removeMember: [UUID, {}],
   teamAudit: [],
   readInvite: [{ invite: 'x' }],
-  joinStart: [{ invite: 'x', loginName: 'sample.login', publicKey: 'x' }],
+  joinStart: [{ invite: 'x', loginName: 'sample.login', publicKey: 'x', acceptedTerms: '2026-10-17' }],
   joinFinish: [{ challengeId: UUID, code: 'x' }],
   joinSecondPgpStart: [{ setupId: UUID, publicKey: 'x' }],
   joinSecondPgpFinish: [{ setupId: UUID, challengeId: UUID, code: 'x', deviceLabel: 'B' }],

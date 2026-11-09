@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { expect, test, type Page } from '@playwright/test';
 import { KNOWN_EXCEPTIONS, boardTexts, expectParity, missingTexts, reportPixels, withoutBoardMarkers } from './parity.js';
+import { signedIn } from './session.js';
 
 const run = promisify(execFile);
 const REPO = fileURLToPath(new URL('../../../', import.meta.url));
@@ -363,6 +364,8 @@ test.describe('board texts', () => {
 // Job 3: the wide rail. The page name under the logo ("Trade · K7M2" on the board, a trade room) is
 // checked in the room's own Desktop parity (pay.spec.ts); on /sell the rail names "Find a trade".
 test('the 1280×800 rail text matches the Desktop board', async ({ page }) => {
+  // The rail shows behind the front door (owner, 8 Nov 2026): a signed-in, set-up trader.
+  await signedIn(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto('/sell');
   await expect(page.locator('[data-shell="desktop"]')).toBeAttached();

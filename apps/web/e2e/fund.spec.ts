@@ -14,6 +14,7 @@ import { BOARD_TRADE as B } from '../src/fixtures/boards.js';
 import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
 import { PORT } from './playwright.config.js';
+import { INSIDE } from './session.js';
 
 const FIXTURES_PORT = PORT + 1;
 const FIXTURES = `http://127.0.0.1:${FIXTURES_PORT}`;
@@ -124,7 +125,7 @@ async function stub(page: Page, view: () => View, escrow: FixtureEscrow = VERIFI
   await page.addInitScript((e) => {
     window.__x2fFixtureEscrow = e;
   }, escrow);
-  await page.route('**/v1/account/me', (r) => r.fulfill({ json: { kind: 'trader' } }));
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: INSIDE }));
   await page.route(`**/v1/trades/${B.code}`, (r) => r.fulfill({ json: view() }));
 }
 

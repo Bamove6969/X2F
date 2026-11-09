@@ -72,6 +72,9 @@ export function passwordLogin(loginName: string, password: string): Promise<Pass
  * shell sees the new login.
  */
 export async function afterLogin(navigate: (to: string) => void, returnTo: string): Promise<void> {
+  // The screens behind the front door read the shared session answer: the one from before this
+  // login says signed out (session/frontDoor.tsx), so drop it before going back to `returnTo`.
+  refreshSession();
   let termsCurrent = true;
   // Session length (owner, 2 Nov 2026): a session with no length yet asks for it before anything else.
   let askLength = false;

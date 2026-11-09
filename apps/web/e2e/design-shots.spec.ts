@@ -20,6 +20,7 @@ import sodium from 'libsodium-wrappers';
 import type { TradeView } from '../src/api/trade.js';
 import { BOARD_BUY_LIVE_USD, BOARD_BUY_OFFERS, BOARD_SELL_LIVE_USD, BOARD_SELL_OFFERS, boardBuyOffers, boardSellOffers } from '../src/fixtures/boards.js';
 import { PAY_NOW, PAY_SECURED, PAY_SECURING } from '../src/fixtures/payBoard.js';
+import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { stubBrowseApi } from './browse-stub.js';
 import { startFixtures } from './fixtures-serve.js';
@@ -328,7 +329,8 @@ test('20 an invite from a one-proof login is refused (CantDoThat weak-session)',
 
 async function joinApi(page: Page, invite?: { status: number; body: unknown }): Promise<void> {
   await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
-  await page.route('**/v1/team/invite', json(invite?.body ?? { team: 'Calcium', displayName: 'Aurora', roles: ['trades'], expiresAt: LATER }, invite?.status ?? 200));
+  await page.route('**/v1/team/invite', json(invite?.body ?? { displayName: 'Aurora', roles: ['trades'], expiresAt: LATER }, invite?.status ?? 200));
+  await page.route('**/v1/terms', json({ version: TERMS_TEXT_VERSION }));
   await page.route('**/v1/team/join/start', json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: LATER }));
   await page.route('**/v1/team/join/finish', json({ setupId: 's1', needs: ['security-key', 'passkey', 'pgp'], setupUntil: LATER }, 201));
 }
@@ -336,6 +338,13 @@ async function joinApi(page: Page, invite?: { status: number; body: unknown }): 
 test('21-23 a member joins: the invite, the PGP step, the second way', async ({ page }) => {
   await joinApi(page);
   await page.goto(`/team/join#${CODE}`);
+  // The member signs the Terms first (review 2026-11-08 F1).
+  await page.locator('[data-part="terms-text"]').evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+    el.dispatchEvent(new Event('scroll'));
+  });
+  await page.check('[data-part="terms-tick"]');
+  await page.click('[data-part="terms-accept"]');
   await expect(page.locator('[data-part="invite-who"]')).toBeVisible();
   await shot(page, '21-team-join-invite');
   await page.getByLabel('Your private login name').fill('aurora_login');
@@ -922,7 +931,7 @@ test('60 News', async ({ page }) => {
     item(2, '2026-10-28T09:00:00.000Z', 'Planned upgrade', 'Tomorrow at 09:00 UTC. Trades in escrow are safe.'),
     item(1, '2026-10-20T09:00:00.000Z', 'Welcome', 'Hello from X2F.'),
   ], serverNow: '2026-10-29T12:00:00.000Z' }));
-  await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
+  await page.route('**/v1/account/me', json(TRADER_ME));
   await page.goto('/news');
   await expect(page.getByRole('heading', { level: 1, name: 'News' })).toBeVisible();
   await shot(page, '60-news');

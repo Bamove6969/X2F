@@ -321,6 +321,7 @@ interface SessionRow {
   member_roles: TeamRole[] | null;
   member_name: string | null;
   member_disabled: boolean | null;
+  member_terms_version: string | null;
   app: SessionRealm['app'];
   /** Set when the request carried the token before the last extend (review S-m1): its own end. */
   prev_until: Date | null;
@@ -376,7 +377,8 @@ export function requireSession(
       `select s.id, s.account_id, s.level, s.onboarding_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
               s.hold_until, a.kind, a.disabled_at, a.terms_version, s.member_id,
               (tm.removed_at is null and tm.joined_at is not null and tm.account_id = s.account_id) as member_live,
-              tm.roles as member_roles, tm.display_name as member_name, ma.disabled_at is not null as member_disabled, s.app,
+              tm.roles as member_roles, tm.display_name as member_name, ma.disabled_at is not null as member_disabled,
+              ma.terms_version as member_terms_version, s.app,
               case when s.token_hash = $1 then null else s.prev_token_until end as prev_until
          from sessions s join accounts a on a.id = s.account_id
          left join team_members tm on tm.id = s.member_id
@@ -416,7 +418,13 @@ export function requireSession(
       throw new ApiError(403, 'recovery-hold', { holdUntil: row.hold_until.toISOString() });
     }
     if (opts.kinds && !opts.kinds.includes(row.kind)) throw new ApiError(403, 'wrong-account-kind');
-    if (row.kind === 'trader' && row.terms_version !== deps.config.termsVersion && !opts.allowStaleTerms) {
+    // Review 2026-11-08 F1 (the front door: nobody gets in without signing the agreement): a team
+    // member must have accepted the current Terms on their own login account too; the team
+    // account's acceptance is the account owner's and never stands in for theirs.
+    if (
+      row.kind === 'trader' && !opts.allowStaleTerms &&
+      (row.terms_version !== deps.config.termsVersion || (row.member_id !== null && row.member_terms_version !== deps.config.termsVersion))
+    ) {
       throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
     }
     // For staff, owner and recovery sessions expires_at is the idle deadline capped by the absolute

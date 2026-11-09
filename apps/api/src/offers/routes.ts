@@ -1,6 +1,7 @@
 import { MAX_MARGIN_BPS, fiatCents, offerRate, rangeInBoth, type AmountUnit, type OfferRange, type Price, type Pricing, type Side } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
+import { requireInside } from '../auth/frontDoor.js';
 import { requireSession } from '../auth/sessions.js';
 import { holdRefusal, holdUntil, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import type { AuthContext } from '../auth/sessions.js';
@@ -462,29 +463,18 @@ const requireTrader = requireSession({ kinds: ['trader'], member: 'offers' });
 const requireTraderStaleOk = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers' });
 
 /** 403 `terms-required` `{ version }`, as requireSession answers, for a trader on a stale Terms version. */
-async function assertTermsCurrent(deps: Deps, accountId: string): Promise<void> {
-  const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [accountId]);
+async function assertTermsCurrent(deps: Deps, auth: { accountId: string; memberId: string | null }): Promise<void> {
+  const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [auth.accountId]);
   if (rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
-}
-// Browsing: a signed-in trader's session, read only (no touch), when there is one; a team member
-// browses as the account it works for.
-const viewerCheck = requireSession({ kinds: ['trader'], touch: false, allowStaleTerms: true, member: 'any' });
-
-/**
- * The signed-in trader browsing, or null for anyone else (logged out, staff, an expired session, a
- * recovery session or one on its recovery hold: every 401 and 403). A null viewer is never treated
- * as blocked (Task 37: it is the accepted residue documented in coordination.md).
- */
-export async function viewer(app: FastifyInstance, req: FastifyRequest, reply: FastifyReply): Promise<string | null> {
-  try {
-    await viewerCheck.call(app, req, reply);
-  } catch (e) {
-    if (e instanceof ApiError && (e.status === 401 || e.status === 403)) return null;
-    throw e;
+  // A team member's own acceptance too (review 2026-11-08 F1, as requireSession checks it).
+  if (auth.memberId !== null) {
+    const m = await deps.db.query<{ terms_version: string | null }>(
+      'select a.terms_version from team_members tm join accounts a on a.id = tm.member_account_id where tm.id = $1',
+      [auth.memberId],
+    );
+    if (m.rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
   }
-  return req.auth?.accountId ?? null;
 }
-
 /**
  * `/v1/methods`' live-offer counts (Task 3's `LiveOfferStats`), from the offers anyone may see, counted by the database;
  * for a signed-in viewer, without the offers a block hides from them (Task 37 review I1), so the counts and best
@@ -575,7 +565,7 @@ export function offerRoutes(app: FastifyInstance): void {
     if (typeof status !== 'string' || !(STATUSES as readonly string[]).includes(status)) throw bad();
     // Pausing and removing work on stale Terms (R10 lead decisions 2026-10-29: shutting off never
     // waits for new Terms); relisting does not.
-    if (status === 'live') await assertTermsCurrent(deps, req.auth!.accountId);
+    if (status === 'live') await assertTermsCurrent(deps, req.auth!);
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
     const { rows } = await deps.db.query<{ account_id: string; status: OfferStatus; method_id: string }>(
       'select account_id, status, method_id from offers where id = $1',
@@ -617,8 +607,9 @@ export function offerRoutes(app: FastifyInstance): void {
     return { id, status };
   });
 
-  // Browsing needs no session (P3-M9); a signed-in trader also gets `opensAt`.
-  app.get('/v1/offers', async (req, reply) => {
+  // Browsing is behind the front door (owner, 8 Nov 2026; it was open to anyone under P3-M9): a
+  // live session of a set-up trader account; a team member browses as the account they work for.
+  app.get('/v1/offers', { preHandler: requireInside }, async (req) => {
     const deps = req.server.deps;
     const side = single(req.query, 'side');
     const method = single(req.query, 'method');
@@ -634,7 +625,7 @@ export function offerRoutes(app: FastifyInstance): void {
     // online from the newest live session (as traderSummaries: by bucket, hidden from someone the
     // poster blocked), trades from the completed count; ties newest first.
     const now = deps.clock();
-    const viewerId = await viewer(app, req, reply);
+    const viewerId = req.auth!.accountId;
     const market = deps.prices.current(currency)?.centsPerXmr ?? null;
     const byRate = `r.rate ${side === 'buy' ? 'desc' : 'asc'} nulls last`;
     const order =
@@ -656,15 +647,15 @@ export function offerRoutes(app: FastifyInstance): void {
     const posters = await traderSummaries(deps.db, rows.map((r) => r.account_id), now, viewerId, undefined, new Map(rows.map((r) => [r.account_id, role])));
     const entries = rows.map((r) => ({ r, poster: posters.get(r.account_id)!, rate: rateOf(r, deps.prices) }));
     const cards = entries.map((e) => toCard(e.r, e.poster, e.rate));
-    if (viewerId !== null) await markOpensAt(deps, viewerId, entries.map((e) => e.r), cards);
+    await markOpensAt(deps, viewerId, entries.map((e) => e.r), cards);
     return cards;
   });
 
-  app.get('/v1/offers/:id', async (req, reply): Promise<OfferDetail> => {
+  app.get('/v1/offers/:id', { preHandler: requireInside }, async (req): Promise<OfferDetail> => {
     const deps = req.server.deps;
     const id = (req.params as { id: string }).id;
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
-    const viewerId = await viewer(app, req, reply);
+    const viewerId = req.auth!.accountId;
     const { rows } = await deps.db.query<OfferRow & { listed: boolean; blocked: boolean }>(
       `select ${OFFER_COLUMNS}, (${LISTED} and ${posterRated('$3::timestamptz')}) as listed, ${blockedEitherWaySql('o.account_id', '$2::uuid')} as blocked
          from offers o join accounts a on a.id = o.account_id where o.id = $1`,
@@ -672,13 +663,13 @@ export function offerRoutes(app: FastifyInstance): void {
     );
     const r = rows[0];
     if (!r || r.status === 'removed') throw new ApiError(404, 'not-found');
-    const mine = viewerId !== null && viewerId === r.account_id;
+    const mine = viewerId === r.account_id;
     // A block either way looks exactly like an offer that does not exist (Task 37).
     if (!mine && (r.blocked || !(r.listed && isAvailable(r.method_id)))) throw new ApiError(404, 'not-found');
     const now = deps.clock();
     const poster = (await traderSummaries(deps.db, [r.account_id], now, viewerId, undefined, new Map([[r.account_id, r.side === 'sell' ? 'seller' : 'buyer']]))).get(r.account_id)!;
     const card = toCard(r, poster, rateOf(r, deps.prices));
-    if (viewerId !== null && !mine) await markOpensAt(deps, viewerId, [r], [card]);
+    if (!mine) await markOpensAt(deps, viewerId, [r], [card]);
     return { ...card, side: r.side, methodId: r.method_id, currency: r.currency, terms: r.terms, status: r.status };
   });
 
@@ -760,7 +751,7 @@ export function offerRoutes(app: FastifyInstance): void {
     } else throw bad();
     const accountId = req.auth!.accountId;
     // Turning off works on stale Terms (R10 lead decision 2026-10-29); turning on does not.
-    if (status === 'live') await assertTermsCurrent(deps, accountId);
+    if (status === 'live') await assertTermsCurrent(deps, req.auth!);
     // Task 17: no offer goes on during the account's 24-hour hold (403 `recovery-hold` for the whole call).
     if (status === 'live') {
       const until = await holdUntil(deps, accountId, req.server.events);

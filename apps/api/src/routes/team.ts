@@ -19,9 +19,12 @@
  *
  * The member's side (no session; every answer gives the browser a device cookie, and every step
  * after the first is bound to the device that took it):
- * - `POST /v1/team/invite { invite }` → `{ team, displayName, roles, expiresAt }` (404 for a
- *   wrong, used or expired code).
- * - `POST /v1/team/join/start { invite, loginName, publicKey }` → a PGP challenge to the key.
+ * - `POST /v1/team/invite { invite }` → `{ displayName, roles, expiresAt }` (404 for a wrong, used
+ *   or expired code). It never names the team account: the vendor is named only inside the door
+ *   (review 2026-11-08 F3).
+ * - `POST /v1/team/join/start { invite, loginName, publicKey, acceptedTerms }` → a PGP challenge to
+ *   the key; 400 `terms-not-accepted` `{ version }` unless `acceptedTerms` is the current version
+ *   (the member signs the Terms themselves, review 2026-11-08 F1).
  * - `POST /v1/team/join/finish { challengeId, code }` → `{ setupId, needs, setupUntil }`: the
  *   member's login exists with that key and the invite is used up; no session yet.
  * - `POST /v1/team/join/second/webauthn/start { setupId, kind }` and
@@ -33,7 +36,7 @@
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
-import { openNames, sealNames } from '../accounts.js';
+import { assertTermsAccepted, openNames, sealNames } from '../accounts.js';
 import { ApiError } from '../errors.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { requireConfirm } from '../auth/confirm.js';
@@ -228,11 +231,14 @@ export function teamRoutes(app: FastifyInstance): void {
     const deps = req.server.deps;
     const b = body(req);
     const invite = await openInvite(deps.db, { code: b.invite }, deps.clock());
+    // Review 2026-11-08 F1: a member signs the agreement like every trader (the front door), before
+    // anything is made; the version rides in the challenge to the account `join/finish` creates.
+    const terms = assertTermsAccepted(deps, b.acceptedTerms);
     const loginName = await checkMemberLoginName(deps.db, b.loginName);
     // FU-D: the login name waits in the challenge only sealed, never in clear.
     const names = sealNames(deps.config, memberNames(loginName.key));
     return issueTeamJoinChallenge(deps, req, {
-      accountId: null, publicKey: str(b, 'publicKey'), payload: { step: 'first', inviteId: invite.id, names },
+      accountId: null, publicKey: str(b, 'publicKey'), payload: { step: 'first', inviteId: invite.id, names, terms },
     });
   });
 
@@ -242,15 +248,17 @@ export function teamRoutes(app: FastifyInstance): void {
     const deps = req.server.deps;
     const b = body(req);
     const proved = await checkTeamJoinCode(deps, req, str(b, 'challengeId'), str(b, 'code'), null);
-    const p = proved.payload as { step?: unknown; inviteId?: unknown; names?: unknown };
+    const p = proved.payload as { step?: unknown; inviteId?: unknown; names?: unknown; terms?: unknown };
     if (p.step !== 'first' || typeof p.inviteId !== 'string') throw new ApiError(400, 'challenge-expired');
+    // The Terms signed at `join/start` must still be the current ones.
+    const terms = assertTermsAccepted(deps, p.terms);
     const names = openNames(deps.config, p.names);
     const inviteId = p.inviteId;
     const now = deps.clock();
     const device = deviceHash(req)!;
     const setup = await inTransaction(deps.db, async (c) => {
       const m = await startMember(c, deps.config, {
-        inviteId, names, now,
+        inviteId, names, now, terms,
         addKey: (memberAccountId) => insertPgpKey(c, deps.config, { accountId: memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved }),
       });
       const { rows } = await c.query<{ id: string }>(

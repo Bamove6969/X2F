@@ -115,9 +115,35 @@ describe('safeReturnTo', () => {
     '/%2e%2e//evil.com',
     '/sell/..//evil.com',
     'data:text/html,<script>alert(1)</script>',
+    '/%2F%2Fevil.com',
+    '/%2f%2fevil.com',
+    '/%2e%2e%2f%2fevil.com',
+    '/%5Cevil.com',
+    '/%5cevil.com',
+    '/sell%2F..%2F..%2F%2Fevil.com',
+    '/%00/evil.com',
+    '/%09/evil.com',
+    '/%0A/evil.com',
+    '/%0d/evil.com',
+    '/%1F/evil.com',
+    '/%7f/evil.com',
+    '/%7F/evil.com',
   ])('refuses %j and falls back to /sell', (raw) => {
     expect(safeReturnTo(raw)).toBe('/sell');
   });
+
+  it('refuses an encoded slash, backslash or control character that arrives through the query string', () => {
+    expect(returnToFrom('?returnTo=%2F%252F%252Fevil.com')).toBe('/sell');
+    expect(returnToFrom('?returnTo=%2F%255Cevil.com')).toBe('/sell');
+    expect(returnToFrom('?returnTo=%2F%2509%2Fevil.com')).toBe('/sell');
+  });
+
+  it.each(['/sell/%20zelle', '/sell?q=%7E', '/sell?q=%25', '/wallets?add=1&returnTo=%2Fsell%2Fzelle', '/sell#%2F%2F'])(
+    'keeps other percent-encoded characters, and encoded slashes in the query or fragment: %j',
+    (raw) => {
+      expect(safeReturnTo(raw)).toBe(raw);
+    },
+  );
 
   it('refuses a missing value', () => {
     expect(safeReturnTo(null)).toBe('/sell');

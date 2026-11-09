@@ -92,7 +92,10 @@ export const JOIN_COPY = {
   title: 'Join a team',
   loading: 'Checking your invite…',
   gone: 'This invite link has been used, has run out or is not complete. Ask for a new one.',
-  invited: (team: string, name: string, roles: readonly TeamRole[]) => `${team} invited you as ${name}, for ${rolesText(roles)}.`,
+  // Never the team's name before joining (review 2026-11-08 F3). COPY-UNSIGNED.
+  invited: (name: string, roles: readonly TeamRole[]) => `You are invited to a team as ${name}, for ${rolesText(roles)}.`,
+  // The member's Terms step before joining (review 2026-11-08 F1). COPY-UNSIGNED.
+  termsIntro: 'Before you join, read the Terms of Service to the end and accept them. The key points first:',
   twoFactors: 'You log in with two factors: first a PGP key, then a security key, a passkey or a second PGP key.',
   loginNameLabel: 'Your private login name',
   loginNameHint: 'Only you use it to log in. Nobody else sees it.',
