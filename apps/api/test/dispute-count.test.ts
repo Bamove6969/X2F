@@ -56,7 +56,7 @@ async function ruleFinal(code: string, outcome: string) {
 describe('completed trades count settled disputes, whoever won (R38)', () => {
   it('(a) a refund-to-seller ruling counts for the buyer who lost and the seller who won', async () => {
     const { seller, buyer, t } = await tradeIn('secured');
-    expect((await buyer.browser.post(`/v1/trades/${t.code}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
+    expect((await seller.browser.post(`/v1/trades/${t.code}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
     await ruleFinal(t.code, 'refund-to-seller');
     // While the dispute is open the trade is not completed for either side.
     expect(await completed(buyer.id)).toBe(0);

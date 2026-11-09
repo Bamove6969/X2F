@@ -1,62 +1,50 @@
-import { autoRefundDecision, FINAL_ALERT_MS, type AutoRefundRefusal, type Payout } from '@x2f/escrow';
+import { autoRefundDecision, type AutoRefundRefusal, type Payout } from '@x2f/escrow';
 import type { Trade } from '@x2f/trade';
 
 /**
- * The buyer no-show auto-refund (Plan 3 Task 10, spec 2.3 and 3.3): may the moderator co-sign the
- * seller-built refund ALONE, now? Pure. The moderation service calls it every watcher pass while
- * the API shows the trade `refund_requested`.
+ * The seller's cancel refund (Plan 3 Task 10, spec 2.3 and 3.3; owner 8 Nov, p6-1 and p9-2: no
+ * final warning, the refund starts at once): may the moderator co-sign the seller-built refund
+ * ALONE, now? Pure. The moderation service calls it every watcher pass while the API shows the
+ * trade settling as `auto-refund` (the seller's accepted `request-refund`).
  *
- * Every fact it trusts is the service's own: the shadow trade (payBy, paidAt, finalAlertAt, fed only
- * by its watcher and the signals it opened), whether it ever opened a valid `trade.paid` from the
- * buyer's identity, the refund address the SELLER's identity signed (never the API's
- * `seller_refund`) and the escrow balance read by its own party (balance == unlocked). The API
- * supplies only brakes: its state (nothing is signed unless it, too, says `refund_requested`) and
- * the buyer's seen-receipt for the final alert (`final_alert_seen_at`, set only by Task 25's
- * FinalAlert; absent = not seen, Task 19 review 2026-10-27).
+ * Every fact it trusts is the service's own: the shadow trade (payBy, paidAt, its own settling,
+ * fed only by its watcher and the signals it opened; the shadow takes the seller's
+ * `trade.refund-request` only once ITS payBy has passed and the buyer has not marked paid), whether
+ * it ever opened a valid `trade.paid` from the buyer's identity, the refund address the SELLER's
+ * identity signed (never the API's `seller_refund`) and the escrow balance read by its own party
+ * (balance == unlocked). The API supplies only brakes: nothing is signed unless it, too, shows the
+ * seller's cancel (`settling` / `auto-refund`), unpaused. A lying API can delay a refund, never
+ * cause one: without the seller's signal after the shadow's own payBy nothing is signed.
  *
  * Order:
- * 1. The API must show `refund_requested`, not paused (and the shadow not paused).
- * 2. The shadow must be `refund_requested` too, with no `trade.paid` ever opened and a seller-signed
- *    refund address; otherwise nothing is signed, and once the API has shown `refund_requested`
- *    for REFUND_UNVERIFIED_MS the trade escalates (`refund-unverified`) instead of hanging. A
- *    `trade.paid` this service opened while the API still shows `refund_requested` PAID_CONFLICT_MS
- *    later is a definite conflict: it escalates then (review M7).
- * 3. `shadow.finalAlertAt > shadow.payBy` (rulings Task 9: the alert only after the payment window).
- * 4. The API's own pause-shifted `finalAlertAt` must be on the watch list (review I1).
- * 5. Wait until max(shadow.finalAlertAt, api.finalAlertAt) + 15 min + AUTO_REFUND_MARGIN_MS. The
- *    API's `mark-paid` is open until ITS finalAlertAt + 15 min, and its finalAlertAt moves with
- *    every maintenance pause the API saw, even one this service missed (a restart across the pause
- *    start, an early refund-request signal, review I1). The margin covers a watch pass plus clock
- *    skew between the API and this service (review M1). Taking the later alert can only delay.
- * 6. No seen-receipt by then → escalate (`alert-unseen`).
- * 7. A receipt more than ALERT_LATE_MS after the EARLIER of the two alerts → escalate (`alert-late`,
- *    lead decision I2 option b, 2026-10-29; min, review round 2 N1): the API counts the buyer's 15
- *    minutes from its own alert, so a push that sat with the push service left the buyer less than
- *    its 15 minutes; a person decides. Taking the earlier alert can only escalate more often.
- * 8. Wait until `final_alert_seen_at + 15 min + margin` (at most ALERT_LATE_MS more than 5.).
- * 9. Wait until the whole balance is unlocked.
- * 10. `autoRefundDecision` with the derived one-payout refund: ok → sign; otherwise refused with its
- *    reason only (and the 2. fallback escalates later).
+ * 1. The API must show `settling` as `auto-refund`, not paused (and the shadow not paused).
+ * 2. No `trade.paid` ever opened (else wait, and once the API still shows the cancel
+ *    PAID_CONFLICT_MS after it, escalate `refund-unverified`: review M7), a seller-signed refund
+ *    address, and the shadow itself settling as `auto-refund`; otherwise nothing is signed, and
+ *    once the API has shown the cancel for REFUND_UNVERIFIED_MS the trade escalates
+ *    (`refund-unverified`) instead of hanging.
+ * 3. Wait until the whole balance is unlocked.
+ * 4. `autoRefundDecision` (the shadow's payBy has passed, no mark-paid, one payout to the
+ *    seller-signed address) with the derived one-payout refund: ok → sign; otherwise refused with
+ *    its reason only (and the 2. fallback escalates later).
+ * The API's `mark-paid` is closed from the moment it shows the cancel (one trade row decides which
+ * came first), so no margin for an open buyer window is needed any more.
  */
 export const REFUND_UNVERIFIED_MS = 60 * 60_000;
-/**
- * Clock skew between the API and this service plus the age of the API facts (review I1, M1): the desk
- * judges at the watch list's read time and reads it again when older than WATCH_FRESH_MS (10 s;
- * security review 7 Nov, finding 1).
- */
-export const AUTO_REFUND_MARGIN_MS = 60_000;
-/** A seen-receipt later than this after the alert escalates instead (lead decision I2 (b)). */
-export const ALERT_LATE_MS = 2 * 60_000;
-/** A `trade.paid` opened here while the API still shows `refund_requested` this long after: escalate (review M7). */
+/** A `trade.paid` opened here while the API still shows the seller's cancel this long after: escalate (review M7). */
 export const PAID_CONFLICT_MS = 2 * 60_000;
+
+/** The API shows the seller's cancel refund: settling as `auto-refund`. */
+export const apiShowsSellerCancel = (api: { state: string; settleKind?: string | null }): boolean =>
+  api.state === 'settling' && api.settleKind === 'auto-refund';
 
 export interface AutoRefundInputs {
   now: Date;
   /** Null when the attested deal could not make a shadow trade: then nothing is ever signed alone. */
   shadow: Trade | null;
-  /** The API's watch-list item: `finalAlertAt` is the API's own, shifted by every pause it applied. */
-  api: { state: string; finalAlertSeenAt: Date | null; finalAlertAt?: Date | null; paused?: boolean };
-  /** When this service first saw the API show `refund_requested` (this episode, restarted by a pause), or null. */
+  /** The API's watch-list item. */
+  api: { state: string; settleKind?: string | null; paused?: boolean };
+  /** When this service first saw the API show the seller's cancel (this episode, restarted by a pause), or null. */
   apiRefundSince: Date | null;
   /** A valid `trade.paid` from the buyer's identity was opened, ever. */
   paidSeen: boolean;
@@ -70,24 +58,17 @@ export interface AutoRefundInputs {
   refundFor: (balance: bigint) => Payout[];
 }
 
-export type AutoRefundWait =
-  | 'api-not-refund-requested'
-  | 'final-alert-pending'
-  | 'receipt-too-recent'
-  | 'not-unlocked'
-  | 'unverified'
-  | 'paused'
-  | 'api-final-alert-missing';
+export type AutoRefundWait = 'api-not-cancelled' | 'not-unlocked' | 'unverified' | 'paused';
 
 export type AutoRefundStep =
-  | { action: 'wait'; reason: AutoRefundWait | 'buyer-paid' | 'no-seller-terms' | 'shadow-not-refund-requested' }
+  | { action: 'wait'; reason: AutoRefundWait | 'buyer-paid' | 'no-seller-terms' | 'shadow-not-cancelled' }
   | { action: 'sign'; proposed: Payout[] }
-  | { action: 'escalate'; report: 'alert-unseen' | 'alert-late' | 'refund-unverified' }
-  | { action: 'refuse'; reason: AutoRefundRefusal | 'alert-not-after-deadline' | 'no-payout' };
+  | { action: 'escalate'; report: 'refund-unverified' }
+  | { action: 'refuse'; reason: AutoRefundRefusal | 'no-payout' };
 
 export function autoRefundStep(f: AutoRefundInputs): AutoRefundStep {
-  if (f.api.state !== 'refund_requested') return { action: 'wait', reason: 'api-not-refund-requested' };
-  // Maintenance: nothing is decided while paused (every window is frozen).
+  if (!apiShowsSellerCancel(f.api)) return { action: 'wait', reason: 'api-not-cancelled' };
+  // Maintenance: nothing is decided while paused.
   if (f.api.paused === true || (f.shadow !== null && f.shadow.pausedAt !== null)) return { action: 'wait', reason: 'paused' };
   const now = f.now.getTime();
   const overdue = f.apiRefundSince !== null && now >= f.apiRefundSince.getTime() + REFUND_UNVERIFIED_MS;
@@ -100,21 +81,9 @@ export function autoRefundStep(f: AutoRefundInputs): AutoRefundStep {
     return notYet({ action: 'wait', reason: 'buyer-paid' });
   }
   if (f.recordedRefundAddress === null) return notYet({ action: 'wait', reason: 'no-seller-terms' });
-  if (t === null || t.state !== 'refund_requested' || t.finalAlertAt === null || t.payBy === null) {
-    return notYet({ action: 'wait', reason: 'shadow-not-refund-requested' });
+  if (t === null || t.state !== 'settling' || t.settling !== 'auto-refund' || t.payBy === null) {
+    return notYet({ action: 'wait', reason: 'shadow-not-cancelled' });
   }
-  if (t.finalAlertAt.getTime() <= t.payBy.getTime()) return notYet({ action: 'refuse', reason: 'alert-not-after-deadline' });
-  const apiAlert = f.api.finalAlertAt ?? null;
-  if (apiAlert === null || Number.isNaN(apiAlert.getTime())) return notYet({ action: 'wait', reason: 'api-final-alert-missing' });
-  const alertAt = Math.max(t.finalAlertAt.getTime(), apiAlert.getTime());
-  if (now < alertAt + FINAL_ALERT_MS + AUTO_REFUND_MARGIN_MS) return { action: 'wait', reason: 'final-alert-pending' };
-  const seen = f.api.finalAlertSeenAt;
-  if (seen === null || Number.isNaN(seen.getTime())) return { action: 'escalate', report: 'alert-unseen' };
-  // Late against the EARLIER alert (review round 2 N1): the API's mark-paid window runs from its own
-  // alert, and the shadow's is usually the later one (the seller's signal follows the API post, or the
-  // mod was down), so comparing with the later one would sign for a buyer whose window had closed.
-  if (seen.getTime() > Math.min(t.finalAlertAt.getTime(), apiAlert.getTime()) + ALERT_LATE_MS) return { action: 'escalate', report: 'alert-late' };
-  if (now < seen.getTime() + FINAL_ALERT_MS + AUTO_REFUND_MARGIN_MS) return { action: 'wait', reason: 'receipt-too-recent' };
   const { balance, unlocked } = f.funds;
   if (balance <= 0n || balance !== unlocked) return { action: 'wait', reason: 'not-unlocked' };
   let proposed: Payout[];
@@ -126,7 +95,6 @@ export function autoRefundStep(f: AutoRefundInputs): AutoRefundStep {
   const d = autoRefundDecision({
     paymentDeadline: t.payBy,
     markedPaidAt: t.paidAt,
-    finalAlertAt: t.finalAlertAt,
     now: f.now,
     recordedRefundAddress: f.recordedRefundAddress,
     proposed,

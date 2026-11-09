@@ -2,8 +2,9 @@
  * Cancelling a funded trade (spec 2.3). The buyer cancels with one tap before "I've paid"
  * (BuyerPay); after it there is no cancel of any kind (owner, Revision 2026-10-29b), so the
  * after-paid CancelSheet and its warning are gone (Task 39).
- * - SellerCancelControls: the seller never cancels alone after funding, so the seller's room gets
- *   only Propose cancel (a mutual cancel), and Withdraw while the proposal stands.
+ * - SellerCancelControls: the seller's waiting room offers no cancel at all (design proto review
+ *   P2, 8 Nov: no Propose cancel while waiting for payment; the seller's own cancel after the time
+ *   to pay is SellerRefund's). Only Withdraw, for a proposal that already stands.
  * - CancelProposalCard: the buyer's accept/decline card for the seller's proposal.
  */
 import { useState } from 'react';
@@ -13,17 +14,9 @@ import type { TradeView } from './payTypes.js';
 import { Name } from './TradeTimeline.js';
 import './pay.css';
 
-/** Propose cancel / Withdraw for the seller; renders nothing where no mutual cancel can be proposed. */
-export function SellerCancelControls({ view, busy, onPropose, onWithdraw }: { view: TradeView; busy: boolean; onPropose(): void; onWithdraw(): void }) {
-  const mode = sellerCancelMode(view);
-  if (mode === 'none') return null;
-  if (mode === 'propose') {
-    return (
-      <Button variant="quiet" disabled={busy} onClick={onPropose}>
-        Propose cancel
-      </Button>
-    );
-  }
+/** Withdraw for the seller's standing mutual-cancel proposal; nothing otherwise (no Propose cancel, proto review P2). */
+export function SellerCancelControls({ view, busy, onWithdraw }: { view: TradeView; busy: boolean; onWithdraw(): void }) {
+  if (sellerCancelMode(view) !== 'proposed') return null;
   return (
     <span className="x2f-cancel__proposed">
       <span role="status">

@@ -1,5 +1,5 @@
 /**
- * The whole "I've paid" step, for BuyerPay and for Task 25's FinalAlert (`setFinalAlertPaidSheet`):
+ * The whole "I've paid" step, for BuyerPay:
  * the sum is this device's own (`escrow.fiatCents`, Task 12), never the API's (review 2026-10-27,
  * I1); Yes posts `mark-paid { fiatCents }` with exactly that total, then `escrow.markPaid` (the
  * `trade.paid` signal). A `total-changed` refusal sends nothing: the trade is re-read and the sheet
@@ -7,11 +7,12 @@
  * landed and its answer was lost) closes the sheet and re-reads; if the trade is now paid and this
  * device never recorded it, BuyerPay offers "Finish marking as paid" (review I2).
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { formatFiat, formatXmr } from '@x2f/trade';
 import { ApiCallError } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { Sheet } from '../../ui/Sheet.js';
+import { confirmSkipped, skipConfirm } from './confirmSkip.js';
 import { PaidConfirmSheet, type YesResult } from './PaidConfirmSheet.js';
 import { payBlock, type PayBlock } from './payModel.js';
 import { payMethodOf, postPayEvent } from './paySeams.js';
@@ -104,14 +105,41 @@ export interface PaidFlowSheetProps {
 
 export function PaidFlowSheet({ view, escrow, refresh, open, onClose }: PaidFlowSheetProps) {
   const [grew, setGrew] = useState(false);
+  /**
+   * Owner p7-2: this user ticked "Do not show me this warning again", so an opening marks paid at
+   * once with this device's total ('direct'); anything but a clean yes ('ask') shows the sheet.
+   * Only this "Are you sure…?" step can be skipped. The no-proof warning ("Mark paid without
+   * proof?", ProofBlur, not built yet) goes BEFORE this point and is always shown (lead, 8 Nov):
+   * when it lands, an opening without proof shows it first and only its answer may lead here.
+   */
+  const [direct, setDirect] = useState<'idle' | 'running' | 'ask'>('idle');
   const total = deviceTotal(view, escrow);
   const block = payBlock(view, escrow);
   const close = () => {
     setGrew(false);
+    setDirect('idle');
     onClose();
   };
 
-  const onYes = async (fiatCents: bigint): Promise<YesResult> => {
+  const onYes = async (fiatCents: bigint, dontShow = false): Promise<YesResult> => {
+    const r = await markPaid(fiatCents);
+    if (r.ok && dontShow) skipConfirm('paid');
+    return r;
+  };
+
+  const yesRef = useRef(onYes);
+  yesRef.current = onYes;
+  useEffect(() => {
+    if (!open) return setDirect('idle');
+    if (direct !== 'idle' || block !== null || total === null || !confirmSkipped('paid')) return;
+    setDirect('running');
+    void yesRef.current(total.cents).then((r) => {
+      if (!r.ok) setDirect('ask');
+    });
+    // Once per opening: only `open` re-runs it.
+  }, [open]);
+
+  const markPaid = async (fiatCents: bigint): Promise<YesResult> => {
     // Only the device's own total, and only while the API shows the same one.
     if (payBlock(view, escrow) !== null || escrow.fiatCents !== fiatCents) {
       return { ok: false, reason: 'error', message: "Your device can't confirm this total. Don't send any money yet." };
@@ -160,7 +188,7 @@ export function PaidFlowSheet({ view, escrow, refresh, open, onClose }: PaidFlow
   }
   return (
     <PaidConfirmSheet
-      open={open && total !== null}
+      open={open && total !== null && direct !== 'running'}
       fiatCents={total?.cents ?? 0n}
       fiatText={total?.text ?? ''}
       methodName={payMethodOf(view).name}

@@ -58,13 +58,6 @@ export interface TradeView {
   payBy: string | null;
   paidAt: string | null;
   confirmBy: string | null;
-  finalAlertAt: string | null;
-  /**
-   * When the buyer's first seen-receipt for the final alert landed (Task 19); null = not seen. Task
-   * 10 counts 15 min from it. Shown to the buyer only: the seller always gets null, so they never
-   * learn whether or when the buyer looked (Task 19 re-review, item 5).
-   */
-  finalAlertSeenAt: string | null;
   settleBy: string | null;
   /**
    * When the moderator's watcher reported that a buyer or seller says their side of the
@@ -82,8 +75,8 @@ export interface TradeView {
   /** When the seller's Confirm cancel became available; the trade closes by itself 48 h later (owner 2026-10-29). */
   cancelConfirmableAt: string | null;
   /**
-   * When the seller first nudged the buyer after the escrow was secured (owner G2, g66; migration
-   * 119); null = not yet. The seller's refund stays locked until it is set and the 90 minutes are over.
+   * When the seller first nudged the buyer after the escrow was secured (migration 119); null = not
+   * yet. A record only: nudges are optional (owner 8 Nov, p6-1), the seller's cancel needs none.
    */
   sellerNudgedAt: string | null;
   nextDeadline: string | null;
@@ -96,8 +89,6 @@ export interface ViewContext {
   /** Task 3's method profile for `t.methodId` (null until Task 3 wires `getProfile`). */
   profile: unknown;
   sellerWalletApp: string | null;
-  /** `trades.final_alert_seen_at` (not a machine field). */
-  finalAlertSeenAt: Date | null;
 }
 
 /**
@@ -150,8 +141,6 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     payBy: iso(t.payBy),
     paidAt: iso(t.paidAt),
     confirmBy: iso(t.confirmBy),
-    finalAlertAt: iso(t.finalAlertAt),
-    finalAlertSeenAt: role === 'buyer' ? iso(ctx.finalAlertSeenAt) : null,
     settleBy: iso(t.settleBy),
     releaseClaimedAt: t.state === 'settling' ? iso(t.releaseClaimedAt) : null,
     pausedAt: iso(t.pausedAt),

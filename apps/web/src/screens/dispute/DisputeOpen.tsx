@@ -1,6 +1,6 @@
 // DisputeOpen (Plan 3 Task 27), board design/x2f-app/DisputeOpen.dc.html. The trader picks what
 // went wrong and tells the moderator; the screen says plainly that a moderator will read the whole
-// chat. Before the state machine allows a dispute (the buyer, until the seller's confirm window
+// chat. Before the state machine allows a dispute (either side in `paid`, until the confirm window
 // ends) it explains when and sends nothing. Evidence goes through Plan 5's on-device pipeline
 // (seams.tsx); until then nothing can be picked.
 import { useId, useState, type ReactNode } from 'react';

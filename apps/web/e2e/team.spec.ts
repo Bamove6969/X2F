@@ -508,7 +508,7 @@ for (const viewport of PHONE_VIEWPORTS) {
 }
 
 for (const viewport of PHONE_VIEWPORTS) {
-  test(`a Trades member proposes a mutual cancel from the seller's room, and may open a dispute; no escrow (${viewport})`, async ({ page }) => {
+  test(`a Trades member in the seller's waiting room may open a dispute, and has no Propose cancel; no escrow (${viewport})`, async ({ page }) => {
     // Review round 2, n3: the escrow-free steps a member may take (owner question 13(d)).
     const later = new Date(Date.now() + 25 * 60_000).toISOString();
     let view = { ...sellerView(), payBy: later, nextDeadline: later, serverNow: new Date().toISOString() };
@@ -532,9 +532,9 @@ for (const viewport of PHONE_VIEWPORTS) {
     await expect(room.getByRole('link', { name: 'Open dispute' })).toHaveAttribute('href', `/trade/${encodeURIComponent(TRADE)}/dispute`);
     await expect(room.getByRole('button', { name: /I've paid/ })).toHaveCount(0);
     await expectPhoneLayout(page);
-    await room.getByRole('button', { name: 'Propose cancel' }).click();
-    await expect(room.getByRole('button', { name: 'Withdraw' })).toBeVisible();
-    expect(posted).toEqual([{ type: 'propose-cancel' }]);
+    // No Propose cancel while waiting (design proto review P2).
+    await expect(room.getByRole('button', { name: 'Propose cancel' })).toHaveCount(0);
+    expect(posted).toEqual([]);
     expect(identity).toEqual([]);
     await expectPhoneLayout(page);
   });

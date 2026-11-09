@@ -203,15 +203,15 @@ const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
 export const KEEP_AFTER_CLOSE_MS = 30 * 24 * 60 * 60 * 1000;
 const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 /** Where a seller still waiting to fix the signed paid amount keeps reading its own size (I2). */
-const SELLER_WAIT_STATES: readonly TradeState[] = ['paid', 'settling', 'refund_requested'];
-const BUYER_RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling', 'refund_requested'];
+const SELLER_WAIT_STATES: readonly TradeState[] = ['paid', 'settling'];
+const BUYER_RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling'];
 /**
  * Where a mutual cancel can be proposed (Task 2 CANCEL_STATES) and the buyer may cancel alone
  * before settling: never `paid`, no cancel of any kind after "I've paid" (owner, Revision
  * 2026-10-29b; Task 39 review I2), so a cancel tapped earlier no longer holds once paid.
  */
 const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
-const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'refund_requested'];
+const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 
 /**
  * Whether the trade view still supports a choice the user tapped. While the trade is settling,
@@ -230,7 +230,7 @@ export function viewSupports(kind: SettleKind, v: Pick<EscrowTradeView, 'state' 
     case 'release':
       return v.state === 'secured' || v.state === 'paid';
     case 'auto-refund':
-      return v.state === 'refund_requested';
+      return false; // only while settling as `auto-refund`, the seller's cancel (owner 8 Nov; first line)
     case 'lapse-refund':
       return v.state === 'lapsed';
   }
@@ -685,7 +685,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         role: r.role,
         own: r.role === 'buyer' ? { payout: r.ownAddress } : { refund: r.ownAddress },
         balance,
-        trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, paidAt: v.paidAt },
+        trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, paidAt: v.paidAt, settling: v.settling },
         deal: { poster: r.deal.poster, amountAtomic: size },
         signedTerms: { payout, refund },
       };
@@ -1074,7 +1074,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private autoKind(v: EscrowTradeView): SettleKind | null {
       if (this.rec.role === 'seller') {
         if (v.state === 'lapsed') return 'lapse-refund';
-        if (v.state === 'refund_requested') return 'auto-refund';
+        if (v.state === 'settling' && v.settling === 'auto-refund') return 'auto-refund';
         if (v.state === 'settling' && v.settling === 'mutual-cancel') return 'mutual-cancel';
         return null;
       }

@@ -81,8 +81,6 @@ function sellerView(over: View = {}): View {
     payBy: null,
     paidAt: null,
     confirmBy: null,
-    finalAlertAt: null,
-    finalAlertSeenAt: null,
     settleBy: null,
     releaseClaimedAt: null,
     pausedAt: null,
@@ -423,6 +421,12 @@ test.describe('the buyer before funding', () => {
     await expect(page.getByText(`Buying from ${B.seller}`)).toBeVisible();
     await expect(page.locator('[data-qr], [data-wallet-link], [data-escrow-address]')).toHaveCount(0);
     expect(await page.content()).not.toContain('monero:');
+    // Design proto review P1: Chat and an at-once Cancel trade, which asks once.
+    await expect(page.getByRole('button', { name: 'Chat' })).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel trade' }).click();
+    await expect(page.getByRole('dialog', { name: 'Cancelling is final' })).toBeVisible();
+    await page.getByRole('button', { name: 'Keep trading' }).click();
+    await expect(page.getByRole('dialog', { name: 'Cancelling is final' })).toHaveCount(0);
   });
 });
 

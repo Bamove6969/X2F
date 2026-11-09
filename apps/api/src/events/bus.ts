@@ -127,8 +127,7 @@ export class EventBus {
   }
 
   /**
-   * True while the account owner has at least one stream of their own open (the final-alert proof,
-   * P3-I13; the nudge push rule). Team members' streams do not count (Plan 2 Task 18, review I1).
+   * True while the account owner has at least one stream of their own open (the nudge push rule). Team members' streams do not count (Plan 2 Task 18, review I1).
    */
   delivered(accountId: string): boolean {
     const set = this.streams.get(accountId);
