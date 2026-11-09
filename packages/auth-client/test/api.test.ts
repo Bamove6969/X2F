@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SIG } from './helpers/routes.js';
 import { AuthApiError, MISSES_BEFORE_SENDING_AWAY, PASSWORD_LOGIN_MISMATCH, createAuthApi, shouldSendAway } from '../src/index.js';
 
 interface Sent {
@@ -165,7 +166,7 @@ describe('createAuthApi requests', () => {
       status: 'second-factor', pendingId: 'p', needs: ['totp'],
     });
     const empty = recorder(() => new Response(null, { status: 204 }));
-    await expect(createAuthApi({ fetch: empty.fetch }).acceptTerms({ version: 'v' })).resolves.toBeUndefined();
+    await expect(createAuthApi({ fetch: empty.fetch }).acceptTerms({ version: 'v', signature: SIG })).resolves.toBeUndefined();
   });
 
   it('refuses redirects instead of following them', async () => {

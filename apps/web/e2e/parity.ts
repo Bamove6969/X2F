@@ -176,6 +176,18 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: 'End of Terms. Version [DATE].',
       why: 'The page shows the real version from GET /v1/terms in place of [DATE] (Task 28).',
     },
+    {
+      text: 'Please read to the end. The key points first:',
+      why: 'Superseded on the canvas (design 9 Nov, p11-15, ea2a9ca8): the intro now reads "Read to the end. If you agree to X2F\'s rules and terms, …"; this repo\'s mirror of the board is from 26 Oct.',
+    },
+    {
+      text: 'I accept',
+      why: 'Superseded on the canvas (design 9 Nov, p11-15): the button reads "Start creating my account"; this repo\'s mirror of the board is from 26 Oct.',
+    },
+    {
+      text: 'Dispute records are kept for 30 days.',
+      why: 'Superseded on the canvas (design 9 Nov, p11-9; owner 8 Nov 30/90 ruling): two key points, "Completed trades are erased on day 30." and "Disputed trades are kept up to 90 days, …"; this repo\'s mirror of the board is from 26 Oct.',
+    },
   ],
   SetupPgpKey: [
     {

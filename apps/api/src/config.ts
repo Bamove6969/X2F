@@ -239,10 +239,11 @@ export function loadConfig(env: Env): Config {
  * A purpose-bound key: HKDF-SHA-256 of `serverKey`, info `x2f/<label>`, 32 bytes. `totp` only
  * opens format-0 (pre-FU-C) sealed TOTP secrets until `rewrapTotpSecrets` has moved them.
  * `login-seal` seals the login name of a sign-up waiting in its challenge (FU-D, `sealNames`).
+ * `terms-signature` seals the signature kept with an account (`sealTermsSignature`).
  */
 export function subkey(
   config: Config,
-  label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start' | 'name' | 'login-seal' | 'owner-setup',
+  label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start' | 'name' | 'login-seal' | 'owner-setup' | 'terms-signature',
 ): Uint8Array {
   return new Uint8Array(hkdfSync('sha256', config.serverKey, new Uint8Array(0), `x2f/${label}`, 32));
 }

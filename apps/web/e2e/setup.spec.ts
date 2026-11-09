@@ -13,7 +13,7 @@ import { expectParity, type ParityViewport } from './parity.js';
 
 const PHONES = ['390x844', '360x800'] as const satisfies readonly ParityViewport[];
 
-const TERMS_VERSION = '2026-10-17';
+const TERMS_VERSION = '2026-11-09';
 /** The board's example message (SetupPgpChallenge), so the page shows exactly the board's text. */
 const BOARD_MESSAGE = '-----BEGIN PGP MESSAGE-----\nhF4DkR7c2x9mPq0SAQdA4vJ8u2Lk0aQz\nWm3n…\n-----END PGP MESSAGE-----';
 /** A 95-character standard address ending like the board's example ("…k3Fz"). */
@@ -168,9 +168,28 @@ async function readTermsToEnd(page: Page): Promise<void> {
   });
 }
 
+/** Draws an X on the signature pad with the mouse (owner, 8 Nov 2026: a scribble or an X is fine). */
+async function signTerms(page: Page): Promise<void> {
+  const pad = page.locator('[data-part="signature-pad"]');
+  await pad.scrollIntoViewIfNeeded();
+  const b = (await pad.boundingBox())!;
+  const at = (fx: number, fy: number) => [b.x + b.width * fx, b.y + b.height * fy] as const;
+  for (const [from, to] of [[at(0.2, 0.2), at(0.4, 0.7)], [at(0.4, 0.2), at(0.2, 0.7)]] as const) {
+    await page.mouse.move(from[0], from[1]);
+    await page.mouse.down();
+    await page.mouse.move(to[0], to[1], { steps: 8 });
+    await page.mouse.up();
+  }
+  await expect(pad).toHaveAttribute('data-empty', 'false');
+}
+
+/** What every accept carries with the version: a drawn signature (the X above). */
+const DRAWN = expect.objectContaining({ kind: 'drawn', path: expect.stringMatching(/^M\d+ \d+(L\d+ \d+)+M\d+ \d+(L\d+ \d+)+$/) });
+
 async function acceptTerms(page: Page): Promise<void> {
   await readTermsToEnd(page);
   await page.check('[data-part="terms-tick"]');
+  await signTerms(page);
   await page.click('[data-part="terms-accept"]');
 }
 
@@ -241,9 +260,11 @@ for (const v of PHONES) {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Log in');
     expect(s.requests).toContain('POST /v1/logout');
 
-    // The register calls carry both names (FU-A) and the accepted Terms version.
+    // The register calls carry both names (FU-A), the accepted Terms version and the signature.
     expect(s.bodies['pgp-start']).toEqual([{ displayName: 'lumen.k', loginName: 'lumen-login-7', publicKey: realKey.trim() }]);
-    expect(s.bodies['pgp-finish']).toEqual([expect.objectContaining({ challengeId: 'c1', code: '1234-5678-9ABC', acceptedTerms: TERMS_VERSION })]);
+    expect(s.bodies['pgp-finish']).toEqual([
+      expect.objectContaining({ challengeId: 'c1', code: '1234-5678-9ABC', acceptedTerms: TERMS_VERSION, termsSignature: DRAWN }),
+    ]);
     // The first wallet goes with no confirm token and no confirm-it's-you call at all.
     expect(s.bodies.wallets).toEqual([{ wallets: [{ app: 'cake', label: 'Wallet 1', address: ADDRESS }] }]);
     expect(s.requests.filter((r) => r.includes('/v1/confirm/'))).toEqual([]);
@@ -293,6 +314,7 @@ for (const v of PHONES) {
       loginName: 'lumen-login-7',
       password: 'Quiet-harbour-58',
       acceptedTerms: TERMS_VERSION,
+      termsSignature: DRAWN,
     });
   });
 }
@@ -318,9 +340,59 @@ test('I accept stays disabled until the Terms are scrolled to the end and ticked
   await expect(tick).toBeEnabled();
   await expect(accept).toBeDisabled();
   await page.check('[data-part="terms-tick"]');
+  // The tick alone is not enough: a signature too (owner, 8 Nov 2026).
+  await expect(accept).toBeDisabled();
+  await signTerms(page);
   await expect(accept).toBeEnabled();
   await page.uncheck('[data-part="terms-tick"]');
   await expect(accept).toBeDisabled();
+  await page.check('[data-part="terms-tick"]');
+  await expect(accept).toBeEnabled();
+  await page.click('[data-part="signature-clear"]');
+  await expect(page.locator('[data-part="signature-pad"]')).toHaveAttribute('data-empty', 'true');
+  await expect(accept).toBeDisabled();
+});
+
+test('the signature pad: drawn by touch, or a typed name by keyboard only; the setup sends it once', async ({ page }) => {
+  const s = await stubApi(page);
+  await page.goto('/setup');
+  const accept = page.locator('[data-part="terms-accept"]');
+  await readTermsToEnd(page);
+  await page.check('[data-part="terms-tick"]');
+
+  // A finger: touch pointer events draw a mark too.
+  {
+    const pad = page.locator('[data-part="signature-pad"]');
+    await pad.scrollIntoViewIfNeeded();
+    const b = (await pad.boundingBox())!;
+    await pad.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 7, isPrimary: true, button: 0, clientX: b.x + 20, clientY: b.y + 20 });
+    await pad.dispatchEvent('pointermove', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: b.x + 60, clientY: b.y + 50 });
+    await pad.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 7, isPrimary: true, clientX: b.x + 60, clientY: b.y + 50 });
+    await expect(pad).toHaveAttribute('data-empty', 'false');
+    await expect(accept).toBeEnabled();
+    await page.click('[data-part="signature-clear"]');
+    await expect(accept).toBeDisabled();
+  }
+
+  // Keyboard only: Tab to "Type your name to sign", type the name, Tab on to I accept.
+  await page.locator('[data-part="signature-type"]').focus();
+  await page.keyboard.press('Enter');
+  const name = page.getByLabel('Type your name to sign');
+  await expect(name).toBeFocused();
+  await page.keyboard.type('Lumen K');
+  await expect(accept).toBeEnabled();
+  await accept.focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/setup\/name\?/);
+
+  await pickNames(page, 'lumen.k', 'lumen-login-7');
+  await page.click('[data-method="password"]');
+  await page.click('[data-part="method-continue"]');
+  await page.fill('#pw', 'Quiet-harbour-58');
+  await page.fill('#pw2', 'Quiet-harbour-58');
+  await page.click('[data-part="password-set"]');
+  await expect(page).toHaveURL(/\/setup\/backup\?/);
+  expect(s.bodies.password).toEqual([expect.objectContaining({ acceptedTerms: TERMS_VERSION, termsSignature: { kind: 'typed', name: 'Lumen K' } })]);
 });
 
 test('Mira.K_ shows exactly as typed after setup (password path, backup skipped)', async ({ page }) => {
@@ -516,7 +588,8 @@ test('raising the Terms version sends a logged-in trader to /terms and back to t
   await expect(page.locator('[data-part="terms-accept"]')).toBeDisabled();
   await acceptTerms(page);
   await expect(page).toHaveURL(/\/trade\/K7M2-9QXA-4FTR-8WPN$/);
-  expect(accepted).toEqual({ version: TERMS_VERSION });
+  // A changed Terms version asks for a new signature too (owner, 8 Nov 2026).
+  expect(accepted).toEqual({ version: TERMS_VERSION, signature: DRAWN });
 });
 
 test('Start trading with no usable wallet goes to Add a wallet first, then on to the take', async ({ page }) => {
@@ -582,7 +655,7 @@ for (const v of PHONES) {
     await page.goto('/setup');
     // The screen renders once the session check answers (signed out): wait for it, not a race.
     await expect(page.locator('[data-part="terms-accept"]')).toBeVisible();
-    await expect(page.locator('[data-part="terms-text"]')).toContainText('End of Terms. Version 2026-10-17.');
+    await expect(page.locator('[data-part="terms-text"]')).toContainText(`End of Terms. Version ${TERMS_VERSION}.`);
     await expectParity(page, 'SetupTerms', { viewport: v });
   });
 
@@ -598,8 +671,21 @@ for (const v of PHONES) {
     expect(box.scroll).toBeGreaterThan(box.client);
     // I accept is reachable on a small phone without scrolling the page.
     const accept = await page.locator('[data-part="terms-accept"]').boundingBox();
-    const [, height] = v.split('x').map(Number) as [number, number];
+    const [width, height] = v.split('x').map(Number) as [number, number];
     expect(accept!.y + accept!.height).toBeLessThanOrEqual(height);
+    // The signature pad (owner, 8 Nov 2026): white, at least 120 px tall, the content's full width.
+    const pad = page.locator('.x2f-sign__pad');
+    const padBox = (await pad.boundingBox())!;
+    expect(padBox.height).toBeGreaterThanOrEqual(120);
+    expect(padBox.width).toBeGreaterThanOrEqual(width - 2 * 16 - 1);
+    expect(await pad.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(255, 255, 255)');
+    await expect(page.locator('.x2f-sign__here')).toHaveText('Sign your name here with your finger or mouse. A scribble or an X is fine.');
+    // Design 9 Nov (p11-15): the intro and the button's words.
+    await expect(page.locator('[data-screen="setup-terms"]')).toContainText(
+      "Read to the end. If you agree to X2F's rules and terms, tick the box, sign your name and start creating your account. You agree once, here, never again on a trade.",
+    );
+    await expect(page.locator('[data-part="terms-accept"]')).toHaveText('Start creating my account');
+    await expect(page.locator('#terms-sign-help')).toContainText('Start creating my account needs both the tick and your signature.');
   });
 }
 
@@ -719,9 +805,10 @@ test.describe('review fix round', () => {
     await page.click('[data-part="method-continue"]');
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     expect(s.bodies['webauthn-start']).toEqual([{ displayName: 'lumen.k', loginName: 'lumen-login-7', kind: 'passkey' }]);
-    const finish = s.bodies['webauthn-finish']?.[0] as { acceptedTerms: string; deviceLabel: string; challengeId: string };
+    const finish = s.bodies['webauthn-finish']?.[0] as { acceptedTerms: string; termsSignature: unknown; deviceLabel: string; challengeId: string };
     expect(finish.challengeId).toBe('w1');
     expect(finish.acceptedTerms).toBe(TERMS_VERSION);
+    expect(finish.termsSignature).toEqual(DRAWN);
     expect(finish.deviceLabel).not.toBe(TERMS_VERSION);
     expect(finish.deviceLabel.length).toBeGreaterThan(0);
   });
@@ -754,6 +841,8 @@ test.describe('review fix round', () => {
     await page.click('[data-part="password-set"]');
     await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
     await expect(page.locator('[data-part="terms-tick"]')).toBeDisabled();
+    // Read again means sign again: the pad starts empty.
+    await expect(page.locator('[data-part="signature-pad"]')).toHaveAttribute('data-empty', 'true');
     await acceptTerms(page);
     // The names are kept; the person picks the method again.
     await expect(page.locator('#uname')).toHaveValue('lumen.k');
@@ -765,7 +854,7 @@ test.describe('review fix round', () => {
     await page.click('[data-part="password-set"]');
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     expect(s.bodies.password).toHaveLength(2);
-    expect(s.bodies.password?.[1]).toMatchObject({ acceptedTerms: TERMS_VERSION });
+    expect(s.bodies.password?.[1]).toMatchObject({ acceptedTerms: TERMS_VERSION, termsSignature: DRAWN });
   });
 
   test('M3: /terms reloads the version when the Terms change before I accept, and the retry posts the new one', async ({ page }) => {
@@ -787,10 +876,12 @@ test.describe('review fix round', () => {
     await expect(page.locator('[data-screen="terms"] [role="alert"]')).toContainText('The Terms changed while you were reading');
     await expect(page.locator('[data-part="terms-stale"]')).toHaveCount(0);
     await expect(page.locator('[data-part="terms-tick"]')).not.toBeChecked();
+    await expect(page.locator('[data-part="signature-pad"]')).toHaveAttribute('data-empty', 'true');
     expect(gets).toBeGreaterThanOrEqual(2);
     await acceptTerms(page);
     await expect(page).toHaveURL(/\/post$/);
     expect(posts).toHaveLength(2);
+    expect(posts[1]).toEqual({ version: TERMS_VERSION, signature: DRAWN });
   });
 
   test('M3 (review m2): Terms that move to a NEW version at accept say only "Reload"; after the reload (a page carrying the new text) I read and accept the new version', async ({ page }) => {
@@ -826,7 +917,7 @@ test.describe('review fix round', () => {
     serverVersion = NEW;
     newBuild = true;
     await acceptTerms(page);
-    expect(posts).toEqual([{ version: TERMS_VERSION }]);
+    expect(posts).toEqual([{ version: TERMS_VERSION, signature: DRAWN }]);
     // One message, the one the person can act on: reload. No "read them again" next to it.
     const stale = page.locator('[data-part="terms-stale"]');
     await expect(stale).toHaveText('The Terms have been updated. Reload the page to read the new version.');
@@ -840,7 +931,7 @@ test.describe('review fix round', () => {
     await expect(page.locator('[data-part="terms-tick"]')).toBeDisabled();
     await acceptTerms(page);
     await expect(page).toHaveURL(/\/post$/);
-    expect(posts).toEqual([{ version: TERMS_VERSION }, { version: NEW }]);
+    expect(posts).toEqual([{ version: TERMS_VERSION, signature: DRAWN }, { version: NEW, signature: DRAWN }]);
   });
 
   test('M4: when the server names Terms this page does not carry, the page says to reload and I accept stays off', async ({ page }) => {
@@ -869,8 +960,10 @@ test.describe('review fix round', () => {
     await stubApi(page);
     await page.goto('/setup');
     await expect(page.locator('[data-part="terms-tick"]')).toHaveAttribute('aria-describedby', /.+/);
-    const hint = await page.locator('[data-part="terms-tick"]').getAttribute('aria-describedby');
+    // The scroll hint, then the signature line (owner, 8 Nov 2026: the tick box says a signature is needed).
+    const [hint, sign] = (await page.locator('[data-part="terms-tick"]').getAttribute('aria-describedby'))!.split(' ');
     await expect(page.locator(`[id="${hint}"]`)).toHaveText('Scroll to the end to continue');
+    await expect(page.locator(`[id="${sign}"]`)).toContainText('A scribble or an X is fine.');
     await acceptTerms(page);
     for (const id of ['uname', 'login-name']) {
       const d = await page.locator(`#${id}`).getAttribute('aria-describedby');

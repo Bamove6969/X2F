@@ -17,6 +17,7 @@ import { accountIdByLoginName, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
+import { SIG } from './helpers/signature.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-17T12:00:00Z');
@@ -101,7 +102,7 @@ const unique = (p: string) => `${p}${++seq}x${step}`;
 async function signUp(label = 'Firefox on Linux') {
   const b = new Browser(label);
   const name = unique('dev');
-  const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: label, acceptedTerms: TERMS });
+  const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: label, acceptedTerms: TERMS, termsSignature: SIG });
   expect(res.statusCode).toBe(201);
   const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
   return { a: b, name, accountId: rows[0]!.id };
@@ -498,7 +499,7 @@ describe('who it applies to', () => {
     const name = unique('pk');
     const start = await a.post('/v1/register/webauthn/start', { displayName: `D.${name}`, loginName: name, kind: 'passkey' });
     const { challengeId, options } = start.json();
-    expect((await a.post('/v1/register/webauthn/finish', { challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: TERMS })).statusCode).toBe(201);
+    expect((await a.post('/v1/register/webauthn/finish', { challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG })).statusCode).toBe(201);
     const b = new Browser();
     const s = (await b.post('/v1/login/webauthn/start', {})).json();
     const res = await b.post('/v1/login/webauthn/finish', { challengeId: s.challengeId, response: auth.authenticate(s.options, ORIGIN), deviceLabel: 'Phone' });

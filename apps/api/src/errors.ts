@@ -40,6 +40,10 @@ export type ApiErrorCode =
   | 'wallet-exists'
   | 'terms-not-accepted'
   | 'terms-required'
+  // Owner, 8 Nov 2026: the signature given with the Terms (src/termsSignature.ts).
+  | 'signature-required'
+  | 'signature-invalid'
+  | 'signature-too-large'
   // Plan 2 Task 16: new-device approval.
   | 'approval-ended'
   | 'too-many-devices'

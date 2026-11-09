@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { inviteRegistrationChallenge, keyCheckCode } from '@x2f/staff';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { assertNewNames, createAccount } from '../accounts.js';
+import { assertNewNames, assertTermsAccepted, createAccount } from '../accounts.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
 import { lockAccount, withTx } from '../auth/hold.js';
 import { PGP_BODY_LIMIT, checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge } from '../auth/pgp.js';
@@ -9,6 +9,7 @@ import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, type Crede
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
+import { SIGNED_BODY_LIMIT } from '../termsSignature.js';
 import type { StaffDeps } from './app.js';
 import { requireStaff } from './guard.js';
 import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
@@ -32,9 +33,11 @@ import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type In
 // is unused, not cancelled and not expired, else 404 `invite-invalid`; only then does it spend the
 // process-wide start or register budget, so made-up tokens cannot drain it for a real invitee):
 // - `GET /staff/v1/invites/accept/:token` → `{ role, hours, expiresAt }`;
-// - `POST …/:token/account { displayName, loginName }` → 201: the public name and the private login
-//   name (FU-D), once (409 `wrong-state` after that). The account is created disabled: it cannot
-//   log in until `finish`;
+// - `POST …/:token/account { displayName, loginName, acceptedTerms, termsSignature }` → 201: the
+//   public name and the private login name (FU-D), once (409 `wrong-state` after that), with the
+//   Terms accepted and signed (owner 9 Nov 2026, p11-14: everyone who gets a login signs;
+//   `assertTermsAccepted`'s 400s, first). The account is created disabled: it cannot log in until
+//   `finish`;
 // - `POST …/:token/key/start { kind? }` → `{ options }`, challenge `inviteRegistrationChallenge(tokenHash)`
 //   (default kind `security-key`, which must be attested; or `passkey`, PGP's partner for staff);
 // - `POST …/:token/key/finish { kind?, response, label? }` → 201 `{ kind, keyCheckCode }`;
@@ -182,18 +185,23 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     return { role: i.role, hours: i.hours, expiresAt: i.expires_at.toISOString(), resume };
   });
 
-  app.post('/staff/v1/invites/accept/:token/account', pub, async (req, reply) => {
+  // NEEDS_P4_TASK16: the staff web's invite page (wip/third-p4-task16, apps/staff-web/src/screens/
+  // Invite.tsx, not on main yet) posts `{ displayName, loginName }` only. Before it lands it needs
+  // the Terms step (the web app's TermsScreen and SignaturePad, or the same parts) and must send
+  // `acceptedTerms` and `termsSignature` here (tripwire in test/staff/members.test.ts).
+  app.post('/staff/v1/invites/accept/:token/account', { ...pub, bodyLimit: SIGNED_BODY_LIMIT }, async (req, reply) => {
     const deps = req.server.deps;
     const open = await openInvite(deps.db, tokenOf(req), deps.clock());
     if (open.account_id !== null) throw new ApiError(409, 'wrong-state');
     req.server.budgets.register.take();
     const b = body(req);
+    const terms = assertTermsAccepted(deps, b.acceptedTerms, b.termsSignature);
     const names = await assertNewNames(deps.db, b.displayName, b.loginName);
     const now = deps.clock();
     await withTx(deps.db, async (c) => {
       const i = await openInvite(c, tokenOf(req), now, true);
       if (i.account_id !== null) throw new ApiError(409, 'wrong-state');
-      const accountId = await createAccount(c, deps.config, { ...names, kind: 'staff', termsVersion: null, now });
+      const accountId = await createAccount(c, deps.config, { ...names, kind: 'staff', termsVersion: terms.version, termsSignature: terms.signature, now });
       // Disabled until `finish`: a half-made staff login can never log in.
       await c.query('update accounts set disabled_at = $2 where id = $1', [accountId, now]);
       await c.query('update staff_invites set account_id = $2 where id = $1', [i.id, accountId]);

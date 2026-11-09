@@ -28,6 +28,7 @@ export {
   throttleReset, visitorMiss, visitorReset, type ThrottledMethod,
 } from './auth/throttle.js';
 export { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, type NewNames } from './accounts.js';
+export { SIGNATURE_MAX_BYTES, MAX_TYPED_NAME, checkTermsSignature, type TermsSignature } from './termsSignature.js';
 export { openLeakedList } from './auth/leaked.js';
 export { parseConfirmAction } from './auth/actionInput.js';
 export {

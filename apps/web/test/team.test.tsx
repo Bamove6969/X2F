@@ -47,6 +47,7 @@ beforeEach(() => {
     if (input === '/v1/team/invite') return body?.invite === CODE ? json(200, { displayName: 'Aurora', roles: ['trades'], expiresAt: '2026-10-31T10:00:00.000Z' }) : json(404, { error: 'not-found' });
     if (input === '/v1/terms') return json(200, { version: TERMS_TEXT_VERSION });
     if (input === '/v1/team/join/start') return json(200, { challengeId: 'c1', encryptedMessage: 'MSG', fingerprint: 'F' });
+    if (input === '/v1/team/join/finish') return json(201, { setupId: 's1', needs: ['security-key', 'passkey', 'pgp'], setupUntil: '2026-10-31T10:00:00.000Z' });
     return json(500, { error: 'internal' });
   });
 });
@@ -204,6 +205,14 @@ describe('MemberInvite (join)', () => {
     await act(async () => {
       (byPart(host, 'terms-tick') as HTMLInputElement).click();
     });
+    // Owner 9 Nov 2026 (p11-14): everyone who gets a login signs; the tick alone is not enough.
+    expect(accept.disabled).toBe(true);
+    await act(async () => {
+      (byPart(host, 'signature-type') as HTMLButtonElement).click();
+    });
+    type(byPart(host, 'signature-name') as HTMLInputElement, 'AK');
+    await settle();
+    expect(accept.disabled).toBe(false);
     await act(async () => {
       accept.click();
     });
@@ -222,6 +231,14 @@ describe('MemberInvite (join)', () => {
     });
     await settle();
     expect(calls.find((c) => c.url === '/v1/team/join/start')?.body).toEqual({ invite: CODE, loginName: 'aurora.login', publicKey: 'KEY', acceptedTerms: TERMS_TEXT_VERSION });
+    // The signature goes with the first factor's finish, where the login account is made.
+    type(host.querySelector('input[aria-label="Code"]') as HTMLInputElement, '12345678');
+    await act(async () => {
+      (byPart(host, 'prove') as HTMLButtonElement).click();
+    });
+    await settle();
+    expect(calls.find((c) => c.url === '/v1/team/join/finish')?.body).toEqual({ challengeId: 'c1', code: '12345678', termsSignature: { kind: 'typed', name: 'AK' } });
+    expect(byPart(host, 'join-second')).not.toBeNull();
   });
 
   it('a used or expired invite says so without naming the vendor (front door, design board InviteInvalid)', async () => {

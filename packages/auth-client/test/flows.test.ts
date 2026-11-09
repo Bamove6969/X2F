@@ -17,7 +17,7 @@ import {
   withConfirm,
   type AuthApi,
 } from '../src/index.js';
-import { ROUTES, callSample, methodNames } from './helpers/routes.js';
+import { ROUTES, SIG, callSample, methodNames } from './helpers/routes.js';
 import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
 
@@ -120,7 +120,7 @@ async function registerPgp(j: Jar): Promise<{ username: string; key: Pair }> {
   const start = await j.api.registerPgpStart({ displayName: `D${username}`, loginName: username, publicKey: key.publicKey });
   expect(start.fingerprint).toBe(key.fingerprint);
   const done = await j.api.registerPgpFinish({
-    challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: terms(),
+    challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG,
   });
   expect(done).toEqual({ displayName: `D${username}` });
   return { username, key };
@@ -185,7 +185,7 @@ describe('onboarding', () => {
   it('passkey sign-up through the ceremony wrapper', async () => {
     const soft = createSoftAuthenticator({ backedUp: true, userVerified: true });
     const username = uniqueName('key');
-    await expect(registerWithWebAuthn(jar().api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), ceremonyOf(soft))).resolves.toEqual({
+    await expect(registerWithWebAuthn(jar().api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), SIG, ceremonyOf(soft))).resolves.toEqual({
       displayName: `D${username}`,
     });
     const fresh = jar();
@@ -195,16 +195,16 @@ describe('onboarding', () => {
   it('password sign-up: a leaked or weak password is refused with its reason, then a good one works', async () => {
     const own = jar();
     const username = uniqueName('pass');
-    const leaked = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'Password123!', deviceLabel: LABEL, acceptedTerms: terms() })));
+    const leaked = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'Password123!', deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG })));
     expect(leaked.status).toBe(400);
     expect(leaked.code).toBe('password-leaked');
-    const weak = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'short', deviceLabel: LABEL, acceptedTerms: terms() })));
+    const weak = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'short', deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG })));
     expect(weak.code).toBe('password-weak');
     expect(weak.missing).toEqual(expect.arrayContaining(['length']));
-    const stale = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: 'old' })));
+    const stale = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: 'old', termsSignature: SIG })));
     expect(stale.code).toBe('terms-not-accepted');
 
-    await expect(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms() })).resolves.toEqual({
+    await expect(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG })).resolves.toEqual({
       displayName: `D${username}`,
     });
     await own.api.logout();
@@ -264,7 +264,7 @@ describe('a flood of bad passwords (Review Focus 2, P2-C1)', () => {
     // A password account (this browser becomes trusted) that adds a passkey and a PGP key during onboarding.
     const own = jar();
     const username = uniqueName('flood');
-    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms() });
+    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG });
     const soft = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await addWebAuthnKey(own.api, 'passkey', {}, ceremonyOf(soft));
     const key = await genKey();

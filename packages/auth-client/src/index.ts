@@ -26,6 +26,7 @@ export {
   type RegistrationChallenge,
   type SessionEntry,
   type SessionInfo,
+  type TermsSignature,
   type TeamAuditEntry,
   type TeamInviteView,
   type TeamMember,

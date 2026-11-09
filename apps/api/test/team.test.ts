@@ -24,6 +24,8 @@ import { Browser, ORIGIN } from './helpers/totp.js';
 import { publishRuling } from './helpers/disputes.js';
 import { driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
+import { SIG } from './helpers/signature.js';
+import { openTermsSignature } from '../src/termsSignature.js';
 
 // Plan 2 Task 18: team members (spec 6.7, R44). Real Postgres, one database for the file; each
 // test makes its own team accounts.
@@ -223,7 +225,14 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect(s1.statusCode, s1.body).toBe(200);
     const c1 = s1.json() as { challengeId: string; encryptedMessage: string };
     const code1 = codeOf(await decrypt(c1.encryptedMessage, k1.privateKey, undefined, deps.clock()));
-    const f1 = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: code1 });
+    // Owner 9 Nov 2026 (p11-14): everyone who gets a login signs. The signature comes with the
+    // finish and is checked before the code is used, so the same code still works after.
+    for (const [termsSignature, error] of [[undefined, 'signature-required'], [{ kind: 'typed', name: '' }, 'signature-invalid']] as const) {
+      const unsigned = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: code1, termsSignature });
+      expect(unsigned.statusCode, unsigned.body).toBe(400);
+      expect((unsigned.json() as { error: string }).error).toBe(error);
+    }
+    const f1 = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: code1, termsSignature: SIG });
     expect(f1.statusCode, f1.body).toBe(201);
     const { setupId, needs } = f1.json() as { setupId: string; needs: string[] };
     expect(needs).toEqual(['security-key', 'passkey', 'pgp']);
@@ -260,12 +269,15 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect(me.member).toEqual({ name: `Joiner${n}x`, roles: ['trades'] });
     // The member's own login account carries the Terms they signed, and they are inside.
     expect(me.termsCurrent).toBe(true);
-    const signed = await deps.db.query<{ terms_version: string | null; terms_accepted_at: Date | null }>(
-      'select a.terms_version, a.terms_accepted_at from team_members tm join accounts a on a.id = tm.member_account_id where tm.id = $1',
+    const signed = await deps.db.query<{ id: string; terms_version: string | null; terms_accepted_at: Date | null; terms_signature: Buffer | null }>(
+      'select a.id, a.terms_version, a.terms_accepted_at, a.terms_signature from team_members tm join accounts a on a.id = tm.member_account_id where tm.id = $1',
       [created.id],
     );
     expect(signed.rows[0]!.terms_version).toBe(deps.config.termsVersion);
     expect(signed.rows[0]!.terms_accepted_at).not.toBeNull();
+    // Sealed to the member's own login account, never the team account's.
+    expect(openTermsSignature(deps.config, signed.rows[0]!.terms_signature!, signed.rows[0]!.id)).toEqual(SIG);
+    expect(() => openTermsSignature(deps.config, signed.rows[0]!.terms_signature!, owner.id)).toThrow();
     expect((await b.get('/v1/news')).statusCode).toBe(200);
     const alerts = (await owner.browser.get('/v1/account/alerts')).json() as { kind: string }[];
     expect(alerts.map((a) => a.kind)).toContain('team-member-joined');

@@ -6,7 +6,7 @@ import { createContext, useContext, type KeyboardEvent, type ReactNode } from 'r
 import { Link } from 'react-router';
 import type { WalletApp } from '@x2f/auth-client';
 import { Icon } from '../../ui/icons.js';
-import type { RegisterPgpStart, SetupError } from './register.js';
+import type { RegisterPgpStart, SetupError, TermsAcceptance } from './register.js';
 import './setup.css';
 
 export type LoginMethod = 'pgp' | 'passkey' | 'security-key' | 'password';
@@ -14,8 +14,11 @@ export type BackupChoice = 'totp' | 'security-key' | 'pgp' | 'recovery-codes';
 export type Step = '' | 'name' | 'login' | 'pgp-key' | 'pgp-code' | 'password' | 'backup' | 'wallet' | 'welcome';
 
 export interface SetupState {
-  /** The Terms version accepted on the first screen; sent as `acceptedTerms` with the register call. */
-  terms: string | null;
+  /**
+   * The Terms version accepted on the first screen and the signature given there (owner, 8 Nov
+   * 2026); sent as `acceptedTerms` and `termsSignature` with the register call.
+   */
+  terms: TermsAcceptance | null;
   displayName: string;
   loginName: string;
   method: LoginMethod;

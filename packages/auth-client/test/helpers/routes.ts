@@ -1,4 +1,7 @@
-import type { AuthApi } from '../../src/index.js';
+import type { AuthApi, TermsSignature } from '../../src/index.js';
+
+/** A Terms signature (owner, 8 Nov 2026): an X on the pad. */
+export const SIG: TermsSignature = { kind: 'drawn', width: 320, height: 120, path: 'M10 10L60 60M60 10L10 60' };
 
 const UUID = '00000000-0000-4000-8000-000000000000';
 const RESPONSE = { id: 'x', rawId: 'x', type: 'public-key', response: {}, clientExtensionResults: {} } as never;
@@ -10,18 +13,18 @@ const RESPONSE = { id: 'x', rawId: 'x', type: 'public-key', response: {}, client
 export const SAMPLE_CALLS: { [K in keyof AuthApi]: Parameters<AuthApi[K]> } = {
   getTerms: [],
   getPgpSigningKey: [],
-  registerPassword: [{ displayName: 'Sample01', loginName: 'sample.login', password: 'x', deviceLabel: 'B', acceptedTerms: 'v' }],
+  registerPassword: [{ displayName: 'Sample01', loginName: 'sample.login', password: 'x', deviceLabel: 'B', acceptedTerms: 'v', termsSignature: SIG }],
   loginPassword: [{ loginName: 'sample.login', password: 'x', deviceLabel: 'B' }],
   loginSecondFactor: [{ pendingId: UUID, code: '000000' }],
   pollLoginApproval: [UUID],
   cancelLoginApproval: [UUID],
   loginBackup: [{ loginName: 'sample.login', kind: 'recovery-code', code: 'x', deviceLabel: 'B' }],
   registerPgpStart: [{ displayName: 'Sample01', loginName: 'sample.login', publicKey: 'x' }],
-  registerPgpFinish: [{ challengeId: UUID, code: 'x', deviceLabel: 'B', acceptedTerms: 'v' }],
+  registerPgpFinish: [{ challengeId: UUID, code: 'x', deviceLabel: 'B', acceptedTerms: 'v', termsSignature: SIG }],
   loginPgpStart: [{ key: 'x' }],
   loginPgpFinish: [{ challengeId: UUID, code: 'x', deviceLabel: 'B' }],
   registerWebAuthnStart: [{ displayName: 'Sample01', loginName: 'sample.login', kind: 'passkey' }],
-  registerWebAuthnFinish: [{ challengeId: UUID, response: RESPONSE, deviceLabel: 'B', acceptedTerms: 'v' }],
+  registerWebAuthnFinish: [{ challengeId: UUID, response: RESPONSE, deviceLabel: 'B', acceptedTerms: 'v', termsSignature: SIG }],
   loginWebAuthnStart: [{}],
   loginWebAuthnFinish: [{ challengeId: UUID, response: RESPONSE, deviceLabel: 'B' }],
   logout: [],
@@ -43,7 +46,7 @@ export const SAMPLE_CALLS: { [K in keyof AuthApi]: Parameters<AuthApi[K]> } = {
   listMethods: [],
   removeMethod: ['pgp', UUID, {}],
   me: [],
-  acceptTerms: [{ version: 'v' }],
+  acceptTerms: [{ version: 'v', signature: SIG }],
   listSessions: [],
   endSession: [UUID],
   listAlerts: [],
@@ -69,7 +72,7 @@ export const SAMPLE_CALLS: { [K in keyof AuthApi]: Parameters<AuthApi[K]> } = {
   teamAudit: [],
   readInvite: [{ invite: 'x' }],
   joinStart: [{ invite: 'x', loginName: 'sample.login', publicKey: 'x', acceptedTerms: '2026-10-17' }],
-  joinFinish: [{ challengeId: UUID, code: 'x' }],
+  joinFinish: [{ challengeId: UUID, code: 'x', termsSignature: { kind: 'typed', name: 'x' } }],
   joinSecondPgpStart: [{ setupId: UUID, publicKey: 'x' }],
   joinSecondPgpFinish: [{ setupId: UUID, challengeId: UUID, code: 'x', deviceLabel: 'B' }],
   joinSecondWebAuthnStart: [{ setupId: UUID, kind: 'passkey' }],

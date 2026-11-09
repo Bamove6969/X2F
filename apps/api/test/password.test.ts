@@ -7,13 +7,15 @@ import type { Deps } from '../src/app.js';
 import { loginNameLookup } from '../src/accounts.js';
 import { issueConfirmToken, requireConfirm } from '../src/auth/confirm.js';
 import { DEVICE_COOKIE } from '../src/auth/device.js';
-import { DUMMY_HASH, hashPassword, pepperedPassword } from '../src/auth/password.js';
+import { DUMMY_HASH, REGISTER_PASSWORD_BODY_LIMIT, hashPassword, pepperedPassword } from '../src/auth/password.js';
 import { SESSION_COOKIE, requireSession } from '../src/auth/sessions.js';
 import { ARGON2_SLOTS, Semaphore } from '../src/limits.js';
 import { accountIdByLoginName, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { spySql } from './helpers/sqlSpy.js';
+import { SIG } from './helpers/signature.js';
+import { SIGNATURE_SEALED_MAX_BYTES, openTermsSignature } from '../src/termsSignature.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-17T12:00:00Z');
@@ -67,7 +69,7 @@ function post(url: string, payload: unknown, cookies: Record<string, string> = {
 const register = (
   loginName: string,
   password = GOOD,
-  extra: Record<string, unknown> = { acceptedTerms: TERMS },
+  extra: Record<string, unknown> = { acceptedTerms: TERMS, termsSignature: SIG },
   o: { displayName?: string; cookies?: Record<string, string> } = {},
 ) =>
   post(
@@ -113,6 +115,101 @@ describe('terms on sign-up (R10)', () => {
   });
 });
 
+describe('the Terms signature on sign-up (owner, 8 Nov 2026)', () => {
+  const signatureOf = async (loginName: string) => {
+    const id = (await accountIdByLoginName(deps, loginName))!;
+    const { rows } = await deps.db.query<{ terms_signature: Buffer }>('select terms_signature from accounts where id = $1', [id]);
+    return openTermsSignature(deps.config, rows[0]!.terms_signature, id);
+  };
+
+  it('stores the drawn signature with the account, exactly as checked and nothing more', async () => {
+    expect((await register('signed.d1')).statusCode).toBe(201);
+    expect(await signatureOf('signed.d1')).toEqual(SIG);
+  });
+
+  it('stores a typed name as the signature', async () => {
+    const res = await register('signed.t1', GOOD, { acceptedTerms: TERMS, termsSignature: { kind: 'typed', name: '  Mira  K ' } });
+    expect(res.statusCode).toBe(201);
+    expect(await signatureOf('signed.t1')).toEqual({ kind: 'typed', name: 'Mira K' });
+  });
+
+  it('keeps the signature sealed at rest, bound to its account', async () => {
+    expect((await register('sealed.t1', GOOD, { acceptedTerms: TERMS, termsSignature: { kind: 'typed', name: 'Mira Sealed' } })).statusCode).toBe(201);
+    const id = (await accountIdByLoginName(deps, 'sealed.t1'))!;
+    const { rows } = await deps.db.query<{ terms_signature: Buffer; type: string }>(
+      'select terms_signature, pg_typeof(terms_signature)::text as type from accounts where id = $1', [id],
+    );
+    expect(rows[0]!.type).toBe('bytea');
+    expect(rows[0]!.terms_signature.includes('Mira Sealed')).toBe(false);
+    expect(() => openTermsSignature(deps.config, rows[0]!.terms_signature, '00000000-0000-4000-8000-00000000000a')).toThrow();
+  });
+
+  it('the column takes the largest sealed signature and refuses anything longer', async () => {
+    expect((await register('sealed.t2')).statusCode).toBe(201);
+    const id = await accountIdByLoginName(deps, 'sealed.t2');
+    const set = (n: number) => deps.db.query('update accounts set terms_signature = $2 where id = $1', [id, Buffer.alloc(n)]);
+    await expect(set(SIGNATURE_SEALED_MAX_BYTES)).resolves.toBeDefined();
+    await expect(set(SIGNATURE_SEALED_MAX_BYTES + 1)).rejects.toMatchObject({ code: '23514' });
+  });
+
+  // Security review 2026-11-08, finding 6: reachable without logging in, it was a 500.
+  it('answers 400 to a deeply nested signature on every sign-up route', async () => {
+    const nested = `${'['.repeat(20_000)}${']'.repeat(20_000)}`;
+    for (const url of ['/v1/register/password', '/v1/register/pgp/finish', '/v1/register/webauthn/finish']) {
+      const res = await app.inject({
+        method: 'POST', url, headers: { origin: ORIGIN, 'content-type': 'application/json' },
+        payload: `{"acceptedTerms":"${TERMS}","termsSignature":{"a":${nested}}}`,
+      });
+      expect(res.statusCode, url).toBe(400);
+      expect(res.json(), url).toEqual({ error: 'signature-invalid' });
+    }
+  });
+
+  it('refuses a missing, wrong-type or too-large signature before hashing or creating anything', async () => {
+    const hash = vi.spyOn(argon2, 'hash');
+    const big = { kind: 'drawn', width: 320, height: 120, path: `M0 0${'L100 100'.repeat(8300)}` };
+    const cases: [unknown, string][] = [
+      [undefined, 'signature-required'],
+      [null, 'signature-required'],
+      ['M0 0L1 1', 'signature-invalid'],
+      [{ kind: 'png', data: 'iVBORw0KGgo=' }, 'signature-invalid'],
+      [{ kind: 'drawn', width: 320, height: 120, path: '<path d="M0 0"/>' }, 'signature-invalid'],
+      [{ kind: 'typed', name: 'Mira\ud800' }, 'signature-invalid'],
+      [{ kind: 'typed', name: 'Mi\u200bra' }, 'signature-invalid'],
+      [big, 'signature-too-large'],
+    ];
+    for (const [termsSignature, error] of cases) {
+      const res = await register('unsigned1', GOOD, { acceptedTerms: TERMS, termsSignature });
+      expect(res.statusCode, error).toBe(400);
+      expect(res.json()).toEqual({ error });
+    }
+    expect(hash).not.toHaveBeenCalled();
+    expect(await accountRow('unsigned1')).toBeUndefined();
+  });
+
+  it('answers 413 to a body far over the signature cap', async () => {
+    const res = await register('unsigned2', GOOD, {
+      acceptedTerms: TERMS, termsSignature: { kind: 'drawn', width: 320, height: 120, path: `M0 0${'L100 100'.repeat(20_000)}` },
+    });
+    expect(res.statusCode).toBe(413);
+    expect(await accountRow('unsigned2')).toBeUndefined();
+  });
+
+  it('keeps no IP address, user agent or device detail with the signature', async () => {
+    const res = await app.inject({
+      method: 'POST', url: '/v1/register/password', remoteAddress: '203.0.113.9',
+      headers: { origin: ORIGIN, 'user-agent': 'SignatureProbe/1.0', 'x-forwarded-for': '198.51.100.7' },
+      payload: { displayName: 'Psigned.p1', loginName: 'signed.p1', password: GOOD, deviceLabel: 'Test browser', acceptedTerms: TERMS, termsSignature: SIG },
+    });
+    expect(res.statusCode).toBe(201);
+    const { rows } = await deps.db.query('select * from accounts where id = $1', [await accountIdByLoginName(deps, 'signed.p1')]);
+    const stored = JSON.stringify(rows[0]);
+    for (const probe of ['203.0.113.9', '198.51.100.7', 'SignatureProbe']) expect(stored).not.toContain(probe);
+    // The signature is not sent back either.
+    expect(res.body).not.toContain('M10 10');
+  });
+});
+
 describe('POST /v1/register/password', () => {
   it('creates the account, its Argon2id hash and a first session without a new-login alert', async () => {
     const res = await register('Satoshi.N');
@@ -139,7 +236,7 @@ describe('POST /v1/register/password', () => {
     // A taken login name is found only by the final create, after the Argon2 hash, and answered
     // with the generic names-unavailable (never "login name taken").
     const hash = vi.spyOn(argon2, 'hash');
-    const loginTaken = await register('satoshi.q', GOOD, { acceptedTerms: TERMS }, { displayName: 'Fresh.Name1' });
+    const loginTaken = await register('satoshi.q', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Fresh.Name1' });
     expect(loginTaken.statusCode).toBe(409);
     expect(loginTaken.json()).toEqual({ error: 'names-unavailable' });
     expect(hash).toHaveBeenCalledTimes(1);
@@ -147,27 +244,27 @@ describe('POST /v1/register/password', () => {
     expect(await accountRow('satoshi.q')).toBeDefined();
     const { rows: fresh } = await deps.db.query("select 1 from accounts where display_key = 'fresh.name1'");
     expect(fresh).toEqual([]);
-    const displayTaken = await register('other.login1', GOOD, { acceptedTerms: TERMS }, { displayName: 'psatoshi.q' });
+    const displayTaken = await register('other.login1', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'psatoshi.q' });
     expect(displayTaken.statusCode).toBe(409);
     expect(displayTaken.json()).toEqual({ error: 'display-name-taken' });
-    const reserved = await register('quiet.one1', GOOD, { acceptedTerms: TERMS }, { displayName: 'X2F.Support' });
+    const reserved = await register('quiet.one1', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'X2F.Support' });
     expect(reserved.statusCode).toBe(400);
     expect(reserved.json()).toEqual({ error: 'display-name-reserved' });
     // F4: look-alikes of reserved words are reserved for display names.
-    const lookAlike = await register('quiet.one2', GOOD, { acceptedTerms: TERMS }, { displayName: 'adm1n.team' });
+    const lookAlike = await register('quiet.one2', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'adm1n.team' });
     expect(lookAlike.json()).toEqual({ error: 'display-name-reserved' });
-    expect((await register('quiet.one3', GOOD, { acceptedTerms: TERMS }, { displayName: 'badminton' })).statusCode).toBe(201);
-    const invalid = await register('quiet.one4', GOOD, { acceptedTerms: TERMS }, { displayName: 'аlice' }); // Cyrillic а
+    expect((await register('quiet.one3', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'badminton' })).statusCode).toBe(201);
+    const invalid = await register('quiet.one4', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'аlice' }); // Cyrillic а
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json()).toEqual({ error: 'display-name-invalid' });
-    const badLogin = await register('bad login', GOOD, { acceptedTerms: TERMS }, { displayName: 'Fine.Name5' });
+    const badLogin = await register('bad login', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Fine.Name5' });
     expect(badLogin.json()).toEqual({ error: 'login-name-invalid' });
     // A private login name may hold a reserved word: nobody ever sees it.
-    expect((await register('my.admin.pw', GOOD, { acceptedTerms: TERMS }, { displayName: 'Plain.Pat' })).statusCode).toBe(201);
+    expect((await register('my.admin.pw', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Plain.Pat' })).statusCode).toBe(201);
   });
 
   it('refuses a login name equal to the display name in any case', async () => {
-    const res = await register('Same.Name1', GOOD, { acceptedTerms: TERMS }, { displayName: 'same.NAME1' });
+    const res = await register('Same.Name1', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'same.NAME1' });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'names-same' });
   });
@@ -175,17 +272,17 @@ describe('POST /v1/register/password', () => {
   it('one namespace (review I1): a login name never equals a display name, nor a display name a login name', async () => {
     // Alice: display Mira.K. Bob picks login name mira.k: refused before the Argon2 hash (display
     // names are public, so the cheap refusal tells nobody anything new).
-    expect((await register('alice.private', GOOD, { acceptedTerms: TERMS }, { displayName: 'Mira.K' })).statusCode).toBe(201);
+    expect((await register('alice.private', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Mira.K' })).statusCode).toBe(201);
     const hash = vi.spyOn(argon2, 'hash');
-    const bob = await register('MIRA.K', GOOD, { acceptedTerms: TERMS }, { displayName: 'Bob.Trades' });
+    const bob = await register('MIRA.K', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Bob.Trades' });
     expect(bob.statusCode).toBe(409);
     expect(bob.json()).toEqual({ error: 'names-unavailable' });
     expect(hash).not.toHaveBeenCalled();
     // Bob: login night.owl. Carol picks display name Night.Owl: refused only by the credential-bound
     // create (after the hash), as the generic names-unavailable, so no start route can test a login name.
-    expect((await register('night.owl', GOOD, { acceptedTerms: TERMS }, { displayName: 'Bob.Trades' })).statusCode).toBe(201);
+    expect((await register('night.owl', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Bob.Trades' })).statusCode).toBe(201);
     hash.mockClear();
-    const carol = await register('carol.private', GOOD, { acceptedTerms: TERMS }, { displayName: 'Night.Owl' });
+    const carol = await register('carol.private', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Night.Owl' });
     expect(carol.statusCode).toBe(409);
     expect(carol.json()).toEqual({ error: 'names-unavailable' });
     expect(hash).toHaveBeenCalledTimes(1);
@@ -197,13 +294,13 @@ describe('POST /v1/register/password', () => {
   it('F4: refuses a display name that looks like a staff or owner display name', async () => {
     await seedAccount(deps, { loginName: 'staff.login9', displayName: 'Kim.Lorn', kind: 'staff' });
     for (const displayName of ['kim.lom', 'Klm.L0rn', 'KIM.LORN']) {
-      const res = await register(`kimfan.${displayName.length}${displayName[1]}`, GOOD, { acceptedTerms: TERMS }, { displayName });
+      const res = await register(`kimfan.${displayName.length}${displayName[1]}`, GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName });
       expect(res.statusCode, displayName).toBe(400);
       expect(res.json()).toEqual({ error: 'display-name-reserved' });
     }
     // Two traders whose names only look alike are both fine.
-    expect((await register('trader.aa1', GOOD, { acceptedTerms: TERMS }, { displayName: 'Alice.bb' })).statusCode).toBe(201);
-    expect((await register('trader.aa2', GOOD, { acceptedTerms: TERMS }, { displayName: 'A1ice.bb' })).statusCode).toBe(201);
+    expect((await register('trader.aa1', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Alice.bb' })).statusCode).toBe(201);
+    expect((await register('trader.aa2', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'A1ice.bb' })).statusCode).toBe(201);
   });
 
   it('refuses leaked and weak passwords', async () => {
@@ -217,16 +314,21 @@ describe('POST /v1/register/password', () => {
     expect(await accountRow('leaky001')).toBeUndefined();
   });
 
-  it('answers 413 to a body over 4 KiB without hashing', async () => {
+  it('refuses an over-long password without hashing, and a body over its limit with 413', async () => {
     const hash = vi.spyOn(argon2, 'hash');
-    const res = await register('bigbody01', `Aa1!${'x'.repeat(5000)}`);
+    // Register's limit has room for the Terms signature (REGISTER_PASSWORD_BODY_LIMIT), so a 5000
+    // character password reaches the password check, which refuses it before any hashing.
+    const long = await register('bigbody01', `Aa1!${'x'.repeat(5000)}`);
+    expect(long.statusCode).toBe(400);
+    expect(long.json().error).toBe('password-weak');
+    const res = await register('bigbody01', `Aa1!${'x'.repeat(REGISTER_PASSWORD_BODY_LIMIT)}`);
     expect(res.statusCode).toBe(413);
     expect(hash).not.toHaveBeenCalled();
   });
 
   it('strips control characters from the device label', async () => {
     const res = await post('/v1/register/password', {
-      displayName: 'Plabelnul1', loginName: 'labelnul1', password: GOOD, deviceLabel: 'a\u0000b', acceptedTerms: TERMS,
+      displayName: 'Plabelnul1', loginName: 'labelnul1', password: GOOD, deviceLabel: 'a\u0000b', acceptedTerms: TERMS, termsSignature: SIG,
     });
     expect(res.statusCode).toBe(201);
     // From the same browser (Task 16: a new browser would wait for approval).
@@ -240,7 +342,7 @@ describe('POST /v1/register/password', () => {
   });
 
   it('refuses a body with missing or non-string fields', async () => {
-    const res = await post('/v1/register/password', { displayName: 'Pshapeless', loginName: 'shapeless', password: 12, deviceLabel: 'x', acceptedTerms: TERMS });
+    const res = await post('/v1/register/password', { displayName: 'Pshapeless', loginName: 'shapeless', password: 12, deviceLabel: 'x', acceptedTerms: TERMS, termsSignature: SIG });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'bad-request' });
   });
@@ -262,7 +364,7 @@ describe('POST /v1/login/password', () => {
   });
 
   it('logs in by the login name only, never by the public display name', async () => {
-    await register('private.lg1', GOOD, { acceptedTerms: TERMS }, { displayName: 'Public.Face1' });
+    await register('private.lg1', GOOD, { acceptedTerms: TERMS, termsSignature: SIG }, { displayName: 'Public.Face1' });
     expect((await login('Public.Face1', GOOD)).json()).toMatchObject({ error: 'credentials-invalid' });
     expect((await login('private.lg1', GOOD)).statusCode).toBe(200);
   });

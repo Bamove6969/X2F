@@ -14,9 +14,9 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type { AccountKind, ConfirmAction, MethodType } from '@x2f/accounts';
-import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginResult } from '@x2f/api';
+import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginResult, TermsSignature } from '@x2f/api';
 
-export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult };
+export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult, TermsSignature };
 
 /**
  * Plan 2 Task 17: a security change made from a login with only one way of proving it's you
@@ -333,7 +333,15 @@ export interface AuthApi {
   /** `GET /v1/pgp/signing-key`: X2F's official PGP key, which signs every challenge (R7). */
   getPgpSigningKey(): Promise<{ fingerprint: string; publicKey: string }>;
   /** Both names are picked at sign-up (spec 6.1): the public `displayName` and the private `loginName`; they must differ. */
-  registerPassword(b: { displayName: string; loginName: string; password: string; deviceLabel: string; acceptedTerms: string }): Promise<{
+  /** `acceptedTerms` and `termsSignature`: the Terms version accepted and the signature given with it (owner, 8 Nov 2026). */
+  registerPassword(b: {
+    displayName: string;
+    loginName: string;
+    password: string;
+    deviceLabel: string;
+    acceptedTerms: string;
+    termsSignature: TermsSignature;
+  }): Promise<{
     displayName: string;
   }>;
   /** Every failure is 401 `credentials-invalid` (`PASSWORD_LOGIN_MISMATCH`) with `misses`; check `shouldSendAway`. */
@@ -351,7 +359,7 @@ export interface AuthApi {
     holdUntil: string | null;
   }>;
   registerPgpStart(b: { displayName: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
-  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string }): Promise<{ displayName: string }>;
+  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string; termsSignature: TermsSignature }): Promise<{ displayName: string }>;
   /**
    * PGP login needs no name: `key` is the person's whole armored public key (an unknown key's decoy
    * goes to that key too). A fingerprint, or anything else, is 400 `key-unreadable`, the same for
@@ -365,6 +373,7 @@ export interface AuthApi {
     response: RegistrationResponseJSON;
     deviceLabel: string;
     acceptedTerms: string;
+    termsSignature: TermsSignature;
     label?: string;
   }): Promise<{ displayName: string }>;
   /** Without `loginName`: a discoverable passkey login (traders). */
@@ -405,7 +414,8 @@ export interface AuthApi {
 
   // Account overview (Task 11)
   me(): Promise<AccountOverview>;
-  acceptTerms(b: { version: string }): Promise<void>;
+  /** `POST /v1/account/terms`: a changed Terms version, accepted with a new signature (owner, 8 Nov 2026). */
+  acceptTerms(b: { version: string; signature: TermsSignature }): Promise<void>;
   listSessions(): Promise<SessionEntry[]>;
   endSession(id: string): Promise<void>;
   listAlerts(): Promise<AlertEntry[]>;
@@ -471,7 +481,8 @@ export interface AuthApi {
   /** `acceptedTerms`: the Terms version the member read and accepted (review 2026-11-08 F1). */
   joinStart(b: { invite: string; loginName: string; publicKey: string; acceptedTerms: string }): Promise<PgpChallenge & { fingerprint: string }>;
   /** The PGP key proved: the member's login exists, no session yet; add the second factor before `setupUntil`. */
-  joinFinish(b: { challengeId: string; code: string }): Promise<{ setupId: string; needs: ('security-key' | 'passkey' | 'pgp')[]; setupUntil: string }>;
+  /** `termsSignature`: the signature given on the Terms step, with the version sent at `joinStart` (owner, 9 Nov 2026). */
+  joinFinish(b: { challengeId: string; code: string; termsSignature: TermsSignature }): Promise<{ setupId: string; needs: ('security-key' | 'passkey' | 'pgp')[]; setupUntil: string }>;
   joinSecondPgpStart(b: { setupId: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
   joinSecondPgpFinish(b: { setupId: string; challengeId: string; code: string; deviceLabel: string }): Promise<{ status: 'ok' }>;
   joinSecondWebAuthnStart(b: { setupId: string; kind: WebAuthnKind }): Promise<RegistrationChallenge>;

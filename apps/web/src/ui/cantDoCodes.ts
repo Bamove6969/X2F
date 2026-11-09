@@ -131,6 +131,10 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'wallet-exists': 'an input check (already linked)',
   'terms-not-accepted': 'sends the person to the Terms',
   'terms-required': 'sends the person to the Terms',
+  // Owner, 8 Nov 2026: the signature given with the Terms; the pad never sends these.
+  'signature-required': 'an input check on the Terms signature',
+  'signature-invalid': 'an input check on the Terms signature',
+  'signature-too-large': 'an input check on the Terms signature',
   'price-unavailable': 'the price feed is down (a fault)',
   'price-changed': 'the market moved (re-quote)',
   'method-unavailable': 'a catalog fact (the method is off the list); Suggest a method covers it',

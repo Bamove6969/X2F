@@ -10,6 +10,7 @@ import { ApiError } from '../src/errors.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
+import { SIG } from './helpers/signature.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
 
 // Owner, 2 Nov 2026: the ban list. When an account is banned its usernames (display and login
@@ -39,7 +40,7 @@ async function create(n: NewNames): Promise<string> {
   const c = await deps.db.connect();
   try {
     await c.query('begin');
-    const id = await createAccount(c, deps.config, { ...n, kind: 'trader', termsVersion: deps.config.termsVersion, now: deps.clock() });
+    const id = await createAccount(c, deps.config, { ...n, kind: 'trader', termsVersion: deps.config.termsVersion, termsSignature: SIG, now: deps.clock() });
     await c.query('commit');
     return id;
   } catch (e) {

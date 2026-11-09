@@ -51,6 +51,7 @@ export function SetupFlow() {
     <SetupContext.Provider value={api}>
       <Routes>
         <Route index element={<SetupStart />} />
+        {/* NEEDS_OWNER_SITE_RULES (owner p11-24): a site rules step, if the owner makes one, goes between the Terms and `name` (see SetupTerms). */}
         <Route path="name" element={before(state.terms !== null, <Username />)} />
         <Route path="login" element={before(named, <Login />)} />
         <Route path="pgp-key" element={before(named, <PgpKey />)} />

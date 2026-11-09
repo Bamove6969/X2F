@@ -23,6 +23,7 @@ import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softA
 import { FIAT, driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { Browser, codeAt } from './helpers/totp.js';
+import { SIG } from './helpers/signature.js';
 
 const ORIGIN = 'https://x2f.test';
 const TERMS = '2026-10-17';
@@ -115,7 +116,7 @@ const onboarding = (d: Deps, accountId: string, until: Date | null) =>
 /** A password trader signed up in `b` (its sign-up session stays open there, its set-up window over). */
 async function passwordTrader(a: FastifyInstance = app, d: Deps = deps, b = new Browser(a)) {
   const name = unique('cool');
-  const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
+  const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
   expect(res.statusCode).toBe(201);
   const rows = [{ id: (await accountIdByLoginName(d, name))! }];
   const id = rows[0]!.id;
@@ -150,7 +151,7 @@ async function passkeyTrader(b = new Browser(app)): Promise<{ b: Browser; id: st
   const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
   const name = unique('passkeyuser');
   const start = (await b.post('/v1/register/webauthn/start', { displayName: `D.${name}`, loginName: name, kind: 'passkey' })).json();
-  expect((await b.post('/v1/register/webauthn/finish', { challengeId: start.challengeId, response: auth.register(start.options, ORIGIN), deviceLabel: 'Phone', acceptedTerms: TERMS })).statusCode).toBe(201);
+  expect((await b.post('/v1/register/webauthn/finish', { challengeId: start.challengeId, response: auth.register(start.options, ORIGIN), deviceLabel: 'Phone', acceptedTerms: TERMS, termsSignature: SIG })).statusCode).toBe(201);
   const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
   await onboarding(deps, rows[0]!.id, null);
   return { b, id: rows[0]!.id, name, auth };
@@ -199,7 +200,7 @@ async function pgpTrader(): Promise<{ b: Browser; id: string; key: Pair }> {
   const b = new Browser(app);
   const start = await b.post('/v1/register/pgp/start', { displayName: `G${name}`, loginName: name, publicKey: key.publicKey });
   const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey));
-  expect((await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: TERMS })).statusCode).toBe(201);
+  expect((await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG })).statusCode).toBe(201);
   const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
   await onboarding(deps, rows[0]!.id, null);
   return { b, id: rows[0]!.id, key };
@@ -378,7 +379,7 @@ describe('one weak way', () => {
   it('the sign-up session setting the account up starts no wait', async () => {
     const b = new Browser(app);
     const name = unique('cool');
-    await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
+    await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
     expect((await b.post('/v1/account/recovery-codes', {})).statusCode).toBe(200);
     const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
     expect(await holdOf(deps, rows[0]!.id)).toBeNull();
@@ -473,7 +474,7 @@ describe('C2: during the hold a weak session cannot change the password or the l
     expect(errorOf(await addPasskey(deps, b, id, createSoftAuthenticator({ backedUp: true, userVerified: true })))).toBe('recovery-hold');
     expect(errorOf(await heldChange(b, id))).toBe('recovery-hold');
     // Accepting the Terms is not a security change: allowed during the hold (lead decision 2026-10-30).
-    expect((await b.post('/v1/account/terms', { version: TERMS })).statusCode).toBe(204);
+    expect((await b.post('/v1/account/terms', { version: TERMS, signature: SIG })).statusCode).toBe(204);
     expect((await methodsOf(b)).map((m) => m.type).sort()).toEqual(['passkey', 'password']);
     expect(await holdOf(deps, id)).toMatchObject({ pending: 'remove-method' });
 
@@ -916,9 +917,9 @@ describe('review round 2', () => {
       expect(await holdOf(deps, t.id)).toMatchObject({ pending: 'login-name' });
       expect(await legacy(t.id)).toBe(true);
       // Nobody can take it meanwhile, as a display name or as a login name.
-      const asDisplay = await new Browser(app).post('/v1/register/password', { displayName: name, loginName: unique('other'), password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS });
+      const asDisplay = await new Browser(app).post('/v1/register/password', { displayName: name, loginName: unique('other'), password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG });
       expect(errorOf(asDisplay)).toBe('names-unavailable');
-      const asLogin = await new Browser(app).post('/v1/register/password', { displayName: `P${unique('d')}`, loginName: name, password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS });
+      const asLogin = await new Browser(app).post('/v1/register/password', { displayName: `P${unique('d')}`, loginName: name, password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG });
       expect(errorOf(asLogin)).toBe('names-unavailable');
       setNow(new Date(now.getTime() + HOLD_MS));
       await settleDueHolds(deps.config, app.events).run(deps.db, now);
@@ -1393,7 +1394,7 @@ describe('review round 2', () => {
         'POST /v1/account/terms': async () => {
           const o = await passkeyWithPassword();
           await deps.db.query('update accounts set terms_accepted_at = null where id = $1', [o.id]);
-          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/terms', { version: TERMS }) };
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/terms', { version: TERMS, signature: SIG }) };
         },
         // Plan 2 Task 18 (team members), at its landing.
         'POST /v1/team/invites': async () => {

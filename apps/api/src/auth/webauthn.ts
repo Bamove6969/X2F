@@ -12,6 +12,7 @@ import {
 } from '@simplewebauthn/server';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
+import { SIGNED_BODY_LIMIT } from '../termsSignature.js';
 import { addAlert } from '../alerts.js';
 import {
   assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, loginTagMatch, openNames, retagLoginName, sealNames,
@@ -835,7 +836,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   ensureDeviceCookie(req, reply);
   req.server.budgets.register.take();
   const body = record(req.body);
-  const terms = assertTermsAccepted(deps, body.acceptedTerms);
+  const terms = assertTermsAccepted(deps, body.acceptedTerms, body.termsSignature);
   const challengeId = str(body, 'challengeId');
   const deviceLabel = str(body, 'deviceLabel');
   const label = optStr(body, 'label');
@@ -852,7 +853,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
-      accountId = await createAccount(client, deps.config, { ...names, kind: 'trader', termsVersion: terms, now });
+      accountId = await createAccount(client, deps.config, { ...names, kind: 'trader', termsVersion: terms.version, termsSignature: terms.signature, now });
       await client.query('update accounts set webauthn_user_id = $2 where id = $1', [accountId, Buffer.from(userId, 'base64url')]);
       await insertCredential(client, accountId, cred, cleanLabel(label, kind), now);
       await client.query('commit');
@@ -988,7 +989,8 @@ export async function applyCredential(db: Queryable, accountId: string, c: Store
  */
 export function webauthnRoutes(app: FastifyInstance): void {
   app.post('/v1/register/webauthn/start', registerStart);
-  app.post('/v1/register/webauthn/finish', registerFinish);
+  // The Terms signature rides on the finish (owner, 8 Nov 2026): the default limit plus its room.
+  app.post('/v1/register/webauthn/finish', { bodyLimit: SIGNED_BODY_LIMIT }, registerFinish);
   // Members reach these only for MEMBER_CONFIRM_ACTIONS ("Stay logged in", owner Q73): `confirmerOf`.
   // Review M5: on old Terms only "Stay logged in" (`staleTermsOnlyToExtend`).
   app.post('/v1/confirm/webauthn/start', { preHandler: [requireSession({ member: 'any', allowStaleTerms: true }), staleTermsOnlyToExtend] }, confirmStart);
