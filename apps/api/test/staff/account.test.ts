@@ -80,6 +80,45 @@ describe('one\'s own PGP keys on the staff site', () => {
     expect(errorOf(await del(keyIds[0]!))).toBe('owner-needs-two-keys');
   });
 
+  it('owner G4 (review P-I1): the owner adds a PGP key only with taps by both owner keys', async () => {
+    const owner = await theOwner();
+    const fresh = await genKey();
+    const intent = { kind: 'add-pgp-key' as const, fingerprint: fresh.fingerprint.toLowerCase() };
+    const add = async (taps: { tapId: string; secondTapId?: string }) => {
+      const start = await owner.browser.post('/staff/v1/account/pgp/start', { publicKey: fresh.publicKey });
+      expect(start.statusCode, start.body).toBe(200);
+      const code = codeOf(await decrypt(start.json().encryptedMessage, fresh.privateKey, undefined, t.deps.clock()));
+      return owner.browser.post('/staff/v1/account/pgp/finish', { challengeId: start.json().challengeId, code, ...taps });
+    };
+    const before = await methods(owner.id);
+    // One key's tap alone, or the same key twice: not both keys, nothing added.
+    expect(errorOf(await add({ tapId: await tap(owner, intent, owner.keys[0]) }))).toBe('both-owner-keys-required');
+    const same = await add({ tapId: await tap(owner, intent, owner.keys[0]), secondTapId: await tap(owner, intent, owner.keys[0]) });
+    expect([same.statusCode, errorOf(same)]).toEqual([409, 'both-owner-keys-required']);
+    expect(await methods(owner.id)).toEqual(before);
+    const ok = await add({ tapId: await tap(owner, intent, owner.keys[0]), secondTapId: await tap(owner, intent, owner.keys[1]) });
+    expect([ok.statusCode, ok.json()]).toEqual([200, { fingerprint: fresh.fingerprint }]);
+    expect(await methods(owner.id)).toContain(fresh.fingerprint);
+  });
+
+  it('owner G4 (review P-I1): the owner removes a PGP key only with taps by both owner keys', async () => {
+    const owner = await theOwner();
+    // Two PGP keys, so one may go (the owner keeps a usable PGP key).
+    await addPgpKey(t.deps, owner.id);
+    await addPgpKey(t.deps, owner.id);
+    const id = (await t.deps.db.query<{ id: string }>('select id from pgp_keys where account_id = $1 order by id limit 1', [owner.id])).rows[0]!.id;
+    const intent = { kind: 'remove-method' as const, methodType: 'pgp' as const, methodId: id };
+    const del = (b: Record<string, unknown>) => owner.browser.send('DELETE', `/staff/v1/account/methods/pgp/${id}`, b);
+    const one = await del({ tapId: await tap(owner, intent, owner.keys[1]) });
+    expect([one.statusCode, errorOf(one)]).toEqual([409, 'both-owner-keys-required']);
+    const same = await del({ tapId: await tap(owner, intent, owner.keys[1]), secondTapId: await tap(owner, intent, owner.keys[1]) });
+    expect([same.statusCode, errorOf(same)]).toEqual([409, 'both-owner-keys-required']);
+    expect((await t.deps.db.query('select 1 from pgp_keys where id = $1', [id])).rows).toHaveLength(1);
+    const ok = await del({ tapId: await tap(owner, intent, owner.keys[1]), secondTapId: await tap(owner, intent, owner.keys[0]) });
+    expect(ok.statusCode, ok.body).toBe(204);
+    expect((await t.deps.db.query('select 1 from pgp_keys where id = $1', [id])).rows).toEqual([]);
+  });
+
   it('lead review I-2: a moderator keeps one security key (409 security-key-required); a second may go', async () => {
     const mod = await staffWithKeys(t, { role: 'mod', keys: 2 });
     await addPgpKey(t.deps, mod.id);

@@ -269,7 +269,7 @@ export async function consumeKeyTap(
 
 /**
  * Owner G4 (7 Nov): a major change to the owner's account (adding or removing one of the owner's
- * security keys) needs both of the owner's keys: after the first tap is consumed, a second tap for
+ * security keys or PGP keys) needs both of the owner's keys: after the first tap is consumed, a second tap for
  * the same intent by a different security key. 409 `both-owner-keys-required` when the second tap
  * is missing or came from the same key; an invalid second tap is 403 `tap-invalid`.
  */
