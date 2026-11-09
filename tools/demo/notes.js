@@ -141,50 +141,56 @@
   }
 
   // ── the Comment button ────────────────────────────────────────────────────────────────────────
-  var commentBtn = button('Comment', true);
-  css(commentBtn, { position: 'fixed', pointerEvents: 'auto', borderRadius: '22px', boxShadow: '0 2px 10px rgba(0,0,0,.45)', touchAction: 'none', left: '12px', bottom: '16px' });
+  // A 44 px touch area (the button) around a 36 px pill (its label), top-right, clear of the header actions.
+  var commentBtn = make('button', {
+    position: 'fixed', pointerEvents: 'auto', touchAction: 'none', cursor: 'pointer', boxSizing: 'border-box',
+    height: '44px', minWidth: '44px', padding: '4px 0', margin: '0', border: '0', background: 'transparent',
+    right: '8px', top: 'calc(8px + env(safe-area-inset-top, 0px))',
+  });
+  commentBtn.type = 'button';
+  var pill = make('span', {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', height: '36px', padding: '0 12px', borderRadius: '18px',
+    background: ACCENT, color: ACCENT_INK, font: '600 13px ' + FONT, boxShadow: '0 2px 8px rgba(0,0,0,.45)', pointerEvents: 'none',
+  }, 'Comment');
+  commentBtn.appendChild(pill);
   commentBtn.setAttribute('aria-label', 'Leave a comment on this screen');
   root.appendChild(commentBtn);
 
   var moved = null;
-  try { moved = JSON.parse(store.get('x2f-demo-comment-pos') || 'null'); } catch (e) { moved = null; }
-  if (!moved || typeof moved.left !== 'number' || typeof moved.bottom !== 'number') moved = null;
+  try { moved = JSON.parse(store.get('x2f-demo-comment-pos2') || 'null'); } catch (e) { moved = null; }
+  if (!moved || typeof moved.left !== 'number' || typeof moved.top !== 'number') moved = null;
 
   function clampPos(p) {
-    var r = commentBtn.getBoundingClientRect();
+    var w = commentBtn.offsetWidth || 96;
+    var h = commentBtn.offsetHeight || 44;
     return {
-      left: Math.max(0, Math.min(window.innerWidth - r.width, p.left)),
-      bottom: Math.max(0, Math.min(window.innerHeight - r.height, p.bottom)),
+      left: Math.max(0, Math.min(window.innerWidth - w, p.left)),
+      top: Math.max(0, Math.min(window.innerHeight - h, p.top)),
     };
   }
-  function pinnedBarAt(x, y) {
-    var h = window.innerHeight;
-    for (var n = underPoint(x, y); n && n !== document.documentElement; n = n.parentElement) {
-      var pos = getComputedStyle(n).position;
-      if (pos === 'fixed' || pos === 'sticky') {
-        var r = n.getBoundingClientRect();
-        if (r.height < h * 0.5 && r.bottom >= h - 80 && r.top > 0) return r;
-      }
-    }
-    return null;
+  var TAPPABLE = 'button, a, input, select, textarea, summary, [role="button"], [role="tab"], [role="link"], [tabindex]';
+  function tappableAt(x, y) {
+    var n = underPoint(x, y);
+    return !!(n && n.closest && n.closest(TAPPABLE));
   }
-  /** Sits at the bottom-left, above whatever is pinned there (the tab bar, a trade's action bar). */
+  /** Sits at the top-right, moved down past any header action it would cover (never past a quarter of the screen). */
   function placeButton() {
     if (moved) {
       var p = clampPos(moved);
-      css(commentBtn, { left: p.left + 'px', bottom: p.bottom + 'px' });
+      css(commentBtn, { left: p.left + 'px', top: p.top + 'px', right: 'auto' });
       return;
     }
     var w = commentBtn.offsetWidth || 96;
     var ht = commentBtn.offsetHeight || 44;
-    var bottom = 16;
-    for (var i = 0; i < 4; i++) {
-      var top = window.innerHeight - bottom - ht;
-      var bar = pinnedBarAt(12 + 6, top + 6) || pinnedBarAt(12 + w - 6, top + ht - 6) || pinnedBarAt(12 + w / 2, top + ht / 2);
-      if (!bar) break;
-      bottom = Math.ceil(window.innerHeight - bar.top + 8);
+    var left = Math.max(0, window.innerWidth - 8 - w);
+    var top = 8;
+    var limit = Math.max(8, Math.min(window.innerHeight * 0.25, window.innerHeight - ht - 8));
+    for (; top < limit; top += 8) {
+      var y0 = top + 4;
+      var y1 = top + ht - 4;
+      if (!(tappableAt(left + 4, y0) || tappableAt(left + w - 4, y0) || tappableAt(left + 4, y1) || tappableAt(left + w - 4, y1) || tappableAt(left + w / 2, top + ht / 2))) break;
     }
-    css(commentBtn, { left: '12px', bottom: 'calc(' + bottom + 'px + env(safe-area-inset-bottom, 0px))' });
+    css(commentBtn, { right: '8px', left: 'auto', top: 'calc(' + top + 'px + env(safe-area-inset-top, 0px))' });
   }
 
   var drag = null;
@@ -200,12 +206,11 @@
     if (!drag.on && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 8) return;
     drag.on = true;
     dragged = true;
-    var r = commentBtn.getBoundingClientRect();
-    moved = clampPos({ left: e.clientX - drag.dx, bottom: window.innerHeight - (e.clientY - drag.dy) - r.height });
-    css(commentBtn, { left: moved.left + 'px', bottom: moved.bottom + 'px' });
+    moved = clampPos({ left: e.clientX - drag.dx, top: e.clientY - drag.dy });
+    css(commentBtn, { left: moved.left + 'px', top: moved.top + 'px', right: 'auto' });
   });
   function endDrag() {
-    if (drag && drag.on && moved) store.set('x2f-demo-comment-pos', JSON.stringify(moved));
+    if (drag && drag.on && moved) store.set('x2f-demo-comment-pos2', JSON.stringify(moved));
     drag = null;
   }
   commentBtn.addEventListener('pointerup', endDrag);
