@@ -7,6 +7,7 @@ import { purgeNudges } from './nudge/routes.js';
 import type { RetentionJob } from './retention.js';
 import { purgeTradeAddressesJob } from './trades/purge.js';
 import { purgeTeamLeftovers } from './team/members.js';
+import { purgeStaffInviteLeftovers } from './staff/invites.js';
 import { closeInactiveAccounts } from './accountInactivity.js';
 import { purgeRemovedWalletAddresses } from './wallets/routes.js';
 
@@ -16,6 +17,7 @@ import { purgeRemovedWalletAddresses } from './wallets/routes.js';
  * purgeTradeAddresses (Task 6), purgeNudges (Task 26) and purgeChats (Task 20), and Plan 5's purgeFeedbackForm (Task 21)
  * and purgeFeedback (Task 4), purgeJabberPending (owner rule p5-7, review L4), and closeInactiveAccounts
  * (owner answer Q77, 6 Nov 2026: not a purge; it closes a vendor account 60 days after its last login).
- * Plan 4 adds its own.
+ * Plan 4's purgeStaffInviteLeftovers (Task 7/16, security review 2026-11-09) runs after purgeTeamLeftovers: it erases
+ * the Terms signature of a half-made staff account whose invite was cancelled or expired (owner p11-13).
  */
-export const RETENTION_JOBS: readonly RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeFeedbackForm, purgeFeedback, purgeJabberPending, closeInactiveAccounts];
+export const RETENTION_JOBS: readonly RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeStaffInviteLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeFeedbackForm, purgeFeedback, purgeJabberPending, closeInactiveAccounts];

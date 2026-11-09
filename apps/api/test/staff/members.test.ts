@@ -11,6 +11,8 @@ import { SESSION_COOKIE, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, log
 import { seedAccount } from '../helpers/accounts.js';
 import { driveTo, seedTrade } from '../helpers/trades.js';
 import { applyEvent } from '../../src/trades/store.js';
+import { RETENTION_JOBS } from '../../src/retentionJobs.js';
+import { purgeStaffInviteLeftovers } from '../../src/staff/invites.js';
 import { openTermsSignature, sealTermsSignature } from '../../src/termsSignature.js';
 import { SIG } from '../helpers/signature.js';
 import { KEY_AAGUID, addPgpKey, attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
@@ -159,6 +161,66 @@ describe('invites', () => {
     expect(errorOf(await invitee().get(acceptUrl('A'.repeat(43))))).toBe('invite-invalid');
   });
 
+  // Owner 9 Nov 2026 (p11-13): "Erase it when the account closes." A half-made staff account (the
+  // names picked, the invite not finished) is disabled and never logs in once its invite is
+  // cancelled or has expired: that is its close, so the sealed signature goes with it (security
+  // review 2026-11-09, minor 3). The Terms version and acceptance time stay, as at removal.
+  const signatureOf = async (id: string) =>
+    (await t.deps.db.query<{ terms_signature: Buffer | null; terms_version: string | null }>('select terms_signature, terms_version from accounts where id = $1', [id])).rows[0]!;
+
+  it('cancelling an invite erases the half-made account\'s Terms signature (owner p11-13)', async () => {
+    const inv = await createInvite('helper');
+    const n = await pickNames(invitee(), inv.token);
+    expect(n.res.statusCode).toBe(201);
+    const id = await accountOf(n.loginName);
+    expect((await signatureOf(id)).terms_signature).not.toBeNull();
+    // Another half-made account, on an invite that stays open: untouched.
+    const other = await createInvite('helper');
+    const o = await pickNames(invitee(), other.token);
+    const otherId = await accountOf(o.loginName);
+    expect((await owner.browser.send('DELETE', `/staff/v1/invites/${inv.inviteId}`)).statusCode).toBe(204);
+    const row = await signatureOf(id);
+    expect(row.terms_signature).toBeNull();
+    expect(row.terms_version).toBe(t.deps.config.termsVersion);
+    expect((await signatureOf(otherId)).terms_signature).not.toBeNull();
+    // Cancelling before the names (no account yet) is still a plain 204.
+    const bare = await createInvite('helper');
+    expect((await owner.browser.send('DELETE', `/staff/v1/invites/${bare.inviteId}`)).statusCode).toBe(204);
+  });
+
+  it('the retention sweep erases the signature of a half-made account whose invite expired over an hour ago; a finished one keeps it', async () => {
+    expect(RETENTION_JOBS).toContain(purgeStaffInviteLeftovers);
+    // Half-made: the names picked, nothing more.
+    const half = await createInvite('helper');
+    const n = await pickNames(invitee(), half.token);
+    expect(n.res.statusCode).toBe(201);
+    const halfId = await accountOf(n.loginName);
+    // Finished on the same expiry: a staff member, whose signature stays until removal.
+    const done = await createInvite('helper');
+    const d = await signUp(done.token, { noKey: true, twoPgp: true });
+    expect(d.finish.statusCode, d.finish.body).toBe(201);
+    const doneId = await accountOf(d.loginName);
+    // Expired, but less than an hour ago: nothing yet (the margin keeps the sweep clear of a finish
+    // racing the deadline on another process's clock).
+    t.setNow(new Date(MON_NOON.getTime() + 24 * HOUR + 30 * 60_000));
+    await purgeStaffInviteLeftovers.run(t.deps.db, t.deps.clock());
+    expect((await signatureOf(halfId)).terms_signature).not.toBeNull();
+    expect((await signatureOf(doneId)).terms_signature).not.toBeNull();
+    // Over an hour past expiry: the half-made account's goes; the staff member's stays.
+    t.setNow(new Date(MON_NOON.getTime() + 25 * HOUR + 60_000));
+    expect(await purgeStaffInviteLeftovers.run(t.deps.db, t.deps.clock())).toBeGreaterThanOrEqual(1);
+    const row = await signatureOf(halfId);
+    expect(row.terms_signature).toBeNull();
+    expect(row.terms_version).toBe(t.deps.config.termsVersion);
+    expect((await signatureOf(doneId)).terms_signature).not.toBeNull();
+    // Nothing left to touch for these two: a second sweep does not count them again.
+    const before = await t.deps.db.query<{ n: number }>(
+      "select count(*)::int as n from accounts a join staff_invites i on i.account_id = a.id where i.used_at is null and a.terms_signature is not null and i.expires_at <= $1",
+      [new Date(t.deps.clock().getTime() - HOUR)],
+    );
+    expect(before.rows[0]!.n).toBe(0);
+  });
+
   it('a moderator invitee with only PGP gets security-key-required; a helper with two PGP keys joins', async () => {
     const mod = await createInvite('mod');
     const m = await signUp(mod.token, { noKey: true, twoPgp: true });
@@ -246,6 +308,18 @@ describe('invites', () => {
     // Keys and PGP before the names: refused.
     const fresh = await createInvite('mod');
     expect((await invitee().post(acceptUrl(fresh.token, '/key/start'), { kind: 'security-key' })).statusCode).toBe(409);
+  });
+
+  it('GET /staff/v1/terms answers the Terms version and nothing else; HEAD works (owner 9 Nov 2026, p11-14)', async () => {
+    // The staff origin's answer to the trader API's `GET /v1/terms`: the same X2F_TERMS_VERSION, no
+    // text, no headings, no token (the matrix proves it public; this pins the body).
+    const res = await invitee().get('/staff/v1/terms');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ version: t.deps.config.termsVersion });
+    expect(res.headers['cache-control']).toBe('no-store');
+    const head = await invitee().send('HEAD', '/staff/v1/terms');
+    expect(head.statusCode).toBe(200);
+    expect(head.body).toBe('');
   });
 
   it('refuses an invite whose tap was for another invite, and a tap reused', async () => {

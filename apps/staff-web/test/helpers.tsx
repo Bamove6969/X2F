@@ -42,6 +42,13 @@ export async function click(el: Element | null | undefined): Promise<void> {
   await settle();
 }
 
+/** Ticks (or unticks) a checkbox the way the browser does: the element's own click toggles it and fires change. */
+export async function tick(el: Element | null | undefined): Promise<void> {
+  if (!(el instanceof HTMLInputElement)) throw new Error('not a checkbox');
+  act(() => el.click());
+  await settle();
+}
+
 /** Types into an input or textarea the way React notices (the native value setter, then input). */
 export function typeInto(el: Element | null | undefined, value: string): void {
   if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) throw new Error('not a text field');

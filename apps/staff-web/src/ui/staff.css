@@ -215,6 +215,15 @@
   color: var(--x2f-ink-muted);
 }
 
+/*
+ * The invite's Terms step (owner 9 Nov 2026, p11-14): the trader app's Terms box (setup.css) fills a
+ * fitted frame there; in a step card it needs its own height, or it would show the whole text and
+ * nothing would be left to scroll to. No board for this step (DESIGNER-REVIEW).
+ */
+.x2f-staff-terms .x2f-terms {
+  max-height: 320px;
+}
+
 .x2f-staff-ok {
   display: flex;
   align-items: center;
