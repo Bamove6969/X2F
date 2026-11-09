@@ -71,6 +71,9 @@ const BAN: Schema = { accountId: 'uuid', until: 'iso', reasonCode: 'id', permane
 
 export const LOG_ACTIONS = {
   ...TRADE,
+  // Hold model v3 (lead review 8 Nov I5): the partner's buyer-cancel on a held funded trade is
+  // recorded; `trade.buyer-cancel` is logged when it is carried out at the hold's end.
+  'trade.buyer-cancel-recorded': {},
   // Disputes and cases (Tasks 10–11).
   'dispute.opened': { reason: 'id', afterRefund: 'bool', seq: 'number' },
   'dispute.assigned': { staffId: 'uuid' },

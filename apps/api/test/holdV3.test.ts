@@ -907,6 +907,50 @@ describe('a recovery-code login', () => {
     expect(await endHoldByModerator(deps, t.id, { staffId: null })).toBe(true);
     expect(await state()).toEqual({ state: 'settling', settling: 'buyer-cancel', p: null });
     expect((await partner.browser.get(`/v1/trades/${s.code}`)).json()).toMatchObject({ cancelWaiting: false, counterpartyProblem: false });
+    // Lead review 8 Nov: each recording is `trade.buyer-cancel-recorded`; `trade.buyer-cancel` once, when carried out.
+    const logged = await deps.db.query<{ action: string }>(
+      "select action from activity_log where trade_code = $1 and action like 'trade.buyer-cancel%' order by id",
+      [s.code],
+    );
+    expect(logged.rows.map((x) => x.action)).toEqual(['trade.buyer-cancel-recorded', 'trade.buyer-cancel-recorded', 'trade.buyer-cancel']);
+  });
+
+  it("lead review 8 Nov R-C1: the held buyer's seller cannot forge the buyer's cancel (409 wrong-party); nothing is recorded and no refund follows the hold", async () => {
+    const t = await ownerWithCode();
+    const partner = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: partner.id, buyerId: t.id, poster: 'seller' });
+    const s = await driveTo(deps, trade, 'secured');
+    expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
+    const state = async () => (await deps.db.query<{ state: string; settling: string | null; p: Date | null }>('select state, settling, paused_at as p from trades where code = $1', [s.code])).rows[0]!;
+    const asked = async () => (await deps.db.query<{ c: Date | null }>('select cancel_requested_at as c from held_trades where code = $1', [s.code])).rows.map((x) => x.c);
+    expect((await state()).p).not.toBeNull();
+    const r = await partner.browser.post(`/v1/trades/${s.code}/events`, { type: 'buyer-cancel' });
+    expect(r.statusCode, r.body).toBe(409);
+    expect(errorOf(r)).toBe('wrong-party');
+    expect(await asked()).toEqual([null]);
+    expect((await partner.browser.get(`/v1/trades/${s.code}`)).json()).toMatchObject({ cancelWaiting: false, counterpartyProblem: true });
+    await syncHeldTradesJob(noPublish).run(deps.db, now);
+    expect(await state()).toMatchObject({ state: 'secured', settling: null });
+    // The hold ends: the trade resumes, still secured; no buyer-cancel is carried out.
+    expect(await endHoldByModerator(deps, t.id, { staffId: null })).toBe(true);
+    await syncHeldTradesJob(noPublish).run(deps.db, now);
+    expect(await state()).toEqual({ state: 'secured', settling: null, p: null });
+    expect((await deps.db.query('select 1 from held_trades where code = $1', [s.code])).rows).toHaveLength(0);
+    const logged = await deps.db.query("select 1 from activity_log where trade_code = $1 and action like 'trade.buyer-cancel%'", [s.code]);
+    expect(logged.rows).toHaveLength(0);
+  });
+
+  it("lead review 8 Nov R-C1: the held buyer's own buyer-cancel is refused (403 recovery-hold) and nothing is recorded", async () => {
+    const t = await ownerWithCode();
+    const partner = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: partner.id, buyerId: t.id, poster: 'seller' });
+    const s = await driveTo(deps, trade, 'secured');
+    const rec = new Browser(app);
+    expect((await backupLogin(rec, t.name, t.code)).statusCode).toBe(200);
+    expect(errorOf(await rec.post(`/v1/trades/${s.code}/events`, { type: 'buyer-cancel' }))).toBe('recovery-hold');
+    expect((await deps.db.query<{ c: Date | null }>('select cancel_requested_at as c from held_trades where code = $1', [s.code])).rows.map((x) => x.c)).toEqual([null]);
+    const row = await deps.db.query<{ state: string; settling: string | null }>('select state, settling from trades where code = $1', [s.code]);
+    expect(row.rows[0]).toEqual({ state: 'secured', settling: null });
   });
 
   it('lead review 8 Nov I5: a recorded buyer-cancel gives way to a dispute; the moderator decides', async () => {

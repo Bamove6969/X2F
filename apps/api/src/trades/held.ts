@@ -25,7 +25,7 @@
  *   row, and `/internal/v1/watch` reports it paused, so neither the API's deadlines nor the
  *   moderation service's timers run while it is held (owner G7; lead review 8 Nov C2).
  */
-import { TradeRuleError, apply, type Trade } from '@x2f/trade';
+import { TradeRuleError, apply, type Party, type Trade } from '@x2f/trade';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
@@ -198,13 +198,18 @@ export function syncHeldTradesJob(publish: TradePublisher): RetentionJob {
  * sync carries it out when the trade's last row goes; a dispute opened meanwhile takes its place
  * (the machine refuses the cancel then). A buyer-cancel that moves no coins (nothing funded) goes
  * through as before.
+ *
+ * Lead review 8 Nov R-C1: the dry run is the caller's own side (`held.by`), and only the buyer's
+ * cancel is recorded. The machine refuses a seller's `buyer-cancel` (409 `wrong-party`); were it
+ * dry-run as the buyer, the seller of a held buyer could record it and have the escrow returned to
+ * himself at the hold's end without the buyer's consent.
  */
 export async function refuseHeldTradeEvent(
   db: Queryable,
   code: string,
   accountId: string,
   eventType: string,
-  held?: { prev: Trade; now: Date },
+  held?: { prev: Trade; now: Date; by: Party },
 ): Promise<void | 'stop'> {
   const { rows } = await db.query<{ account_id: string }>('select account_id from held_trades where code = $1 and released_at is null', [code]);
   if (rows.length === 0) return;
@@ -213,10 +218,10 @@ export async function refuseHeldTradeEvent(
     throw new ApiError(403, 'recovery-hold', until.rows[0] ? { holdUntil: until.rows[0].hold_until.toISOString() } : undefined);
   }
   if (!PARTNER_EXITS.includes(eventType)) throw new ApiError(409, 'counterparty-unavailable');
-  if (eventType !== 'buyer-cancel' || held === undefined) return;
+  if (eventType !== 'buyer-cancel' || held === undefined || held.by !== 'buyer') return;
   let next: Trade;
   try {
-    next = apply(held.prev, { type: 'buyer-cancel' }, 'buyer', held.now);
+    next = apply(held.prev, { type: 'buyer-cancel' }, held.by, held.now);
   } catch {
     return; // the machine refuses it: the caller's apply answers the same refusal
   }

@@ -10,8 +10,8 @@ import { assertLiveMember, auditMember, type AuditAction } from '../team/audit.j
 import { assertMemberMaySend } from '../team/perms.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
-import { applyEvent, eventRecord, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
-import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
+import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
+import { actorOfBy, appendLog } from '../log/append.js';
 import { roleOf, toTradeView, traderSummary, type TradeView } from './view.js';
 
 /** Task 3's `getProfile`; the default (until Task 3 is wired in) knows no profiles. */
@@ -211,10 +211,12 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
           await requireLiveSessionInTx(client, req.auth, now);
           // Hold model v3: a trade held by a recovery-code hold moves for nobody (trades/held.ts);
           // the partner's buyer-cancel is only recorded while coins are in escrow (owner G7, I5).
-          const held = await refuseHeldTradeEvent(client, row.code, req.auth.accountId, e.type, { prev, now });
+          // R-C1: the dry run is the caller's real side (`by`); a seller's buyer-cancel falls through to the machine (409 wrong-party).
+          const held = await refuseHeldTradeEvent(client, row.code, req.auth.accountId, e.type, { prev, now, by });
           if (held === 'stop') {
             await auditMember(client, req.auth, { action: e.type as AuditAction, tradeCode: row.code }, now);
-            await appendLog(client, { at: now, actor: actorOfBy(by), tradeCode: row.code, action: 'trade.buyer-cancel', detail: tradeLogDetail(eventRecord(e), 'trade.buyer-cancel') });
+            // Recorded only; the cancel itself is logged as `trade.buyer-cancel` when the sync applies it (lead review 8 Nov I5).
+            await appendLog(client, { at: now, actor: actorOfBy(by), tradeCode: row.code, action: 'trade.buyer-cancel-recorded', detail: {} });
           }
           return held;
         },
