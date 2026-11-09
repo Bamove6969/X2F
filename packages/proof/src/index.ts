@@ -31,3 +31,20 @@ export {
   proofKeyToBase64,
   sealProofEnvelope,
 } from './payloads.js';
+export {
+  type ImageHeader,
+  type ProofReceiveErrorCode,
+  type ReceiveBitmap,
+  type ReceiveDeclared,
+  type ReceiveDeps,
+  type ReceiveMime,
+  type ReceivedProof,
+  ProofReceiveError,
+  RECEIVE_MAX_BYTES,
+  RECEIVE_MAX_RENDER_BYTES,
+  RECEIVE_MAX_SIDE,
+  RECEIVE_MIMES,
+  readImageHeader,
+  receiveProof,
+  sniffImage,
+} from './receive.js';
