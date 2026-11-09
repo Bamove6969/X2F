@@ -16,6 +16,10 @@
  *   (`senderRole`, the session's role when it was posted) must agree, or the line is dropped. A
  *   moderator line is accepted only while a dispute is open (`modMayPost`), so the moderator badge
  *   can only ever follow a message the attested mod identity signed and the server recorded as mod.
+ * - A payee's packaged payment details (J-08, S-090) is a line like any other with `pay` set: the
+ *   text is the plain rendering, `pay` the boxes for the card. `sendPay` seals one (chatCrypto's
+ *   sealPayDetails); a bad package is 'bad-details'. Like the text, the boxes are never stored on
+ *   the device: a reopen decrypts them again.
  * - No message text is stored on the device (owner p11-10, design 2026-11-08 section 5): the store
  *   keeps keys, the ChatState, the cursor and a receipt per accepted line. The first sync of a chat
  *   in this worker re-reads the whole chat from the server and decrypts it again; a line the guard
@@ -32,9 +36,9 @@
  *   record (a block hides a chat with that same 404, and it may come back).
  */
 import type { Role } from '@x2f/core';
-import { isPlainObject, ProtocolError, ReplayGuard, type Identity, type Participants } from '@x2f/protocol';
-import { AttestationError, verifyAttestation, type Attestation } from '@x2f/trade';
-import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, signChatIdentity, type ChatState } from './chatCrypto.js';
+import { isPlainObject, ProtocolError, ReplayGuard, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { AttestationError, PayDetailsError, verifyAttestation, type Attestation, type PayDetailsPayload } from '@x2f/trade';
+import { ChatError, chatChannel, newChatState, openChatMessage, sealChatMessage, sealPayDetails, signChatIdentity, type ChatState } from './chatCrypto.js';
 import type { ChatRecord, ChatStore, StoredChatReceipt } from './store.js';
 
 export interface ChatApiView {
@@ -77,6 +81,8 @@ export interface ChatLine {
    * is empty and the panel says the message is no longer on the server.
    */
   missing?: true;
+  /** The payee's packaged payment details (J-08): the panel shows a card; `text` is its plain rendering. */
+  pay?: PayDetailsPayload;
 }
 
 export interface ChatSnapshot {
@@ -94,7 +100,7 @@ export interface ChatSnapshot {
   more: boolean;
 }
 
-export type ChatSendError = 'not-ready' | 'bad-text' | 'too-large' | 'slow-down' | 'refused';
+export type ChatSendError = 'not-ready' | 'bad-text' | 'bad-details' | 'too-large' | 'slow-down' | 'refused';
 
 export class ChatSendFailed extends Error {
   /** `cause`: the API's refusal behind a 'refused' (a 410 there erases the chat). */
@@ -107,6 +113,8 @@ export class ChatSendFailed extends Error {
 export interface ChatEngine {
   sync(chat: string): Promise<ChatSnapshot>;
   send(chat: string, text: string): Promise<ChatSnapshot>;
+  /** Seals and posts the payee's packaged payment details (J-08); 'bad-details' for a bad package. */
+  sendPay(chat: string, pay: PayDetailsPayload): Promise<ChatSnapshot>;
   /**
    * Asks the API about every chat stored on this device and erases each one it answers 410
    * `chat-purged` for; resolves with those. Any other answer (or none) keeps the record. Rejects on
@@ -158,7 +166,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
    * Per chat, once its first read in this worker went through: the text of each line opened, by
    * envelope id, and how far the reads reached (`all` once a read reached the end). Memory only.
    */
-  const sessions = new Map<string, { texts: Map<string, string>; reached: bigint | 'all' }>();
+  const sessions = new Map<string, { texts: Map<string, Shown>; reached: bigint | 'all' }>();
   const erase = async (chat: string): Promise<void> => {
     sessions.delete(chat);
     await d.store.delete(chat);
@@ -181,8 +189,9 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         .sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1))
         .map((m): ChatLine => {
           const line = { id: m.id, from: m.from, at: m.at, mine: m.from === view.role, gapBefore: m.gapBefore };
-          const text = session?.texts.get(m.id);
-          return text === undefined ? { ...line, text: '', missing: true } : { ...line, text };
+          const shown = session?.texts.get(m.id);
+          if (shown === undefined) return { ...line, text: '', missing: true };
+          return shown.pay === undefined ? { ...line, text: shown.text } : { ...line, text: shown.text, pay: shown.pay };
         }),
     };
   };
@@ -242,13 +251,13 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
    * Re-opens a line the guard already took (its receipt), for a re-read: with a fresh guard, and
    * only for the same envelope (its signature) from the same sender and seq. Null when it is not.
    */
-  async function reopen(rec: ChatRecord, me: Identity, parts: Participants, e: ApiEnvelope, r: StoredChatReceipt, channel: string): Promise<string | null> {
+  async function reopen(rec: ChatRecord, me: Identity, parts: Participants, e: ApiEnvelope, r: StoredChatReceipt, channel: string): Promise<Shown | null> {
     try {
       if (e.senderRole !== r.from || (r.sig !== null && sigOf(e.envelope) !== r.sig)) return null;
       const fresh = { channel, nextSeq: 0, guard: new ReplayGuard(channel).toJSON() };
       // A moderator line it showed once (during a dispute) is shown again: the guard took it then.
       const o = await openChatMessage(e.envelope, { role: rec.role, me, participants: parts, state: fresh, modMayPost: true });
-      return o.message.from === r.from && o.message.seq === r.seq ? o.message.text : null;
+      return o.message.from === r.from && o.message.seq === r.seq ? shownOf(o.message) : null;
     } catch {
       return null;
     }
@@ -268,7 +277,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     let state: ChatState = rec.state ?? newChatState(channel);
     const session = sessions.get(rec.chat);
     const cold = session === undefined;
-    const shown = session?.texts ?? new Map<string, string>();
+    const shown = session?.texts ?? new Map<string, Shown>();
     const start = BigInt(rec.cursor);
     let cursor = rec.cursor;
     let held = false;
@@ -287,8 +296,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         const receipt = known.get(e.id);
         if (receipt) {
           if (!shown.has(e.id)) {
-            const text = await reopen(rec, me, parts, e, receipt, channel);
-            if (text !== null) shown.set(e.id, text);
+            const again = await reopen(rec, me, parts, e, receipt, channel);
+            if (again !== null) shown.set(e.id, again);
           }
           if (past && !held && cursor !== e.id) {
             cursor = e.id;
@@ -319,7 +328,7 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           lastSeq.set(m.from, m.seq);
           receipts.push(m);
           known.set(m.id, m);
-          shown.set(m.id, r.message.text);
+          shown.set(m.id, shownOf(r.message));
         } catch (err) {
           // A moderator line outside a dispute, or a message that did not parse, is tried again on
           // a later sync: the cursor stops before it (the guard did not move for it).
@@ -380,6 +389,38 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     }
   };
 
+  /** Seals with `make` and posts, the same way for a line and a package. */
+  function post(chat: string, make: (a: Omit<Parameters<typeof sealChatMessage>[0], 'text'>) => Promise<{ envelope: Envelope; state: ChatState }>): Promise<ChatSnapshot> {
+    return serial(chat, () => purging(chat, async () => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const s = await syncLocked(chat);
+        if (s.snap.phase !== 'ready' || !s.rec || !s.parts) throw new ChatSendFailed('not-ready');
+        let sealed;
+        try {
+          sealed = await make({ role: s.rec.role, me: toIdentity(s.rec.identity), participants: s.parts, state: s.rec.state ?? newChatState(await chatChannel(chat)) });
+        } catch (e) {
+          if (e instanceof ChatError && (e.code === 'bad-text' || e.code === 'too-large')) throw new ChatSendFailed(e.code);
+          if (e instanceof PayDetailsError) throw new ChatSendFailed('bad-details', e);
+          throw e;
+        }
+        // Saved before posting: a seq is never used twice.
+        await d.store.save({ ...s.rec, state: sealed.state });
+        try {
+          await d.api.postEnvelope(chat, sealed.envelope);
+        } catch (e) {
+          const code = (e as { code?: unknown }).code;
+          if (code === 'stale-seq' && attempt === 0) continue;
+          if (code === 'too-large' || (e as { status?: unknown }).status === 413) throw new ChatSendFailed('too-large');
+          // The per-account envelope budget (review M7). The seq stays used: the next line follows a gap.
+          if ((e as { status?: unknown }).status === 429) throw new ChatSendFailed('slow-down');
+          throw new ChatSendFailed('refused', e);
+        }
+        return (await syncLocked(chat)).snap;
+      }
+      throw new ChatSendFailed('refused');
+    }));
+  }
+
   return {
     sync: (chat) => serial(chat, () => purging(chat, async () => (await syncLocked(chat)).snap)),
     sweep: async () => {
@@ -395,33 +436,14 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       }
       return gone;
     },
-    send: (chat, text) =>
-      serial(chat, () => purging(chat, async () => {
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const s = await syncLocked(chat);
-          if (s.snap.phase !== 'ready' || !s.rec || !s.parts) throw new ChatSendFailed('not-ready');
-          let sealed;
-          try {
-            sealed = await sealChatMessage({ role: s.rec.role, me: toIdentity(s.rec.identity), participants: s.parts, state: s.rec.state ?? newChatState(await chatChannel(chat)), text });
-          } catch (e) {
-            if (e instanceof ChatError && (e.code === 'bad-text' || e.code === 'too-large')) throw new ChatSendFailed(e.code);
-            throw e;
-          }
-          // Saved before posting: a seq is never used twice.
-          await d.store.save({ ...s.rec, state: sealed.state });
-          try {
-            await d.api.postEnvelope(chat, sealed.envelope);
-          } catch (e) {
-            const code = (e as { code?: unknown }).code;
-            if (code === 'stale-seq' && attempt === 0) continue;
-            if (code === 'too-large' || (e as { status?: unknown }).status === 413) throw new ChatSendFailed('too-large');
-            // The per-account envelope budget (review M7). The seq stays used: the next line follows a gap.
-            if ((e as { status?: unknown }).status === 429) throw new ChatSendFailed('slow-down');
-            throw new ChatSendFailed('refused', e);
-          }
-          return (await syncLocked(chat)).snap;
-        }
-        throw new ChatSendFailed('refused');
-      })),
+    send: (chat, text) => post(chat, (a) => sealChatMessage({ ...a, text })),
+    sendPay: (chat, pay) => post(chat, (a) => sealPayDetails({ ...a, pay })),
   };
 }
+
+/** What a sync keeps in memory for a line it opened: the text, and the boxes of a package. */
+interface Shown {
+  text: string;
+  pay?: PayDetailsPayload;
+}
+const shownOf = (m: { text: string; pay?: PayDetailsPayload }): Shown => (m.pay === undefined ? { text: m.text } : { text: m.text, pay: m.pay });

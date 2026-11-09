@@ -979,3 +979,39 @@ describe('review round 2 (2026-10-28): fix round 3', () => {
     expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
   });
 });
+
+describe("J-08 (S-090): the seller's packaged details fill the buyer's Send exactly card", () => {
+  it('the rows are the labelled boxes of the newest package in the trade chat, in place of "Ask in the chat"', async () => {
+    const { setChatClient } = await import('../src/chat/client.js');
+    const { chatPaymentDetailsSource } = await import('../src/chat/payDetailsFeed.js');
+    const CHAT = 'Q2W3-E4R5-T6Y7-U8I9';
+    const pay = { v: 1 as const, method: 'ZELLE', fields: [{ key: 'email', value: 'jane@example.com' }, { key: 'name', value: 'Jane Doe' }] };
+    const chatSnap = {
+      phase: 'ready' as const,
+      problem: null,
+      role: 'buyer' as const,
+      counterparty: 'satoshi_ghost',
+      disputeOpen: false,
+      more: false,
+      lines: [{ id: '3', from: 'seller' as const, text: 'Payment details\nEmail: jane@example.com\nName on the account: Jane Doe', pay, at: null, mine: false, gapBefore: false }],
+    };
+    const sync = vi.fn(async () => chatSnap);
+    setChatClient({ sync, send: vi.fn(async () => chatSnap), sendPay: vi.fn(async () => chatSnap) });
+    answer = () => ({ status: 200, json: { chat: CHAT } });
+    setPaymentDetailsSource(chatPaymentDetailsSource);
+    try {
+      mount(props({ view: tradeView(SECURED) }));
+      await flush();
+      expect(calls).toContain(`POST /v1/trades/${CODE}/chat {}`);
+      expect(sync).toHaveBeenCalledWith(CHAT);
+      const card = document.querySelector('[aria-label="Send this payment"]')!;
+      const rows = [...card.querySelectorAll('.x2f-pay-card__row')].map((r) => r.textContent);
+      expect(rows.slice(0, 2)).toEqual(['Emailjane@example.com', 'Name on the accountJane Doe']);
+      expect(card.textContent).not.toContain('Ask in the chat');
+      // Nothing of the details went to the API: the only call was the chat lookup, with an empty body.
+      expect(calls.filter((c) => c.startsWith('POST'))).toEqual([`POST /v1/trades/${CODE}/chat {}`]);
+    } finally {
+      setChatClient(null);
+    }
+  });
+});

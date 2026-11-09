@@ -162,3 +162,89 @@
   color: var(--x2f-danger);
   font-size: var(--x2f-label-size);
 }
+
+/* J-08 (S-090): a package as a card, on both sides. */
+.x2f-chat__paycard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+}
+
+.x2f-chat__paycard-title {
+  font-family: var(--x2f-label-family);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-chat__paycard-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  margin: 0;
+}
+
+.x2f-chat__paycard-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.x2f-chat__paycard-row dt {
+  font-family: var(--x2f-label-family);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+}
+
+.x2f-chat__paycard-row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: all;
+}
+
+/* The payee's boxes above the composer. */
+.x2f-chat__pay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-3) var(--x2f-space-4);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-chat__pay-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.x2f-chat__pay-lead,
+.x2f-chat__pay-hint {
+  margin: 0;
+  color: var(--x2f-ink-muted);
+  font-family: var(--x2f-label-family);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+}
+
+.x2f-chat__pay-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+}
+
+.x2f-chat__pay-label {
+  font-family: var(--x2f-label-family);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+}
+
+.x2f-chat__pay-input {
+  min-width: 0;
+  padding: var(--x2f-space-2) var(--x2f-space-3);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  color: var(--x2f-ink);
+  font: inherit;
+}

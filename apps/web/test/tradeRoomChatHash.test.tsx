@@ -21,9 +21,9 @@ const PAY_BY = new Date(T0 + 60_000).toISOString();
 
 const jsonResponse = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 
-function StubChat({ name }: { code: string; name: string }) {
+function StubChat({ name, methodId }: { code: string; name: string; methodId?: string | undefined }) {
   return (
-    <div data-stub-chat="">
+    <div data-stub-chat="" data-method-id={methodId}>
       <p>Chat with {name}</p>
       <textarea aria-label="Message" />
     </div>
@@ -79,6 +79,8 @@ describe("wide #chat follows the screen chosen by time (Task 20 round-3 review n
     const sheet = () => document.querySelector('.x2f-sheet');
     // SellerWaiting draws its own chat aside: no second chat in a sheet.
     expect(r.host.querySelector("[data-pane='main'] .x2f-room__chat-panel [data-stub-chat]")).not.toBeNull();
+    // J-08: the room tells the chat the trade's payment method, so the payee's side can show its boxes.
+    expect(r.host.querySelector('[data-stub-chat]')?.getAttribute('data-method-id')).toBe('ZELLE');
     expect(sheet()).toBeNull();
 
     // The payment window ends; the room's deadline re-read switches the screen within `secured`.

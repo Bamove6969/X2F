@@ -15,7 +15,7 @@ import './pay.css';
 /** The chat for the trade (Task 20's ChatPanel through the seam), or nothing until it is installed. */
 export function ChatSlot({ view }: { view: TradeView }) {
   const Chat = useTradeChat();
-  return Chat ? <Chat code={view.code} name={publicName(view.counterparty)} /> : null;
+  return Chat ? <Chat code={view.code} name={publicName(view.counterparty)} methodId={view.methodId} /> : null;
 }
 
 export function ChatButton({ view, primary }: { view: TradeView; primary?: boolean }) {

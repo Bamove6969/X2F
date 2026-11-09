@@ -350,7 +350,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
   const Screen = broken ? integrityScreen : screenFor(view, clock().getTime());
   const Chat = useTradeChat();
   // The dispute room lays out its own chat (follow-up); a broken trade shows only its refusal.
-  const chat = Chat !== null && view.state !== 'disputed' && !broken ? <Chat code={view.code} name={publicName(view.counterparty)} /> : null;
+  const chat = Chat !== null && view.state !== 'disputed' && !broken ? <Chat code={view.code} name={publicName(view.counterparty)} methodId={view.methodId} /> : null;
   const chatPane = chatPaneFor(layout, Chat !== null, view, broken);
   return (
     <main data-screen="trade" data-trade-state={view.state} data-role={view.role}>
