@@ -115,13 +115,23 @@ async function staff(role: 'mod' | 'senior' | 'owner' | 'helper', app = staffApp
   return { id: s.id, name, b, fresh };
 }
 
-/** A secured trade the buyer disputed at `at`, with its chat (both traders' identities and the mod's). */
+/** The seller's confirm window seedTrade gives every trade (its `confirmWindowMin`). */
+const CONFIRM_WINDOW_MIN = 120;
+
+/**
+ * A trade the buyer disputed at `at`, with its chat (both traders' identities and the mod's). The
+ * buyer marked it paid one confirm window before `at`: trade-rules P1 (owner p9-4, proto review P1)
+ * lets the buyer open a dispute only after "I've paid" and the method's full wait, so `at` is the
+ * first moment the dispute may open.
+ */
 async function disputed(at = START) {
-  setNow(at);
+  setNow(new Date(at.getTime() - CONFIRM_WINDOW_MIN * MIN));
   const seller = await newTrader();
   const buyer = await newTrader();
   const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
-  const t = await driveTo(deps, trade, 'secured');
+  expect(trade.confirmWindowMin).toBe(CONFIRM_WINDOW_MIN);
+  const t = await driveTo(deps, trade, 'paid');
+  expect(t.confirmBy).toEqual(at);
   setNow(at);
   for (const p of [seller, buyer]) expect((await p.browser.post('/t/login', { accountId: p.id })).statusCode).toBe(200);
   const res = await buyer.browser.post(`/v1/trades/${t.code}/dispute`, { reason: 'paid', note: '' });
@@ -491,9 +501,10 @@ describe('the freeze', () => {
 
     // A take by the frozen seller is refused.
     const poster = await newTrader();
+    // No minimum is null (migration 315: min_trades is one of 5, 10, 25, 50 or null; owner 8 Nov).
     const offer = await deps.db.query<{ id: string }>(
       `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-       values ($1, 'buy', 'ZELLE', 'USD', 'market', 0, 1000, 100000, 0, '', 'live', $2, $2) returning id`,
+       values ($1, 'buy', 'ZELLE', 'USD', 'market', 0, 1000, 100000, null, '', 'live', $2, $2) returning id`,
       [poster.id, deps.clock()],
     );
     expect((await seller.browser.post('/t/login', { accountId: seller.id })).statusCode).toBe(200);
