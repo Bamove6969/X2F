@@ -31,7 +31,8 @@
  *   seller (who receives the payment) gets the method's boxes (packages/trade payFields.ts) above
  *   the composer; Send packages them through the worker (`chatClient().sendPay`), sealed like any
  *   line. Both sides see a package as a card (`PayCard`); its plain text is what is announced.
- *   The buyer never gets the boxes. Each snapshot of a trade's chat is handed to payDetailsFeed, so
+ *   The buyer never gets the boxes. Owner Q12: Send is closed, and says why, until the escrow is
+ *   secured (`snapshot.paySecured`); the engine refuses a package sent early on the reading side. Each snapshot of a trade's chat is handed to payDetailsFeed, so
  *   the buyer's "Send exactly" card follows the chat.
  *
  * `TradeChatPanel` resolves a trade's chat (`POST /v1/trades/:code/chat`) and is the component
@@ -39,7 +40,7 @@
  * pre-trade chat on an offer (the quote's Chat button).
  */
 import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiCallError } from '../api/client.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
 import { utcDateTime } from '../ui/dates.js';
@@ -296,7 +297,9 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
         </p>
       ) : null}
 
-      {phase === 'ready' && !gone && pay !== undefined && snap?.role === 'seller' ? <PayBoxes chat={chat} name={name} methodId={pay.methodId} onSent={sent} /> : null}
+      {phase === 'ready' && !gone && pay !== undefined && snap?.role === 'seller' ? (
+        <PayBoxes chat={chat} name={name} methodId={pay.methodId} secured={snap.paySecured} onSent={sent} />
+      ) : null}
       {phase === 'ready' && !gone ? (
         <form className="x2f-chat__composer" onSubmit={(e) => void onSubmit(e)}>
           <label className="x2f-chat__label">
@@ -385,8 +388,9 @@ function payErrorText(e: unknown, spec: readonly PayFieldSpec[]): string {
  * hands them to the worker, which seals them like any line; the boxes clear once the package is in
  * the chat. Values never leave the page except inside that sealed envelope.
  */
-function PayBoxes({ chat, name, methodId, onSent }: { chat: string; name: string; methodId: string; onSent: (s: ChatSnapshot) => void }) {
+function PayBoxes({ chat, name, methodId, secured, onSent }: { chat: string; name: string; methodId: string; secured: boolean; onSent: (s: ChatSnapshot) => void }) {
   const spec = payFieldsFor(methodId);
+  const whyId = useId();
   const [values, setValues] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -400,7 +404,8 @@ function PayBoxes({ chat, name, methodId, onSent }: { chat: string; name: string
   const groups = groupsOf(spec);
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (sending) return;
+    // Owner Q12: nothing is sent before the escrow is secured (the button is closed; a submit by key is not).
+    if (sending || !secured) return;
     setError(null);
     let pay: PayDetailsPayload;
     try {
@@ -451,9 +456,15 @@ function PayBoxes({ chat, name, methodId, onSent }: { chat: string; name: string
           {oneOfHint(labels)}
         </p>
       ))}
-      <button type="submit" className="x2f-chat__send" aria-disabled={sending ? 'true' : undefined}>
+      <button type="submit" className="x2f-chat__send" disabled={!secured} aria-disabled={sending ? 'true' : undefined} aria-describedby={secured ? undefined : whyId}>
         Send payment details
       </button>
+      {secured ? null : (
+        // COPY-UNSIGNED (J-08, owner Q12): why Send is closed while the escrow is securing.
+        <p id={whyId} className="x2f-chat__pay-hint" data-pay-block="not-secured">
+          You can send these once the escrow is secured.
+        </p>
+      )}
       {error !== null ? (
         <p role="alert" className="x2f-chat__error" data-pay-error="">
           {error}

@@ -13,7 +13,8 @@
  *   plain rendering of the boxes, which any reader that knows only `text` shows as a line, and
  *   `pay` the boxes for the card. A reader checks that the text IS the rendering of the boxes, so
  *   the two can never say different things. Only a trader sends one; a mod-signed package is
- *   refused. Messages carry no names: the UI shows each role's display name (never a login name)
+ *   refused, and so is any package while the reader's trade is not secured (`payAllowed`, owner
+ *   Q12), so no client can push details to the buyer early. Messages carry no names: the UI shows each role's display name (never a login name)
  *   from its own records.
  * - Every message is sealed to buyer, seller and the chat's mod identity (spec 6.6: a moderator
  *   can read the chat once a dispute opens), including the sender, so it can re-read its own.
@@ -236,6 +237,13 @@ export interface OpenChatArgs {
    * guard does not move, so the same envelope opens once a dispute is open.
    */
   modMayPost?: boolean;
+  /**
+   * Accept a package (`{ text, pay }`). Default false: owner Q12, the seller's payment details
+   * reach the buyer only once the escrow is secured, so the engine sets it from the trade's
+   * `securedAt`. When false, a package is refused with ChatError('bad-message') and the guard does
+   * not move, so the same envelope opens once the trade is secured.
+   */
+  payAllowed?: boolean;
 }
 
 /**
@@ -279,8 +287,9 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
   }
   const message: ChatMessage = { from: opened.from, seq: env.seq, text };
   if (packaged) {
-    // Only a trader has payment details to send; the text must be exactly the rendering of the boxes.
-    if (opened.from === 'mod') throw notChat();
+    // Only a trader has payment details to send, only once the escrow is secured (owner Q12), and
+    // the text must be exactly the rendering of the boxes.
+    if (opened.from === 'mod' || a.payAllowed !== true) throw notChat();
     let pay: PayDetailsPayload;
     try {
       pay = parsePayDetails((p as { pay: unknown }).pay);

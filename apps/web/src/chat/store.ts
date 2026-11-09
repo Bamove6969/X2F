@@ -40,6 +40,12 @@ export interface StoredChatReceipt {
   at: string | null;
   /** This sender's seq skipped one or more messages before this one (review M5). */
   gapBefore: boolean;
+  /**
+   * A payee's package (J-08) taken before the trade's escrow was secured (owner Q12): the guard
+   * moved for it, so the sender's later lines flow, but it is not shown until the trade is secured,
+   * when it is decrypted again and shown in its place. Never set on a plain line.
+   */
+  heldPay?: true;
 }
 
 export interface ChatRecord {

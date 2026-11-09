@@ -18,7 +18,7 @@ const ROWS = [
   { label: 'Email', value: 'jane@example.ca' },
 ];
 
-const snap = (over: Partial<ChatSnapshot> = {}): ChatSnapshot => ({ phase: 'ready', problem: null, role: 'buyer', counterparty: 'Sam', disputeOpen: false, lines: [], more: false, ...over });
+const snap = (over: Partial<ChatSnapshot> = {}): ChatSnapshot => ({ phase: 'ready', problem: null, role: 'buyer', counterparty: 'Sam', disputeOpen: false, paySecured: true, lines: [], more: false, ...over });
 const line = (id: string, from: 'buyer' | 'seller', pay: typeof PAY | null = PAY) => ({ id, from, text: pay ? TEXT : 'hi', ...(pay ? { pay } : {}), at: null, mine: from === 'buyer', gapBefore: false });
 
 let current: ChatSnapshot;

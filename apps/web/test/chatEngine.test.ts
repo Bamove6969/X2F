@@ -31,7 +31,7 @@ beforeAll(async () => {
 
 /** An in-memory chat API standing in for apps/api's routes (one chat, seen as the buyer). */
 class FakeApi implements ChatApi {
-  view: ChatApiView = { role: 'buyer', counterparty: 'Sam', disputeOpen: false, mySignPublic: null };
+  view: ChatApiView = { role: 'buyer', counterparty: 'Sam', disputeOpen: false, tradeSecuredAt: '2026-10-28T11:00:00.000Z', mySignPublic: null };
   identities: Partial<Record<'buyer' | 'seller', { signPublic: string; boxPublic: string; proof: string }>> = {};
   attestation: { attestation: unknown; sig: unknown } | null = null;
   refused = false;
@@ -606,6 +606,31 @@ describe('chat engine: the payment details package (J-08, S-090)', () => {
     for (const s of ['Jane Doe', 'jane@example.ca', 'INTERAC_E_TRANSFER']) expect(saved, s).not.toContain(s);
     // A new engine (a reopened app) decrypts it again and shows the package again.
     expect((await engine().sync(chat)).lines[1]?.pay).toEqual(INTERAC);
+  });
+
+  it("owner Q12: a package is held while the trade is not secured (the snapshot says so) and shown once it is; a plain line is not held", async () => {
+    api.view.tradeSecuredAt = null;
+    await engine().sync(chat);
+    const parts = attest();
+    await sellerPay(INTERAC, parts);
+    await fromSeller('sent too early, sorry', parts);
+    const early = await engine().sync(chat);
+    expect(early.paySecured).toBe(false);
+    expect(early.lines.map((l) => l.text)).toEqual(['sent too early, sorry']);
+    expect(api.calls).toBeGreaterThan(0);
+    // Still not secured on the next sync (and after a reopen): still held, not shown. The guard took
+    // it (a held receipt), so the line after it was not stuck behind it, and nothing of it is on the device.
+    expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['sent too early, sorry']);
+    expect((await store.load(chat))!.receipts.map((r) => [r.seq, r.heldPay === true])).toEqual([[0, true], [1, false]]);
+    for (const s of ['Jane Doe', 'jane@example.ca', 'INTERAC_E_TRANSFER']) expect(JSON.stringify(store.records.get(chat)), s).not.toContain(s);
+    // Secured: the held envelope is read again and shown, in its place.
+    api.view.tradeSecuredAt = '2026-10-28T12:30:00.000Z';
+    const now = await engine().sync(chat);
+    expect(now.paySecured).toBe(true);
+    expect(now.lines.map((l) => [l.text, l.pay ?? null])).toEqual([
+      [TEXT, INTERAC],
+      ['sent too early, sorry', null],
+    ]);
   });
 
   it('the worker answers chat-send-pay like a send, and a non-package is bad-details', async () => {

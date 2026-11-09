@@ -992,6 +992,7 @@ describe("J-08 (S-090): the seller's packaged details fill the buyer's Send exac
       role: 'buyer' as const,
       counterparty: 'satoshi_ghost',
       disputeOpen: false,
+      paySecured: true,
       more: false,
       lines: [{ id: '3', from: 'seller' as const, text: 'Payment details\nEmail: jane@example.com\nName on the account: Jane Doe', pay, at: null, mine: false, gapBefore: false }],
     };

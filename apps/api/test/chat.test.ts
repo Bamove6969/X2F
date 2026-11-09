@@ -204,7 +204,7 @@ describe('GET /v1/chats/:chat', () => {
     const res = await o.taker.b.get(`/v1/chats/${o.chat}`);
     expect(res.statusCode).toBe(200);
     const body = res.json() as Record<string, unknown>;
-    expect(body).toMatchObject({ chat: o.chat, role: 'buyer', offerId: o.offerId, tradeCode: null, disputeOpen: false, attested: false, mySignPublic: null });
+    expect(body).toMatchObject({ chat: o.chat, role: 'buyer', offerId: o.offerId, tradeCode: null, disputeOpen: false, tradeSecuredAt: null, attested: false, mySignPublic: null });
     expect((body.counterparty as { displayName: string }).displayName).toMatch(/^Dchl/);
     expect(JSON.stringify(body)).not.toContain(`"chl`);
     const stranger = await trader();

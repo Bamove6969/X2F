@@ -38,8 +38,9 @@ beforeAll(async () => {
 
 const INTERAC: PayDetailsPayload = { v: PAY_DETAILS_V, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }] };
 
-async function read(body: unknown, role: Role, state = newChatState(channel)) {
-  return openChatMessage(body, { role, me: ids[role], participants, state, modMayPost: true });
+/** Opens as a reader whose trade is secured (`payAllowed`): a package may be shown. */
+async function read(body: unknown, role: Role, state = newChatState(channel), payAllowed = true) {
+  return openChatMessage(body, { role, me: ids[role], participants, state, modMayPost: true, payAllowed });
 }
 
 /** Seals an arbitrary inner payload as the seller, bypassing the chat's own checks (what a tampered client could send). */
@@ -125,6 +126,17 @@ describe('openChatMessage with a package', () => {
     // The same seq then opens fine: nothing was recorded for the refused ones.
     const good = await raw({ text: renderPayDetailsText(INTERAC), pay: INTERAC });
     expect((await read(good, 'buyer', state)).message.pay).toEqual(INTERAC);
+  });
+
+  it('owner Q12: before the escrow is secured (no `payAllowed`) a package is not a chat message, and the guard does not move; a plain line still opens', async () => {
+    const state = newChatState(channel);
+    const early = await raw({ text: renderPayDetailsText(INTERAC), pay: INTERAC });
+    expect(await codeOf(read(early, 'buyer', state, false))).toBe('bad-message');
+    expect(await codeOf(openChatMessage(early, { role: 'buyer', me: ids.buyer, participants, state }))).toBe('bad-message');
+    const plain = await raw({ text: 'Not yet, wait for the escrow' });
+    expect((await read(plain, 'buyer', state, false)).message.text).toBe('Not yet, wait for the escrow');
+    // Once secured, the very same envelope (same seq) opens: nothing was recorded for the refusal.
+    expect((await read(early, 'buyer', state, true)).message.pay).toEqual(INTERAC);
   });
 
   it('a moderator never sends payment details: a mod-signed package is not a chat message', async () => {

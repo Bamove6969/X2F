@@ -15,6 +15,7 @@ const snap = (over: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
   role: 'buyer',
   counterparty: 'Sam',
   disputeOpen: false,
+  paySecured: true,
   lines: [],
   more: false,
   ...over,
@@ -384,6 +385,35 @@ describe('ChatPanel: the payee\'s payment details boxes and the payer\'s card (J
     const waiting = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
     await flush();
     expect(boxes(waiting.host)).toBeNull();
+  });
+
+  it('owner Q12: before the escrow is secured the boxes show but Send is closed and says why; nothing is sent', async () => {
+    current = snap({ role: 'seller', paySecured: false });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    const form = boxes(host)!;
+    expect(form).not.toBeNull();
+    const send = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    expect(send.disabled).toBe(true);
+    const why = host.querySelector<HTMLElement>('[data-pay-block="not-secured"]')!;
+    expect(why.textContent).toBe('You can send these once the escrow is secured.');
+    expect(send.getAttribute('aria-describedby')).toBe(why.id);
+    fill(field(host, 'name')!, 'Jane Doe');
+    fill(field(host, 'email')!, 'jane@example.ca');
+    submit(form);
+    await flush();
+    expect(client.sendPay).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-pay-error]')).toBeNull();
+    // Secured (the next sync says so): Send opens, the typed boxes are kept, and the why-line goes.
+    current = snap({ role: 'seller', paySecured: true });
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
+    expect(host.querySelector('[data-pay-block]')).toBeNull();
+    expect(field(host, 'name')!.value).toBe('Jane Doe');
+    submit(form);
+    await flush();
+    expect(client.sendPay).toHaveBeenCalledTimes(1);
   });
 
   it('a mailing address is a multi-line box', async () => {
