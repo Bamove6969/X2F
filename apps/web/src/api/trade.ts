@@ -103,12 +103,23 @@ export interface TradeView {
   /** When the buyer's device posted the final-alert seen-receipt (Task 25's FinalAlert); sent to the buyer only, null for the seller. */
   finalAlertSeenAt: string | null;
   settleBy: string | null;
+  /**
+   * When a trader's side of the settlement was reported done (Task 9 I/O, lead decision b): the
+   * trade then waits for the network's sweep and the settle window no longer reverts it. Null
+   * until then. `settleBy` is unchanged (a dispute stays open after it).
+   */
+  releaseClaimedAt: string | null;
   pausedAt: string | null;
   closedAt: string | null;
   /** The seller's "Confirm cancel" after a buyer-cancel refund (owner 2026-10-29); null until then. */
   cancelConfirmedAt: string | null;
   /** When the seller's Confirm cancel became available; the trade closes by itself 48 h later (owner 2026-10-29). */
   cancelConfirmableAt: string | null;
+  /**
+   * When the seller first nudged the buyer after the escrow was secured (owner G2, g66); null =
+   * not yet. The seller's "Cancel and get refund" stays locked until it is set and the 90 minutes are over.
+   */
+  sellerNudgedAt: string | null;
   nextDeadline: string | null;
   serverNow: string;
 }

@@ -64,10 +64,12 @@ export const PAY_SECURING: TradeView = {
   finalAlertAt: null,
   finalAlertSeenAt: null,
   settleBy: null,
+  releaseClaimedAt: null,
   pausedAt: null,
   closedAt: null,
   cancelConfirmedAt: null,
   cancelConfirmableAt: null,
+  sellerNudgedAt: null,
   nextDeadline: null,
   serverNow: PAY_NOW,
 };

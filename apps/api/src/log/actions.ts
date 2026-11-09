@@ -40,6 +40,8 @@ const TRADE: Record<`trade.${TradeEvent['type']}`, Schema> = {
   'trade.settled': { kind: 'id', txHash: 'hex64' },
   'trade.open-dispute': {},
   'trade.escalate': {},
+  // Plan 3 Task 9 I/O: the watcher saw a party's release claim (no tx hash, no amount).
+  'trade.release-claimed': {},
   'trade.pause': {},
   'trade.resume': {},
   'trade.tick': {},

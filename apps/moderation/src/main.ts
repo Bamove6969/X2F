@@ -1,16 +1,56 @@
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
-import { channelFor, type Attestation, type ModPartyArgs } from '@x2f/trade';
+import type { PartyHandle, Transport } from '@x2f/escrow';
+import { channelFor, WATCH_INTERVAL_MS, type Attestation, type ModPartyArgs } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { AttestRefused, attestChat, attestTrade, BadTerms } from './attest.js';
 import { loadChatIdentity, loadParty, saveChatIdentity, saveParty, walletPassword } from './keystore.js';
 import { createLink, type ChatWorkItem, type Fetch, type Link, type WorkItem } from './link.js';
+import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
+import { openDesk } from './desk.js';
+import { createWatcher } from './watcher.js';
+
+/** The instance lock's advisory key ("x2mi"; the migrator's is "x2mo"): one moderation process per database. */
+export const MOD_INSTANCE_LOCK = 0x7832_6d69;
+/** How long the per-pass lock check waits for the lock connection (re-verify R3: a half-open one never answers). */
+export const LOCK_CHECK_TIMEOUT_MS = 5_000;
+
+/**
+ * Does this connection still hold the instance lock (re-verify R3)? Asked every watch pass: a
+ * connection the server dropped (failover, a half-open TCP session that never errors) answers
+ * false, an error, or nothing within `timeoutMs`; each counts as lost.
+ */
+export async function instanceLockHeld(client: { query: (sql: string, values: unknown[]) => Promise<{ rows: Array<{ held?: boolean }> }> }, timeoutMs = LOCK_CHECK_TIMEOUT_MS): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  const check = client
+    .query(
+      `select exists (select 1 from pg_locks where locktype = 'advisory' and classid = 0 and objid = $1 and objsubid = 1 and granted and pid = pg_backend_pid()) as held`,
+      [MOD_INSTANCE_LOCK],
+    )
+    .then((r) => r.rows[0]?.held === true, () => false);
+  try {
+    return await Promise.race([check, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export { AttestRefused, attestChat, attestTrade, BadTerms, checkChatWork, checkWork, signAttestation, type Attested } from './attest.js';
 export { loadChatIdentity, saveChatIdentity, type ChatModIdentity } from './keystore.js';
 export { loadParty, migrateModeration, modSubkey, open, saveParty, seal, WALLET_PASSWORD_BYTES, walletPassword } from './keystore.js';
-export { createLink, relayRegisterMessage, type ChatWorkItem, type Fetch, type Link, type WorkItem } from './link.js';
+export { createLink, relayCloseMessage, relayRegisterMessage, type ChatWorkItem, type Fetch, type Link, type WatchItem, type WorkItem } from './link.js';
+export { defaultPartyIO, escrowStore, startModParty, type PartyIO } from './party.js';
+export { autoRefundStep, REFUND_UNVERIFIED_MS, type AutoRefundInputs, type AutoRefundStep } from './autoRefund.js';
+export { buyerCancelStep, type BuyerCancelInputs, type BuyerCancelStep } from './buyerCancel.js';
+export { openDesk, type Desk, type DeskRecord, type DeskStep } from './desk.js';
+export { verifyRuling } from './rulings.js';
+export { newShadow } from './shadow.js';
+export { readSignal, sealAck, termsMatch, type ModSignal } from './signals.js';
+export { createWatcher, dumpWatchState, reviveWatchState, spendEvidence, SETTLE_BACKOFF_MS, type SweepContext, type Watcher } from './watcher.js';
 
 /**
  * The moderation service: a SEPARATE process that holds the moderator keystore (MOD_KEYSTORE_KEY)
@@ -38,12 +78,33 @@ export interface ModerationOptions {
   /** MOD_SIGNING_SECRET: the 64-byte Ed25519 secret key. */
   signingSecret: Uint8Array;
   feeWallet: string;
+  /** RELAY_URL: the relay's public WebSocket URL, which the moderator party joins (Task 9). */
+  relayUrl: string;
+  /** MONERO_NETWORK: the escrow wallets' network. */
+  network: 'regtest' | 'stagenet' | 'mainnet';
 }
 
 export interface ModerationDeps {
   fetch?: Fetch;
-  /** Starts the moderator party for a trade. Task 9 supplies the real one; until then it is deferred. */
+  /**
+   * Replaces the whole moderator party hook (Task 8's tests record it). Default: the Task 9
+   * watcher's, which registers the trade in `mod_watch` and starts the party.
+   */
   runParty?: (a: ModPartyArgs) => void | Promise<void>;
+  /** Starts one moderator party. Default: `startModParty` with the production I/O (`partyIO`). */
+  startParty?: (a: ModPartyArgs) => Promise<PartyHandle>;
+  /** The party's I/O for the default `startParty`. Default: monero-ts and the relay (`defaultPartyIO`). */
+  partyIO?: PartyIO;
+  /**
+   * The signals channel transport for one trade's desk (Task 10), on `channelFor(code, 'signals')`
+   * as `mod`. Default: the production relay transport (`wsTransport`), but only when `startParty`
+   * is not replaced either; a caller that replaces `startParty` without this runs no desks.
+   */
+  signalsTransport?: (a: { channel: string; me: Identity }) => Transport | Promise<Transport>;
+  /** Watcher period; 0 runs no watcher loop (callers drive `watch`). Default WATCH_INTERVAL_MS (15 s). */
+  watchIntervalMs?: number;
+  /** The per-pass instance-lock check (tests); default `instanceLockHeld` on the lock connection (re-verify R3). */
+  lockHeld?: () => Promise<boolean>;
   newIdentity?: () => Promise<Identity>;
   now?: () => Date;
   /** Loop period; 0 runs no loop (callers drive `tick`). Default 5 s. */
@@ -57,7 +118,15 @@ export interface ModerationHandle {
   tick(): Promise<string[]>;
   /** One pass over the API's chat work list (Task 20); resolves with the chats attested this pass. */
   chatTick(): Promise<string[]>;
+  /** One chain-watcher pass (Task 9). */
+  watch(): Promise<void>;
+  /** Stops the loops, then every running moderator party. */
   stop(): Promise<void>;
+  /**
+   * Resolves once the instance lock was lost (re-verify R3); the service has then stopped itself.
+   * The process entry exits 1 on it, so a supervisor restarts it (and the new one waits for the lock).
+   */
+  lockLost: Promise<void>;
 }
 
 /** The moderator's party state as sealed into `mod_party_state` (never the wallet password). */
@@ -95,7 +164,40 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   }
   const now = deps.now ?? (() => new Date());
   const log = deps.log ?? (() => {});
-  const runParty = deps.runParty ?? (() => log({ reason: 'party-deferred' }));
+  if (typeof o.relayUrl !== 'string' || !/^wss?:\/\//.test(o.relayUrl)) throw new TypeError('moderation: relayUrl must be a ws:// or wss:// URL');
+  if (!['regtest', 'stagenet', 'mainnet'].includes(o.network)) throw new TypeError('moderation: network must be regtest, stagenet or mainnet');
+  // Security review 7 Nov 2026, finding 2: one moderation process per database. The lock is held on
+  // its own connection for the life of the process; a second process refuses to start.
+  const lock = await o.db.connect();
+  let locked = false;
+  try {
+    locked = (await lock.query<{ ok: boolean }>('select pg_try_advisory_lock($1) as ok', [MOD_INSTANCE_LOCK])).rows[0]?.ok === true;
+  } catch (e) {
+    lock.release();
+    throw e;
+  }
+  if (!locked) {
+    lock.release();
+    log({ reason: 'moderation-instance-locked' });
+    throw new Error('moderation: another moderation process holds the instance lock on this database');
+  }
+  // A lost lock connection releases the lock: stop working rather than run beside a new process
+  // (re-verify R3: the error event, and the per-pass check for a half-open connection that never errors).
+  let lost = false;
+  let onLost!: () => void;
+  const lockLost = new Promise<void>((resolve) => {
+    onLost = resolve;
+  });
+  let stopForLoss: (() => Promise<void>) | null = null;
+  const loseLock = (): void => {
+    if (lost) return;
+    lost = true;
+    log({ reason: 'moderation-instance-lock-lost' });
+    void (stopForLoss?.() ?? Promise.resolve()).finally(onLost);
+  };
+  const onLockError = (): void => loseLock();
+  lock.on('error', onLockError);
+  const lockHeld = deps.lockHeld ?? (() => instanceLockHeld(lock));
   const link: Link = createLink({
     apiInternalUrl: o.apiInternalUrl,
     relayAdminUrl: o.relayAdminUrl,
@@ -103,6 +205,41 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     fetch: deps.fetch ?? defaultFetch,
     now: () => now().getTime(),
   });
+  let io: PartyIO | undefined = deps.partyIO;
+  const startParty =
+    deps.startParty ??
+    (async (a: ModPartyArgs) => startModParty(a, (io ??= await defaultPartyIO({ relayUrl: o.relayUrl, network: o.network })), o.db, o.keystoreKey));
+  const signalsTransport =
+    deps.signalsTransport ??
+    (deps.startParty
+      ? undefined
+      : async (a: { channel: string; me: Identity }) => {
+          io ??= await defaultPartyIO({ relayUrl: o.relayUrl, network: o.network });
+          return io.transport({ url: io.relayUrl, code: a.channel, role: 'mod', me: a.me });
+        });
+  const watcher = createWatcher({
+    db: o.db,
+    link,
+    startParty,
+    argsFor: (code) => partyArgsFor(o, code),
+    now,
+    log,
+    ...(signalsTransport
+      ? {
+          openDesk: async (a: ModPartyArgs) =>
+            openDesk({
+              db: o.db,
+              args: a,
+              feeWallet: o.feeWallet,
+              transport: await signalsTransport({ channel: await channelFor(a.trade, 'signals'), me: a.me }),
+              link,
+              now,
+              log,
+            }),
+        }
+      : {}),
+  });
+  const runParty = deps.runParty ?? ((a: ModPartyArgs) => watcher.runParty(a));
   const started = new Set<string>();
 
   /** The trade's signed attestation and party, minted once and sealed before anything is sent. */
@@ -280,20 +417,79 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   let running: Promise<unknown> = Promise.resolve();
   const loop = (): void => {
     if (stopped) return;
-    running = tick().then(chatTick).finally(() => {
-      if (!stopped) timer = setTimeout(loop, intervalMs);
-    });
+    // A throw that escapes a pass is logged and the loop goes on (review M3): an unhandled rejection
+    // would end the process, and the chain watcher with it.
+    running = tick()
+      .then(chatTick)
+      .catch(() => log({ reason: 'work-pass-failed' }))
+      .finally(() => {
+        if (!stopped) timer = setTimeout(loop, intervalMs);
+      });
   };
   if (intervalMs > 0) loop();
+
+  const watchIntervalMs = deps.watchIntervalMs ?? WATCH_INTERVAL_MS;
+  let watchTimer: ReturnType<typeof setTimeout> | null = null;
+  let watching: Promise<unknown> = Promise.resolve();
+  const watchLoop = (): void => {
+    if (stopped) return;
+    watching = lockHeld()
+      .then((held) => {
+        if (!held) return loseLock();
+        return watcher.tick();
+      })
+      .catch(() => log({ reason: 'watch-pass-failed' }))
+      .finally(() => {
+        if (!stopped) watchTimer = setTimeout(watchLoop, watchIntervalMs);
+      });
+  };
+  if (watchIntervalMs > 0) watchLoop();
+
+  let stopping: Promise<void> | null = null;
+  const stop = (): Promise<void> =>
+    (stopping ??= (async () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      if (watchTimer) clearTimeout(watchTimer);
+      await running.catch(() => undefined);
+      await watching.catch(() => undefined);
+      await watcher.stop();
+      if (!lost) await lock.query('select pg_advisory_unlock($1)', [MOD_INSTANCE_LOCK]).catch(() => undefined);
+      lock.off('error', onLockError);
+      // A lost connection is destroyed, never handed back to the pool.
+      lock.release(lost ? true : undefined);
+    })());
+  stopForLoss = stop;
 
   return {
     tick,
     chatTick,
-    async stop() {
-      stopped = true;
-      if (timer) clearTimeout(timer);
-      await running.catch(() => undefined);
-    },
+    // Through the watcher's own queue: never a pass alongside the loop's (finding 2).
+    watch: () => watcher.tick(),
+    stop,
+    lockLost,
+  };
+}
+
+/**
+ * A trade's ModPartyArgs after a restart, from this service's own records only: the sealed mod
+ * identity and participants (`mod_party_state`), the R27 wallet password (`mod_wallet_secrets`)
+ * and the terms it signed (`signed_terms`). Never from the API. Null when any is missing.
+ */
+async function partyArgsFor(o: ModerationOptions, code: string): Promise<ModPartyArgs | null> {
+  const party = await loadParty<SealedParty>(o.db, o.keystoreKey, code);
+  const { rows } = await o.db.query<{ attestation: Attestation }>('select attestation from signed_terms where trade = $1 and posted_at is not null', [code]);
+  const terms = rows[0]?.attestation.terms;
+  if (!party || terms === undefined) return null;
+  return {
+    trade: code,
+    role: 'mod',
+    me: fromHexIdentity(party.me),
+    participants: party.participants,
+    password: await walletPassword(o.db, o.keystoreKey, code),
+    daemonUri: o.daemonUri,
+    feeWallet: o.feeWallet,
+    terms,
   };
 }
 
@@ -325,15 +521,23 @@ export function internalFromEnv(env: Record<string, string | undefined>): { sock
   return { socketPath, secret: envBytes(env, 'MOD_INTERNAL_SECRET', 32), apiReaderUrl: envString(env, 'MOD_API_READER_DATABASE_URL') };
 }
 
-// `tsx apps/moderation/src/main.ts`: the moderation process. Its one listener is the Unix socket.
+function envNetwork(env: Record<string, string | undefined>): ModerationOptions['network'] {
+  const v = envString(env, 'MONERO_NETWORK');
+  if (v !== 'regtest' && v !== 'stagenet' && v !== 'mainnet') throw new Error('moderation: MONERO_NETWORK must be regtest, stagenet or mainnet');
+  return v;
+}
+
+// `tsx apps/moderation/src/main.ts`: the moderation process. Its one listener is the internal Unix socket (Plan 4 Task 11), and only when MOD_INTERNAL_SOCKET is set.
 if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href) {
   const env = process.env;
   const { default: pgMod } = await import('pg');
   const { migrateModeration } = await import('./keystore.js');
-  const db = new pgMod.Pool({ connectionString: envString(env, 'MOD_DATABASE_URL'), max: 4 });
+  const db = new pgMod.Pool({ connectionString: envString(env, 'MOD_DATABASE_URL'), max: 5, keepAlive: true });
   db.on('error', () => process.stderr.write('{"level":50,"msg":"moderation database idle client error"}\n'));
   await migrateModeration(db);
-  const handle = await startModeration(
+  let handle: ModerationHandle;
+  try {
+    handle = await startModeration(
     {
       apiInternalUrl: envString(env, 'X2F_API_INTERNAL_URL'),
       relayAdminUrl: envString(env, 'RELAY_ADMIN_URL'),
@@ -342,9 +546,17 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
       keystoreKey: envBytes(env, 'MOD_KEYSTORE_KEY', 32),
       signingSecret: envBytes(env, 'MOD_SIGNING_SECRET', 64),
       feeWallet: envString(env, 'X2F_FEE_WALLET'),
+      relayUrl: envString(env, 'RELAY_URL'),
+      network: envNetwork(env),
     },
     { log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) },
-  );
+    );
+  } catch (e) {
+    // A refused start (another process holds the instance lock, finding 2) or bad settings: exit non-zero.
+    process.stderr.write(`${JSON.stringify({ level: 50, msg: e instanceof Error ? e.message : 'moderation: start failed' })}\n`);
+    await db.end().catch(() => undefined);
+    process.exit(1);
+  }
   const internal = internalFromEnv(env);
   let apiReader: pg.Pool | null = null;
   let server: { close(): Promise<void> } | null = null;
@@ -366,6 +578,14 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
     await apiReader?.end();
     await db.end();
   };
+  // Re-verify R3: a lost instance lock ends the process non-zero (the service already stopped), so a
+  // supervisor restarts it and the new process waits for the lock.
+  void handle.lockLost.then(async () => {
+    await server?.close().catch(() => undefined);
+    await apiReader?.end().catch(() => undefined);
+    await db.end().catch(() => undefined);
+    process.exit(1);
+  });
   process.once('SIGTERM', () => void shutdown());
   process.once('SIGINT', () => void shutdown());
 }

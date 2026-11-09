@@ -21,6 +21,7 @@ import {
   rulingFinal,
   paidOutAtomic,
   xmrInText,
+  xmrInTextExact,
   type SettleOutcome,
 } from '../src/screens/dispute/rules.js';
 import { fire, render } from './render.js';
@@ -564,5 +565,16 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     const buyer = render(inRouter(<DisputeRuling trade={{ ...t, role: 'buyer', counterparty: 'satoshi_ghost' }} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} onTxProof={onTxProof} />));
     expect(buyer.host.textContent).toContain('satoshi_ghost must send you 1.25 XMR');
     expect(buyer.host.querySelector('[aria-label="Transfer proof"]')).toBeNull();
+  });
+
+  it('seller-sends-xmr: the amount to send is exact, never cut at 6 places (review kit round 1, finding 1)', () => {
+    const t = trade({ role: 'seller', counterparty: 'mira.k', state: 'refunded', amountAtomic: '610529733574', dispute: { by: 'buyer', at: iso(130) } });
+    const d = { ...ruled({ outcome: 'seller-sends-xmr', destination: null }, { afterRefund: true, status: 'final' as const }), complyBy: iso(2000) };
+    const seller = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(seller.host.textContent).toContain('You must send mira.k 0.610529733574 XMR');
+    const buyer = render(inRouter(<DisputeRuling trade={{ ...t, role: 'buyer', counterparty: 'satoshi_ghost' }} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(buyer.host.textContent).toContain('satoshi_ghost must send you 0.610529733574 XMR');
+    expect(xmrInTextExact(733_574n)).toBe('0.000000733574');
+    expect(xmrInTextExact('1250000000000')).toBe('1.25');
   });
 });

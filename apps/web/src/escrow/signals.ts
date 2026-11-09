@@ -14,28 +14,21 @@
  *   the plan's `{}` (security fix 2026-10-24): the seller fixes the amount from this signed value,
  *   never from the API. Task 10 must accept it.
  * - trade.cancel (buyer); trade.extend, trade.refund-request (seller): `{}`.
- * - trade.ack (mod → sender): GUESS `{ of: '<type>' }`; an ack of trade.terms stops its resends.
+ * - trade.ack (mod → the sender only): `{ of: '<type>' }`; an ack of trade.terms stops its resends.
+ *
+ * The payload schema is `@x2f/trade`'s (signals.ts), the one the moderation service reads too
+ * (Task 10, which replaced this module's earlier guesses).
  */
 import type { Role } from '@x2f/core';
 import type { Transport } from '@x2f/escrow';
 import { ProtocolError, ReplayGuard, open, seal, type Identity, type Participants, type ReplayGuardJSON } from '@x2f/protocol';
 import { ROLES } from '@x2f/core';
+import { SIGNAL_SENDERS, SIGNAL_TYPES, parseSignalDeal, signalAddressKey, signalPayloadOk, type SignalType } from '@x2f/trade';
 import type { Deal } from './policy.js';
 
-export const SIGNAL_TYPES = ['trade.terms', 'trade.paid', 'trade.cancel', 'trade.extend', 'trade.refund-request', 'trade.ack'] as const;
-export type SignalType = (typeof SIGNAL_TYPES)[number];
+export { SIGNAL_SENDERS, SIGNAL_TYPES, type SignalType };
 /** The signals a trader's app may send itself (terms and acks are sent by the runtime). */
 export type UserSignal = 'trade.paid' | 'trade.cancel' | 'trade.extend' | 'trade.refund-request';
-
-/** Who may send each signal. */
-export const SIGNAL_SENDERS: Record<SignalType, readonly Role[]> = {
-  'trade.terms': ['buyer', 'seller'],
-  'trade.paid': ['buyer'],
-  'trade.cancel': ['buyer'],
-  'trade.extend': ['seller'],
-  'trade.refund-request': ['seller'],
-  'trade.ack': ['mod'],
-};
 
 export interface SignalsState {
   guard: ReplayGuardJSON;
@@ -84,43 +77,13 @@ export interface SignalsHandle {
   stop(): void;
 }
 
-const MAX_ADDRESS = 256;
-
-function isRecord(x: unknown): x is Record<string, unknown> {
-  return typeof x === 'object' && x !== null && !Array.isArray(x);
-}
-
-function exactKeys(o: Record<string, unknown>, keys: readonly string[]): boolean {
-  const own = Object.keys(o);
-  return own.length === keys.length && keys.every((k) => own.includes(k));
-}
-
-function parseDeal(d: unknown): Deal | null {
-  if (!isRecord(d) || !exactKeys(d, ['poster', 'takeAmountAtomic', 'currency', 'centsPerXmr', 'maxFiatCents'])) return null;
-  if (d.poster !== 'buyer' && d.poster !== 'seller') return null;
-  if (typeof d.currency !== 'string' || !/^[A-Z]{3}$/.test(d.currency)) return null;
-  for (const k of ['takeAmountAtomic', 'centsPerXmr', 'maxFiatCents'] as const) if (typeof d[k] !== 'bigint' || (d[k] as bigint) <= 0n) return null;
-  return d as unknown as Deal;
-}
-
 export function sameDeal(a: Deal, b: Deal): boolean {
   return a.poster === b.poster && a.takeAmountAtomic === b.takeAmountAtomic && a.currency === b.currency && a.centsPerXmr === b.centsPerXmr && a.maxFiatCents === b.maxFiatCents;
 }
 
-const addressKey = (role: Role): 'payoutAddress' | 'refundAddress' => (role === 'buyer' ? 'payoutAddress' : 'refundAddress');
-
-/** Checks a payload's exact shape for its type and sender. */
-function wellFormed(type: SignalType, from: Role, p: unknown): p is Record<string, unknown> {
-  if (!isRecord(p) || !SIGNAL_SENDERS[type].includes(from)) return false;
-  if (type === 'trade.terms') {
-    const k = addressKey(from);
-    const addr = p[k];
-    return exactKeys(p, [k, 'deal']) && typeof addr === 'string' && addr.length > 0 && addr.length <= MAX_ADDRESS && parseDeal(p.deal) !== null;
-  }
-  if (type === 'trade.ack') return exactKeys(p, ['of']) && typeof p.of === 'string';
-  if (type === 'trade.paid') return exactKeys(p, ['amountAtomic', 'fiatCents']) && typeof p.amountAtomic === 'bigint' && p.amountAtomic > 0n && typeof p.fiatCents === 'bigint' && p.fiatCents > 0n;
-  return Object.keys(p).length === 0;
-}
+const addressKey = signalAddressKey;
+const parseDeal = (d: unknown): Deal | null => parseSignalDeal(d);
+const wellFormed = signalPayloadOk;
 
 export function runSignals(a: SignalsArgs): SignalsHandle {
   const ignored = a.onIgnored ?? (() => {});
