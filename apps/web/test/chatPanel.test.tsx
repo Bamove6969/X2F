@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CHAT_NOTICE, ChatPanel, OfferChatPanel, OTHER_DEVICE, TradeChatPanel } from '../src/chat/ChatPanel.js';
+import { CHAT_NOTICE, ChatPanel, MISSING_LINE, OfferChatPanel, OTHER_DEVICE, TradeChatPanel } from '../src/chat/ChatPanel.js';
 import { ChatFailed, setChatClient, type ChatClient, type ChatSnapshot } from '../src/chat/client.js';
 import { emitChatLive } from '../src/chat/live.js';
 import { render } from './render.js';
@@ -82,6 +82,21 @@ describe('ChatPanel', () => {
     expect(host.querySelector('[data-system="dispute"]')).toBeNull();
     // The panel never adds a second primary action to the screen it sits in.
     expect(host.querySelector('[data-primary]')).toBeNull();
+  });
+
+  it('review I2: a line the server no longer serves stays in place as a note with its sender and time, never as its text', async () => {
+    current = snap({
+      lines: [
+        { id: '1', from: 'seller', text: '', at: '2026-11-06T15:00:00.000Z', mine: false, gapBefore: false, missing: true },
+        { id: '2', from: 'buyer', text: 'Paid', at: null, mine: true, gapBefore: false },
+      ],
+    });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    const items = [...host.querySelectorAll('li')].map((li) => li.textContent);
+    expect(items).toEqual([`Sam: ${MISSING_LINE} Sent 6 Nov 2026, 15:00 UTC.`, 'You: Paid']);
+    expect(host.querySelector('li[data-missing] time')?.getAttribute('dateTime')).toBe('2026-11-06T15:00:00.000Z');
+    expect(host.querySelectorAll('li[data-missing]')).toHaveLength(1);
   });
 
   it('outside the dispute room a moderator line reads "Moderator", with no badge, and the panel says a dispute is open', async () => {

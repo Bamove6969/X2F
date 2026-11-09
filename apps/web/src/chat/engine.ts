@@ -20,7 +20,13 @@
  *   keeps keys, the ChatState, the cursor and a receipt per accepted line. The first sync of a chat
  *   in this worker re-reads the whole chat from the server and decrypts it again; a line the guard
  *   already took is shown only for the same signed envelope (its receipt's signature). The text is
- *   kept in this worker's memory only, for the later syncs of the same session.
+ *   kept in this worker's memory only, for the later syncs of the same session, and only once that
+ *   first read went through (review I3): a read that fails partway is done again from the start.
+ * - A line the device took earlier that the re-read cannot show again (the server no longer serves
+ *   it, or serves another envelope in its place) is a placeholder line from its receipt: its sender
+ *   and time, `missing`, no text (review I2). A drop is shown as a gap, never hidden.
+ * - Envelopes at or below the cursor were all decided before: on a re-read, one with no receipt is
+ *   skipped, never opened (review M2).
  * - Erase on purge: when the API answers 410 `chat-purged` for a chat, its record and the lines in
  *   memory are erased; `sweep` checks every stored chat once per worker start. A 404 keeps the
  *   record (a block hides a chat with that same 404, and it may come back).
@@ -66,6 +72,11 @@ export interface ChatLine {
   at: string | null;
   mine: boolean;
   gapBefore: boolean;
+  /**
+   * A line this device took earlier that the server no longer serves as it was (review I2): `text`
+   * is empty and the panel says the message is no longer on the server.
+   */
+  missing?: true;
 }
 
 export interface ChatSnapshot {
@@ -98,7 +109,8 @@ export interface ChatEngine {
   send(chat: string, text: string): Promise<ChatSnapshot>;
   /**
    * Asks the API about every chat stored on this device and erases each one it answers 410
-   * `chat-purged` for; resolves with those. Any other answer (or none) keeps the record.
+   * `chat-purged` for; resolves with those. Any other answer (or none) keeps the record. Rejects on
+   * a 401 (no live session: nothing can be told apart), so the caller tries again later.
    */
   sweep(): Promise<string[]>;
 }
@@ -142,15 +154,20 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     return next;
   };
 
-  /** The text of each line this worker has opened, by chat and envelope id: memory only, never stored. */
-  const texts = new Map<string, Map<string, string>>();
+  /**
+   * Per chat, once its first read in this worker went through: the text of each line opened, by
+   * envelope id, and how far the reads reached (`all` once a read reached the end). Memory only.
+   */
+  const sessions = new Map<string, { texts: Map<string, string>; reached: bigint | 'all' }>();
   const erase = async (chat: string): Promise<void> => {
-    texts.delete(chat);
+    sessions.delete(chat);
     await d.store.delete(chat);
   };
 
   const snapshot = (rec: ChatRecord | null, view: ChatApiView, phase: ChatPhase, problem: ChatSnapshot['problem'] = null, more = false): ChatSnapshot => {
-    const shown = rec ? texts.get(rec.chat) : undefined;
+    const session = rec ? sessions.get(rec.chat) : undefined;
+    /** A receipt the reads went past without showing it again: a placeholder (review I2). */
+    const judged = (id: string): boolean => session !== undefined && (session.reached === 'all' || BigInt(id) <= session.reached);
     return {
       phase,
       more,
@@ -160,9 +177,13 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       disputeOpen: view.disputeOpen,
       // By the server's order: a moderator line held until a dispute opened is shown where it was posted.
       lines: [...(rec?.receipts ?? [])]
-        .filter((m) => shown?.has(m.id) === true)
+        .filter((m) => session?.texts.has(m.id) === true || judged(m.id))
         .sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1))
-        .map((m) => ({ id: m.id, from: m.from, text: shown!.get(m.id)!, at: m.at, mine: m.from === view.role, gapBefore: m.gapBefore })),
+        .map((m): ChatLine => {
+          const line = { id: m.id, from: m.from, at: m.at, mine: m.from === view.role, gapBefore: m.gapBefore };
+          const text = session?.texts.get(m.id);
+          return text === undefined ? { ...line, text: '', missing: true } : { ...line, text };
+        }),
     };
   };
 
@@ -235,17 +256,19 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
 
   /**
    * Reads and opens the envelopes: from the start of the chat on its first sync in this worker (the
-   * device keeps no text), else past the cursor. A line with a receipt is re-opened (`reopen`); any
-   * other goes through the saved guard, and the record is saved after each one it takes. At most
-   * MAX_PAGES pages past the cursor; `more` when it stopped there with envelopes still unread.
+   * device keeps no text), else past the cursor. A line with a receipt is re-opened (`reopen`); one
+   * at or below the cursor with none is skipped (review M2); any other goes through the saved guard,
+   * and the record is saved after each one it takes. At most MAX_PAGES pages past the cursor; `more`
+   * when it stopped there with envelopes still unread. The session (the texts) is kept only once the
+   * read went through (review I3): a read that throws leaves a first read to be done again.
    */
   async function readAll(rec: ChatRecord, view: ChatApiView, parts: Participants): Promise<{ rec: ChatRecord; more: boolean }> {
     const me = toIdentity(rec.identity);
     const channel = await chatChannel(rec.chat);
     let state: ChatState = rec.state ?? newChatState(channel);
-    const shown = texts.get(rec.chat) ?? new Map<string, string>();
-    const cold = !texts.has(rec.chat);
-    texts.set(rec.chat, shown);
+    const session = sessions.get(rec.chat);
+    const cold = session === undefined;
+    const shown = session?.texts ?? new Map<string, string>();
     const start = BigInt(rec.cursor);
     let cursor = rec.cursor;
     let held = false;
@@ -274,6 +297,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           }
           continue;
         }
+        // Decided before (taken, or skipped as a replay or forgery): a new line given an old id is never read.
+        if (!past) continue;
         let advance = true;
         try {
           if (!ROLES_SET.has(e.senderRole)) throw new ChatError('bad-message', 'unknown sender');
@@ -301,7 +326,6 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           if (err instanceof ChatError && (err.code === 'mod-not-allowed' || err.code === 'bad-message')) advance = false;
           // Anything else (a replay of a line already shown, a forged or foreign envelope) is skipped.
         }
-        if (!past) continue;
         if (!advance) held = true;
         if (!held) cursor = e.id;
         rec = { ...rec, state, cursor, receipts: [...receipts] };
@@ -310,6 +334,9 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       unread = more;
       if (!more) break;
     }
+    let reached: bigint | 'all' = unread ? BigInt(after) : 'all';
+    if (session !== undefined && (session.reached === 'all' || (reached !== 'all' && session.reached > reached))) reached = session.reached;
+    sessions.set(rec.chat, { texts: shown, reached });
     return { rec, more: unread };
   }
 
@@ -362,6 +389,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
           await serial(chat, () => purging(chat, () => d.api.getChat(chat)));
         } catch (e) {
           if (isPurged(e)) gone.push(chat);
+          // No live session: every other chat would answer the same. Stop; the caller tries later.
+          else if ((e as { status?: unknown } | null)?.status === 401) throw e;
         }
       }
       return gone;

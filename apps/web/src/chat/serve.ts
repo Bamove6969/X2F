@@ -27,22 +27,37 @@ function failure(e: unknown): ChatFailure {
 }
 
 /**
- * Answers the page's chat messages with `engine` (made once `makeEngine` resolves). The first time
- * an engine is made, it sweeps the device's stored chats for purged ones (design 2026-11-08
- * section 5: erase on purge), in the background; a failed sweep is tried on the next start.
+ * Answers the page's chat messages with `engine` (made once `makeEngine` resolves). The engine is
+ * made when the worker starts, not on the first chat message, and it sweeps the device's stored
+ * chats for purged ones right away (design 2026-11-08 section 5, "at every app start"; review M3),
+ * in the background. A sweep that fails (no live session yet: 401) is tried again on the next chat
+ * message, which comes with one; once one goes through, never again in this worker.
  */
 export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>): void {
-  let engine: Promise<ChatEngine> | null = null;
   let swept = false;
+  let sweeping = false;
+  const sweep = (eng: ChatEngine): void => {
+    if (swept || sweeping) return;
+    sweeping = true;
+    eng.sweep().then(
+      () => {
+        swept = true;
+        sweeping = false;
+      },
+      () => {
+        sweeping = false;
+      },
+    );
+  };
   const make = (): Promise<ChatEngine> => {
     const p = makeEngine();
-    void p.then((eng) => {
-      if (swept) return;
-      swept = true;
-      return eng.sweep();
-    }).catch(() => undefined);
+    p.then(sweep, () => {
+      // A failed start (no config, no IndexedDB) is retried on the next message.
+      if (engine === p) engine = null;
+    });
     return p;
   };
+  let engine: Promise<ChatEngine> | null = make();
   port.addEventListener('message', (e) => {
     const m = e.data as Partial<ToChatWorker> | null;
     if (typeof m !== 'object' || m === null || (m.t !== 'chat-sync' && m.t !== 'chat-send') || typeof m.id !== 'number') return;
@@ -52,6 +67,7 @@ export function serveChat(port: ChatPort, makeEngine: () => Promise<ChatEngine>)
         if (typeof m.chat !== 'string' || !CODE.test(m.chat)) throw Object.assign(new Error('bad chat'), { status: 404 });
         engine ??= make();
         const eng = await engine;
+        sweep(eng);
         let snapshot: ChatSnapshot;
         if (m.t === 'chat-send') {
           if (typeof m.text !== 'string') throw new ChatSendFailed('bad-text');
