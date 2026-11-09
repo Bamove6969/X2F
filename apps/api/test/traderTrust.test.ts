@@ -213,6 +213,26 @@ describe('badges (spec 5.4, @x2f/reputation earnedBadges and the default visibil
     expect(poster.badges).toEqual(['fast', 'veteran-1', 'pgp', 'security-key']);
   });
 
+  it('Fast weighs both lists: 20 payments at 240 min and 20 releases at 1 min is not Fast (review 2, I2)', async () => {
+    const p = await person();
+    const lists = (pay: number, release: number) =>
+      deps.db.query(
+        `insert into account_action_minutes (account_id, kind, minutes) values ($1, 'pay', $2), ($1, 'release', $3)
+         on conflict (account_id, kind) do update set minutes = excluded.minutes`,
+        [p.id, Array.from({ length: 20 }, () => pay), Array.from({ length: 20 }, () => release)],
+      );
+    await lists(240, 1);
+    const sell = await post(p, 'sell');
+    const buy = await post(p, 'buy');
+    const seller = await posterOn('sell', sell);
+    expect(seller.typicalMinutes).toBe(1);
+    expect(seller.badges).not.toContain('fast');
+    expect((await posterOn('buy', buy)).typicalMinutes).toBe(240);
+    // Quick on both sides is Fast.
+    await lists(2, 1);
+    expect((await posterOn('sell', sell)).badges).toContain('fast');
+  });
+
   it('a passkey is not a security key; a graduated trader with nothing earned carries no badge', async () => {
     const p = await person();
     await deps.db.query(

@@ -1,7 +1,7 @@
 import {
   NEGATIVE_MAX_STARS,
   POSITIVE_MIN_STARS,
-  TYPICAL_WINDOW,
+  bothRolesTypical,
   earnedBadges,
   resolveVisibility,
   typicalMinutes,
@@ -90,7 +90,7 @@ export type SummaryRole = 'buyer' | 'seller';
  * trader asking, or null) may see them: `online` and `lastSeenAt` are hidden from someone the
  * account has blocked. `roles` picks each account's typical time (P5-A8): as seller, the release
  * time ("Releases in ~8 min"); as buyer, the payment time ("Pays in ~6 min"); with no role, the
- * median of both lists.
+ * median of both lists' last 20 together (@x2f/reputation bothRolesTypical).
  */
 export async function traderSummaries(
   q: Queryable,
@@ -141,9 +141,10 @@ export async function traderSummaries(
     const positivePct = rated === 0 ? null : Math.floor((positive * 100) / rated);
     const pay = r.pay ?? [];
     const release = r.release ?? [];
-    const both = [...pay, ...release];
+    // Both lists' last 20 together (review 2, I2): a plain concatenation's "last 20" was only releases.
+    const both = bothRolesTypical(pay, release);
     const role = roles?.get(r.id);
-    const typical = typicalMinutes(role === 'seller' ? release : role === 'buyer' ? pay : both);
+    const typical = role === 'seller' ? typicalMinutes(release) : role === 'buyer' ? typicalMinutes(pay) : both.minutes;
     const earned = earnedBadges(
       {
         stage,
@@ -151,8 +152,12 @@ export async function traderSummaries(
         positivePct,
         ratedReviews: rated,
         // Fast: "usually pays or releases within 10 min", over both lists.
-        typicalMinutes: typicalMinutes(both),
-        typicalSamples: Math.min(both.length, TYPICAL_WINDOW * 2),
+        typicalMinutes: both.minutes,
+        typicalSamples: both.samples,
+        // NEEDS_TASK_20_LOST_DISPUTES (review 2, M1): Clean record reads lost disputes from the live
+        // trades, so once the 30-day trade delete runs it would undercount and claim "no lost disputes"
+        // falsely. The Plan 7 trade purge must not land before Task 20's `lost_disputes` running total
+        // replaces LOST_DISPUTES_SQL (or Clean record is withheld). docs/coordination.md records this.
         lostDisputes: Number(r.lost),
         accountCreatedAt: r.created_at,
         hasPgp: r.pgp,
