@@ -60,25 +60,16 @@ describe('socketModerationClient', () => {
     expect(s.mac).toBe(want);
   });
 
-  it('NEEDS_P4_CHAT_MEMBERSHIP: has no chat read (the key-membership design replaces it)', () => {
+  it('NEEDS_P4_CHAT_MEMBERSHIP: has no chat read and no proof read (the key-membership design replaces both)', async () => {
+    // Review 8 Nov I-1: the unblurred proof is not relayed through the API either.
     const c = client('/tmp/x2f-unused.sock') as unknown as Record<string, unknown>;
-    expect(c.chatRead).toBeUndefined();
-    expect((NO_MODERATION as unknown as Record<string, unknown>).chatRead).toBeUndefined();
-  });
-
-  it('sends a message and reads a proof, with their own paths and bodies', async () => {
-    const { socket, seen } = await serve((req, res) => {
-      if (req.url === '/internal/chat/send') return json(res, 200, { envelope: { v: 1 } });
-      res.writeHead(200, { 'content-type': 'image/png' });
-      res.end(Buffer.from([1, 2, 3]));
-    });
-    const c = client(socket);
-    expect(await c.chatSend({ code: CODE, logEntryId: '7', text: 'Hello' })).toEqual({ envelope: { v: 1 } });
-    expect(await c.proofRead({ code: CODE, logEntryId: '8' })).toEqual({ mime: 'image/png', bytes: new Uint8Array([1, 2, 3]) });
-    expect(seen.map((s) => [s.path, JSON.parse(s.body)])).toEqual([
-      ['/internal/chat/send', { code: CODE, logEntryId: '7', text: 'Hello' }],
-      ['/internal/proof/read', { code: CODE, logEntryId: '8' }],
-    ]);
+    for (const m of ['chatRead', 'proofRead']) {
+      expect(c[m], m).toBeUndefined();
+      expect((NO_MODERATION as unknown as Record<string, unknown>)[m], m).toBeUndefined();
+    }
+    const { readFile } = await import('node:fs/promises');
+    const src = await readFile(new URL('../../src/disputes/moderationClient.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/'\/internal\/proof\/read'/);
   });
 
   it('passes the process\'s refusal on with its status and code; anything else is moderation-unavailable', async () => {
@@ -86,14 +77,9 @@ describe('socketModerationClient', () => {
     const { socket } = await serve((_q, res) => answer(res));
     const c = client(socket);
     await expect(c.chatSend({ code: CODE, logEntryId: '1', text: 'Hi' })).rejects.toMatchObject({ status: 403, code: 'log-entry-invalid' });
-    answer = (res) => json(res, 404, { error: 'no-proof' });
-    await expect(c.proofRead({ code: CODE, logEntryId: '1' })).rejects.toMatchObject({ status: 404, code: 'no-proof' });
-    // A proof that is not an image type, an answer with no envelope, a code that is not one: refused.
-    answer = (res) => {
-      res.writeHead(200, { 'content-type': 'text/html' });
-      res.end('<b>x</b>');
-    };
-    await expect(c.proofRead({ code: CODE, logEntryId: '1' })).rejects.toMatchObject({ status: 502, code: 'moderation-unavailable' });
+    answer = (res) => json(res, 404, { error: 'no-chat' });
+    await expect(c.chatSend({ code: CODE, logEntryId: '1', text: 'Hi' })).rejects.toMatchObject({ status: 404, code: 'no-chat' });
+    // An answer with no envelope, a code that is not one: refused.
     answer = (res) => json(res, 200, { messages: [] });
     await expect(c.chatSend({ code: CODE, logEntryId: '1', text: 'Hi' })).rejects.toMatchObject({ status: 502, code: 'moderation-unavailable' });
     answer = (res) => json(res, 500, { error: 'Something <b>long</b> and odd' });
@@ -102,9 +88,9 @@ describe('socketModerationClient', () => {
 
   it('a missing socket, or one that never answers, is moderation-unavailable (503)', async () => {
     const missing = client(join(tmpdir(), `x2f-none-${randomBytes(6).toString('hex')}.sock`));
-    await expect(missing.proofRead({ code: CODE, logEntryId: '1' })).rejects.toMatchObject({ status: 503, code: 'moderation-unavailable' });
+    await expect(missing.chatSend({ code: CODE, logEntryId: '1', text: 'Hi' })).rejects.toMatchObject({ status: 503, code: 'moderation-unavailable' });
     const { socket } = await serve(() => undefined);
-    await expect(client(socket, 200).proofRead({ code: CODE, logEntryId: '1' })).rejects.toBeInstanceOf(ModerationError);
+    await expect(client(socket, 200).chatSend({ code: CODE, logEntryId: '1', text: 'Hi' })).rejects.toBeInstanceOf(ModerationError);
   });
 
   it('needs a 32-byte secret', () => {

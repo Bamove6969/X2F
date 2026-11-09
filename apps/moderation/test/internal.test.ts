@@ -1,12 +1,15 @@
 // Plan 4 Task 11: the moderation process's internal API. It listens only on a Unix socket; every
 // request carries an HMAC over method, path, body and time (30 s); every call names the activity-log
 // entry the API wrote for it, which must match, be fresh (60 s), be unused, and belong to a trade
-// whose current dispute is not closed. The unblurred proof leaves this process only through those
-// calls. NEEDS_P4_CHAT_MEMBERSHIP: there is no chat read here (no `/internal/chat/read`): the
-// moderator's read path waits for the per-trade key-membership design (owner p11-2,
-// design-chat-membership-keys-2026-11-08), which replaces handing plaintext to the API.
+// whose current dispute is not closed. NEEDS_P4_CHAT_MEMBERSHIP: there is no chat read here (no
+// `/internal/chat/read`) and no proof read (no `/internal/proof/read`, review 8 Nov I-1): both
+// would hand plaintext to the API. The per-trade key-membership design (owner p11-2,
+// design-chat-membership-keys-2026-11-08) re-wraps the keys to the staff device instead.
+// NEEDS_P4_MOD_COUNTERSIGN (review 8 Nov I-2, lead): `/internal/chat/send` lets a compromised API
+// seal text as the moderator, so it is registered only with X2F_DEV_MOD_CHAT=1, never in
+// production, until build task 9 makes it a countersign.
 import { createHmac, randomBytes } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -95,13 +98,23 @@ async function disputedCase(api: FakeApi, status = 'open'): Promise<Case> {
   return { code, chat, channel, ids, participants };
 }
 
-/** A proof source that has a proof for every trade, so an accepted proof read answers 200. */
-const PROOFS = { unblurred: async () => ({ mime: 'image/png' as const, bytes: new Uint8Array([1, 2, 3]) }) };
-const PROOF = '/internal/proof/read';
+const SEND = '/internal/chat/send';
+/** The entry the API commits before it asks for a message (review 8 Nov M-2). */
+const REQUESTED = 'chat.message-requested';
 const OPENED = 'proof.unblurred-opened';
+/** The socket's group in these tests: this process's own (a deployment uses a dedicated one). */
+const GID = process.getgid!();
 
+/** Dev deps: the moderator's message route is on (X2F_DEV_MOD_CHAT=1); production has it off. */
 function deps(api: ApiView, o: Partial<InternalDeps> = {}): InternalDeps {
-  return { secret: SECRET, api, db, keystoreKey, now: () => NOW, proofs: PROOFS, ...o };
+  return { secret: SECRET, api, db, keystoreKey, now: () => NOW, devModChat: true, ...o };
+}
+
+/** A directory this process owns, mode 0750 (as /run/x2f-mod in a deployment). */
+async function socketDir(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'x2f-mod-'));
+  await chmod(dir, 0o750);
+  return dir;
 }
 
 const mac = (secret: Uint8Array, method: string, path: string, body: string, ts: string) =>
@@ -122,12 +135,14 @@ async function call(
   body: unknown,
   o: { ts?: number; secret?: Uint8Array; method?: string; noMac?: boolean; tamper?: boolean } = {},
 ): Promise<Answer> {
-  const socket = join(tmpdir(), `x2f-mod-${randomBytes(6).toString('hex')}.sock`);
-  const srv = await startInternalServer(socket, d);
+  const dir = await socketDir();
+  const socket = join(dir, 'mod.sock');
+  const srv = await startInternalServer({ path: socket, gid: GID }, d);
   try {
     return await send(socket, path, body, o);
   } finally {
     await srv.close();
+    await rm(dir, { recursive: true, force: true });
   }
 }
 
@@ -158,22 +173,54 @@ describe('authentication', () => {
   it('refuses a missing or wrong HMAC, a changed body, and a time more than 30 s off, with 401', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
-    const body = () => ({ code: c.code, logEntryId: api.entry(OPENED, c.code) });
+    const body = () => ({ code: c.code, logEntryId: api.entry(REQUESTED, c.code), text: 'Hi' });
     const d = deps(api);
     for (const o of [{ noMac: true }, { secret: new Uint8Array(randomBytes(32)) }, { tamper: true }, { ts: NOW.getTime() - 31_000 }, { ts: NOW.getTime() + 31_000 }]) {
-      const res = await call(d, PROOF, body(), o);
+      const res = await call(d, SEND, body(), o);
       expect({ o, status: res.status, error: res.json().error }).toEqual({ o, status: 401, error: 'unauthorized' });
     }
-    expect((await call(d, PROOF, body(), { ts: NOW.getTime() - 29_000 })).status).toBe(200);
+    expect((await call(d, SEND, body(), { ts: NOW.getTime() - 29_000 })).status).toBe(200);
   });
 
-  it('answers only its two POST paths', async () => {
+  it('answers only its one POST path', async () => {
     const api = new FakeApi();
     const d = deps(api);
-    expect((await call(d, PROOF, {}, { method: 'GET' })).status).toBe(404);
+    expect((await call(d, SEND, {}, { method: 'GET' })).status).toBe(404);
     expect((await call(d, '/internal/nothing', {})).status).toBe(404);
-    expect((await call(d, PROOF, { code: 'nope', logEntryId: '1' })).status).toBe(400);
-    expect((await call(d, PROOF, { code: newTradeCode(), logEntryId: '1', extra: 1 })).status).toBe(400);
+    expect((await call(d, SEND, { code: 'nope', logEntryId: '1', text: 'Hi' })).status).toBe(400);
+    expect((await call(d, SEND, { code: newTradeCode(), logEntryId: '1', text: 'Hi', extra: 1 })).status).toBe(400);
+    expect((await call(d, SEND, { code: newTradeCode(), logEntryId: '1' })).status).toBe(400);
+  });
+
+  it('NEEDS_P4_CHAT_MEMBERSHIP: has no proof read either, even for a signed call naming a fresh proof.unblurred-opened entry', async () => {
+    // Review 8 Nov I-1: `/internal/proof/read` sent the unblurred image to the API, the same
+    // plaintext-through-the-API gap as the chat read. The design (2.4 step 5) re-wraps the proof key
+    // to the staff device key instead; build it from that design, then replace this test. Plan 5
+    // must not wire a proof source into this process's internal API.
+    const api = new FakeApi();
+    const c = await disputedCase(api);
+    const id = api.entry(OPENED, c.code);
+    const res = await call(deps(api), '/internal/proof/read', { code: c.code, logEntryId: id });
+    expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'not-found' });
+    expect((await db.query('select 1 from used_log_entries where id = $1', [id])).rows).toEqual([]);
+    const src = await readFile(new URL('../src/internal/server.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/'\/internal\/proof\/read'|ProofSource|\.unblurred\(/);
+  });
+
+  it('NEEDS_P4_MOD_COUNTERSIGN: no message route unless X2F_DEV_MOD_CHAT=1 (never in production)', async () => {
+    // Review 8 Nov I-2 (lead): this route seals any text the API names as the moderator, so a
+    // compromised API could post "Moderator: release now" into a live trade. Until build task 9
+    // makes it a countersign (text signed by a certified staff device key on the case), it is off.
+    const api = new FakeApi();
+    const c = await disputedCase(api);
+    const id = api.entry(REQUESTED, c.code);
+    for (const o of [{}, { devModChat: false }]) {
+      const d = deps(api, o);
+      if (!('devModChat' in o)) delete (d as { devModChat?: boolean }).devModChat;
+      const res = await call(d, SEND, { code: c.code, logEntryId: id, text: 'Seller, release now.' });
+      expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'not-found' });
+    }
+    expect((await db.query('select 1 from used_log_entries where id = $1', [id])).rows).toEqual([]);
   });
 
   it('NEEDS_P4_CHAT_MEMBERSHIP: has no chat read, even for a signed call naming a fresh chat.read entry', async () => {
@@ -194,17 +241,50 @@ describe('authentication', () => {
     expect(chatSrc).not.toMatch(/\bopen\(/);
   });
 
-  it('listens on a Unix socket only, readable by its owner only', async () => {
-    const socket = join(tmpdir(), `x2f-mod-${randomBytes(6).toString('hex')}.sock`);
-    const srv = await startInternalServer(socket, deps(new FakeApi()));
+  it('listens on a Unix socket only: mode 0660, its own group, in a directory this process owns (review 8 Nov I-3)', async () => {
+    const dir = await socketDir();
+    const socket = join(dir, 'mod.sock');
     try {
-      expect(srv.address).toBe(socket);
-      expect((await stat(socket)).mode & 0o777).toBe(0o600);
+      const srv = await startInternalServer({ path: socket, gid: GID }, deps(new FakeApi()));
+      try {
+        expect(srv.address).toBe(socket);
+        const st = await stat(socket);
+        expect(st.mode & 0o777).toBe(0o660);
+        expect(st.gid).toBe(GID);
+      } finally {
+        await srv.close();
+      }
     } finally {
-      await srv.close();
+      await rm(dir, { recursive: true, force: true });
     }
     const src = await readFile(new URL('../src/internal/server.ts', import.meta.url), 'utf8');
     expect(src).not.toMatch(/listen\(\s*\{?\s*(port|host)/);
+    expect(src).not.toMatch(/0o600/);
+  });
+
+  it('refuses a socket directory others may write to or enter, and a missing or root group', async () => {
+    // A shared directory (/tmp) would let another user replace the socket; "other" access would let
+    // anyone outside the group reach it.
+    await expect(startInternalServer({ path: join(tmpdir(), `x2f-mod-${randomBytes(6).toString('hex')}.sock`), gid: GID }, deps(new FakeApi())))
+      .rejects.toThrow('MOD_INTERNAL_SOCKET');
+    for (const mode of [0o770, 0o755, 0o751]) {
+      const dir = await socketDir();
+      try {
+        await chmod(dir, mode);
+        await expect(startInternalServer({ path: join(dir, 'mod.sock'), gid: GID }, deps(new FakeApi())), mode.toString(8)).rejects.toThrow('MOD_INTERNAL_SOCKET');
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    }
+    const dir = await socketDir();
+    try {
+      await mkdir(join(dir, 'sub'), { mode: 0o700 });
+      for (const gid of [0, -1, 1.5, Number.NaN]) {
+        await expect(startInternalServer({ path: join(dir, 'sub', 'mod.sock'), gid }, deps(new FakeApi())), String(gid)).rejects.toThrow('MOD_INTERNAL_SOCKET_GID');
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -214,43 +294,41 @@ describe('the log entry each call names', () => {
     const c = await disputedCase(api);
     const other = await disputedCase(api);
     const d = deps(api);
-    const used = api.entry(OPENED, c.code);
-    expect((await call(d, PROOF, { code: c.code, logEntryId: used })).status).toBe(200);
+    const used = api.entry(REQUESTED, c.code);
+    expect((await call(d, SEND, { code: c.code, logEntryId: used, text: 'Hi' })).status).toBe(200);
     const cases = {
       used,
-      old: api.entry(OPENED, c.code, new Date(NOW.getTime() - 61_000)),
-      otherTrade: api.entry(OPENED, other.code),
-      otherAction: api.entry('chat.message-sent', c.code),
+      old: api.entry(REQUESTED, c.code, new Date(NOW.getTime() - 61_000)),
+      otherTrade: api.entry(REQUESTED, other.code),
+      // The entry the API writes AFTER storing the envelope (M-2) never authorises a send.
+      sent: api.entry('chat.message-sent', c.code),
+      opened: api.entry(OPENED, c.code),
       chatRead: api.entry('chat.read', c.code),
-      noTrade: api.entry(OPENED, null),
+      noTrade: api.entry(REQUESTED, null),
       unknown: '999999',
     };
     for (const [why, id] of Object.entries(cases)) {
-      const res = await call(d, PROOF, { code: c.code, logEntryId: id });
+      const res = await call(d, SEND, { code: c.code, logEntryId: id, text: 'Hi' });
       expect({ why, status: res.status, error: res.json().error }).toEqual({ why, status: 403, error: 'log-entry-invalid' });
     }
     // 59 s old is still fresh.
-    expect((await call(d, PROOF, { code: c.code, logEntryId: api.entry(OPENED, c.code, new Date(NOW.getTime() - 59_000)) })).status).toBe(200);
-    // Each path takes its own action only.
-    for (const action of [OPENED, 'chat.read']) {
-      const res = await call(d, '/internal/chat/send', { code: c.code, logEntryId: api.entry(action, c.code), text: 'Hi' });
-      expect(res.json().error).toBe('log-entry-invalid');
-    }
+    expect((await call(d, SEND, { code: c.code, logEntryId: api.entry(REQUESTED, c.code, new Date(NOW.getTime() - 59_000)), text: 'Hi' })).status).toBe(200);
   });
 
   it('refuses a fresh entry when the trade has no dispute, or its dispute is closed', async () => {
     const api = new FakeApi();
     const c = await disputedCase(api);
     const d = deps(api);
+    const sendBody = () => ({ code: c.code, logEntryId: api.entry(REQUESTED, c.code), text: 'Hi' });
     api.disputes.delete(c.code);
-    let res = await call(d, PROOF, { code: c.code, logEntryId: api.entry(OPENED, c.code) });
+    let res = await call(d, SEND, sendBody());
     expect({ status: res.status, error: res.json().error }).toEqual({ status: 403, error: 'log-entry-invalid' });
     api.disputes.set(c.code, 'closed');
-    res = await call(d, PROOF, { code: c.code, logEntryId: api.entry(OPENED, c.code) });
+    res = await call(d, SEND, sendBody());
     expect({ status: res.status, error: res.json().error }).toEqual({ status: 403, error: 'log-entry-invalid' });
     for (const s of ['open', 'awaiting-approval', 'published', 'appealed', 'final', 'complying']) {
       api.disputes.set(c.code, s);
-      expect((await call(d, PROOF, { code: c.code, logEntryId: api.entry(OPENED, c.code) })).status, s).toBe(200);
+      expect((await call(d, SEND, sendBody())).status, s).toBe(200);
     }
   });
 
@@ -259,7 +337,7 @@ describe('the log entry each call names', () => {
     const c = await disputedCase(api);
     api.chats.delete(c.code);
     const d = deps(api);
-    const id = api.entry('chat.message-sent', c.code);
+    const id = api.entry(REQUESTED, c.code);
     const res = await call(d, '/internal/chat/send', { code: c.code, logEntryId: id, text: 'Hi' });
     expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'no-chat' });
     expect((await call(d, '/internal/chat/send', { code: c.code, logEntryId: id, text: 'Hi' })).json().error).toBe('log-entry-invalid');
@@ -273,7 +351,7 @@ describe('the moderator\'s message', () => {
     const d = deps(api);
     const envs: Envelope[] = [];
     for (const text of ['First.', 'Second.']) {
-      const res = await call(d, '/internal/chat/send', { code: c.code, logEntryId: api.entry('chat.message-sent', c.code), text });
+      const res = await call(d, '/internal/chat/send', { code: c.code, logEntryId: api.entry(REQUESTED, c.code), text });
       expect(res.status).toBe(200);
       envs.push(res.json().envelope as Envelope);
     }
@@ -294,30 +372,14 @@ describe('the moderator\'s message', () => {
     const c = await disputedCase(api);
     const d = deps(api);
     for (const b of [{ text: '' }, { text: '  ' }, { text: 'x'.repeat(2001) }, { text: 'é'.repeat(1001) }, { text: 5 }, { text: 'bell\u0007' }]) {
-      const res = await call(d, '/internal/chat/send', { code: c.code, logEntryId: api.entry('chat.message-sent', c.code), ...b });
+      const res = await call(d, '/internal/chat/send', { code: c.code, logEntryId: api.entry(REQUESTED, c.code), ...b });
       expect(res.status, JSON.stringify(b)).toBe(400);
     }
     const unattested = newTradeCode();
     api.disputes.set(unattested, 'open');
     api.chats.set(unattested, newTradeCode());
-    const res = await call(d, '/internal/chat/send', { code: unattested, logEntryId: api.entry('chat.message-sent', unattested), text: 'Hi' });
+    const res = await call(d, '/internal/chat/send', { code: unattested, logEntryId: api.entry(REQUESTED, unattested), text: 'Hi' });
     expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'no-chat' });
-  });
-});
-
-describe('the unblurred proof', () => {
-  // NEEDS_P5_PROOF_ENVELOPE: the proof package (Plan 5: `proof.unblurred` sealed to the mod only,
-  // PROOF_RECIPIENTS / sealProofEnvelope) is not on this branch; the reader is a seam until then.
-  it('answers no-proof when the source has none, and the bytes with their type from one', async () => {
-    const api = new FakeApi();
-    const c = await disputedCase(api);
-    let res = await call(deps(api, { proofs: { unblurred: async () => null } }), '/internal/proof/read', { code: c.code, logEntryId: api.entry('proof.unblurred-opened', c.code) });
-    expect({ status: res.status, error: res.json().error }).toEqual({ status: 404, error: 'no-proof' });
-    const proofs = { unblurred: async (code: string) => (code === c.code ? { mime: 'image/png' as const, bytes: new Uint8Array([1, 2, 3]) } : null) };
-    res = await call(deps(api, { proofs }), '/internal/proof/read', { code: c.code, logEntryId: api.entry('proof.unblurred-opened', c.code) });
-    expect(res.status).toBe(200);
-    expect(res.type).toBe('image/png');
-    expect([...res.body]).toEqual([1, 2, 3]);
   });
 });
 
@@ -393,15 +455,31 @@ describe('internalFromEnv', () => {
     const { internalFromEnv } = await import('../src/main.js');
     expect(internalFromEnv({})).toBeNull();
     const secret = Buffer.from(SECRET).toString('base64');
-    const ok = internalFromEnv({ MOD_INTERNAL_SOCKET: '/run/x2f/mod.sock', MOD_INTERNAL_SECRET: secret, MOD_API_READER_DATABASE_URL: 'postgres://r@db/x2f' });
-    expect(ok).toEqual({ socketPath: '/run/x2f/mod.sock', secret: SECRET, apiReaderUrl: 'postgres://r@db/x2f' });
+    const base = { MOD_INTERNAL_SOCKET: '/run/x2f-mod/mod.sock', MOD_INTERNAL_SOCKET_GID: '991', MOD_INTERNAL_SECRET: secret, MOD_API_READER_DATABASE_URL: 'postgres://r@db/x2f' };
+    expect(internalFromEnv(base)).toEqual({ socketPath: '/run/x2f-mod/mod.sock', gid: 991, secret: SECRET, apiReaderUrl: 'postgres://r@db/x2f', devModChat: false });
     for (const [env, name] of [
-      [{ MOD_INTERNAL_SOCKET: 'mod.sock', MOD_INTERNAL_SECRET: secret, MOD_API_READER_DATABASE_URL: 'x' }, 'MOD_INTERNAL_SOCKET'],
-      [{ MOD_INTERNAL_SOCKET: '/run/x2f/mod.sock', MOD_API_READER_DATABASE_URL: 'x' }, 'MOD_INTERNAL_SECRET'],
-      [{ MOD_INTERNAL_SOCKET: '/run/x2f/mod.sock', MOD_INTERNAL_SECRET: 'c2hvcnQ=', MOD_API_READER_DATABASE_URL: 'x' }, 'MOD_INTERNAL_SECRET'],
-      [{ MOD_INTERNAL_SOCKET: '/run/x2f/mod.sock', MOD_INTERNAL_SECRET: secret }, 'MOD_API_READER_DATABASE_URL'],
+      [{ ...base, MOD_INTERNAL_SOCKET: 'mod.sock' }, 'MOD_INTERNAL_SOCKET'],
+      [{ ...base, MOD_INTERNAL_SECRET: undefined }, 'MOD_INTERNAL_SECRET'],
+      [{ ...base, MOD_INTERNAL_SECRET: 'c2hvcnQ=' }, 'MOD_INTERNAL_SECRET'],
+      [{ ...base, MOD_API_READER_DATABASE_URL: undefined }, 'MOD_API_READER_DATABASE_URL'],
+      // Review 8 Nov I-3: a dedicated group, never root's and never left out.
+      [{ ...base, MOD_INTERNAL_SOCKET_GID: undefined }, 'MOD_INTERNAL_SOCKET_GID'],
+      [{ ...base, MOD_INTERNAL_SOCKET_GID: '0' }, 'MOD_INTERNAL_SOCKET_GID'],
+      [{ ...base, MOD_INTERNAL_SOCKET_GID: 'x2f-mod' }, 'MOD_INTERNAL_SOCKET_GID'],
+      [{ ...base, MOD_INTERNAL_SOCKET_GID: '-5' }, 'MOD_INTERNAL_SOCKET_GID'],
     ] as const) {
       expect(() => internalFromEnv(env)).toThrow(name);
     }
+  });
+
+  it('NEEDS_P4_MOD_COUNTERSIGN: X2F_DEV_MOD_CHAT=1 turns the message route on, and is refused when NODE_ENV=production', async () => {
+    const { internalFromEnv } = await import('../src/main.js');
+    const base = { MOD_INTERNAL_SOCKET: '/run/x2f-mod/mod.sock', MOD_INTERNAL_SOCKET_GID: '991', MOD_INTERNAL_SECRET: Buffer.from(SECRET).toString('base64'), MOD_API_READER_DATABASE_URL: 'x' };
+    expect(internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '1' })?.devModChat).toBe(true);
+    expect(internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '1', NODE_ENV: 'development' })?.devModChat).toBe(true);
+    expect(internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '' })?.devModChat).toBe(false);
+    expect(internalFromEnv({ ...base, NODE_ENV: 'production' })?.devModChat).toBe(false);
+    expect(() => internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: '1', NODE_ENV: 'production' })).toThrow('X2F_DEV_MOD_CHAT');
+    for (const v of ['true', 'yes', '0', '2']) expect(() => internalFromEnv({ ...base, X2F_DEV_MOD_CHAT: v }), v).toThrow('X2F_DEV_MOD_CHAT');
   });
 });

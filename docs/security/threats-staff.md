@@ -1,0 +1,9 @@
+# Staff and moderation threat table
+
+What each compromised component can do to dispute chats and proofs today, and what is accepted until the chat key-membership design (design-chat-membership-keys-2026-11-08, comms folder; its section 10 has the full table) is built. Kept in step with docs/coordination.md, Plan 4 Task 11.
+
+| Compromised | What it can do today | Why, and what stops worse | Until |
+|---|---|---|---|
+| API (X2F's server) | **In a dev build only: seal text as the moderator in any disputed chat.** It holds `MOD_INTERNAL_SECRET`, writes `activity_log` and `disputes`, so it can make the `chat.message-requested` entry moderation checks and have `/internal/chat/send` seal "Moderator: release now" as the chat's moderator identity, which both traders' apps verify as genuine (review 8 Nov I-2). | Production builds do not register `/internal/chat/send` (`X2F_DEV_MOD_CHAT=1` is refused with `NODE_ENV=production`; tripwire `NEEDS_P4_MOD_COUNTERSIGN`), so in production no moderator messages are sent at all. | Build task 9: moderation seals only text signed by a certified staff device key its own `mod_chat_access` record shows on the case (countersign). |
+| API | Read a disputed chat or the unblurred proof: **no.** | No route relays either (`NEEDS_P4_CHAT_MEMBERSHIP`: no `/internal/chat/read`, no `/internal/proof/read`; the reader role cannot select envelopes). | The design re-wraps keys to staff device keys; staff-web decrypts. |
+| API host user | Read moderation's keystore key and signing secret: **no, if deployed as required.** | The API and moderation run as separate OS users; the socket is 0660 to a dedicated group in a directory moderation owns (review 8 Nov I-3, docs/coordination.md deploy requirement). The same uid could read `/proc/<pid>/environ`. | Plan 6 builds the users, group and directory. |

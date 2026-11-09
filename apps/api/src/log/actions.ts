@@ -78,7 +78,9 @@ export const LOG_ACTIONS = {
   'dispute.unassigned': { staffId: 'uuid' },
   'case.opened': {},
   'chat.read': {},
-  'chat.message-sent': {},
+  // Review 8 Nov M-2: requested (before moderation seals it) and sent (in the transaction that stores it).
+  'chat.message-requested': {},
+  'chat.message-sent': { envelopeId: 'id' },
   'proof.unblurred-requested': { side: 'id' },
   'proof.unblurred-opened': {},
   // Rulings and appeals (Tasks 12, 24). `ruling.final` records "Decision overruled" or "stands".

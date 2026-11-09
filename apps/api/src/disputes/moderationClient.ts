@@ -4,13 +4,15 @@ import { MOD_INTERNAL_MAC_HEADER, MOD_INTERNAL_TS_HEADER, modInternalMacInput } 
 
 /**
  * Plan 4 Task 11: the API's client of the moderation process's internal API. The moderation
- * process holds the chat's moderator identity, so only it can seal the moderator's message or read
- * the unblurred proof.
+ * process holds the chat's moderator identity, so only it can seal the moderator's message.
  *
  * NEEDS_P4_CHAT_MEMBERSHIP: there is NO chat read here (the plan's `chatRead`, plaintext from the
  * moderation process through the API, was removed: a compromised API could read every disputed
- * chat). Build task 9 of design-chat-membership-keys-2026-11-08 (`/internal/chat/grant`, keys
- * wrapped to certified staff device keys) replaces it. It listens on a Unix socket only
+ * chat), and NO proof read (`proofRead`, the unblurred image through the API, review 8 Nov I-1).
+ * Build task 9 of design-chat-membership-keys-2026-11-08 (`/internal/chat/grant`, keys wrapped to
+ * certified staff device keys; the proof key re-wrapped the same way) replaces both.
+ * NEEDS_P4_MOD_COUNTERSIGN: the moderation process answers `chatSend` only in dev builds
+ * (X2F_DEV_MOD_CHAT=1, review 8 Nov I-2); in production it is 404 and the API answers 502. It listens on a Unix socket only
  * (`MOD_INTERNAL_SOCKET`); every request carries an HMAC (`MOD_INTERNAL_SECRET`) over the method,
  * the path, the exact body and the time, and names the activity-log entry the API committed for
  * it, which the moderation process checks in the API's database before it does anything.
@@ -20,8 +22,6 @@ export interface ModerationClient {
   readonly name: 'moderation';
   /** `POST /internal/chat/send`: the moderator's message sealed to both traders; the API stores it. */
   chatSend(a: { code: string; logEntryId: string; text: string }): Promise<{ envelope: unknown }>;
-  /** `POST /internal/proof/read`: the unblurred proof's bytes and type. */
-  proofRead(a: { code: string; logEntryId: string }): Promise<{ mime: string; bytes: Uint8Array }>;
 }
 
 /** A refusal from the moderation process (its status and error code), or `moderation-unavailable` (503). */
@@ -38,9 +38,6 @@ export const NO_MODERATION: ModerationClient = {
   chatSend: async () => {
     throw new ModerationError(503, 'moderation-unavailable');
   },
-  proofRead: async () => {
-    throw new ModerationError(503, 'moderation-unavailable');
-  },
 };
 
 export interface SocketModerationOptions {
@@ -53,9 +50,8 @@ export interface SocketModerationOptions {
   timeoutMs?: number;
 }
 
-/** The largest answer read (an unblurred proof image fits well under it). */
-export const MOD_ANSWER_MAX_BYTES = 12 * 1024 * 1024;
-const PROOF_TYPES = new Set(['image/png', 'image/jpeg']);
+/** The largest answer read (one sealed chat envelope fits well under it). */
+export const MOD_ANSWER_MAX_BYTES = 1024 * 1024;
 const ERROR_CODE = /^[a-z][a-z0-9-]{0,40}$/;
 
 interface Answer {
@@ -139,13 +135,6 @@ export function socketModerationClient(o: SocketModerationOptions): ModerationCl
       const v = json(await call('/internal/chat/send', { code: a.code, logEntryId: a.logEntryId, text: a.text }));
       if (v.envelope === undefined) throw new ModerationError(502, 'moderation-unavailable');
       return { envelope: v.envelope };
-    },
-    async proofRead(a) {
-      const res = await call('/internal/proof/read', { code: a.code, logEntryId: a.logEntryId });
-      if (res.status !== 200) throw refusal(res);
-      const mime = res.type.split(';')[0]!.trim().toLowerCase();
-      if (!PROOF_TYPES.has(mime)) throw new ModerationError(502, 'moderation-unavailable');
-      return { mime, bytes: new Uint8Array(res.body) };
     },
   };
 }

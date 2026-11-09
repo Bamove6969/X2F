@@ -59,7 +59,6 @@ interface ChatSetup {
 class FakeModeration implements ModerationClient {
   readonly name = 'moderation' as const;
   calls: Array<{ op: string; code: string; logEntryId: string }> = [];
-  proof: { mime: string; bytes: Uint8Array } | null = null;
   chats = new Map<string, ChatSetup>();
   constructor(private readonly db: Deps['db']) {}
 
@@ -69,7 +68,8 @@ class FakeModeration implements ModerationClient {
   }
 
   async chatSend(a: { code: string; logEntryId: string; text: string }) {
-    await this.logged(a.logEntryId, 'chat.message-sent', a.code);
+    // Review 8 Nov M-2: the API asks under `chat.message-requested`; `chat.message-sent` comes after.
+    await this.logged(a.logEntryId, 'chat.message-requested', a.code);
     this.calls.push({ op: 'send', code: a.code, logEntryId: a.logEntryId });
     const c = this.chats.get(a.code);
     if (!c) throw new ModerationError(404, 'no-chat');
@@ -79,13 +79,6 @@ class FakeModeration implements ModerationClient {
       to: ['buyer', 'seller', 'mod'], me: c.ids.mod, participants: c.participants,
     });
     return { envelope };
-  }
-
-  async proofRead(a: { code: string; logEntryId: string }) {
-    await this.logged(a.logEntryId, 'proof.unblurred-opened', a.code);
-    this.calls.push({ op: 'proof', ...a });
-    if (this.proof === null) throw new ModerationError(404, 'no-proof');
-    return this.proof;
   }
 }
 
@@ -274,7 +267,7 @@ describe('who works a case', () => {
     const senior = await staff('senior');
     const { code } = await disputed();
     await mod.b.post(url(code, '/take'), {});
-    for (const route of ['/messages', '/proof-request', '/proof', '/freeze']) {
+    for (const route of ['/messages', '/proof-request', '/freeze']) {
       const res = await stranger.b.post(url(code, route), route === '/messages' ? { text: 'Hello' } : route === '/proof-request' ? { side: 'buyer' } : route === '/freeze' ? { side: 'seller', on: true, reason: 'no-reply' } : {});
       expect({ route, status: res.statusCode, error: errorOf(res) }).toEqual({ route, status: 403, error: 'forbidden-case' });
     }
@@ -375,7 +368,14 @@ describe('messages to the parties', () => {
     } finally {
       sb.stop();
     }
-    expect((await logOf(code)).filter((e) => e.action === 'chat.message-sent').map((e) => e.actor_id)).toEqual([mod.id]);
+    // Review 8 Nov M-2: the request is logged before sealing, and the send (with the envelope id)
+    // in the transaction that stores it.
+    const entries = (await logOf(code)).filter((e) => e.action.startsWith('chat.message-'));
+    const stored = (await deps.db.query<{ id: string }>("select id::text as id from chat_envelopes where chat = $1 and sender_role = 'mod'", [chat])).rows;
+    expect(entries.map((e) => [e.action, e.actor_id, JSON.parse(e.detail)])).toEqual([
+      ['chat.message-requested', mod.id, {}],
+      ['chat.message-sent', mod.id, { envelopeId: stored[0]!.id }],
+    ]);
     expect((await loadDispute(deps.db, code))!.firstReplyAt).toEqual(START);
 
     const c = moderation.chats.get(code)!;
@@ -405,7 +405,7 @@ describe('messages to the parties', () => {
 });
 
 describe('the unblurred proof', () => {
-  it('the request is logged and goes only to the trader named; opening it is logged before the bytes are read', async () => {
+  it('the request is logged and goes only to the trader named', async () => {
     const mod = await staff('mod');
     const { code, buyer, seller } = await disputed();
     await mod.b.post(url(code, '/take'), {});
@@ -422,17 +422,21 @@ describe('the unblurred proof', () => {
     }
     expect((await logOf(code)).filter((e) => e.action === 'proof.unblurred-requested').map((e) => e.detail)).toEqual([JSON.stringify({ side: 'seller' })]);
     expect((await mod.b.post(url(code, '/proof-request'), { side: 'mod' })).statusCode).toBe(400);
+  });
 
-    moderation.proof = null;
-    const none = await mod.b.post(url(code, '/proof'), {});
-    expect({ status: none.statusCode, error: errorOf(none) }).toEqual({ status: 404, error: 'no-proof' });
-    moderation.proof = { mime: 'image/png', bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) };
-    const got = await mod.b.post(url(code, '/proof'), {});
-    expect(got.statusCode).toBe(200);
-    expect(got.headers['content-type']).toBe('image/png');
-    expect(got.headers['cache-control']).toBe('no-store');
-    expect([...got.rawPayload]).toEqual([0x89, 0x50, 0x4e, 0x47]);
-    expect((await logOf(code)).filter((e) => e.action === 'proof.unblurred-opened')).toHaveLength(2);
+  it('NEEDS_P4_CHAT_MEMBERSHIP: no staff route reads the unblurred proof through the API (review 8 Nov I-1)', async () => {
+    // The plan's `POST /staff/v1/disputes/:code/proof` relayed the unblurred image from the
+    // moderation process through this API: the same plaintext gap as the chat read. The design
+    // (2.4 step 5) re-wraps the proof key to the staff device key instead; build that, then replace
+    // this test.
+    const mod = await staff('mod');
+    const { code } = await disputed();
+    await mod.b.post(url(code, '/take'), {});
+    const res = await mod.b.post(url(code, '/proof'), {});
+    expect(res.statusCode).toBe(404);
+    expect((await logOf(code)).filter((e) => e.action === 'proof.unblurred-opened')).toEqual([]);
+    expect(staffApp.printRoutes({ commonPrefix: false })).not.toMatch(/proof\b(?!-)/);
+    expect((moderation as unknown as Record<string, unknown>).proofRead).toBeUndefined();
   });
 });
 
@@ -542,8 +546,7 @@ describe('helpers', () => {
     const { code } = await disputed();
     const routes: Array<[string, string]> = [
       ['GET', '/staff/v1/disputes'], ['POST', '/staff/v1/disputes/next'], ['POST', url(code, '/take')], ['GET', url(code)],
-      ['POST', url(code, '/messages')], ['POST', url(code, '/proof-request')], ['POST', url(code, '/proof')],
-      ['POST', url(code, '/freeze')],
+      ['POST', url(code, '/messages')], ['POST', url(code, '/proof-request')], ['POST', url(code, '/freeze')],
     ];
     for (const [m, u] of routes) {
       const res = await helper.b.send(m, u, m === 'POST' ? {} : undefined);
@@ -660,7 +663,9 @@ describe('more on messages and the queue', () => {
       await mod.b.post(url(code, '/take'), {});
       const res = await mod.b.post(url(code, '/messages'), { text: 'Hello' });
       expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 503, error: 'moderation-unavailable' });
-      expect((await logOf(code)).filter((e) => e.action === 'chat.message-sent')).toHaveLength(1);
+      // The request is logged; nothing was sent, so no `chat.message-sent` (review 8 Nov M-2).
+      expect((await logOf(code)).filter((e) => e.action === 'chat.message-requested')).toHaveLength(1);
+      expect((await logOf(code)).filter((e) => e.action === 'chat.message-sent')).toEqual([]);
     } finally {
       await none.close();
     }
@@ -725,10 +730,10 @@ describe('Task 11 tripwires (local tree only)', () => {
   it('NEEDS_P5_PROOF_ENVELOPE: the unblurred proof is read through the proof pipeline once its storage lands', async () => {
     // @x2f/proof (sealProofEnvelope, `proof.unblurred` sealed to the mod only, decryptProof) is on
     // main, but no API table stores a proof's ciphertext yet (Plan 5 Tasks 13-15). When one lands:
-    // give apps/moderation's internal server a real `ProofSource` (open the trade's
-    // `proof.unblurred` chat envelope with the chat's mod identity, read the ciphertext through the
-    // reader role, `decryptProof` with kind 'unblurred'), and make the proof-request route ask the
-    // trader who uploaded the proof instead of the side the moderator names.
+    // the moderator's unblurred view follows the key-membership design (the proof key re-wrapped to
+    // the staff device key, decrypted in staff-web; NEVER bytes relayed through this API, review
+    // 8 Nov I-1), and the proof-request route asks the trader who uploaded the proof instead of the
+    // side the moderator names.
     const { readdirSync, readFileSync } = await import('node:fs');
     const dir = `${ROOT}apps/api/migrations/`;
     const sql = readdirSync(dir).map((f) => readFileSync(dir + f, 'utf8')).join('\n');

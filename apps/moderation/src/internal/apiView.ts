@@ -13,7 +13,7 @@ export interface LogEntryRow {
  * `x2f_mod_reader` (migration 208: these columns of these three tables, nothing else, no writes;
  * no chat envelopes until the moderator's chat read is built, NEEDS_P4_CHAT_MEMBERSHIP).
  * Reading the log entry from the database itself, rather than taking the API's word for it, is the
- * point: a moderator's message or proof read leaves a hash-chained log entry or it does not happen.
+ * point: a moderator's message leaves a hash-chained log entry or it does not happen.
  */
 export interface ApiView {
   logEntry(id: string): Promise<LogEntryRow | null>;

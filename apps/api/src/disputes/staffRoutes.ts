@@ -18,15 +18,23 @@ import { loadDisputeRecord, withDispute, type DisputeRecord } from './store.js';
  * Plan 4 Task 11: the moderator's queue and case view, messages to both traders, the
  * unblurred-proof request, and the freeze. Every route needs `disputes.handle`.
  *
+ * - NEEDS_P4_CHAT_MEMBERSHIP: the unblurred proof is not read through this API either (review
+ *   8 Nov I-1): no `POST /staff/v1/disputes/:code/proof`. The design re-wraps the proof key to the
+ *   staff device key (2.4 step 5), and staff-web decrypts.
+ * - NEEDS_P4_MOD_COUNTERSIGN: `…/messages` works only against a dev moderation process
+ *   (X2F_DEV_MOD_CHAT=1); a production one does not register `/internal/chat/send` (review 8 Nov
+ *   I-2, a compromised API could otherwise seal text as the moderator), and the route answers 502.
+ *
  * - NEEDS_P4_CHAT_MEMBERSHIP: the moderator's chat READ is not built and its route is not
  *   registered. The plan's `POST /staff/v1/disputes/:code/chat` had the moderation process open the
  *   chat and hand plaintext to this API, so a compromised API could read every disputed chat. Build
  *   task 9 of design-chat-membership-keys-2026-11-08 (a grant to certified staff device keys,
  *   staff-web decrypts) replaces it; nothing here returns chat text.
- * - Nothing the moderator sends or opens leaves the moderation process unless the API has first
- *   COMMITTED an activity-log entry for it (`chat.message-sent`, `proof.unblurred-opened`) and
- *   named it in the call; the moderation process checks that entry in the database itself. A log
- *   that cannot be written means no message and no proof.
+ * - Nothing the moderator sends leaves the moderation process unless the API has first COMMITTED
+ *   an activity-log entry for it (`chat.message-requested`) and named it in the call; the
+ *   moderation process checks that entry in the database itself. A log that cannot be written means
+ *   no message. `chat.message-sent {envelopeId}` is written in the transaction that stores the
+ *   envelope (review 8 Nov M-2), so the log never claims a message nobody stored.
  * - Messages, the proof and the freeze are the assignee's, or a senior moderator's or the
  *   owner's (else 403 `forbidden-case`). In an appealed case nobody involved in round 1 takes any
  *   part (R37), a senior included.
@@ -135,7 +143,7 @@ function ruleError(err: unknown): never {
   throw err;
 }
 
-const MOD_CODES = new Set<ApiErrorCode>(['no-chat', 'no-proof', 'moderation-unavailable']);
+const MOD_CODES = new Set<ApiErrorCode>(['no-chat', 'moderation-unavailable']);
 
 /** A moderation refusal as the staff app sees it. A refused log entry is the API's own fault: 502. */
 function moderationError(err: unknown): never {
@@ -176,7 +184,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
   async function logged(
     req: FastifyRequest,
     code: string,
-    action: 'chat.message-sent' | 'proof.unblurred-requested' | 'proof.unblurred-opened',
+    action: 'chat.message-requested' | 'proof.unblurred-requested',
     detail: object,
     check: (d: Dispute) => void,
   ): Promise<string> {
@@ -450,7 +458,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     const t = await caseTrade(deps.db, code);
     const chat = (await deps.db.query<{ code: string }>('select code from chats where trade_code = $1', [code])).rows[0]?.code;
     if (chat === undefined) throw new ApiError(404, 'no-chat');
-    const logEntryId = await logged(req, code, 'chat.message-sent', {}, workable(req));
+    const logEntryId = await logged(req, code, 'chat.message-requested', {}, workable(req));
     let envelope: unknown;
     try {
       ({ envelope } = await o.moderation.chatSend({ code, logEntryId, text }));
@@ -470,6 +478,7 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
       await withDispute(disputeDeps(req), { code }, async (d, client, now) => {
         workable(req)(d);
         id = await storeModEnvelope(client, chat, env, now);
+        await log(client, { at: now, actor: me, tradeCode: code, action: 'chat.message-sent', detail: { envelopeId: id } });
         return applyDispute(d, { type: 'reply' }, me, now, await disputeSettings(client));
       });
     } catch (err) {
@@ -500,26 +509,9 @@ export function staffDisputeRoutes(app: FastifyInstance, o: StaffDisputeDeps): v
     return reply.code(204).send();
   });
 
-  // The unblurred proof, read by the moderation process under a committed `proof.unblurred-opened`.
-  app.post('/staff/v1/disputes/:code/proof', { preHandler: guard, config: cfg }, async (req, reply: FastifyReply) => {
-    body(req, []);
-    const deps = req.server.deps;
-    const code = await codeOf(deps.db, req);
-    await caseTrade(deps.db, code);
-    const logEntryId = await logged(req, code, 'proof.unblurred-opened', {}, workable(req));
-    let proof;
-    try {
-      proof = await o.moderation.proofRead({ code, logEntryId });
-    } catch (err) {
-      moderationError(err);
-    }
-    return reply
-      .code(200)
-      .header('content-type', proof.mime)
-      .header('cache-control', 'no-store')
-      .header('content-disposition', 'inline')
-      .send(Buffer.from(proof.bytes));
-  });
+  // NEEDS_P4_CHAT_MEMBERSHIP: no `POST /staff/v1/disputes/:code/proof` here on purpose (review 8 Nov
+  // I-1: it relayed the unblurred image through this API; the design re-wraps the proof key to the
+  // staff device key instead).
 
   // The freeze (owner 2026-11-02). `on: true` with a `reason`: `no-reply`, the party said nothing
   // for FREEZE_NO_REPLY_H since the dispute (or its appeal) opened or their last chat message;

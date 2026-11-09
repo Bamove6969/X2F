@@ -56,7 +56,7 @@ export { createWatcher, dumpWatchState, reviveWatchState, spendEvidence, SETTLE_
  * The moderation service: a SEPARATE process that holds the moderator keystore (MOD_KEYSTORE_KEY)
  * and the long-term moderation signing key (MOD_SIGNING_SECRET). It opens no TCP listener and
  * depends on neither fastify nor `@x2f/api`: it makes outbound, signed requests, and (Plan 4 Task 11)
- * answers the API's chat and proof reads only on a Unix socket (`internal/server.ts`). Its own
+ * answers the API's (dev-only) moderator message calls only on a Unix socket (`internal/server.ts`). Its own
  * database (`x2f_moderation`) is unreadable to the API's database role.
  *
  * Each loop it pulls `GET <api-internal>/internal/v1/work`. For every trade with both traders
@@ -510,15 +510,31 @@ function envString(env: Record<string, string | undefined>, name: string): strin
 
 /**
  * Plan 4 Task 11: the internal API's settings. `MOD_INTERNAL_SOCKET` (an absolute path) unset: the
- * internal API does not start. Set, it needs `MOD_INTERNAL_SECRET` (base64 of 32 bytes, shared with
- * the API only) and `MOD_API_READER_DATABASE_URL` (the API's database as a member of the read-only
- * role `x2f_mod_reader`, migration 208). Errors name the variable, never the value.
+ * internal API does not start. Set, it needs `MOD_INTERNAL_SOCKET_GID` (the numeric id of the
+ * dedicated group the API's user is in, never 0; review 8 Nov I-3), `MOD_INTERNAL_SECRET` (base64 of
+ * 32 bytes, shared with the API only) and `MOD_API_READER_DATABASE_URL` (the API's database as a
+ * member of the read-only role `x2f_mod_reader`, migration 208). NEEDS_P4_MOD_COUNTERSIGN:
+ * `X2F_DEV_MOD_CHAT=1` turns on the moderator's message route (dev only; refused with
+ * NODE_ENV=production, review 8 Nov I-2). Errors name the variable, never the value.
  */
-export function internalFromEnv(env: Record<string, string | undefined>): { socketPath: string; secret: Uint8Array; apiReaderUrl: string } | null {
+export function internalFromEnv(
+  env: Record<string, string | undefined>,
+): { socketPath: string; gid: number; secret: Uint8Array; apiReaderUrl: string; devModChat: boolean } | null {
   const socketPath = env.MOD_INTERNAL_SOCKET;
   if (socketPath === undefined || socketPath === '') return null;
   if (!socketPath.startsWith('/')) throw new Error('moderation: MOD_INTERNAL_SOCKET is malformed (an absolute Unix socket path)');
-  return { socketPath, secret: envBytes(env, 'MOD_INTERNAL_SECRET', 32), apiReaderUrl: envString(env, 'MOD_API_READER_DATABASE_URL') };
+  const gidText = env.MOD_INTERNAL_SOCKET_GID ?? '';
+  if (!/^[1-9][0-9]{0,9}$/.test(gidText)) throw new Error('moderation: MOD_INTERNAL_SOCKET_GID is malformed (the dedicated group\'s numeric id, not 0)');
+  const dev = env.X2F_DEV_MOD_CHAT ?? '';
+  if (dev !== '' && dev !== '1') throw new Error('moderation: X2F_DEV_MOD_CHAT is malformed (1 or unset)');
+  if (dev === '1' && env.NODE_ENV === 'production') throw new Error('moderation: X2F_DEV_MOD_CHAT is refused with NODE_ENV=production (review 8 Nov I-2)');
+  return {
+    socketPath,
+    gid: Number(gidText),
+    secret: envBytes(env, 'MOD_INTERNAL_SECRET', 32),
+    apiReaderUrl: envString(env, 'MOD_API_READER_DATABASE_URL'),
+    devModChat: dev === '1',
+  };
 }
 
 function envNetwork(env: Record<string, string | undefined>): ModerationOptions['network'] {
@@ -565,11 +581,12 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
     const { startInternalServer } = await import('./internal/server.js');
     apiReader = new pgMod.Pool({ connectionString: internal.apiReaderUrl, max: 2 });
     apiReader.on('error', () => process.stderr.write('{"level":50,"msg":"api reader idle client error"}\n'));
-    server = await startInternalServer(internal.socketPath, {
+    server = await startInternalServer({ path: internal.socketPath, gid: internal.gid }, {
       secret: internal.secret,
       api: pgApiView(apiReader),
       db,
       keystoreKey: envBytes(env, 'MOD_KEYSTORE_KEY', 32),
+      devModChat: internal.devModChat,
     });
   }
   const shutdown = async () => {
