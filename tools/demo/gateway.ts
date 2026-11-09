@@ -42,8 +42,12 @@ function isTailscaleIp(ip: string): boolean {
 type Target = { port: number; path: string; node: boolean };
 type Route = (url: string) => Target;
 
-/** The web origin: the API, and the relay under /relay. */
+/** The node proxy's paths (apps/node-proxy server.ts), so one host name with no port can carry both origins. */
+const NODE_PATHS = new Set(['/json_rpc', '/getblocks.bin', '/getblocks_by_height.bin', '/gethashes.bin', '/get_o_indexes.bin', '/getouts.bin', '/get_outs.bin', '/get_transaction_pool_hashes.bin', '/get_output_distribution.bin', '/get_transactions', '/sendrawtransaction', '/get_height', '/get_info', '/is_key_image_spent', '/get_transaction_pool']);
+
+/** The web origin: the node's RPC paths, the API, and the relay under /relay. */
 const web: Route = (url) => {
+  if (NODE_PATHS.has(url.split('?')[0] ?? url)) return { port: NODE, path: url, node: true };
   if (url === '/relay' || url.startsWith('/relay/') || url.startsWith('/relay?')) return { port: RELAY, path: url.slice('/relay'.length) || '/', node: false };
   return { port: API, path: url, node: false };
 };

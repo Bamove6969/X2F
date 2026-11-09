@@ -58,7 +58,7 @@ export function demoOrigins(env: Record<string, string | undefined>, tsIp = ''):
   if ((pubRaw === '') !== (pubNodeRaw === '')) throw new DemoOriginError('set both DEMO_PUBLIC_ORIGIN and DEMO_PUBLIC_NODE_ORIGIN, or neither');
   const pub = pubRaw === '' ? '' : publicOrigin('DEMO_PUBLIC_ORIGIN', pubRaw);
   const pubNode = pubNodeRaw === '' ? '' : publicOrigin('DEMO_PUBLIC_NODE_ORIGIN', pubNodeRaw);
-  if (pub !== '' && pub === pubNode) throw new DemoOriginError('DEMO_PUBLIC_ORIGIN and DEMO_PUBLIC_NODE_ORIGIN must differ');
+  // The two may be the same host: the gateway then sends the node's RPC paths to the node proxy.
   const ts = tsIp ? `https://${tsIp}:${PORTS.gatewayTls}` : '';
   const tsNode = tsIp ? `https://${tsIp}:${PORTS.gatewayNodeTls}` : '';
   const primary = pub || ts || local;

@@ -27,7 +27,8 @@ describe('demo origins', () => {
   it('refuses one without the other, the same origin twice, http, paths, credentials and ports', () => {
     expect(() => demoOrigins({ DEMO_PUBLIC_ORIGIN: 'https://a.example' })).toThrow(DemoOriginError);
     expect(() => demoOrigins({ DEMO_PUBLIC_NODE_ORIGIN: 'https://a.example' })).toThrow(DemoOriginError);
-    expect(() => demoOrigins({ DEMO_PUBLIC_ORIGIN: 'https://a.example', DEMO_PUBLIC_NODE_ORIGIN: 'https://a.example/' })).toThrow(/differ/);
+    // One host may carry both: the gateway routes the node's RPC paths by path.
+    expect(demoOrigins({ DEMO_PUBLIC_ORIGIN: 'https://a.example', DEMO_PUBLIC_NODE_ORIGIN: 'https://a.example/' }).node).toBe('https://a.example');
     for (const bad of ['http://a.example', 'wss://a.example', 'https://a.example/x', 'https://a.example?x=1', 'https://u:p@a.example', 'https://a.example:8443', 'not a url']) {
       expect(() => publicOrigin('DEMO_PUBLIC_ORIGIN', bad)).toThrow(DemoOriginError);
     }
