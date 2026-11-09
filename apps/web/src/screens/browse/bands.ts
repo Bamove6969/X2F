@@ -83,19 +83,11 @@ export function bandRange(band: Band, currency: string, exponent = 2): string {
  * markup"; this says "0.4% above market". Both are COPY-UNSIGNED; the numbers agree
  * (test/bands.test.ts). Keep both until design answers, then make one call the other.
  *
- * A price compared with the market: "0.2% above market", "At market"; a
- * fixed price reads its difference from the market price now, or "Fixed price" with no market.
- * `favourable` says whether a price above (positive) or below (negative) market is good for the
+ * A price compared with the market: "0.2% above market", "At market" (every offer is market ± %,
+ * owner Q1, 6 Nov 2026). `favourable` says whether a price above (positive) or below (negative) market is good for the
  * person looking (BrowseCopy.favourable), shown in the escrow tone.
  */
-export function marginText(pricing: Pricing, currency: string, market: bigint | null, favourable: (sign: number) => boolean): { text: string; favourable: boolean } {
-  if (pricing.mode === 'fixed') {
-    if (market === null) return { text: 'Fixed price', favourable: false };
-    const diff = pricing.centsPerXmr - market;
-    if (diff === 0n) return { text: 'At market', favourable: false };
-    const abs = diff < 0n ? -diff : diff;
-    return { text: `${formatMinor(abs, currency)} ${diff > 0n ? 'above' : 'below'} market`, favourable: favourable(diff > 0n ? 1 : -1) };
-  }
+export function marginText(pricing: Pricing, _currency: string, _market: bigint | null, favourable: (sign: number) => boolean): { text: string; favourable: boolean } {
   const bps = pricing.marginBps;
   if (bps === 0) return { text: 'At market', favourable: false };
   const pct = (Math.abs(bps) / 100).toFixed(2).replace(/\.?0+$/, '');
@@ -140,19 +132,11 @@ export function bandOther(band: Band, rate: Price, currency: string, exponent = 
 }
 
 /**
- * The band's markup over the market, 2 places as on the board: "+0.03%", "−0.20%", "0.00%". A
- * market band's is its margin, exact; a fixed band's needs the market price (null without one),
- * rounded half away from zero to a basis point.
+ * The band's markup over the market, 2 places as on the board: "+0.03%", "−0.20%", "0.00%": the
+ * band's margin, exact (every band is market ± %, owner Q1; `market` is kept for the callers).
  */
-export function markupText(pricing: Pricing, market: bigint | null): string | null {
-  let bps: bigint;
-  if (pricing.mode === 'market') bps = BigInt(pricing.marginBps);
-  else if (market === null || market <= 0n) return null;
-  else {
-    const diff = (pricing.centsPerXmr - market) * 10_000n;
-    const abs = ((diff < 0n ? -diff : diff) * 2n + market) / (2n * market);
-    bps = diff < 0n ? -abs : abs;
-  }
+export function markupText(pricing: Pricing, _market: bigint | null): string | null {
+  const bps = BigInt(pricing.marginBps);
   const abs = bps < 0n ? -bps : bps;
   const sign = bps > 0n ? '+' : bps < 0n ? '−' : '';
   return `${sign}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}%`;

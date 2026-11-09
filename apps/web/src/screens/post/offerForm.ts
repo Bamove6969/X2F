@@ -20,16 +20,34 @@ export const MIN_TRADES_OPTIONS: readonly { id: string; label: string; value: Mi
   label: n === null ? 'No minimum' : String(n),
   value: n,
 }));
-export type PriceMode = 'market' | 'fixed';
+/**
+ * Offers are market ± % only (owner Q1, 6 Nov: no fixed-price offers). The vendor picks above or
+ * below the market and types the percentage, at most 50% (owner F1, 7 Nov: "You just have to choose
+ * if you want to be a percentage above or below and then you fill in the number. It maxes out at
+ * 50%"). The owner's 50% wins over the board's ±10% stepper.
+ */
+export type MarginSide = 'above' | 'below';
+
+/** The largest margin either way, in basis points: 50% (owner F1; the API's MAX_MARGIN_BPS). */
+export const MARGIN_MAX_BPS = 5000;
+
+/** DESIGN: wording. COPY-UNSIGNED: the two choices beside the percentage box (owner F1). */
+export const MARGIN_SIDES: readonly { id: MarginSide; label: string }[] = [
+  { id: 'above', label: 'Above market' },
+  { id: 'below', label: 'Below market' },
+];
+
+/** DESIGN: wording. COPY-UNSIGNED: the percentage box's error (empty, not a number, or over 50). */
+export const MARGIN_ERROR = 'Enter a percentage from 0 to 50, like 0.5.';
 
 export interface FormState {
   side: Side;
   methodId: string;
   currency: string;
-  priceMode: PriceMode;
-  marginBps: number;
-  /** The fixed price per XMR as typed. */
-  fixed: string;
+  /** Above or below the market (owner F1). */
+  marginSide: MarginSide;
+  /** The percentage as typed: "0.5", "2", "12.25" (at most two decimals, 0 to 50). */
+  marginPct: string;
   /**
    * The unit both range boxes are in (owner, 8 Nov: an XMR / currency switch at each box's right
    * edge, XMR by default; lead default: Smallest and Largest switch together, one unit per offer).
@@ -48,9 +66,8 @@ export const DEFAULT_FORM: FormState = {
   side: 'sell',
   methodId: '',
   currency: 'USD',
-  priceMode: 'market',
-  marginBps: 50,
-  fixed: '',
+  marginSide: 'above',
+  marginPct: '0.5',
   unit: 'xmr',
   min: '',
   max: '',
@@ -67,7 +84,6 @@ export const DEFAULT_FORM: FormState = {
  */
 export const POST_CURRENCIES: readonly string[] = CURRENCIES;
 
-export const FIXED_STALE_WARNING = 'A fixed price goes stale when the market moves.';
 export const PRICE_UNAVAILABLE = 'Price unavailable right now.';
 /** OD-7 (P3-M4), under the preview. */
 export const FEE_SENTENCE = 'You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.';
@@ -79,9 +95,6 @@ export const COUNTRY_REQUIRED = "Choose the card's country.";
 /** Shown with a Retry button when GET /v1/methods fails, instead of an empty picker. */
 export const METHODS_FAILED = "The payment methods didn't load.";
 
-/** The board's margin limits (±10%) and step (0.1%). */
-export const MARGIN_LIMIT_BPS = 1000;
-export const MARGIN_STEP_BPS = 10;
 
 /** "$2,000", "2000", "12.50", "€0.99" in minor units; null for anything else. */
 export function parseAmount(raw: string): bigint | null {
@@ -152,12 +165,32 @@ export function switchUnit(f: FormState, to: AmountUnit, rate: bigint | null): F
   return { ...f, unit: to, min, max: lo !== null && hi !== null && lo > hi ? min : max };
 }
 
-export function stepMargin(bps: number, dir: 1 | -1): number {
-  return Math.max(-MARGIN_LIMIT_BPS, Math.min(MARGIN_LIMIT_BPS, bps + dir * MARGIN_STEP_BPS));
+/** "0.5", "2", "12.25", "3.1%" as basis points (0 to 5000); null for anything else or over 50%. */
+function parseMarginPct(raw: string): number | null {
+  const m = /^(\d{1,2})(?:\.(\d{1,2}))?%?$/.exec(raw.trim());
+  if (!m) return null;
+  const bps = Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0'));
+  return bps <= MARGIN_MAX_BPS ? bps : null;
 }
 
+/** The form's margin in basis points, signed by its side (+ above, − below); null when the box is not a valid percentage. */
+export function marginBpsOf(f: Pick<FormState, 'marginSide' | 'marginPct'>): number | null {
+  const bps = parseMarginPct(f.marginPct);
+  if (bps === null) return null;
+  // 0% is at market either way (never −0).
+  return f.marginSide === 'below' && bps !== 0 ? -bps : bps;
+}
+
+/** A margin in basis points as the box's text: 50 → "0.5", 1225 → "12.25", 0 → "0". */
+function marginPctText(bps: number): string {
+  const abs = Math.abs(bps);
+  const frac = (abs % 100).toString().padStart(2, '0').replace(/0+$/, '');
+  return frac === '' ? `${Math.floor(abs / 100)}` : `${Math.floor(abs / 100)}.${frac}`;
+}
+
+/** "+0.5%", "-1.2%", "0.0%" as the board; a hundredth when the margin has one ("-12.25%", "+0.03%"). */
 export function marginText(bps: number): string {
-  return `${bps > 0 ? '+' : ''}${(bps / 100).toFixed(1)}%`;
+  return `${bps > 0 ? '+' : ''}${(bps / 100).toFixed(bps % 10 === 0 ? 1 : 2)}%`;
 }
 
 export function marginWord(bps: number): string {
@@ -203,28 +236,6 @@ export function formatAmount(cents: bigint, currency: string): string {
   return money(cents, currency, cents % 100n === 0n ? 0 : 2);
 }
 
-/** A fixed price this far off the market (in bps) gets a caution line; this far gets refused. */
-export const FIXED_CAUTION_BPS = 1000n;
-export const FIXED_REFUSE_BPS = 5000n;
-
-export type FixedPriceCheck = { kind: 'ok' } | { kind: 'caution'; text: string } | { kind: 'refuse'; text: string };
-
-/**
- * A fixed price against the market (Task 21 review 2026-10-27): within 10% nothing is said; from 10%
- * off, a caution line with the percentage and the direction (paired with a caution icon by the
- * screen); from 50% off (a missed decimal point, a stale number) the price is refused inline, naming
- * the market price. `fixed` and `market` are minor units of `currency`, market > 0.
- */
-export function fixedPriceCheck(fixed: bigint, market: bigint, currency: string): FixedPriceCheck {
-  const diff = fixed > market ? fixed - market : market - fixed;
-  const bps = (diff * 10_000n) / market;
-  if (bps < FIXED_CAUTION_BPS) return { kind: 'ok' };
-  if (bps >= FIXED_REFUSE_BPS) return { kind: 'refuse', text: `Check your price: the market is ${formatPrice(market, currency)}` };
-  const pct = Number(bps) / 100;
-  const shown = Number.isInteger(pct) ? `${pct}%` : `${pct.toFixed(1)}%`;
-  return { kind: 'caution', text: `Caution: that is ${shown} ${fixed > market ? 'above' : 'below'} the market price` };
-}
-
 export function previewLine(side: Side, methodName: string, currency: string, minTrades: MinTrades): string {
   const base = `${side === 'sell' ? 'Selling XMR' : 'Buying XMR'} via ${methodName} · ${currency} · you`;
   return minTrades === null ? base : `${base} · ${minTrades}+ completed trades`;
@@ -241,7 +252,7 @@ export const UNIT_HELP = 'One unit for the whole offer. Traders see both, conver
 /** COPY-UNSIGNED: the range boxes' error in XMR. */
 export const XMR_AMOUNT_ERROR = 'Enter an amount in XMR, like 0.5 or 2.';
 
-export type FieldError = 'method' | 'country' | 'min' | 'max' | 'fixed' | 'terms';
+export type FieldError = 'method' | 'country' | 'min' | 'max' | 'margin' | 'terms';
 
 /** The longest terms the API stores (apps/api/src/offers/routes.ts TERMS_MAX). */
 export const TERMS_MAX = 4000;
@@ -261,8 +272,6 @@ export function cleanTerms(t: string): string {
 export interface ValidateContext {
   /** The chosen method is a gift card, so the card's country is required and sent. */
   giftCard?: boolean;
-  /** The market price per XMR in the form's currency, when the feed has one (fixed-price sanity). */
-  market?: bigint | null;
 }
 
 export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Partial<Record<FieldError, string>>; body?: PostOfferBody } {
@@ -277,15 +286,9 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
   if (max === null || max === 0n) errors.max = amountError;
   // not-a-refusal: an input check on the two amounts
   if (min !== null && max !== null && min > 0n && max > 0n && min > max) errors.min = "The smallest trade can't be more than the largest.";
-  let fixed: bigint | null = null;
-  if (f.priceMode === 'fixed') {
-    fixed = parseAmount(f.fixed);
-    if (fixed === null || fixed === 0n) errors.fixed = 'Enter your price per XMR.';
-    else if (ctx.market !== undefined && ctx.market !== null && ctx.market > 0n) {
-      const check = fixedPriceCheck(fixed, ctx.market, f.currency);
-      if (check.kind === 'refuse') errors.fixed = check.text;
-    }
-  }
+  const marginBps = marginBpsOf(f);
+  // not-a-refusal: an input check on the percentage box
+  if (marginBps === null) errors.margin = MARGIN_ERROR;
   const terms = cleanTerms(f.terms);
   if (BAD_TERMS_CHAR.test(terms)) errors.terms = TERMS_BAD_TEXT;
   else if ([...terms].length > TERMS_MAX) errors.terms = TERMS_LONG_TEXT;
@@ -296,7 +299,7 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
       side: f.side,
       methodId: f.methodId,
       currency: f.currency,
-      pricing: f.priceMode === 'fixed' ? { mode: 'fixed', centsPerXmr: fixed! } : { mode: 'market', marginBps: f.marginBps },
+      pricing: { mode: 'market', marginBps: marginBps! },
       amounts: f.unit === 'xmr' ? { amountUnit: 'xmr', minAtomic: min!, maxAtomic: max! } : { amountUnit: 'fiat', minFiatCents: min!, maxFiatCents: max! },
       minTrades: f.minTrades,
       terms,
@@ -352,6 +355,18 @@ export function clearDraft(storage: Storage): void {
 
 const str = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 
+/**
+ * The draft's margin: the typed side and percentage, or, from a draft saved before the typed margin,
+ * its market margin in basis points. A fixed-price draft has none (owner Q1) and is dropped.
+ */
+function draftMargin(d: Record<string, unknown>): Pick<FormState, 'marginSide' | 'marginPct'> | null {
+  if (d.marginSide === 'above' || d.marginSide === 'below') return str(d.marginPct, 16) ? { marginSide: d.marginSide, marginPct: d.marginPct } : null;
+  if (d.priceMode === 'market' && typeof d.marginBps === 'number' && Number.isInteger(d.marginBps) && Math.abs(d.marginBps) <= MARGIN_MAX_BPS) {
+    return { marginSide: d.marginBps < 0 ? 'below' : 'above', marginPct: marginPctText(d.marginBps) };
+  }
+  return null;
+}
+
 export function loadDraft(storage: Storage): FormState | null {
   let raw: unknown;
   try {
@@ -363,16 +378,13 @@ export function loadDraft(storage: Storage): FormState | null {
   }
   if (raw === null || typeof raw !== 'object') return null;
   const d = raw as Record<string, unknown>;
+  const margin = draftMargin(d);
   const ok =
     (d.side === 'sell' || d.side === 'buy') &&
     str(d.methodId, 64) &&
     typeof d.currency === 'string' &&
     POST_CURRENCIES.includes(d.currency) &&
-    (d.priceMode === 'market' || d.priceMode === 'fixed') &&
-    typeof d.marginBps === 'number' &&
-    Number.isInteger(d.marginBps) &&
-    Math.abs(d.marginBps) <= MARGIN_LIMIT_BPS &&
-    str(d.fixed, 32) &&
+    margin !== null &&
     (d.unit === undefined || d.unit === 'xmr' || d.unit === 'fiat') &&
     str(d.min, 32) &&
     str(d.max, 32) &&
@@ -385,9 +397,7 @@ export function loadDraft(storage: Storage): FormState | null {
     side: d.side as Side,
     methodId: d.methodId as string,
     currency: d.currency as string,
-    priceMode: d.priceMode as PriceMode,
-    marginBps: d.marginBps as number,
-    fixed: d.fixed as string,
+    ...margin!,
     // A draft from before the switch was typed in fiat.
     unit: (d.unit ?? 'fiat') as AmountUnit,
     min: d.min as string,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { amountForFunds, atomicForFiat, escrowPlan, fiatCents, formatFiat, formatXmr, formatXmrExact, offerRate, posterRole, rateFor } from '../src/index.js';
+import { amountForFunds, atomicForFiat, escrowPlan, fiatCents, formatFiat, formatXmr, formatXmrExact, offerRate, posterRole, rateFor, type Pricing } from '../src/index.js';
 
 const XMR = 1_000_000_000_000n;
 
@@ -73,9 +73,19 @@ describe('fiatCents and atomicForFiat', () => {
 describe('offerRate', () => {
   const market = { currency: 'USD', centsPerXmr: 32990n };
 
-  test('fixed mode ignores the feed', () => {
-    expect(offerRate({ mode: 'fixed', centsPerXmr: 34000n }, 'USD', null)).toEqual({ currency: 'USD', centsPerXmr: 34000n });
-    expect(offerRate({ mode: 'fixed', centsPerXmr: 34000n }, 'USD', market)).toEqual({ currency: 'USD', centsPerXmr: 34000n });
+  // Owner Q1 (6 Nov) and F1 (7 Nov): offers are market ± % only; there is no fixed price to fall back on.
+  test('there is no fixed mode: a fixed price is refused, with or without the feed', () => {
+    const fixed = { mode: 'fixed', centsPerXmr: 34000n } as unknown as Pricing;
+    expect(() => offerRate(fixed, 'USD', null)).toThrow(RangeError);
+    expect(() => offerRate(fixed, 'USD', market)).toThrow(RangeError);
+  });
+
+  test('the margin is at most 50% either way: 50% is taken, 50.01% is refused', () => {
+    const at = (marginBps: number) => offerRate({ mode: 'market', marginBps }, 'USD', { currency: 'USD', centsPerXmr: 10_000n });
+    expect(at(5_000)).toEqual({ currency: 'USD', centsPerXmr: 15_000n });
+    expect(at(-5_000)).toEqual({ currency: 'USD', centsPerXmr: 5_000n });
+    expect(() => at(5_001)).toThrow(RangeError);
+    expect(() => at(-5_001)).toThrow(RangeError);
   });
 
   test('market mode needs the feed', () => {
@@ -85,10 +95,6 @@ describe('offerRate', () => {
 
   test('market mode refuses a feed price in another currency', () => {
     expect(offerRate({ mode: 'market', marginBps: 40 }, 'EUR', market)).toBeNull();
-  });
-
-  test('fixed mode rejects a non-positive price', () => {
-    expect(() => offerRate({ mode: 'fixed', centsPerXmr: 0n }, 'USD', null)).toThrow(RangeError);
   });
 });
 

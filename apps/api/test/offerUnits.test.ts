@@ -11,8 +11,8 @@ import { XMR, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
 
 // Owner, 8 Nov 2026 ("Offer amounts in XMR or fiat"): an offer stores its trade size in the unit its
 // poster chose (`amountUnit`), the lists show both units at the offer's rate now, and the take
-// checks the size in the poster's unit at the rate it locks (the market plus the margin, or the
-// fixed price). Real Postgres (one database per file), a fake market so each test moves the price.
+// checks the size in the poster's unit at the rate it locks (the market plus the margin; there is
+// no fixed price, owner Q1). Real Postgres (one database per file), a fake market so each test moves the price.
 
 const DAY = 86_400_000;
 const market = { usdCentsPerXmr: 33_000n as bigint | null };
@@ -136,13 +136,14 @@ describe('posting and listing in the poster\'s unit', () => {
     expect(await card(await post(await person(), old))).toMatchObject({ amountUnit: 'fiat', minFiatCents: '50000' });
   });
 
-  it('while the feed is down the converted pair is null for a market offer; a fixed price still converts', async () => {
+  it('while the feed is down the converted pair is null for every offer, at any margin (no fixed price, owner Q1)', async () => {
     const mkt = await post(await person(), XMR_OFFER);
-    const fixed = await post(await person(), { ...XMR_OFFER, pricing: { mode: 'fixed', centsPerXmr: '35000' } });
+    const below = await post(await person(), { ...XMR_OFFER, pricing: { mode: 'market', marginBps: -5000 } });
     const fiat = await post(await person(), FIAT_OFFER);
+    expect(await card(below)).toMatchObject({ rate: '16500', minFiatCents: '16500', maxFiatCents: '82500' });
     market.usdCentsPerXmr = null;
     expect(await card(mkt)).toMatchObject({ rate: null, amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: null, maxFiatCents: null });
-    expect(await card(fixed)).toMatchObject({ rate: '35000', minFiatCents: '35000', maxFiatCents: '175000' });
+    expect(await card(below)).toMatchObject({ rate: null, amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: null, maxFiatCents: null });
     expect(await card(fiat)).toMatchObject({ rate: null, minFiatCents: '50000', minAtomic: null, maxAtomic: null });
   });
 

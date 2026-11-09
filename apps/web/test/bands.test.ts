@@ -109,7 +109,7 @@ describe('the words the offers card and the quote share', () => {
       [{ mode: 'market', marginBps: 250 }, 33_000n],
     ];
     for (const [pricing, market] of cases) {
-      const card = markupOf({ rate: 1n, pricing }, 'USD', { favourable: buyerLikes }, market)!;
+      const card = markupOf({ rate: 1n, pricing }, { favourable: buyerLikes })!;
       const words = marginText(pricing, 'USD', market, buyerLikes);
       const quote = markupText(pricing, market)!;
       const at = JSON.stringify(pricing);
@@ -119,18 +119,12 @@ describe('the words the offers card and the quote share', () => {
       expect([at, dir(card.mark!)]).toEqual([at, dir(quote)]);
       expect([at, card.favourable]).toEqual([at, words.favourable]);
     }
-    // A fixed price: the card and marginText both name the money difference from the market.
-    const fixed = { mode: 'fixed', centsPerXmr: 34_000n } as const;
-    expect(markupOf({ rate: 1n, pricing: fixed }, 'USD', { favourable: buyerLikes }, 33_000n)!.mark).toBe('+$10.00');
-    expect(marginText(fixed, 'USD', 33_000n, buyerLikes).text).toBe('$10.00 above market');
   });
 
   it("marginText's words (kept for the quote until design picks, see the TODO above)", () => {
     expect(marginText({ mode: 'market', marginBps: 20 }, 'CAD', null, buyerLikes)).toEqual({ text: '0.2% above market', favourable: false });
     expect(marginText({ mode: 'market', marginBps: -125 }, 'USD', null, buyerLikes)).toEqual({ text: '1.25% below market', favourable: true });
     expect(marginText({ mode: 'market', marginBps: 0 }, 'USD', null, buyerLikes)).toEqual({ text: 'At market', favourable: false });
-    expect(marginText({ mode: 'fixed', centsPerXmr: 34_000n }, 'USD', null, buyerLikes)).toEqual({ text: 'Fixed price', favourable: false });
-    expect(marginText({ mode: 'fixed', centsPerXmr: 34_000n }, 'USD', 33_000n, buyerLikes)).toEqual({ text: '$10.00 above market', favourable: false });
   });
 });
 
@@ -154,12 +148,9 @@ describe('bandRate and bandXmr: each band in XMR, with or without the markup (ow
     expect(bandXmr(up, rate)).toBe('0.151515 – 4.545454');
   });
 
-  it('no market price: a market band has no rate either way; a fixed band only with its markup', () => {
+  it('no market price: a band has no rate either way (every band is market ± %, owner Q1)', () => {
     expect(bandRate(up, 'USD', null, true)).toBeNull();
     expect(bandRate(up, 'USD', null, false)).toBeNull();
-    const fixed: Band = { ...up, pricing: { mode: 'fixed', centsPerXmr: 30_000n } };
-    expect(bandXmr(fixed, bandRate(fixed, 'USD', null, true)!)).toBe('0.166666 – 5.000000');
-    expect(bandRate(fixed, 'USD', null, false)).toBeNull();
   });
 });
 
@@ -207,14 +198,6 @@ describe('markupText: the markup as the board writes it', () => {
     expect(markupText({ mode: 'market', marginBps: -20 }, null)).toBe('−0.20%');
     expect(markupText({ mode: 'market', marginBps: 0 }, MARKET)).toBe('0.00%');
   });
-
-  it("a fixed band's, from the market price, to the nearest basis point; none without a market", () => {
-    // The board's $330.00 on $329.90: 0.0303...% → +0.03%.
-    expect(markupText({ mode: 'fixed', centsPerXmr: 33_000n }, 32_990n)).toBe('+0.03%');
-    expect(markupText({ mode: 'fixed', centsPerXmr: 33_188n }, 32_990n)).toBe('+0.60%');
-    expect(markupText({ mode: 'fixed', centsPerXmr: 32_000n }, 33_000n)).toBe('−3.03%');
-    expect(markupText({ mode: 'fixed', centsPerXmr: 33_000n }, null)).toBeNull();
-  });
 });
 
 describe('clipLines: where the rate changes around your band', () => {
@@ -240,11 +223,12 @@ describe('clipLines: where the rate changes around your band', () => {
   });
 
   it('a 0-decimal currency: the edge and the rate in whole yen', () => {
+    // Market ¥33,000; the next band is +1%, so its rate is ¥33,330 (was two fixed bands before owner Q1).
     const yen: Band[] = [
-      { unit: 'fiat', from: 5_000n, to: 50_000n, pricing: { mode: 'fixed', centsPerXmr: 33_000n }, minTrades: 0 },
-      { unit: 'fiat', from: 50_001n, to: 150_000n, pricing: { mode: 'fixed', centsPerXmr: 33_188n }, minTrades: 0 },
+      { unit: 'fiat', from: 5_000n, to: 50_000n, pricing: { mode: 'market', marginBps: 0 }, minTrades: 0 },
+      { unit: 'fiat', from: 50_001n, to: 150_000n, pricing: { mode: 'market', marginBps: 100 }, minTrades: 0 },
     ];
-    expect(clipLines(yen, { kind: 'in', index: 0 }, 'JPY', null, 0)).toEqual([{ dir: 'up', at: '¥50,000', rate: '¥33,188' }]);
+    expect(clipLines(yen, { kind: 'in', index: 0 }, 'JPY', 33_000n, 0)).toEqual([{ dir: 'up', at: '¥50,000', rate: '¥33,330' }]);
   });
 
   it('no market price: no rate to name, no line', () => {

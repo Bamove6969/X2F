@@ -137,8 +137,9 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // explains a ruling about the other trader. 56 -> 58 (trade-copy e47e8e43, J-31, 9 Nov 2026: one
     // pragma per shared line in quote/tradeTerms.ts, two lines): the nudge line's pace ("at most once every 15
     // minutes", encouraged by the owner, p6-1) and the moderator's response time ("within 24 hours
-    // at most"), which explain, not refuse.
-    expect(notARefusal).toBeLessThanOrEqual(58);
+    // at most"), which explain, not refuse. 58 -> 59 (offer-rules 32744fdd, J-02): the percentage box's
+    // input check on PostOffer ("an input check on the percentage box"), a field rule, not a refusal.
+    expect(notARefusal).toBeLessThanOrEqual(59);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

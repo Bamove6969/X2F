@@ -26,7 +26,8 @@ export interface PostOfferBody {
   side: Side;
   methodId: string;
   currency: string;
-  pricing: { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
+  /** Always the market moved by the margin, at most ±5000 bps (owner Q1: no fixed price; F1: 50%). */
+  pricing: { mode: 'market'; marginBps: number };
   /**
    * The trade size in the unit the poster chose (owner, 8 Nov): XMR in atomic units, or fiat in the
    * currency's minor units. Either way the offer sells or buys XMR.

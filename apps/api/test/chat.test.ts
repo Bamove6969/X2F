@@ -190,6 +190,24 @@ describe('POST /v1/chats', () => {
     expect((await other.b.post('/v1/chats', {})).statusCode).toBe(400);
   });
 
+  it('an offer stored as fixed before the market-only rule (owner Q1) is not found', async () => {
+    const poster = await trader();
+    const other = await trader();
+    // Migration 345 refuses new fixed rows; lift it for this one insert, as a row from before the rule.
+    await deps.db.query('alter table offers drop constraint if exists offers_market_only');
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into offers (account_id, side, method_id, currency, price_mode, fixed_cents_per_xmr, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
+       values ($1, 'sell', 'zelle', 'USD', 'fixed', 34000, 1000, 100000, null, '', 'live', $2, $2) returning id`,
+      [poster.id, now],
+    );
+    await deps.db.query(
+      `alter table offers add constraint offers_market_only check (price_mode = 'market' and margin_bps is not null and fixed_cents_per_xmr is null) not valid`,
+    );
+    const res = await other.b.post('/v1/chats', { offerId: rows[0]!.id });
+    expect(res.statusCode, res.body).toBe(404);
+    expect(res.json()).toEqual({ error: 'not-found' });
+  });
+
   it('needs a session', async () => {
     const poster = await trader();
     const offerId = await seedOffer(poster.id);

@@ -38,7 +38,8 @@ interface Seen {
   walletPosts: unknown[];
 }
 
-const FIXED = { ...B.offer, id: 'offer-fixed', pricing: { mode: 'fixed', centsPerXmr: '34000' }, rate: '34000' };
+/** 50% above the market, the furthest an offer goes (owner F1); there are no fixed-price offers (owner Q1). */
+const ABOVE = { ...B.offer, id: 'offer-above', pricing: { mode: 'market', marginBps: 5000 }, rate: '49500' };
 const MIRA_BUYS = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, displayName: 'mira.k' } };
 
 async function stubApi(page: Page, s: Stub): Promise<Seen> {
@@ -89,7 +90,7 @@ async function stubApi(page: Page, s: Stub): Promise<Seen> {
   return seen;
 }
 
-const base: Stub = { signedIn: true, price: 'ok', offers: [B.offer, FIXED], wallets: [...B.wallets] };
+const base: Stub = { signedIn: true, price: 'ok', offers: [B.offer, ABOVE], wallets: [...B.wallets] };
 const BUY = `/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}`;
 const SELL = `/sell/${B.method.id}/${MIRA_BUYS.id}?currency=${B.currency}`;
 
@@ -151,16 +152,21 @@ test.describe('BuyQuote', () => {
     expect(((await page.locator('#root').innerText()).match(/X2F fee/g) ?? []).length).toBe(1);
   });
 
-  test('a market offer is disabled with "Price unavailable right now" on a 503; a fixed-price offer still quotes', async ({ page }) => {
+  test('on a 503 every offer, at any margin, is disabled with "Price unavailable right now" (no fixed price, owner Q1)', async ({ page }) => {
     await stubApi(page, { ...base, price: 'down' });
-    await page.goto(`${BUY}&amount=${B.amount}`);
-    await page.getByRole('radio', { name: /Cake Wallet/ }).check();
-    await expect(page.locator('#quote-amount-help')).toHaveText('Price unavailable right now');
-    await expect(trade(page)).toBeDisabled();
+    for (const url of [`${BUY}&amount=${B.amount}`, `/buy/${B.method.id}/${ABOVE.id}?currency=USD&amount=495`]) {
+      await page.goto(url);
+      await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+      await expect(page.locator('#quote-amount-help')).toHaveText('Price unavailable right now');
+      await expect(trade(page)).toBeDisabled();
+    }
+  });
 
-    await page.goto(`/buy/${B.method.id}/${FIXED.id}?currency=USD&amount=340`);
+  test('an offer 50% above the market quotes at its own rate (owner F1)', async ({ page }) => {
+    await stubApi(page, base);
+    await page.goto(`/buy/${B.method.id}/${ABOVE.id}?currency=USD&amount=495`);
     await page.getByRole('radio', { name: /Cake Wallet/ }).check();
-    await expect(card(page)).toContainText('$340.00 / XMR');
+    await expect(card(page)).toContainText('$495.00 / XMR');
     await expect(card(page)).toContainText('1.000000 XMR');
     await expect(trade(page)).toBeEnabled();
   });

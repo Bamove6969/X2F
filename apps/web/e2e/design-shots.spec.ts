@@ -442,7 +442,7 @@ const OC = '33333333-3333-4333-8333-333333333333';
 type Offer = Record<string, unknown> & { id: string; status: 'live' | 'paused'; hidden?: string };
 const myOffers = (): Offer[] => [
   { id: OA, side: 'sell', methodId: 'ZELLE', methodName: 'Zelle', currency: 'USD', rate: '33165', pricing: { mode: 'market', marginBps: 50 }, minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0, status: 'live', createdAt: '2026-10-29T10:00:00.000Z' },
-  { id: OB, side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '30000', pricing: { mode: 'fixed', centsPerXmr: '30000' }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5, status: 'paused', createdAt: '2026-10-29T09:00:00.000Z' },
+  { id: OB, side: 'buy', methodId: 'REVOLUT', methodName: 'Revolut', currency: 'EUR', rate: '27000', pricing: { mode: 'market', marginBps: -1000 }, minFiatCents: '1250', maxFiatCents: '50000', minTrades: 5, status: 'paused', createdAt: '2026-10-29T09:00:00.000Z' },
   { id: OC, side: 'sell', methodId: 'WISE', methodName: 'Wise', currency: 'GBP', rate: '26530', pricing: { mode: 'market', marginBps: 0 }, minFiatCents: '2000', maxFiatCents: '90000', minTrades: 0, status: 'live', createdAt: '2026-10-29T08:00:00.000Z' },
 ];
 

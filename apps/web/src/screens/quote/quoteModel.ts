@@ -62,8 +62,9 @@ export interface MarketNow {
 }
 
 /**
- * The currency's exponent from the currency itself (Intl's ISO 4217 table), for a fixed-price offer
- * quoting with the feed down; 2 for a code Intl does not know.
+ * The currency's exponent from the currency itself (Intl's ISO 4217 table), for showing an offer's
+ * own fiat range while the feed is down (nothing quotes then: every offer is market ± %, owner Q1);
+ * 2 for a code Intl does not know.
  */
 export function currencyExponent(currency: string): number {
   try {
@@ -146,7 +147,7 @@ export function quote(i: { offer: QuoteOffer; market: MarketNow | null; text: st
   const fits = rangeAllows(range, amountAtomic, rate);
   if (fits !== 'ok') return { kind: fits, rate };
 
-  // The US-dollar figures are the trade's own figures (at the offer's rate, margin or fixed price
+  // The US-dollar figures are the trade's own figures (at the offer's rate, the margin
   // included) converted at the exchange rate the feed implies, usdCentsPerXmr / centsPerXmr: never
   // the raw market XMR/USD, which would leave out the margin (Task 18 review, item 3).
   const toUsd = offer.currency !== 'USD' && market?.usdCentsPerXmr != null ? (cents: bigint) => mulDivHalfUp(cents, market.usdCentsPerXmr!, market.centsPerXmr) : null;

@@ -14,14 +14,21 @@ import { seedReviews, seedTrade } from './helpers/trades.js';
 
 const DAY = 86_400_000;
 
-/** The market the app sees: USD (and EUR at 0.9 USD) at `usdCentsPerXmr`, or nothing while down. */
+/**
+ * The market the app sees: USD at `usdCentsPerXmr`, and a few currencies at a fixed number of their
+ * minor units per US cent (EUR 0.9, GBP 0.8, BRL 5, SEK 10, MXN 18, THB 35), or nothing while down.
+ * Every other currency has no market. Offers are market ± % only (owner Q1), so a test that needs
+ * two different rates uses two margins over one of these.
+ */
 const market = { usdCentsPerXmr: 33_000n as bigint | null };
+const PER_USD: Record<string, [bigint, bigint]> = { USD: [1n, 1n], EUR: [9n, 10n], GBP: [8n, 10n], BRL: [5n, 1n], SEK: [10n, 1n], MXN: [18n, 1n], THB: [35n, 1n] };
 
 function quote(currency: string): MarketQuote | null {
   const usd = market.usdCentsPerXmr;
   if (usd === null) return null;
-  const local = currency === 'USD' ? usd : currency === 'EUR' ? (usd * 9n) / 10n : null;
-  if (local === null) return null;
+  const ratio = PER_USD[currency];
+  if (ratio === undefined) return null;
+  const local = (usd * ratio[0]) / ratio[1];
   return {
     price: { currency, centsPerXmr: local }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
     usdCentsPerXmr: usd, fx: null,
@@ -176,26 +183,31 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     expect((await viewer.get('/v1/offers/not-a-uuid')).statusCode).toBe(404);
   });
 
-  it('a fixed-price offer lists its own rate while the feed is down; a market offer lists rate null', async () => {
+  it('while the feed is down every offer lists rate null (there is no fixed price, owner Q1); they sort newest first', async () => {
     const p = await poster();
-    const fixed = await post(p, { currency: 'GBP', pricing: { mode: 'fixed', centsPerXmr: '28000' } });
-    const mkt = await post(p, { currency: 'GBP', side: 'sell' });
+    const q = await poster();
+    // GBP market: 0.8 × $330.00 = £264.00; −10% is £237.60, +10% is £290.40.
+    const low = await post(p, { currency: 'GBP', pricing: { mode: 'market', marginBps: -1000 } });
+    const high = await post(q, { currency: 'GBP', pricing: { mode: 'market', marginBps: 1000 } });
+    await deps.db.query('update offers set created_at = created_at - interval \'1 minute\' where id = $1', [low]);
+    expect((await list('side=sell&method=ZELLE&currency=GBP')).map((c) => [c.id, c.rate])).toEqual([[low, '23760'], [high, '29040']]);
     market.usdCentsPerXmr = null;
     const cards = await list('side=sell&method=ZELLE&currency=GBP');
-    expect(cards.find((c) => c.id === fixed)).toMatchObject({ rate: '28000', pricing: { mode: 'fixed', centsPerXmr: '28000' } });
-    expect(cards.find((c) => c.id === mkt)).toMatchObject({ rate: null });
-    // Best price for someone buying XMR (sell ads): lowest first; no price now goes last.
-    expect(cards.map((c) => c.id)).toEqual([fixed, mkt]);
+    expect(cards.map((c) => [c.id, c.rate, c.pricing])).toEqual([
+      [high, null, { mode: 'market', marginBps: 1000 }],
+      [low, null, { mode: 'market', marginBps: -1000 }],
+    ]);
   });
 
   it('sorts best price for the person browsing: sell ads lowest first, buy ads highest first', async () => {
     const p = await poster();
     const q = await poster();
-    const cheap = await post(p, { currency: 'BRL', pricing: { mode: 'fixed', centsPerXmr: '150000' } });
-    const dear = await post(q, { currency: 'BRL', pricing: { mode: 'fixed', centsPerXmr: '160000' } });
+    // BRL market 165000: −10% = 148500, −3% = 160050.
+    const cheap = await post(p, { currency: 'BRL', pricing: { mode: 'market', marginBps: -1000 } });
+    const dear = await post(q, { currency: 'BRL', pricing: { mode: 'market', marginBps: -300 } });
     expect((await list('side=sell&method=ZELLE&currency=BRL&sort=best')).map((c) => c.id)).toEqual([cheap, dear]);
-    const low = await post(p, { side: 'buy', currency: 'BRL', pricing: { mode: 'fixed', centsPerXmr: '150000' } });
-    const high = await post(q, { side: 'buy', currency: 'BRL', pricing: { mode: 'fixed', centsPerXmr: '160000' } });
+    const low = await post(p, { side: 'buy', currency: 'BRL', pricing: { mode: 'market', marginBps: -1000 } });
+    const high = await post(q, { side: 'buy', currency: 'BRL', pricing: { mode: 'market', marginBps: -300 } });
     expect((await list('side=buy&method=ZELLE&currency=BRL&sort=best')).map((c) => c.id)).toEqual([high, low]);
     // Most trades first.
     await history(q.id, { days: 1, completed: 2 });
@@ -268,7 +280,10 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     const bad: Record<string, unknown>[] = [
       { pricing: { mode: 'market', marginBps: 50, centsPerXmr: '33000' } },
       { pricing: { mode: 'fixed', centsPerXmr: '33000', marginBps: 0 } },
+      // Owner Q1: no fixed-price offers, however well formed.
+      { pricing: { mode: 'fixed', centsPerXmr: '33000' } },
       { pricing: { mode: 'market', marginBps: 5001 } },
+      { pricing: { mode: 'market', marginBps: -5001 } },
       { pricing: { mode: 'market', marginBps: 1.5 } },
       { pricing: { mode: 'fixed', centsPerXmr: '0' } },
       { pricing: { mode: 'fixed', centsPerXmr: 33000 } },
@@ -388,19 +403,20 @@ describe('who is listed', () => {
 
   it('/v1/methods counts live offers from the offers table, with the best rate', async () => {
     const p = await poster();
-    await post(p, { currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '350000' } });
-    await post(p, { currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '340000' } });
-    const paused = await post(p, { currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '100' } });
+    // SEK market 330000: +5% = 346500, +2% = 336600, −50% = 165000, +9% = 359700.
+    await post(p, { currency: 'SEK', pricing: { mode: 'market', marginBps: 500 } });
+    await post(p, { currency: 'SEK', pricing: { mode: 'market', marginBps: 200 } });
+    const paused = await post(p, { currency: 'SEK', pricing: { mode: 'market', marginBps: -5000 } });
     await p.browser.patch(`/v1/offers/${paused}`, { status: 'paused' });
     const res = await viewer.get('/v1/methods?side=sell&currency=SEK');
     expect(res.statusCode).toBe(200);
     const { live } = res.json() as { live: { id: string; offers: number; bestRate: string | null }[] };
-    expect(live).toEqual([expect.objectContaining({ id: 'ZELLE', offers: 2, bestRate: '340000' })]);
+    expect(live).toEqual([expect.objectContaining({ id: 'ZELLE', offers: 2, bestRate: '336600' })]);
     // Buy ads: the best is the highest.
-    await post(p, { side: 'buy', currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '340000' } });
-    await post(p, { side: 'buy', currency: 'SEK', pricing: { mode: 'fixed', centsPerXmr: '360000' } });
+    await post(p, { side: 'buy', currency: 'SEK', pricing: { mode: 'market', marginBps: 200 } });
+    await post(p, { side: 'buy', currency: 'SEK', pricing: { mode: 'market', marginBps: 900 } });
     const buy = (await viewer.get('/v1/methods?side=buy&currency=SEK')).json() as { live: { id: string; bestRate: string | null }[] };
-    expect(buy.live).toEqual([expect.objectContaining({ id: 'ZELLE', bestRate: '360000' })]);
+    expect(buy.live).toEqual([expect.objectContaining({ id: 'ZELLE', bestRate: '359700' })]);
   });
 });
 
@@ -461,10 +477,10 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
     // (Another poster: p already has its 3 buying offers, the per-account cap.)
     const eur = await post(await poster(), { currency: 'EUR', minFiatCents: '50000', maxFiatCents: '60000', side: 'buy' });
     expect((await list('side=buy&method=ZELLE&currency=EUR', starter.browser)).find((c) => c.id === eur)?.opensAt).toBe('building');
-    // A fixed-price offer is converted the same way (its minimum is still money in its currency).
-    // (Another poster, for the same reason.)
-    const fixedBig = await post(await poster(), { currency: 'USD', side: 'buy', minFiatCents: '150000', maxFiatCents: '160000', pricing: { mode: 'fixed', centsPerXmr: '1' } });
-    expect((await list(q, starter.browser)).find((c) => c.id === fixedBig)?.opensAt).toBe('graduated');
+    // An offer 50% below the market is measured the same way (its minimum is still money in its currency).
+    // (Another poster: p already has 3 offers in USD buy ads, the per-market cap.)
+    const halfBig = await post(await poster(), { currency: 'USD', side: 'buy', minFiatCents: '150000', maxFiatCents: '160000', pricing: { mode: 'market', marginBps: -5000 } });
+    expect((await list(q, starter.browser)).find((c) => c.id === halfBig)?.opensAt).toBe('graduated');
 
     // While the market is down the cap cannot be checked here: no mark (the take checks it).
     market.usdCentsPerXmr = null;
@@ -547,11 +563,11 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     expect(rows[0]).toEqual({ n: 3 });
   });
 
-  it('I1: the best sort is done by the database across market and fixed offers', async () => {
+  it('I1: the best sort is done by the database across margins', async () => {
     const p = await poster();
     const q = await poster();
-    // USD market 33000: +1% = 33330, −1% = 32670; fixed 33000 sits between.
-    const mid = await post(q, { currency: 'USD', methodId: 'CASH_APP', pricing: { mode: 'fixed', centsPerXmr: '33000' } });
+    // USD market 33000: +1% = 33330, −1% = 32670; 0% (q's) sits between.
+    const mid = await post(q, { currency: 'USD', methodId: 'CASH_APP', pricing: { mode: 'market', marginBps: 0 } });
     const up = await post(p, { currency: 'USD', methodId: 'CASH_APP', pricing: { mode: 'market', marginBps: 100 } });
     const down = await post(p, { currency: 'USD', methodId: 'CASH_APP', pricing: { mode: 'market', marginBps: -100 } });
     const cards = await list('side=sell&method=CASH_APP&currency=USD&sort=best');
@@ -593,7 +609,7 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
 
   it("M7: the poster's own offers never carry opensAt; another viewer's single-offer answer does", async () => {
     const p = await poster(); // Starter, cap $200
-    const id = await post(p, { currency: 'SAR', minFiatCents: '50000', maxFiatCents: '90000', pricing: { mode: 'fixed', centsPerXmr: '120000' } });
+    const id = await post(p, { currency: 'SAR', minFiatCents: '50000', maxFiatCents: '90000' });
     // SAR has no market in the fake feed, so use USD for the converted cap.
     const usd = await post(p, { currency: 'USD', side: 'sell', methodId: 'APPLE_CASH', minFiatCents: '50000', maxFiatCents: '90000' });
     expect((await list('side=sell&method=APPLE_CASH&currency=USD', p.browser)).find((c) => c.id === usd)!.opensAt).toBeUndefined();
@@ -664,7 +680,7 @@ describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
     }
     const { rows } = await deps.db.query<{ rate: string }>(
       `select (${rateSql('o.m')})::text as rate
-         from (select 'market'::text as price_mode, null::numeric as fixed_cents_per_xmr, u.b as margin_bps, u.m::numeric as m, u.i
+         from (select u.b as margin_bps, u.m::numeric as m, u.i
                  from unnest($1::text[], $2::int[]) with ordinality as u(m, b, i)) o
         order by o.i`,
       [pairs.map(([m]) => m.toString()), pairs.map(([, b]) => b)],
@@ -674,32 +690,31 @@ describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
       return rows[i]!.rate === js ? [] : [{ m: m.toString(), b, js, sql: rows[i]!.rate }];
     });
     expect(differ).toEqual([]);
-    // A fixed offer's rate is its own price, also at the 20-digit maximum.
-    const fixed = await deps.db.query<{ rate: string }>(
-      `select (${rateSql('$1')})::text as rate from (select 'fixed'::text as price_mode, '99999999999999999999'::numeric as fixed_cents_per_xmr, null::int as margin_bps) o`,
-      ['33000'],
-    );
-    expect(fixed.rows[0]!.rate).toBe('99999999999999999999');
+    // No market price: no rate, whatever the margin (there is no fixed price to fall back on, owner Q1).
+    const none = await deps.db.query<{ rate: string | null }>(`select (${rateSql('$1')})::text as rate from (select 0 as margin_bps) o`, [null]);
+    expect(none.rows[0]!.rate).toBeNull();
   });
 
   it('Minor 1: the best sort uses the rate rounded half up, as the cards show it', async () => {
-    market.usdCentsPerXmr = 33_333n;
+    // $10.00 market: +0.04% = 1000.4 → 1000; +0.05% = 1000.5 → 1001; +0.06% = 1000.6 → 1001.
+    market.usdCentsPerXmr = 1_000n;
     const p = await poster();
     const q = await poster();
-    // 33333 × 1.0005 = 33349.67 → 33350, between the fixed 33349 and 33351.
-    const lo = await post(q, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'fixed', centsPerXmr: '33349' } });
-    const hi = await post(q, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'fixed', centsPerXmr: '33351' } });
-    const mid = await post(p, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'market', marginBps: 5 } });
+    const lo = await post(q, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'market', marginBps: 4 } });
+    const five = await post(p, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'market', marginBps: 5 } });
+    const six = await post(q, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'market', marginBps: 6 } });
+    // Five is older: unrounded, it would come before six; rounded, the two tie and the newer (six) is first.
+    await deps.db.query('update offers set created_at = created_at - interval \'1 minute\' where id = $1', [five]);
     const cards = await list('side=sell&method=TRANSFERWISE&currency=USD&sort=best');
-    expect(cards.map((c) => [c.id, c.rate])).toEqual([[lo, '33349'], [mid, '33350'], [hi, '33351']]);
+    expect(cards.map((c) => [c.id, c.rate])).toEqual([[lo, '1000'], [six, '1001'], [five, '1001']]);
   });
 
   it('Minor 2: online is seen in the current or previous 5-minute bucket, so polling learns only the bucket', async () => {
     const p = await poster();
     const q = await poster();
     // q is cheaper, so only the online sort puts p first.
-    const pOffer = await post(p, { currency: 'MXN', pricing: { mode: 'fixed', centsPerXmr: '600000' } });
-    const qOffer = await post(q, { currency: 'MXN', pricing: { mode: 'fixed', centsPerXmr: '500000' } });
+    const pOffer = await post(p, { currency: 'MXN', pricing: { mode: 'market', marginBps: 1000 } });
+    const qOffer = await post(q, { currency: 'MXN', pricing: { mode: 'market', marginBps: -1000 } });
     const seen = async (who: Who, at: string): Promise<void> => {
       await deps.db.query('update sessions set last_seen_at = $2 where account_id = $1', [who.id, new Date(at)]);
     };
@@ -734,20 +749,20 @@ describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
     const other = await trader();
     expect((await p.browser.post('/v1/account/blocks', { displayName: blocked.displayName })).statusCode).toBe(204);
     // q is cheaper and offline: the online sort puts p first, unless p counts as offline.
-    const pOffer = await post(p, { currency: 'JPY', pricing: { mode: 'fixed', centsPerXmr: '6000000' } });
-    const qOffer = await post(q, { currency: 'JPY', pricing: { mode: 'fixed', centsPerXmr: '5000000' } });
+    const pOffer = await post(p, { currency: 'THB', pricing: { mode: 'market', marginBps: 1000 } });
+    const qOffer = await post(q, { currency: 'THB', pricing: { mode: 'market', marginBps: -1000 } });
     await deps.db.query('update sessions set last_seen_at = $2 where account_id = $1', [q.id, new Date(deps.clock().getTime() - DAY)]);
     const shown = { online: true, lastSeenAt: deps.clock().toISOString() };
     const hidden = { online: false, lastSeenAt: null };
     for (const who of [viewer, other.browser]) {
-      const cards = await list('side=sell&method=ZELLE&currency=JPY&sort=online', who);
+      const cards = await list('side=sell&method=ZELLE&currency=THB&sort=online', who);
       expect(cards.map((c) => c.id)).toEqual([pOffer, qOffer]);
       expect(cards.find((c) => c.id === pOffer)!.poster).toMatchObject(shown);
       expect(((await who.get(`/v1/offers/${pOffer}`)).json() as Card).poster).toMatchObject(shown);
     }
     // Since Task 37 the blocked viewer does not see p's offers at all (list and 404), so p's
     // presence cannot reach them through an offer (apps/api/test/blocks.test.ts).
-    expect((await list('side=sell&method=ZELLE&currency=JPY&sort=online', blocked.browser)).map((c) => c.id)).toEqual([qOffer]);
+    expect((await list('side=sell&method=ZELLE&currency=THB&sort=online', blocked.browser)).map((c) => c.id)).toEqual([qOffer]);
     expect((await blocked.browser.get(`/v1/offers/${pOffer}`)).statusCode).toBe(404);
     // The trade view's counterparty too.
     const { code } = await seedTrade(deps, { sellerId: p.id, buyerId: blocked.id, poster: 'seller' });
@@ -756,5 +771,57 @@ describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
     expect((res.json() as { counterparty: Record<string, unknown> }).counterparty).toMatchObject(hidden);
     const mine = await p.browser.get(`/v1/trades/${code}`);
     expect((mine.json() as { counterparty: Record<string, unknown> }).counterparty).toMatchObject({ online: true });
+  });
+});
+
+describe('no fixed-price offers (owner Q1, 6 Nov; F1, 7 Nov: market ± % only, at most 50% either way)', () => {
+  it('a fixed price is refused with 400 and nothing is stored; 50% above or below is posted, 50.01% is refused', async () => {
+    const p = await poster();
+    const fixed = await p.browser.post('/v1/offers', { ...BODY, currency: 'HUF', pricing: { mode: 'fixed', centsPerXmr: '33000' } });
+    expect(fixed.statusCode, fixed.body).toBe(400);
+    expect(fixed.json()).toEqual({ error: 'bad-request' });
+    const { rows } = await deps.db.query(`select 1 from offers where account_id = $1`, [p.id]);
+    expect(rows).toHaveLength(0);
+    for (const marginBps of [5001, -5001]) {
+      const res = await p.browser.post('/v1/offers', { ...BODY, currency: 'HUF', pricing: { mode: 'market', marginBps } });
+      expect(res.statusCode, String(marginBps)).toBe(400);
+    }
+    const above = await post(p, { currency: 'USD', methodId: 'VENMO', pricing: { mode: 'market', marginBps: 5000 } });
+    const below = await post(p, { currency: 'USD', methodId: 'VENMO', pricing: { mode: 'market', marginBps: -5000 } });
+    // USD market $330.00: +50% is $495.00, −50% is $165.00.
+    expect((await viewer.get(`/v1/offers/${above}`)).json()).toMatchObject({ pricing: { mode: 'market', marginBps: 5000 }, rate: '49500' });
+    expect((await viewer.get(`/v1/offers/${below}`)).json()).toMatchObject({ pricing: { mode: 'market', marginBps: -5000 }, rate: '16500' });
+  });
+
+  it('an offer stored as fixed before the rule is kept, but never listed, counted, shown, switched or relisted', async () => {
+    const p = await poster();
+    const mkt = await post(p, { currency: 'HKD' });
+    // A row from before the rule: migration 345 refuses new ones, so lift it for the insert only.
+    await deps.db.query('alter table offers drop constraint if exists offers_market_only');
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into offers (account_id, side, method_id, currency, price_mode, fixed_cents_per_xmr, min_fiat_cents, max_fiat_cents,
+                           min_trades, terms, status, created_at, updated_at)
+       values ($1, 'sell', 'ZELLE', 'HKD', 'fixed', 700000, 5000, 200000, null, '', 'live', $2, $2) returning id`,
+      [p.id, deps.clock()],
+    );
+    await deps.db.query(
+      `alter table offers add constraint offers_market_only check (price_mode = 'market' and margin_bps is not null and fixed_cents_per_xmr is null) not valid`,
+    );
+    const legacy = rows[0]!.id;
+    expect((await list('side=sell&method=ZELLE&currency=HKD')).map((c) => c.id)).toEqual([mkt]);
+    expect(((await viewer.get('/v1/methods?side=sell&currency=HKD')).json() as { live: { offers: number }[] }).live).toEqual([
+      expect.objectContaining({ id: 'ZELLE', offers: 1 }),
+    ]);
+    expect((await viewer.get(`/v1/offers/${legacy}`)).statusCode).toBe(404);
+    expect((await p.browser.get(`/v1/offers/${legacy}`)).statusCode).toBe(404);
+    expect(((await p.browser.get('/v1/account/offers')).json() as { id: string }[]).map((o) => o.id)).toEqual([mkt]);
+    for (const status of ['live', 'paused']) {
+      expect((await p.browser.patch(`/v1/offers/${legacy}`, { status })).statusCode, status).toBe(404);
+      const bulk = await p.browser.post('/v1/account/offers/status', { ids: [legacy], status });
+      expect(bulk.json(), status).toMatchObject({ results: [{ id: legacy, refused: 'not-found' }] });
+    }
+    // The data is kept as it was, for the owner's decision on old rows.
+    const kept = await deps.db.query(`select price_mode, fixed_cents_per_xmr::text, margin_bps, status from offers where id = $1`, [legacy]);
+    expect(kept.rows).toEqual([{ price_mode: 'fixed', fixed_cents_per_xmr: '700000', margin_bps: null, status: 'live' }]);
   });
 });

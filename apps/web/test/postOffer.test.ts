@@ -1,4 +1,4 @@
-// Pure parts of PostOffer (Task 21): amounts, margin steps, prices with their US-dollar value
+// Pure parts of PostOffer (Task 21): amounts, the margin (above or below the market, typed; owner F1), prices with their US-dollar value
 // (spec 11.6), validation into the POST /v1/offers body, the preview line, the saved draft and the
 // refusal copy. The screen itself is covered by apps/web/e2e/post.spec.ts.
 import { describe, expect, it } from 'vitest';
@@ -10,16 +10,18 @@ import {
   TERMS_BAD_TEXT,
   TERMS_LONG_TEXT,
   DEFAULT_FORM,
-  FIXED_STALE_WARNING,
+  MARGIN_ERROR,
+  MARGIN_MAX_BPS,
+  MARGIN_SIDES,
   MIN_TRADES,
   MIN_TRADES_OPTIONS,
   POST_CURRENCIES,
   afterPostPath,
-  fixedPriceCheck,
   formatAmount,
   formatMoney,
   formatPrice,
   loadDraft,
+  marginBpsOf,
   marginText,
   marginWord,
   parseAmount,
@@ -27,7 +29,6 @@ import {
   priceWithMargin,
   refusalText,
   saveDraft,
-  stepMargin,
   usdValue,
   validate,
   type FormState,
@@ -71,18 +72,60 @@ describe('parseAmount', () => {
   });
 });
 
-describe('margin', () => {
-  it('steps by 0.1% (10 bps) and stops at the board limits of ±10%', () => {
-    expect(stepMargin(50, 1)).toBe(60);
-    expect(stepMargin(50, -1)).toBe(40);
-    expect(stepMargin(1000, 1)).toBe(1000);
-    expect(stepMargin(-1000, -1)).toBe(-1000);
+describe('margin (owner F1, 7 Nov: pick above or below, type the percentage, at most 50%)', () => {
+  const bps = (marginSide: 'above' | 'below', marginPct: string) => marginBpsOf(form({ marginSide, marginPct }));
+
+  it('starts at 0.5% above the market (the board), and offers exactly above and below', () => {
+    expect(DEFAULT_FORM).toMatchObject({ marginSide: 'above', marginPct: '0.5' });
+    expect(MARGIN_SIDES.map((o) => o.id)).toEqual(['above', 'below']);
+    expect(MARGIN_MAX_BPS).toBe(5000);
+  });
+
+  it('reads the typed percentage in basis points, signed by the side', () => {
+    expect(bps('above', '0.5')).toBe(50);
+    expect(bps('below', '0.5')).toBe(-50);
+    expect(bps('above', '2')).toBe(200);
+    expect(bps('below', '12.25')).toBe(-1225);
+    expect(bps('above', ' 3.1 ')).toBe(310);
+    expect(bps('above', '3.10%')).toBe(310);
+    expect(bps('above', '0')).toBe(0);
+    expect(bps('below', '0')).toBe(0);
+  });
+
+  it('takes 50% either way and refuses 50.01% either way', () => {
+    expect(bps('above', '50')).toBe(5000);
+    expect(bps('below', '50')).toBe(-5000);
+    expect(bps('above', '50.00')).toBe(5000);
+    expect(bps('above', '50.01')).toBeNull();
+    expect(bps('below', '50.01')).toBeNull();
+    expect(bps('above', '51')).toBeNull();
+    expect(bps('below', '100')).toBeNull();
+  });
+
+  it('refuses anything that is not a plain percentage with at most two decimals', () => {
+    for (const bad of ['', ' ', 'abc', '-1', '+1', '1.234', '1.2.3', '1e1', '.', '50.001']) expect(bps('above', bad), bad).toBeNull();
+  });
+
+  it('validate sends the signed margin, and refuses a bad or too-large percentage inline, on the margin', () => {
+    expect(validate(form({ marginSide: 'above', marginPct: '50' })).body?.pricing).toEqual({ mode: 'market', marginBps: 5000 });
+    expect(validate(form({ marginSide: 'below', marginPct: '50' })).body?.pricing).toEqual({ mode: 'market', marginBps: -5000 });
+    for (const marginSide of ['above', 'below'] as const) {
+      const r = validate(form({ marginSide, marginPct: '50.01' }));
+      expect(r.body).toBeUndefined();
+      expect(r.errors).toEqual({ margin: MARGIN_ERROR });
+    }
+    expect(validate(form({ marginPct: '' })).errors).toEqual({ margin: MARGIN_ERROR });
+    expect(MARGIN_ERROR).not.toContain('!');
   });
 
   it('reads like the board', () => {
     expect(marginText(50)).toBe('+0.5%');
     expect(marginText(0)).toBe('0.0%');
     expect(marginText(-120)).toBe('-1.2%');
+    // A typed hundredth is shown, never rounded away (owner F1: the percentage is typed).
+    expect(marginText(-1225)).toBe('-12.25%');
+    expect(marginText(3)).toBe('+0.03%');
+    expect(marginText(5000)).toBe('+50.0%');
     expect(marginWord(50)).toBe('above market');
     expect(marginWord(0)).toBe('at market');
     expect(marginWord(-10)).toBe('below market');
@@ -123,40 +166,6 @@ describe('formatting', () => {
   });
 });
 
-describe('fixedPriceCheck (a fixed price against the market, Task 21 review 2026-10-27)', () => {
-  const market = 32990n; // $329.90
-  const at = (pct: number) => BigInt(Math.round(32990 * (1 - pct / 100)));
-
-  it('says nothing within 10% of the market, either way', () => {
-    expect(fixedPriceCheck(market, market, 'USD')).toEqual({ kind: 'ok' });
-    expect(fixedPriceCheck(29724n, market, 'USD')).toEqual({ kind: 'ok' }); // 9.9% below
-    expect(fixedPriceCheck(36256n, market, 'USD')).toEqual({ kind: 'ok' }); // 9.9% above
-  });
-
-  it('cautions from 10% to under 50% off the market, with the percentage and the direction', () => {
-    expect(fixedPriceCheck(29691n, market, 'USD')).toEqual({ kind: 'caution', text: 'Caution: that is 10% below the market price' });
-    expect(fixedPriceCheck(36289n, market, 'USD')).toEqual({ kind: 'caution', text: 'Caution: that is 10% above the market price' });
-    expect(fixedPriceCheck(at(49.9), market, 'USD')).toEqual({ kind: 'caution', text: 'Caution: that is 49.9% below the market price' });
-    expect(fixedPriceCheck(29000n, market, 'USD')).toEqual({ kind: 'caution', text: 'Caution: that is 12.1% below the market price' });
-  });
-
-  it('refuses from 50% off the market, naming the market price', () => {
-    expect(fixedPriceCheck(16495n, market, 'USD')).toEqual({ kind: 'refuse', text: 'Check your price: the market is $329.90 / XMR' });
-    expect(fixedPriceCheck(49485n, market, 'USD')).toEqual({ kind: 'refuse', text: 'Check your price: the market is $329.90 / XMR' });
-    expect(fixedPriceCheck(330n, market, 'USD').kind).toBe('refuse'); // 99% below: a missed decimal point
-    expect(fixedPriceCheck(26530n, 26530n, 'GBP')).toEqual({ kind: 'ok' });
-    expect(fixedPriceCheck(100n, 26530n, 'GBP')).toEqual({ kind: 'refuse', text: 'Check your price: the market is £265.30 / XMR' });
-  });
-
-  it('uses no exclamation marks', () => {
-    for (const fixed of [29691n, 16495n, 29000n]) {
-      const r = fixedPriceCheck(fixed, market, 'USD');
-      expect(r.kind).not.toBe('ok');
-      if (r.kind !== 'ok') expect(r.text).not.toContain('!');
-    }
-  });
-});
-
 describe('countries (the gift card\'s country, Revision 2026-10-21)', () => {
   it('lists every ISO 3166-1 alpha-2 code once, named in English and sorted by name', () => {
     expect(COUNTRIES).toHaveLength(249);
@@ -188,9 +197,10 @@ describe('validate', () => {
     });
   });
 
-  it('a fixed price posts pricing.mode = fixed with its cents per XMR', () => {
-    const r = validate(form({ priceMode: 'fixed', fixed: '335' }));
-    expect(r.body?.pricing).toEqual({ mode: 'fixed', centsPerXmr: 33500n });
+  it('there is no fixed price (owner Q1): the form has no price box and always sends a market margin', () => {
+    expect(DEFAULT_FORM).not.toHaveProperty('priceMode');
+    expect(DEFAULT_FORM).not.toHaveProperty('fixed');
+    expect(validate(form({ side: 'buy', marginSide: 'below', marginPct: '3' })).body?.pricing).toEqual({ mode: 'market', marginBps: -300 });
   });
 
   it('refuses min > max inline, on the smallest trade', () => {
@@ -199,10 +209,10 @@ describe('validate', () => {
     expect(r.errors.min).toBe("The smallest trade can't be more than the largest.");
   });
 
-  it('refuses missing or zero amounts, a missing method and a missing fixed price', () => {
-    const r = validate(form({ methodId: '', min: '', max: '0', priceMode: 'fixed', fixed: 'x' }));
+  it('refuses missing or zero amounts, a missing method and a missing margin', () => {
+    const r = validate(form({ methodId: '', min: '', max: '0', marginPct: 'x' }));
     expect(r.body).toBeUndefined();
-    expect(Object.keys(r.errors).sort()).toEqual(['fixed', 'max', 'method', 'min']);
+    expect(Object.keys(r.errors).sort()).toEqual(['margin', 'max', 'method', 'min']);
   });
 
   it('a gift-card method needs the card\'s country, sent as `country` (Revision 2026-10-21)', () => {
@@ -219,16 +229,6 @@ describe('validate', () => {
     expect(r.errors).toEqual({});
     expect(r.body).not.toHaveProperty('country');
     expect(validate(form()).body).not.toHaveProperty('country');
-  });
-
-  it('refuses a fixed price 50% or more off the market inline, on the price; cautions do not block', () => {
-    const market = 32990n;
-    const refused = validate(form({ priceMode: 'fixed', fixed: '160' }), { market });
-    expect(refused.body).toBeUndefined();
-    expect(refused.errors.fixed).toBe('Check your price: the market is $329.90 / XMR');
-    expect(validate(form({ priceMode: 'fixed', fixed: '290' }), { market }).body?.pricing).toEqual({ mode: 'fixed', centsPerXmr: 29000n });
-    // With no quote the stale-price line stands and any price goes through.
-    expect(validate(form({ priceMode: 'fixed', fixed: '160' }), { market: null }).body?.pricing).toEqual({ mode: 'fixed', centsPerXmr: 16000n });
   });
 });
 
@@ -279,18 +279,26 @@ describe('preview and navigation', () => {
     expect(afterPostPath('sell', 'ZELLE', 'USD')).toBe('/buy/ZELLE?currency=USD');
     expect(afterPostPath('buy', 'SEPA', 'EUR')).toBe('/sell/SEPA?currency=EUR');
   });
-
-  it('has the spec 2.2 stale-price warning', () => {
-    expect(FIXED_STALE_WARNING).toBe('A fixed price goes stale when the market moves.');
-  });
 });
 
 describe('draft', () => {
   it('round-trips the form through storage', () => {
     const s = memoryStorage();
-    const f = form({ side: 'buy', priceMode: 'fixed', fixed: '340', terms: 'cash only', minTrades: 50, country: 'GB' });
+    const f = form({ side: 'buy', marginSide: 'below', marginPct: '2.5', terms: 'cash only', minTrades: 50, country: 'GB' });
     saveDraft(s, f);
     expect(loadDraft(s)).toEqual(f);
+  });
+
+  it('a draft from before the typed margin keeps its market margin; a fixed-price draft is dropped (owner Q1)', () => {
+    const s = memoryStorage();
+    const { marginSide: _s, marginPct: _p, ...rest } = form();
+    s.setItem('x2f.post-draft', JSON.stringify({ ...rest, priceMode: 'market', marginBps: -120, fixed: '' }));
+    expect(loadDraft(s)).toMatchObject({ marginSide: 'below', marginPct: '1.2' });
+    s.setItem('x2f.post-draft', JSON.stringify({ ...rest, priceMode: 'fixed', marginBps: 50, fixed: '340' }));
+    expect(loadDraft(s)).toBeNull();
+    // A typed percentage over 50 is kept as typed (the form shows the error); the side must be one of the two.
+    s.setItem('x2f.post-draft', JSON.stringify({ ...form(), marginSide: 'sideways' }));
+    expect(loadDraft(s)).toBeNull();
   });
 
   it('refuses a draft whose country is not an alpha-2 code', () => {

@@ -13,9 +13,9 @@ import { dropIfLeft, readQuote, updateQuote, useQuoteKept } from './quoteKept.js
 // the marker re-shows the quote at the price now for a fresh tap (it never takes by itself).
 // Logged in, it calls take with the quoted rate and total. The server locks its own rate now, never
 // the quoted one (lead decision 2026-10-29), and refuses 409 price-changed when that is more than
-// 0.5% from the quote (a fixed price: any difference), so the quote re-fetches the price and asks
+// 0.5% from the quote, so the quote re-fetches the price and asks
 // for a fresh tap. The take answers with the rate that locked; the device checks it is within that
-// 0.5% of what the person saw (a fixed price: equal, as the server checks), else it records nothing
+// 0.5% of what the person saw (as the server checks), else it records nothing
 // and says the trade could not start. Then it opens the trade room with the device's own record of
 // what was confirmed (confirmed.ts), its deal at the rate that locked (the rate, and the fiat maximum
 // worked out again at that rate, as the server records it): stored in this tab first,

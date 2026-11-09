@@ -114,10 +114,10 @@ function importedLine(l: { site: string; overUsd: number }): string {
 
 /**
  * The markup at the card's bottom left (owner #11, 8 Nov; boards v142): the figure in mono over its
- * label, "+0.4%" over "Vendor markup", "0%" over "At market" when there is none. A fixed price's
- * markup is its difference from the market price now ("+$0.10"); with no market price it reads only
- * "Fixed price". Null while a market offer has no price. COPY-UNSIGNED: "Vendor markup", and the marks
- * "+0.4%" / "−0.4%", "+$0.10" / "−$0.90" and "0%" over "At market" / "Fixed price" (the labels existed; the marks are new).
+ * label, "+0.4%" over "Vendor markup", "0%" over "At market" when there is none. Every offer is the
+ * market ± % (owner Q1: no fixed-price offers). Null while the offer has no price (the feed is down).
+ * COPY-UNSIGNED: "Vendor markup", and the marks "+0.4%" / "−0.4%" and "0%" over "At market" (the
+ * labels existed; the marks are new).
  */
 export interface Markup {
   mark: string | null;
@@ -128,15 +128,8 @@ export interface Markup {
 export const VENDOR_MARKUP = 'Vendor markup';
 const MINUS = '\u2212';
 
-export function markupOf(offer: Pick<Offer, 'rate' | 'pricing'>, currency: string, copy: Pick<BrowseCopy, 'favourable'>, market: bigint | null): Markup | null {
+export function markupOf(offer: Pick<Offer, 'rate' | 'pricing'>, copy: Pick<BrowseCopy, 'favourable'>): Markup | null {
   if (offer.rate === null) return null;
-  if (offer.pricing.mode === 'fixed') {
-    if (market === null) return { mark: null, label: 'Fixed price', favourable: false };
-    const diff = offer.pricing.centsPerXmr - market;
-    if (diff === 0n) return { mark: '0%', label: 'At market', favourable: false };
-    const abs = diff < 0n ? -diff : diff;
-    return { mark: `${diff > 0n ? '+' : MINUS}${formatMinor(abs, currency)}`, label: VENDOR_MARKUP, favourable: copy.favourable(diff > 0n ? 1 : -1) };
-  }
   const bps = offer.pricing.marginBps;
   if (bps === 0) return { mark: '0%', label: 'At market', favourable: false };
   const pct = (Math.abs(bps) / 100).toFixed(2).replace(/\.?0+$/, '');
@@ -200,7 +193,7 @@ export interface OfferCardProps {
   /** The one orange Trade on the screen (the first offer that can be taken). */
   primary: boolean;
   now: Date;
-  /** The market price now (minor units per XMR), for a fixed price's difference; null when unknown. */
+  /** The market price now (minor units per XMR), for the range shown without the markup; null when unknown. */
   market?: bigint | null;
   /**
    * "Display amounts including vendor markup" (owner, 8 Nov): the range's other unit at the offer's
@@ -242,7 +235,7 @@ export function RangeRowsView({ rows, currency, className = 'x2f-offer__range' }
 export function OfferCard({ offer, currency, copy, primary, now, market = null, withMarkup = false, onTrade, onMessage, onNudge, pick }: OfferCardProps) {
   const name = offer.poster.displayName;
   const closed = offer.opensAt !== undefined;
-  const markup = markupOf(offer, currency, copy, market);
+  const markup = markupOf(offer, copy);
   const rows = cardRows(offer, currency, market, withMarkup);
   const time = offer.poster.typicalMinutes === null ? null : copy.typicalTime(offer.poster.typicalMinutes);
 

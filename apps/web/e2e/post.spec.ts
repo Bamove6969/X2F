@@ -79,12 +79,11 @@ const f = (page: Page) => ({
   terms: page.getByLabel('Your terms (optional)'),
   minTrades: page.getByRole('radiogroup', { name: 'Minimum completed trades' }),
   minTradesChoice: (name: string) => page.getByRole('radiogroup', { name: 'Minimum completed trades' }).getByRole('radio', { name, exact: true }),
-  fixed: page.getByLabel('Your price per XMR'),
-  market: page.getByRole('radio', { name: 'Market ± %' }),
-  fixedMode: page.getByRole('radio', { name: 'Fixed price per XMR' }),
+  // Owner F1 (7 Nov): above or below the market, and the percentage typed in (at most 50%).
+  above: page.getByRole('radio', { name: 'Above market' }),
+  below: page.getByRole('radio', { name: 'Below market' }),
+  margin: page.getByLabel('Percentage', { exact: true }),
   country: page.getByLabel('Country', { exact: true }),
-  up: page.getByRole('button', { name: 'Raise margin by 0.1%' }),
-  down: page.getByRole('button', { name: 'Lower margin by 0.1%' }),
   post: page.getByRole('button', { name: 'Post offer' }),
 });
 
@@ -99,8 +98,8 @@ async function fillBoard(page: Page): Promise<void> {
 test('parity with PostOffer at 390x844', async ({ page }) => {
   // KNOWN_EXCEPTIONS.PostOffer (parity.ts): the board's "Bank transfer (ACH)" option is the catalog's
   // "ACH bank transfer (US)". Its other options (Zelle, Cash App, Cash by mail, Custom method) are
-  // catalog methods the picker offers. The board has no pricing choice yet (the plan's controller
-  // step adds Market ± % / Fixed price per XMR to the canvas and re-captures PostOffer.png).
+  // catalog methods the picker offers. The board draws a ±0.1% stepper; the owner's F1 (7 Nov) is
+  // above or below plus a typed percentage (KNOWN_EXCEPTIONS lists the stepper's marks).
   await stub(page);
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);
@@ -113,7 +112,8 @@ test('the board copy and the default market price', async ({ page }) => {
   await fillBoard(page);
   await expect(page.getByRole('heading', { name: 'Post an offer' })).toBeVisible();
   for (const t of ['I want to', 'Your price', 'Who can trade with you', 'How others will see it']) await expect(page.getByText(t, { exact: true })).toBeVisible();
-  await expect(f(page).market).toBeChecked();
+  await expect(f(page).above).toBeChecked();
+  await expect(f(page).margin).toHaveValue('0.5');
   await expect(page.getByText('+0.5%', { exact: true })).toBeVisible();
   await expect(page.getByText('above market', { exact: true })).toBeVisible();
   await expect(
@@ -134,15 +134,52 @@ test('the board copy and the default market price', async ({ page }) => {
   await expect(preview.getByText('Selling XMR via Zelle · USD · you · 25+ completed trades', { exact: true })).toBeVisible();
 });
 
-test('the margin steps by 0.1%', async ({ page }) => {
+test('the margin is typed, above or below the market (owner F1)', async ({ page }) => {
   await stub(page);
   await page.goto('/post?method=ZELLE');
-  await f(page).up.click();
+  const preview = page.getByRole('region', { name: 'Preview' });
+  await f(page).margin.fill('0.6');
   await expect(page.getByText('+0.6%', { exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Preview' }).getByText('$331.88 / XMR', { exact: true })).toBeVisible();
-  for (let i = 0; i < 7; i += 1) await f(page).down.click();
+  await expect(preview.getByText('$331.88 / XMR', { exact: true })).toBeVisible();
+  await f(page).below.check();
+  await f(page).margin.fill('0.1');
   await expect(page.getByText('-0.1%', { exact: true })).toBeVisible();
   await expect(page.getByText('below market', { exact: true })).toBeVisible();
+  await f(page).margin.fill('12.25');
+  await expect(page.getByText('-12.25%', { exact: true })).toBeVisible();
+  await expect(preview.getByText('$289.49 / XMR', { exact: true })).toBeVisible();
+});
+
+test('50% above or below the market posts; 50.01% either way is refused inline and nothing is posted (owner F1)', async ({ page }) => {
+  const posts = await stub(page);
+  await page.goto('/post?method=ZELLE');
+  await fillBoard(page);
+  const preview = page.getByRole('region', { name: 'Preview' });
+  for (const side of ['above', 'below'] as const) {
+    await f(page)[side].check();
+    await f(page).margin.fill('50.01');
+    await expect(preview.getByText('Set your percentage', { exact: true })).toBeVisible();
+    await f(page).post.click();
+    await expect(page.getByText('Enter a percentage from 0 to 50, like 0.5.', { exact: true })).toBeVisible();
+    await expect(f(page).margin).toHaveAttribute('aria-invalid', 'true');
+    await expect(f(page).margin).toHaveAccessibleDescription('Enter a percentage from 0 to 50, like 0.5.');
+  }
+  expect(posts).toHaveLength(0);
+  await f(page).above.check();
+  await f(page).margin.fill('50');
+  // $329.90 × 1.5 = $494.85.
+  await expect(preview.getByText('$494.85 / XMR', { exact: true })).toBeVisible();
+  await f(page).post.click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]!.postDataJSON()).toMatchObject({ pricing: { mode: 'market', marginBps: 5000 } });
+  await page.goto('/post?method=ZELLE');
+  await fillBoard(page);
+  await f(page).below.check();
+  await f(page).margin.fill('50');
+  await expect(preview.getByText('$164.95 / XMR', { exact: true })).toBeVisible();
+  await f(page).post.click();
+  await expect.poll(() => posts.length).toBe(2);
+  expect(posts[1]!.postDataJSON()).toMatchObject({ pricing: { mode: 'market', marginBps: -5000 } });
 });
 
 test('a smallest trade above the largest is refused inline and nothing is posted', async ({ page }) => {
@@ -173,9 +210,9 @@ test('I want to and Your price are radio groups the arrow keys move through', as
   await expect(page.getByRole('region', { name: 'Preview' }).getByText(/^Buying XMR via Zelle/)).toBeVisible();
   await buy.press('ArrowLeft');
   await expect(sell).toBeChecked();
-  await f(page).market.focus();
+  await f(page).above.focus();
   await page.keyboard.press('ArrowDown');
-  await expect(f(page).fixedMode).toBeChecked();
+  await expect(f(page).below).toBeChecked();
 });
 
 test('Close returns to where the poster came from: Buy from the buy side, Sell otherwise', async ({ page }) => {
@@ -200,23 +237,26 @@ test('when the methods do not load, the form says so and Retry loads them', asyn
   await expect(page.getByText("The payment methods didn't load.", { exact: true })).toHaveCount(0);
 });
 
-test('Fixed shows the stale-price warning and posts pricing.mode = fixed', async ({ page }) => {
+test('there is no fixed price (owner Q1): no Fixed choice, no price box, no stale-price line; it posts a market margin', async ({ page }) => {
   const posts = await stub(page);
   await page.goto('/post?method=ZELLE');
-  await expect(page.getByText('A fixed price goes stale when the market moves.')).toHaveCount(0);
-  await f(page).fixedMode.check();
-  await expect(page.getByText('A fixed price goes stale when the market moves.', { exact: true })).toBeVisible();
-  await expect(f(page).up).toHaveCount(0);
-  await f(page).fixed.fill('335');
+  await expect(page.getByRole('radio', { name: 'Fixed price per XMR' })).toHaveCount(0);
+  await expect(page.getByRole('radio', { name: 'Market ± %' })).toHaveCount(0);
+  await expect(page.getByLabel('Your price per XMR')).toHaveCount(0);
+  await expect(page.getByText(/fixed price/i)).toHaveCount(0);
+  await expect(page.getByRole('radiogroup', { name: 'Your price' }).getByRole('radio')).toHaveText(['Above market', 'Below market']);
+  await f(page).below.check();
+  await f(page).margin.fill('1.5');
   await fillBoard(page);
-  await expect(page.getByRole('region', { name: 'Preview' }).getByText('$335.00 / XMR', { exact: true })).toBeVisible();
+  // $329.90 × 0.985 = $324.95.
+  await expect(page.getByRole('region', { name: 'Preview' }).getByText('$324.95 / XMR', { exact: true })).toBeVisible();
   await f(page).post.click();
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]!.postDataJSON()).toEqual({
     side: 'sell',
     methodId: 'ZELLE',
     currency: 'USD',
-    pricing: { mode: 'fixed', centsPerXmr: '33500' },
+    pricing: { mode: 'market', marginBps: -150 },
     amountUnit: 'fiat',
     minFiatCents: '5000',
     maxFiatCents: '200000',
@@ -288,6 +328,8 @@ test('an account with no wallet lands on Add a wallet and returns to the filled 
   await page.goto('/post?method=ZELLE');
   await page.getByRole('radio', { name: 'Buy XMR' }).click();
   await fillBoard(page);
+  await f(page).below.check();
+  await f(page).margin.fill('2.7');
   await f(page).terms.fill('Cash only.');
   await f(page).post.click();
   await expect(page).toHaveURL(/\/wallets\?add=1&returnTo=/);
@@ -298,6 +340,10 @@ test('an account with no wallet lands on Add a wallet and returns to the filled 
   await expect(f(page).method).toHaveValue('ZELLE');
   await expect(f(page).min).toHaveValue('$50');
   await expect(f(page).max).toHaveValue('$2,000');
+  // The pricing comes back too (J-02: below/above market and the percentage; was checked on the
+  // logged-out flow, which the front door closed).
+  await expect(f(page).below).toBeChecked();
+  await expect(f(page).margin).toHaveValue('2.7');
   await expect(f(page).terms).toHaveValue('Cash only.');
 });
 
@@ -360,26 +406,6 @@ test("a gift-card offer needs the card's country and sends it as `country` (Revi
   await expect(f(page).country).toHaveCount(0);
 });
 
-test('a fixed price far from the market gets a caution line, and one 50% off is refused', async ({ page }) => {
-  const posts = await stub(page);
-  await page.goto('/post?method=ZELLE');
-  await f(page).fixedMode.check();
-  await fillBoard(page);
-  await f(page).fixed.fill('290');
-  await expect(page.getByText('Caution: that is 12.1% below the market price', { exact: true })).toBeVisible();
-  await f(page).fixed.fill('335');
-  await expect(page.getByText(/^Caution:/)).toHaveCount(0);
-  await f(page).fixed.fill('160');
-  await f(page).post.click();
-  await expect(page.getByText('Check your price: the market is $329.90 / XMR', { exact: true })).toBeVisible();
-  await expect(f(page).fixed).toHaveAttribute('aria-invalid', 'true');
-  expect(posts).toHaveLength(0);
-  await f(page).fixed.fill('290');
-  await f(page).post.click();
-  await expect.poll(() => posts.length).toBe(1);
-  expect(posts[0]!.postDataJSON()).toMatchObject({ pricing: { mode: 'fixed', centsPerXmr: '29000' } });
-});
-
 // Phone sizes (spec "Mobile ready at launch", owner 2026-10-25): the harness's viewports and layout
 // rule (no sideways scroll, nothing past the sides, every control big enough to tap). Post offer
 // stays on the screen while the form scrolls, and text inputs are at least 16 px (so phones don't
@@ -389,8 +415,8 @@ for (const viewport of PHONE_VIEWPORTS) {
     await setPhone(page, viewport);
     await stub(page);
     await page.goto('/post?method=AMAZON_GIFT_CARD&currency=EUR');
-    await f(page).fixedMode.check();
-    await f(page).fixed.fill('250');
+    await f(page).below.check();
+    await f(page).margin.fill('2.5');
     await fillBoard(page);
     await expect(f(page).country).toBeVisible();
     await expectPhoneLayout(page);

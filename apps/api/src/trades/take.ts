@@ -18,7 +18,7 @@ import { COMPLETED_TRADES_SQL, loadStarterSettings, tradeCap, usdCentsOf, type T
 import { usableWallets, type Wallet } from '../wallets/routes.js';
 import { insertTrade, loadTradeRow, rowToTrade, type TradeSides } from './store.js';
 import { roleOf } from './view.js';
-import { rangeOf } from '../offers/routes.js';
+import { MARKET_PRICED, rangeOf } from '../offers/routes.js';
 
 /**
  * Plan 3 Task 5: taking an offer, and the poster's side of the new trade.
@@ -27,9 +27,10 @@ import { rangeOf } from '../offers/routes.js';
  *   → `{ code, centsPerXmr, fiatCents }`. The amount, the rates and the totals are decimal strings.
  *   The client's rate and total are the ones the taker's quote showed; they are never locked (lead
  *   decision 2026-10-29, Task 5 review I2). The take always locks the server's own rate now
- *   (`offerRate`: the market plus the offer's margin, or the fixed price) and that rate's total
- *   (OD-5), and answers with both so the device records the deal that locked; the client's rate
- *   only detects a move: past 0.5% of the server's (fixed: any difference) → 409 `price-changed`.
+ *   (`offerRate`: the market plus the offer's margin) and that rate's total (OD-5), and answers
+ *   with both so the device records the deal that locked; the client's rate only detects a move:
+ *   past 0.5% of the server's → 409 `price-changed`. An offer stored as fixed before the owner's
+ *   market-only rule (Q1) is not-found (offers/routes.ts MARKET_PRICED).
  *   So the taker gets the live price, within 0.5% of what they saw, and can never pick a better
  *   one. `walletId` is the taker's own: the buyer's payout wallet when the taker buys, the seller's
  *   refund and funding wallet when the taker sells. The trade starts in `setup` with the poster's
@@ -101,9 +102,7 @@ interface OfferRow {
   side: Side;
   method_id: string;
   currency: string;
-  price_mode: 'market' | 'fixed';
-  margin_bps: number | null;
-  fixed_cents_per_xmr: string | null;
+  margin_bps: number;
   amount_unit: 'xmr' | 'fiat';
   min_atomic: string | null;
   max_atomic: string | null;
@@ -116,36 +115,35 @@ interface OfferRow {
   poster_ok: boolean;
 }
 
-const OFFER_SQL = `select o.account_id, o.side, o.method_id, o.currency, o.price_mode, o.margin_bps, o.fixed_cents_per_xmr,
+const OFFER_SQL = `select o.account_id, o.side, o.method_id, o.currency, o.margin_bps,
     o.amount_unit, o.min_atomic, o.max_atomic, o.min_fiat_cents, o.max_fiat_cents, o.min_trades, o.status,
     (a.kind = 'trader' and a.disabled_at is null
       and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)) as poster_ok
-  from offers o join accounts a on a.id = o.account_id where o.id = $1`;
+  from offers o join accounts a on a.id = o.account_id where o.id = $1 and ${MARKET_PRICED}`;
 
 function pricingOf(r: OfferRow): Pricing {
-  return r.price_mode === 'fixed' ? { mode: 'fixed', centsPerXmr: BigInt(r.fixed_cents_per_xmr!) } : { mode: 'market', marginBps: r.margin_bps! };
+  return { mode: 'market', marginBps: r.margin_bps };
 }
 
 /**
  * The rate that locks: always the offer's rate now (`offerRate`), never the client's (lead decision
  * 2026-10-29). The client's quoted rate only detects a move: 409 `price-changed` when it differs
- * from the rate now by more than 0.5% for a market offer, or at all for a fixed price. 409
- * `price-unavailable` for a market offer while the feed is down.
+ * from the rate now by more than 0.5%. 409 `price-unavailable` while the feed is down: every offer
+ * is market-priced (owner Q1, F1), so no offer can be taken without a price.
  */
 function lockRate(r: OfferRow, quoted: bigint, prices: MarketPrices): Price {
   const p = pricingOf(r);
   const now = offerRate(p, r.currency, prices.current(r.currency));
   if (now === null) throw new ApiError(409, 'price-unavailable');
   const diff = quoted > now.centsPerXmr ? quoted - now.centsPerXmr : now.centsPerXmr - quoted;
-  const ok = p.mode === 'fixed' ? diff === 0n : diff * 1000n <= now.centsPerXmr * TOLERANCE_PER_MILLE;
-  if (!ok) throw new ApiError(409, 'price-changed');
+  if (diff * 1000n > now.centsPerXmr * TOLERANCE_PER_MILLE) throw new ApiError(409, 'price-changed');
   return now;
 }
 
 /**
  * What the trade counts against the starter caps, in US cents: the larger of its fiat total and its
- * XMR amount valued at the live market price (lead decision 2026-10-29, Task 5 review M5), so a
- * fixed price far below market cannot move more XMR inside a cap. Both convert with `usdCentsOf`
+ * XMR amount valued at the live market price (lead decision 2026-10-29, Task 5 review M5), so an
+ * offer priced below the market (down to −50%) cannot move more XMR inside a cap. Both convert with `usdCentsOf`
  * at the market quote, exactly as Task 4's `opensAt` converts an offer's minimum (Task 4 review
  * M8). Null when there is no quote to value the XMR with.
  */
