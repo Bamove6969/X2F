@@ -5,7 +5,6 @@ import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
-import { queueTradeAttention } from '../jabber/outbox.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
 import { countTradeTotals } from '../traders/tradedTotal.js';
 
@@ -379,11 +378,7 @@ export async function applyEvent(
       ]);
       // Task 27: a system escalation writes its dispute row with the trade (a trader's own
       // opening writes it through `within`, with the reason they gave).
-      if (e.type === 'escalate' && next.state === 'disputed') {
-        await openSystemDispute(client, next, now);
-        // X2F opened it: the payer (the buyer) gets the Jabber trade-attention notice (lead default, p11-16).
-        await queueTradeAttention(client, next.buyerId);
-      }
+      if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, next, now);
       // C12b: a completed trade adds its take-time USD value to both sides' running totals, a settled
       // buyer cancel to the buyer's cancel count (idempotent per trade; traders/tradedTotal.ts).
       if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) await countTradeTotals(client, code);

@@ -11,7 +11,6 @@ import { applyEvent, noPublish, rowToTrade, type TradePublisher, type TradeRow }
 import { tradeFor } from '../trades/routes.js';
 import { roleOf } from '../trades/view.js';
 import { appendLog } from '../log/append.js';
-import { queueTradeAttention } from '../jabber/outbox.js';
 import { disputeSettings } from './settings.js';
 import { loadDisputeRecord, startDispute, withDispute } from './store.js';
 
@@ -237,9 +236,6 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
         // Plan 4 Task 10: the machine starts here, with the owner's settings as they are now (the
         // large-trade limit is a snapshot) and the trade's USD value; `dispute.opened` is logged.
         await startDispute(client, prev, { openedBy: side, reason, note, afterRefund: prev.state === 'refunded', now, prices: deps.prices });
-        // The payer (the buyer) gets the Jabber trade-attention notice when the other side opened
-        // it (lead default, p11-16 and p11-4): behind their Jabber opt-in, in this transaction, no details.
-        if (side !== 'buyer') await queueTradeAttention(client, prev.buyerId);
         // Task 18: a team member's dispute is in the account owner's audit log (the reason, never the note).
         await auditMember(client, req.auth, { action: 'dispute-opened', tradeCode: row.code, detail: { reason } }, now);
       });
