@@ -75,8 +75,8 @@ import { applyRecoveryCodes } from './recovery.js';
 import { waits, type LoginStrength } from './strength.js';
 import { applyTotp } from './totp.js';
 import { applyCredential, type StoredCredential } from './webauthn.js';
-import { applyMemberRemoval, applyRoles } from '../team/members.js';
-import type { TeamRole } from '../team/perms.js';
+import { applyAbilities, applyMemberRemoval } from '../team/members.js';
+import { rolesToAbilities, type TeamRole } from '../team/abilities.js';
 import { releaseHeldTrades, syncHeldTrades } from '../trades/held.js';
 import type { TradePublisher } from '../trades/store.js';
 import { HOLD_CHANGE_ACTIONS_PER_DAY, holdActionsKey, stageChange } from './holdChanges.js';
@@ -108,7 +108,16 @@ export type PendingChange =
   | { kind: 'logout-timer'; idleHours: number }
   /** Review round 2 N-I4 (lead decision 2026-10-30): payout wallets added by a session whose login waits; `method` is the confirm's. */
   | { kind: 'wallets'; items: PendingWallet[]; method: ConfirmMethod | null }
-  /** Model v3: a team member's permissions changed by a username-and-password session. */
+  /**
+   * Model v3: a team member's permissions changed by a username-and-password session, as boxes
+   * (Job 1c, J-10): `abilities` sorted in catalogue order, whichever body shape asked for it (the
+   * old `{ roles }` is mapped by `rolesToAbilities`). Checked again against the catalogue when it applies.
+   */
+  | { kind: 'team-abilities'; memberId: string; abilities: string[] }
+  /**
+   * The roles form staged before the boxes (hold v3, before Job 1c). Nothing stages one now; one
+   * still stored applies as its roles' boxes (`rolesToAbilities`), checked again like the above.
+   */
   | { kind: 'team-roles'; memberId: string; roles: TeamRole[] }
   /**
    * Owner p5-7 (7 Nov 2026, replacing G5): a payout wallet removed by a username-and-password
@@ -265,8 +274,10 @@ export async function applyChange(db: Queryable, s: SettleDeps, accountId: strin
     case 'wallets':
       await applyWallets(db, accountId, c.items, c.method, now);
       return false;
+    case 'team-abilities':
     case 'team-roles': {
-      const ended = await applyRoles(db, accountId, c.memberId, c.roles, now);
+      const abilities = c.kind === 'team-abilities' ? c.abilities : rolesToAbilities(c.roles);
+      const ended = await applyAbilities(db, accountId, c.memberId, abilities, now);
       for (const id of ended) s.events?.closeSession(accountId, id);
       return false;
     }

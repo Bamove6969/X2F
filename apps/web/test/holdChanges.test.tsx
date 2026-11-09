@@ -100,6 +100,12 @@ describe('the words of a change (owner G29: before and after)', () => {
     expect(changeWords(c).title).toBe("A team member's roles");
   });
 
+  it("names a team member's boxes change by the boxes' labels (Job 1c, review 2026-11-09 item 10)", () => {
+    const c = { kind: 'team-abilities', memberId: 'm1', abilities: ['offers-see', 'hold-end'], abilityLabels: ['See offers', 'End a hold'] };
+    expect(changeWords(c, new Map([['m1', 'Aurora']]))).toEqual({ title: "Aurora's abilities", before: 'Their current abilities', after: 'See offers, End a hold' });
+    expect(changeWords(c).title).toBe("A team member's abilities");
+  });
+
   it('reads a recovery code in groups of four', () => {
     expect(codeGroups('K7QM4XD2VT9BHP3A')).toEqual(['K7QM', '4XD2', 'VT9B', 'HP3A']);
     expect(codeGroups('K7QM-4XD2 VT9B')).toEqual(['K7QM', '4XD2', 'VT9B']);

@@ -37,6 +37,7 @@ import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
 import { applyChange, concurrencyFailure, lockAccount, methodIds, withTx, HOLD_MS, type PendingChange, type SettleDeps } from './hold.js';
 import { addressEnd } from '@x2f/accounts';
+import { abilityOf } from '../team/abilities.js';
 
 /** At most this many changes (drafts and waiting ones) per account, so a session cannot flood the list or the alerts. */
 export const MAX_HOLD_CHANGES = 20;
@@ -60,10 +61,13 @@ export interface ChangeSummary {
   /** Wallets: how many, and each address's last 6 characters (lead hold v3 review, minor). */
   wallets?: number;
   addressEnds?: string[];
-  /** The one-device switch, a member's new roles. */
+  /** The one-device switch, a member's new roles (an old staged change) or boxes. */
   on?: boolean;
   memberId?: string;
   roles?: string[];
+  /** A member's new boxes (Job 1c): their ids in catalogue order, and each one's label (COPY-UNSIGNED, the catalogue's). */
+  abilities?: string[];
+  abilityLabels?: string[];
   /** A wallet removed (owner p5-7): its label. */
   label?: string;
 }
@@ -80,6 +84,8 @@ export function describeChange(c: PendingChange): ChangeSummary {
       return { kind: c.kind, on: c.on };
     case 'team-roles':
       return { kind: c.kind, memberId: c.memberId, roles: [...c.roles] };
+    case 'team-abilities':
+      return { kind: c.kind, memberId: c.memberId, abilities: [...c.abilities], abilityLabels: c.abilities.map((id) => abilityOf(id)?.label ?? id) };
     case 'remove-wallet':
       return { kind: c.kind, label: c.label, addressEnds: [c.addressEnd] };
     case 'team-remove':
@@ -89,14 +95,14 @@ export function describeChange(c: PendingChange): ChangeSummary {
   }
 }
 
-/** SQL: the `hold_changes` row's change names team member `$5` (their removal or their roles). */
-const NAMES_MEMBER = "change->>'kind' in ('team-remove', 'team-roles') and change->>'memberId' = $5";
+/** SQL: the `hold_changes` row's change names team member `$5` (their removal, roles or boxes). */
+const NAMES_MEMBER = "change->>'kind' in ('team-remove', 'team-roles', 'team-abilities') and change->>'memberId' = $5";
 
 /** 403 `forbidden` when one of `ids` is a change of the account that names team member `memberId` (lead review 8 Nov I3). */
 async function refuseNamingMember(db: Queryable, accountId: string, ids: string[], memberId: string): Promise<void> {
   const { rows } = await db.query(
     `select 1 from hold_changes where account_id = $1 and id = any($2::uuid[])
-        and change->>'kind' in ('team-remove', 'team-roles') and change->>'memberId' = $3 limit 1`,
+        and change->>'kind' in ('team-remove', 'team-roles', 'team-abilities') and change->>'memberId' = $3 limit 1`,
     [accountId, ids, memberId],
   );
   if (rows.length > 0) throw new ApiError(403, 'forbidden');

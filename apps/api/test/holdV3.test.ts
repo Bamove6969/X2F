@@ -1076,8 +1076,8 @@ describe('team member permissions from a password-only session', () => {
     // Batch 2 (owner 2 Nov 2026): team members are for vendor accounts only.
     await makeVendor(deps, t.id);
     const { rows } = await deps.db.query<{ id: string }>(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, created_at)
-       values ($1, 'Ann', 'ann', '{offers}', $2, $2) returning id`,
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, created_at)
+       values ($1, 'Ann', 'ann', '{offers-see}', $2, $2) returning id`,
       [t.id, new Date(now.getTime() + HOUR)],
     );
     const memberId = rows[0]!.id;
@@ -1085,7 +1085,8 @@ describe('team member permissions from a password-only session', () => {
     const r = await t.b.patch(`/v1/team/members/${memberId}`, { roles: ['offers', 'trades'], confirmToken });
     expect(r.statusCode).toBe(202);
     expect(r.json()).toMatchObject({ status: 'staged' });
-    const roles = await deps.db.query<{ roles: string[] }>('select roles from team_members where id = $1', [memberId]);
-    expect(roles.rows[0]!.roles).toEqual(['offers']);
+    // Job 1c: the member's boxes (migration 360) are unchanged until the staged change applies.
+    const boxes = await deps.db.query<{ abilities: string[] }>('select abilities from team_members where id = $1', [memberId]);
+    expect(boxes.rows[0]!.abilities).toEqual(['offers-see']);
   });
 });

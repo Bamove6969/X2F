@@ -19,15 +19,7 @@ import type { FastifyRequest } from 'fastify';
 import { ApiError } from '../errors.js';
 import { hasAbility, type AbilityNeed } from './abilities.js';
 
-export { legacyRoles, parseAbilities, parseRoles, rolesToAbilities, TEAM_ROLES, type TeamRole } from './abilities.js';
-
-/** Owner p4-8 (7 Nov 2026): a member's hold right, as the waiting-changes view names it (the catalogue's hold boxes). */
-export function holdRightOf(abilities: readonly string[]): 'none' | 'see' | 'cancel' | 'end' {
-  if (abilities.includes('hold-end')) return 'end';
-  if (abilities.includes('hold-cancel')) return 'cancel';
-  if (abilities.includes('hold-see')) return 'see';
-  return 'none';
-}
+export { holdRightOf, HOLD_RIGHTS, legacyRoles, parseAbilities, parseRoles, rolesToAbilities, TEAM_ROLES, type HoldRight, type TeamRole } from './abilities.js';
 
 /** At most this many live members (open invites included) per account (owner, 2026-10-29c). */
 export const MAX_TEAM_MEMBERS = 3;

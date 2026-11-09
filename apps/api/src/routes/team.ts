@@ -10,7 +10,8 @@
  *   role ticks the boxes it allowed (`ROLE_ABILITIES`).
  * - `PATCH /v1/team/members/:id { abilities, confirmToken }` (confirm `team-abilities`) → the member;
  *   the old `{ roles }` (confirm `team-roles`) still works. A box the owner's hard rules keep
- *   owner-only, an always-on one or an unknown id is 400 `bad-request` (team/abilities.ts).
+ *   owner-only, an always-on one or an unknown id is 400 `bad-request` (team/abilities.ts). From a
+ *   username-and-password session either shape is staged as the same boxes (`team-abilities`).
  * - `DELETE /v1/team/members/:id { confirmToken }` (confirm `team-remove`) → 204; the member's
  *   sessions end at once.
  * - The three writes re-check the session is live (401) and, owner 2026-10-30, are refused during a
@@ -230,12 +231,16 @@ export function teamRoutes(app: FastifyInstance): void {
     },
     async (req, reply) => {
       const deps = req.server.deps;
+      // Both body shapes end here as the same boxes (`{ roles }` mapped by `rolesToAbilities`), so
+      // the strength decision below is one branch for both: a weak `{ abilities }` cannot skip it.
+      const { abilities } = input(req);
       const { rows } = await deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
-      if (!waits(rows[0]?.strength)) return setAbilities({ ...deps, events: req.server.events }, caller(req), idParam(req), input(req).abilities);
+      if (!waits(rows[0]?.strength)) return setAbilities({ ...deps, events: req.server.events }, caller(req), idParam(req), abilities);
       // Hold model v3: staged under the account lock (`gateChange`), for a live member only, and
-      // (owner 2 Nov 2026) for a vendor account only, checked again under that lock.
+      // (owner 2 Nov 2026) for a vendor account only, checked again under that lock. The set is
+      // checked again when it applies (`applyAbilities`).
       const staged = await inTransaction(deps.db, async (c) => {
-        const g = await gateChange(c, req, { kind: 'team-roles', memberId: idParam(req), roles: input(req).roles! });
+        const g = await gateChange(c, req, { kind: 'team-abilities', memberId: idParam(req), abilities });
         if (g === null) throw weakRefusal();
         await assertVendor(c, req.auth.accountId);
         if (!(await liveMember(c, req.auth.accountId, idParam(req), deps.clock()))) throw new ApiError(404, 'not-found');

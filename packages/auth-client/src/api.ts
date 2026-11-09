@@ -44,6 +44,9 @@ export interface HoldChangeSummary {
   on?: boolean;
   memberId?: string;
   roles?: string[];
+  /** A member's new boxes (Job 1c, `team-abilities`): their ids, and each one's catalogue label. */
+  abilities?: string[];
+  abilityLabels?: string[];
   /** A wallet removed (owner p5-7): its label (and `addressEnds` its address's last 6). */
   label?: string;
 }
@@ -270,7 +273,13 @@ export type TeamRole = 'offers' | 'trades' | 'hold-see' | 'hold-cancel' | 'hold-
 export interface TeamMember {
   id: string;
   displayName: string;
+  /** The old roles the member's boxes read as (Job 1c). */
   roles: TeamRole[];
+  /** Job 1c: the boxes, in catalogue order, and the preset they match (null: none). Optional: older API builds do not send them. */
+  abilities?: string[];
+  preset?: string | null;
+  /** True when the roles above do not describe the boxes exactly (a custom set): show "Custom", not the roles. */
+  custom?: boolean;
   status: 'invited' | 'joining' | 'active';
   inviteExpiresAt: string | null;
   joinedAt: string | null;

@@ -27,7 +27,7 @@ import { waits } from '../auth/strength.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
 import { assertVendor } from '../routes/accountType.js';
-import { hasAbility, legacyRoles, presetOf, rolesToAbilities, sortAbilities, type PresetId, type TeamRole } from './abilities.js';
+import { hasAbility, legacyRoles, parseAbilities, presetOf, sortAbilities, type PresetId, type TeamRole } from './abilities.js';
 import { MAX_TEAM_MEMBERS, STREAM_ABILITY } from './perms.js';
 
 /** An invite lives this long (as Plan 4's staff invites). */
@@ -319,13 +319,16 @@ async function updateAbilities(c: Queryable, accountId: string, memberId: string
 }
 
 /**
- * Hold model v3: a member's roles waiting from a username-and-password session, applied when their 24 h
- * are up (hold.ts `applyChange`, account locked), as the boxes those roles tick. Throws 404 `not-found`
- * (the change is dropped) when the member is no longer live. Returns the member's sessions whose live
- * streams must close.
+ * Hold model v3: a member's boxes waiting from a username-and-password session, applied when their
+ * 24 h are up (hold.ts `applyChange`, account locked). The set is checked again here against the
+ * catalogue as it is now (`parseAbilities`: a box that became owner-only or unknown since it was
+ * staged drops the whole change, 400; the database check is the backstop). Throws 404 `not-found`
+ * (the change is dropped) when the member is no longer live. Returns the member's sessions whose
+ * live streams must close.
  */
-export async function applyRoles(c: Queryable, accountId: string, memberId: string, roles: TeamRole[], now: Date = new Date()): Promise<string[]> {
-  const r = await updateAbilities(c, accountId, memberId, rolesToAbilities(roles), now);
+export async function applyAbilities(c: Queryable, accountId: string, memberId: string, abilities: readonly string[], now: Date = new Date()): Promise<string[]> {
+  const set = parseAbilities(abilities);
+  const r = await updateAbilities(c, accountId, memberId, set, now);
   if (!r) throw new ApiError(404, 'not-found');
   return r.sessions;
 }

@@ -11,7 +11,7 @@ import { settleDueChanges } from '../src/auth/holdChanges.js';
 import { EventBus, type StreamSink } from '../src/events/bus.js';
 import { tradeEventPublisher } from '../src/events/tradePublisher.js';
 import { ACTION_ABILITY, auditMember } from '../src/team/audit.js';
-import { HARD_OWNER_ONLY, legacyRoles, ROLE_ABILITIES, rolesToAbilities } from '../src/team/abilities.js';
+import { HARD_OWNER_ONLY, legacyRoles, ROLE_ABILITIES, rolesToAbilities, sortAbilities } from '../src/team/abilities.js';
 import { memberAccessOf } from '../src/auth/sessions.js';
 import { openInvite, purgeTeamLeftovers } from '../src/team/members.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
@@ -212,7 +212,7 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect(view.body).not.toContain(owner.displayName);
     // Review 6a5949a6 F6: the vendor's name is not even loaded, so no later spread can send it.
     const row = await openInvite(deps.db, { code: created.invite }, deps.clock());
-    expect(Object.keys(row).sort()).toEqual(['account_id', 'display_name', 'id', 'invite_expires_at', 'roles']);
+    expect(Object.keys(row).sort()).toEqual(['abilities', 'account_id', 'display_name', 'id', 'invite_expires_at']);
     expect(Object.values(row)).not.toContain(owner.displayName);
 
     const k1 = await genKey();
@@ -1328,7 +1328,7 @@ describe('review 2026-11-09 M1: the boxes and the 24-hour hold (hold v3 staging,
   it('a strong lead grants a hold box through { abilities }', async () => {
     const owner = await team();
     const m = await member(owner.id, ['trades']);
-    const abilities = [...rolesToAbilities(['trades']), 'hold-cancel'];
+    const abilities = sortAbilities([...rolesToAbilities(['trades']), 'hold-cancel']);
     const confirmToken = await confirmed(owner, { kind: 'team-abilities', memberId: m.id, abilities: abilities.join(',') });
     const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities, confirmToken });
     expect(res.statusCode, res.body).toBe(200);

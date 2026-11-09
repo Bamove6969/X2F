@@ -76,6 +76,12 @@ export function changeWords(c: HoldChangeSummary, names: ReadonlyMap<string, str
       const roles = rolesText((c.roles ?? []) as TeamRole[]);
       return { title: who !== undefined ? `${who}'s roles` : "A team member's roles", before: 'Their current roles', after: roles !== '' ? roles : 'New roles' };
     }
+    // Job 1c: a member's boxes, named by the catalogue's labels (COPY-UNSIGNED).
+    case 'team-abilities': {
+      const who = c.memberId !== undefined ? names.get(c.memberId) : undefined;
+      const boxes = (c.abilityLabels ?? []).join(', ');
+      return { title: who !== undefined ? `${who}'s abilities` : "A team member's abilities", before: 'Their current abilities', after: boxes !== '' ? boxes : 'New abilities' };
+    }
     default:
       return { title: 'Account setting', before: 'Your current setting', after: 'A new setting' };
   }

@@ -140,9 +140,9 @@ const ROWS: readonly Row[] = [
   // B7. Team administration
   [44, 'team-see', 'team', 'See the team', 'See who is on the team and what each may do', 'low', 'not-built', false, null, 1, 1, 0],
   [45, 'team-see-log', 'team', 'See the team log', 'See who did what, and when', 'low', 'not-built', false, 'Start set', 1, 1, 1],
-  [46, 'hold-see', 'team', 'See waiting changes', 'See changes waiting out a 24-hour hold', 'medium', 'not-built', false, 'p4-8: lead grants it', 0, 0, 0],
-  [47, 'hold-cancel', 'team', 'Cancel waiting changes', 'Untick or cancel waiting changes', 'high', 'not-built', false, 'p4-8; team changes asked p11-22', 0, 0, 0],
-  [48, 'hold-end', 'team', 'End a hold', 'Apply waiting changes now', 'high', 'not-built', false, 'p4-8', 0, 0, 0],
+  [46, 'hold-see', 'team', 'See waiting changes', 'See changes waiting out a 24-hour hold', 'medium', 'grantable', false, 'p4-8: lead grants it', 0, 0, 0],
+  [47, 'hold-cancel', 'team', 'Cancel waiting changes', 'Untick or cancel waiting changes', 'high', 'grantable', false, 'p4-8; team changes asked p11-22', 0, 0, 0],
+  [48, 'hold-end', 'team', 'End a hold', 'Apply waiting changes now', 'high', 'grantable', false, 'p4-8', 0, 0, 0],
   [49, 'team-invite', 'team', 'Invite members', 'Send a team invite', 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
   [50, 'team-remove', 'team', 'Remove members', 'Kick a member out', 'high', 'owner-only', true, 'Lead only (G57)', 0, 0, 0],
   [51, 'team-change-abilities', 'team', 'Change abilities', "Tick or untick another member's boxes", 'high', 'owner-only', true, 'Lead only', 0, 0, 0],
@@ -218,11 +218,34 @@ export function presetOf(abilities: readonly string[]): PresetId | null {
 /** A route's need: `any` (every member), one ability, or any one of several. */
 export type AbilityNeed = 'any' | string | readonly string[];
 
-/** A member's abilities: the stored boxes (only grantable ones count) and the always-on ones. */
+/**
+ * Owner p4-8 (7 Nov 2026): the "Holds and waiting changes" boxes, weakest first. Each one includes
+ * the ones before it: `hold-cancel` also sees the waiting changes, `hold-end` also cancels them
+ * (`effectiveAbilities` closes a stored set downward, so a member stored with `hold-end` alone
+ * passes a `hold-see` route; migration 360 stores the closed set for the roles it moves).
+ */
+export type HoldRight = 'hold-see' | 'hold-cancel' | 'hold-end';
+export const HOLD_RIGHTS: readonly HoldRight[] = ['hold-see', 'hold-cancel', 'hold-end'];
+
+/** A member's abilities: the stored boxes (only grantable ones count, a hold box with the ones it includes) and the always-on ones. */
 export function effectiveAbilities(stored: readonly string[]): Set<string> {
   const out = new Set<string>(ALWAYS_ON);
-  for (const id of stored) if (GRANTABLE.has(id)) out.add(id);
+  for (const id of stored) {
+    if (!GRANTABLE.has(id)) continue;
+    out.add(id);
+    const h = (HOLD_RIGHTS as readonly string[]).indexOf(id);
+    for (const lower of HOLD_RIGHTS.slice(0, Math.max(h, 0))) out.add(lower);
+  }
   return out;
+}
+
+/** A member's hold right, as the waiting-changes view names it: `none` unless the lead granted one. */
+export function holdRightOf(stored: readonly string[]): 'none' | 'see' | 'cancel' | 'end' {
+  const have = effectiveAbilities(stored);
+  if (have.has('hold-end')) return 'end';
+  if (have.has('hold-cancel')) return 'cancel';
+  if (have.has('hold-see')) return 'see';
+  return 'none';
 }
 
 /** True when a member holding `stored` meets `need`. A hard owner-only ability is never met. */
@@ -253,16 +276,18 @@ export function abilityOf(id: string): Ability | undefined {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The two roles of 29 Oct (Plan 2 Task 18), kept for the web until it renders the boxes
+// The roles of 29 Oct (Plan 2 Task 18) and the hold rights of p4-8, kept for the web until it renders the boxes
 
-export type TeamRole = 'offers' | 'trades';
-export const TEAM_ROLES: readonly TeamRole[] = ['offers', 'trades'];
+export type TeamRole = 'offers' | 'trades' | HoldRight;
+/** In their fixed order (the confirm's `roles` lists them in this order). */
+export const TEAM_ROLES: readonly TeamRole[] = ['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'];
 
 /**
  * What each old role let a member do, as boxes (migration 360 moved every member's roles to these,
  * and `roles` in a request body still maps to them): exactly what the API allowed the role before,
  * so the move widens nobody's access. Offers also gets the not-built edit boxes the role's bundle
  * named ("adjust and maintain offers"). Trades loses opening a dispute (D-066, owner-only now).
+ * A hold right (p4-8, migration 016) keeps the ones it included (`HOLD_RIGHTS`).
  * Pinned here and in migration 360 (a test checks they agree).
  */
 export const ROLE_ABILITIES: Readonly<Record<TeamRole, readonly string[]>> = {
@@ -271,17 +296,25 @@ export const ROLE_ABILITIES: Readonly<Record<TeamRole, readonly string[]>> = {
     'trades-see-active', 'trades-see-history', 'trades-accept', 'trades-take', 'trades-pick-wallet', 'trades-mark-paid', 'trades-extend', 'trades-cancel',
     'trades-cancel-no-show', 'trades-confirm-cancel', 'disputes-answer', 'disputes-appeal', 'wallets-see', 'feedback-send',
   ],
+  'hold-see': ['hold-see'],
+  'hold-cancel': ['hold-see', 'hold-cancel'],
+  'hold-end': ['hold-see', 'hold-cancel', 'hold-end'],
 };
 
 export function rolesToAbilities(roles: readonly TeamRole[]): string[] {
   return sortAbilities([...new Set(roles.flatMap((r) => ROLE_ABILITIES[r]))]);
 }
 
-/** The old roles a set still reads as, for the web's `roles` (Offers: may post; Trades: sees active trades). */
+/**
+ * The old roles a set still reads as, for the web's `roles` (Offers: may post; Trades: sees active
+ * trades; each hold right the set holds, a stronger one with those it includes).
+ */
 export function legacyRoles(abilities: readonly string[]): TeamRole[] {
   const out: TeamRole[] = [];
   if (abilities.includes('offers-post')) out.push('offers');
   if (abilities.includes('trades-see-active')) out.push('trades');
+  const have = effectiveAbilities(abilities);
+  for (const h of HOLD_RIGHTS) if (have.has(h)) out.push(h);
   return out;
 }
 

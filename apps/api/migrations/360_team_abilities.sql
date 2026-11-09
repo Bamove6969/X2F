@@ -2,7 +2,10 @@
 -- (apps/api/src/team/abilities.ts, the catalogue) instead of the two roles Offers / Trades.
 --
 -- Every live or past member keeps exactly what their roles let them do (ROLE_ABILITIES in
--- abilities.ts; a test checks the two lists below agree with it), so this widens nobody. The Trades
+-- abilities.ts; a test checks the five lists below agree with it), so this widens nobody. Hold v3's
+-- rights (016: hold-see, hold-cancel, hold-end; each included the ones before it) move to the
+-- catalogue's boxes of the same ids, closed downward, so nobody loses one and no hold-only member
+-- is left with an empty set (review 2026-11-09 M1). The Trades
 -- role loses opening a dispute: only trade parties open disputes (owner D-066, p7-7).
 --
 -- The owner's hard rules are refused by the database too: no stored set may hold an ability the
@@ -17,6 +20,10 @@ update team_members set abilities = array(
     || (case when 'trades' = any (roles) then
       '{trades-see-active,trades-see-history,trades-accept,trades-take,trades-pick-wallet,trades-mark-paid,trades-extend,trades-cancel,trades-cancel-no-show,trades-confirm-cancel,disputes-answer,disputes-appeal,wallets-see,feedback-send}'::text[]
      else '{}'::text[] end)
+    -- Hold v3's member rights (owner p4-8, migration 016): the same boxes, each with the ones it included.
+    || (case when 'hold-see' = any (roles) then '{hold-see}'::text[] else '{}'::text[] end)
+    || (case when 'hold-cancel' = any (roles) then '{hold-see,hold-cancel}'::text[] else '{}'::text[] end)
+    || (case when 'hold-end' = any (roles) then '{hold-see,hold-cancel,hold-end}'::text[] else '{}'::text[] end)
   ) as a order by a
 );
 
