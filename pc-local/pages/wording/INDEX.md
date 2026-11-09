@@ -15,3 +15,14 @@ Source: docs/copy-unsigned-by-screen.md on origin/wip/design-brief (8 Nov 2026).
 | wording/batch-09 | 8 screens: TeamChat, ModQueue, ModCase, StaffLog, StaffPerformance, StaffSettings, Support, FAQ | 94 |
 
 Total: 780 questions across 9 batches.
+
+## Published 9 Nov 2026 (owner's links; answers in each page's db, collection `answers`, ids w0N-k)
+- batch 1: https://claude.ai/artifact/VrpbfX9muKFJGvVvUSVnV8 (59)
+- batch 2: https://claude.ai/artifact/Pm1edz8Dvywzhs5X3srY7i (100)
+- batch 3: https://claude.ai/artifact/WbU4fyPWfNMStMVTaCUPt2 (52)
+- batch 4: https://claude.ai/artifact/XtSbza6c9z7rAJyKq1Xiix (98)
+- batch 5: https://claude.ai/artifact/AVMPH9F8w8q2uvzZREWBij (91)
+- batch 6: https://claude.ai/artifact/51FVHKgtnCJ2SmA91ynDek (80)
+- batch 7: https://claude.ai/artifact/WXX8NZbSjD83kv4kiuuL9i (127)
+- batch 8: https://claude.ai/artifact/88sBS68UYjAFJHfn31XxXn (78)
+- batch 9: https://claude.ai/artifact/NjwNvrNWCgJtmbAWS4ex24 (94)
