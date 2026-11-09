@@ -21,6 +21,7 @@ const HEADINGS: Record<AllowlistKind, string> = { owner: 'Owner allowlist', staf
  */
 export function parseAllowlist(readme: string, kind: AllowlistKind): string[] {
   const heading = HEADINGS[kind];
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- heading comes from the constant HEADINGS map, not user input
   const start = readme.search(new RegExp(`^## ${heading}[ \\t]*$`, 'm'));
   if (start < 0) throw new Error(`attestation: README.md has no "## ${heading}" section`);
   const rest = readme.slice(start).split('\n').slice(1);

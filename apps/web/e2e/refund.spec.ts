@@ -14,7 +14,8 @@ import type { TradeView } from '../src/api/trade.js';
 import { PAY_SECURED } from '../src/fixtures/payBoard.js';
 import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
-import { BOARD, SERVER_NOW, buyerAlertView, sellerView } from './refundViews.js';
+import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
+import { BOARD, SERVER_NOW, buyerAlertView, sellerNudgedView, sellerView } from './refundViews.js';
 
 type RefundView = TradeView;
 const PORT = 4319;
@@ -91,6 +92,7 @@ test('parity with SellerRefund at 390x844', async ({ page }) => {
   // The board's header "Chat" link is rendered (it points at the room's chat anchor until Task
   // 20's chat screen lands; lead decision 2026-10-27).
   test.skip(!existsSync(REF), 'design/x2f-app/refs/SellerRefund.png is absent');
+  // The G2 board's default is the locked state: 90 min passed, no nudge yet (owner G2).
   await stubTrade(page, sellerView());
   await open(page);
   await parity(page, 'SellerRefund');
@@ -135,34 +137,58 @@ test('the board copy, the warning before the tap, one primary and no CSP violati
   page.on('console', (m) => {
     if (/content security policy/i.test(m.text())) csp.push(m.text());
   });
-  await stubTrade(page, sellerView());
+  await stubTrade(page, sellerNudgedView());
   await open(page);
   await expect(page.getByRole('heading', { name: "mira.k didn't mark the payment in time" })).toBeVisible();
   for (const t of [
     'Payment window ended',
-    'Your 1.25 XMR is still safe in escrow. You can take it back, or give mira.k more time.',
-    'If you cancel',
-    'mira.k gets a final alert and 15 minutes to say they already paid.',
-    'If they stay silent, your 1.25 XMR comes back to your wallet automatically. No moderator needed.',
-    'If they say they paid, a moderator checks both sides before anything moves.',
+    'Your 1.250000 XMR is still safe in escrow. You can take it back, or give mira.k more time.',
+    'If mira.k paid after all',
     "Check your bank account first. If mira.k's Zelle payment did arrive, release instead of cancelling.",
+    'You can nudge again every 15 min, as often as you need. You can cancel now and get your 1.250000 XMR back.',
   ]) {
     await expect(page.getByText(t, { exact: true })).toBeVisible();
   }
+  // Owner G2: the final-alert steps are gone from this screen.
+  await expect(page.getByText('mira.k gets a final alert and 15 minutes to say they already paid.')).toHaveCount(0);
   const warning = page.getByText(/^Even after your refund, mira\.k can still open a dispute/);
   await expect(warning).toBeVisible();
   await expect(page.locator('[data-primary]')).toHaveCount(1);
-  await expect(page.locator('[data-primary]')).toHaveText('Cancel & get refund');
+  await expect(page.locator('[data-primary]')).toHaveText('Cancel and get refund');
   await expect(button(page, 'Give 30 more min')).toBeVisible();
-  await expect(button(page, 'Nudge mira.k')).toBeVisible();
+  await expect(button(page, 'Nudge again')).toBeVisible();
   const transforms = await page.locator('[data-username]').evaluateAll((els) => els.map((e) => getComputedStyle(e).textTransform));
   expect(transforms.length).toBeGreaterThan(0);
   for (const t of transforms) expect(t).toBe('none');
   expect(csp).toEqual([]);
 });
 
-test('Give 30 more min twice, then it is gone', async ({ page }) => {
+test('owner G2: before any nudge Cancel is locked and Nudge is the one primary; the nudge unlocks it', async ({ page }) => {
   const s = await stubTrade(page, sellerView());
+  // The API records the seller's nudge on the trade (sellerNudgedAt); the room's re-read sees it.
+  await page.route('**/v1/nudges', async (r) => {
+    s.trade.view = { ...s.trade.view, sellerNudgedAt: SERVER_NOW };
+    await r.fulfill({ status: 202, json: {} });
+  });
+  await open(page);
+  await expect(page.getByText('Your 1.250000 XMR is still safe in escrow. Nudge mira.k, or give them more time.', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('No word from mira.k? After 90 min and at least one nudge, you can cancel and get your 1.250000 XMR back.', { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator('[data-primary]')).toHaveCount(1);
+  await expect(page.locator('[data-primary]')).toHaveText('Nudge mira.k');
+  await expect(button(page, 'Cancel and get refund')).toHaveCount(0);
+  await expect(button(page, 'Give 30 more min')).toBeVisible();
+  await button(page, 'Nudge mira.k').click();
+  await expect(page.getByRole('status')).toHaveText('Nudge sent.');
+  await expect(page.locator('[data-primary]')).toHaveText('Cancel and get refund');
+  await expect(button(page, 'Cancel and get refund')).toBeEnabled();
+  await expect(button(page, 'Nudge again')).toBeVisible();
+  expect(s.posted).toEqual([]);
+});
+
+test('Give 30 more min twice, then it is gone', async ({ page }) => {
+  const s = await stubTrade(page, sellerNudgedView());
   await open(page);
   for (let n = 1; n <= 2; n += 1) {
     await button(page, 'Give 30 more min').click();
@@ -170,15 +196,15 @@ test('Give 30 more min twice, then it is gone', async ({ page }) => {
     // secured before payBy), so nothing can be cancelled.
     await expect(page.getByRole('region', { name: 'Waiting for payment' })).toBeVisible();
     await expect(button(page, 'Give 30 more min')).toHaveCount(0);
-    await expect(button(page, 'Cancel & get refund')).toHaveCount(0);
+    await expect(button(page, 'Cancel and get refund')).toHaveCount(0);
     expect(s.trade.view.extensions).toBe(n);
     // The 30 minutes pass on the server; the room re-reads the trade.
     s.trade.view = { ...s.trade.view, serverNow: later(s.trade.view.payBy!, 1) };
     await page.reload();
-    await expect(button(page, 'Cancel & get refund')).toBeEnabled();
+    await expect(button(page, 'Cancel and get refund')).toBeEnabled();
   }
   await expect(button(page, 'Give 30 more min')).toHaveCount(0);
-  await expect(button(page, 'Nudge mira.k')).toBeVisible();
+  await expect(button(page, 'Nudge again')).toBeVisible();
   expect(s.posted).toEqual([{ type: 'extend' }, { type: 'extend' }]);
 });
 
@@ -191,9 +217,9 @@ test('each extension sends the extend signal once', async ({ page }) => {
 });
 
 test('Cancel & get refund sends exactly one event, one signal and one tx set', async ({ page }) => {
-  const s = await stubTrade(page, sellerView());
+  const s = await stubTrade(page, sellerNudgedView());
   await open(page);
-  await button(page, 'Cancel & get refund').dblclick();
+  await button(page, 'Cancel and get refund').dblclick();
   await expect(page.getByText('Final alert sent', { exact: true })).toBeVisible();
   await expect(page.getByRole('timer')).toHaveText(/^1[45]:\d\d$/);
   expect(s.posted).toEqual([{ type: 'request-refund' }]);
@@ -201,9 +227,9 @@ test('Cancel & get refund sends exactly one event, one signal and one tx set', a
 });
 
 test('the relay is down at the tap: the final-alert view resumes the run, Retry finishes the tx set once the relay is back (review I1)', async ({ page }) => {
-  const s = await stubTrade(page, sellerView());
+  const s = await stubTrade(page, sellerNudgedView());
   await open(page, { fail: true });
-  await button(page, 'Cancel & get refund').click();
+  await button(page, 'Cancel and get refund').click();
   // The API accepted request-refund, so the seller sees the final alert running; the signal failed
   // and the resume failed again, so the seller is told and offered Retry. No tx set was built.
   await expect(page.getByText('Final alert sent', { exact: true })).toBeVisible();
@@ -224,27 +250,27 @@ test('the relay is down at the tap: the final-alert view resumes the run, Retry 
 });
 
 test('a refused request-refund sends no signal and no tx set', async ({ page }) => {
-  await stubTrade(page, sellerView());
+  await stubTrade(page, sellerNudgedView());
   await page.route(`**/v1/trades/${CODE}/events`, json({ error: 'too-early' }, 409));
   await open(page);
-  await button(page, 'Cancel & get refund').click();
+  await button(page, 'Cancel and get refund').click();
   await expect(page.getByRole('alert')).toHaveText('That did not work. Try again.');
   expect(await escrowCalls(page)).toEqual([]);
 });
 
 test('before payBy by the server clock nothing can be cancelled, with the device clock 10 min ahead', async ({ page }) => {
   await page.clock.install({ time: new Date(Date.parse(SERVER_NOW) + 10 * MIN) });
-  const s = await stubTrade(page, sellerView({ payBy: later(SERVER_NOW, 3), nextDeadline: later(SERVER_NOW, 3) }));
+  const s = await stubTrade(page, sellerNudgedView({ payBy: later(SERVER_NOW, 3), nextDeadline: later(SERVER_NOW, 3) }));
   await open(page);
   // Before payBy the room shows no refund screen at all (Task 23's waiting room), though the
   // device clock is already past payBy.
   await expect(page.getByRole('region', { name: 'Waiting for payment' })).toBeVisible();
-  await expect(button(page, 'Cancel & get refund')).toHaveCount(0);
+  await expect(button(page, 'Cancel and get refund')).toHaveCount(0);
   await expect(button(page, 'Give 30 more min')).toHaveCount(0);
   // payBy passes on the server; the room re-reads the trade at its next deadline.
   s.trade.view = { ...s.trade.view, serverNow: later(SERVER_NOW, 4) };
   await page.clock.runFor(4 * MIN);
-  await expect(button(page, 'Cancel & get refund')).toBeEnabled();
+  await expect(button(page, 'Cancel and get refund')).toBeEnabled();
   expect(s.posted).toEqual([]);
 });
 
@@ -318,4 +344,24 @@ for (const [width, height] of [
       for (const h of heights) expect(h).toBeGreaterThanOrEqual(44);
     });
   }
+}
+
+// Task 9 I/O, open edge 2: once a trader's side of a settlement is claimed done, the room waits for
+// the network with no countdown, even past settleBy (the settle window no longer reverts it).
+for (const viewport of PHONE_VIEWPORTS) {
+  test(`a claimed refund waits for the network, no timer past settleBy; unclaimed counts down (${viewport})`, async ({ page }) => {
+    const settling = { state: 'settling' as const, settling: 'auto-refund' as const, finalAlertAt: later(SERVER_NOW, -20) };
+    const s = await stubTrade(page, sellerView({ ...settling, settleBy: later(SERVER_NOW, -30), releaseClaimedAt: later(SERVER_NOW, -40), nextDeadline: null }));
+    await open(page);
+    await setPhone(page, viewport);
+    const card = page.locator('.x2f-trade-status[data-trade-state="settling"]');
+    await expect(card.getByText('Refund sent, waiting for the network', { exact: true })).toBeVisible();
+    await expect(page.getByRole('timer')).toHaveCount(0);
+    await expectPhoneLayout(page);
+    s.trade.view = sellerView({ ...settling, settleBy: later(SERVER_NOW, 10), nextDeadline: later(SERVER_NOW, 10) });
+    await page.reload();
+    await expect(card.getByRole('timer')).toHaveText('10 min');
+    await expect(card.getByText('waiting for the network')).toHaveCount(0);
+    await expectPhoneLayout(page);
+  });
 }

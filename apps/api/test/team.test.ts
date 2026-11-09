@@ -22,7 +22,7 @@ import { testDb } from './helpers/db.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { Browser, ORIGIN } from './helpers/totp.js';
 import { publishRuling } from './helpers/disputes.js';
-import { driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
+import { driveTo, fakeAddress, markSellerNudged, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
 // Plan 2 Task 18: team members (spec 6.7, R44). Real Postgres, one database for the file; each
@@ -713,6 +713,7 @@ describe('the audit log covers every member action (review M3)', () => {
     // not count as the owner seeing it (review M9(b)).
     const f = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
     const fs = await driveTo(deps, f.trade, 'secured');
+    await markSellerNudged(deps, f.code);
     const base = deps.clock();
     try {
       setNow(new Date(fs.payBy!.getTime() + 60_000));

@@ -34,7 +34,7 @@ export function TradeHeader({
       <div className="x2f-trade-header__text">
         <span className="x2f-trade-header__title">{title}</span>
         <span className="x2f-trade-header__sub">
-          Trade {code} ·{' '}
+          Trade <span className="x2f-num">{code}</span> ·{' '}
           <button type="button" className="x2f-method-name" aria-haspopup="dialog" onClick={() => setExplain(true)}>
             {method.name}
           </button>

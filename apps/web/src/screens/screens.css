@@ -21,6 +21,12 @@
   font-weight: var(--x2f-heading-weight);
 }
 
+/* The one lead line under a screen title (Feedback, News): body size, muted, no margin of its own. */
+.x2f-screen__lead {
+  margin: 0;
+  color: var(--x2f-ink-muted);
+}
+
 .x2f-screen__foot {
   margin: 0;
   text-align: center;

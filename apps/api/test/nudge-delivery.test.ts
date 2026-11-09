@@ -131,7 +131,7 @@ describe('nudges over the real live events and Web Push (Tasks 19 + 26)', () => 
 
     s.close();
     await until(() => app.events.size === 0);
-    setNow(new Date(T0.getTime() + step * DAY + 11 * 60_000));
+    setNow(new Date(T0.getTime() + step * DAY + 16 * 60_000));
     expect((await from.b.post('/v1/nudges', { to: to.name, context: CONTEXT })).statusCode).toBe(202);
     await until(() => calls.length > 0);
     expect(calls.map((c) => c.payload)).toEqual(['Someone nudged you on X2F']);

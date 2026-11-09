@@ -228,6 +228,8 @@ export const CANT_DO_TITLE = {
   accountType: "You can't switch to a vendor account",
   // Design build review 7 Nov: a title that says why (CantDoThat titles). COPY-UNSIGNED
   teamOwnerOnly: 'Only the owner can do this',
+  // COPY-UNSIGNED: 'forbidden' is a role issue, not an owner-only one (lead's review, 7 Nov).
+  teamRole: "Your role doesn't include this",
   teamWeak: 'Needs a Strong login',
   // COPY-UNSIGNED: the design review's title for shot 19 (too-many-members, now a server fallback).
   teamFull: 'Your team is full',
@@ -312,7 +314,7 @@ export function extendCantDoText(code: CantDoCode): string | null {
 export const NUDGE_TOO_SOON_CODE = 'too-soon' satisfies CantDoCode;
 
 /** 429 `too-soon` on a nudge (Plan 3 Task 26). */
-export const NUDGE_TOO_SOON = 'You can nudge once every 10 minutes.';
+export const NUDGE_TOO_SOON = 'You can nudge once every 15 minutes.';
 
 /** The block's refusal code (Plan 3 Task 37). */
 export const CANNOT_BLOCK_CODE = 'cannot-block' satisfies CantDoCode;
@@ -458,7 +460,8 @@ export const TOO_MANY_MEMBERS_CODE = 'too-many-members' satisfies CantDoCode;
  */
 /** The team refusal's title: who may do it, or why this device can't (design build review 7 Nov). */
 export function teamCantDoTitle(code: CantDoCode | string): string {
-  if (code === 'owner-only' || code === 'forbidden') return CANT_DO_TITLE.teamOwnerOnly;
+  if (code === 'owner-only') return CANT_DO_TITLE.teamOwnerOnly;
+  if (code === 'forbidden') return CANT_DO_TITLE.teamRole;
   if (code === 'weak-session') return CANT_DO_TITLE.teamWeak;
   if (code === TOO_MANY_MEMBERS_CODE) return CANT_DO_TITLE.teamFull;
   return CANT_DO_TITLE.team;

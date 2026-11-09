@@ -17,5 +17,6 @@ npm run copy-lint
 # Plan 3 Task 8: the API and web never reach moderation secrets; moderation never listens.
 npm run separation-check
 npm test
-npm run audit
+# semgrep runs before the audit: under set -e a dirty audit must not skip it.
 npm run semgrep
+npm run audit
