@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { BODY_LIMIT } from '../src/app.js';
 import { ApiError } from '../src/errors.js';
@@ -173,5 +175,27 @@ describe('sealing a signature for storage', () => {
     expect(size).toBeLessThanOrEqual(SIGNATURE_MAX_BYTES);
     expect(sealTermsSignature(config, sig, A)).toHaveLength(size + 28);
     expect(SIGNATURE_SEALED_MAX_BYTES).toBe(SIGNATURE_MAX_BYTES + 28);
+  });
+});
+
+// Owner, 9 Nov 2026 (p11-13): "Erase it when the account closes." A close that deletes the account
+// row takes the signature with it; a close that keeps the row (it sets `closed_at`, as the 60-day
+// close on wip/lead-vendor does) must erase it in the same place. This scan fails when such a close
+// lands without `eraseTermsSignature` or `terms_signature = null`.
+describe('every account close erases the Terms signature (tripwire)', () => {
+  const SRC = fileURLToPath(new URL('../src/', import.meta.url));
+  const files = (dir: string): string[] =>
+    readdirSync(dir).flatMap((f) => (statSync(dir + f).isDirectory() ? files(`${dir}${f}/`) : f.endsWith('.ts') ? [dir + f] : []));
+
+  it('a statement that sets accounts.closed_at sits in a file that erases the signature', () => {
+    const CLOSE = /update\s+accounts\b[^;`]*?\bclosed_at\s*=/s;
+    // The 60-day close's statement on wip/lead-vendor (accountInactivity.ts) is one it catches.
+    expect(CLOSE.test("update accounts a set disabled_at = $1, closed_at = $1, closed_reason = 'inactive' where a.id = $3")).toBe(true);
+    const closes = files(SRC).filter((f) => CLOSE.test(readFileSync(f, 'utf8')));
+    const missing = closes.filter((f) => {
+      const text = readFileSync(f, 'utf8');
+      return !text.includes('eraseTermsSignature(') && !/terms_signature\s*=\s*null/.test(text);
+    });
+    expect(missing.map((f) => f.slice(SRC.length)), 'erase the signature in this account close (eraseTermsSignature)').toEqual([]);
   });
 });

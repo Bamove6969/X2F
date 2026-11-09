@@ -2,7 +2,10 @@
  * The signature a trader gives when accepting the Terms (owner, 8 Nov 2026): once, at account
  * opening, and again whenever the Terms version changes, never per trade. Stored with the account
  * (`accounts.terms_signature`, migration 316) next to `terms_version` and `terms_accepted_at`, and
- * deleted with it. Nothing else is recorded with it: no IP address, user agent or device
+ * erased when the account closes (owner, 9 Nov 2026, p11-13: "Erase it when the account closes"):
+ * a deleted row takes it, and every close that keeps the row calls `eraseTermsSignature` in its
+ * transaction (a staff member removed; the 60-day close when it lands, see the tripwire in
+ * test/termsSignature.test.ts). Nothing else is recorded with it: no IP address, user agent or device
  * fingerprint. It is never shown to other users, and no route reads it back (a staff route may come
  * later, by owner decision).
  *
@@ -25,6 +28,7 @@
  */
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { subkey, type Config } from './config.js';
+import type { Queryable } from './db/pool.js';
 import { ApiError } from './errors.js';
 
 /** The cap on a signature, as its JSON text in UTF-8 (owner's example, 64 KB). */
@@ -150,4 +154,14 @@ export function openTermsSignature(config: Config, sealed: Buffer, accountId: st
   decipher.setAuthTag(sealed.subarray(sealed.length - 16));
   const text = Buffer.concat([decipher.update(sealed.subarray(12, sealed.length - 16)), decipher.final()]).toString('utf8');
   return JSON.parse(text) as TermsSignature;
+}
+
+/**
+ * Erases an account's stored signature, inside the caller's transaction (owner, 9 Nov 2026, p11-13:
+ * "Erase it when the account closes"). Every close that keeps the account row calls it; a close
+ * that deletes the row needs nothing more. The Terms version and acceptance time stay: they say
+ * which Terms the account was under, not who signed.
+ */
+export async function eraseTermsSignature(db: Queryable, accountId: string): Promise<void> {
+  await db.query('update accounts set terms_signature = null where id = $1', [accountId]);
 }

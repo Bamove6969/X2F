@@ -1,6 +1,7 @@
 -- Owner, 8 Nov 2026: a trader agrees to the Terms once, at account opening (and again when the
 -- Terms version changes), with a tick AND a signature. The signature is kept with the account, next
--- to terms_version and terms_accepted_at, and goes when the account row goes. It is a small JSON
+-- to terms_version and terms_accepted_at, and is erased when the account closes (owner, 9 Nov
+-- 2026: a deleted row takes it, a close that keeps the row sets it null, eraseTermsSignature). It is a small JSON
 -- value checked by the API (src/termsSignature.ts, at most 64 KiB as JSON):
 -- {"kind":"drawn","width","height","path"} (an SVG path of the strokes) or {"kind":"typed","name"}.
 -- It is stored sealed, never in clear: AES-256-GCM under a subkey of its own with the account id as

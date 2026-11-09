@@ -10,6 +10,8 @@ import { SESSION_COOKIE, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, log
 import { seedAccount } from '../helpers/accounts.js';
 import { driveTo, seedTrade } from '../helpers/trades.js';
 import { applyEvent } from '../../src/trades/store.js';
+import { sealTermsSignature } from '../../src/termsSignature.js';
+import { SIG } from '../helpers/signature.js';
 import { attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
 
 const MON_NOON = new Date('2026-11-02T12:00:00Z');
@@ -320,6 +322,22 @@ describe('members', () => {
     const tapId = await tap(owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' });
     expect((await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, { tapId })).statusCode).toBe(404);
     expect((await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`)).statusCode).toBe(404);
+  });
+
+  it('removal erases the stored Terms signature; switch-off keeps it (owner 9 Nov, p11-13: erase it when the account closes)', async () => {
+    const signature = async (id: string) =>
+      (await t.deps.db.query<{ terms_signature: Buffer | null }>('select terms_signature from accounts where id = $1', [id])).rows[0]!.terms_signature;
+    const mod = await staffWithKeys(t, { role: 'mod' });
+    await t.deps.db.query('update accounts set terms_signature = $2 where id = $1', [mod.id, sealTermsSignature(t.deps.config, SIG, mod.id)]);
+    const other = await staffWithKeys(t, { role: 'helper' });
+    await t.deps.db.query('update accounts set terms_signature = $2 where id = $1', [other.id, sealTermsSignature(t.deps.config, SIG, other.id)]);
+    // Switch-off can be undone: the login is not closed, so its signature stays.
+    expect((await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {})).statusCode).toBe(200);
+    expect(await signature(mod.id)).not.toBeNull();
+    expect((await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`)).statusCode).toBe(204);
+    expect(await signature(mod.id)).toBeNull();
+    // Only the removed person's.
+    expect(await signature(other.id)).not.toBeNull();
   });
 
   it('a member route for someone who is not staff: 404', async () => {

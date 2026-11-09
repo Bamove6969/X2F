@@ -5,6 +5,7 @@ import { lockAccount, withTx } from '../auth/hold.js';
 import { endAllSessions } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { eraseTermsSignature } from '../termsSignature.js';
 import { appendLog } from '../log/append.js';
 import type { LogAction } from '../log/actions.js';
 import { requireStaff } from './guard.js';
@@ -263,6 +264,8 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       const target = await lockTarget(c, id);
       await c.query('update accounts set disabled_at = coalesce(disabled_at, $2) where id = $1', [id, now]);
       await c.query('update staff_members set switched_off_at = coalesce(switched_off_at, $2), removed_at = $2 where account_id = $1', [id, now]);
+      // Removal closes the staff login for good (switch-off can be undone, so it keeps it).
+      await eraseTermsSignature(c, id);
       if (!target.switchedOff) await unassignOpenCases(c, id, req);
       await log(c, req, 'staff.removed', { staffId: id });
     });
