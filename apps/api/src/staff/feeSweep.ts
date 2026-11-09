@@ -161,6 +161,10 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
         return { outcome: plan.reason };
       }
       const last = (await client.query<{ outcome: string; at: Date }>('select outcome, at from fee_sweeps order by id desc limit 1')).rows[0];
+      // OWNER QUESTION p11-77 (review F1): how a held (pending or failed) sweep resumes. As built, any
+      // settings save after the attempt (a later `fee_sweep_set_at`) lifts the hold, even an
+      // unrelated threshold change, and an identical re-save (no change, no tap) does not. Left as
+      // built until the owner answers p11-77; do not change this rule without that answer.
       if (last && last.outcome !== 'sent' && (cfg.setAt === null || last.at.getTime() >= cfg.setAt.getTime())) {
         await client.query('rollback');
         return { outcome: last.outcome === 'pending' ? 'held-unfinished' : 'held-after-failure' };
