@@ -179,12 +179,12 @@ describe('closeInactiveAccounts (Q77)', () => {
     const due = at(INACTIVE_MS + DAY);
     expect(await job.run(deps.db, due, deps)).toBe(0); // the first pass only records the time
     expect((await row(t.id)).closed_at).toBeNull();
-    await deps.db.query('update site_flags set maintenance_since = $1', [due]);
+    await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [due]);
     try {
       expect(await job.run(deps.db, new Date(due.getTime() + 10 * 60_000), deps)).toBe(0);
       expect((await row(t.id)).closed_at).toBeNull();
     } finally {
-      await deps.db.query('update site_flags set maintenance_since = null');
+      await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     }
     // A gap of more than an hour: again nothing, then the next regular pass closes.
     const later = new Date(due.getTime() + 3 * 60 * 60_000);

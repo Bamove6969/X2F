@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
-import { useSite, type SiteBannerInfo } from './api/site.js';
+import { useSite, type PlannedMaintenanceInfo, type SiteBannerInfo } from './api/site.js';
 import { TradeChatPanel } from './chat/ChatPanel.js';
 import { emitChatLive } from './chat/live.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
@@ -45,6 +45,7 @@ import { BehindTheDoor, isInside } from './session/frontDoor.js';
 import { mayPostOffers, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
+import { PlannedMaintenanceBanner } from './ui/PlannedMaintenanceBanner.js';
 import { SiteBanner } from './ui/SiteBanner.js';
 import { DesktopRail, WideTop, wideFrameOf } from './ui/DesktopShell.js';
 import { useFoldAttribute, useFoldLayout } from './ui/fold.js';
@@ -64,7 +65,7 @@ setTradeChat(TradeChatPanel);
  * left rail, or the centred logo before login (Job 3, src/ui/DesktopShell.tsx; Task 40, src/ui/fold.ts). The frame keeps one tree in every layout, so folding or
  * unfolding never remounts the screen: its route, scroll position and typed text stay.
  */
-function Layout({ nav, banner, door = false }: { nav: boolean; banner: SiteBannerInfo | null; door?: boolean }) {
+function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: SiteBannerInfo | null; door?: boolean; planned: PlannedMaintenanceInfo | null }) {
   const layout = useFoldLayout();
   useFoldAttribute(layout);
   const wide = layout === 'wide';
@@ -84,6 +85,8 @@ function Layout({ nav, banner, door = false }: { nav: boolean; banner: SiteBanne
       {top}
       <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
         {/* Plan 4 Task 8: the owner's banner at the top of every trader screen. */}
+        {/* J-04 (owner G19): a planned maintenance announced ahead, in the big bright banner, on every layout, the front door's too (lead default, owner p11-120). */}
+        <PlannedMaintenanceBanner plan={planned} />
         <SiteBanner banner={banner} />
         <Outlet />
       </div>
@@ -210,12 +213,12 @@ export function App() {
       <Routes>
         {/* Behind the front door (owner, 8 Nov 2026): a set-up trader's session, else the login (session/frontDoor.tsx). */}
         <Route element={<BehindTheDoor />}>
-          <Route element={<Layout nav banner={site.banner} />}>
+          <Route element={<Layout nav banner={site.banner} planned={site.plannedMaintenance} />}>
             <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
             <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
             <Route path="/profile/offers" element={<MyOffers />} />
           </Route>
-          <Route element={<Layout nav={false} banner={site.banner} />}>
+          <Route element={<Layout nav={false} banner={site.banner} planned={site.plannedMaintenance} />}>
             <Route path="/post" element={<PostOffer />} />
             {/* The offers and their quote share one component (two panes on a fold, Fold-Offers). */}
             <Route path="/sell/:methodId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
@@ -240,7 +243,7 @@ export function App() {
           </Route>
         </Route>
         {/* The front door: open to anyone (FRONT_DOOR in session/frontDoor.tsx lists the same paths). */}
-        <Route element={<Layout nav={false} door banner={site.banner} />}>
+        <Route element={<Layout nav={false} door banner={site.banner} planned={site.plannedMaintenance} />}>
           {/* The Landing board (design review 2026-11-08 item 1): where every signed-out visitor lands. */}
           <Route path="/" element={<Landing />} />
           <Route path="/setup/*" element={<SetupFlow />} />

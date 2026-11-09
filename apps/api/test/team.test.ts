@@ -293,7 +293,7 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     const s1 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: banned.publicKey, acceptedTerms: deps.config.termsVersion });
     expect(s1.statusCode, s1.body).toBe(200);
     const c1 = s1.json() as { challengeId: string; encryptedMessage: string };
-    const f1 = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: codeOf(await decrypt(c1.encryptedMessage, banned.privateKey, undefined, deps.clock())) });
+    const f1 = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: codeOf(await decrypt(c1.encryptedMessage, banned.privateKey, undefined, deps.clock())), termsSignature: SIG });
     expect(err(f1)).toEqual({ status: 409, error: 'key-unavailable' });
     // The transaction rolled back: no member account, the key is nowhere, the invite is still open.
     expect((await deps.db.query('select 1 from pgp_keys where fingerprint = $1', [banned.fingerprint.toLowerCase()])).rowCount).toBe(0);
@@ -304,7 +304,7 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     const k1 = await genKey();
     const s2 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: k1.publicKey, acceptedTerms: deps.config.termsVersion });
     const c2 = s2.json() as { challengeId: string; encryptedMessage: string };
-    const f2 = await b.post('/v1/team/join/finish', { challengeId: c2.challengeId, code: codeOf(await decrypt(c2.encryptedMessage, k1.privateKey, undefined, deps.clock())) });
+    const f2 = await b.post('/v1/team/join/finish', { challengeId: c2.challengeId, code: codeOf(await decrypt(c2.encryptedMessage, k1.privateKey, undefined, deps.clock())), termsSignature: SIG });
     expect(f2.statusCode, f2.body).toBe(201);
     const { setupId } = f2.json() as { setupId: string };
     const s3 = await b.post('/v1/team/join/second/pgp/start', { setupId, publicKey: banned.publicKey });

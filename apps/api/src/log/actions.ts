@@ -163,6 +163,9 @@ export const LOG_ACTIONS = {
   'site.banner-removed': {},
   'site.maintenance-on': { kind: 'id' },
   'site.maintenance-off': {},
+  // J-04 (owner G19): a planned maintenance announced (its start and end) or withdrawn; never the message.
+  'site.maintenance-planned': { startsAt: 'iso', endsAt: 'iso' },
+  'site.maintenance-plan-removed': {},
   // Security review 8 Nov M1: the owner turns the 60-day close back on after it switched itself off.
   'site.auto-close-resumed': {},
   'news.published': { newsId: 'id' },
