@@ -6,7 +6,7 @@ import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { countActionTimes } from '../src/traders/actionTimes.js';
 import { applyEvent } from '../src/trades/store.js';
-import { seedAccount } from './helpers/accounts.js';
+import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, fakeAddress, happyPath, seedReviews, seedTrade } from './helpers/trades.js';
@@ -98,6 +98,8 @@ async function timedTrade(sellerId: string, buyerId: string, pay: number, releas
 const OFFER = { methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 }, minTrades: null, terms: '', amountUnit: 'xmr', minAtomic: (XMR / 10n).toString(), maxAtomic: XMR.toString() };
 
 async function post(who: Who, side: 'sell' | 'buy'): Promise<string> {
+  // Owner 2 Nov 2026: only vendors post (403 not-vendor).
+  await makeVendor(deps, who.id);
   const res = await who.browser.post('/v1/offers', { ...OFFER, side });
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;

@@ -47,7 +47,7 @@ type Who = Awaited<ReturnType<typeof trader>>;
 
 const BODY = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 50 },
-  minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0, terms: 'Zelle only.',
+  minFiatCents: '5000', maxFiatCents: '200000', minTrades: null, terms: 'Zelle only.',
 };
 
 async function addWallet(accountId: string): Promise<void> {
@@ -249,7 +249,7 @@ describe('migration 198: existing accounts', () => {
       if (o.offer) {
         await deps.db.query(
           `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-           values ($1, 'sell', 'ZELLE', 'USD', 'market', 0, 100, 200, 0, '', $2, $3, $3)`,
+           values ($1, 'sell', 'ZELLE', 'USD', 'market', 0, 100, 200, null, '', $2, $3, $3)`,
           [id, o.offer, now],
         );
       }
