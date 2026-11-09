@@ -20,6 +20,7 @@ export const BUY_QUOTE_COPY: QuoteCopy = {
   headlineXmr: (q) => q.receiveAtomic,
   // What the buyer receives is not a figure anyone sends: the boards' 6 places (review 8 Nov item 4).
   headlineExact: false,
+  // COPY-UNSIGNED (design review 8 Nov item 4)
   signedOutPickLine: 'You add your wallet when you set up your account, then pick it here.',
   walletLine: (name, end) => (
     <>
@@ -27,7 +28,6 @@ export const BUY_QUOTE_COPY: QuoteCopy = {
     </>
   ),
   noWalletLine: 'Pick the wallet that gets paid.',
-  signedOutWalletLine: 'In the wallet you add when you set up your account.',
   networkFee: 'about 0.0001 XMR, taken from the payout',
   total: (method) => `You send via ${method}`,
   footnote: (poster) =>

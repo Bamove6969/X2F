@@ -457,6 +457,8 @@ describe('BuyQuote', () => {
     expect(group.textContent).toContain('You add your wallet when you set up your account, then pick it here.');
     // Nothing to pick yet: no radios, and no made-up wallet rows.
     expect(group.querySelector('input')).toBeNull();
+    // Said once (review m5): the line under the figure does not repeat it.
+    expect(host.textContent!.match(/when you set up your account/g)).toHaveLength(1);
   });
 
   it('logged out, Trade goes to setup with returnTo = this quote with a pending-take nonce', async () => {

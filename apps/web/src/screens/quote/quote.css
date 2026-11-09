@@ -153,7 +153,7 @@
 
 /* Focus (design review 8 Nov item 4): a soft 1 px ink border on the field, as on the boards, in
    place of the global 2 px outline drawn around the bare input (a hard white box inside the field). */
-.x2f-quote__box:focus-within {
+.x2f-quote__box:has(input:focus-visible) {
   border-color: var(--x2f-ink);
 }
 
@@ -166,7 +166,7 @@
 }
 
 /* In error the border stays danger; focus thickens it to 2 px so it still shows. */
-.x2f-quote__box[data-bad]:focus-within {
+.x2f-quote__box[data-bad]:has(input:focus-visible) {
   box-shadow: inset 0 0 0 1px var(--x2f-danger);
 }
 
@@ -521,7 +521,14 @@
   color: var(--x2f-ink-muted);
 }
 
+/* Forced colors (High Contrast) replaces border colours and drops box-shadow, and the input has no
+   outline, so the box draws one (WCAG 2.4.7; review I1). */
 @media (forced-colors: active) {
+  .x2f-quote__box:focus-within {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
   .x2f-quote__band[aria-current='true'] {
     border-color: CanvasText;
   }

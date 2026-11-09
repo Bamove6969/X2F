@@ -21,10 +21,21 @@ describe('quote amount field focus', () => {
   });
 
   it('the box takes a 1 px ink border while its input has focus', () => {
-    expect(body('.x2f-quote__box:focus-within')).toMatch(/border-color:\s*var\(--x2f-ink\)/);
+    expect(body('.x2f-quote__box:has(input:focus-visible)')).toMatch(/border-color:\s*var\(--x2f-ink\)/);
   });
 
   it('a field in error keeps the danger border and still shows focus', () => {
-    expect(body('.x2f-quote__box[data-bad]:focus-within')).toMatch(/box-shadow:[^;]*var\(--x2f-danger\)/);
+    expect(body('.x2f-quote__box[data-bad]:has(input:focus-visible)')).toMatch(/box-shadow:[^;]*var\(--x2f-danger\)/);
+  });
+
+  it('Max and the unit switch do not light the field border (:has(input:focus-visible), not :focus-within)', () => {
+    expect(CSS.match(/\.x2f-quote__box(\[data-bad\])?:focus-within/g)).toHaveLength(1); // only the forced-colors rule
+  });
+
+  it('forced colors (High Contrast): the box draws a Highlight outline, since borders and shadows are replaced', () => {
+    const m = CSS.match(/@media \(forced-colors: active\)\s*\{[^@]*?\.x2f-quote__box:focus-within\s*\{([^{}]*)\}/);
+    expect(m).not.toBeNull();
+    expect(m![1]).toMatch(/outline:\s*2px solid Highlight/);
+    expect(m![1]).toMatch(/outline-offset:\s*2px/);
   });
 });

@@ -52,7 +52,6 @@ export interface QuoteCopy {
   /** The line under the figure for a picked wallet. */
   walletLine: (name: string, end: string) => ReactNode;
   noWalletLine: string;
-  signedOutWalletLine: string;
   networkFee: string;
   total: (method: string) => string;
   footnote: (poster: string) => string;
@@ -268,8 +267,9 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   // data-long (more than 6 places) takes the smaller size so 12 places fit a phone card.
   const headlineFigure = copy.headlineExact ? xmrText(headlineAtomic) : formatXmr(headlineAtomic);
 
+  // Signed out, the wallet group above already says it (signedOutPickLine), so no line here.
   let walletLine: ReactNode = copy.noWalletLine;
-  if (signedIn === false) walletLine = copy.signedOutWalletLine;
+  if (signedIn === false) walletLine = null;
   // The ending is cut from the full address the take will confirm, never the API's addressEnd (Task 19 re-review, gap 2).
   else if (pickedWallet) walletLine = copy.walletLine(walletName(pickedWallet), `…${addressEnd(pickedWallet.address)}`);
 
@@ -364,7 +364,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             <span className="x2f-quote__xmr" data-long={(headlineFigure.split('.')[1] ?? '').length > 6 ? '' : undefined}>
               {headlineFigure} <span className="x2f-quote__xmr-unit">XMR</span>
             </span>
-            <span className="x2f-quote__muted-sm">{walletLine}</span>
+            {walletLine === null ? null : <span className="x2f-quote__muted-sm">{walletLine}</span>}
           </div>
           <div className="x2f-quote__rows">
             <div className="x2f-quote__row">
