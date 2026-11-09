@@ -569,6 +569,8 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     const buyer = render(inRouter(<DisputeRuling trade={{ ...t, role: 'buyer', counterparty: 'satoshi_ghost' }} methodName="Zelle" dispute={d} serverClock={at(500)} onAppeal={async () => undefined} />));
     expect(buyer.host.textContent).toContain('satoshi_ghost must send you 0.610529733574 XMR');
     expect(xmrInTextExact(733_574n)).toBe('0.000000733574');
-    expect(xmrInTextExact('1250000000000')).toBe('1.25');
+    // Kit handoff 1.5: an exact figure still reads as money, 6 places at least, more only when non-zero.
+    expect(xmrInTextExact('1250000000000')).toBe('1.250000');
+    expect(xmrInTextExact('1250000000100')).toBe('1.2500000001');
   });
 });

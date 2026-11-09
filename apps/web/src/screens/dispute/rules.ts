@@ -152,13 +152,11 @@ export function xmrInText(atomic: string | bigint): string {
 
 /**
  * As xmrInText, but for an amount a side must send (review kit round 1, finding 1): exact to the
- * atomic unit (formatXmrExact), so 0.610529733574 is never written as 0.610529. Trailing zeros are
- * dropped the same way, keeping at least two: an aligned amount still reads "1.25".
+ * atomic unit (formatXmrExact), so 0.610529733574 is never written as 0.610529. Like every XMR
+ * figure (design kit handoff 1.5) it keeps at least 6 places: an aligned amount reads "1.250000".
  */
 export function xmrInTextExact(atomic: string | bigint): string {
-  const exact = formatXmrExact(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
-  const [whole, frac = ''] = exact.split('.');
-  return `${whole}.${frac.replace(/0+$/, '').padEnd(2, '0')}`;
+  return formatXmrExact(typeof atomic === 'bigint' ? atomic : BigInt(atomic));
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
