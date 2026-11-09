@@ -102,8 +102,12 @@ const SEND = '/internal/chat/send';
 /** The entry the API commits before it asks for a message (review 8 Nov M-2). */
 const REQUESTED = 'chat.message-requested';
 const OPENED = 'proof.unblurred-opened';
-/** The socket's group in these tests: this process's own (a deployment uses a dedicated one). */
-const GID = process.getgid!();
+/**
+ * The socket's group in these tests: this process's own (a deployment uses a dedicated one). Run as
+ * root (gid 0, which startInternalServer rightly refuses), it is nogroup (65534) instead: root may
+ * give a file any group, so the chown and the gid check below still run for real.
+ */
+const GID = process.getgid!() === 0 ? 65_534 : process.getgid!();
 
 /** Dev deps: the moderator's message route is on (X2F_DEV_MOD_CHAT=1); production has it off. */
 function deps(api: ApiView, o: Partial<InternalDeps> = {}): InternalDeps {
