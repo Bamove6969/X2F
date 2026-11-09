@@ -93,3 +93,36 @@ Strings: all three are fixed and marked COPY-UNSIGNED. New nits: holdText/holdLo
 
 ### Verdict
 CHANGES REQUIRED: fix R-C1 (one-line actor fix plus a test). C1, C2, I3, I4 and the minors are closed. Residuals for the lead and owner: the lockable recovery and password login throttle (pre-existing), and the older-thief case under I4 (covered by the recovery login).
+
+## Re-verify 9e2b0082 (cloud lead reviewer, 9 Nov). APPROVED WITH MINOR: R-C1 is closed.
+Worktree hold-v3, branch wip/lead-hold-v3 at 9e2b0082 (one commit on 561af62c), clean. Reviewed `git diff 561af62c 9e2b0082`: 4 files (held.ts, routes.ts, log/actions.ts, holdV3.test.ts) and nothing else. In routes.ts the only other change is removing the now-unused `eventRecord`/`tradeLogDetail` imports. `tsc -p apps/api --noEmit` is clean. Ran through the runner: holdV3 45/45, timers 7/7, log 19/19, cancel-rules 12/12.
+
+### (1) R-C1 is closed for every caller
+held.ts:221 now returns before the dry run unless `held.by === 'buyer'`, and the dry run uses `held.by`. routes.ts:215 passes `by = roleOf(rowToTrade(row), req.auth.accountId)`. The two sides never change after the take, so reading `row` before the lock is fine.
+- Seller of a held buyer: `by='seller'`, so the hook returns early, nothing is recorded, and the machine (machine.ts:577) answers 409 `wrong-party`. buyer-cancel is in WHILE_PAUSED, so the role check is reached on a paused trade.
+- Team member: a member's session is a row of the team account (sessions.ts:348-415, `s.account_id`), so `req.auth.accountId` is the team account and `by` is that account's side. A member of the seller's account gets `by='seller'`, which is the same as the seller. A member of the held account matches the held row and gets 403 `recovery-hold` before any `by` check. `assertMemberMaySend` does not block buyer-cancel, as intended.
+- Recovery session: it belongs to the held account, so it gets 403 `recovery-hold` (new test holdV3:943).
+- Staff session: `row.app !== realmOf(req).app` gives 401 on the trader API, so staff never reach this route. The disputes route calls `refuseHeldTradeEvent` without `held` (disputes/routes.ts:239,270), so the dry run is never reached from there.
+- Both parties held: the partner also matches a held row and gets 403.
+- The only writer of `cancel_requested_at` outside this path is held.ts:122 (stillHeld keep), which copies an existing record and never creates one. So a recorded cancel now always comes from an unheld buyer.
+
+### (2) No behaviour change for other events
+The early return was already taken for every event type other than buyer-cancel. For a non-buyer's buyer-cancel the old code did one of three things: refused in the dry run (fell through to the machine), dry-ran to a non-settling result (fell through, and the machine answered wrong-party), or dry-ran to settling, which was the bug. All three now fall through to the machine's wrong-party. walk-away and open-dispute are unchanged; the machine's WHILE_PAUSED and role checks decide them as before. The buyer's own recorded cancel (I5) is unchanged.
+
+### (3) Sync at hold end and crash safety
+held.ts:147 still applies buyer-cancel as 'buyer', and it is now reachable only from a record made by the buyer. If the process crashes after the record commits, the record and its log row are in one transaction (the 'stop' path), so nothing is half-written. If it crashes after the resume and before the cancel, the row is still there (it is deleted last), the next sync skips the resume (not paused) and applies the cancel. If it crashes after the cancel and before the delete, the next run has the machine refuse (settling or closed), catches the refusal and deletes the row. There is no double apply and no lost record.
+
+### (4) Log action rename
+`trade.buyer-cancel-recorded` is in LOG_ACTIONS with an empty schema, and detail `{}` passes `assertDetail`. Nothing in src parses `trade.buyer-cancel` counts. log/query.ts filters only by OWNER_ONLY_PREFIXES, the disputes appeal involvement reads only staff-actor rows, and this branch has no staff-web app. The only matches are holdV3.test.ts:910-939. Nothing else depends on the old double log.
+
+### (5) Tests
+- holdV3:918 (the seller forges the cancel) fails on the old code: the old dry run as 'buyer' on secured returned 'stop', so the old answer is not 409 and `cancel_requested_at` is set. It checks 409 wrong-party, nothing recorded, still secured after the hold ends, and no buyer-cancel log rows. It is good.
+- The log assertion added to the existing I5 test (holdV3:910-915) fails on the old code, which logged `trade.buyer-cancel` three times.
+- holdV3:943 (the held buyer's own cancel gets 403) passes on the old code too, because the account check came first then as well. It is a regression guard, not a red-then-green test. That is fine, but the builder's claim that both new tests fail on the old code is only half right.
+
+### Minors
+- M-a (minor, test gap): holdV3 has no test for a seller-side Trades member posting buyer-cancel on a held buyer's trade. It takes the same code path as the seller (same `accountId`, so the same `by`), so reasoning covers it. A two-line variant of :918 using a member session would pin it. Optional.
+- M-b (info): the `trade.buyer-cancel-recorded` entry is added under the "Hold model v3" comment outside the typed `TRADE` record, which is correct since it is not a machine event. No action needed.
+
+### Verdict
+APPROVED WITH MINOR. R-C1 is closed for the seller, members of either side, recovery sessions and staff. No other held-trade event changed behaviour. The sync, crash handling and log rename are sound. No other change slipped into the commit. The only minor is the optional member-session test.

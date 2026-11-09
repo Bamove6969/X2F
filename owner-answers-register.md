@@ -2,17 +2,17 @@
 
 The owner's order (8 Nov): "I want all my answers to every question moved and dispersed and disseminated amongst the team and worked on." One row per answer he has given. His own words win over this file; where a row and his words differ, fix the row.
 
-## Summary (counts by the first word of each row's status; 515 rows; refreshed after the full owner-decisions-2026-11-06.md was restored)
+## Summary (counts by the first word of each row's status; 534 rows; refreshed 9 Nov after page 11 answers 17-40 were recorded)
 
 | status | rows |
 |---|---|
-| landed on main (incl. Oct work and done settings/processes) | 160 |
-| in flight (on a branch awaiting review/re-verify/landing, or in progress) | 104 |
-| not started | 131 |
-| waiting on another answer (owner page, re-ask, lawyer, design) | 57 |
-| superseded by a later ruling | 63 |
+| landed on main (incl. Oct work and done settings/processes) | 159 |
+| in flight (on a branch awaiting review/re-verify/landing, or in progress) | 101 |
+| not started | 148 |
+| waiting on another answer (owner page, re-ask, lawyer, design) | 41 |
+| superseded by a later ruling | 85 |
 
-Rows marked "lead default (confirm)": 19. Design audit column: CONFLICT 15, DRAWN 1, NOT DRAWN 21, PARTLY 36 (others not in design's audit).
+Rows marked "lead default (confirm)": 18. Design audit column: CONFLICT 17, DRAWN 1, NOT DRAWN 24, PARTLY 37 (others not in design's audit; new 9 Nov rows carry the lead helper's reading of what the boards lack).
 Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started") counts as landed; its next action names the remainder. Many October rows were checked by presence in code only.
 
 ### Ten most important not-started rows
@@ -57,7 +57,7 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | T-012 | 10-29 | 28OCT 12:30; R39 | Buyer cancel after funding = option B: XMR goes back at once (buyer + mod auto-sign to locked refund address); seller's Confirm cancel greyed until return confirmed | claude2 | landed main (Oct) | - | none |
 | T-013 | 10-29 | 28OCT 13:14, 14:06 | Seller never taps Confirm cancel: stays in Active trades with "Your input is needed..."; auto-closes 48 h after the button lights up | claude2 | landed main (Oct; SELLER_CONFIRM_CANCEL_TIMEOUT_H 48) | - | none |
 | T-014 | 10-29 | 28OCT 12:52, 13:48 | A cancel itself can't be disputed | claude2 | landed main (Oct) | - | none |
-| T-015 | 10-29 | 28OCT 14:05 | Buyer may open a dispute within 48 h of a no-show refund to prove they paid | claude2 | landed main (Oct; disputeAfterRefundHours 48) | PARTLY | design: show the 48 h deadline on the card |
+| T-015 | 10-29 | 28OCT 14:05 | Buyer may open a dispute within 48 h of a no-show refund to prove they paid | claude2 | superseded by T-082 (p11-17: window to file a dispute becomes 72 h; code still 48) | PARTLY | none |
 | T-016 | 10-15 | HO Edge cases | Mutual cancel, no penalty; profiles show a neutral cancel rate | claude2 | superseded by T-017 | - | none |
 | T-017 | 11-02 | 30OCT-lw 2 Nov 01:50 (2) | All cancel types recorded as ONE cancel figure, seen only by moderators (not public) | claude3 | not started (unverified) | - | lead helper: check public cancel rate is gone; add mod-only figure in Plan 4 case view |
 | T-018 | 10-15 | HO Edge cases | Buyer no-show: seller may extend +30 min at most twice | claude2 | landed main (Oct; extendMin 30, maxExtensions 2) | - | none |
@@ -79,12 +79,12 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | T-034 | 11-08 | p6-1 | The trade's rules list tells each side about the nudge and encourages it with an unresponsive partner | design | not started | - | design: add nudge line to the per-trade rules list |
 | T-035 | 11-07 | G66 | Seller's 90 minutes count from when escrow is fully funded | claude2 | landed main (Oct) | - | none |
 | T-036 | 11-07 | G67 | Buyer can no longer cancel once "I've paid"; only disputes from then | claude2 | landed main (Oct; R39) | - | none |
-| T-037 | 11-08 | p9-2 | When the 90 min run out it is not automatic: seller may cancel; buyer may still ask to wait; if buyer paid and seller cancels, buyer may dispute at once | lead helper | on branch wip/lead-trade-rules-p1 1801ffb5 awaiting landing (batch 3) | - | land batch 3 |
+| T-037 | 11-08 | p9-2; p11-18 | When the 90 min run out it is not automatic: seller may cancel; buyer may still ask to wait; if buyer paid and seller cancels, buyer may dispute at once | lead helper | on branch wip/lead-trade-rules-p1 1801ffb5 awaiting landing (batch 3) | - | land batch 3 (p11-18 confirms: refund at once, no 5-min freeze, buyer disputes afterwards) |
 | T-038 | 11-08 | p9-3 | No penalty for a taker who opens trades and never funds | claude2 | landed main (no penalty exists) | - | none |
 | T-039 | 11-08 | p9-3 | A rule pop-up when opening a trade: if you open several to see who answers first, close the others out of respect (design wording) | design | not started | - | design words it; lead helper adds to trade-open rules list |
 | T-040 | 11-08 | p9-4 | Once the poster taps "I've paid" (proof or not), the other side can no longer cancel | lead helper | on branch wip/lead-trade-rules-p1 1801ffb5 awaiting landing (batch 3) | - | land batch 3 |
 | T-041 | 11-08 | p9-4 | Wait after "I've paid" is per payment type; shown up front at method pick ("FYI this method can take up to 12 hours") | lead helper | on branch wip/lead-launch-rules 17eba0de awaiting money-gap fix + security review | - | put payWindowMin into attested terms (moderation shadow), then review |
-| T-042 | 11-08 | p9-6 | Time to pay reflects the payment method | lead helper | on branch wip/lead-launch-rules 17eba0de awaiting money-gap fix + security review | - | values are lead defaults: owner new question N4 |
+| T-042 | 11-08 | p9-6 | Time to pay reflects the payment method | lead helper | on branch wip/lead-launch-rules 17eba0de awaiting money-gap fix + security review | - | builder defaults (90 min / 3 h / 24 h) NOT approved (p11-29): research per method, T-083 |
 | T-043 | 11-08 | p9-7 | Seller marks complete, XMR releases automatically, 1% subtracted; no release deadline (lead reading) | claude2 | landed main (Oct) | - | design: R-m3 copy treats confirmBy as a release deadline: fix copy |
 | T-044 | 11-08 | p9-9 | Recommend paying from an account in your own name; never enforced; reassure identity is protected | design | not started | - | design words a line for the pay screen |
 | T-045 | 11-06 | Q12 | "Pay now"/payment details never show before escrow is secured (10/10), even for trusted sellers | lead helper | landed main 687ae821 | - | proto still shows details early: rebuild wip/lead-proto |
@@ -113,9 +113,9 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | T-067 | 10-29 | 29OCT-lc | Take locks the server's live price; Starter cap counts the larger of cash and XMR at market; a blocked user can't take the blocker's offers | lead | landed main (Oct) | - | lead default (confirm) |
 | T-068 | 11-07 | G62 | Maintenance freezes every trade timer site-wide; the 24 h low-security account holds keep ticking | claude2 | landed main (Oct-Nov; maintenance_since, coordination "Owner rule g62") | - | design: SellerConfirm/dispute hide Open dispute in maintenance (p1 follow-up) |
 | T-069 | 11-07 | G19 | During maintenance all disputes and their times are on hold | claude2 | landed main (same as T-068) | PARTLY | none |
-| T-070 | 11-07 | G7 | A held trade: both can still enter and chat; no coins move until a moderator decides | claude2 | on branch wip/lead-hold-v3 561af62c awaiting R-C1 fix + re-verify | PARTLY | fix refuseHeldTradeEvent (caller's side), re-verify |
+| T-070 | 11-07 | G7 | A held trade: both can still enter and chat; no coins move until a moderator decides | claude2 | on branch wip/lead-hold-v3 561af62c awaiting R-C1 fix + re-verify | PARTLY | fix refuseHeldTradeEvent, re-verify; check against S-106 (p11-26: weak holds no longer hold trades) |
 | T-071 | 11-07 | G33 | During a hold the partner may leave the trade and do other things | claude2 | landed main (nothing locks them) | - | none |
-| T-072 | 11-01 | 30OCT-lw 1 Nov 17:00 #4 | When a hold triggers: unfunded trade cancelled; mid-trade put on hold with incident ID pop-up; partner told "technical issue" | claude2 | on branch wip/lead-hold-v3 561af62c awaiting R-C1 fix + re-verify | - | holdText says "paused" but unfunded are cancelled: fix text |
+| T-072 | 11-01 | 30OCT-lw 1 Nov 17:00 #4 | When a hold triggers: unfunded trade cancelled; mid-trade put on hold with incident ID pop-up; partner told "technical issue" | claude2 | superseded by S-106 (p11-26: a hold holds only the changes made; trades keep running); hold-v3 561af62c still cancels/holds trades | - | rework in hold-v3 per S-106 |
 | T-073 | 11-08 | lead decision | "Secured" = the trade's own funds 10/10 and unlocked; later dust never re-locks paying | lead | landed main 687ae821 | - | lead default (confirm) |
 | T-074 | 11-08 | p10-1 | Selling poster escrows trade + 1%; taker receives the full amount (case 2 as the app does) | claude2 | landed main (Oct) | - | design: BuyQuote fee rows must match (board changes, not the build) |
 | T-075 | 11-08 | p9-1 | Buying poster: on completion the poster receives the trade less 1%, fee to the X2F wallet | claude2 | landed main (Oct) | - | results room must not promise the full amount (results-fold review): fixed on design-results? verify |
@@ -124,6 +124,8 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | T-079 | 11-08 | owner-decisions 8 Nov | No-proof warning: tapping "I've paid" with no proof shows "are you sure?", says proof can win a dispute, leaves it to them (design words; lead default: can't be silenced) | lead helper | not started | - | design words; build in BuyerPay |
 | T-080 | 11-08 | prototype comments 8 Nov | Trade terms show each reader only what applies to them, line by line (responsibilities, effects, options such as nudge every 15 min); no "poster pays 1%" to the taker | design | not started (code unverified; boards have "What applies to you") | - | build per-reader terms list |
 | T-077 | 10-29 | 29OCT-lc | "Completed trades" = released + refunded-after-dispute (R38) | claude3 | landed main (Oct) | - | lead default (confirm) |
+| T-082 | 11-09 | p11-17 | Window to file a dispute is 72 h (was 48 h); 30 days for destroying an undisputed trade's chat and keys stands | claude2 | not started | PARTLY | lead confirms which window he means (only 48 h trader window built: after a no-show refund, T-015, disputeAfterRefundHours 48; appeal D-004 is separate); change constant; design shows 72 h on the card |
+| T-083 | 11-09 | p11-29; p11-18 | Time to pay per payment type = the researched average time to receive that method; the same number is the wait before the other side may cancel | lead | not started | - | run research (he suggests ~8 agents) on every payment type; then lead helper sets pay windows in launch-rules (T-041, T-042) |
 
 ## 2. Offers and prices
 
@@ -211,7 +213,7 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | D-020 | 11-07 | G39 | Ban notice: "We're sorry, but your account has been banned. If you feel this has been done in error, reach out to a moderator at [Matrix] [Telegram]..." (design words) | design | not started | - | design words it; addresses wait on W-016 |
 | D-021 | 11-06 | Q79 | No look-alike name bans | claude2 | landed main (no such check exists) | - | none |
 | D-022 | 11-07 | G27 | Banning a vendor also bans its team members' entries | claude2 | on branch wip/lead-land f89233af (batch 2, vendor ban scope) awaiting landing | - | land batch 2 |
-| D-023 | 11-06 | Q51; G3 | Moderators hold a security key, a PGP key and a passkey; a new device needs 2 of 3; an existing device 1 | claude3 | on branch wip/third-p4-task16 169fa1d6 awaiting landing (batch 3; invite all-three) | CONFLICT | design: invite card says "security key or PGP": redraw |
+| D-023 | 11-06 | Q51; G3 | Moderators hold a security key, a PGP key and a passkey; a new device needs 2 of 3; an existing device 1 | claude3 | superseded by D-070 (p11-19: security key optional for a moderator with username + password + PGP + passkey); invite all-three on wip/third-p4-task16 169fa1d6 must change | CONFLICT | none |
 | D-024 | 11-06 | Q52 | Owner always uses one of his two security keys for serious actions | claude3 | on branch wip/lead-land f89233af (batch 2, page3 2213ae8a) awaiting landing | PARTLY | design draws the approver's tap step |
 | D-025 | 11-07 | G4 | Every security-key use is a tap; owner-account changes (e.g. changing a key) need both owner keys | claude3 | on branch wip/lead-land f89233af (batch 2, page3) awaiting landing | NOT DRAWN | design adds "Remove for good" with tap |
 | D-026 | 11-06 | Q55 | Site isn't live until the owner activates with both security keys | claude3 | on branch wip/third-p4-task16 169fa1d6 awaiting landing | PARTLY | design adds "X2F stays offline until..." line |
@@ -258,6 +260,8 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | D-067 | 10-29 | 28OCT lead call | Moderator contact link setting takes Matrix or Telegram (Matrix preferred) | lead | not started (unverified) | - | lead default (confirm) |
 | D-068 | 11-08 | lead decision (T11 review I-2) | Moderator chat sending dev-only until the chat key design is built | lead | on branch wip/third-p4-task11 ca356ce7 awaiting landing | - | lead default (confirm) |
 | D-069 | 11-08 | p9-5 | In a dispute both parties must cooperate with the moderator's questions or risk a ruling against them | design | not started | - | design words it in the dispute room |
+| D-070 | 11-09 | p11-19 (changes Q51, G3) | A moderator may log in with username, password, PGP key and passkey and have no security key; synced passkeys stay allowed (no hardware-only rule) | claude3 | not started | CONFLICT | change third-p4-task16 invite all-three; lead confirms the 2-of-3 new-device rule when the key is absent; design redraws the staff invite card |
+| D-071 | 11-09 | p11-37 | Dispute room between the seller's cancel and the refund landing: "The seller has cancelled this trade. XMR has begun refunding back to their wallet", with confirmations n/10 (replaces "Locked in escrow") | design | not started | - | design words it; claude3 builds in the dispute room |
 
 ## 4. Accounts, logins, holds, sessions, teams
 
@@ -280,8 +284,8 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | S-015 | 11-01 | 30OCT-lw 09:10 | At signup a strength chart shows where the chosen methods stand; confirm to continue; owner's draft copy per row | design | not started | - | design words chart; build |
 | S-016 | 11-01 | 30OCT-lw 11:00 | Recovery code is not a login combo; everyone should have one, stored apart from every method (humour ok) | claude2 | on branch wip/lead-signup-team 08d96d4d (backup = recovery code only) awaiting review | - | review + land |
 | S-017 | 11-01 | 30OCT-lw 11:05 | Recovery code required at signup: tick "I've written it down", then type it back | claude2 | not started (unverified) | - | verify in signup-team |
-| S-018 | 11-01 | 30OCT-lw 16:30 Q4 | ONE 16-char recovery code; after use remind the lead at next login to write the new code | claude2 | landed main (unverified) | - | check against S-019 format |
-| S-019 | 11-07 | G32 | Recovery code = emergency login only; very long or ~5 mnemonic words; does not overwrite user/pass or the 24 h hold; for team lead or moderator only | claude2 | not started | CONFLICT | design: RecoveryHold says nobody can log in: redraw; owner to confirm format vs S-018 |
+| S-018 | 11-01 | 30OCT-lw 16:30 Q4 | ONE 16-char recovery code; after use remind the lead at next login to write the new code | claude2 | landed main (unverified) | - | check against S-019 format; p11-36 (S-111): person generates the new code in security settings: confirm flow |
+| S-019 | 11-07 | G32 | Recovery code = emergency login only; very long or ~5 mnemonic words; does not overwrite user/pass or the 24 h hold; for team lead or moderator only | claude2 | not started | CONFLICT | design: RecoveryHold says nobody can log in: redraw; "team lead or moderator only" changed by p11-28 (S-108, members too); "does not overwrite user/pass or the 24 h hold" changed by p11-35 (S-110); format vs S-018 still to confirm |
 | S-020 | 10-31 | 30OCT-lw 31 Oct 00:45 | Recovery login = username + code; 24 h hold on everything; trading delayed except trades in motion | claude2 | landed main (Oct, unverified) | - | none |
 | S-021 | 10-31 | 30OCT-lw 00:45 | During a recovery hold the person may add/upgrade 2FA | claude2 | superseded by S-023 | - | none |
 | S-022 | 10-31 | 30OCT-lw 00:55 | Held trader's offers simply hidden; recovery hold always 24 h; other devices notified and can block | claude2 | landed main (Oct, unverified) | - | none |
@@ -289,16 +293,16 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | S-024 | 11-01 | 30OCT-lw N51 | A strong login (re-proving pre-hold methods) ends a recovery hold early | claude2 | landed main (Oct; R42) | - | none |
 | S-025 | 11-01 | 30OCT-lw N50 | Message for a recovery-session change attempt ("a 24 h hold... security team reviews... Matrix/Telegram... Jabber") (design words) | design | not started | - | design words; addresses W-016 |
 | S-026 | 11-01 | 30OCT-lw N55 | During a recovery hold contact only via Matrix/Telegram/secure Jabber | claude2 | not started | - | confirm trades in motion with owner |
-| S-027 | 11-01 | 30OCT-lw N56 | Hide offers during every hold ("you are considered offline to everyone") | claude2 | landed main (Oct, unverified) | - | none |
+| S-027 | 11-01 | 30OCT-lw N56 | Hide offers during every hold ("you are considered offline to everyone") | claude2 | superseded by S-106 for weak-login holds (p11-26: everything else works as normal); recovery hold to confirm | - | lead confirms whether S-106 also covers the recovery hold |
 | S-028 | 11-01 | 30OCT-lw N60 | A method added is kept if saved before the session ends and not in the hold | claude2 | landed main (Oct, unverified) | - | none |
-| S-029 | 11-01 | 30OCT-lw | Recovery codes only for the account owner (team lead), never members | claude2 | waiting on owner N3 (members' recovery codes, new question) | - | ask with N3 |
+| S-029 | 11-01 | 30OCT-lw | Recovery codes only for the account owner (team lead), never members | claude2 | superseded by S-108 (p11-28: members get their own recovery codes) | - | none |
 | S-030 | 11-01 | 30OCT-lw 17:00 #1 | A username+password session changing login methods or payout wallets triggers the 24 h hold; pop-up recommends stronger security | claude2 | landed main (Oct; hold v2) | - | none |
 | S-031 | 11-01 | 30OCT-lw 17:00 #2,#7 | Lead's new device: "is this you?" on a logged-in device; device approval is for the lead only | claude2 | landed main (Oct) | - | none |
 | S-032 | 11-01 | 30OCT-lw 17:00 #4 | When a hold triggers, everyone on the account is logged out | claude2 | superseded by S-035 | - | none |
 | S-033 | 11-01 | 30OCT-lw 17:00 #5 | Hold ends by the lead's own strong methods or after 24 h; a mod can extend it or vet the lead back in | claude2 | landed main (Oct; mod extend in Plan 4 unverified) | - | none |
 | S-034 | 11-01 | 30OCT-lw 17:00 #9 | Weak changes take effect only after the hold; if the lead ends it early they are discarded | claude2 | superseded by S-046 | - | none |
 | S-035 | 11-07 | G8 | A held account can stay logged in and extend its session; hold strongly recommends upgrading security | claude2 | on branch wip/lead-hold-v3 561af62c awaiting R-C1 fix + re-verify | - | land after re-verify |
-| S-036 | 11-07 | G5 | Weak removal of a wallet or member: wallet unusable / member access removed at once; deleted after 24 h | claude2 | superseded by S-055 | - | lead reading (owner-decisions p5-7: removals held too, nothing applies early); owner confirms the combination on p11-23 |
+| S-036 | 11-07 | G5 | Weak removal of a wallet or member: wallet unusable / member access removed at once; deleted after 24 h | claude2 | superseded by S-055 | - | p11-23 not answered as asked (9 Nov): re-ask; p11-26 (S-106) says a hold holds only the changes made |
 | S-037 | 11-07 | G10 | A username+password account may extend its session with username + password | claude2 | on branch wip/lead-land f89233af (batch 2, sessions) awaiting landing | - | land batch 2 |
 | S-038 | 11-07 | G13 | A vendor can't remove its only strong method; it must swap it for another strong one | claude2 | on branch wip/lead-land f89233af (batch 2, vendor; unverified) | NOT DRAWN | verify refusal; design draws it |
 | S-039 | 11-07 | G14 | Auto-closed account: may reuse keys on a new account; needs new username and display name | claude2 | on branch wip/lead-land f89233af (batch 2, vendor closed_account_keys) | - | land batch 2 |
@@ -311,18 +315,18 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | S-046 | 11-07 | G58 | A strong lead sees pending weak changes before/after with a countdown and can approve now, cancel all or edit | claude2 | on branch wip/lead-hold-v3 561af62c (unverified) | - | verify approve-now path |
 | S-047 | 11-07 | G29 | Tally all changes (one screen or a final list) with before/after view; weak users told submit starts 24 h; serious ones act at once but become permanent at 24 h; strong users see the same view, instant | claude2 | on branch wip/lead-hold-v3 561af62c (g65 view) awaiting re-verify | - | land |
 | S-048 | 11-07 | G36 | At most 20 waiting changes per account | claude2 | on branch wip/lead-hold-v3 561af62c (unverified) | - | verify cap |
-| S-049 | 11-07 | G64 | Weak lead changing a login method: new credentials take effect only after 24 h; the real owner can still log in and kick the thief | claude2 | on branch wip/lead-hold-v3 561af62c (I4 per-change dates) | - | owner confirms combination on p11-23 |
+| S-049 | 11-07 | G64 | Weak lead changing a login method: new credentials take effect only after 24 h; the real owner can still log in and kick the thief | claude2 | on branch wip/lead-hold-v3 561af62c (I4 per-change dates) | - | p11-23 not answered as asked: re-ask; p11-35 adds a recovery-code fast path (S-110) |
 | S-050 | 11-07 | G65 | Cancel all changes with one button, or uncheck individual ones | claude2 | on branch wip/lead-hold-v3 561af62c | - | land |
 | S-051 | 11-07 | G57 | Only the team lead kicks out members; weak kick = immediate, deletion after 24 h; other weak member changes wait 24 h | claude2 | on branch wip/lead-hold-v3 561af62c (unverified) | CONFLICT | design: Devices note "nobody is logged out" contradicts: redraw |
 | S-052 | 11-07 | G31 | Team members can't see or cancel the lead's waiting changes (built) | claude2 | landed main (built per the page; unverified sha) | - | none |
 | S-053 | 11-07 | p4-8 | Members' login strength capped at the lead's (the strength cap only) | claude2 | superseded by S-054 | - | none |
-| S-054 | 11-08 | p7-9 | Members may use any login method; if the lead is weak the 24 h hold applies even to strong members' changes | lead helper | in progress on wip/lead-signup-team 08d96d4d (API join still needs two strong factors) | - | change teamCopy.ts + member join; owner answers N3 first |
+| S-054 | 11-08 | p7-9 | Members may use any login method; if the lead is weak the 24 h hold applies even to strong members' changes | lead helper | in progress on wip/lead-signup-team 08d96d4d (API join still needs two strong factors) | - | change teamCopy.ts + member join; p11-26 (S-106): a member's weak login holds only that member's own changes; "weak lead holds strong members' changes" not re-addressed |
 | S-055 | 11-08 | p5-7 | Weak logins: 24 h hold for every important change (account, team, wallet/cash-out), removals included, so nothing applies early; the same lead may log back in and undo some or all | claude2 | on branch wip/lead-hold-v3 561af62c awaiting R-C1 fix + re-verify | - | land |
 | S-056 | 11-08 | p5-7 | With secure Jabber set up, every account change sends a discreet notice that doesn't say what | lead helper | on branch wip/lead-jabber-notices 4446e3c5 awaiting security review | - | review; classify other branches' tables in changePaths.ts at merge |
 | S-057 | 11-06 | Q14 | Changes after the 24 h apply on their own; always say "username and password", never "password only" | claude2 | on branch wip/lead-hold-v3 561af62c (strings; WEAK_SESSION_TEXT open) | - | grep copy for "password only" before landing |
 | S-058 | 10-30 | 30OCT-lw 11:50 | During a 24 h hold block all team changes (invites, roles, removals wait) | claude2 | superseded by S-036, S-051 | - | none |
 | S-059 | 11-01 | 30OCT-lw 08:49 #48 | Removing a member during a hold is queued until the hold ends | claude2 | superseded by S-036 | - | none |
-| S-060 | 11-01 | 30OCT-lw 47 | Invites / role grants need a strong login; password-only gets "not allowed" | claude2 | on branch wip/lead-hold-v3 561af62c (invite from weak session refused) | - | owner answers p11-21 (held or refused) |
+| S-060 | 11-01 | 30OCT-lw 47 | Invites / role grants need a strong login; password-only gets "not allowed" | claude2 | superseded by S-104 (p11-21: weak-login invite goes through, member settings apply after 24 h); hold-v3 561af62c still refuses it | - | none |
 | S-061 | 11-06 | Q73 | 5-min warning before the session ends; extend for the same durations with your own login methods; members too | claude2 | on branch wip/lead-land f89233af (batch 2, sessions SESSION_PROMPT_MS 5 min) awaiting landing | - | land batch 2 |
 | S-062 | 11-02 | 2NOV-l 08:12 | "Stay logged in?" prompt 2 minutes | claude2 | superseded by S-061 | - | none |
 | S-063 | 11-06 | Q75 | Optional idle reminder in personal settings: on/off and its own interval | claude2 | on branch wip/lead-land f89233af (batch 2, sessions; intervals 10/15/30/60/120 lead default) | NOT DRAWN | design draws the switch; land |
@@ -348,7 +352,7 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | S-083 | 10-14 | HO Accounts | No sign-up form at the door; setup at the first Trade tap | claude2 | superseded by W-019 | - | none |
 | S-084 | 10-30 | 30OCT-lw | A password-only user must still use two devices or move to a new one and kick the old | owner-pending | waiting on owner (design discussion never closed) | - | put on a page with the device rules |
 | S-085 | 11-01 | 30OCT-lw | Device-bound sessions (non-copyable browser key) before mainnet | lead helper | not started | - | queue before mainnet |
-| S-086 | 10-29 | 28OCT 13:41; R44 | Team members: up to 3; roles Offers and Trades; audit log for the owner; chat label "Message from Team <name> member: <member>" | claude2 | landed main (Oct; 015_team_members); label waiting on owner N2 | CONFLICT | owner answers N2 (label vs design's "never which member") |
+| S-086 | 10-29 | 28OCT 13:41; R44 | Team members: up to 3; roles Offers and Trades; audit log for the owner; chat label "Message from Team <name> member: <member>" | claude2 | landed main (Oct; 015_team_members); chat label superseded by S-105 (p11-25) | CONFLICT | label: see S-105; design CONFLICT now resolved by a third rule (neither R44 nor design) |
 | S-087 | 11-06 | Q16 | Granular teams: 3-4 member types, 7-10 boxes each, a member can be in several types | lead helper | not started (design team-permissions-review on design-brief) | PARTLY | Job 1c: build permission model from design's starting set |
 | S-088 | 10-29 | 28OCT 13:42 | Team members at launch if possible | lead | in progress (Job 1c) | - | none |
 | S-089 | 10-29 | 28OCT 13:58 | Team-member fee idea (tiered 1.1/1.2/1.3% or flat 1.15%), decide before launch | owner-pending | waiting on owner (before launch) | - | put on a page before launch |
@@ -357,15 +361,23 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | S-092 | 11-08 | p7-5 | Granular boxes; a "manager" preset ticks a recommended set that can be unticked | lead helper | not started | - | Job 1c |
 | S-093 | 11-08 | p7-6 | Block/unblock in one click; blocked list with optional notes and the date/time blocked | claude2 | landed main (Oct; block + list); notes and time not started | - | add notes + timestamp to Blocked |
 | S-094 | 11-08 | p7-8 | Member boxes "can view notes on traders" and "can add notes" (logged, no delete) | lead helper | not started | - | Job 1c |
-| S-095 | 11-08 | p7-10 | Member logins: approve only the first login (design B); the granular boxes are the protection (no money on site) | lead helper | not started (Job 1c) | - | build; N3 still asks about password-only members |
+| S-095 | 11-08 | p7-10 | Member logins: approve only the first login (design B); the granular boxes are the protection (no money on site) | lead helper | superseded by S-107 (p11-27: no first-login approval; notice + Jabber instead) | - | none |
 | S-096 | 11-08 | p7-11 | Member hours: 24/7 or fine-tune days and hours | lead helper | not started | - | Job 1c (carry sessions note S-m4) |
 | S-097 | 11-08 | p7-12 | The starting granular list is good; think of every one, leave the rest to feedback | lead helper | not started | - | Job 1c |
 | S-098 | 11-01 | 30OCT-lw 17:00 #8 | Lead approves every new team member; refusal removes the newcomer only | claude2 | landed main (Oct, unverified) | - | none |
 | S-099 | 11-07 | G61 | "Holds off-limits to team members?" (owner asked what it means) | lead | superseded by S-053, S-054 | - | none |
 | S-100 | 11-07 | G30 | "Example of a revoked session?" | lead | waiting on owner G30 (lead to re-ask with an example) | - | put on a page |
 | S-101 | 10-30 | 30OCT-lw | Trust reset on owner proof: owner asked for a better explanation | lead | waiting on owner (re-ask) | - | put on a page |
-| S-102 | 11-07 | p4-8 | Who can see, untick or cancel waiting changes, or end a hold, is a granular team permission; default only the lead acts; others just see a hold is on | lead helper | on branch wip/lead-hold-v3 561af62c (p4-8 team hold rights) awaiting re-verify | - | fold into Job 1c model; owner p11-22 |
+| S-102 | 11-07 | p4-8 | Who can see, untick or cancel waiting changes, or end a hold, is a granular team permission; default only the lead acts; others just see a hold is on | lead helper | on branch wip/lead-hold-v3 561af62c (p4-8 team hold rights) awaiting re-verify | - | fold into Job 1c model; p11-22 not answered as asked: abilities list first (Q-006) |
 | S-103 | 11-08 | prototype comments 8 Nov | Agree once at account opening (Terms, required tick box, tall wide signature pad; a scribble or X is fine); never per trade | lead helper | on branch wip/lead-terms-signature 909f87fb (HOLD until p11-13..15 applied) | - | apply owner answers, version bump, re-verify |
+| S-104 | 11-09 | p11-21 (changes 30OCT-lw 47) | A weak-login lead may invite: invite goes out, member accepts, lead notified (+ secure Jabber); lead sets and submits the member's settings, which take effect after 24 h | lead helper | not started (hold-v3 refuses today) | NOT DRAWN | replace the weak-invite refusal in hold-v3 with a 24 h hold on the member's settings; design draws it |
+| S-105 | 11-09 | p11-25 (changes R44) | Team member's chat label = "<lead's display name> Assistant 1", "Assistant 2" (e.g. "Circa 55 Assistant 1"); the member's own name is not shown | lead helper | not started | CONFLICT | design redraws chat label; change label in code; lead updates R44 in rulings-and-lessons.md |
+| S-106 | 11-09 | p11-26 | A 24 h hold holds only the changes being made; everything else works as normal; a member's weak login holds only that member's own changes; the team account never freezes because of a member | lead helper | not started | - | rework hold-v3 effects (no offer hiding, no trade cancel/hold for weak-change holds); lead confirms whether the recovery hold (S-020, S-022) changes too |
+| S-107 | 11-09 | p11-27 | New team member's first login: no approval by the lead; the lead gets a notification and a secure Jabber notice when the member first logs in | lead helper | not started | - | Job 1c / signup-team member join |
+| S-108 | 11-09 | p11-28 | Team members get their own recovery codes | lead helper | not started | - | member join in signup-team; design adds the step to member setup |
+| S-109 | 11-09 | p11-34 | A correct recovery code always gets in, even when logins are throttled | lead helper | not started (unverified on hold-v3) | - | check hold-v3 throttle path; build bypass for a correct code |
+| S-110 | 11-09 | p11-35 | Password change with current password + new password + recovery code applies at once (no 24 h hold) | lead helper | not started | NOT DRAWN | build in hold-v3; design draws the option on the password change form |
+| S-111 | 11-09 | p11-36 | After a recovery code is used: tell the person it is burned and to generate a new one in security settings | design | not started | - | design words the notice; lead confirms whether the new code is user-generated (vs made automatically, S-018) |
 
 ## 5. Chat and privacy
 
@@ -382,7 +394,7 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | C-009 | 11-08 | p11-1 | No Matrix; build our own encryption | lead | landed main (Oct; libsodium chat) | - | none |
 | C-010 | 11-08 | p11-2; p9-5 | One key per trade, members added like Windows permissions; a dispute adds the moderator (full history); seniors/owner per case; key filed with the dispute for an appeal | lead helper | in progress on wip/lead-chat-shred-2 0d7e65f8 (tasks 1-2; design-chat-membership-keys-2026-11-08.md) | - | re-verify chat-shred-2; rest waits on page 12 |
 | C-011 | 11-08 | p11-2 | Audit log of every message and button action with time stamps, for admins; destroyed at completion without dispute or 90 days after resolution | lead helper | waiting on owner p12-7, p12-8, p12-11 | - | after page 12 |
-| C-012 | 11-08 | p11-3 | Completed trade's keys destroyed at the 48 h mark unless a dispute happens | lead helper | waiting on owner p11-17 (48 h vs 30 days) | - | owner answers p11-17 |
+| C-012 | 11-08 | p11-3 | Completed trade's keys destroyed at the 48 h mark unless a dispute happens | lead helper | superseded by C-001 (p11-17: 30 days stands; his "48 h" was the dispute window, now 72 h: T-082) | - | none |
 | C-013 | 11-08 | p11-9 | Terms say: completed trades destroyed on the 30th day; disputes kept up to 90 days (privacy-scrubbed, for training) | lead helper | not started | - | termsText.ts:31,84 still says 30 days for disputes: fix with terms-signature + version bump |
 | C-014 | 11-08 | p11-10 | Purge is system-wide, including the trader's own devices | lead helper | on branch wip/lead-chat-shred-2 0d7e65f8 awaiting re-verify | - | re-verify, land |
 | C-015 | 11-02 | C3 16:02 (Q6 retention) | Disputes kept 90 days with personal detail removed, dialogue intact; unedited proof kept 90 days for training | claude3 | not started (Plan 4 Task 23) | - | build; page 12 p12-12 asks where scrubbed copies live |
@@ -391,6 +403,7 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | C-018 | 10-27 | HO Moderators | Users told in every chat that a moderator can read it in a dispute | lead | landed main (Oct) | - | public crypto spec must say "only after a dispute" is enforced by Plan 4 |
 | C-019 | 11-08 | lead/design | Team chat must not ship before a team-member key path exists; hide team replies until then | lead | not started | - | lead default (confirm) |
 | C-020 | 11-08 | owner-decisions 8 Nov chat retention | A dispute opened inside the 30 days stops the 30-day destruction | lead helper | landed main b63e4c29 | - | none |
+| C-021 | 11-09 | p11-33 | When a device becomes active again (website, Android web app or app) it syncs first: every change is pushed before the user can act (a few seconds) | lead helper | not started | - | fold into chat-shred-2 device erase (C-014); marker keep time still open (Q-029) |
 
 ## 6. Reputation, reviews and proof
 
@@ -432,11 +445,12 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | R-034 | 10-15 | HO Badges | New safety badge; milestones 10/50/100/500/1000; Veteran; Fast; Clean record; security honours; Featured/On hover/Hidden; no volume badges | claude3 | landed main (Oct) | - | none |
 | R-035 | 11-07 | G38 | Badge middle choice (tap/hover): owner asked what it does | lead | waiting on owner G38 (lead to re-ask) | - | put on a page with an example |
 | R-036 | 10-29 | 28OCT lead call | Release-time stat: last 20 action durations per account, no trade codes | lead | on branch wip/lead-land f89233af (batch 2, offer-units migrations 324/325) | - | lead default (confirm) |
-| R-037 | 11-08 | lead defaults (offer-units) | Lost disputes from live rulings; badge defaults for all; every review counts; Fast = median of both lists | lead | on branch wip/lead-land f89233af (batch 2) | - | lead default (confirm); Fast measure waits p11-20 |
+| R-037 | 11-08 | lead defaults (offer-units) | Lost disputes from live rulings; badge defaults for all; every review counts; Fast = median of both lists | lead | on branch wip/lead-land f89233af (batch 2) | - | lead default (confirm); Fast measure replaced by p11-20 (R-042): drop the median rule |
 | R-038 | 11-01 | 30OCT-lw item 9 | No feedback cap | claude3 | superseded by D-056 | - | none |
 | R-039 | 11-02 | 30OCT-lw 07:20; C3 04:51 | Feedback form at most 1 submission per 30 s per person | claude3 | landed main (third-feedback-form-limit in main) | - | none |
 | R-040 | 10-28 | 28OCT Feedback | "Leave feedback" link on every popup that refuses something; "Send anonymously" checkbox; owner's thank-you text | claude3 | landed main (Oct; Task 21) | PARTLY | add link to inline refusals (TeamRefusal etc.) |
 | R-041 | 10-29 | 29OCT-lc | Anonymous feedback updates no "last seen"; copy promises only "We don't record who sent it" | claude3 | landed main (Oct) | - | none |
+| R-042 | 11-09 | p11-20 (replaces R-037 Fast median) | Fast badge: earned after 30 ("let's say") payments sent in under half the allowed time to pay | claude3 | not started | - | lead reading: measured to the "I've paid" tap (allowed time ends there): confirm; replace median in offer-units |
 | P-001 | 10-15 | HO Proof | Metadata stripped on device; best-effort auto blur; buyer double-checks; seller sees blurred; mod can request unblurred; proof optional; smart card | claude3 | landed main (Oct) | - | none |
 | P-002 | 11-02 | 2NOV-l 08:12 | Uploader can only ADD blur, never remove the automatic one | claude3 | landed main (unverified) | - | none |
 | P-003 | 11-02 | 2NOV-l 08:17 | Auto blur never hides the amount; if the uploader's blur covers amount/memo: warn, can still post | claude3 | landed main | - | none |
@@ -492,11 +506,12 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | G-017 | 10-15 | HO Design system | Night-first; orange only for the one primary action; state colours with words; fonts; no emoji or exclamation marks; usernames as set | design | landed main (Oct) | - | none |
 | G-018 | 10-30 | 30OCT-lw 11:50 | Send design a phone screenshot pack + "what changed" after each landing batch | lead | not started (process) | - | do it after batch 2 |
 | G-019 | 11-08 | standing rule | Forward every owner comment/answer to design verbatim | lead | in progress (process) | - | send page 11 + this register to design |
-| G-020 | 11-08 | chat 8 Nov | "Frankly the previous demo was better" (why not yet given) | owner-pending | waiting on owner (asked twice) | - | ask once more on a page |
+| G-020 | 11-08 | chat 8 Nov; p11-39 | "Frankly the previous demo was better" (why not yet given) | owner-pending | superseded by X-016 (p11-39: he misses the Claude integration while reviewing) | - | none |
 | G-021 | 10-29 | HO 29b | Foldables: phone < 600 px, two panes to 999, wide from 1000, tabletop/flip layouts | design | landed main (Oct; Task 40) | - | none |
 | G-022 | 11-08 | p11-15 | Typed signature box: tick to agree, sign your name, "begin account creation" (design words) | design | on branch wip/lead-terms-signature 909f87fb (HOLD until owner answers applied) | - | apply design ea2a9ca8 wording |
 | G-023 | 11-08 | wide-shell review M2 | Page names Blocked users, Zelle offers, Dispute · code, Wallets, Security are unsigned | owner-pending | waiting on owner (wording pages) | - | add to G-012 pages |
 | G-024 | 10-28 | 28OCT Decision 5 | 44px method name left to Claude Design | design | landed main (Oct) | - | none |
+| G-025 | 11-09 | p11-24 | Signup order: disclaimer/Terms of Service, then site rules (maybe separate pages, each acknowledged), then a box to sign (any signature), then "Continue creating your account" | design | not started | - | design checks terms-signature (S-103) follows this order |
 
 ## 8. Public site, alerts, Jabber
 
@@ -508,7 +523,7 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | W-004 | 11-07 | G19 | Maintenance never defaults to "emergency" (internal only); unplanned: minimal info + best guess; planned: ~24 h notice; 500 chars in a big bright banner | claude2 | not started | CONFLICT | design renames chip "Unplanned maintenance"; code default changes to planned/unplanned |
 | W-005 | 10-29 | HO 29b design-reported | Maintenance planned (start/end) and emergency ("back soon", timers paused) versions | claude2 | superseded by W-004 | - | none |
 | W-006 | 10-28 | 28OCT Q6 final | Phone push + loud alarm (default sound/volume, custom sound file + volume) | lead helper | landed main (push, Oct); loud alarm + custom sound not started (unverified) | - | verify; build in native app (Plan 6) |
-| W-007 | 10-28 | 28OCT Q6 final | One extra alert channel only: OMEMO Jabber over Tor; no Nostr | lead helper | in progress on wip/lead-jabber-notices 4446e3c5; waiting on owner N6 (OMEMO only over Tor?) | - | security review; owner answers N6 |
+| W-007 | 10-28 | 28OCT Q6 final; p11-31 | One extra alert channel only: OMEMO Jabber over Tor; no Nostr | lead helper | in progress on wip/lead-jabber-notices 4446e3c5 (OMEMO and Tor both mandatory, p11-31) | - | security review; refuse any alert that cannot be OMEMO-encrypted; connect over Tor (ties to p11-42 own onion server, not yet answered) |
 | W-008 | 10-27 | HO 10-27 | Nostr and PGP-encrypted email alerts | lead | superseded by W-007 | - | none |
 | W-009 | 10-28 | 28OCT Battery | Optional unrestricted battery on Android, explained in setup | lead helper | not started (Plan 6 native app) | - | Plan 6 |
 | W-010 | 10-27 | HO 10-27; 28OCT Q4 | Android: APK from the site + own F-Droid repo; web app stays main path | lead helper | not started (Plan 6) | - | Plan 6 |
@@ -521,7 +536,9 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | W-017 | 11-07 | p4-2 | Deadlines in UTC only, no time-zone option | lead | landed main (UTC strings everywhere) | - | none |
 | W-018 | 10-27 | HO 10-27 | No guest buying; sign-up stays easy and fast | claude2 | landed main (Oct) | - | none |
 | W-019 | 11-08 | design real-app review | Owner 8 Nov: "No one gets past the front door... without signing an agreement, creating an account and logging in. No free tours." Logged-out: login, create account, recovery only; API refuses market/user data without a full session | lead helper | on branch wip/lead-front-door 6a5949a6 awaiting security review | - | security review, land |
-| W-020 | 11-08 | lead default (jabber) | Dispute opened -> payer gets a "trade-attention" Jabber notice; weak sessions and holds block Jabber writes | lead | on branch wip/lead-jabber-notices 4446e3c5 | - | lead default (confirm) with N6 |
+| W-020 | 11-08 | lead default (jabber) | Dispute opened -> payer gets a "trade-attention" Jabber notice; weak sessions and holds block Jabber writes | lead | on branch wip/lead-jabber-notices 4446e3c5 | - | lead default (confirm) via the W-022 event checklist |
+| W-021 | 11-09 | p11-27 | A Jabber notifications settings page: each user picks which events send them a secure Jabber notice | lead helper | not started | NOT DRAWN | design draws it; build on jabber-notices |
+| W-022 | 11-09 | p11-32 | Jabber events: lead and design list every event worth a notice in an artifact checklist; the owner ticks the ones to use and can add rows with his own description | lead | not started | - | lead + design build the checklist artifact |
 
 ## 9. Ops, security, GitHub
 
@@ -541,14 +558,16 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | X-012 | 10-27 | HO 10-27; chat 7 Nov 07:19-07:20 | Workers and design never message the owner; everything goes through the lead (permission prompts too) | lead | in progress (process) | - | none |
 | X-013 | 11-08 | chat 8 Nov | Move the lead and all X2F folders to the cloud/GitHub; leave nothing important behind | lead | landed (pc-archive-2026-11-08, comms) | - | none |
 | X-014 | 11-08 | chat 8 Nov | Spawn many agents for maximum parallel work | lead | in progress (cap test-running helpers) | - | none |
-| X-015 | 11-08 | p11-12 | Open the demo on his phone through Tailscale | lead | landed (demo on PC, wip/lead-demo 8855328c) | - | where it lives long term: N9 |
-| X-016 | 11-08 | chat 8 Nov | A comment tool on the demo like the earlier one | lead | on branch wip/lead-demo 8855328c (running on PC) | - | cloud can't read demo-notes.jsonl: plan |
+| X-015 | 11-08 | p11-12 | Open the demo on his phone through Tailscale | lead | landed (demo on PC, wip/lead-demo 8855328c) | - | long-term home: X-023 (Claude cloud session environment, p11-38) |
+| X-016 | 11-08 | chat 8 Nov; p11-39 | A comment tool on the demo like the earlier one | lead | on branch wip/lead-demo 8855328c (running on PC) | - | p11-39: this is what he missed about the old demo; bring Claude comments to the working demo in the cloud (X-023) |
 | X-017 | 11-08 | chat 8 Nov | "I don't see why nudge can't be moved to GitHub": scheduled routine wakes workers from the comms branch | lead | not started | - | create scheduled tasks for claude2/claude3 until 21 Nov |
 | X-018 | 11-08 | chat 8 Nov | Registrar that keeps the buyer confidential and takes Monero; lead reads actual terms | owner-pending | waiting on owner (rec IncogNET, then OrangeWebsite, 1984; Njalla unread) | - | read Njalla terms; owner chooses |
 | X-019 | 11-08 | chat 8 Nov | claude2 and claude3 accounts close 21 Nov: on 19-20 Nov confirm all pushed, get final handoffs, reassign | lead | not started | - | schedule for 19 Nov |
 | X-020 | 10-21 | R30 (lead) | Every agent pushes its own wip branch at each commit | lead | landed (process) | - | none |
 | X-021 | 11-08 | owner-decisions 8 Nov | One 1Password service account token allowed in the cloud lead's environment (replaces "vault token stays off cloud"); lead recommends a dedicated read-only vault | lead | not started (token not created) | - | owner does the three steps |
 | X-022 | 11-07 | owner-decisions 7 Nov | Next topic after the owner sees the working demo: team member permissions | lead | in progress (design team-permissions-review) | - | bring the permission list on a page |
+| X-023 | 11-09 | p11-38 | Working demo: code on GitHub, run in a Claude cloud session environment while it is being tested (reachable from claude.ai / Android app) | lead | not started | - | set up the demo in a cloud environment |
+| X-024 | 11-09 | p11-40 | No archive of the raw lead transcripts; the snapshot was only for the cloud migration | lead | landed (decision) | - | none |
 
 ## 10. Business and legal
 
@@ -573,13 +592,13 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 
 | id | date | source | question / what is needed | owner | status | design | next action |
 |---|---|---|---|---|---|---|---|
-| Q-001 | 11-08 | p11-17 | Completed trade's chat and keys destroyed at 48 h or 30 days? (he wrote both) | owner-pending | waiting on owner p11-17 | - | none until answered |
-| Q-002 | 11-08 | p11-18 | A late "I've paid" cannot stop the seller's refund (as built per p9-2): confirm | owner-pending | waiting on owner p11-18 | - | none |
-| Q-003 | 11-08 | p11-19 | Must moderators' passkeys be hardware devices? | owner-pending | waiting on owner p11-19 | - | none |
-| Q-004 | 11-08 | p11-20 | Fast badge: buyer's speed to the "I've paid" tap or to the seller's confirmation? | owner-pending | waiting on owner p11-20 | - | none |
-| Q-005 | 11-08 | p11-21 | Weak-login team invite: held 24 h or refused? | owner-pending | waiting on owner p11-21 | - | none |
-| Q-006 | 11-08 | p11-22 | May a member with hold rights cancel/approve the lead's waiting team changes? | owner-pending | waiting on owner p11-22 | - | none |
-| Q-007 | 11-08 | p11-23 | The combined hold rules (per-change dates; older session ends newer): as he wants? | owner-pending | waiting on owner p11-23 | - | none |
+| Q-001 | 11-08 | p11-17 | Completed trade's chat and keys destroyed at 48 h or 30 days? (he wrote both) | owner-pending | superseded by C-001, T-082 (p11-17 answered 9 Nov) | - | none |
+| Q-002 | 11-08 | p11-18 | A late "I've paid" cannot stop the seller's refund (as built per p9-2): confirm | owner-pending | superseded by T-037 (p11-18 confirmed as built) | - | none |
+| Q-003 | 11-08 | p11-19 | Must moderators' passkeys be hardware devices? | owner-pending | superseded by D-070 (p11-19 answered 9 Nov) | - | none |
+| Q-004 | 11-08 | p11-20 | Fast badge: buyer's speed to the "I've paid" tap or to the seller's confirmation? | owner-pending | superseded by R-042 (p11-20 answered 9 Nov) | - | none |
+| Q-005 | 11-08 | p11-21 | Weak-login team invite: held 24 h or refused? | owner-pending | superseded by S-104 (p11-21 answered 9 Nov) | - | none |
+| Q-006 | 11-08 | p11-22 | May a member with hold rights cancel/approve the lead's waiting team changes? | owner-pending | waiting on owner (p11-22 not answered as asked: he wants the full list of team abilities, and whether there are member types or only per-ability boxes, decided first) | - | lead + design write the full abilities list (Job 1c, S-087/S-097), then re-ask |
+| Q-007 | 11-08 | p11-23 | The combined hold rules (per-change dates; older session ends newer): as he wants? | owner-pending | waiting on owner (p11-23 not answered as asked; he said a thief would need both username and password) | - | re-ask on a later page; p11-35 (S-110) and p11-34 (S-109) give the owner a way out |
 | Q-008 | 11-08 | p12-1 | Moderators never read a chat without a dispute: does that include the owner? | owner-pending | waiting on owner p12-1 | - | none |
 | Q-009 | 11-08 | p12-2 | When the system opens a dispute by itself, how does X2F get the chat key? | owner-pending | waiting on owner p12-2 | - | none |
 | Q-010 | 11-08 | p12-3 | Both traders lose their devices: chat unreadable forever. Accept? | owner-pending | waiting on owner p12-3 | - | none |
@@ -595,18 +614,18 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 | Q-020 | 11-08 | p12-13 | A staff-only thread per case for questions to the previous moderator? | owner-pending | waiting on owner p12-13 | - | none |
 | Q-021 | 11-08 | p12-14 | Chats no longer stored on the phone; app reads them live each time? | owner-pending | waiting on owner p12-14 | - | none |
 | Q-022 | 11-08 | p12-15 | 60-day inactivity close: all trader accounts, never staff, owner or team-member logins? | owner-pending | waiting on owner p12-15 | - | none |
-| Q-023 | 11-08 | LEAD-START-HERE 7 N1 | Signup "username available" tick allows ~14,400 existence checks a day (was hidden on purpose): keep? | owner-pending | waiting on owner N1 (not yet on a page) | - | lead adds to page 11 |
-| Q-024 | 11-08 | N2 | Team chat hint: "Team Calcium member: Aurora" (R44) vs design's "never name the member" | owner-pending | waiting on owner N2 (not yet on a page) | CONFLICT | lead adds to page 11 |
-| Q-025 | 11-08 | N3 | Password-only members: may a member's weak login hold the lead's account; first-login approval; members' recovery codes? | owner-pending | waiting on owner N3 (not yet on a page) | - | lead adds to page 11 |
-| Q-026 | 11-08 | N4 | Time-to-pay defaults: 90 min apps/instant, 3 h bank, 24 h cash by mail | owner-pending | waiting on owner N4 (not yet on a page) | - | lead adds to page 11 |
-| Q-027 | 11-08 | N5 | Fixed-price offer can't be taken while the feed is down (for the $5k cap): OK? | owner-pending | waiting on owner N5 (not yet on a page) | - | moot if O-001 removes fixed offers: say so |
-| Q-028 | 11-08 | N6 | Jabber: "OMEMO only over Tor" or "OMEMO recommended"? And what counts as an account change | owner-pending | waiting on owner N6 (not yet on a page) | - | lead adds to page 11 |
-| Q-029 | 11-08 | N7 | How long the server remembers a purged chat (builder: 365 days) | owner-pending | waiting on owner N7 (not yet on a page) | - | lead adds to page 11 |
-| Q-030 | 11-08 | N8 | Hold: let a correct recovery code through even when throttled; two limits of a shared password (cancel each other's change; older session ends newer) | owner-pending | waiting on owner N8 (not yet on a page) | - | lead adds to page 11 |
-| Q-031 | 11-08 | N9 | Where the working demo lives (needs a machine that stays on) | owner-pending | waiting on owner N9 (not yet on a page) | - | lead adds to page 11 |
-| Q-032 | 11-08 | N10 | Archive the raw chat transcripts to the private repo? | owner-pending | waiting on owner N10 (not yet on a page) | - | lead adds to page 11 |
+| Q-023 | 11-08 | LEAD-START-HERE 7 N1; p11-24 | Signup "username available" tick allows ~14,400 existence checks a day (was hidden on purpose): keep? | owner-pending | waiting on owner (p11-24 not answered as asked; he described the signup order instead: G-025) | - | re-ask the live username tick on a later page |
+| Q-024 | 11-08 | N2; p11-25 | Team chat hint: "Team Calcium member: Aurora" (R44) vs design's "never name the member" | owner-pending | superseded by S-105 (p11-25 answered 9 Nov) | CONFLICT | none |
+| Q-025 | 11-08 | N3 | Password-only members: may a member's weak login hold the lead's account; first-login approval; members' recovery codes? | owner-pending | superseded by S-106, S-107, S-108 (p11-26, 27, 28 answered 9 Nov) | - | none |
+| Q-026 | 11-08 | N4; p11-29 | Time-to-pay defaults: 90 min apps/instant, 3 h bank, 24 h cash by mail | owner-pending | superseded by T-083 (p11-29 answered 9 Nov: research the average per method) | - | none |
+| Q-027 | 11-08 | N5; p11-30 | Fixed-price offer can't be taken while the feed is down (for the $5k cap): OK? | owner-pending | waiting on owner (p11-30 not answered as asked: he said 3-4 feeds plus a Tor backup should be enough) | - | re-ask: no trades at all while the price is unknown (as built)? N5 fixed-price part is moot if O-001 lands |
+| Q-028 | 11-08 | N6; p11-31, p11-32 | Jabber: "OMEMO only over Tor" or "OMEMO recommended"? And what counts as an account change | owner-pending | superseded by W-007, W-022 (p11-31, p11-32 answered 9 Nov) | - | none |
+| Q-029 | 11-08 | N7; p11-33 | How long the server remembers a purged chat (builder: 365 days) | owner-pending | waiting on owner (p11-33 not answered as asked: he gave sync-on-login, C-021, not how long the marker is kept; builder 365 days as built) | - | lead decides whether to re-ask the number |
+| Q-030 | 11-08 | N8; p11-34, p11-35 | Hold: let a correct recovery code through even when throttled; two limits of a shared password (cancel each other's change; older session ends newer) | owner-pending | superseded by S-109, S-110 (p11-34, p11-35 answered 9 Nov; the two limits themselves were not explicitly accepted or rejected) | - | none |
+| Q-031 | 11-08 | N9; p11-38 | Where the working demo lives (needs a machine that stays on) | owner-pending | superseded by X-023 (p11-38 answered 9 Nov) | - | none |
+| Q-032 | 11-08 | N10; p11-40 | Archive the raw chat transcripts to the private repo? | owner-pending | superseded by X-024 (p11-40 answered 9 Nov) | - | none |
 | Q-033 | 11-07 | G22 | "Too many tries, try again in 1 minute" after 2 sends in 30 s: which form? (he asked back) | lead | waiting on owner G22 (re-ask: it is the feedback form) | - | put on a page |
-| Q-034 | 11-08 | hold-v3 review minor 8 | Tell the user a replaced recovery code was never revealed? (product decision) | owner-pending | waiting on owner (not yet on a page) | - | add to page 11 |
+| Q-034 | 11-08 | hold-v3 review minor 8; p11-36 | Tell the user a replaced recovery code was never revealed? (product decision) | owner-pending | superseded by S-111 (p11-36 answered 9 Nov) | - | none |
 | Q-035 | 11-08 | chat-retention review | Terms wording for 30/90 days (p11-9 answered); does "destroyed" cover the trader's device (p11-10 answered yes) | lead | superseded by C-013, C-014 | - | none |
 
 ---
@@ -623,6 +642,11 @@ Caveat: a row "landed" with a partial tail (e.g. "landed main ...; X not started
 8. **Docs still say 90 days from the dispute button** (C-003): R36 text, spec 4.1, Plan 4, migration 110 comment, coordination M4. Code on main follows the owner (from close).
 9. **wip/second-api-cap-dispute** carries g66 "one nudge required before the seller's cancel" (326d9c6f), reversed by p6-1 (T-032/T-033): do not land that commit.
 10. **No nudge sound asset on main** although the owner approved one (T-031).
-11. **Design conflicts the owner's words** (design's audit): G34 (TOTP strong), G32 (recovery code lets you in), Q23 (3 bands), G19 (no "emergency" default), appeal 48 h (boards show 72 h), p11-11 (90 days from close), Q77 (no switch back), G57 (weak kick is immediate), clawback A (no 48 h hold), Q54 (two fields), Q51/G3 (all three staff methods), R44 chat label (design says never name the member). Rows S-011, S-019, O-009, W-004, D-004, C-003, S-041, S-051, D-044, D-027, D-023, S-086 carry "design to redraw" or "owner to confirm".
-12. **G5 vs p5-7 (removals during a hold):** G5 said a weak removal acts at once and becomes permanent at 24 h; owner-decisions reads p5-7 as "removals held too, nothing applies early". S-036 is marked superseded on that reading; hold-v3 staged removals; the owner confirms the combination on p11-23.
+11. **Design conflicts the owner's words** (design's audit): G34 (TOTP strong), G32 (recovery code lets you in), Q23 (3 bands), G19 (no "emergency" default), appeal 48 h (boards show 72 h), p11-11 (90 days from close), Q77 (no switch back), G57 (weak kick is immediate), clawback A (no 48 h hold), Q54 (two fields), Q51/G3 (all three staff methods), R44 chat label (design says never name the member). 9 Nov: Q51/G3 changed by p11-19 (D-070) and the R44 label changed by p11-25 (S-105): the boards must be redrawn to the new rules, not to the old ones. Rows S-011, S-019, O-009, W-004, D-004, C-003, S-041, S-051, D-044, D-027, D-023, S-086 carry "design to redraw" or "owner to confirm".
+12. **G5 vs p5-7 (removals during a hold):** G5 said a weak removal acts at once and becomes permanent at 24 h; owner-decisions reads p5-7 as "removals held too, nothing applies early". S-036 is marked superseded on that reading; hold-v3 staged removals; the owner confirms the combination on p11-23. 9 Nov: p11-23 not answered as asked (re-ask); p11-26 adds that a hold holds only the changes made (S-106).
 13. **Nudge sound licence:** F10 (owner-decisions) says check the rights to the ICQ clip first; use an original in that style unless it can be licensed (T-031).
+14. **Dispute window 48 h in code vs 72 h** (T-082, p11-17): `disputeAfterRefundHours 48` on main; lead confirms which window he meant.
+15. **hold-v3 refuses invites from a weak login** (S-060 built) vs p11-21: the invite goes through and the member's settings apply after 24 h (S-104).
+16. **hold-v3 account-wide hold effects** (offers hidden, unfunded trades cancelled, trades held: S-027, T-072) vs p11-26: a hold holds only the changes made (S-106).
+17. **Moderator invite needs all three methods** (third-p4-task16, D-023) vs p11-19: security key optional with username + password + PGP + passkey (D-070).
+18. **Time-to-pay defaults on launch-rules** (90 min / 3 h / 24 h) are not approved (p11-29): placeholders until the per-method research (T-083).
