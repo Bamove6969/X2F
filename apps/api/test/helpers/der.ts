@@ -79,6 +79,8 @@ export interface CertSpec {
   ca: boolean;
   /** id-fido-gen-ce-aaguid, 16 bytes. */
   aaguid?: Uint8Array;
+  /** subjectAltName dNSName entries (a TLS server certificate for jabber/xmpp.ts tests). */
+  dnsNames?: string[];
 }
 
 /** A DER X.509 v3 certificate signed with ECDSA-SHA256. */
@@ -87,6 +89,7 @@ export function certificate(c: CertSpec): Buffer {
   const extensions = [ext('2.5.29.19', true, c.ca ? seq(bool(true)) : seq())];
   if (c.ca) extensions.push(ext('2.5.29.15', true, bitString(Buffer.from([0x06]), 1))); // keyCertSign, cRLSign
   if (c.aaguid) extensions.push(ext('1.3.6.1.4.1.45724.1.1.4', false, octet(c.aaguid)));
+  if (c.dnsNames) extensions.push(ext('2.5.29.17', false, seq(...c.dnsNames.map((d) => tlv(0x82, Buffer.from(d, 'ascii'))))));
   const tbs = seq(
     explicit(0, int(2)),
     int(c.serial),

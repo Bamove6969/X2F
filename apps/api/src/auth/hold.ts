@@ -61,6 +61,7 @@ import { applyPgpKey } from './pgp.js';
 import { applyRecoveryCodes } from './recovery.js';
 import { waits, type LoginStrength } from './strength.js';
 import { applyTotp } from './totp.js';
+import { JABBER_WRITE_ROUTES } from '../jabber/routeList.js';
 import { applyCredential, type StoredCredential } from './webauthn.js';
 
 export const HOLD_MS = 24 * 3_600_000;
@@ -508,6 +509,8 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   // Plan 5 Task 10 review round 1 M3: the claim insert re-checks the session and the hold under the
   // account lock (as Task 18's ownerWriteGate).
   'POST /v1/account/past-rep/finish',
+  // Owner rule p5-7: the Jabber alert set-up (jabber/routes.ts `writeGate`).
+  ...JABBER_WRITE_ROUTES,
 ];
 
 /**
@@ -600,6 +603,9 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   // removing one's own claims stay open.
   'POST /v1/account/past-rep/start',
   'POST /v1/account/past-rep/finish',
+  // Owner rule p5-7 (lead default): the Jabber alert set-up waits out a hold like the other
+  // security settings; each also checks it under the account lock (jabber/routes.ts `writeGate`).
+  ...JABBER_WRITE_ROUTES,
 ];
 
 /**

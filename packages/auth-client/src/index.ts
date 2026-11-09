@@ -9,6 +9,7 @@ export {
   type AccountOverview,
   type AccountType,
   type AlertEntry,
+  type JabberStatus,
   type ApiErrorCode,
   type ApprovalDecision,
   type ApprovalPoll,

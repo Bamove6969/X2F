@@ -32,6 +32,7 @@ import { IDLE_REMINDER_PATH } from './screens/auth/sessionCopy.js';
 import { IdleReminderScreen } from './screens/settings/IdleReminderSettings.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
+import { JabberSetup } from './screens/settings/JabberSetup.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
 import { Security } from './screens/settings/Security.js';
 import { Team } from './screens/settings/Team.js';
@@ -227,6 +228,7 @@ export function App() {
             <Route path="/settings/security" element={<Security />} />
             <Route path="/settings/devices" element={<DevicesRoute />} />
             <Route path="/settings/blocked" element={<Blocked />} />
+            <Route path="/settings/jabber" element={<JabberSetup />} />
             <Route path="/settings/team" element={<Team />} />
             <Route path={IDLE_REMINDER_PATH} element={<IdleReminderScreen />} />
             <Route path="/settings/account-type" element={<AccountType />} />
