@@ -11,6 +11,7 @@ import { readConfirmed } from '../src/screens/quote/confirmed.js';
 import { PENDING_TAKE_KEY, PENDING_TAKE_MS, rememberTake } from '../src/screens/quote/pendingTake.js';
 import { quotePath } from '../src/screens/quote/quoteModel.js';
 import { forgetQuotes } from '../src/screens/quote/quoteKept.js';
+import { resetCourtesy, turnCourtesyOff } from '../src/screens/quote/courtesy.js';
 import { OffersRoute } from '../src/screens/browse/OffersRoute.js';
 import { BUY_COPY } from '../src/screens/browse/BuyCopy.js';
 import { fire, render } from './render.js';
@@ -69,6 +70,9 @@ function json(status: number, body: unknown): Response {
 
 beforeEach(() => {
   sessionStorage.clear();
+  // The take tests below are about the take and the room it opens; the courtesy sheet between them
+  // (T-039) has its own block at the end, which turns it back on.
+  turnCourtesyOff();
   arrivedState = null;
   session.status = 'signed-in';
   stub = {
@@ -801,5 +805,128 @@ describe('the quote across a fold (review M1, M2, M3)', () => {
     await settle();
     expect(quotes(host)).toHaveLength(1);
     expect(amount(host).value).toBe('');
+  });
+});
+
+// Build spec j31a section 1 (T-034, T-080): the taker's own "What applies to you" list.
+describe('What applies to you on the quote (j31a section 1)', () => {
+  const card = () => document.querySelector<HTMLElement>('[data-part="what-applies"]')!;
+  const shown = () => [...card().querySelectorAll('li')].map((l) => l.textContent);
+
+  it('BuyQuote shows the buyer-taker list: subtitle, three groups with counts, the first line of each and "Show all"', async () => {
+    await open(`${BUY}&amount=412.50`);
+    expect(card().querySelector('h2')?.textContent).toBe('What applies to you');
+    expect(card().textContent).toContain("You're buying from a sell ad · information only");
+    const heads = [...card().querySelectorAll('h3')].map((h) => [h.textContent, h.nextElementSibling?.textContent]);
+    // The board's 13 "What affects you" lines less the lead's placeholder (p9-8), never shipped.
+    expect(heads).toEqual([
+      ['Your responsibilities', '7'],
+      ['What affects you', '12'],
+      ['Your options', '5'],
+    ]);
+    expect(shown()).toEqual([
+      'Pay only when "Pay now" shows; it never shows before the escrow is secured.',
+      "Amounts can be shown with or without the vendor's markup.",
+      "Opened trades with several people to see who answers first? Close the others once you've picked one, so they aren't left waiting.",
+    ]);
+    const toggle = [...card().querySelectorAll('button')].find((b) => b.textContent === 'Show all 24')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fire(toggle, new MouseEvent('click', { bubbles: true }));
+    expect(toggle.textContent).toBe('Show less');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(shown()).toHaveLength(24);
+    expect(shown()).toContain('Seller gone quiet? Nudge them: it often brings them back and saves starting over. Optional, at most once every 15 minutes.');
+    expect(card().textContent).not.toContain('[lead writes the wording]');
+    // A taker sees no X2F fee line.
+    expect(card().textContent).not.toMatch(/X2F fee|1%/);
+    // Numbers in the mono face.
+    expect([...card().querySelectorAll('.x2f-wa__mono')].map((m) => m.textContent)).toContain('15');
+  });
+
+  it('SellQuote shows the seller-taker list, with the buyer nudge and no fee line', async () => {
+    await open(quotePath('buy', 'ZELLE', 'offer-mira', 'USD'));
+    expect(card().textContent).toContain("You're selling to a buy ad · information only");
+    fire([...card().querySelectorAll('button')].find((b) => b.textContent === 'Show all 21')!, new MouseEvent('click', { bubbles: true }));
+    expect(shown()).toContain('Buyer gone quiet? Nudge them: it often brings them back and saves starting over. Optional, at most once every 15 minutes.');
+    expect(shown()).toContain('Fund the escrow in full.');
+    expect(card().textContent).not.toMatch(/X2F fee|1%/);
+  });
+});
+
+// Build spec j31a section 2 (owner p9-3, T-039): the courtesy sheet between the take and the room.
+describe('the courtesy sheet after Trade (j31a section 2)', () => {
+  beforeEach(() => resetCourtesy());
+  afterEach(() => resetCourtesy());
+
+  const sheet = () => document.querySelector<HTMLElement>('[data-sheet="courtesy"]');
+  const gotIt = () => [...sheet()!.querySelectorAll('button')].find((b) => b.textContent === 'Got it')!;
+
+  async function takeIt(host: HTMLElement) {
+    pick(host, 'w-cake');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+  }
+
+  it('the take goes through, then the sheet shows before the trade room; Got it opens the room', async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    await takeIt(host);
+    expect(stub.takes).toHaveLength(1);
+    expect(where(host)).toBeNull();
+    const dialog = sheet()!.closest('[role="dialog"]')!;
+    expect(dialog.querySelector('h2')?.textContent).toBe('Trading with more than one person?');
+    expect(sheet()!.textContent).toContain(
+      "If you opened trades with several people to see who answers first, close the others once you've picked one. That way nobody is left waiting on you.",
+    );
+    const tick = sheet()!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(tick.checked).toBe(false);
+    expect(tick.closest('label')?.textContent).toBe("Don't show this again");
+    // "Got it" is the only action.
+    expect([...sheet()!.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Got it']);
+    fire(gotIt(), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    expect(arrivedState).toMatchObject({ confirmed: { role: 'buyer' } });
+  });
+
+  it('it shows on every trade until "Don\'t show this again" is ticked', async () => {
+    const first = await open(`${BUY}&amount=412.50`);
+    await takeIt(first.host);
+    fire(gotIt(), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(where(first.host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    first.unmount();
+    forgetQuotes();
+
+    const second = await open(`${BUY}&amount=412.50`);
+    await takeIt(second.host);
+    expect(where(second.host)).toBeNull();
+    fire(sheet()!.querySelector('input[type="checkbox"]')!, new MouseEvent('click', { bubbles: true }));
+    fire(gotIt(), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(where(second.host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    second.unmount();
+    forgetQuotes();
+
+    const third = await open(`${BUY}&amount=412.50`);
+    await takeIt(third.host);
+    expect(sheet()).toBeNull();
+    expect(where(third.host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+  });
+
+  it('SellQuote: the same sheet, then the trade room', async () => {
+    const { host } = await open(quotePath('buy', 'ZELLE', 'offer-mira', 'USD') + '&amount=1&unit=xmr');
+    await takeIt(host);
+    expect(where(host)).toBeNull();
+    expect(sheet()).not.toBeNull();
+    fire(gotIt(), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+  });
+
+  it('a refused take shows no sheet', async () => {
+    stub.take = () => ({ status: 409, json: { error: 'price-changed' } });
+    const { host } = await open(`${BUY}&amount=412.50`);
+    await takeIt(host);
+    expect(sheet()).toBeNull();
   });
 });

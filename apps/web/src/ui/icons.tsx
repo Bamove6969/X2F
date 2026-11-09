@@ -8,6 +8,15 @@ const SHAPES = {
   'chevron-left': <path d="M15 18l-6-6 6-6" />,
   'chevron-right': <path d="M9 6l6 6-6 6" />,
   'chevron-down': <path d="M6 9l6 6 6-6" />,
+  // BuyQuote / SellQuote / OfferAd boards (j31a): the "What applies to you" tile.
+  'list-check': (
+    <>
+      <path d="M4 6l1.5 1.5L8 5" />
+      <path d="M4 12l1.5 1.5L8 11" />
+      <path d="M4 18l1.5 1.5L8 17" />
+      <path d="M11 6h9M11 12h9M11 18h9" />
+    </>
+  ),
   close: <path d="M6 6l12 12M18 6L6 18" />,
   // Main board: the search box; BuyQuote board: the Chat button.
   search: (

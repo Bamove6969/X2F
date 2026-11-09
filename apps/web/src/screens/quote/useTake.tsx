@@ -73,10 +73,15 @@ export interface TakeArgs {
   resumeHref: () => string;
 }
 
-/** `onPriceChanged` runs on a 409 price-changed, before the refusal is shown: the quote re-fetches the price. */
+/**
+ * `onPriceChanged` runs on a 409 price-changed, before the refusal is shown: the quote re-fetches the price.
+ * `beforeRoom`, when given, is handed the step into the trade room once the take went through
+ * (and is recorded), to run it later: the courtesy sheet (T-039) shows first.
+ */
 export function useTake(
   offerId: string,
   onPriceChanged?: () => void,
+  beforeRoom?: (go: () => void) => void,
 ): {
   signedIn: boolean | null;
   state: TakeState;
@@ -113,7 +118,9 @@ export function useTake(
             deal: { ...confirmed.deal, centsPerXmr: taken.centsPerXmr, maxFiatCents: tradeFiatLimits(a.range, at).maxFiatCents },
           };
           storeConfirmed(taken.code, locked);
-          void navigate(`/trade/${encodeURIComponent(taken.code)}`, { state: { confirmed: locked } });
+          const go = () => void navigate(`/trade/${encodeURIComponent(taken.code)}`, { state: { confirmed: locked } });
+          if (beforeRoom) beforeRoom(go);
+          else go();
         },
         (error: unknown) => {
           if (error instanceof ApiCallError && error.status === 401) {
@@ -128,7 +135,7 @@ export function useTake(
         },
       );
     },
-    [session.status, navigate, offerId, onPriceChanged],
+    [session.status, navigate, offerId, onPriceChanged, beforeRoom],
   );
 
   return { signedIn, state, take };

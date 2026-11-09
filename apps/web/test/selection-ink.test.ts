@@ -69,6 +69,8 @@ const ORANGE_ALLOWED = [
   'screens/quote/quote.css .x2f-quote__switch, .x2f-quote__max',
   'screens/quote/quote.css .x2f-quote__add',
   'screens/dispute/dispute.css .dispute-retry',
+  // "Show all N" / "Show less" on "What applies to you" (j31a, BuyQuote / SellQuote boards: --monero-ink).
+  'screens/quote/quote.css .x2f-wa__toggle',
   // The XMR unit label (tokens.json monero-ink usage; BuyQuote board).
   'ui/ui.css .x2f-amount__unit',
   'ui/kit.css .x2f-recipient__unit',
