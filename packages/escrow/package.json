@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@x2f/core": "0.0.0",
-    "monero-ts": "0.11.16",
+    "monero-ts": "0.11.21",
     "@x2f/protocol": "0.0.0",
     "libsodium-wrappers": "0.8.4"
   },
