@@ -7,6 +7,7 @@
 Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's answers register of 2026-11-09. Where this list differs from older text, this list wins.
 
 - **Offer cap (owner Q31, 6 Nov):** 3 buying + 3 selling per account in total, paused offers counted, no seventh; built on main (`OFFER_CAP_DEFAULTS`, keys `offers_max_buy` / `offers_max_sell`). Task 34 must not change the cap; the "2 per side per currency, 20 in total" text below is superseded.
+- **Bands and methods (owner Q23, 6 Nov):** Task 34 limits are 3 bands per currency and 5 payment types per offer (the code has 5 and 10: change to 3 and 5).
 
 ## Revision 2026-10-29 (Task 10 as built, second, `wip/second-p3-task10`; not reviewed yet)
 
@@ -1119,13 +1120,14 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 **Interfaces:**
 - Produces:
   - `type Tier = { minFiatCents: string; maxFiatCents: string; marginBps: number; minTrades: 0|5|10|50 }` (*lead default (2026-10-29), owner may change:* the owner said "buyer must have X completed trades"; the four values match the existing offer rule); `type OfferMethod = { methodId: string; instructions: string; adjustBps: number }`.
+  - **Limits (owner Q23, 6 Nov 2026):** at most 3 bands (tiers) per currency and at most 5 payment types (methods) per offer; the built `MAX_BANDS = 5` (web) and `MAX_METHODS = 10` (API and web) are wrong and change to 3 and 5. `tiersValid` and the `POST /v1/offers` validation refuse more.
   - `tiersValid(tiers)`: ranges never overlap; gaps are allowed; at least one tier. `tierFor(tiers, fiatCents)` → the tier or `null` (a gap).
   - `finalRate(offer, fiatCents, methodId, marketRate)` = market + the tier's margin + the method's adjustment (fixed-price offers: the fixed price + the method's adjustment).
   - Tables `offer_tiers(offer_id, min_fiat_cents, max_fiat_cents, margin_bps, min_trades)` and `offer_methods(offer_id, method_id, instructions, adjust_bps)`; the old single `method_id`, margin and range become the first rows (migration copies them).
   - `POST /v1/offers` accepts `tiers` and `methods`; `GET /v1/offers?amount&method` returns each card's final rate for that amount and method (`null` when the amount falls in a gap).
   - `POST /v1/offers/:id/take` requires `methodId` (one of the offer's methods); the chosen method, its instructions and the final rate are **locked into the signed trade terms**.
   - **Cap:** *not changed by this task (owner Q31, 2026-11-09): 3 buying + 3 selling per account in total, keys `offers_max_buy` and `offers_max_sell`, already on main.* Refusal 409 `too-many-offers`. (Older text: 2 per (side, currency) and 20 in total, `offers_max_per_market` default 2.)
-- [ ] **Step 1: Write the failing tests:** overlapping tiers → 400; a gap amount gets no rate and a take in a gap → 409 `out-of-range`; a tier rule (`minTrades`) refuses a taker below it; the take locks the chosen method and the attested terms carry it; a method not on the offer → 400; the fourth offer on one side (any currency or method) → `too-many-offers`; the seventh offer → `too-many-offers` (owner Q31); an old single-method offer still lists and takes after the migration.
+- [ ] **Step 1: Write the failing tests:** overlapping tiers → 400; a gap amount gets no rate and a take in a gap → 409 `out-of-range`; a tier rule (`minTrades`) refuses a taker below it; the take locks the chosen method and the attested terms carry it; a method not on the offer → 400; a fourth tier in one currency → 400; a sixth payment type → 400 (owner Q23); the fourth offer on one side (any currency or method) → `too-many-offers`; the seventh offer → `too-many-offers` (owner Q31); an old single-method offer still lists and takes after the migration.
 - [ ] **Step 2:** Run `flock ~/x2f-comms/check.lock npm test -- --project @x2f/trade` and `--project @x2f/api`; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.

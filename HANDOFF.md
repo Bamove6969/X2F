@@ -260,3 +260,4 @@ The owner's words of 2026-10-29 12:30–13:34 and the team-members answer later 
 Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's answers register of 2026-11-09. Where this list differs from older text, this list wins.
 
 - **Offer cap (owner Q31, 6 Nov):** 3 buying + 3 selling per account in total, no seventh.
+- **Bands and methods (owner Q23, 6 Nov):** at most 3 amount bands per currency, 5 payment types per offer.
