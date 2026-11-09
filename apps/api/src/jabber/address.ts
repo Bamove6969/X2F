@@ -3,7 +3,7 @@
  * key store every sealed secret uses (auth/keystore.ts), and shown only masked. The address is
  * never logged and never sent back in full.
  */
-import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHmac, hkdfSync, randomInt, timingSafeEqual } from 'node:crypto';
 import { keyringBox, type SecretBox } from '../auth/keystore.js';
 import { BARE_JID, type Config, type Keyring } from '../config.js';
 
@@ -48,10 +48,16 @@ export function openJid(ring: Keyring, accountId: string, sealed: Buffer): strin
 /** Six random digits. */
 export const newTestCode = (): string => String(randomInt(0, 1_000_000)).padStart(6, '0');
 
-/** HMAC-SHA-256 of the code under the ring's current key, bound to the account (the code itself is never stored). */
+/**
+ * HMAC-SHA-256 of the code, bound to the account (the code itself is never stored), under a subkey
+ * of the ring's current key: HKDF-SHA-256, info `x2f/jabber-code` (review L7: the raw key is the
+ * AES-GCM sealing key and is not used by a second primitive). A key rotation between the test
+ * message and the code makes the code fail; the user sends a new test message.
+ */
 export function codeHash(config: Pick<Config, 'jabberKeys'>, accountId: string, code: string): Buffer {
   const ring = config.jabberKeys!;
-  return createHmac('sha256', ring.keys.get(ring.current)!).update(`x2f/jabber-code\0${accountId}\0${code}`).digest();
+  const subkey = Buffer.from(hkdfSync('sha256', ring.keys.get(ring.current)!, new Uint8Array(0), 'x2f/jabber-code', 32));
+  return createHmac('sha256', subkey).update(`${accountId}\0${code}`).digest();
 }
 
 export function codeMatches(config: Pick<Config, 'jabberKeys'>, accountId: string, code: string, stored: Buffer): boolean {

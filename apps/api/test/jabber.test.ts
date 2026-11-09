@@ -1,12 +1,13 @@
 // Owner rule p5-7, boards JabberSetup and Alerts: the Jabber set-up routes, the outbox worker and
 // the fixed message texts, against real Postgres with a fake sender.
+import { createHmac, hkdfSync } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { startHold, withTx } from '../src/auth/hold.js';
 import { startDispute } from '../src/disputes/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
-import { maskJid, normalizeJid } from '../src/jabber/address.js';
+import { codeHash, maskJid, normalizeJid } from '../src/jabber/address.js';
 import { OUTBOX_ATTEMPTS, sendDueNotices } from '../src/jabber/outbox.js';
 import { CODE_TRIES, CODE_TTL_MS, RESEND_WAIT_S, TESTS_PER_DAY } from '../src/jabber/routes.js';
 import { ACCOUNT_CHANGE_TEXT, NOTICE_KINDS, SENDER_NAME, TRADE_ATTENTION_TEXT, messageText, type JabberMessage, type JabberSender } from '../src/jabber/sender.js';
@@ -94,6 +95,15 @@ describe('the fixed texts', () => {
     expect(maskJid('bob@x.org')).toBe('b…@x.org');
     expect(maskJid('al@x.org')).toBe('a…@x.org');
     expect(maskJid('z@x.org')).toBe('z…@x.org');
+  });
+
+  it('review L7: the test-code hash is keyed by a subkey (HKDF "x2f/jabber-code"), never the raw ring key', () => {
+    const ring = deps.config.jabberKeys!;
+    const raw = ring.keys.get(ring.current)!;
+    const h = codeHash(deps.config, 'acct-1', '123456');
+    expect(h.equals(createHmac('sha256', raw).update('x2f/jabber-code\x00acct-1\x00123456').digest())).toBe(false);
+    const sub = Buffer.from(hkdfSync('sha256', raw, new Uint8Array(0), 'x2f/jabber-code', 32));
+    expect(h.equals(createHmac('sha256', sub).update('acct-1\x00123456').digest())).toBe(true);
   });
 });
 
