@@ -874,6 +874,38 @@ describe('a recovery-code login', () => {
     expect(row.rows[0]!.p).not.toBeNull();
   });
 
+  it('lead re-verify 9 Nov m3: on a dispute the hold is checked before the machine; the held party hears recovery-hold, never too-early, and the partner is unchanged', async () => {
+    const t = await ownerWithCode();
+    const partner = await trader();
+    // Two secured trades of the account to be held: in `asBuyer` the held account is the buyer, whom
+    // the machine refuses before "I've paid" (too-early, batch 3 P1); in `asSeller` the partner is.
+    const asBuyer = await driveTo(deps, (await seedTrade(deps, { sellerId: partner.id, buyerId: t.id, poster: 'seller' })).trade, 'secured');
+    const asSeller = await driveTo(deps, (await seedTrade(deps, { sellerId: t.id, buyerId: partner.id, poster: 'buyer' })).trade, 'secured');
+    const rec = new Browser(app);
+    expect((await backupLogin(rec, t.name, t.code)).statusCode).toBe(200);
+    const body = { reason: 'silent', note: 'Nothing is moving.' };
+    // The held buyer's recovery session: the hold answers, not the machine (403, not 409 too-early).
+    const heldBuyer = await rec.post(`/v1/trades/${asBuyer.code}/dispute`, body);
+    expect(heldBuyer.statusCode).toBe(403);
+    expect(errorOf(heldBuyer)).toBe('recovery-hold');
+    // The partner buyer on the other trade still gets the machine's answer: a non-held party's
+    // dispute is unchanged by the ordering (whether that buyer should be able to reach a moderator
+    // during the hold is the owner's open question p11-97).
+    const partnerBuyer = await partner.browser.post(`/v1/trades/${asSeller.code}/dispute`, body);
+    expect(partnerBuyer.statusCode).toBe(409);
+    expect(errorOf(partnerBuyer)).toBe('too-early');
+    // Neither refusal wrote anything: both trades are still secured, paused and without a dispute.
+    const rows = await deps.db.query<{ code: string; state: string; p: Date | null; d: string | null }>(
+      'select code, state, paused_at as p, dispute_by as d from trades where code = any($1) order by code',
+      [[asBuyer.code, asSeller.code]],
+    );
+    expect(rows.rows.map((r) => [r.state, r.p !== null, r.d])).toEqual([
+      ['secured', true, null],
+      ['secured', true, null],
+    ]);
+    expect((await deps.db.query('select 1 from disputes where code = any($1)', [[asBuyer.code, asSeller.code]])).rowCount).toBe(0);
+  });
+
   it("the held account's own recovery session cannot move its held trades either", async () => {
     const t = await ownerWithCode();
     const partner = await trader();
