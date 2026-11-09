@@ -89,3 +89,6 @@ All through `scratchpad/run-tests.sh` from the worktree root, single files only,
 | typecheck | `npx tsc -p apps/web --noEmit`; `npx tsc -p apps/api --noEmit` | both exit 0 | `sec-tsc-web.log`, `sec-tsc-api.log` |
 
 Not run: Playwright, any whole project, the escrow/regtest suites (not in scope). The attack tests I relied on are real: a lying package, six malformed shapes, a mod-signed package and an early package are each refused with the guard untouched (`chatPay.test.ts:105-145`); the engine's held-then-shown test checks the store never holds a box (`chatEngine.test.ts`, "held while the trade is not secured"); the wire probes use characters base64 and hex never produce. Nothing in the three commits weakens or removes an existing assertion (the only changed expectations add the new `tradeSecuredAt`/`paySecured` fields).
+
+## Lead note, 23:20 UTC
+M1, M2, M5, M6, M8 applied on wip/lead-pay-details (c4c81122, 90024b78, 0cb93d55, bfb810d6, 2b54fe67; head 2b54fe67 pushed). M6 keeps \p{M} (combining marks) so Indic/Thai/Arabic account text is not refused: lead accepts. M3, M4 open (minor). Q1-Q3 on page 11 as p11-115..117. Lands in batch 4.
