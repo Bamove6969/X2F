@@ -306,9 +306,9 @@ describe('draft', () => {
     expect(loadDraft(s)).toBeNull();
     s.setItem('x2f.post-draft', JSON.stringify({ ...form(), minTrades: 7 }));
     expect(loadDraft(s)).toBeNull();
-    // A draft from before the owner's choices (0 for anyone) is dropped, never read as a minimum.
+    // A draft from before the owner's choices (0 for anyone) is No minimum, never read as a minimum (review L2).
     s.setItem('x2f.post-draft', JSON.stringify({ ...form(), minTrades: 0 }));
-    expect(loadDraft(s)).toBeNull();
+    expect(loadDraft(s)?.minTrades).toBeNull();
     s.setItem('x2f.post-draft', JSON.stringify({ ...form(), side: 'steal' }));
     expect(loadDraft(s)).toBeNull();
   });

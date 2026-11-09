@@ -42,6 +42,7 @@ import {
   refusalText,
   saveDraft,
   stepMargin,
+  switchUnit,
   usdValue,
   validate,
   type FieldError,
@@ -168,8 +169,14 @@ export function PostOffer() {
     setCantDo(null);
   };
   const text = (key: 'min' | 'max' | 'fixed' | 'terms') => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set(key, e.target.value);
-  // One unit per offer (lead default, 8 Nov): either box's switch swaps both.
-  const unitSwitch = (box: string) => <UnitSwitch box={box} currency={form.currency} unit={form.unit} onChange={(u) => set('unit', u)} />;
+  // One unit per offer (lead default, 8 Nov): either box's switch swaps both, converting what is typed
+  // at your price, or clearing it with no price (review H1: a typed number never changes unit).
+  const changeUnit = (u: FormState['unit']) => {
+    setForm((f) => switchUnit(f, u, yourPrice));
+    setRefusal(null);
+    setCantDo(null);
+  };
+  const unitSwitch = (box: string) => <UnitSwitch box={box} currency={form.currency} unit={form.unit} onChange={changeUnit} />;
   // Under each box, the other unit at your price (boards v142): "≈ $165.77 at your price (+0.5%)".
   const otherLine = (raw: string) => {
     const v = parseRangeAmount(raw, form.unit);

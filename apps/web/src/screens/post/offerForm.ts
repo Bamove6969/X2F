@@ -93,11 +93,12 @@ export function parseAmount(raw: string): bigint | null {
 
 /**
  * "0.5", "2", "1,000.25", "XMR 1.5" as atomic units (12 decimals at most); null for anything else.
- * At most 9 whole digits (far above the supply).
+ * At most 8 whole digits (far above the supply): the API takes at most 20 digits of atomic units
+ * (apps/api/src/offers/routes.ts ATOMIC), so a larger amount is a field error here, not a 400 (review L2).
  */
 export function parseXmrAmount(raw: string): bigint | null {
   const s = raw.trim().replace(/^xmr\s*/i, '').replace(/\s*xmr$/i, '').replaceAll(',', '');
-  const m = /^(\d{1,9})(?:\.(\d{1,12}))?$/.exec(s) ?? /^()\.(\d{1,12})$/.exec(s);
+  const m = /^(\d{1,8})(?:\.(\d{1,12}))?$/.exec(s) ?? /^()\.(\d{1,12})$/.exec(s);
   if (!m) return null;
   return BigInt(m[1] === '' ? '0' : m[1]!) * 1_000_000_000_000n + BigInt((m[2] ?? '').padEnd(12, '0'));
 }
@@ -105,6 +106,43 @@ export function parseXmrAmount(raw: string): bigint | null {
 /** A range box's text in the form's unit: atomic units for XMR, minor units for fiat. */
 export function parseRangeAmount(raw: string, unit: AmountUnit): bigint | null {
   return unit === 'xmr' ? parseXmrAmount(raw) : parseAmount(raw);
+}
+
+/** XMR typed in the boxes after a switch: six places (the card's), with no trailing zeros. */
+const SWITCH_XMR_PLACES = 6n;
+const ATOMIC_PER_XMR = 1_000_000_000_000n;
+
+const divUp = (n: bigint, d: bigint): bigint => (n + d - 1n) / d;
+
+/** `units` with `places` decimals as plain box text: "0.033333", "1.5", "330". */
+function decimalText(units: bigint, places: bigint): string {
+  const scale = 10n ** places;
+  const frac = (units % scale).toString().padStart(Number(places), '0').replace(/0+$/, '');
+  return frac === '' ? `${units / scale}` : `${units / scale}.${frac}`;
+}
+
+/** One box converted to `to` at `rate` (minor units per XMR): the min rounded up, the max down. */
+function convertBox(raw: string, from: AmountUnit, to: AmountUnit, rate: bigint, dir: 'up' | 'down'): string {
+  const v = parseRangeAmount(raw, from);
+  if (v === null || v === 0n) return '';
+  const div = dir === 'up' ? divUp : (n: bigint, d: bigint) => n / d;
+  if (to === 'xmr') {
+    // Minor units to millionths of an XMR.
+    return decimalText(div(v * 10n ** SWITCH_XMR_PLACES, rate), SWITCH_XMR_PLACES);
+  }
+  return decimalText(div(v * rate, ATOMIC_PER_XMR), 2n);
+}
+
+/**
+ * The form after the poster picks `to` for the range (review H1): both boxes converted at your price
+ * (`rate`, minor units per XMR), the smallest trade rounded up and the largest down, so the range
+ * never grows; once converted, the new unit is exact. With no price, both boxes are cleared, so a
+ * number typed in one unit is never read in the other.
+ */
+export function switchUnit(f: FormState, to: AmountUnit, rate: bigint | null): FormState {
+  if (f.unit === to) return f;
+  if (rate === null || rate <= 0n) return { ...f, unit: to, min: '', max: '' };
+  return { ...f, unit: to, min: convertBox(f.min, f.unit, to, rate, 'up'), max: convertBox(f.max, f.unit, to, rate, 'down') };
 }
 
 export function stepMargin(bps: number, dir: 1 | -1): number {
@@ -329,7 +367,8 @@ export function loadDraft(storage: Storage): FormState | null {
     str(d.min, 32) &&
     str(d.max, 32) &&
     str(d.terms, 4000) &&
-    (MIN_TRADES as readonly unknown[]).includes(d.minTrades) &&
+    // 0 was the old default ("anyone"); it loads as No minimum (review L2).
+    (d.minTrades === 0 || (MIN_TRADES as readonly unknown[]).includes(d.minTrades)) &&
     (d.country === '' || isCountryCode(d.country));
   if (!ok) return null;
   return {
@@ -344,7 +383,7 @@ export function loadDraft(storage: Storage): FormState | null {
     min: d.min as string,
     max: d.max as string,
     terms: d.terms as string,
-    minTrades: d.minTrades as MinTrades,
+    minTrades: d.minTrades === 0 ? null : (d.minTrades as MinTrades),
     country: d.country as string,
   };
 }
