@@ -4,6 +4,12 @@
 
 > **Status: DRAFT, 2026-10-28 (lead); rewritten 2026-10-29 from the owner's answers.** Written from the owner's decisions of 2026-10-27 (`HANDOFF.md`, "Decided 2026-10-27 (owner)") and the OpenMonero comparison (`research/openmonero-parity-2026-10-27.md`).
 
+## Revision 2026-11-09 (owner)
+
+Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's answers register of 2026-11-09. Where this list differs from older text, this list wins.
+
+- **Jabber alerts (owner p11-31):** OMEMO and Tor are both mandatory; X2F refuses to send an alert it cannot encrypt, and design's "OMEMO recommended" is dropped. Which events send an alert is for the owner's checklist (p11-32); a Jabber notifications settings page lets each user pick events (p11-27).
+
 > **Revision 2026-10-29 (owner).** Q1 is answered (source: `~/x2f-comms/owner-answers-2026-10-28.md`; spec "Revision 2026-10-29 (owner)"). **An undisputed trade self-destructs 30 days after it ends; this is the advertised self-destruct. There are no user-chosen delete times and no early or manual delete for anyone. A disputed trade is kept 90 days from ~~the moment the dispute button is pressed~~ the dispute closing (owner p11-11, 2026-11-09). No per-trade stub is kept.** So Part A is rewritten around that one rule: the per-side and whole-trade self-delete settings (old Tasks 1–4, P7-A1 to A6) are dropped. Part B is rewritten: phone push with an optional loud alarm, an optional unrestricted-battery opt-in in the Android app, and **OMEMO Jabber over Tor as the only extra channel; no email, no Nostr** (old Tasks 6–7 dropped). Delete my account (new Task 18) is added. I2P is undecided and the warrant canary waits for the lawyer. Text that still mentions self-delete settings, Nostr or email below this note is superseded by it.
 
 **Goal:** Every finished trade self-destructs on a fixed, published clock (30 days after it ends; 90 days from ~~the dispute button~~ the dispute closing (owner p11-11, 2026-11-09) for a disputed trade), with no per-trade stub; traders can delete their account; alerts reach the phone reliably (push, an optional loud alarm, an optional battery opt-in) and, optionally, over OMEMO-encrypted Jabber through Tor; and anyone can learn what X2F is from a public site with a FAQ, a searchable support centre, guides and a published policy on lawful requests. The owner sees aggregate statistics collected from day one; publishing them is decided later.
