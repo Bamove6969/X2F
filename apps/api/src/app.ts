@@ -33,6 +33,8 @@ import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { teamRoutes } from './routes/team.js';
+import { jabberRoutes } from './jabber/routes.js';
+import type { JabberSender } from './jabber/sender.js';
 import { tradeIdentityRoutes } from './trades/identity.js';
 import { chatRoutes } from './chat/routes.js';
 import { newBudgets, type Budgets } from './limits.js';
@@ -81,6 +83,11 @@ export interface Deps {
   liveOffers?: LiveOfferStats;
   /** Task 26: shared-context check (Tasks 6, 20), SSE publish and Web Push (Task 19). */
   nudges: NudgeWiring;
+  /**
+   * Owner rule p5-7: X2F's Jabber sender (the XMPP account in `config.xmpp`, jabber/xmpp.ts; tests
+   * pass a fake). Without it the Jabber set-up answers 503 `jabber-unavailable`.
+   */
+  jabberSender?: JabberSender;
 }
 
 declare module 'fastify' {
@@ -330,6 +337,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   pastRepRoutes(app);
   // Plan 2, Task 18: team members (invites, the member's sign-up, roles, the owner's audit log).
   teamRoutes(app);
+  // Owner rule p5-7: secure Jabber account-change alerts (boards JabberSetup, Alerts).
+  jabberRoutes(app);
   // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.
   feedbackRoutes(app);
 
