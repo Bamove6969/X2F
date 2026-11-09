@@ -2,10 +2,13 @@
  * The real `JabberSender` (owner rule p5-7): X2F's own XMPP account sends one message per
  * connection. Deliberately small, with no XMPP library:
  *
- * - **TLS only.** Direct TLS (XEP-0368, RFC 7590) from the first byte, TLS 1.2 or newer, the
- *   server certificate checked against the account's domain. There is no plaintext stream and no
- *   STARTTLS, so there is nothing to downgrade: a server that does not speak TLS on the port fails
- *   the handshake and the send fails.
+ * - **Tor only** (owner ruling p11-31). The connection goes through a SOCKS5 proxy (`X2F_XMPP_SOCKS`,
+ *   the local Tor daemon), which is handed the server's host name to resolve: a `.onion` name never
+ *   reaches a DNS resolver and nothing is looked up before connecting (socks.ts).
+ * - **TLS only.** Direct TLS (XEP-0368, RFC 7590) from the first byte inside that stream, TLS 1.2 or
+ *   newer, the server certificate checked against the account's domain. There is no plaintext stream
+ *   and no STARTTLS, so there is nothing to downgrade: a server that does not speak TLS on the port
+ *   fails the handshake and the send fails.
  * - SASL PLAIN, only ever inside that TLS session, then resource binding (RFC 6120).
  * - The message is one of the two fixed texts (`messageText`), type `chat`, with the nickname
  *   "X2F alerts" (XEP-0172) and no other element. A ping (XEP-0199) after it confirms the server
@@ -14,14 +17,15 @@
  * Errors never quote the address, the password or anything the server said.
  *
  * GAP (owner p5-7 build, 2026-11-08): X2F's production Jabber account and server are not set up,
- * so `X2F_XMPP_*` are unset and the set-up answers `jabber-unavailable`. Not built yet: sending
- * over Tor (the 2026-10-29 Plan 7 note says "OMEMO Jabber over Tor"; the p5-7 board says OMEMO is
- * recommended, not required, because the text gives nothing away), OMEMO encryption, SCRAM.
+ * so `X2F_XMPP_*` are unset and the set-up answers `jabber-unavailable`. Not built yet: OMEMO
+ * encryption (owner ruling p11-31: mandatory), SCRAM.
  */
+import { isIP } from 'node:net';
 import { connect, type ConnectionOptions, type TLSSocket } from 'node:tls';
 import type { XmppConfig } from '../config.js';
 import { BARE_JID } from '../config.js';
 import { messageText, SENDER_NAME, type JabberMessage, type JabberSender } from './sender.js';
+import { socksConnect } from './socks.js';
 
 /** A server that sends more than this before we have what we wait for is refused. */
 const MAX_BUFFER = 64 * 1024;
@@ -94,6 +98,8 @@ export interface XmppSenderOptions {
 
 export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): JabberSender {
   if (!BARE_JID.test(cfg.jid)) throw new Error('config: X2F_XMPP_JID is malformed');
+  // Tor is mandatory (owner ruling p11-31): there is no direct connection.
+  if (!cfg.socks || isIP(cfg.socks.host) === 0) throw new Error('config: X2F_XMPP_SOCKS (a SOCKS5 proxy at an IP address) is required');
   const at = cfg.jid.indexOf('@');
   const local = cfg.jid.slice(0, at);
   const domain = cfg.jid.slice(at + 1);
@@ -101,8 +107,9 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
     async send(to: string, message: JabberMessage): Promise<void> {
       if (!BARE_JID.test(to)) throw new XmppError('address check');
       const text = messageText(message);
+      const tunnel = await socksConnect(cfg.socks, cfg.host, cfg.port, STEP_TIMEOUT_MS);
       const socket = connect({
-        host: cfg.host, port: cfg.port, servername: domain, minVersion: 'TLSv1.2', rejectUnauthorized: true,
+        socket: tunnel, servername: domain, minVersion: 'TLSv1.2', rejectUnauthorized: true,
         ...(opts.ca ? { ca: opts.ca } : {}),
       });
       try {

@@ -1,6 +1,7 @@
 import { createECDH, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { constants, readFileSync, statSync } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
+import { isIP } from 'node:net';
 import { parseFxSources, type FxSourceName } from './price/fx.js';
 import { parsePriceSources, type PriceSourceName } from './price/sources.js';
 
@@ -48,17 +49,24 @@ export interface Config {
 }
 
 /**
- * X2F's Jabber sending account. The connection is direct TLS only (XEP-0368, default port 5223),
- * certificate checked against `domain`; there is no plaintext or STARTTLS path at all.
+ * X2F's Jabber sending account. The connection is through a SOCKS5 proxy (Tor) only, then direct
+ * TLS only (XEP-0368, default port 5223), certificate checked against `domain`; there is no direct
+ * connection and no plaintext or STARTTLS path at all.
  */
 export interface XmppConfig {
   /** The bare address messages come from, e.g. `x2f-alerts@xmpp.example.org`. */
   jid: string;
   /** Its password (`X2F_XMPP_PASSWORD` or `X2F_XMPP_PASSWORD_FILE`). Never logged. */
   password: string;
-  /** Where to connect (default: the address's domain) and its direct-TLS port (default 5223). */
+  /** Where to connect (default: the address's domain; a `.onion` name is fine) and its direct-TLS port (default 5223). */
   host: string;
   port: number;
+  /**
+   * The SOCKS5 proxy every connection goes through (`X2F_XMPP_SOCKS`, required: owner ruling p11-31,
+   * Tor is mandatory), normally the local Tor daemon. An IP address, never a name; `host` is handed
+   * to it unresolved.
+   */
+  socks: { host: string; port: number };
 }
 
 /**
@@ -265,14 +273,29 @@ export function loadConfig(env: Env): Config {
 export const BARE_JID = /^[a-z0-9._%+!#$*=?^`{|}~-]{1,64}@(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
 /**
- * `X2F_XMPP_JID` turns sending on; then `X2F_XMPP_PASSWORD` (or `_FILE`) is required and
- * `X2F_XMPP_HOST` / `X2F_XMPP_PORT` are optional. GAP (owner p5-7 build): X2F's production Jabber
- * account and server are not set up; nothing here has a default account or credential.
+ * `X2F_XMPP_SOCKS`: `[socks5h://]<IPv4>:<port>` or `[socks5h://][<IPv6>]:<port>`. Only an IP
+ * address, so the proxy is reached with no DNS lookup; `socks5h` because the proxy resolves the
+ * server's name (a plain `socks5://` would mean resolving it here, which is never done).
+ */
+function parseSocks(raw: string): { host: string; port: number } | null {
+  const m = /^(?:socks5h:\/\/)?(?:([0-9.]+)|\[([0-9a-fA-F:.]+)\]):([1-9][0-9]{0,4})$/.exec(raw);
+  if (!m) return null;
+  const host = m[1] ?? m[2]!;
+  const port = Number(m[3]);
+  if (port > 65_535 || isIP(host) !== (m[1] !== undefined ? 4 : 6)) return null;
+  return { host, port };
+}
+
+/**
+ * `X2F_XMPP_JID` turns sending on; then `X2F_XMPP_PASSWORD` (or `_FILE`) and `X2F_XMPP_SOCKS` (the
+ * Tor SOCKS5 proxy; owner ruling p11-31) are required and `X2F_XMPP_HOST` / `X2F_XMPP_PORT` are
+ * optional. Without a proxy the API refuses to start. GAP (owner p5-7 build): X2F's production
+ * Jabber account and server are not set up; nothing here has a default account or credential.
  */
 function parseXmpp(env: Env): XmppConfig | null {
   const jid = env.X2F_XMPP_JID;
   if (jid === undefined || jid === '') {
-    for (const n of ['X2F_XMPP_PASSWORD', 'X2F_XMPP_PASSWORD_FILE', 'X2F_XMPP_HOST', 'X2F_XMPP_PORT']) {
+    for (const n of ['X2F_XMPP_PASSWORD', 'X2F_XMPP_PASSWORD_FILE', 'X2F_XMPP_HOST', 'X2F_XMPP_PORT', 'X2F_XMPP_SOCKS']) {
       if (env[n]) throw malformed(n, 'set X2F_XMPP_JID too, or none of the X2F_XMPP_ settings');
     }
     return null;
@@ -285,7 +308,10 @@ function parseXmpp(env: Env): XmppConfig | null {
   const rawPort = env.X2F_XMPP_PORT || '5223';
   const port = Number(rawPort);
   if (!/^[1-9][0-9]{0,4}$/.test(rawPort) || port > 65_535) throw malformed('X2F_XMPP_PORT', '1-65535');
-  return { jid, password, host, port };
+  if (!env.X2F_XMPP_SOCKS) throw missing('X2F_XMPP_SOCKS');
+  const socks = parseSocks(env.X2F_XMPP_SOCKS);
+  if (socks === null) throw malformed('X2F_XMPP_SOCKS', 'the Tor SOCKS5 proxy as an IP address and port, e.g. 127.0.0.1:9050');
+  return { jid, password, host, port, socks };
 }
 
 /**
