@@ -72,6 +72,7 @@ export function StaffShell({ pages }: { pages: Partial<Record<NavItem, ReactNode
         // 401s went to Login through the listener; anything else (a network fault) does too, as
         // the shell cannot show pages it cannot check.
         const c = codeOf(e);
+        // not-a-refusal: a code comparison that picks the navigation, no text shown.
         if (live && c !== 'outside-login-hours' && c !== 'not-authenticated') void navigate('/login', { replace: true });
       },
     );

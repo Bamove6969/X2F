@@ -157,6 +157,7 @@ export function NewsEditor() {
       </div>
       <Sheet open={deleting !== null} title="Delete this message?" wide="dialog" onClose={() => setDeleting(null)}>
         <div className="x2f-stack">
+          {/* not-a-refusal: says what deleting does, stops nobody. */}
           <p>Traders will no longer see it in News.</p>
           <Button variant="danger-outline" disabled={busy} onClick={() => deleting !== null && void remove(deleting)}>
             Delete

@@ -64,13 +64,13 @@ describe('owner lockout', () => {
     // The in-memory start budget refills within a minute; nothing about the owner is stored.
     t.setNow(new Date(MON_NOON.getTime() + 2 * MIN));
     const { b, res } = await ownerLogin(owner.keys[0]!);
-    expect(res.json()).toEqual({ status: 'ok' });
+    expect(res.json(), res.body).toEqual({ status: 'ok' });
     expect((await b.get('/staff/v1/me')).json()).toMatchObject({ role: 'owner' });
   }, 300_000);
 
   it('the owner logs in with the spare key alone', async () => {
     const { res } = await ownerLogin(owner.keys[1]!);
-    expect(res.json()).toEqual({ status: 'ok' });
+    expect(res.json(), res.body).toEqual({ status: 'ok' });
   });
 
   it('switch-off, hours, role and delete targeting the owner each get owner-protected, even from the owner', async () => {
@@ -189,7 +189,7 @@ describe('owner lockout', () => {
       expect((await owner.browser.get('/staff/v1/owner/keys')).statusCode).toBe(200);
       // keys[0] was removed by the owner-key test above; the spare logs in.
       const { res } = await ownerLogin(owner.keys[1]!);
-      expect(res.json()).toEqual({ status: 'ok' });
+      expect(res.json(), res.body).toEqual({ status: 'ok' });
     } finally {
       await t.deps.db.query('update site_flags set trading_paused = false, maintenance_since = null');
     }

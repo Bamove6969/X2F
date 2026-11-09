@@ -68,6 +68,7 @@ export async function staffApi<T = unknown>(path: string, init: CallInit = {}): 
   const rec = data !== null && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
   const { error, ...extra } = rec;
   const err = new StaffApiError(res.status, typeof error === 'string' ? error : 'internal', extra);
+  // not-a-refusal: routes the code to the shell's session-ended handling, shows no text.
   if (err.status === 401 && err.code === 'outside-login-hours') sessionEnded?.('hours');
   else if (err.status === 401 && err.code === 'not-authenticated') sessionEnded?.('expired');
   throw err;
@@ -176,12 +177,15 @@ export interface InviteView {
   role: InviteRole;
   hours: LoginHours;
   expiresAt: string;
+  /** A return visit: the account is made; what was added so far (null before the names). */
+  resume: { keys: number; passkeys: number; pgp: number; keyCheckCode: string | null } | null;
 }
 
 const invitePath = (token: string, rest = '') => `/staff/v1/invites/accept/${encodeURIComponent(token)}${rest}`;
 
 export const inviteRead = (token: string) => staffApi<InviteView>(invitePath(token));
-export const inviteAccount = (token: string, b: { username: string; loginName: string }) =>
+/** Owner Q54: the public name is `displayName` (the API refuses a field named username). */
+export const inviteAccount = (token: string, b: { displayName: string; loginName: string }) =>
   staffApi<{ ok: true }>(invitePath(token, '/account'), { method: 'POST', body: b });
 export const inviteKeyStart = (token: string, kind: 'security-key' | 'passkey') =>
   staffApi<{ options: PublicKeyCredentialCreationOptionsJSON }>(invitePath(token, '/key/start'), { method: 'POST', body: { kind } });

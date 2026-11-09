@@ -118,7 +118,20 @@ describe('Login', () => {
 });
 
 describe('Invite', () => {
-  const view = { role: 'mod', hours: { days: ['Mon', 'Tue'], start: '09:00', end: '17:00', tz: 'UTC' }, expiresAt: new Date().toISOString() };
+  const view = { role: 'mod', hours: { days: ['Mon', 'Tue'], start: '09:00', end: '17:00', tz: 'UTC' }, expiresAt: new Date().toISOString(), resume: null };
+
+  it('a return visit carries on at the keys, counting what was added on the earlier visit', async () => {
+    const api = fakeApi({
+      'GET /staff/v1/invites/accept/:token': { body: { ...view, resume: { keys: 1, passkeys: 0, pgp: 1, keyCheckCode: 'AB12-CD34-EF56-GH78' } } },
+      'POST /staff/v1/invites/accept/:token/finish': { status: 201, body: { keyCheckCode: 'AB12-CD34-EF56-GH78' } },
+    });
+    await open('/invite/tok_3');
+    expect(button('Continue')).toBeUndefined();
+    expect(button('Finish')!.disabled).toBe(false);
+    await click(button('Finish')!);
+    expect(api.calls.some((c) => c.path.endsWith('/account'))).toBe(false);
+    expect(document.querySelector('[data-part="key-check"]')?.textContent).toBe('Your key check code: AB12-CD34-EF56-GH78. Read it to the owner.');
+  });
 
   it('username, a security key (required for moderators) and a PGP key, then finish shows the key check code', async () => {
     const api = fakeApi({
@@ -135,7 +148,8 @@ describe('Invite', () => {
     typeInto(field('Username'), 'dmitri_k');
     typeInto(field('Login name'), 'dk-login');
     await click(button('Continue'));
-    expect(api.calls.find((c) => c.path.endsWith('/account'))?.body).toEqual({ username: 'dmitri_k', loginName: 'dk-login' });
+    // Owner Q54: the public name goes as displayName (the API refuses a field named username).
+    expect(api.calls.find((c) => c.path.endsWith('/account'))?.body).toEqual({ displayName: 'dmitri_k', loginName: 'dk-login' });
     // A moderator gets no passkey row, and cannot finish without a security key.
     expect(document.body.textContent).not.toContain('Passkey');
     const finish = () => button('Finish')!;

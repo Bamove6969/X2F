@@ -45,10 +45,10 @@ describe('StaffShell', () => {
     expect(navLabels()).toEqual(['Disputes', 'Training library', 'Activity log']);
   });
 
-  it('a senior moderator sees the same three', async () => {
+  it('a senior moderator sees the same three, and Feedback (owner Q60: seniors always get feedback)', async () => {
     fakeApi({ 'GET /staff/v1/me': { body: me('senior') } });
     await open('/');
-    expect(navLabels()).toEqual(['Disputes', 'Training library', 'Activity log']);
+    expect(navLabels()).toEqual(['Disputes', 'Training library', 'Activity log', 'Feedback']);
   });
 
   it('a helper sees no staff pages, only "Nothing to show for your role yet"', async () => {

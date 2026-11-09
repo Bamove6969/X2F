@@ -66,7 +66,14 @@ export function Invite() {
       (v) => {
         if (!live) return;
         setInvite(v);
-        setStep('name');
+        if (v.resume === null) {
+          setStep('name');
+          return;
+        }
+        // A return visit: the names were picked before; carry on at the keys with what is in.
+        setAdded({ keys: v.resume.keys, passkeys: v.resume.passkeys, pgp: v.resume.pgp });
+        setCheckCode(v.resume.keyCheckCode);
+        setStep('keys');
       },
       (e: unknown) => {
         if (!live) return;
@@ -108,7 +115,7 @@ export function Invite() {
         return;
       }
       try {
-        await inviteAccount(token, { username: username.trim(), loginName: loginName.trim() });
+        await inviteAccount(token, { displayName: username.trim(), loginName: loginName.trim() });
       } catch (e) {
         // The account was made on an earlier visit to this link: carry on with the keys.
         if (codeOf(e) !== 'wrong-state') throw e;
