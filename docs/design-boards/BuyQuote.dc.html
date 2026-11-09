@@ -58,9 +58,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Rate</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{rateText}}</span> / XMR</dd></div>
         <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Network fee</dt><dd style="margin: 0; font-size: 15px;">Paid by satoshi_ghost</dd></div>
-        <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
-        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Deposit</dt><dd style="margin: 0; font-size: 15px;">None for this trade</dd></div>
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Network fee</dt><dd style="margin: 0; font-size: 15px; text-align: right;">about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.0001</span> XMR, taken from your payout</dd></div>
         <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 52px; padding: 0 14px; font-size: 16px; line-height: 22px; font-weight: 600;"><dt>You send via Zelle</dt><dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">${{usd}}</span> USD</dd></div>
       </dl>
@@ -159,7 +157,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"bandsView":{"editor":"enum","options":["with","without"],"default":"with"},"role":{"editor":"enum","options":["auto","buyer-taker","seller-taker","poster-selling","poster-buying"],"default":"auto"},"$preview":{"width":390,"height":3101}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"bandsView":{"editor":"enum","options":["with","without"],"default":"with"},"role":{"editor":"enum","options":["auto","buyer-taker","seller-taker","poster-selling","poster-buying"],"default":"auto"},"$preview":{"width":390,"height":3052}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -171,7 +169,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + ((this.state.obView || this.props.bandsView) === 'without' ? 2677 : 2647) + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + ((this.state.obView || this.props.bandsView) === 'without' ? 2628 : 2598) + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const MIN = 50, MAX = 1500, MKT = 329.90;
     const raw = String(this.state.amount).replace(/[^0-9.]/g, '');
     const usd = parseFloat(raw);

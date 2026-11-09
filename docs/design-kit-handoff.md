@@ -674,7 +674,7 @@ Sizes are the badge seal (3.2) in `--ink`:
 
 **Kit note.** The craft brief lists the trio as "passkey, security key and PGP". The boards draw PGP first. Build the board order.
 
-Pre-login wordmark: plain ink "X2F" in Familjen 700, centred, 24 px on phone and 32 px on wide. It isn't a logo mark.
+Pre-login mark: **logo D** (docs/brand/svg/), centred, alone (no page name), 24 px tall on phone and 32 px on wide. Corrected 9 Nov: the earlier "plain ink X2F text" line is superseded by the owner's logo pick (page 8) and the real-app review.
 
 Replaces in apps/web: new. There are no seals in `setup/Login.tsx`, `auth/*` or `settings/Security.tsx`. Build `LoginSeal method size` and `StrongLoginTrio`.
 

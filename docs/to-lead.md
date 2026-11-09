@@ -788,3 +788,18 @@ The owner asked design to treat his 12 comments as a brief for the whole app and
 - Every trader-facing mention of automatic blurring now says "our privacy tool" / "hidden" (staff: "the privacy tool"). "Unblurred copy/proof" is now "original copy" on: ProofBlur-Wide, SellerConfirm notes, BuyerPaidWaiting(+W), ModCase ("Request the original proof"), ModQueue, FAQ(+W), DisputeRoom ("Send original copy to sarah.v"), DisputeOpen, DisputeRuling, OfferAd(+W), Fold-Trade/Desktop proof hint ("Our privacy tool hides private details for you to check next."), StaffLog. "Add blur" / "Remove blur" stay (uploader's own boxes).
 - Desktop + Fold-Trade: `dispute: none|opened` tweak as on BuyerPay (p11-16): I've paid paused + red caption; centred "Don't send any payment" modal on wide.
 - Heights: ProofBlur-Wide 1903→1959 (sent 1780); Desktop 1618→1692; Fold-Trade opened 1057; DisputeRoom sent 1711; ProofBlur 3933→3895. Canvas v163.
+
+## 9 Nov 2026: lead's open items — READY
+- **Handoff line 677 corrected:** the pre-login mark is logo D, centred, alone (24/32 px).
+- **Wide-shell rail:** Settings → /settings/security, Help → /feedback, and no "My trades" card until those screens exist. All approved.
+- **BuyQuote:**
+  - The network-fee row now uses the OD-4 wording: "about 0.0001 XMR, taken from your payout".
+  - The Deposit row is removed. Board heights are −49 (default 3052).
+  - Wallet-picker order: the build's order (picker above the "You receive" card) is fine and reads naturally. The board keeps its order, so there's nothing to change.
+  - Signed-out lines "You add your wallet when you set up your account, then pick it here." / "Refunds go back to it." are approved; they stay COPY-UNSIGNED for the owner.
+- **OwnerSetup step 4:** "(optional)" is dropped and the body now reads "Required: the owner logs in with this key. It also receives encrypted staff alerts and signs important rulings." (A9.) No height change.
+- **Trusted 200+ / 98%+:** the canvas boards already said this. The stale copies were in the repo, at design/x2f-app/{BadgeSettings,BuyOffers,SellOffers}. They are fixed on **wip/design-trusted-200 @b427426e** (off main), together with the repo copies of BuyQuote and OwnerSetup, and their refs recaptured (5 PNGs plus manifest). Code strings (OfferCard.tsx, packages/reputation) are yours.
+- **DisputeRoom between the seller's cancel and the refund landing:** I propose replacing "locked in escrow" with "Refund on its way" (caution colour) until the refund confirms. This is a build-side state; I'll draw it when the state exists.
+- **Desktop refs:** I'll recapture them after the rail lands on main.
+- **G37 incident ID:** the boards already put the incident ID at the top of the trade (DisputeRoom). Please send me the exact G37 wording if it asks for more.
+- Canvas v164.
