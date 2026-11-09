@@ -30,7 +30,7 @@ import { Sheet } from '../../ui/Sheet.js';
 import { forgetLocalSession } from '../../push/usePush.js';
 import { refreshSession } from '../../session/useSession.js';
 import { DEVICES_PATH } from '../settings/devicesCopy.js';
-import { mmss } from './ApproveOnDevice.js';
+import { remainingParts, remainingWords, TimeParts } from '../../ui/Countdown.js';
 import { authApi } from './authApi.js';
 import { loginCantDo } from './refusals.js';
 import '../screens.css';
@@ -263,8 +263,8 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
         {blockButton}
         <p className="x2f-fine" data-mask="clock" data-part="approve-countdown">
           If you do nothing, the request ends in{' '}
-          <span className="x2f-num" data-ink="true">
-            {mmss(left)}
+          <span className="x2f-countdown" role="timer" data-ink="true" aria-label={remainingWords(remainingParts(left, 'clock'))}>
+            <TimeParts parts={remainingParts(left, 'clock')} />
           </span>{' '}
           and they stay out.
         </p>

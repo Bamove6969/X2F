@@ -155,7 +155,7 @@ test('DisputeOpen shows the board copy and sends the reason and note', async ({ 
   await open(page);
   await expect(page.getByRole('heading', { name: 'Open a dispute' })).toBeVisible();
   await expect(page.getByText("Seller's time to confirm ran out", { exact: true })).toBeVisible();
-  await expect(page.getByText('A moderator looks at what happened and decides where the 1.25 XMR goes. It stays locked in escrow until then.')).toBeVisible();
+  await expect(page.getByText('A moderator looks at what happened and decides where the 1.250000 XMR goes. It stays locked in escrow until then.')).toBeVisible();
   await expect(page.getByText("A moderator will read this trade's chat to decide", { exact: true })).toBeVisible();
   await expect(page.getByRole('radio')).toHaveCount(4);
   await page.getByRole('radio', { name: "The seller isn't replying" }).check();
@@ -163,7 +163,7 @@ test('DisputeOpen shows the board copy and sends the reason and note', async ({ 
   await expect(page.getByText('22 / 1000')).toBeVisible();
   // Spec 4.2: no file can be picked until Plan 5's on-device pipeline strips and blurs it.
   await expect(page.locator('input[type=file]')).toHaveCount(0);
-  await expect(page.locator('.x2f-moderator-badge')).toHaveCount(0);
+  await expect(page.locator('.x2f-tag[data-role="mod"]')).toHaveCount(0);
   await page.getByRole('button', { name: 'Open dispute' }).click();
   await expect.poll(() => posts.length).toBe(1);
   expect(posts[0]!.postDataJSON()).toEqual({ reason: 'silent', note: 'No answer since 10:02.' });
@@ -238,7 +238,7 @@ test('no moderator on record: no banner and no violet badge anywhere; the hourgl
   await expect(page.locator('[data-part="hourglass"]')).toContainText("A moderator steps in within 24 h at the most. Usually it's much sooner.");
   await expect(page.getByText('In dispute', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Moderator joined' })).toHaveCount(0);
-  await expect(page.locator('.x2f-moderator-badge')).toHaveCount(0);
+  await expect(page.locator('.x2f-tag[data-role="mod"]')).toHaveCount(0);
 });
 
 test('DisputeRuling: the ruling card, the destination ending, evidence and the appeal sheet', async ({ page }) => {
@@ -249,9 +249,9 @@ test('DisputeRuling: the ruling card, the destination ending, evidence and the a
   });
   await open(page);
   const card = page.getByRole('region', { name: 'Ruling' });
-  await expect(card.locator('.x2f-moderator-badge')).toHaveText('X2F Moderator');
+  await expect(card.locator('.x2f-tag[data-role="mod"]')).toHaveText('X2F Moderator');
   await expect(card).toContainText('Ruling: release to the buyer');
-  await expect(card).toContainText('1.25 XMR goes to mira.k');
+  await expect(card).toContainText('1.250000 XMR goes to mira.k');
   await expect(card).not.toContainText('address ending');
   await page.getByRole('button', { name: 'Appeal this ruling' }).click();
   const send = page.getByRole('button', { name: 'Send appeal' });

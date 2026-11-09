@@ -15,10 +15,11 @@
 
 .x2f-screen__title {
   margin: 0;
-  font-family: var(--x2f-heading-family);
-  font-size: var(--x2f-heading-size);
-  line-height: var(--x2f-heading-line);
-  font-weight: var(--x2f-heading-weight);
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: var(--x2f-screen-title-weight);
+  letter-spacing: var(--x2f-screen-title-tracking);
 }
 
 /* The one lead line under a screen title (Feedback, News): body size, muted, no margin of its own. */
@@ -173,10 +174,11 @@ textarea.x2f-input {
 
 .x2f-card__title {
   margin: 0;
-  font-family: var(--x2f-title-family);
-  font-size: var(--x2f-title-size);
-  line-height: var(--x2f-title-line);
-  font-weight: var(--x2f-title-weight);
+  font-family: var(--x2f-sheet-title-family);
+  font-size: var(--x2f-sheet-title-size);
+  line-height: var(--x2f-sheet-title-line);
+  font-weight: var(--x2f-sheet-title-weight);
+  letter-spacing: var(--x2f-sheet-title-tracking);
 }
 
 .x2f-list {

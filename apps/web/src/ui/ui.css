@@ -93,14 +93,19 @@
   }
 }
 
-/* Status chips (TradeFund, Desktop boards). */
+/* Status chips (design kit handoff 4.2): 28 px pill, 14% of the tone (16% for neutral and mod,
+   whose text is ink and mod), caps 13/16 600 .04em, 16 px icon. Never orange. */
 .x2f-chip {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: var(--x2f-space-2);
-  padding: 6px 12px;
+  gap: 6px;
+  min-height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
   border-radius: var(--x2f-radius-pill);
-  background: var(--x2f-surface-raised);
+  background: color-mix(in srgb, var(--x2f-chip-tone, var(--x2f-ink-muted)) 14%, transparent);
+  color: var(--x2f-chip-tone, var(--x2f-ink));
   font-size: var(--x2f-label-size);
   line-height: var(--x2f-label-line);
   font-weight: var(--x2f-label-weight);
@@ -108,30 +113,45 @@
   text-transform: uppercase;
 }
 
-.x2f-chip[data-tone='caution'],
+.x2f-chip[data-tone='caution'] {
+  --x2f-chip-tone: var(--x2f-caution);
+}
+
+.x2f-chip[data-tone='escrow'] {
+  --x2f-chip-tone: var(--x2f-escrow);
+}
+
+.x2f-chip[data-tone='danger'] {
+  --x2f-chip-tone: var(--x2f-danger);
+}
+
+.x2f-chip[data-tone='team'] {
+  --x2f-chip-tone: var(--x2f-team);
+}
+
+.x2f-chip[data-tone='mod'] {
+  background: color-mix(in srgb, var(--x2f-mod) 16%, transparent);
+  color: var(--x2f-mod);
+}
+
+.x2f-chip[data-tone='neutral'] {
+  background: color-mix(in srgb, var(--x2f-ink-muted) 16%, transparent);
+  color: var(--x2f-ink);
+}
+
 .x2f-badge[data-tone='caution'],
 .x2f-dots[data-tone='caution'] {
   color: var(--x2f-caution);
 }
 
-.x2f-chip[data-tone='escrow'],
 .x2f-badge[data-tone='escrow'],
 .x2f-dots[data-tone='escrow'] {
   color: var(--x2f-escrow);
 }
 
-.x2f-chip[data-tone='danger'] {
-  color: var(--x2f-danger);
-}
-
 /* A finished state that is neither good nor bad (Refunded board: "Payment time ran out"). */
 .x2f-chip[data-tone='muted'] {
-  color: var(--x2f-ink-muted);
-}
-
-/* Board Refunded: a finished ending with nothing to do (a cancel) is neutral ink, not a state colour. */
-.x2f-chip[data-tone='neutral'] {
-  color: var(--x2f-ink);
+  --x2f-chip-tone: var(--x2f-ink-muted);
 }
 
 /* Badge pills (SellOffers board). */
@@ -146,18 +166,6 @@
   font-weight: 600;
   letter-spacing: var(--x2f-label-tracking);
   text-transform: uppercase;
-}
-
-/* The X2F Moderator badge (DisputeRoom board). */
-.x2f-moderator-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--x2f-space-1);
-  padding: 2px 8px;
-  border: 1px solid var(--x2f-moderator);
-  border-radius: var(--x2f-radius-pill);
-  color: var(--x2f-moderator);
-  font-weight: 600;
 }
 
 /* The 2-of-3 dots (TradeFund board). */
@@ -182,7 +190,8 @@
 }
 
 /* Countdowns use the mono face with tabular figures; the context sets the colour. */
-.x2f-countdown {
+/* Timers (kit handoff 1.5): mono digits, units in the surrounding body type. */
+.x2f-countdown__n {
   font-family: var(--x2f-font-mono);
   font-variant-numeric: tabular-nums;
 }
@@ -302,8 +311,11 @@
 
 .x2f-trade-header__title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: var(--x2f-screen-title-weight);
+  letter-spacing: var(--x2f-screen-title-tracking);
 }
 
 .x2f-trade-header__sub {
@@ -343,8 +355,7 @@
 .x2f-sheet-backdrop {
   position: absolute;
   inset: 0;
-  background: var(--x2f-ground);
-  opacity: 0.8;
+  background: var(--x2f-scrim);
 }
 
 .x2f-sheet {
@@ -431,26 +442,18 @@
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   touch-action: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--x2f-monero) 25%, transparent);
-  transition:
-    background-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
+  transition: background-color 160ms ease;
 }
 
-.x2f-hold:not(:disabled):hover,
-.x2f-hold[data-holding='true'] {
-  transform: translateY(-1px);
-  box-shadow:
-    0 0 0 4px color-mix(in srgb, var(--x2f-monero) 35%, transparent),
-    0 0 32px color-mix(in srgb, var(--x2f-monero) 55%, transparent);
+/* Ruling 16 (kit handoff): hover is a 6% ink overlay, never a glow. */
+.x2f-hold:not(:disabled):hover {
+  background: color-mix(in srgb, var(--x2f-ink) 6%, var(--x2f-monero));
 }
 
 .x2f-hold:disabled {
   border: 1px solid var(--x2f-line);
   background: transparent;
   color: var(--x2f-ink-muted);
-  box-shadow: none;
   cursor: not-allowed;
 }
 
@@ -461,22 +464,24 @@
   background: var(--x2f-escrow);
   color: var(--x2f-ground);
   cursor: default;
-  box-shadow: none;
-  transform: none;
 }
 
+/* Hold progress (kit review 4, WCAG 1.4.11): the strongest on-monero overlay the label allows
+   (on-monero text on it reads 4.5:1), and a 2 px on-monero front edge, 6.45:1 against the unfilled
+   button, so progress shows at 3:1+. The fill grows by its right inset, not a transform, so the edge
+   stays 2 px wide. */
 .x2f-hold__fill {
   position: absolute;
-  inset: 0;
-  background: var(--x2f-monero-hold);
-  transform: scaleX(0);
-  transform-origin: left center;
+  inset: 0 100% 0 0;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--x2f-on-monero) 20%, transparent);
   pointer-events: none;
 }
 
 .x2f-hold[data-holding='true'] .x2f-hold__fill {
-  transform: scaleX(1);
-  transition: transform var(--x2f-hold-ms) linear;
+  right: 0;
+  border-right: 2px solid var(--x2f-on-monero);
+  transition: right var(--x2f-hold-ms) linear;
 }
 
 .x2f-hold__top,
@@ -1126,10 +1131,11 @@
 .x2f-flow__title {
   flex-grow: 1;
   margin: 0;
-  font-family: var(--x2f-title-family);
-  font-size: var(--x2f-title-size);
-  line-height: var(--x2f-title-line);
-  font-weight: var(--x2f-title-weight);
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: var(--x2f-screen-title-weight);
+  letter-spacing: var(--x2f-screen-title-tracking);
 }
 
 /* A title with a muted line under it (FlowScreen `sub`; News "3 new · 4 posts"). */
@@ -1281,25 +1287,7 @@
   background: var(--x2f-surface-raised);
 }
 
-/* A status chip with a tinted wash (visual system v2, section 7): 28 px pill, 14% of the tone. */
-.x2f-chip[data-look='tint'] {
-  gap: 6px;
-  height: 28px;
-  box-sizing: border-box;
-  padding: 0 10px;
-}
-
-.x2f-chip[data-look='tint'][data-tone='caution'] {
-  background: color-mix(in srgb, var(--x2f-caution) 14%, transparent);
-}
-
-.x2f-chip[data-look='tint'][data-tone='escrow'] {
-  background: color-mix(in srgb, var(--x2f-escrow) 14%, transparent);
-}
-
-.x2f-chip[data-look='tint'][data-tone='danger'] {
-  background: color-mix(in srgb, var(--x2f-danger) 14%, transparent);
-}
+/* Every status chip is the tinted wash now (kit 4.2); `data-look="tint"` is kept on old callers. */
 
 .x2f-big-number {
   font-family: var(--x2f-font-mono);
@@ -1374,7 +1362,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-.x2f-num[data-ink='true'] {
+.x2f-num[data-ink='true'],
+.x2f-countdown[data-ink='true'] {
   color: var(--x2f-ink);
 }
 
@@ -1627,22 +1616,7 @@
   font-size: 15px;
 }
 
-/* A small tag beside a name ("This device", "Team member"). */
-.x2f-tag {
-  align-self: flex-start;
-  padding: 1px 8px;
-  border: 1px solid var(--x2f-line);
-  border-radius: var(--x2f-radius-pill);
-  color: var(--x2f-ink-muted);
-  font-size: 12px;
-  line-height: 16px;
-  font-weight: 600;
-}
-
-.x2f-tag[data-tone='team'] {
-  border-color: var(--x2f-team);
-  color: var(--x2f-team);
-}
+/* The small tags beside a name ("This device", "Team member") are the kit's RoleTag (kit.css). */
 
 /* Devices board: "Log out all team members", outlined in the team colour (disabled keeps the shared look). */
 .x2f-button--secondary[data-tone='team']:not(:disabled) {
@@ -1650,22 +1624,7 @@
   color: var(--x2f-team);
 }
 
-/* Initials avatar for a team member. */
-.x2f-avatar {
-  display: flex;
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--x2f-radius-pill);
-  background: var(--x2f-team);
-  color: var(--x2f-ground);
-  font-size: 14px;
-  line-height: 16px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
+/* A team member's initials avatar is the kit's Avatar kind="team" (kit.css). */
 
 /* A setting row: label and hint on the left, the control on the right. */
 .x2f-setting {
@@ -2051,11 +2010,16 @@
   background: transparent;
 }
 
-/* Ticked: the shared selection style (with PickButton and ChoiceGroup, above). The card's border is
-   1 px (dashed when off), so a 1 px inset ring makes the 2 px ink line. */
+/* Ticked: the shared selection style (with PickButton and ChoiceGroup, above): a 2 px ink border
+   (kit 1.5, never a shadow). The card's border is 1 px, so the padding gives back the extra 1 px. */
 .x2f-select-card[data-selected='true'] {
-  border-color: var(--x2f-ink);
-  box-shadow: inset 0 0 0 1px var(--x2f-ink);
+  padding: calc(var(--x2f-space-1) - 1px);
+  border: 2px solid var(--x2f-ink);
+}
+
+/* Ticked and switched off: the ink selection keeps the dashed "off" look (kit review 7). */
+.x2f-select-card[data-on='false'][data-selected='true'] {
+  border-style: dashed;
 }
 
 /* In two panes the card's text is a PickButton (MyOffers' RowText), drawn bare inside the card so
@@ -2230,7 +2194,7 @@
 }
 
 .x2f-hero[data-tone='mod'] {
-  --x2f-hero-tone: var(--x2f-moderator);
+  --x2f-hero-tone: var(--x2f-mod);
 }
 
 /* An outcome hero (Refunded): 24/20/20, gap 20, the wash to 160 px. */
@@ -2407,7 +2371,7 @@
 }
 
 .x2f-steps-line[data-tone='mod'] {
-  --x2f-steps-tone: var(--x2f-moderator);
+  --x2f-steps-tone: var(--x2f-mod);
 }
 
 .x2f-steps-line > li {
