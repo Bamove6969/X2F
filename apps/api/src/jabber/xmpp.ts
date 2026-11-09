@@ -19,6 +19,10 @@
  * - A ping (XEP-0199) after the message confirms the server took it; an error stanza for the
  *   message before the ping result or within `bounceWaitMs` after it fails the send (review L2), so a
  *   bounce never counts as sent.
+ * - Anyone who knows our full JID can put stanzas on this stream while it is open (RFC 6121
+ *   8.5.3.1: no presence needed), so (OMEMO review M1) every request carries a random id, an answer
+ *   counts only when its `from` is the party asked, a bounce only when it is from the recipient or
+ *   their server, and `<failure>` is an answer during SASL alone.
  *
  * Errors never quote the address, the password or anything the server said.
  *
@@ -26,6 +30,7 @@
  * so `X2F_XMPP_*` are unset and the set-up answers `jabber-unavailable`. Not built yet: SCRAM's
  * -PLUS channel binding, ALPN, interop tests against real clients (plan, section 4).
  */
+import { randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { connect, type ConnectionOptions, type TLSSocket } from 'node:tls';
 import type { XmppConfig } from '../config.js';
@@ -56,6 +61,21 @@ class XmppError extends Error {
   }
 }
 
+/**
+ * A stream error, where a top-level element lands: at the head of what is still unread (after the
+ * stream header). Never anywhere else in the buffer: a stanza anyone sends us may carry the same
+ * bytes inside (review M1), and a real stream error also closes the stream, which fails the step.
+ */
+const STREAM_ERROR = /^(?:\s|<\?xml\b[^>]*\?>|<stream:stream\b[^>]*>)*<stream:error[\s>]/;
+
+/** A stanza's `from`, from its opening tag (undefined when it has none). */
+const fromOf = (stanza: string): string | undefined => /^<[a-z:]+\b[^>]*?\sfrom=['"]([^'"]*)['"]/.exec(stanza)?.[1];
+
+/** A fresh stanza id: nobody but the server we asked can know it (review M1). */
+const newId = () => randomBytes(8).toString('hex');
+
+type Accept = (m: RegExpExecArray) => boolean;
+
 /** Reads the TLS stream until a pattern shows up, refusing stream errors and oversize input. */
 class Reader {
   private buf = '';
@@ -77,14 +97,19 @@ class Reader {
   }
 
   /**
-   * Resolves with the first match of `re` and the text before it (dropping both). With `soft`, a
-   * timeout or a closed stream resolves null instead of failing.
+   * Resolves with the first match of `re` that `accept` takes (a refused match is dropped from the
+   * stream and the wait goes on) and the text before it (dropping both). With `soft`, a timeout or
+   * a closed stream resolves null instead of failing.
    */
-  async until(re: RegExp, step: string, o: { ms?: number; soft?: boolean } = {}): Promise<{ m: RegExpExecArray; before: string } | null> {
+  async until(re: RegExp, step: string, o: { ms?: number; soft?: boolean; accept?: Accept } = {}): Promise<{ m: RegExpExecArray; before: string } | null> {
     const deadline = Date.now() + (o.ms ?? STEP_TIMEOUT_MS);
     for (;;) {
-      if (/<stream:error[\s>]|<failure[\s>]/.test(this.buf)) throw new XmppError(step);
-      const m = re.exec(this.buf);
+      if (STREAM_ERROR.test(this.buf)) throw new XmppError(step);
+      let m = re.exec(this.buf);
+      while (m && o.accept && !o.accept(m)) {
+        this.buf = this.buf.slice(0, m.index) + this.buf.slice(m.index + m[0].length);
+        m = re.exec(this.buf);
+      }
       if (m) {
         const before = this.buf.slice(0, m.index);
         this.buf = this.buf.slice(m.index + m[0].length);
@@ -107,13 +132,21 @@ class Reader {
     }
   }
 
-  async must(re: RegExp, step: string): Promise<{ m: RegExpExecArray; before: string }> {
-    return (await this.until(re, step))!;
+  async must(re: RegExp, step: string, accept?: Accept): Promise<{ m: RegExpExecArray; before: string }> {
+    return (await this.until(re, step, accept ? { accept } : {}))!;
   }
 
-  /** The whole `<iq>` with this id (self-closing or not). */
-  async iq(id: string, step: string): Promise<string> {
-    return (await this.must(new RegExp(`<iq\\b[^>]*\\bid=['"]${id}['"][^>]*(?:/>|>[\\s\\S]*?</iq>)`), step)).m[0];
+  /** A SASL answer: the match, or `<failure>`, which is an answer only here and fails the step. */
+  async sasl(re: RegExp): Promise<RegExpExecArray> {
+    const { m } = await this.must(new RegExp(`${re.source}|<failure[\\s>]`), 'sasl');
+    if (m[0].startsWith('<failure')) throw new XmppError('sasl');
+    return m;
+  }
+
+  /** The whole `<iq>` with this id (self-closing or not) whose `from` passes `from` (RFC 6120 8.1.2.1). */
+  async iq(id: string, step: string, from: (from: string | undefined) => boolean): Promise<string> {
+    const re = new RegExp(`<iq\\b[^>]*\\bid=['"]${id}['"][^>]*(?:/>|>[\\s\\S]*?</iq>)`);
+    return (await this.must(re, step, (m) => from(fromOf(m[0])))).m[0];
   }
 }
 
@@ -134,7 +167,7 @@ export interface XmppSenderOptions {
 }
 
 /** The opening tag of an error stanza for message `id` (RFC 6120 8.3). */
-const bounceOf = (id: string) => new RegExp(`<message\\b(?=[^>]*\\btype=['"]error['"])(?=[^>]*\\bid=['"]${id}['"])[^>]*>`);
+const bounceOf = (id: string, flags = '') => new RegExp(`<message\\b(?=[^>]*\\btype=['"]error['"])(?=[^>]*\\bid=['"]${id}['"])[^>]*>`, flags);
 
 export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): JabberSender {
   if (!BARE_JID.test(cfg.jid)) throw new Error('config: X2F_XMPP_JID is malformed');
@@ -147,10 +180,21 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
     throw new XmppError('omemo');
   });
   const bounceWaitMs = opts.bounceWaitMs ?? BOUNCE_WAIT_MS;
+  /**
+   * Who may answer a request to our own account or our server (bind, publish, ping): the server,
+   * which writes no `from`, our bare JID or its own domain (RFC 6120 8.1.2.1). Anything else on the
+   * stream with our id is someone else's stanza (review M1).
+   */
+  const ownAnswer = (from: string | undefined) => from === undefined || from === cfg.jid || from === domain;
+  /** Who may answer a request to another party: exactly the JID it was addressed to. */
+  const answerFrom = (to: string) => (from: string | undefined) => from === to;
   return {
     async send(to: string, message: JabberMessage): Promise<void> {
       if (!BARE_JID.test(to)) throw new XmppError('address check');
       const text = messageText(message);
+      /** A bounce comes from the recipient (bare or full JID) or their server; anyone else's error stanza is noise (review M1). */
+      const recipientDomain = to.slice(to.indexOf('@') + 1);
+      const fromRecipient = (from: string | undefined) => from === to || from === recipientDomain || (from !== undefined && from.startsWith(`${to}/`));
       const tunnel = await socksConnect(cfg.socks, cfg.host, cfg.port, STEP_TIMEOUT_MS);
       const socket = connect({
         socket: tunnel, servername: domain, minVersion: 'TLSv1.2', rejectUnauthorized: true,
@@ -180,7 +224,7 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
         if (scram) {
           const client = scramClient(scram[1], local, cfg.password);
           write(`<auth xmlns='${SASL_NS}' mechanism='${scram[0]}'>${client.first()}</auth>`);
-          const challenge = (await read.must(/<challenge\b[^>]*>([^<]*)<\/challenge>/, 'sasl')).m[1]!;
+          const challenge = (await read.sasl(/<challenge\b[^>]*>([^<]*)<\/challenge>/))[1]!;
           let answer: string;
           try {
             answer = client.final(challenge);
@@ -188,38 +232,42 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
             throw new XmppError('sasl');
           }
           write(`<response xmlns='${SASL_NS}'>${answer}</response>`);
-          const success = (await read.must(/<success\b[^>]*(?:\/>|>([^<]*)<\/success>)/, 'sasl')).m[1] ?? '';
+          const success = (await read.sasl(/<success\b[^>]*(?:\/>|>([^<]*)<\/success>)/))[1] ?? '';
           // The server must prove it knows the password before anything else is sent.
           if (!client.verify(success)) throw new XmppError('sasl');
         } else if (offered.has('PLAIN')) {
           const creds = Buffer.from(`\0${local}\0${cfg.password}`, 'utf8').toString('base64');
           write(`<auth xmlns='${SASL_NS}' mechanism='PLAIN'>${creds}</auth>`);
-          await read.must(/<success[\s/>]/, 'sasl');
+          await read.sasl(/<success[\s/>]/);
         } else {
           throw new XmppError('sasl');
         }
 
         write(openStream(domain));
         await read.must(/<stream:features[\s\S]*?<\/stream:features>/, 'features');
-        write(`<iq type='set' id='bind1'><bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'><resource>x2f-alerts</resource></bind></iq>`);
-        const bound = await read.iq('bind1', 'bind');
+        const bindId = newId();
+        write(`<iq type='set' id='${bindId}'><bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'><resource>x2f-alerts</resource></bind></iq>`);
+        const bound = await read.iq(bindId, 'bind', ownAnswer);
         if (!/^<iq\b[^>]*\btype=['"]result['"]/.test(bound)) throw new XmppError('bind');
 
         // OMEMO (owner ruling p11-31). Our own device list and bundle first, so the recipient's client can read our keys.
         if (opts.announce) {
           const ours = await opts.announce();
-          write(publishRequest('omemo-pub-dl', DEVICELIST_NODE, ours.deviceList, xmlEscape));
-          if (!isResultIq(await read.iq('omemo-pub-dl', 'publish'))) throw new XmppError('publish');
-          write(publishRequest('omemo-pub-b', bundleNode(ours.deviceId), ours.bundle, xmlEscape));
-          if (!isResultIq(await read.iq('omemo-pub-b', 'publish'))) throw new XmppError('publish');
+          for (const [node, item] of [[DEVICELIST_NODE, ours.deviceList], [bundleNode(ours.deviceId), ours.bundle]] as const) {
+            const id = newId();
+            write(publishRequest(id, node, item, xmlEscape));
+            if (!isResultIq(await read.iq(id, 'publish', ownAnswer))) throw new XmppError('publish');
+          }
         }
         // Then the recipient's devices and their bundles, or no message.
-        write(itemsRequest(to, 'omemo-dl', DEVICELIST_NODE, xmlEscape));
-        const devices = parseDeviceList(await read.iq('omemo-dl', 'omemo'));
+        const listId = newId();
+        write(itemsRequest(to, listId, DEVICELIST_NODE, xmlEscape));
+        const devices = parseDeviceList(await read.iq(listId, 'omemo', answerFrom(to)));
         const bundles: OmemoBundle[] = [];
-        for (const [i, deviceId] of devices.entries()) {
-          write(itemsRequest(to, `omemo-b${i}`, bundleNode(deviceId), xmlEscape));
-          const b = parseBundle(deviceId, await read.iq(`omemo-b${i}`, 'omemo'));
+        for (const deviceId of devices) {
+          const id = newId();
+          write(itemsRequest(to, id, bundleNode(deviceId), xmlEscape));
+          const b = parseBundle(deviceId, await read.iq(id, 'omemo', answerFrom(to)));
           if (b) bundles.push(b);
         }
         if (bundles.length === 0) throw new XmppError('omemo');
@@ -231,16 +279,18 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
         }
         if (!isEncryptedElement(encrypted)) throw new XmppError('omemo');
 
-        const id = `x2f${Date.now().toString(36)}`;
+        const id = `x2f${newId()}`;
         write(
           `<message to='${xmlEscape(to)}' type='chat' id='${id}'>${encrypted}` +
             `<nick xmlns='http://jabber.org/protocol/nick'>${xmlEscape(SENDER_NAME)}</nick><store xmlns='urn:xmpp:hints'/></message>`,
         );
-        write(`<iq type='get' id='ping1' to='${xmlEscape(domain)}'><ping xmlns='urn:xmpp:ping'/></iq>`);
-        const ping = await read.must(/<iq\b[^>]*\bid=['"]ping1['"][^>]*>/, 'ping');
-        if (bounceOf(id).test(ping.before)) throw new XmppError('delivery');
+        const pingId = newId();
+        write(`<iq type='get' id='${pingId}' to='${xmlEscape(domain)}'><ping xmlns='urn:xmpp:ping'/></iq>`);
+        const ping = await read.must(new RegExp(`<iq\\b[^>]*\\bid=['"]${pingId}['"][^>]*>`), 'ping', (m) => ownAnswer(fromOf(m[0])));
+        const isBounce: Accept = (m) => fromRecipient(fromOf(m[0]));
+        if ([...ping.before.matchAll(bounceOf(id, 'g'))].some(isBounce)) throw new XmppError('delivery');
         // A bounce from the recipient's server can follow the ping result: wait briefly for one.
-        if ((await read.until(bounceOf(id), 'delivery', { ms: bounceWaitMs, soft: true })) !== null) throw new XmppError('delivery');
+        if ((await read.until(bounceOf(id), 'delivery', { ms: bounceWaitMs, soft: true, accept: isBounce })) !== null) throw new XmppError('delivery');
         write('</stream:stream>');
       } finally {
         socket.end();

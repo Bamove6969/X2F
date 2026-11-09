@@ -104,6 +104,13 @@ const ALL_MECHANISMS = ['SCRAM-SHA-1', 'PLAIN', 'SCRAM-SHA-256'];
 
 type Devices = 'item-not-found' | Array<{ id: number; bundle: string | null }>;
 
+/** What the fake server is about to answer; `inject` may put stanzas on the stream before the answer (review M1). */
+interface Answering {
+  kind: 'bind' | 'publish' | 'devicelist' | 'bundle' | 'ping' | 'message';
+  id: string;
+  node?: string;
+}
+
 interface FakeOptions {
   host?: string;
   mechanisms?: string[];
@@ -114,9 +121,16 @@ interface FakeOptions {
   devices?: Devices;
   /** Answer the message with an error stanza before the ping result, or after it. */
   bounce?: 'early' | 'late';
+  /** Who the error stanza is from (default: the recipient's bare JID). */
+  bounceFrom?: string;
   /** Refuse PEP publishes (a server without PEP, or one that refuses the open access model). */
   rejectPublish?: boolean;
+  /** Stanzas written just before each answer: what a stranger or a hostile recipient could inject (review M1). */
+  inject?: (a: Answering) => string[];
 }
+
+const pubsub = (node: string, inner: string) =>
+  `<pubsub xmlns='http://jabber.org/protocol/pubsub'><items node='${node}'><item id='current'>${inner}</item></items></pubsub>`;
 
 async function fakeServer(o: FakeOptions = {}) {
   const pki = ca();
@@ -126,9 +140,12 @@ async function fakeServer(o: FakeOptions = {}) {
   const published: Array<{ node: string; id: string; item: string; options: string }> = [];
   const mechanisms = o.mechanisms ?? ALL_MECHANISMS;
   const devices: Devices = o.devices ?? [{ id: 4242, bundle: bundleXml() }];
-  const pubsub = (node: string, inner: string) =>
-    `<pubsub xmlns='http://jabber.org/protocol/pubsub'><items node='${node}'><item id='current'>${inner}</item></items></pubsub>`;
+  const bounceFrom = o.bounceFrom ?? 'mira@xmpp.example.org';
   const server = createTlsServer({ key: key.export({ type: 'pkcs8', format: 'pem' }), cert, minVersion: 'TLSv1.2' }, (sock: TLSSocket) => {
+    const answer = (a: Answering, stanza: string) => {
+      for (const s of o.inject?.(a) ?? []) sock.write(s);
+      sock.write(stanza);
+    };
     sock.setEncoding('utf8');
     let buf = '';
     let streams = 0;
@@ -191,10 +208,11 @@ async function fakeServer(o: FakeOptions = {}) {
         const message = /<message\b[^>]*\bid='([^']+)'[^>]*>[\s\S]*?<\/message>/.exec(buf);
         if (message) {
           buf = buf.slice(message.index + message[0].length);
-          if (o.bounce === 'early') sock.write(`<message type='error' id='${message[1]}' from='mira@xmpp.example.org'><error type='cancel'><service-unavailable xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></message>`);
+          const mid = message[1]!;
+          if (o.bounce === 'early') answer({ kind: 'message', id: mid }, `<message type='error' id='${mid}' from='${bounceFrom}'><error type='cancel'><service-unavailable xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></message>`);
+          else for (const s of o.inject?.({ kind: 'message', id: mid }) ?? []) sock.write(s);
           if (o.bounce === 'late') {
-            const id = message[1];
-            setTimeout(() => sock.write(`<message type='error' id='${id}' from='mira@xmpp.example.org'><error type='cancel'><item-not-found xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></message>`), 30);
+            setTimeout(() => sock.write(`<message type='error' id='${mid}' from='${bounceFrom}'><error type='cancel'><item-not-found xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></message>`), 30);
           }
           continue;
         }
@@ -204,24 +222,24 @@ async function fakeServer(o: FakeOptions = {}) {
           const [, id, inner] = iq;
           const node = /<items node='([^']+)'/.exec(inner!)?.[1];
           if (/<bind /.test(inner!)) {
-            sock.write(`<iq type='result' id='${id}'><bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'><jid>x2f-alerts@xmpp.test/x2f-alerts</jid></bind></iq>`);
+            answer({ kind: 'bind', id: id! }, `<iq type='result' id='${id}'><bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'><jid>x2f-alerts@xmpp.test/x2f-alerts</jid></bind></iq>`);
           } else if (/<ping /.test(inner!)) {
-            sock.write(`<iq type='result' id='${id}' from='xmpp.test'/>`);
+            answer({ kind: 'ping', id: id! }, `<iq type='result' id='${id}' from='xmpp.test'/>`);
           } else if (/<publish /.test(inner!)) {
             const pub = /<publish node='([^']+)'><item id='([^']+)'>([\s\S]*?)<\/item><\/publish>(?:<publish-options>([\s\S]*?)<\/publish-options>)?/.exec(inner!);
             if (!pub || o.rejectPublish) {
-              sock.write(`<iq type='error' id='${id}'><error type='cancel'><feature-not-implemented xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></iq>`);
+              answer({ kind: 'publish', id: id! }, `<iq type='error' id='${id}'><error type='cancel'><feature-not-implemented xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></iq>`);
             } else {
               published.push({ node: pub[1]!, id: pub[2]!, item: pub[3]!, options: pub[4] ?? '' });
-              sock.write(`<iq type='result' id='${id}'><pubsub xmlns='http://jabber.org/protocol/pubsub'><publish node='${pub[1]}'><item id='${pub[2]}'/></publish></pubsub></iq>`);
+              answer({ kind: 'publish', id: id!, node: pub[1]! }, `<iq type='result' id='${id}'><pubsub xmlns='http://jabber.org/protocol/pubsub'><publish node='${pub[1]}'><item id='${pub[2]}'/></publish></pubsub></iq>`);
             }
           } else if (node === `${OMEMO_NS}.devicelist`) {
-            sock.write(devices === 'item-not-found'
+            answer({ kind: 'devicelist', id: id!, node }, devices === 'item-not-found'
               ? `<iq type='error' id='${id}' from='mira@xmpp.example.org'><error type='cancel'><item-not-found xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></iq>`
               : `<iq type='result' id='${id}' from='mira@xmpp.example.org'>${pubsub(node, `<list xmlns='${OMEMO_NS}'>${devices.map((x) => `<device id='${x.id}'/>`).join('')}</list>`)}</iq>`);
           } else if (node?.startsWith(`${OMEMO_NS}.bundles:`)) {
             const bundle = devices === 'item-not-found' ? null : devices.find((x) => `${OMEMO_NS}.bundles:${x.id}` === node)?.bundle ?? null;
-            sock.write(bundle === null
+            answer({ kind: 'bundle', id: id!, node }, bundle === null
               ? `<iq type='error' id='${id}' from='mira@xmpp.example.org'><error type='cancel'><item-not-found xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></iq>`
               : `<iq type='result' id='${id}' from='mira@xmpp.example.org'>${pubsub(node, bundle)}</iq>`);
           } else {
@@ -411,14 +429,14 @@ describe('xmppSender: TLS, SASL', () => {
   });
 });
 
-describe('xmppSender: OMEMO is mandatory (owner ruling p11-31); never a plaintext message', () => {
-  /** X2F's identity and bundle as the production encryptor loads them from the database. */
-  const realOmemo = (deviceId = 777) => {
-    const kp = x25519KeyPair();
-    const identity = { deviceId, publicKey: kp.publicKey, privateKey: kp.privateKey };
-    return omemoEncryptorFrom(identity, generateBundleSecrets(kp.privateKey, 20));
-  };
+/** X2F's identity and bundle as the production encryptor loads them from the database. */
+const realOmemo = (deviceId = 777) => {
+  const kp = x25519KeyPair();
+  const identity = { deviceId, publicKey: kp.publicKey, privateKey: kp.privateKey };
+  return omemoEncryptorFrom(identity, generateBundleSecrets(kp.privateKey, 20));
+};
 
+describe('xmppSender: OMEMO is mandatory (owner ruling p11-31); never a plaintext message', () => {
   it('with the real encryptor: publishes our device list and bundle (open access), then a message every recipient device decrypts to the fixed text', async () => {
     const phone = new OmemoDevice(11, 20);
     const laptop = new OmemoDevice(12, 20);
@@ -544,6 +562,82 @@ describe('xmppSender: review L2, a bounced message is a failed send', () => {
   it('no error stanza: the send succeeds', async () => {
     const s = await setup({ opts: { encrypt: fakeEncrypt } });
     await expect(s.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).resolves.toBeUndefined();
+  });
+});
+
+describe('xmppSender: review M1, a stanza from anyone but the party asked is ignored', () => {
+  // Our full JID is on every notice, and a server delivers to a connected resource without presence
+  // (RFC 6121 8.5.3.1), so any X2F Jabber user can put stanzas on our stream during a send.
+  const EVE = 'eve@evil.example/phone';
+  const iqIds = (all: string) => [...all.matchAll(/<iq\b[^>]*\bid='([^']+)'/g)].map((m) => m[1]!);
+
+  it('ids are random: no constant id survives, and two connections share none', async () => {
+    const s = await setup({ opts: realOmemo() });
+    await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
+    const first = s.transcript.splice(0).join('');
+    await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
+    const second = s.all();
+    for (const t of [first, second]) {
+      const ids = iqIds(t);
+      expect(ids).toHaveLength(6); // bind, two publishes, device list, bundle, ping
+      for (const id of ids) expect(id, t.slice(0, 80)).toMatch(/^[0-9a-f]{16}$/);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(/<message\b[^>]*\bid='x2f[0-9a-f]{16}'/.test(t)).toBe(true);
+    }
+    const shared = iqIds(first).filter((id) => iqIds(second).includes(id));
+    expect(shared).toEqual([]);
+  });
+
+  it("a forged device list and bundle (the old constant ids, or the real id from the wrong sender) do not steer the message; the recipient's answers do", async () => {
+    const phone = new OmemoDevice(11, 20);
+    const eve = new OmemoDevice(66, 20);
+    const evesList = pubsub(`${OMEMO_NS}.devicelist`, `<list xmlns='${OMEMO_NS}'><device id='66'/></list>`);
+    const inject = (a: Answering): string[] => {
+      if (a.kind === 'devicelist') {
+        return [
+          `<iq type='result' id='omemo-dl' from='${EVE}'>${evesList}</iq>`,
+          `<iq type='result' id='${a.id}' from='${EVE}'>${evesList}</iq>`,
+          `<iq type='result' id='${a.id}'>${evesList}</iq>`,
+        ];
+      }
+      if (a.kind === 'bundle') return [`<iq type='result' id='${a.id}' from='${EVE}'>${pubsub(a.node!, eve.bundleXml())}</iq>`, `<iq type='error' id='${a.id}' from='${EVE}'><error type='cancel'><item-not-found xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></iq>`];
+      if (a.kind === 'publish') return [`<iq type='error' id='${a.id}' from='${EVE}'><error type='cancel'><forbidden xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></iq>`];
+      return [];
+    };
+    const s = await setup({ devices: [{ id: 11, bundle: phone.bundleXml() }], inject, opts: realOmemo() });
+    await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
+    const messages = messagesIn(s.all());
+    expect(messages).toHaveLength(1);
+    const encrypted = /<encrypted[\s\S]*?<\/encrypted>/.exec(messages[0]!)![0];
+    expect(phone.decrypt(encrypted)).toBe('An account change was made on your X2F account.');
+    expect(eve.decrypt(encrypted)).toBeNull();
+    expect(s.all()).not.toContain(`<items node='${OMEMO_NS}.bundles:66'/>`);
+  });
+
+  it("a stranger's message carrying <failure/> or <stream:error/> after SASL does not fail the send; a SASL <failure/> still does", async () => {
+    const noise = `<message from='${EVE}' to='x2f-alerts@xmpp.test/x2f-alerts' type='chat'><failure xmlns='x'/><stream:error/><body>&lt;failure/&gt;</body></message>`;
+    const s = await setup({ inject: (a) => (a.kind === 'bind' || a.kind === 'devicelist' || a.kind === 'ping' ? [noise, noise] : []), opts: { encrypt: fakeEncrypt } });
+    await expect(s.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).resolves.toBeUndefined();
+    expect(messagesIn(s.all())).toHaveLength(1);
+    const wrong = await setup({ password: 'wrong', opts: { encrypt: fakeEncrypt } });
+    await expect(wrong.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: sasl failed');
+  });
+
+  it("an error stanza for the message from anyone but the recipient or their server is not a bounce; one from their server or one of their devices is", async () => {
+    for (const bounce of ['early', 'late'] as const) {
+      const stranger = await setup({ bounce, bounceFrom: EVE, opts: { encrypt: fakeEncrypt } });
+      await expect(stranger.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).resolves.toBeUndefined();
+      const server = await setup({ bounce, bounceFrom: 'xmpp.example.org', opts: { encrypt: fakeEncrypt } });
+      await expect(server.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: delivery failed');
+      const device = await setup({ bounce, bounceFrom: 'mira@xmpp.example.org/laptop', opts: { encrypt: fakeEncrypt } });
+      await expect(device.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: delivery failed');
+    }
+    // A forged bounce with the real id from a stranger, injected right after the message, is noise too.
+    const forged = await setup({
+      inject: (a) => (a.kind === 'message' ? [`<message type='error' id='${a.id}' from='${EVE}'><error type='cancel'><service-unavailable xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></message>`] : []),
+      opts: { encrypt: fakeEncrypt },
+    });
+    await expect(forged.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).resolves.toBeUndefined();
   });
 });
 
