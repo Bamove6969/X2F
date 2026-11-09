@@ -45,6 +45,8 @@ export interface HoldChangeSummary {
   idleHours?: number;
   memberId?: string;
   roles?: string[];
+  /** A wallet removed (owner p5-7): its label (and `addressEnds` its address's last 6). */
+  label?: string;
 }
 
 /** Hold model v3: `GET /v1/account/hold`. */
@@ -61,6 +63,12 @@ export interface HoldView {
   drafts: Array<HoldChangeSummary & { id: string; createdAt: string }>;
   /** This session's changes are staged instead of applied. */
   changesWait: boolean;
+  /**
+   * Owner p4-8: set for a team member only, their "Holds and waiting changes" right (`none`: they
+   * see only that a hold is on, no list), and `lead`, the team's name.
+   */
+  rights?: 'none' | 'see' | 'cancel' | 'end';
+  lead?: string;
 }
 
 /** A refused call: the HTTP status, the API's error code and the extra fields it sent. */
@@ -219,6 +227,8 @@ export interface AccountOverview {
   accountHoldUntil?: string | null;
   /** Hold model v3: the account's waiting changes (the banner), else null. Optional: older API builds do not send it. */
   pendingChanges?: { count: number; takesEffectAt: string } | null;
+  /** Owner p4-8: for a team member, while the lead's changes wait, when they take effect (nothing more). */
+  teamHold?: { takesEffectAt: string } | null;
   /** Hold model v3: this session's changes are staged and wait 24 h. Optional: older API builds do not send it. */
   changesWait?: boolean;
   /** Hold model v3: a new recovery code may be shown once (`revealRecoveryCode`). Optional: older API builds do not send it. */
@@ -230,8 +240,8 @@ export interface AccountOverview {
   member?: { name: string; roles: TeamRole[] } | null;
 }
 
-/** Plan 2 Task 18: a team member's roles (spec 6.7). */
-export type TeamRole = 'offers' | 'trades';
+/** Plan 2 Task 18: a team member's roles (spec 6.7); owner p4-8 adds the hold rights (each includes the ones before it). */
+export type TeamRole = 'offers' | 'trades' | 'hold-see' | 'hold-cancel' | 'hold-end';
 
 /** Plan 2 Task 18: one member or open invite, as the account owner sees it (`GET /v1/team`). */
 export interface TeamMember {
@@ -459,7 +469,8 @@ export interface AuthApi {
   addWallets(b: { wallets: WalletDraft[] } & Token): Promise<Wallet[] | Staged>;
   getWalletRule(): Promise<WalletRule>;
   /** Needs no confirm; the server always records a `wallet-removed` alert. */
-  removeWallet(id: string): Promise<void>;
+  /** Owner p5-7: `Staged` (202) from a login with just a username and password: the wallet stays until it applies. */
+  removeWallet(id: string): Promise<Staged | undefined>;
   // Logout timer (owner, 2026-10-23)
   getLogoutTimer(): Promise<LogoutTimer>;
   /** Full trader sessions only; applies to the current session at once. */
@@ -472,7 +483,8 @@ export interface AuthApi {
   /** Confirm `team-roles` (`teamRolesAction`). From a login that waits (a username and password), 202 `Staged`. */
   setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember | Staged>;
   /** Confirm `team-remove` (`teamRemoveAction`); the member's sessions end at once. */
-  removeMember(id: string, b: Token): Promise<void>;
+  /** Owner p5-7: `Staged` (202) from a login with just a username and password: the member keeps access until it applies. */
+  removeMember(id: string, b: Token): Promise<Staged | undefined>;
   /** Newest first, at most 200 rows. */
   teamAudit(q?: { from?: string; to?: string; member?: string }): Promise<TeamAuditEntry[]>;
   // The invited person's side (no session yet).
@@ -621,14 +633,14 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     addWallet: (b) => post('/v1/wallets', b),
     addWallets: (b) => post('/v1/wallets', b),
     getWalletRule: () => get('/v1/wallets/rule'),
-    removeWallet: (id) => done(call('DELETE', `/v1/wallets/${seg(id)}`)),
+    removeWallet: (id) => stagedOrDone(call('DELETE', `/v1/wallets/${seg(id)}`)),
     getLogoutTimer: () => get('/v1/account/security/logout-timer'),
     setLogoutTimer: (b) => call('PUT', '/v1/account/security/logout-timer', b),
 
     getTeam: () => get('/v1/team'),
     inviteMember: (b) => post('/v1/team/invites', b),
     setMemberRoles: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
-    removeMember: (id, b) => done(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
+    removeMember: (id, b) => stagedOrDone(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
     teamAudit: (q = {}) => {
       const p = new URLSearchParams();
       if (q.from !== undefined) p.set('from', q.from);

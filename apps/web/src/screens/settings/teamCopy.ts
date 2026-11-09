@@ -8,11 +8,19 @@ import { utcDateTime } from '../../ui/dates.js';
 export const TEAM_PATH = '/settings/team';
 export const JOIN_PATH = '/team/join';
 
-export const ROLE_WORDS: Record<TeamRole, string> = { offers: 'Offers', trades: 'Trades' };
+// Owner p4-8: the "Holds and waiting changes" rights (MemberPermissions board, COPY-UNSIGNED).
+export const ROLE_WORDS: Record<TeamRole, string> = {
+  offers: 'Offers',
+  trades: 'Trades',
+  'hold-see': 'See waiting changes',
+  'hold-cancel': 'Untick or cancel waiting changes',
+  'hold-end': 'End a hold',
+};
 
 /** "Offers", "Trades" or "Offers and Trades". */
 export function rolesText(roles: readonly TeamRole[]): string {
-  return (['offers', 'trades'] as const).filter((r) => roles.includes(r)).map((r) => ROLE_WORDS[r]).join(' and ');
+  const words = (['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'] as const).filter((r) => roles.includes(r)).map((r) => ROLE_WORDS[r]);
+  return words.length <= 2 ? words.join(' and ') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
 }
 
 const when = (iso: string): string => utcDateTime(new Date(iso));
@@ -37,6 +45,8 @@ const AUDIT_WORDS: Record<string, string> = {
   'withdraw-cancel': 'withdrew a cancel',
   'walk-away': 'walked away from the trade',
   'confirm-cancel': 'confirmed the cancel',
+  'hold-changes-cancelled': 'cancelled waiting changes',
+  'hold-changes-approved': 'applied waiting changes now',
 };
 
 export const TEAM_COPY = {
@@ -45,6 +55,8 @@ export const TEAM_COPY = {
   what: [
     'Offers: post, change, turn on or off and remove your offers.',
     'Trades: start trades on offers, mark payments sent, cancel and open disputes.',
+    // Owner p4-8 (MemberPermissions board; COPY-UNSIGNED).
+    'Holds and waiting changes: see your waiting changes, untick or cancel them, or end a hold. Off by default: without these, a member only sees that a hold is on.',
   ] as const,
   // The lead defaults the owner may change (spec 6.7).
   ownerKeeps: 'Payout wallets, your login methods, security settings and the team itself stay with you.',

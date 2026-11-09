@@ -32,7 +32,7 @@ import { StagedNote } from './HoldChanges.js';
 import { JOIN_PATH, ROLE_WORDS, TEAM_COPY as C, TEAM_PATH } from './teamCopy.js';
 import '../screens.css';
 
-const ROLES: readonly TeamRole[] = ['offers', 'trades'];
+const ROLES: readonly TeamRole[] = ['offers', 'trades', 'hold-see', 'hold-cancel', 'hold-end'];
 
 /** The link a new member opens: the code rides in the fragment, which browsers never send. */
 export function inviteLink(origin: string, code: string): string {
@@ -168,8 +168,10 @@ export function Team() {
 
   const remove = (m: TeamMember) =>
     run(async () => {
-      await withConfirm(teamRemoveAction(m.id), (confirmToken) => authApi.removeMember(m.id, { confirmToken }), prove);
-      setSaid(C.removed(m.displayName));
+      const r = await withConfirm(teamRemoveAction(m.id), (confirmToken) => authApi.removeMember(m.id, { confirmToken }), prove);
+      // Owner p5-7: from a username-and-password login the removal waits 24 h like every change.
+      if (isStaged(r)) setStaged(true);
+      else setSaid(C.removed(m.displayName));
       await load();
     });
 

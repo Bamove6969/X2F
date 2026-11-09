@@ -81,10 +81,19 @@ export function describeAction(a: ConfirmAction): string {
   }
 }
 
-/** "Offers", "Trades" or "Offers and Trades" from a comma-separated roles list. */
+/** Owner p4-8 adds the hold rights (MemberPermissions board wording, COPY-UNSIGNED). */
+const ROLE_WORDS: Readonly<Record<string, string>> = {
+  offers: 'Offers',
+  trades: 'Trades',
+  'hold-see': 'See waiting changes',
+  'hold-cancel': 'Untick or cancel waiting changes',
+  'hold-end': 'End a hold',
+};
+
+/** "Offers", "Trades", "Offers and Trades" or a longer list ("Offers, Trades and End a hold") from a comma-separated roles list. */
 function teamRoleWords(roles: string): string {
-  const words = roles.split(',').map((r) => (r === 'offers' ? 'Offers' : r === 'trades' ? 'Trades' : r));
-  return words.join(' and ');
+  const words = roles.split(',').map((r) => ROLE_WORDS[r] ?? r);
+  return words.length <= 2 ? words.join(' and ') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
 }
 
 /** SHA-256 hex (WebCrypto) of the trimmed address. */

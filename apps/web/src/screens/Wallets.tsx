@@ -9,7 +9,7 @@ import { Icon } from '../ui/icons.js';
 import { Sheet } from '../ui/Sheet.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from './auth/ConfirmSheet.js';
 import { refusalText } from './auth/refusals.js';
-import { StagedNote, changesCapOf } from './settings/HoldChanges.js';
+import { StagedNote, changesCapOf, reportChangesCap } from './settings/HoldChanges.js';
 import {
   APP_LABELS,
   MAX_WALLET_BATCH,
@@ -404,9 +404,16 @@ function WalletsScreen() {
     setError(null);
     try {
       // Removal cannot redirect money, so it needs no confirm; the API always saves an alert.
-      await api(`/v1/wallets/${encodeURIComponent(w.id)}`, { method: 'DELETE' });
+      const r = await api<unknown>(`/v1/wallets/${encodeURIComponent(w.id)}`, { method: 'DELETE' });
+      // Owner p5-7: from a username-and-password login the removal is a draft that waits 24 h once
+      // submitted; the wallet stays listed and usable until then.
+      if (isStaged(r)) {
+        setStaged(true);
+        return;
+      }
       setWallets((prev) => (prev ?? []).filter((x) => x.id !== w.id));
-    } catch {
+    } catch (e) {
+      if (reportChangesCap(e)) return;
       setError('That wallet could not be removed. Try again.');
     }
   }

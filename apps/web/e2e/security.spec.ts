@@ -394,7 +394,7 @@ test('a staged logout-timer change is a draft: it keeps the old value, then is r
 
   const drafts = page.locator('[data-part="change-drafts"]');
   await expect(drafts.locator('[data-part="change"]')).toContainText('Logged out after 2 hours with no activity');
-  await expect(drafts.locator('[data-part="drafts-wait"]')).toContainText('apply 24 hours after you submit them');
+  await expect(drafts.locator('[data-part="drafts-wait"]')).toContainText('Every change, removals included, applies after 24 h');
   await expect(drafts.locator('[data-part="drafts-stronger"]')).toContainText('Add a passkey, a security key or a PGP key');
   await drafts.locator('[data-part="drafts-submit"]').click();
   await expect(page.locator('[data-part="changes-status"]')).toHaveText('Submitted. Your changes take effect on 2 Jan 2099, 15:00 UTC.');
@@ -463,7 +463,7 @@ test('G58: a strong login during the wait sees the changes and can approve them 
   expect(approved).toEqual({ ids: [D1] });
 });
 
-test('the banner shows waiting changes on other screens; a team member sees none of it', async ({ page }) => {
+test('the banner shows waiting changes on other screens; a team member sees none of it, only the hold view their rights allow (owner p4-8)', async ({ page }) => {
   await base(page, { me: { pendingChanges: { count: 1, takesEffectAt: DUE } } });
   await page.goto('/settings/devices');
   const banner = page.locator('[data-part="changes-banner-pending"]');
@@ -474,7 +474,8 @@ test('the banner shows waiting changes on other screens; a team member sees none
   await page.unroute('**/v1/account/me');
   await page.route('**/v1/account/me', json(overview({ member: { name: 'Aurora', roles: ['trades'] }, pendingChanges: null })));
   await page.goto('/settings/changes');
-  await expect(page.locator('[data-owner-only]')).toBeVisible();
+  await expect(page.locator('[data-screen="account-changes"]')).toBeVisible();
+  await expect(page.locator('[data-owner-only]')).toHaveCount(0);
   await expect(page.locator('[data-part="changes-banner"]')).toHaveCount(0);
 });
 

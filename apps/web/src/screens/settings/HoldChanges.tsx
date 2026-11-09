@@ -13,8 +13,11 @@
  *   PGP key (`changesWait` false) sees the same view with Approve now (G58: `POST
  *   /v1/account/hold/changes/approve { ids }`, the API route is being added) and Make changes.
  * - `ChangesBanner` (the app shell): "N changes take effect on <date>" with Review changes while
- *   changes wait, from `me().pendingChanges`. A team member's overview has none (G31), and the
- *   panel's API answers a member 403, so a member never sees or cancels them.
+ *   changes wait, from `me().pendingChanges`. A team member (owner p4-8, HoldMember board) sees "A
+ *   hold is on" instead (`me().teamHold`), and the panel shows them what the right the lead granted
+ *   allows (`HoldView.rights`): none (that a hold is on, its countdown), see (the list), cancel
+ *   (ticks and Cancel all changes), end (also End the hold, from their strong login). Removals wait
+ *   like every change (owner p5-7).
  * - `ChangesCapPopup` (the app shell): 409 `too-many-changes` from any screen, through CantDoThat
  *   (G36: at most 20).
  */
@@ -32,8 +35,7 @@ import { CANT_DO_TITLE, TOO_MANY_CHANGES_CODE, holdChangesCantDoText } from '../
 import { Notice } from '../../ui/Notice.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { authApi } from '../auth/authApi.js';
-import { CHANGES_PATH, HOLD_COPY as C, NEW_CODE_COPY, changeWords } from './holdCopy.js';
-import { OwnerOnly } from './OwnerOnly.js';
+import { CHANGES_PATH, HOLD_COPY as C, MEMBER_HOLD_COPY as M, NEW_CODE_COPY, changeWords } from './holdCopy.js';
 import '../screens.css';
 
 const CHANGED = 'x2f:hold-changed';
@@ -215,7 +217,7 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
         const keep = waiting.filter((c) => !unticked.has(c.id)).map((c) => c.id);
         await cancelIds([...unticked]);
         if (keep.length > 0) await authApi.approveHoldChanges({ ids: keep });
-        return { kind: 'done', text: C.approved };
+        return { kind: 'done', text: isMember ? M.ended : C.approved };
       } catch (e) {
         if (e instanceof AuthApiError && e.code === 'changes-changed') return { kind: 'error', text: C.changed };
         return { kind: 'error', text: C.approveFailed };
@@ -226,8 +228,9 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
     setAsk(false);
     void after(async () => {
       try {
+        const n = waiting.length;
         await authApi.cancelHoldChanges();
-        return { kind: 'done', text: C.cancelled };
+        return { kind: 'done', text: isMember ? M.cancelled(n) : C.cancelled };
       } catch {
         return { kind: 'error', text: C.cancelFailed };
       }
@@ -237,8 +240,16 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
   const drafts = view?.drafts ?? [];
   const waiting = view?.changes.items ?? [];
   const due = view?.changes.takesEffectAt ?? null;
+  // Owner p4-8: a team member's view follows the hold right the lead granted (`rights`).
+  const rights = view?.rights;
+  const isMember = rights !== undefined;
+  const lead = view?.lead ?? '';
   // This session's own changes apply at once (a passkey, security key or PGP key login): G58's Approve now.
-  const strong = view !== null && !view.changesWait;
+  const strong = view !== null && !view.changesWait && !isMember;
+  const canTick = !isMember || rights === 'cancel' || rights === 'end';
+  const canApprove = isMember ? rights === 'end' : strong;
+  // A member without a right still sees that a hold is on (the date, no list).
+  const holdOn = waiting.length > 0 || (isMember && due !== null);
 
   const statusLine =
     status === null ? null : status.kind === 'error' ? (
@@ -259,7 +270,7 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
     ) : null;
   }
   if (view === null) return null;
-  if (drafts.length === 0 && waiting.length === 0) {
+  if (drafts.length === 0 && !holdOn) {
     if (statusLine !== null) return <section className="x2f-card" data-part="account-changes">{statusLine}</section>;
     return standalone ? (
       <section className="x2f-card" data-part="account-changes">
@@ -316,20 +327,37 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
           </Button>
         </section>
       ) : null}
-      {waiting.length > 0 ? (
-        <section className="x2f-card" data-part="changes-waiting" aria-labelledby={`${askId}-waiting`}>
+      {holdOn ? (
+        <section className="x2f-card" data-part="changes-waiting" data-rights={rights} aria-labelledby={`${askId}-waiting`}>
           <h2 className="x2f-card__title" id={`${askId}-waiting`}>
-            {C.waitingTitle}
+            {isMember ? M.title : C.waitingTitle}
           </h2>
+          {isMember ? (
+            <Notice tone="caution" live="off" data-part="member-hold">
+              <p>{M.hero(lead)}</p>
+              <p>{M.why(lead)}</p>
+            </Notice>
+          ) : null}
           {due !== null ? (
             <>
-              <p className="x2f-note" data-part="waiting-when">
-                {C.banner(waiting.length, due)}
-              </p>
+              {!isMember ? (
+                <p className="x2f-note" data-part="waiting-when">
+                  {C.banner(waiting.length, due)}
+                </p>
+              ) : null}
               {/* g65: a countdown while the changes are held. */}
               <p className="x2f-change__countdown" data-part="waiting-countdown">
-                <span className="x2f-change__k">{C.countdownLead}</span> <Countdown deadline={due} serverClock={deviceClock} format="minutes" />
+                <span className="x2f-change__k">{isMember ? M.endsIn : C.countdownLead}</span> <Countdown deadline={due} serverClock={deviceClock} format="minutes" />
               </p>
+            </>
+          ) : null}
+          {isMember ? (
+            <>
+              <p className="x2f-note">{M.trading}</p>
+              <p className="x2f-note" data-part="member-rights">
+                {rights === 'none' ? M.none(lead) : rights === 'see' ? M.see : M.cancel}
+              </p>
+              {waiting.length > 0 ? <p className="x2f-list__time">{M.submittedBy(lead)}</p> : null}
             </>
           ) : null}
           {strong ? (
@@ -337,11 +365,15 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
               <p>{C.strongNote}</p>
             </Notice>
           ) : null}
-          <p className="x2f-note">{C.untickHelp}</p>
+          {canTick && !isMember ? <p className="x2f-note">{C.untickHelp}</p> : null}
+          {waiting.length > 0 ? (
           <ul className="x2f-list" data-part="waiting-list">
             {waiting.map((c) => {
               const w = changeWords(c, names);
-              const meta = [...(due !== null ? [C.applies(due)] : []), c.mine ? C.fromHere : c.by !== null ? C.from(c.by) : null].filter((m): m is string => m !== null);
+              const removal = c.kind === 'remove-wallet' || c.kind === 'team-remove';
+              const effect = due !== null ? [removal ? C.removes(due) : C.applies(due)] : [];
+              const from = isMember ? null : c.mine ? C.fromHere : c.by !== null ? C.from(c.by) : null;
+              const meta = [...effect, from].filter((m): m is string => m !== null);
               const kept = !unticked.has(c.id);
               return (
                 <ChangeRow
@@ -349,7 +381,7 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
                   {...w}
                   meta={meta}
                   action={
-                    <Checkbox
+                    !canTick ? null : <Checkbox
                       checked={kept}
                       disabled={busy}
                       aria-label={C.keepLabel(w.title)}
@@ -368,19 +400,23 @@ export function AccountChanges({ standalone = false }: { standalone?: boolean })
               );
             })}
           </ul>
-          {strong ? (
+          ) : null}
+          {canApprove && isMember && waiting.length > 0 ? <p className="x2f-note" data-part="member-end-note">{M.endNote}</p> : null}
+          {canApprove && waiting.length > 0 ? (
             <Button variant="primary" disabled={busy || unticked.size === waiting.length} onClick={() => void approve()} data-part="waiting-approve">
-              {C.approve(waiting.length - unticked.size)}
+              {isMember ? M.end : C.approve(waiting.length - unticked.size)}
             </Button>
           ) : null}
-          {unticked.size > 0 ? (
+          {canTick && unticked.size > 0 ? (
             <Button variant="secondary" disabled={busy} onClick={() => void cancelUnticked()} data-part="waiting-cancel-unticked">
               {C.cancelUnticked(unticked.size)}
             </Button>
           ) : null}
-          <Button variant="danger-outline" disabled={busy} onClick={() => setAsk(true)} data-part="waiting-cancel-all">
-            {C.cancelAll}
-          </Button>
+          {canTick && waiting.length > 0 ? (
+            <Button variant="danger-outline" disabled={busy} onClick={() => setAsk(true)} data-part="waiting-cancel-all">
+              {C.cancelAll}
+            </Button>
+          ) : null}
           {strong ? (
             <Link className="x2f-button x2f-button--tertiary" to="/settings/security#methods-h" data-part="waiting-make-changes">
               {C.makeChanges}
@@ -409,8 +445,8 @@ export function AccountChangesScreen() {
   const { search } = useLocation();
   // After a strong login (G58) the screen comes first and Continue goes on where the person was going.
   const onward = new URLSearchParams(search).has('returnTo') ? returnToFrom(search) : null;
+  // Owner p4-8: a team member comes here too; the API answers what their hold right allows.
   return (
-    <OwnerOnly screen="account-changes">
       <main className="x2f-screen" data-screen="account-changes">
         <h1 className="x2f-screen__title">{C.screenTitle}</h1>
         <AccountChanges standalone />
@@ -420,7 +456,6 @@ export function AccountChangesScreen() {
           </Link>
         ) : null}
       </main>
-    </OwnerOnly>
   );
 }
 
@@ -435,9 +470,23 @@ export function ChangesBanner() {
   const { pathname } = useLocation();
   const [, bump] = useState(0);
   useOnHoldChanged(useCallback(() => bump((n) => n + 1), []));
-  if (session.status !== 'signed-in' || memberOf(session) !== null) return null;
+  if (session.status !== 'signed-in') return null;
   if (pathname === CHANGES_PATH || pathname === '/settings/security') return null;
   const me = session.me;
+  // Owner p4-8: a team member is told only that a hold is on (HoldMember board).
+  if (memberOf(session) !== null) {
+    if ((me.teamHold ?? null) === null) return null;
+    return (
+      <div className="x2f-changes-banner" data-part="changes-banner">
+        <p role="status" data-part="changes-banner-member">
+          {M.banner}{' '}
+          <Link className="x2f-link" to={CHANGES_PATH}>
+            {M.bannerLink}
+          </Link>
+        </p>
+      </div>
+    );
+  }
   const pending = me.pendingChanges ?? null;
   const code = me.recoveryCodeToShow === true;
   if (pending === null && !code) return null;

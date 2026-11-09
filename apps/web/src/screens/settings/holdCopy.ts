@@ -67,6 +67,16 @@ export function changeWords(c: HoldChangeSummary, names: ReadonlyMap<string, str
         after: `${n > 0 ? `${plural(n, 'new wallet', 'new wallets')} added` : 'New wallets added'}${ends !== '' ? `: ${ends}` : ''}`,
       };
     }
+    // Owner p5-7: removals wait like every change (HoldChange board rows, COPY-UNSIGNED).
+    case 'remove-wallet': {
+      const end = c.addressEnds?.[0];
+      const name = [c.label, end !== undefined ? `…${end}` : undefined].filter((x) => x !== undefined && x !== '').join(' · ');
+      return { title: 'Wallet removed', before: name !== '' ? name : 'A payout wallet', after: 'Removed' };
+    }
+    case 'team-remove': {
+      const who = c.memberId !== undefined ? names.get(c.memberId) : undefined;
+      return { title: 'Team member removed', before: who ?? 'A team member', after: 'Removed' };
+    }
     case 'team-roles': {
       const who = c.memberId !== undefined ? names.get(c.memberId) : undefined;
       const roles = rolesText((c.roles ?? []) as TeamRole[]);
@@ -92,8 +102,8 @@ export const HOLD_COPY = {
   removeLabel: (title: string) => `Remove the draft: ${title}`,
   // Told before submitting (owner G29: a username-and-password person is advised of the 24-hour hold).
   waitTitle: 'Applies after a 24-hour wait',
-  waitBody:
-    'You logged in with just your username and password, so these changes apply 24 hours after you submit them. Your account keeps working as normal in the meantime, and anyone logged in to your account can cancel them.',
+  // HoldChange board (p5-7), COPY-UNSIGNED.
+  waitBody: 'You logged in with just a username and password. Every change, removals included, applies after 24 h. Anyone logged in can cancel during the wait.',
   telling: 'We tell you straight away on every device you use, with a list of these changes.',
   // Owner G58 (7 Nov): a strong login no longer throws them away; it sees them and approves, cancels or changes them.
   throwAway: 'If you log in with a passkey, a security key or a PGP key before then, you can approve them at once, cancel them or change them.',
@@ -110,6 +120,8 @@ export const HOLD_COPY = {
   banner: (n: number, iso: string) => `${n === 1 ? '1 change takes' : `${n} changes take`} effect on ${utcDateTime(new Date(iso))}`,
   countdownLead: 'Time left',
   applies: (iso: string) => `Applies ${utcDateTime(new Date(iso))}`,
+  // Owner p5-7: a removal applies at the same time as the rest, nothing early.
+  removes: (iso: string) => `Removed ${utcDateTime(new Date(iso))}`,
   from: (device: string) => `From ${device}`,
   fromHere: 'From this device',
   keepLabel: (title: string) => `Keep the change: ${title}`,
@@ -132,6 +144,28 @@ export const HOLD_COPY = {
   loadFailed: 'Could not load your account changes.',
   none: 'No changes are waiting.',
   review: 'Review changes',
+} as const;
+
+/**
+ * Owner p4-8: a team member's view while the lead's changes wait (HoldMember board, its `rights`
+ * tweak: none, see, cancel, end). COPY-UNSIGNED: every sentence is the board's draft copy.
+ */
+export const MEMBER_HOLD_COPY = {
+  title: 'A hold is on',
+  hero: (lead: string) => `${lead}'s team is on a 24-hour hold. Some changes are waiting; they apply when it ends.`,
+  why: (lead: string) => `${lead} logs in with just a username and password, so team changes wait 24 h, even when a member with a stronger login makes them.`,
+  endsIn: 'Ends in',
+  trading: 'You can keep trading as usual.',
+  none: (lead: string) => `What you can see: that a hold is on. Ask ${lead} if you need to know more.`,
+  see: 'You can see these changes but not change them.',
+  cancel: "You can untick a change so it won't apply, or cancel all of them.",
+  submittedBy: (lead: string) => `Submitted by ${lead} · username and password`,
+  endNote: 'Needs your passkey, security key or PGP key. Ending the hold applies every ticked change now.',
+  end: 'End the hold',
+  ended: 'Hold ended. Every ticked change applied just now. The team is back to normal.',
+  cancelled: (n: number) => `Changes cancelled. None of the ${n === 1 ? '1 change' : `${n} changes`} will apply. Nothing is waiting any more.`,
+  banner: 'A hold is on.',
+  bannerLink: 'See the hold',
 } as const;
 
 /** The new recovery code (RecoveryCode board, reminder and show steps; owner G32). COPY-UNSIGNED */

@@ -9,7 +9,7 @@ import { AuthApiError } from '@x2f/auth-client';
 import { AccountChanges, AccountChangesScreen, ChangesBanner, ChangesCapPopup, StagedNote, changesCapOf, reportChangesCap } from '../src/screens/settings/HoldChanges.js';
 import { NewRecoveryCode } from '../src/screens/settings/NewRecoveryCode.js';
 import { Security } from '../src/screens/settings/Security.js';
-import { CHANGES_PATH, HOLD_COPY, NEW_CODE_COPY, changeWords, codeGroups } from '../src/screens/settings/holdCopy.js';
+import { CHANGES_PATH, HOLD_COPY, MEMBER_HOLD_COPY, NEW_CODE_COPY, changeWords, codeGroups } from '../src/screens/settings/holdCopy.js';
 import { alertDetail, alertWords } from '../src/screens/settings/Alerts.js';
 import { refreshSession } from '../src/session/useSession.js';
 import { utcDateTime } from '../src/ui/dates.js';
@@ -151,7 +151,7 @@ describe('AccountChanges: the drafts in one review, then one submit', () => {
     // The member's name, from the team list.
     expect(rows[1]!.textContent).toContain("Aurora's roles");
     expect(byPart(host, 'drafts-count')!.textContent).toBe('2 changes · up to 20');
-    expect(byPart(host, 'drafts-wait')!.textContent).toContain('these changes apply 24 hours after you submit them');
+    expect(byPart(host, 'drafts-wait')!.textContent).toContain('Every change, removals included, applies after 24 h.');
     expect(byPart(host, 'drafts-wait')!.textContent).toContain(HOLD_COPY.throwAway);
     expect(byPart(host, 'drafts-stronger')!.textContent).toContain('Add a passkey, a security key or a PGP key');
     const submit = byPart(host, 'drafts-submit')!;
@@ -312,7 +312,7 @@ describe('AccountChanges: the waiting changes (g65), with their date, a countdow
     expect(byPart(evil.host, 'changes-continue')!.getAttribute('href')).not.toContain('evil');
   });
 
-  it('its own screen says when nothing waits, and a team member gets the owner-only refusal instead (G31)', async () => {
+  it('its own screen says when nothing waits; a team member without hold rights sees only that a hold is on (owner p4-8)', async () => {
     const { host } = render(
       <MemoryRouter>
         <AccountChangesScreen />
@@ -329,8 +329,93 @@ describe('AccountChanges: the waiting changes (g65), with their date, a countdow
       </MemoryRouter>,
     );
     await settle();
-    expect(member.host.querySelector('[data-owner-only]')).not.toBeNull();
-    expect(byPart(member.host, 'changes-none')).toBeNull();
+    // No hold: the member's screen says nothing waits.
+    expect(member.host.querySelector('[data-owner-only]')).toBeNull();
+    expect(byPart(member.host, 'changes-none')).not.toBeNull();
+  });
+});
+
+describe("owner p4-8: a team member's view of the lead's hold (HoldMember board, rights none / see / cancel / end)", () => {
+  const items = [
+    { id: W1, kind: 'remove-wallet', label: 'Cake Wallet', addressEnds: ['k3Fzab'], createdAt: DUE, submittedAt: DUE, by: 'Laptop', mine: false },
+    { id: W2, kind: 'team-remove', memberId: 'm1', createdAt: DUE, submittedAt: DUE, by: 'Laptop', mine: false },
+  ];
+  const memberView = (rights: string, list = items) => ({
+    accountHold: null, changes: { count: rights === 'none' ? 0 : list.length, takesEffectAt: DUE, items: rights === 'none' ? [] : list },
+    drafts: [], changesWait: false, rights, lead: 'satoshi_ghost',
+  });
+  const show = async (rights: string) => {
+    me = { ...me, member: { name: 'desk_ana', roles: ['trades'] } };
+    hold = { status: 200, body: memberView(rights) };
+    const r = render(
+      <MemoryRouter>
+        <AccountChangesScreen />
+      </MemoryRouter>,
+    );
+    await settle();
+    return r.host;
+  };
+
+  it('none: "A hold is on", the countdown and what they can see; no list and no buttons', async () => {
+    const host = await show('none');
+    expect(byPart(host, 'changes-waiting')!.getAttribute('data-rights')).toBe('none');
+    expect(host.textContent).toContain(MEMBER_HOLD_COPY.title);
+    expect(byPart(host, 'member-hold')!.textContent).toContain(MEMBER_HOLD_COPY.hero('satoshi_ghost'));
+    expect(byPart(host, 'waiting-countdown')!.textContent).toContain(MEMBER_HOLD_COPY.endsIn);
+    expect(byPart(host, 'member-rights')!.textContent).toBe(MEMBER_HOLD_COPY.none('satoshi_ghost'));
+    expect(byPart(host, 'waiting-list')).toBeNull();
+    expect(byPart(host, 'waiting-cancel-all')).toBeNull();
+    expect(byPart(host, 'waiting-approve')).toBeNull();
+  });
+
+  it('see: the list read-only, removals reading "Removed <date>"', async () => {
+    const host = await show('see');
+    const rows = allByPart(host, 'change');
+    expect(rows[0]!.textContent).toContain('Wallet removed');
+    expect(rows[0]!.textContent).toContain('Cake Wallet · …k3Fzab');
+    expect(rows[0]!.textContent).toContain(`Removed ${utcDateTime(new Date(DUE))}`);
+    expect(rows[1]!.textContent).toContain('Team member removed');
+    expect(byPart(host, 'member-rights')!.textContent).toBe(MEMBER_HOLD_COPY.see);
+    expect(allByPart(host, 'waiting-keep')).toEqual([]);
+    expect(byPart(host, 'waiting-cancel-all')).toBeNull();
+    expect(byPart(host, 'waiting-approve')).toBeNull();
+  });
+
+  it('cancel: ticks and Cancel all changes, no End the hold', async () => {
+    const host = await show('cancel');
+    expect(allByPart(host, 'waiting-keep')).toHaveLength(2);
+    expect(byPart(host, 'waiting-cancel-all')).not.toBeNull();
+    expect(byPart(host, 'waiting-approve')).toBeNull();
+    click(byPart(host, 'waiting-cancel-all')!);
+    await settle();
+    click(byPart(document.body, 'cancel-yes')!);
+    await settle();
+    expect(calls.filter((c) => c.method === 'DELETE').map((c) => c.url)).toEqual(['/v1/account/hold/changes']);
+    expect(byPart(host, 'changes-status')!.textContent).toBe(MEMBER_HOLD_COPY.cancelled(2));
+  });
+
+  it('end: End the hold applies the ticked changes now', async () => {
+    replies['POST /v1/account/hold/changes/approve'] = { status: 200, body: { status: 'applied', count: 2 } };
+    const host = await show('end');
+    expect(byPart(host, 'member-end-note')!.textContent).toBe(MEMBER_HOLD_COPY.endNote);
+    const end = byPart(host, 'waiting-approve')!;
+    expect(end.textContent).toBe(MEMBER_HOLD_COPY.end);
+    click(end);
+    await settle();
+    expect(calls.find((c) => c.method === 'POST')).toMatchObject({ url: '/v1/account/hold/changes/approve', body: { ids: [W1, W2] } });
+    expect(byPart(host, 'changes-status')!.textContent).toBe(MEMBER_HOLD_COPY.ended);
+  });
+
+  it('the banner tells a member only that a hold is on', async () => {
+    me = { ...me, member: { name: 'desk_ana', roles: ['trades'] }, teamHold: { takesEffectAt: DUE } };
+    const { host } = render(
+      <MemoryRouter initialEntries={['/sell']}>
+        <ChangesBanner />
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(byPart(host, 'changes-banner-member')!.textContent).toBe(`${MEMBER_HOLD_COPY.banner} ${MEMBER_HOLD_COPY.bannerLink}`);
+    expect(host.textContent).not.toContain('changes take');
   });
 });
 

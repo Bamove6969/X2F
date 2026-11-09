@@ -20,7 +20,7 @@ describe('the 24-hour hold', () => {
 
   it('hold v3: a staged change is a draft; the review says the 24-hour wait and how a strong login throws it away', () => {
     expect(HOLD_COPY.staged).toBe('Saved as a draft. Nothing changes until you submit it.');
-    expect(HOLD_COPY.waitBody).toContain('these changes apply 24 hours after you submit them');
+    expect(HOLD_COPY.waitBody).toContain('Every change, removals included, applies after 24 h');
     expect(HOLD_COPY.throwAway).toContain('approve them at once, cancel them or change them');
     expect(HOLD_COPY.submitted(UNTIL)).toBe(`Submitted. Your changes take effect on ${utcTime(new Date(UNTIL))}.`);
   });
@@ -96,7 +96,7 @@ describe('owner 6 Nov 2026: Q14 wording and Q81 (a PGP key login is strong)', ()
 
   it('Q14: never "password only" or "password alone": it is a username and password at minimum', () => {
     for (const t of texts()) expect(t).not.toMatch(NOT_PASSWORD_ONLY);
-    expect(HOLD_COPY.waitBody).toContain('You logged in with just your username and password');
+    expect(HOLD_COPY.waitBody).toContain('You logged in with just a username and password');
     expect(WEAK_SESSION_TEXT).toContain('This device logged in with just a username and password');
   });
 
