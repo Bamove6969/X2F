@@ -3,12 +3,12 @@
 // the route that waits for the API's frozen state (NEEDS_API_FROZEN_STATE).
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AccountFrozen, AccountFrozenRoute, FROZEN_PATH, incidentId, setFrozenSource, type FrozenState } from '../src/screens/account/AccountFrozen.js';
+import { AccountFrozen, AccountFrozenRoute, FROZEN_PATH, setFrozenSource, type FrozenState } from '../src/screens/account/AccountFrozen.js';
 import { fire, render } from './render.js';
 
 const STATE: FrozenState = {
   since: '2026-11-09T10:12:00.000Z',
-  dispute: { code: '7F3A-9C21-4FTR-8WPN', side: 'selling', amountAtomic: '500000000000', counterparty: 'nightowl_44' },
+  dispute: { code: '7F3A-9C21-4FTR-8WPN', incidentId: 'K7QM4T2X9', side: 'selling', amountAtomic: '500000000000', counterparty: 'nightowl_44' },
 };
 
 function Where() {
@@ -41,7 +41,7 @@ describe('AccountFrozen (D-016)', () => {
     expect(facts).toEqual([
       ['Frozen since', '9 Nov 2026, 10:12 UTC'],
       ['Ends', 'When a moderator lifts it'],
-      ['Dispute', '#7F3A9C21 · Selling 0.500000 XMR to nightowl_44'],
+      ['Dispute', '#K7QM4T2X9 · Selling 0.500000 XMR to nightowl_44'],
     ]);
     expect(hero.querySelector('[data-username]')?.textContent).toBe('nightowl_44');
   });
@@ -69,8 +69,15 @@ describe('AccountFrozen (D-016)', () => {
     expect(host.querySelector('[data-where]')?.getAttribute('data-where')).toBe('/');
   });
 
-  it('the incident ID is the first 8 characters of the trade code', () => {
-    expect(incidentId('7F3A-9C21-4FTR-8WPN')).toBe('7F3A9C21');
+  it("the incident ID is the dispute's, as the API gives it (G37), never derived from the trade code; none given, none shown", () => {
+    const { host } = mount(<AccountFrozen state={STATE} />);
+    const dd = () => [...host.querySelectorAll('dl > div')].find((d) => d.querySelector('dt')?.textContent === 'Dispute')!.querySelector('dd')!;
+    expect(dd().querySelector('.x2f-frozen__mono')?.textContent).toBe('#K7QM4T2X9');
+    expect(dd().textContent).not.toContain('7F3A');
+    const none = mount(<AccountFrozen state={{ ...STATE, dispute: { ...STATE.dispute, incidentId: null } }} />);
+    const noneDd = [...none.host.querySelectorAll('dl > div')].find((d) => d.querySelector('dt')?.textContent === 'Dispute')!.querySelector('dd')!;
+    expect(noneDd.textContent).toBe('Selling 0.500000 XMR to nightowl_44');
+    expect(noneDd.textContent).not.toContain('#');
   });
 
   it('the route shows the frozen state its source gives, and goes home while there is none (NEEDS_API_FROZEN_STATE)', () => {

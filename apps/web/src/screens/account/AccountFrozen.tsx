@@ -23,10 +23,15 @@ import './frozen.css';
 
 export const FROZEN_PATH = '/account/frozen';
 
-/** What the notice shows: when the freeze started and the dispute it came from (the viewer's side of that trade). */
+/**
+ * What the notice shows: when the freeze started and the dispute it came from (the viewer's side of
+ * that trade). `incidentId` is the dispute's own incident ID as the API stores it (G37: 9 characters,
+ * disputes.incident_id, the one the trade header and the moderator show), never derived here; null
+ * while the API gives none, and then the notice shows no ID.
+ */
 export interface FrozenState {
   since: string;
-  dispute: { code: string; side: 'buying' | 'selling'; amountAtomic: string; counterparty: string };
+  dispute: { code: string; incidentId: string | null; side: 'buying' | 'selling'; amountAtomic: string; counterparty: string };
 }
 
 let source: (() => FrozenState | null) | null = null;
@@ -34,11 +39,6 @@ let source: (() => FrozenState | null) | null = null;
 /** Installs where the frozen state comes from (the API, once it says; a test); null removes it. */
 export function setFrozenSource(s: (() => FrozenState | null) | null): void {
   source = s;
-}
-
-/** The dispute's incident ID: the first 8 characters of the trade code ("#7F3A9C21"). */
-export function incidentId(code: string): string {
-  return code.replace(/-/g, '').slice(0, 8);
 }
 
 const HOME = '/';
@@ -78,7 +78,12 @@ export function AccountFrozen({ state }: { state: FrozenState }) {
           <div>
             <dt>Dispute</dt>
             <dd>
-              <span className="x2f-frozen__mono">#{incidentId(d.code)}</span> · {d.side === 'selling' ? 'Selling' : 'Buying'}{' '}
+              {d.incidentId !== null && (
+                <>
+                  <span className="x2f-frozen__mono">#{d.incidentId}</span> ·{' '}
+                </>
+              )}
+              {d.side === 'selling' ? 'Selling' : 'Buying'}{' '}
               <span className="x2f-frozen__mono">{formatXmr(BigInt(d.amountAtomic))}</span> XMR {d.side === 'selling' ? 'to' : 'from'}{' '}
               <span data-username="">{d.counterparty}</span>
             </dd>
