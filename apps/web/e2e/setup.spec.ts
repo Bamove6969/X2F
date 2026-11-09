@@ -11,7 +11,7 @@ import { expectParity, type ParityViewport } from './parity.js';
 
 const PHONES = ['390x844', '360x800'] as const satisfies readonly ParityViewport[];
 
-const TERMS_VERSION = '2026-10-17';
+const TERMS_VERSION = '2026-11-09';
 /** The board's example message (SetupPgpChallenge), so the page shows exactly the board's text. */
 const BOARD_MESSAGE = '-----BEGIN PGP MESSAGE-----\nhF4DkR7c2x9mPq0SAQdA4vJ8u2Lk0aQz\nWm3n…\n-----END PGP MESSAGE-----';
 /** A 95-character standard address ending like the board's example ("…k3Fz"). */
@@ -602,7 +602,7 @@ for (const v of PHONES) {
     await page.goto('/setup');
     // The screen renders once the session check answers (signed out): wait for it, not a race.
     await expect(page.locator('[data-part="terms-accept"]')).toBeVisible();
-    await expect(page.locator('[data-part="terms-text"]')).toContainText('End of Terms. Version 2026-10-17.');
+    await expect(page.locator('[data-part="terms-text"]')).toContainText(`End of Terms. Version ${TERMS_VERSION}.`);
     await expectParity(page, 'SetupTerms', { viewport: v });
   });
 

@@ -192,7 +192,7 @@ describe('SignaturePad', () => {
 // to move whenever the words do. Editing the Terms fails here until TERMS_TEXT_VERSION (and the
 // server's X2F_TERMS_VERSION) moves too; then put the new version and hash in this pin.
 describe('the Terms text is pinned to its version', () => {
-  const PIN = { version: '2026-10-17', sha256: 'e289f18543876a3c93016d0b663bc560ec5520fbaa8353a4896281ba388f01f3' };
+  const PIN = { version: '2026-11-09', sha256: 'fa32ddddee4dd3fabb41fe562184ee93bcce15d4eae9a5070c30e5b03f86e2fc' };
 
   it('has not changed without a new version', () => {
     const text = JSON.stringify({ TERMS_DRAFT_NOTE, KEY_POINTS, PRIVACY_HEADING, TERMS });
