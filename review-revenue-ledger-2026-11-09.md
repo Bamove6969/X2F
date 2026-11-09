@@ -19,7 +19,9 @@ There are four Low findings on the sweep pass (F1 to F4). F1 needs a lead or own
 
 ## Tests run (serialised runner, single files, on 91c1af68)
 
-RESULTS_PLACEHOLDER
+- `apps/api/test/staff/revenue.test.ts`: 1 file, **27 passed**, 0 failed.
+- `apps/api/test/staff/feeSweep.test.ts`: 1 file, **17 passed**, 0 failed.
+- I did not run `schema.test.ts` or the full check (it holds the test lock). I checked the schema lists by reading the code.
 
 ## Checklist
 
