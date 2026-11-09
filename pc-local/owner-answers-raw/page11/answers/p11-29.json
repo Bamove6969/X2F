@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-09T03:43:22.311Z",
+  "choice": null,
+  "n": 29,
+  "own": "Research needs to be done on each individual payment method to find out what the average time period is for receiving that payment method. Whatever the average is will become the amount of time that we make the person wait before they are able to cancel, and also the amount of time that the person has to send that payment type. You might want to send out a whole bunch of research agents, maybe eight of them, to research each and every payment type we have to find out what the average time period is to receive that payment method.",
+  "question": "How long should a buyer get to pay, per payment type?"
+}

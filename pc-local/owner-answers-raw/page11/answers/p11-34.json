@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-09T03:56:18.579Z",
+  "choice": "Yes: a correct recovery code always gets in",
+  "n": 34,
+  "own": "",
+  "question": "Should a correct recovery code always get in, even when logins are being throttled?"
+}

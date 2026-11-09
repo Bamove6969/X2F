@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-09T03:29:56.500Z",
+  "choice": null,
+  "n": 21,
+  "own": "If they have a weak authentication system, the team lead just a username and password, and they invite a new team member, then that team member can accept and the team lead can approve, but they won't be able to set up the new team member for 24 hours. What will happen is the invite goes out, the new team member accepts, a notification goes to the main agent and maybe a secure Jabber notification as well. Once the new team member accepts, normally the team lead would then log into the account and get to use all the granular settings and fine-tune the abilities and features that that new agent's going to have. But if they just have a username and password, we will let them go in and set up all those things and submit them, but the agent is not going to come into effect until 24 hours is up. So that's also going to encourage them to try and switch to more secure authentication methods so their changes go into effect right away.",
+  "question": "From a username-and-password login, should inviting a new team member be held 24 hours like other changes, or refused outright?"
+}

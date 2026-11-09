@@ -1,0 +1,7 @@
+{
+  "at": "2026-11-09T03:24:49.097Z",
+  "choice": null,
+  "n": 19,
+  "own": "I'm okay with a moderator using a username, password, PGP key, and passkey, and just lacking a security key. As long as he has all the other ones, then it's okay if he doesn't have a security key.",
+  "question": "Must moderators' passkeys be hardware devices?"
+}
