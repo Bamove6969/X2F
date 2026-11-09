@@ -248,6 +248,18 @@ describe('invites', () => {
     expect((await invitee().post(acceptUrl(fresh.token, '/key/start'), { kind: 'security-key' })).statusCode).toBe(409);
   });
 
+  it('GET /staff/v1/terms answers the Terms version and nothing else; HEAD works (owner 9 Nov 2026, p11-14)', async () => {
+    // The staff origin's answer to the trader API's `GET /v1/terms`: the same X2F_TERMS_VERSION, no
+    // text, no headings, no token (the matrix proves it public; this pins the body).
+    const res = await invitee().get('/staff/v1/terms');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ version: t.deps.config.termsVersion });
+    expect(res.headers['cache-control']).toBe('no-store');
+    const head = await invitee().send('HEAD', '/staff/v1/terms');
+    expect(head.statusCode).toBe(200);
+    expect(head.body).toBe('');
+  });
+
   it('refuses an invite whose tap was for another invite, and a tap reused', async () => {
     const a = newInvite(t.deps.clock(), { role: 'mod' });
     const b = newInvite(t.deps.clock(), { role: 'mod' });
