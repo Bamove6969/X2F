@@ -285,10 +285,10 @@ test('an account with no wallet lands on Add a wallet and returns to the filled 
   await expect(f(page).terms).toHaveValue('Cash only.');
 });
 
-test('logged out, Post offer never opens: the front door sends the visitor to log in, keeping the form address (owner, 8 Nov 2026)', async ({ page }) => {
+test('logged out, Post offer never opens: the front door (the Landing board) takes the visitor, keeping the form address (owner, 8 Nov 2026)', async ({ page }) => {
   const posts = await stub(page, { signedIn: false });
   await page.goto('/post?method=ZELLE&currency=GBP');
-  await expect(page).toHaveURL(`/login?returnTo=${encodeURIComponent('/post?method=ZELLE&currency=GBP')}`);
+  await expect(page).toHaveURL(`/?returnTo=${encodeURIComponent('/post?method=ZELLE&currency=GBP')}`);
   await expect(f(page).post).toHaveCount(0);
   expect(posts).toEqual([]);
 });

@@ -117,7 +117,7 @@ let sessionGoneListener: (() => void) | null = null;
 /**
  * The front door: called when a call other than `GET /v1/account/me` answers 401
  * `not-authenticated` (the session ended or expired), so the shared session answer becomes
- * signed-out and the screens behind the door send the page to the login (session/useSession.ts).
+ * signed-out and the screens behind the door send the page to the Landing board (session/frontDoor.tsx).
  */
 export function setSessionGoneListener(fn: (() => void) | null): void {
   sessionGoneListener = fn;

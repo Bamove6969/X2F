@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { signedIn, signedOut } from './session.js';
+import { expectPhoneLayout } from './phone.js';
 
 // The shell's screens are behind the front door (owner, 8 Nov 2026): a signed-in, set-up trader
 // unless a test says otherwise (a later page.route wins).
@@ -74,7 +75,7 @@ test('a no-wallet answer sends the page to /wallets?add=1 with returnTo', async 
   await expect(page).toHaveURL(/\/wallets\?add=1&returnTo=%2Fbuy$/);
 });
 
-test('logged out, the first page is the front door: the login, with no links to the screens behind it, on a phone and wide', async ({ page }) => {
+test('logged out, the first page is the front door: the Landing board, with no links to the screens behind it, on a phone and wide', async ({ page }) => {
   await signedOut(page);
   const market: string[] = [];
   page.on('request', (r) => {
@@ -82,12 +83,27 @@ test('logged out, the first page is the front door: the login, with no links to 
     if (['/v1/methods', '/v1/offers', '/v1/price', '/v1/news'].includes(path)) market.push(path);
   });
   await page.goto('/');
-  await expect(page).toHaveURL('/login?returnTo=%2Fsell');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Log in');
-  await expect(page.locator('nav')).toHaveCount(0);
-  await expect(page.locator('[data-part="create-account"]')).toHaveAttribute('href', '/setup?returnTo=%2Fsell');
+  // Design review 2026-11-08 item 1: "/" is the Landing board (logo D, the slogan, the ways in).
+  await expect(page).toHaveURL('/');
+  await expect(page.locator('[data-screen="landing"]')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveAccessibleName('X2F');
+  await expect(page.getByText('You’ll need Fiat to believe it.')).toBeVisible();
+  await expect(page.locator('nav:not([aria-label="Get in"])')).toHaveCount(0);
+  await expect(page.locator('[data-part="landing-create"]')).toHaveAttribute('href', '/setup');
+  await expect(page.locator('[data-part="landing-login"]')).toHaveAttribute('href', '/login');
+  await expectPhoneLayout(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await expect(page.locator('[data-shell="desktop"]')).toBeAttached();
-  await expect(page.locator('nav')).toHaveCount(0);
+  await expect(page.locator('[data-screen="landing"]')).toHaveAttribute('data-wide', 'true');
+  await expect(page.locator('nav:not([aria-label="Get in"])')).toHaveCount(0);
+  // Wide: the two ways in side by side, and nothing scrolls sideways.
+  const [create, login] = [await page.locator('[data-part="landing-create"]').boundingBox(), await page.locator('[data-part="landing-login"]').boundingBox()];
+  expect(Math.abs(create!.y - login!.y)).toBeLessThan(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  // Log in carries where the visitor was going.
+  await page.goto('/sell/ZELLE');
+  await expect(page).toHaveURL('/?returnTo=%2Fsell%2FZELLE');
+  await page.locator('[data-part="landing-login"]').click();
+  await expect(page).toHaveURL('/login?returnTo=%2Fsell%2FZELLE');
   expect(market).toEqual([]);
 });

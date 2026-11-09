@@ -266,13 +266,13 @@ test.describe('/sell/:methodId (SellOffers board)', () => {
     }
   });
 
-  test('logged out, the lists never open: the front door sends the visitor to log in, keeping the path (owner, 8 Nov 2026)', async ({ page }) => {
+  test('logged out, the lists never open: the front door (the Landing board) takes the visitor, keeping the path (owner, 8 Nov 2026)', async ({ page }) => {
     const seen = await stubApi(page, { signedIn: false });
     await page.goto('/sell');
-    await expect(page).toHaveURL(/\/login\?returnTo=%2Fsell$/);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Log in');
+    await expect(page).toHaveURL(/\/\?returnTo=%2Fsell$/);
+    await expect(page.locator('[data-screen="landing"]')).toBeVisible();
     await page.goto('/sell/ZELLE');
-    await expect(page).toHaveURL(/\/login\?returnTo=%2Fsell%2FZELLE$/);
+    await expect(page).toHaveURL(/\/\?returnTo=%2Fsell%2FZELLE$/);
     await expect(page.locator('article')).toHaveCount(0);
     expect(await page.locator('body').innerText()).not.toContain('mira.k');
     const paths = new Set(seen.requests.map((r) => new URL(r.url()).pathname));

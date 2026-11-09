@@ -292,6 +292,9 @@ test('an expired session routes to /login and returns to the same screen after l
   await page.route('**/v1/login/webauthn/finish', json({ status: 'ok' }));
 
   await page.goto(`${LOCAL}/settings/security`);
+  // The Landing board first (design review 2026-11-08 item 1); its Log in keeps where they were going.
+  await expect(page).toHaveURL(/\/\?returnTo=%2Fsettings%2Fsecurity$/);
+  await page.click('[data-part="landing-login"]');
   await expect(page).toHaveURL(/\/login\?returnTo=%2Fsettings%2Fsecurity$/);
 
   await virtualAuthenticator(page);

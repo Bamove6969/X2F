@@ -158,12 +158,12 @@ test.describe('/buy/:methodId (BuyOffers board)', () => {
     expect(await page.locator('body').innerText()).not.toContain('555-0100');
   });
 
-  test('logged out, the buy lists never open: the front door sends the visitor to log in, keeping the path (owner, 8 Nov 2026)', async ({ page }) => {
+  test('logged out, the buy lists never open: the front door (the Landing board) takes the visitor, keeping the path (owner, 8 Nov 2026)', async ({ page }) => {
     const seen = await stub(page, { signedIn: false });
     await page.goto('/buy');
-    await expect(page).toHaveURL(/\/login\?returnTo=%2Fbuy$/);
+    await expect(page).toHaveURL(/\/\?returnTo=%2Fbuy$/);
     await page.goto('/buy/ZELLE');
-    await expect(page).toHaveURL(/\/login\?returnTo=%2Fbuy%2FZELLE$/);
+    await expect(page).toHaveURL(/\/\?returnTo=%2Fbuy%2FZELLE$/);
     await expect(page.locator('article')).toHaveCount(0);
     const paths = new Set(seen.requests.map((r) => new URL(r.url()).pathname));
     for (const p of ['/v1/methods', '/v1/offers', '/v1/price']) expect(paths.has(p), p).toBe(false);

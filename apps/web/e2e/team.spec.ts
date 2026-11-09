@@ -589,7 +589,7 @@ test('the owner changes roles and removes a member; the member is then signed ou
     await m.page.unroute(/\/v1\/team.*/);
     await m.page.route(/\/v1\/team.*/, json({ error: 'not-authenticated' }, 401));
     await m.page.reload();
-    await expect(m.page).toHaveURL(/\/login\?returnTo=%2Fsettings%2Fteam|\/settings\/team/);
+    await expect(m.page).toHaveURL(/\/\?returnTo=%2Fsettings%2Fteam|\/settings\/team/);
     await expect(m.page.locator('[data-part="cant-do-that"]')).toHaveCount(0);
   } finally {
     await m.context.close();

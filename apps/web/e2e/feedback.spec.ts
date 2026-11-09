@@ -93,12 +93,12 @@ test('a named send carries the refusal code; the form works at desktop width too
   await noSideScroll(page);
 });
 
-test('signed out, the form never opens: the front door sends the visitor to log in, keeping where they were going (owner, 8 Nov 2026)', async ({ page }) => {
+test('signed out, the form never opens: the front door (the Landing board) takes the visitor, keeping where they were going (owner, 8 Nov 2026)', async ({ page }) => {
   await stub(page);
   await page.unroute('**/v1/account/me');
   await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
   await page.goto('/feedback?from=trading-hold');
-  await expect(page).toHaveURL(`/login?returnTo=${encodeURIComponent('/feedback?from=trading-hold')}`);
+  await expect(page).toHaveURL(`/?returnTo=${encodeURIComponent('/feedback?from=trading-hold')}`);
   await expect(page.getByLabel('Your message')).toHaveCount(0);
 });
 

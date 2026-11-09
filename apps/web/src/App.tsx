@@ -19,6 +19,7 @@ import { MethodList } from './screens/browse/MethodList.js';
 import { OffersRoute } from './screens/browse/OffersRoute.js';
 import { SELL_COPY } from './screens/browse/SellCopy.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
+import { Landing } from './screens/auth/Landing.js';
 import { Login } from './screens/auth/Login.js';
 import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js';
 import { MemberInvite } from './screens/auth/MemberInvite.js';
@@ -201,13 +202,16 @@ export function App() {
         </Route>
         {/* The front door: open to anyone (FRONT_DOOR in session/frontDoor.tsx lists the same paths). */}
         <Route element={<Layout nav={false} door banner={site.banner} />}>
+          {/* The Landing board (design review 2026-11-08 item 1): where every signed-out visitor lands. */}
+          <Route path="/" element={<Landing />} />
           <Route path="/setup/*" element={<SetupFlow />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/team/join" element={<MemberInvite />} />
         </Route>
-        <Route path="*" element={<Navigate to="/sell" replace />} />
+        {/* Anything else: the front door, which sends a set-up trader on to /sell. */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );

@@ -162,7 +162,7 @@ test.describe('BuyQuote', () => {
     expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-new-0', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
   });
 
-  test('logged out, the quote never opens: the front door sends the visitor to log in with the quote kept as returnTo, and signed in it opens (owner, 8 Nov 2026)', async ({ page }) => {
+  test("logged out, the quote never opens: the Landing board keeps it as returnTo; Create account starts setup with it, and Welcome's Start trading comes back to the quote at the price now, never taken silently (owner, 8 Nov 2026)", async ({ page }) => {
     const stub: Stub = { ...base, signedIn: false, wallets: [] };
     const seen = await stubApi(page, stub);
     const offerCalls: string[] = [];
@@ -172,15 +172,34 @@ test.describe('BuyQuote', () => {
     });
     const quote = `${BUY}&amount=${B.amount}`;
     await page.goto(quote);
-    await expect(page).toHaveURL(`/login?returnTo=${encodeURIComponent(quote)}`);
+    // The front door (design review 2026-11-08 item 1): the Landing board, nothing of the quote.
+    await expect(page).toHaveURL(`/?returnTo=${encodeURIComponent(quote)}`);
+    await expect(page.locator('[data-screen="landing"]')).toBeVisible();
     await expect(card(page)).toHaveCount(0);
     expect(offerCalls).toEqual([]);
+    // Create account starts setup on the Terms, with the quote as returnTo.
+    await page.locator('[data-part="landing-create"]').click();
+    await expect(page).toHaveURL(`/setup?returnTo=${encodeURIComponent(quote)}`);
+    await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
+    expect(offerCalls).toEqual([]);
     expect(seen.takes).toHaveLength(0);
-    // Once logged in (the login returns to returnTo, login.spec), the same quote opens.
+    // The steps in between are setup.spec's: here an account now exists with its first wallet, and
+    // the person is on Welcome in this same tab. Setup took a while and the feed moved: the quote
+    // the person comes back to shows the rate now.
     stub.signedIn = true;
     stub.wallets = [B.wallets[0]];
-    await page.goto(new URL(page.url()).searchParams.get('returnTo')!);
-    await expect(card(page)).toContainText('1.250000 XMR');
+    stub.rate = '34000';
+    await page.goto(`/setup/welcome?returnTo=${encodeURIComponent(quote)}`);
+    await page.click('[data-part="start-trading"]');
+    await expect(page).toHaveURL(/\/buy\//);
+    await expect(card(page)).toContainText('$340.00 / XMR');
+    await expect(card(page)).toContainText('$412.50 USD');
+    expect(seen.takes).toHaveLength(0);
+    await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+    await trade(page).click();
+    await expect(page).toHaveURL(`/trade/${B.code}`);
+    expect(seen.takes).toHaveLength(1);
+    expect(seen.takes[0]).toMatchObject({ centsPerXmr: '34000', fiatCents: '41250' });
   });
 
   test("the rate the person sees is the rate that locks: a stale rate is refused price-changed, the quote re-quotes, and the fresh tap locks the new one", async ({ page }) => {

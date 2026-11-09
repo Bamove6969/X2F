@@ -3,7 +3,8 @@
 // curtains without signing an agreement, creating an account and logging in. There are no free tours
 // for outsiders." Every route in App.tsx is checked logged out, half set up (old Terms), on a
 // recovery session and logged in: only the front door's screens open without a set-up session, and
-// every other one goes to the login with where it was going kept in returnTo.
+// every other one goes to the Landing board ("/", design review 2026-11-08 item 1) with where it was
+// going kept in returnTo, which Create account and Log in carry on.
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +24,7 @@ const PATHS = [...readFileSync(APP, 'utf8').matchAll(/<Route\s+path="([^"]+)"/g)
   .filter((p) => p !== '*')
   .map((p) => p.replace(':methodId', 'ZELLE').replace(':offerId', '00000000-0000-4000-8000-000000000000').replace(':code', 'ABCD-EFGH').replace('/*', ''));
 
-const DOOR = ['/setup', '/terms', '/login', '/login/backup', '/team/join'];
+const DOOR = ['/', '/setup', '/terms', '/login', '/login/backup', '/team/join'];
 const BEHIND = PATHS.filter((p) => !DOOR.includes(p));
 
 const FULL = { displayName: 'viewer_1', kind: 'trader', level: 'full', termsCurrent: true, methods: ['password'], hasBackup: true, suggestions: [], holdUntil: null };
@@ -82,6 +83,9 @@ async function open(path: string): Promise<HTMLElement> {
 
 const MARKET = ['/v1/methods', '/v1/offers', '/v1/price', '/v1/news'];
 const login = (path: string) => `/login?returnTo=${encodeURIComponent(path)}`;
+const landing = (path: string) => `/?returnTo=${encodeURIComponent(path)}`;
+/** Navigation other than the Landing board's own "Get in" links (the bottom nav, the desktop header). */
+const appNav = (host: HTMLElement) => host.querySelectorAll('nav:not([aria-label="Get in"])');
 
 describe('the route table', () => {
   it('has the front door and the screens behind it, and the guard knows the same front door', () => {
@@ -89,19 +93,19 @@ describe('the route table', () => {
     for (const p of DOOR) expect(PATHS, p).toContain(p);
     for (const p of PATHS) expect(isFrontDoor(p), p).toBe(DOOR.includes(p));
     for (const p of ['/setup/name', '/setup/wallet', '/setup/welcome']) expect(isFrontDoor(p), p).toBe(true);
-    for (const p of ['/', '/loginx', '/login/backup/x', '/settings', '/setupx', '/terms/x', '/sell']) expect(isFrontDoor(p), p).toBe(false);
+    for (const p of ['/loginx', '/login/backup/x', '/settings', '/setupx', '/terms/x', '/sell', '//', '/x']) expect(isFrontDoor(p), p).toBe(false);
   });
 });
 
 describe('logged out', () => {
   for (const path of BEHIND) {
-    it(`${path} goes to the login, keeping the path, with nothing of the screen and no marketplace call`, async () => {
+    it(`${path} goes to the Landing board, keeping the path, with nothing of the screen and no marketplace call`, async () => {
       const host = await open(`${path}?x=1`);
-      expect(where).toBe(login(`${path}?x=1`));
-      expect(host.querySelector('[data-screen="login"]')).not.toBeNull();
+      expect(where).toBe(landing(`${path}?x=1`));
+      expect(host.querySelector('[data-screen="landing"]')).not.toBeNull();
       expect(calls.filter((c) => MARKET.includes(c))).toEqual([]);
       // No desktop or phone navigation to the screens behind the door.
-      expect(host.querySelector('nav')).toBeNull();
+      expect(appNav(host)).toHaveLength(0);
     });
   }
 
@@ -113,13 +117,44 @@ describe('logged out', () => {
     });
   }
 
-  it('an unknown path ends at the login too', async () => {
-    await open('/no-such-page');
-    expect(where).toBe(login('/sell'));
+  it('"/" is the Landing board: logo D, the slogan, and the three ways in, nothing else and no marketplace call', async () => {
+    const host = await open('/');
+    expect(where).toBe('/');
+    const screen = host.querySelector('[data-screen="landing"]')!;
+    expect(screen).not.toBeNull();
+    expect(screen.querySelector('h1 svg[aria-label="X2F"]')).not.toBeNull();
+    expect(screen.textContent).toContain('You’ll need Fiat to believe it.');
+    const links = [...screen.querySelectorAll('nav[aria-label="Get in"] a')].map((a) => [a.textContent, a.getAttribute('href')]);
+    expect(links).toEqual([
+      ['Create account', '/setup'],
+      ['Log in', '/login'],
+      ['Lost access? Recover your account', '/login/backup'],
+    ]);
+    expect(appNav(host)).toHaveLength(0);
+    expect(calls.filter((c) => MARKET.includes(c))).toEqual([]);
+  });
+
+  it('Create account and Log in carry where the visitor was going', async () => {
+    const host = await open('/sell/ZELLE?currency=USD');
+    expect(where).toBe(landing('/sell/ZELLE?currency=USD'));
+    const href = (label: string) => [...host.querySelectorAll('nav[aria-label="Get in"] a')].find((a) => a.textContent === label)!.getAttribute('href');
+    expect(href('Create account')).toBe(`/setup?returnTo=${encodeURIComponent('/sell/ZELLE?currency=USD')}`);
+    expect(href('Log in')).toBe(login('/sell/ZELLE?currency=USD'));
+  });
+
+  it('a returnTo on the Landing board that leaves the app is never carried on', async () => {
+    const host = await open(`/?returnTo=${encodeURIComponent('//evil.example')}`);
+    for (const a of host.querySelectorAll('nav[aria-label="Get in"] a')) expect(a.getAttribute('href'), a.textContent!).not.toContain('evil');
+  });
+
+  it('an unknown path ends at the Landing board too', async () => {
+    const host = await open('/no-such-page');
+    expect(where).toBe('/');
+    expect(host.querySelector('[data-screen="landing"]')).not.toBeNull();
   });
 
   it('a returnTo that leaves the app is never kept', () => {
-    expect(doorVerdict({ status: 'signed-out' }, '//evil.example', '')).toEqual({ kind: 'go', to: login('/sell') });
+    expect(doorVerdict({ status: 'signed-out' }, '//evil.example', '')).toEqual({ kind: 'go', to: landing('/sell') });
   });
 });
 
@@ -146,6 +181,13 @@ describe('a recovery (backup) session', () => {
 });
 
 describe('logged in and set up', () => {
+  it('"/" goes on to the app (the Landing board is for outsiders)', async () => {
+    me = { status: 200, body: FULL };
+    const host = await open('/');
+    expect(where.split('?')[0]).toBe('/sell');
+    expect(host.querySelector('[data-screen="landing"]')).toBeNull();
+  });
+
   for (const path of BEHIND) {
     it(`${path} opens`, async () => {
       me = { status: 200, body: FULL };
@@ -159,7 +201,7 @@ describe('logged in and set up', () => {
 describe('the verdict', () => {
   it('waits while loading, and anything short of a full set-up trader session is outside', () => {
     expect(doorVerdict({ status: 'loading' }, '/sell', '')).toEqual({ kind: 'wait' });
-    expect(doorVerdict({ status: 'error', code: 'network' }, '/sell', '')).toEqual({ kind: 'go', to: login('/sell') });
+    expect(doorVerdict({ status: 'error', code: 'network' }, '/sell', '')).toEqual({ kind: 'go', to: landing('/sell') });
     // The session probe refused with terms-required goes the way the API client sends it: the Terms.
     expect(doorVerdict({ status: 'error', code: 'terms-required' }, '/sell', '?currency=EUR')).toEqual({ kind: 'go', to: `/terms?returnTo=${encodeURIComponent('/sell?currency=EUR')}` });
     const as = (m: Record<string, unknown>): Session => ({ status: 'signed-in', me: m as never });
@@ -172,7 +214,7 @@ describe('the verdict', () => {
 });
 
 describe('a session that ends while inside', () => {
-  it('a 401 not-authenticated from any call sends the screen to the login, keeping the path', async () => {
+  it('a 401 not-authenticated from any call sends the screen to the Landing board, keeping the path for its Log in', async () => {
     me = { status: 200, body: FULL };
     await open('/wallets');
     expect(where).toBe('/wallets');
@@ -181,6 +223,6 @@ describe('a session that ends while inside', () => {
       await api('/v1/wallets').catch(() => undefined);
     });
     await settle();
-    expect(where).toBe(login('/wallets'));
+    expect(where).toBe(landing('/wallets'));
   });
 });

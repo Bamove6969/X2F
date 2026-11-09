@@ -3,10 +3,11 @@
  * curtains without signing an agreement, creating an account and logging in. There are no free tours
  * for outsiders."
  *
- * A logged-out visitor sees only the front door: log in, create an account (the setup flow with its
- * Terms), account recovery (the backup login), the Terms text, and a team member's invite. Every
- * other screen sends them to `/login`, keeping where they were going in `returnTo` (always through
- * safeReturnTo), and the login returns there. An account on an old Terms version goes to the Terms
+ * A logged-out visitor sees only the front door: the Landing board (`/`, design review 2026-11-08
+ * item 1), log in, create an account (the setup flow with its Terms), account recovery (the backup
+ * login), the Terms text, and a team member's invite. Every other screen sends them to the Landing
+ * board, keeping where they were going in `returnTo` (always through safeReturnTo); its Create
+ * account and Log in carry it on, and the login returns there. An account on an old Terms version goes to the Terms
  * screen first, a recovery (backup) session only reaches the screens its session may use, and while
  * the session loads nothing behind the door renders. The API is the real enforcement
  * (apps/api/src/auth/frontDoor.ts); this keeps the screens from ever showing an empty shell of it.
@@ -17,7 +18,7 @@ import type { Session } from './useSession.js';
 import { useSession } from './useSession.js';
 
 /** The front door's own screens: open to anyone, signed in or not. */
-const FRONT_DOOR: readonly RegExp[] = [/^\/login$/, /^\/login\/backup$/, /^\/setup(\/.*)?$/, /^\/terms$/, /^\/team\/join$/];
+const FRONT_DOOR: readonly RegExp[] = [/^\/$/, /^\/login$/, /^\/login\/backup$/, /^\/setup(\/.*)?$/, /^\/terms$/, /^\/team\/join$/];
 
 /**
  * What a recovery (backup) session may open: adding a login method (Security), finishing an open
@@ -50,7 +51,7 @@ export function isInside(session: Session): boolean {
 
 /**
  * Where a screen behind the door sends this session: `wait` while it loads, `in` for a set-up trader
- * (or a recovery session on a screen it may use), else `go` to the login, the Terms or Security.
+ * (or a recovery session on a screen it may use), else `go` to the Landing board, the Terms or Security.
  */
 export function doorVerdict(session: Session, pathname: string, search: string): DoorVerdict {
   if (isFrontDoor(pathname)) return { kind: 'in' };
@@ -59,8 +60,9 @@ export function doorVerdict(session: Session, pathname: string, search: string):
   // The API client already sends a 403 `terms-required` to the Terms screen; go the same way.
   if (session.status === 'error' && session.code === 'terms-required') return { kind: 'go', to: `/terms?returnTo=${returnTo}` };
   const m = me(session);
-  // Signed out, or the session could not be read (a network fault): the login, which comes back here.
-  if (m === null || m.kind !== 'trader') return { kind: 'go', to: `/login?returnTo=${returnTo}` };
+  // Signed out, or the session could not be read (a network fault): the Landing board, whose Create
+  // account and Log in come back here.
+  if (m === null || m.kind !== 'trader') return { kind: 'go', to: `/?returnTo=${returnTo}` };
   // Not finished setting up: the current Terms are not accepted yet.
   if (m.termsCurrent !== true) return { kind: 'go', to: `/terms?returnTo=${returnTo}` };
   if (m.level === 'full') return { kind: 'in' };
