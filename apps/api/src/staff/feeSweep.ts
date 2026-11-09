@@ -133,7 +133,8 @@ const LOCK_KEY = 'x2f-fee-sweep';
  * Step 1 reads the settings `for share`, so a concurrent save waits for it. Just before the send
  * the settings are read again under the same lock: if the cold address changed or the sweep was
  * turned off since step 1, nothing is sent and the attempt is settled `failed` (`settings-changed`,
- * review F2).
+ * review F2). The phone pushes are best-effort: a push error is swallowed, so it never stops the
+ * pass or leaves the attempt pending (review F3; the in-app alert is written either way).
  * If the process dies or step 3 fails after the send, the attempt stays `pending`: its result is
  * unknown, so no pass sends again (`held-unfinished`) until the owner saves the sweep settings
  * again, as after a failure (`held-after-failure`, no repeat alerts every pass). One pass at a time
@@ -175,7 +176,7 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
       await client.query('rollback');
       throw e;
     }
-    if (d.push) await pushOwnerAlert({ db: d.db, push: d.push }, 'fee-sweep-due');
+    await bestEffortPush(d, 'fee-sweep-due');
 
     // Step 2: the settings again, under lock, right before the send (review F2); then the send,
     // outside any transaction.
@@ -217,7 +218,7 @@ export async function runFeeSweep(d: FeeSweepDeps): Promise<FeeSweepResult> {
           : { action: 'treasury.sweep-failed' as const, detail: { amountAtomic, reason: result.reason } }),
       });
     });
-    if (d.push && result.outcome === 'failed') await pushOwnerAlert({ db: d.db, push: d.push }, 'fee-sweep-failed');
+    if (result.outcome === 'failed') await bestEffortPush(d, 'fee-sweep-failed');
     return result;
   } finally {
     if (locked) await client.query('select pg_advisory_unlock(hashtext($1))', [LOCK_KEY]).catch(() => undefined);
@@ -239,6 +240,12 @@ async function settingsStillAllow(client: pg.PoolClient, coldAddress: string): P
     await client.query('rollback').catch(() => undefined);
     throw e;
   }
+}
+
+/** The owner's phone push, best-effort (review F3): the in-app alert is already written. */
+async function bestEffortPush(d: FeeSweepDeps, kind: 'fee-sweep-due' | 'fee-sweep-failed'): Promise<void> {
+  if (!d.push) return;
+  await pushOwnerAlert({ db: d.db, push: d.push }, kind).catch(() => undefined);
 }
 
 const amountsOf = (p: Extract<FeeSweepPlan, { due: true }>) => ({

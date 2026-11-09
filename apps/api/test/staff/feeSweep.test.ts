@@ -352,6 +352,23 @@ describe('the sweep pass (runFeeSweep)', () => {
     expect(writeError).toMatchObject({ code: '55P03' });
   });
 
+  // Review F3: the phone push is best-effort; a push failure never leaves the attempt pending.
+  it('a failing phone push neither stops the pass nor leaves the attempt pending', async () => {
+    const now = new Date(T0.getTime() + 1_000_000);
+    setNow(now);
+    await setSweep(10n * XMR, 3n * XMR, now);
+    balance = 14n * XMR;
+    const failingPush = { send: async (): Promise<boolean> => { throw new Error('push service down'); } };
+    expect(await runFeeSweep({ ...base(), push: failingPush })).toMatchObject({ outcome: 'failed', reason: 'not-wired' });
+    expect((await sweeps()).at(-1)).toMatchObject({ outcome: 'failed' });
+    const later = new Date(now.getTime() + 60_000);
+    setNow(later);
+    await setSweep(10n * XMR, 3n * XMR, later);
+    const txHash = '56'.repeat(32);
+    expect(await runFeeSweep({ ...base(), push: failingPush, send: async () => ({ txHash }) })).toMatchObject({ outcome: 'sent', txHash });
+    expect((await sweeps()).at(-1)).toMatchObject({ outcome: 'sent', tx_hash: txHash });
+  });
+
   it('the attempts table refuses a sent row without a tx hash and a pending row with a settled time', async () => {
     const row = [T0, '5', '4', '1'];
     await expect(deps.db.query(`insert into fee_sweeps (at, balance_atomic, amount_atomic, keep_atomic, outcome) values ($1, $2, $3, $4, 'sent')`, row)).rejects.toThrow(/check/);
