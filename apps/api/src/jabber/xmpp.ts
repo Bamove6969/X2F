@@ -7,24 +7,29 @@
  *   reaches a DNS resolver and nothing is looked up before connecting (socks.ts).
  * - **TLS only.** Direct TLS (XEP-0368, RFC 7590) from the first byte inside that stream, TLS 1.2 or
  *   newer, the server certificate checked against the account's domain. There is no plaintext stream
- *   and no STARTTLS, so there is nothing to downgrade: a server that does not speak TLS on the port
- *   fails the handshake and the send fails.
+ *   and no STARTTLS, so there is nothing to downgrade.
  * - SASL SCRAM-SHA-256, else SCRAM-SHA-1, else PLAIN (review L1; scram.ts), only ever inside that
  *   TLS session, then resource binding (RFC 6120).
- * - The message is one of the two fixed texts (`messageText`), type `chat`, with the nickname
- *   "X2F alerts" (XEP-0172) and no other element. A ping (XEP-0199) after it confirms the server
- *   took it before the stream is closed.
+ * - **OMEMO only** (owner ruling p11-31; omemo.ts). The recipient's OMEMO device list and bundles are
+ *   fetched (PEP); with no bundle that checks out the send fails before any message is written. The
+ *   message is the `<encrypted>` element the encryptor returns, with no `<body>` at all: never
+ *   plaintext. GAP: the encryptor is the NEEDS_OMEMO_RATCHET tripwire, so as built every send fails
+ *   there, after the bundles and before the message.
+ * - A ping (XEP-0199) after the message confirms the server took it before the stream is closed.
  *
  * Errors never quote the address, the password or anything the server said.
  *
  * GAP (owner p5-7 build, 2026-11-08): X2F's production Jabber account and server are not set up,
- * so `X2F_XMPP_*` are unset and the set-up answers `jabber-unavailable`. Not built yet: OMEMO
- * encryption (owner ruling p11-31: mandatory), SCRAM's -PLUS channel binding, ALPN.
+ * so `X2F_XMPP_*` are unset and the set-up answers `jabber-unavailable`. Not built yet: OMEMO's
+ * Double Ratchet (above), SCRAM's -PLUS channel binding, ALPN.
  */
 import { isIP } from 'node:net';
 import { connect, type ConnectionOptions, type TLSSocket } from 'node:tls';
 import type { XmppConfig } from '../config.js';
 import { BARE_JID } from '../config.js';
+import {
+  DEVICELIST_NODE, bundleNode, isEncryptedElement, itemsRequest, needsRatchet, parseBundle, parseDeviceList, type OmemoBundle, type OmemoEncrypt,
+} from './omemo.js';
 import { SCRAM_MECHANISMS, scramClient } from './scram.js';
 import { messageText, SENDER_NAME, type JabberMessage, type JabberSender } from './sender.js';
 import { socksConnect } from './socks.js';
@@ -65,19 +70,26 @@ class Reader {
     socket.on('error', end);
   }
 
-  /** Resolves with the first match of `re` (and drops the text up to its end). */
-  async until(re: RegExp, step: string): Promise<RegExpExecArray> {
-    const deadline = Date.now() + STEP_TIMEOUT_MS;
+  /**
+   * Resolves with the first match of `re` and the text before it (dropping both). With `soft`, a
+   * timeout or a closed stream resolves null instead of failing.
+   */
+  async until(re: RegExp, step: string, o: { ms?: number; soft?: boolean } = {}): Promise<{ m: RegExpExecArray; before: string } | null> {
+    const deadline = Date.now() + (o.ms ?? STEP_TIMEOUT_MS);
     for (;;) {
       if (/<stream:error[\s>]|<failure[\s>]/.test(this.buf)) throw new XmppError(step);
       const m = re.exec(this.buf);
       if (m) {
+        const before = this.buf.slice(0, m.index);
         this.buf = this.buf.slice(m.index + m[0].length);
-        return m;
+        return { m, before };
       }
-      if (this.closed || this.buf.length > MAX_BUFFER) throw new XmppError(step);
+      if (this.buf.length > MAX_BUFFER) throw new XmppError(step);
       const left = deadline - Date.now();
-      if (left <= 0) throw new XmppError(step);
+      if (this.closed || left <= 0) {
+        if (o.soft) return null;
+        throw new XmppError(step);
+      }
       await new Promise<void>((resolve) => {
         const t = setTimeout(resolve, left);
         this.waiter = () => {
@@ -88,16 +100,27 @@ class Reader {
       this.waiter = null;
     }
   }
-}
 
-const SASL_NS = 'urn:ietf:params:xml:ns:xmpp-sasl';
+  async must(re: RegExp, step: string): Promise<{ m: RegExpExecArray; before: string }> {
+    return (await this.until(re, step))!;
+  }
+
+  /** The whole `<iq>` with this id (self-closing or not). */
+  async iq(id: string, step: string): Promise<string> {
+    return (await this.must(new RegExp(`<iq\\b[^>]*\\bid=['"]${id}['"][^>]*(?:/>|>[\\s\\S]*?</iq>)`), step)).m[0];
+  }
+}
 
 const openStream = (domain: string) =>
   `<?xml version='1.0'?><stream:stream to='${xmlEscape(domain)}' version='1.0' xml:lang='en' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'>`;
 
+const SASL_NS = 'urn:ietf:params:xml:ns:xmpp-sasl';
+
 export interface XmppSenderOptions {
   /** Extra trust anchors (tests use their own CA); production uses the system's. */
   ca?: ConnectionOptions['ca'];
+  /** Encrypts the message to the recipient's OMEMO devices. Default: the NEEDS_OMEMO_RATCHET tripwire. */
+  encrypt?: OmemoEncrypt;
 }
 
 export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): JabberSender {
@@ -107,6 +130,7 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
   const at = cfg.jid.indexOf('@');
   const local = cfg.jid.slice(0, at);
   const domain = cfg.jid.slice(at + 1);
+  const encrypt = opts.encrypt ?? needsRatchet;
   return {
     async send(to: string, message: JabberMessage): Promise<void> {
       if (!BARE_JID.test(to)) throw new XmppError('address check');
@@ -134,13 +158,13 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
         const write = (s: string) => socket.write(s);
 
         write(openStream(domain));
-        const features = await read.until(/<stream:features[\s\S]*?<\/stream:features>/, 'features');
-        const offered = new Set([...features[0].matchAll(/<mechanism>([A-Z0-9-]+)<\/mechanism>/g)].map((m) => m[1]!));
+        const features = (await read.must(/<stream:features[\s\S]*?<\/stream:features>/, 'features')).m[0];
+        const offered = new Set([...features.matchAll(/<mechanism>([A-Z0-9-]+)<\/mechanism>/g)].map((m) => m[1]!));
         const scram = SCRAM_MECHANISMS.find(([name]) => offered.has(name));
         if (scram) {
           const client = scramClient(scram[1], local, cfg.password);
           write(`<auth xmlns='${SASL_NS}' mechanism='${scram[0]}'>${client.first()}</auth>`);
-          const challenge = (await read.until(/<challenge\b[^>]*>([^<]*)<\/challenge>/, 'sasl'))[1]!;
+          const challenge = (await read.must(/<challenge\b[^>]*>([^<]*)<\/challenge>/, 'sasl')).m[1]!;
           let answer: string;
           try {
             answer = client.final(challenge);
@@ -148,29 +172,43 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
             throw new XmppError('sasl');
           }
           write(`<response xmlns='${SASL_NS}'>${answer}</response>`);
-          const success = (await read.until(/<success\b[^>]*(?:\/>|>([^<]*)<\/success>)/, 'sasl'))[1] ?? '';
+          const success = (await read.must(/<success\b[^>]*(?:\/>|>([^<]*)<\/success>)/, 'sasl')).m[1] ?? '';
           // The server must prove it knows the password before anything else is sent.
           if (!client.verify(success)) throw new XmppError('sasl');
         } else if (offered.has('PLAIN')) {
           const creds = Buffer.from(`\0${local}\0${cfg.password}`, 'utf8').toString('base64');
           write(`<auth xmlns='${SASL_NS}' mechanism='PLAIN'>${creds}</auth>`);
-          await read.until(/<success[\s/>]/, 'sasl');
+          await read.must(/<success[\s/>]/, 'sasl');
         } else {
           throw new XmppError('sasl');
         }
 
         write(openStream(domain));
-        await read.until(/<stream:features[\s\S]*?<\/stream:features>/, 'features');
+        await read.must(/<stream:features[\s\S]*?<\/stream:features>/, 'features');
         write(`<iq type='set' id='bind1'><bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'><resource>x2f-alerts</resource></bind></iq>`);
-        const bound = await read.until(/<iq\b[^>]*\bid=['"]bind1['"][^>]*>/, 'bind');
-        if (!/\btype=['"]result['"]/.test(bound[0])) throw new XmppError('bind');
+        const bound = await read.iq('bind1', 'bind');
+        if (!/^<iq\b[^>]*\btype=['"]result['"]/.test(bound)) throw new XmppError('bind');
 
+        // OMEMO (owner ruling p11-31): the recipient's devices and their bundles, or no message.
+        write(itemsRequest(to, 'omemo-dl', DEVICELIST_NODE, xmlEscape));
+        const devices = parseDeviceList(await read.iq('omemo-dl', 'omemo'));
+        const bundles: OmemoBundle[] = [];
+        for (const [i, deviceId] of devices.entries()) {
+          write(itemsRequest(to, `omemo-b${i}`, bundleNode(deviceId), xmlEscape));
+          const b = parseBundle(deviceId, await read.iq(`omemo-b${i}`, 'omemo'));
+          if (b) bundles.push(b);
+        }
+        if (bundles.length === 0) throw new XmppError('omemo');
+        const encrypted = await encrypt({ to, plaintext: text, bundles }); // NEEDS_OMEMO_RATCHET: throws as built
+        if (!isEncryptedElement(encrypted)) throw new XmppError('omemo');
+
+        const id = `x2f${Date.now().toString(36)}`;
         write(
-          `<message to='${xmlEscape(to)}' type='chat' id='x2f${Date.now().toString(36)}'><body>${xmlEscape(text)}</body>` +
-            `<nick xmlns='http://jabber.org/protocol/nick'>${xmlEscape(SENDER_NAME)}</nick></message>`,
+          `<message to='${xmlEscape(to)}' type='chat' id='${id}'>${encrypted}` +
+            `<nick xmlns='http://jabber.org/protocol/nick'>${xmlEscape(SENDER_NAME)}</nick><store xmlns='urn:xmpp:hints'/></message>`,
         );
         write(`<iq type='get' id='ping1' to='${xmlEscape(domain)}'><ping xmlns='urn:xmpp:ping'/></iq>`);
-        await read.until(/<iq\b[^>]*\bid=['"]ping1['"][^>]*>/, 'ping');
+        await read.must(/<iq\b[^>]*\bid=['"]ping1['"][^>]*>/, 'ping');
         write('</stream:stream>');
       } finally {
         socket.end();

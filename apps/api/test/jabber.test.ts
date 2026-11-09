@@ -1,6 +1,6 @@
 // Owner rule p5-7, boards JabberSetup and Alerts: the Jabber set-up routes, the outbox worker and
 // the fixed message texts, against real Postgres with a fake sender.
-import { createHmac, hkdfSync, randomBytes } from 'node:crypto';
+import { createHmac, createPrivateKey, createPublicKey, hkdfSync, randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
@@ -8,6 +8,7 @@ import { startHold, withTx } from '../src/auth/hold.js';
 import { startDispute } from '../src/disputes/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { codeHash, maskJid, normalizeJid, openJid, sealJid } from '../src/jabber/address.js';
+import { NEEDS_OMEMO_RATCHET, loadOmemoIdentity, ratchetEncryptor } from '../src/jabber/omemo.js';
 import { rewrapJabberSecrets } from '../src/jabber/rewrap.js';
 import { PENDING_RETENTION_MS, purgeJabberPending } from '../src/jabber/retention.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
@@ -380,5 +381,33 @@ describe('review M4: a key removed from X2F_JABBER_KEYS', () => {
     expect(await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } })).toEqual({ rewrapped: 0, failed: 1 });
     await deps.db.query('delete from jabber_contacts where account_id = $1', [t.id]);
     await deps.db.query('delete from jabber_outbox');
+  });
+});
+
+describe("review H1 (owner ruling p11-31, OMEMO mandatory): X2F's own OMEMO identity", () => {
+  it('is created once with its private key stored only sealed; the production encryptor loads it and stops at NEEDS_OMEMO_RATCHET; the rewrap moves it', async () => {
+    const ring = deps.config.jabberKeys!;
+    await expect(ratchetEncryptor(() => loadOmemoIdentity(deps.db, ring, deps.clock()))({ to: 'x@y.org', plaintext: 'p', bundles: [] }))
+      .rejects.toThrow(new RegExp(`^${NEEDS_OMEMO_RATCHET}`));
+    const a = await loadOmemoIdentity(deps.db, ring, deps.clock());
+    const b = await loadOmemoIdentity(deps.db, ring, deps.clock());
+    expect(b.deviceId).toBe(a.deviceId);
+    expect(b.publicKey.equals(a.publicKey)).toBe(true);
+    expect(b.privateKey.equals(a.privateKey)).toBe(true);
+    expect(a.deviceId).toBeGreaterThanOrEqual(1);
+    expect(a.deviceId).toBeLessThan(2 ** 31);
+    // The pair is a real X25519 pair: the public key is the private key's own.
+    const derived = createPublicKey(createPrivateKey({ key: { kty: 'OKP', crv: 'X25519', d: a.privateKey.toString('base64url'), x: a.publicKey.toString('base64url') }, format: 'jwk' }));
+    expect(derived.export({ format: 'jwk' }).x).toBe(a.publicKey.toString('base64url'));
+    const { rows } = await deps.db.query<{ n: number; sealed: Buffer }>('select count(*) over ()::int as n, identity_sealed as sealed from jabber_omemo_identity');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.sealed.includes(a.privateKey)).toBe(false);
+
+    const fresh = new Uint8Array(randomBytes(32));
+    const next: Keyring = { current: 60, keys: new Map([[60, fresh], ...ring.keys]) };
+    await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: next } });
+    const moved = await loadOmemoIdentity(deps.db, { current: 60, keys: new Map([[60, fresh]]) }, deps.clock());
+    expect(moved.privateKey.equals(a.privateKey)).toBe(true);
+    await expect(loadOmemoIdentity(deps.db, ring, deps.clock())).rejects.toThrow();
   });
 });

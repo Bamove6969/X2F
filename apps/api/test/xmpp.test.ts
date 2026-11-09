@@ -1,16 +1,16 @@
 // Owner rule p5-7: the XMPP sender against a local fake server, reached through a fake SOCKS5 proxy
 // (owner ruling p11-31: Tor is mandatory). TLS from the first byte, the certificate checked against
-// the account's domain, no plaintext path, SCRAM before PLAIN, and only the fixed text.
-import { X509Certificate, createHash, createHmac, generateKeyPairSync, pbkdf2Sync, randomBytes, timingSafeEqual, type KeyObject } from 'node:crypto';
+// the account's domain, no plaintext path, SCRAM before PLAIN, and (owner ruling p11-31: OMEMO is
+// mandatory) never a plaintext message: no OMEMO bundle, no message; OMEMO itself is the
+// NEEDS_OMEMO_RATCHET tripwire until the Double Ratchet is built.
+import { X509Certificate, createHash, createHmac, generateKeyPairSync, pbkdf2Sync, randomBytes, sign, timingSafeEqual, type KeyObject } from 'node:crypto';
 import dns from 'node:dns';
 import { connect as tcpConnect, createServer as createTcpServer, type AddressInfo, type Server, type Socket } from 'node:net';
 import { createServer as createTlsServer, type TLSSocket } from 'node:tls';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../src/config.js';
-import { ACCOUNT_CHANGE_TEXT } from '../src/jabber/sender.js';
+import { NEEDS_OMEMO_RATCHET, OMEMO_NS, parseBundle, xeddsaVerify, type OmemoEncrypt } from '../src/jabber/omemo.js';
 import { xmlEscape, xmppSender, type XmppSenderOptions } from '../src/jabber/xmpp.js';
-
-const OMEMO_NS = 'eu.siacs.conversations.axolotl';
 import { certificate } from './helpers/der.js';
 import { VAPID_ENV } from './helpers/vapid.js';
 
@@ -38,9 +38,54 @@ function ca() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The fake server, and a fake SOCKS5 proxy in front of it.
+// OMEMO test keys: an Ed25519 key signs as XEdDSA does once its point is written in Montgomery form
+// (u = (1 + y) / (1 - y)) and its sign bit carried in the signature's top bit (libsignal's verify).
+
+const P = 2n ** 255n - 19n;
+const modpow = (b: bigint, e: bigint): bigint => {
+  let r = 1n;
+  for (b %= P; e > 0n; e >>= 1n, b = (b * b) % P) if (e & 1n) r = (r * b) % P;
+  return r;
+};
+const le = (b: Uint8Array): bigint => b.reduceRight((acc, x) => (acc << 8n) | BigInt(x), 0n);
+const toLe = (n: bigint): Buffer => {
+  const out = Buffer.alloc(32);
+  for (let i = 0; i < 32; i++, n >>= 8n) out[i] = Number(n & 0xffn);
+  return out;
+};
+const djb = (u: Buffer) => Buffer.concat([Buffer.from([0x05]), u]);
+
+function xedKey() {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const a = Buffer.from(publicKey.export({ format: 'jwk' }).x!, 'base64url');
+  const signBit = a[31]! >> 7;
+  const y = le(Buffer.concat([a.subarray(0, 31), Buffer.from([a[31]! & 0x7f])]));
+  const u = ((1n + y) * modpow((1n - y + P) % P, P - 2n)) % P;
+  return {
+    mont: toLe(u),
+    sign(msg: Uint8Array): Buffer {
+      const s = sign(null, msg, privateKey);
+      s[63] = s[63]! | (signBit << 7);
+      return s;
+    },
+  };
+}
 
 const b64 = (b: Uint8Array) => Buffer.from(b).toString('base64');
+
+/** A recipient device's bundle (legacy OMEMO, eu.siacs.conversations.axolotl). */
+function bundleXml(o: { badSignature?: boolean; noPrekeys?: boolean } = {}): string {
+  const identity = xedKey();
+  const signedPre = djb(randomBytes(32));
+  const sig = identity.sign(signedPre);
+  if (o.badSignature) sig[0] = sig[0]! ^ 1;
+  const prekeys = o.noPrekeys ? '' : [1, 2, 3].map((id) => `<preKeyPublic preKeyId='${id}'>${b64(djb(randomBytes(32)))}</preKeyPublic>`).join('');
+  return `<bundle xmlns='${OMEMO_NS}'><signedPreKeyPublic signedPreKeyId='7'>${b64(signedPre)}</signedPreKeyPublic>` +
+    `<signedPreKeySignature>${b64(sig)}</signedPreKeySignature><identityKey>${b64(djb(identity.mont))}</identityKey><prekeys>${prekeys}</prekeys></bundle>`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The fake server, and a fake SOCKS5 proxy in front of it.
 
 const PASSWORD = 's3cret-pass';
 const servers: Server[] = [];
@@ -74,7 +119,7 @@ async function fakeServer(o: FakeOptions = {}) {
   const { key, cert } = pki.leaf(o.host ?? 'xmpp.test');
   const transcript: string[] = [];
   const mechanisms = o.mechanisms ?? ALL_MECHANISMS;
-  const devices: Devices = o.devices ?? [];
+  const devices: Devices = o.devices ?? [{ id: 4242, bundle: bundleXml() }];
   const pubsub = (node: string, inner: string) =>
     `<pubsub xmlns='http://jabber.org/protocol/pubsub'><items node='${node}'><item id='current'>${inner}</item></items></pubsub>`;
   const server = createTlsServer({ key: key.export({ type: 'pkcs8', format: 'pem' }), cert, minVersion: 'TLSv1.2' }, (sock: TLSSocket) => {
@@ -231,6 +276,10 @@ async function fakeSocks(targetPort: number, o: { reply?: number | undefined } =
 
 const ONION = 'x2falertsxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxd.onion';
 
+/** A fake encryptor standing in for the Double Ratchet, so the rest of the path can be tested. */
+const fakeEncrypt: OmemoEncrypt = async ({ bundles }) =>
+  `<encrypted xmlns='${OMEMO_NS}'><header sid='1'>${bundles.map((b) => `<key rid='${b.deviceId}'>AAAA</key>`).join('')}<iv>AAAAAAAAAAAAAAAA</iv></header><payload>CIPHERTEXT</payload></encrypted>`;
+
 async function setup(o: FakeOptions & { password?: string; socksReply?: number; opts?: Partial<XmppSenderOptions> } = {}) {
   const s = await fakeServer(o);
   const socks = await fakeSocks(s.port, { reply: o.socksReply });
@@ -245,7 +294,7 @@ const messagesIn = (all: string) => [...all.matchAll(/<message[\s\S]*?<\/message
 
 describe('xmppSender: through SOCKS5 only (Tor, owner ruling p11-31)', () => {
   it('connects only through the proxy, handing it the host name to resolve; no DNS lookup before connecting', async () => {
-    const s = await setup();
+    const s = await setup({ opts: { encrypt: fakeEncrypt } });
     // (After the fake servers' own listen(), which resolves its address.)
     const lookup = vi.spyOn(dns, 'lookup');
     await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
@@ -255,7 +304,7 @@ describe('xmppSender: through SOCKS5 only (Tor, owner ruling p11-31)', () => {
   });
 
   it('fails when the proxy refuses the connection; nothing reaches the server', async () => {
-    const s = await setup({ socksReply: 4 });
+    const s = await setup({ socksReply: 4, opts: { encrypt: fakeEncrypt } });
     await expect(s.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow(/^xmpp: socks failed$/);
     expect(s.all()).toBe('');
   });
@@ -277,27 +326,6 @@ describe('xmppSender: through SOCKS5 only (Tor, owner ruling p11-31)', () => {
 });
 
 describe('xmppSender: TLS, SASL', () => {
-  it('sends the fixed sentence over TLS: SCRAM inside TLS, bind, one message from "X2F alerts", a ping, close', async () => {
-    const s = await setup();
-    await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
-    const all = s.all();
-    const messages = messagesIn(all);
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toMatch(/^<message to='mira@xmpp\.example\.org' type='chat' id='x2f[0-9a-z]+'>/);
-    expect(messages[0]!.replace(/ id='[^']*'/, '')).toBe(
-      `<message to='mira@xmpp.example.org' type='chat'><body>${ACCOUNT_CHANGE_TEXT}</body><nick xmlns='http://jabber.org/protocol/nick'>X2F alerts</nick></message>`,
-    );
-    expect(all).toContain("mechanism='SCRAM-SHA-256'");
-    expect(all).toContain("<ping xmlns='urn:xmpp:ping'/>");
-    await expect.poll(() => s.all()).toContain('</stream:stream>');
-  });
-
-  it('a test code message carries only the code', async () => {
-    const s = await setup();
-    await s.sender.send('mira@xmpp.example.org', { kind: 'test-code', code: '123456' });
-    expect(s.all()).toContain('<body>Your X2F test code is 123456.</body>');
-  });
-
   it('refuses a server that does not speak TLS (no plaintext fallback): nothing is ever written in the clear', async () => {
     const seen: string[] = [];
     const plain = createTcpServer((sock) => {
@@ -326,34 +354,34 @@ describe('xmppSender: TLS, SASL', () => {
   });
 
   it('review L1: prefers SCRAM-SHA-256, then SCRAM-SHA-1, and uses PLAIN only when nothing else is offered', async () => {
-    const both = await setup();
+    const both = await setup({ opts: { encrypt: fakeEncrypt } });
     await both.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
     expect(both.all()).toContain("mechanism='SCRAM-SHA-256'");
     expect(both.all()).not.toContain("mechanism='PLAIN'");
     expect(both.all()).not.toContain(PASSWORD);
     expect(both.all()).not.toContain(b64(Buffer.from(PASSWORD)));
 
-    const sha1 = await setup({ mechanisms: ['PLAIN', 'SCRAM-SHA-1'] });
+    const sha1 = await setup({ mechanisms: ['PLAIN', 'SCRAM-SHA-1'], opts: { encrypt: fakeEncrypt } });
     await sha1.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
     expect(sha1.all()).toContain("mechanism='SCRAM-SHA-1'");
 
-    const plain = await setup({ mechanisms: ['PLAIN'] });
+    const plain = await setup({ mechanisms: ['PLAIN'], opts: { encrypt: fakeEncrypt } });
     await plain.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
     expect(plain.all()).toContain("mechanism='PLAIN'");
   });
 
   it('SCRAM: a wrong password, or a server that cannot prove it knows the password, fails before any message', async () => {
-    const wrong = await setup({ password: 'wrong' });
+    const wrong = await setup({ password: 'wrong', opts: { encrypt: fakeEncrypt } });
     const e = await wrong.sender.send('mira@xmpp.example.org', { kind: 'account-change' }).catch((x: Error) => x);
     expect((e as Error).message).toBe('xmpp: sasl failed');
     expect(wrong.all()).not.toContain('<message');
-    const liar = await setup({ badServerSignature: true });
+    const liar = await setup({ badServerSignature: true, opts: { encrypt: fakeEncrypt } });
     await expect(liar.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: sasl failed');
     expect(liar.all()).not.toContain('<message');
   });
 
   it('fails without quoting anything on a wrong PLAIN password or no mechanism it knows; sends no message', async () => {
-    const s = await setup({ mechanisms: ['PLAIN'], password: 'wrong' });
+    const s = await setup({ mechanisms: ['PLAIN'], password: 'wrong', opts: { encrypt: fakeEncrypt } });
     const e = await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' }).catch((x: Error) => x);
     expect((e as Error).message).toBe('xmpp: sasl failed');
     expect(s.all()).not.toContain('<message');
@@ -366,6 +394,85 @@ describe('xmppSender: TLS, SASL', () => {
     const s = await setup();
     await expect(s.sender.send("mira@x.org'/><evil", { kind: 'account-change' })).rejects.toThrow('xmpp: address check failed');
     expect(xmlEscape(`<a href="x">'&'</a>`)).toBe('&lt;a href=&quot;x&quot;&gt;&apos;&amp;&apos;&lt;/a&gt;');
+  });
+});
+
+describe('xmppSender: OMEMO is mandatory (owner ruling p11-31); never a plaintext message', () => {
+  it('as built, every send stops at the NEEDS_OMEMO_RATCHET tripwire after fetching the bundles: no message is written', async () => {
+    const s = await setup({ devices: [{ id: 11, bundle: bundleXml() }, { id: 12, bundle: bundleXml() }] });
+    for (const message of [{ kind: 'account-change' } as const, { kind: 'test-code', code: '123456' } as const]) {
+      const e = await s.sender.send('mira@xmpp.example.org', message).catch((x: Error) => x);
+      expect((e as Error).message).toMatch(new RegExp(`^${NEEDS_OMEMO_RATCHET}`));
+    }
+    const all = s.all();
+    expect(all).toContain(`<items node='${OMEMO_NS}.devicelist'/>`);
+    expect(all).toContain(`<items node='${OMEMO_NS}.bundles:11'/>`);
+    expect(all).toContain(`<items node='${OMEMO_NS}.bundles:12'/>`);
+    expect(all).not.toContain('<message');
+    expect(all).not.toContain('An account change');
+    expect(all).not.toContain('123456');
+  });
+
+  it('refuses to send when the recipient publishes no device list, an empty one, or no bundle that checks out', async () => {
+    const cases: Devices[] = [
+      'item-not-found',
+      [],
+      [{ id: 21, bundle: null }],
+      [{ id: 22, bundle: bundleXml({ badSignature: true }) }],
+      [{ id: 23, bundle: bundleXml({ noPrekeys: true }) }],
+      [{ id: 24, bundle: `<bundle xmlns='${OMEMO_NS}'><identityKey>!!!</identityKey></bundle>` }],
+    ];
+    for (const devices of cases) {
+      const encrypt = vi.fn(fakeEncrypt);
+      const s = await setup({ devices, opts: { encrypt } });
+      const e = await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' }).catch((x: Error) => x);
+      expect((e as Error).message, JSON.stringify(devices).slice(0, 80)).toBe('xmpp: omemo failed');
+      expect(encrypt).not.toHaveBeenCalled();
+      expect(s.all()).not.toContain('<message');
+    }
+  });
+
+  it('encrypts only to the devices whose bundle checks out; the message carries the encrypted element and no body', async () => {
+    const encrypt = vi.fn(fakeEncrypt);
+    const s = await setup({ devices: [{ id: 31, bundle: bundleXml() }, { id: 32, bundle: bundleXml({ badSignature: true }) }, { id: 33, bundle: null }], opts: { encrypt } });
+    await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
+    expect(encrypt).toHaveBeenCalledTimes(1);
+    const arg = encrypt.mock.calls[0]![0];
+    expect(arg.to).toBe('mira@xmpp.example.org');
+    expect(arg.plaintext).toBe('An account change was made on your X2F account.');
+    expect(arg.bundles.map((b) => b.deviceId)).toEqual([31]);
+    const messages = messagesIn(s.all());
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatch(/^<message to='mira@xmpp\.example\.org' type='chat' id='x2f[0-9a-z]+'><encrypted xmlns='eu\.siacs\.conversations\.axolotl'>/);
+    expect(messages[0]).not.toContain('<body');
+    expect(messages[0]).not.toContain('An account change');
+    expect(messages[0]).toContain("<store xmlns='urn:xmpp:hints'/>");
+    await expect.poll(() => s.all()).toContain('</stream:stream>');
+  });
+
+  it('refuses an encryptor result that is not one OMEMO encrypted element, or that carries a body', async () => {
+    for (const bad of ['<body>An account change was made on your X2F account.</body>', `<encrypted xmlns='${OMEMO_NS}'><payload>x</payload></encrypted><body>hi</body>`]) {
+      const s = await setup({ opts: { encrypt: async () => bad } });
+      await expect(s.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: omemo failed');
+      expect(s.all()).not.toContain('<message');
+    }
+  });
+
+  it('bundle parsing: XEdDSA signature over the signed prekey, keys of the right type and length', () => {
+    const key = xedKey();
+    const msg = djb(randomBytes(32));
+    expect(xeddsaVerify(key.mont, msg, key.sign(msg))).toBe(true);
+    const other = xedKey();
+    expect(xeddsaVerify(other.mont, msg, key.sign(msg))).toBe(false);
+    const tampered = Buffer.from(msg);
+    tampered[5] = tampered[5]! ^ 1;
+    expect(xeddsaVerify(key.mont, tampered, key.sign(msg))).toBe(false);
+    const parsed = parseBundle(31, bundleXml());
+    expect(parsed).toMatchObject({ deviceId: 31, signedPreKeyId: 7 });
+    expect(parsed!.preKeys).toHaveLength(3);
+    expect(parsed!.identityKey).toHaveLength(33);
+    expect(parseBundle(31, bundleXml({ badSignature: true }))).toBeNull();
+    expect(parseBundle(31, bundleXml({ noPrekeys: true }))).toBeNull();
   });
 });
 

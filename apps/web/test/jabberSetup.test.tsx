@@ -139,3 +139,13 @@ describe('review M4: an address sealed under a removed key', () => {
     expect(host.textContent).not.toContain('Jabber alerts are on');
   });
 });
+
+describe('owner ruling p11-31: OMEMO is required', () => {
+  it('the Alerts note says OMEMO encryption is required, not recommended', async () => {
+    api.getJabber.mockResolvedValue(OFF);
+    const { host } = render(<MemoryRouter><JabberAlerts /></MemoryRouter>);
+    await flush();
+    expect(host.textContent).toContain('OMEMO encryption required');
+    expect(host.textContent).not.toContain('recommended');
+  });
+});

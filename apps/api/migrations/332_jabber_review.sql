@@ -18,3 +18,15 @@ begin
   return null;
 end
 $$;
+
+-- Review H1 (owner ruling p11-31: OMEMO is mandatory): X2F's own OMEMO identity (jabber/omemo.ts),
+-- one row, created on first use: a device id and a Curve25519 identity key pair, the private key
+-- sealed under X2F_JABBER_KEYS (bound to `x2f/jabber-omemo-identity/<public key hex>`). Not an
+-- account's data (no account refers to it).
+create table jabber_omemo_identity (
+  singleton boolean primary key default true check (singleton),
+  device_id integer not null check (device_id between 1 and 2147483647),
+  identity_public bytea not null check (length(identity_public) = 32),
+  identity_sealed bytea not null,
+  created_at timestamptz not null
+);

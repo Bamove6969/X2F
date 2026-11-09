@@ -7,7 +7,8 @@ export const JABBER_COPY = {
   // Alerts section.
   sectionTitle: 'Secure Jabber (XMPP)',
   rowTitle: 'Account change alerts',
-  rowNote: 'Get one short message for every change to your account, with no details in it. Needs a Jabber account; OMEMO encryption recommended.',
+  // COPY-UNSIGNED: "required" replaces the board's "recommended" (owner ruling p11-31: OMEMO is mandatory).
+  rowNote: 'Get one short message for every change to your account, with no details in it. Needs a Jabber account; OMEMO encryption required.',
   addressLabel: 'Address',
   notSetUp: 'Not set up',
   lastMessage: 'Last message',
