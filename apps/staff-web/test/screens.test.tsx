@@ -13,7 +13,7 @@ const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistra
 vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const PGP_KEY = '-----BEGIN PGP PUBLIC KEY BLOCK-----\nabc\n-----END PGP PUBLIC KEY BLOCK-----';
-const ME = { username: 'nightowl_44', role: 'mod', nav: NAV.mod, sessionEndsAt: new Date(Date.now() + 3600_000).toISOString() };
+const ME = { displayName: 'nightowl_44', role: 'mod', nav: NAV.mod, sessionEndsAt: new Date(Date.now() + 3600_000).toISOString() };
 
 async function open(path: string) {
   render(
@@ -223,7 +223,7 @@ describe('OwnerSetup', () => {
     typeInto(field('Username'), 'lumen.k');
     typeInto(field('Login name'), 'lumen-login');
     await click(button('Tap key to register'));
-    expect(api.calls.find((c) => c.path.endsWith('/setup/account'))?.body).toEqual({ username: 'lumen.k', loginName: 'lumen-login' });
+    expect(api.calls.find((c) => c.path.endsWith('/setup/account'))?.body).toEqual({ displayName: 'lumen.k', loginName: 'lumen-login' });
     expect(create().disabled).toBe(true);
     await click(button('Tap key to register'));
     expect(api.calls.filter((c) => c.path.endsWith('/setup/key/finish'))).toHaveLength(2);
@@ -293,7 +293,7 @@ describe('OwnerSetup', () => {
 describe('Feedback (owner)', () => {
   it('lists both feedback kinds with the 30-day Great / OK / Needs work counts, never an account id', async () => {
     fakeApi({
-      'GET /staff/v1/me': { body: { ...ME, username: 'lumen.k', role: 'owner', nav: NAV.owner } },
+      'GET /staff/v1/me': { body: { ...ME, displayName: 'lumen.k', role: 'owner', nav: NAV.owner } },
       'GET /staff/v1/feedback': {
         body: { items: [{ id: 'm1', mood: 'needs-work', note: 'Slow payouts', createdOn: '2026-11-05' }], counts: { great: 4, ok: 2, needsWork: 1 }, next: null },
       },
@@ -313,7 +313,7 @@ describe('Feedback (owner)', () => {
 });
 
 describe('NewsEditor (owner; Plan 4 Task 28)', () => {
-  const OWNER = { ...ME, username: 'lumen.k', role: 'owner', nav: NAV.owner };
+  const OWNER = { ...ME, displayName: 'lumen.k', role: 'owner', nav: NAV.owner };
   const ITEM = { id: 7, title: 'Maintenance tonight', body: 'Back by 02:00 UTC.', publishedAt: '2026-11-05T10:00:00Z', editedAt: null };
 
   it('writes with a preview as the News page shows it, edits and deletes', async () => {

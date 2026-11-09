@@ -16,7 +16,7 @@ vi.mock('@simplewebauthn/browser', () => webauthn);
 
 const inMinutes = (m: number) => new Date(Date.now() + m * 60_000).toISOString();
 const me = (role: 'owner' | 'senior' | 'mod' | 'helper', username = 'lumen.k', ends = inMinutes(120)) => ({
-  username,
+  displayName: username,
   role,
   nav: NAV[role],
   sessionEndsAt: ends,

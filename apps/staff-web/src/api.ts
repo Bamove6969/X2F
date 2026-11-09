@@ -96,7 +96,8 @@ export function deviceLabel(): string {
 // The signed-in staff member (Task 4)
 
 export interface Me {
-  username: string;
+  /** Owner Q54: the public name (the API's `displayName`; the boards call it the username). */
+  displayName: string;
   role: StaffRole;
   nav: NavItem[];
   /** The earliest of the idle limit, the absolute limit and the end of the login window. */
@@ -157,7 +158,7 @@ export async function setupState(): Promise<SetupState> {
 }
 const fetchProbe = () => staffApi<unknown>('/staff/v1/setup/finish', { method: 'POST', body: {} });
 export const setupCode = (code: string) => staffApi<{ ok: true; expiresAt: string }>('/staff/v1/setup/code', { method: 'POST', body: { code } });
-export const setupAccount = (b: { username: string; loginName: string }) => staffApi<{ ok: true }>('/staff/v1/setup/account', { method: 'POST', body: b });
+export const setupAccount = (b: { displayName: string; loginName: string }) => staffApi<{ ok: true }>('/staff/v1/setup/account', { method: 'POST', body: b });
 export const setupKeyStart = () =>
   staffApi<{ challengeId: string; options: PublicKeyCredentialCreationOptionsJSON }>('/staff/v1/setup/key/start', { method: 'POST', body: { kind: 'security-key' } });
 export const setupKeyFinish = (b: { challengeId: string; response: RegistrationResponseJSON; label?: string }) =>

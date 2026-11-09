@@ -171,7 +171,7 @@ function SetupForm({ fault: initialFault, onFinished }: { fault: string | null; 
   const ensureAccount = async () => {
     if (accountMade) return;
     if (username.trim() === '' || loginName.trim() === '') throw new NamesMissing();
-    await setupAccount({ username: username.trim(), loginName: loginName.trim() });
+    await setupAccount({ displayName: username.trim(), loginName: loginName.trim() });
     setAccountMade(true);
   };
 

@@ -106,7 +106,7 @@ export function StaffShell({ pages }: { pages: Partial<Record<NavItem, ReactNode
         </nav>
         <div className="x2f-staff__foot">
           <SessionCountdown endsAt={who.sessionEndsAt} />
-          <RoleChip username={who.username} role={who.role} />
+          <RoleChip username={who.displayName} role={who.role} />
           <Button variant="quiet" onClick={() => void onLogout()}>
             Log out
           </Button>
