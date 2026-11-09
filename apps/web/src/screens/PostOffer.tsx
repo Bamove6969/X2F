@@ -17,7 +17,7 @@ import { RadioChips } from './browse/RadioChips.js';
 import { fetchCurrencies, fetchMethods, fetchPrice, postOffer, type PickMethod, type PriceQuote, type Side } from './post/api.js';
 import { COUNTRIES } from './post/countries.js';
 import { UnitSwitch } from './post/UnitSwitch.js';
-import { marketUpdated, otherUnit } from './browse/offerAmounts.js';
+import { marketUpdated, otherUnit, rowsAt } from './browse/offerAmounts.js';
 import { MY_OFFERS_PATH } from './myoffers/model.js';
 import {
   DEFAULT_FORM,
@@ -425,6 +425,26 @@ function PostOfferForm() {
   const firstBps = firstBand === undefined ? null : marginBpsOf(firstBand);
   const adjust = form.methods[0]?.adjustBps ?? 0;
   const previewPrice = firstQuote && firstBps !== null ? priceWithMargin(firstQuote.centsPerXmr, firstBps + adjust) : null;
+  // The preview's trade sizes in both units (owner #11, 8 Nov; boards v142): the first currency's
+  // envelope, its lowest band start to its highest band end, as that currency's card shows it. The
+  // typed unit is exact, the other is worked out at the preview's price; null while a box is not an
+  // amount yet.
+  const previewRange = (() => {
+    if (first === undefined) return null;
+    let min: bigint | null = null;
+    let max: bigint | null = null;
+    for (const b of form.bands[first] ?? []) {
+      const lo = parseRangeAmount(b.min, form.unit);
+      const hi = parseRangeAmount(b.max, form.unit);
+      if (lo === null || hi === null || lo === 0n || hi < lo) return null;
+      if (min === null || lo < min) min = lo;
+      if (max === null || hi > max) max = hi;
+    }
+    if (min === null || max === null) return null;
+    // Fiat boxes are whole units (O-018); rowsAt takes minor units (the form's currencies are two-decimal, as `other`).
+    const minor = (v: bigint) => (form.unit === 'fiat' ? v * 100n : v);
+    return rowsAt({ unit: form.unit, min: minor(min), max: minor(max) }, first, previewPrice === null ? null : { currency: first, centsPerXmr: previewPrice });
+  })();
   const lowestRule = (): MinTrades => {
     const rules = form.currencies.flatMap((c) => (form.bands[c] ?? []).map((b) => b.minTrades));
     if (rules.length === 0 || rules.some((r) => r === null)) return null;
@@ -657,6 +677,24 @@ function PostOfferForm() {
                   {previewPrice !== null && first !== undefined ? formatPrice(previewPrice, first) : firstBps === null ? 'Set your percentage' : PRICE_UNAVAILABLE}
                 </span>
                 {previewPrice !== null && firstQuote && first !== 'USD' ? <span className="post-muted">{`about ${formatPrice(usdValue(previewPrice, firstQuote), 'USD')}`}</span> : null}
+              </span>
+              <span className="post-preview-range">
+                {previewRange === null ? (
+                  <span className="post-muted">Set your smallest and largest trade</span>
+                ) : (
+                  <>
+                    {previewRange.xmr !== null ? (
+                      <span className="post-muted" data-part="preview-xmr">
+                        {`${previewRange.xmr} XMR`}
+                      </span>
+                    ) : null}
+                    {previewRange.fiat !== null ? (
+                      <span className="post-muted" data-part="preview-fiat">
+                        {`${previewRange.fiat} ${first}`}
+                      </span>
+                    ) : null}
+                  </>
+                )}
               </span>
             </div>
             <span className="post-muted" data-part="preview-methods">

@@ -7,12 +7,17 @@ import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { expectParity } from './parity.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 
-/** The take body as Task 5 reads it (Revision 2026-10-27): the amount, the wallet and the quoted rate and total. */
+/**
+ * The take body as Task 5 reads it (Revision 2026-10-27): the amount, the wallet and the quoted rate
+ * and total; J-16 adds the currency and the payment method the quote was in (the buyer picks both).
+ */
 interface TakeBody {
   amountAtomic: string;
   walletId: string;
   centsPerXmr: string;
   fiatCents: string;
+  methodId: string;
+  currency: string;
 }
 
 interface Stub {
@@ -197,7 +202,9 @@ test.describe('BuyQuote', () => {
     expect(seen.takes).toHaveLength(0);
     await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
-    expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-new-0', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
+    expect(seen.takes).toEqual([
+      { offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-new-0', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250', methodId: B.method.id, currency: B.currency },
+    ]);
   });
 
   test("logged out, Trade goes to setup; Welcome's Start trading comes back in the same tab and the quote is shown again at the price now, never taken silently", async ({ page }) => {
@@ -323,7 +330,7 @@ test.describe('SellQuote', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
-    expect(seen.takes[0]).toMatchObject({ offerId: MIRA_BUYS.id, amountAtomic: '4545454000000', walletId: 'w-cake' });
+    expect(seen.takes[0]).toMatchObject({ offerId: MIRA_BUYS.id, amountAtomic: '4545454000000', walletId: 'w-cake', methodId: B.method.id, currency: B.currency });
   });
 });
 
@@ -428,7 +435,9 @@ test.describe('phone sizes: fit and a take by tapping', () => {
       await expectFitsPhone(page);
       await trade(page).tap();
       await expect(page).toHaveURL(`/trade/${B.code}`);
-      expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
+      expect(seen.takes).toEqual([
+        { offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250', methodId: B.method.id, currency: B.currency },
+      ]);
     });
 
     test(`BuyQuote at ${vp.width}x${vp.height} with no wallet and "Price unavailable right now" still fits`, async ({ page }) => {
