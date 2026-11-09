@@ -15,7 +15,9 @@
  *   message is the `<encrypted>` element the encryptor returns, with no `<body>` at all: never
  *   plaintext. GAP: the encryptor is the NEEDS_OMEMO_RATCHET tripwire, so as built every send fails
  *   there, after the bundles and before the message.
- * - A ping (XEP-0199) after the message confirms the server took it before the stream is closed.
+ * - A ping (XEP-0199) after the message confirms the server took it; an error stanza for the
+ *   message before the ping result or within `bounceWaitMs` after it fails the send (review L2), so a
+ *   bounce never counts as sent.
  *
  * Errors never quote the address, the password or anything the server said.
  *
@@ -37,6 +39,8 @@ import { socksConnect } from './socks.js';
 /** A server that sends more than this before we have what we wait for is refused. */
 const MAX_BUFFER = 64 * 1024;
 const STEP_TIMEOUT_MS = 20_000;
+/** How long after the ping result an error stanza for the message still fails the send. */
+const BOUNCE_WAIT_MS = 1_500;
 
 /** XML character data and attribute values. */
 export function xmlEscape(s: string): string {
@@ -121,7 +125,12 @@ export interface XmppSenderOptions {
   ca?: ConnectionOptions['ca'];
   /** Encrypts the message to the recipient's OMEMO devices. Default: the NEEDS_OMEMO_RATCHET tripwire. */
   encrypt?: OmemoEncrypt;
+  /** How long to wait for a bounce after the ping result (default `BOUNCE_WAIT_MS`). */
+  bounceWaitMs?: number;
 }
+
+/** The opening tag of an error stanza for message `id` (RFC 6120 8.3). */
+const bounceOf = (id: string) => new RegExp(`<message\\b(?=[^>]*\\btype=['"]error['"])(?=[^>]*\\bid=['"]${id}['"])[^>]*>`);
 
 export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): JabberSender {
   if (!BARE_JID.test(cfg.jid)) throw new Error('config: X2F_XMPP_JID is malformed');
@@ -131,6 +140,7 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
   const local = cfg.jid.slice(0, at);
   const domain = cfg.jid.slice(at + 1);
   const encrypt = opts.encrypt ?? needsRatchet;
+  const bounceWaitMs = opts.bounceWaitMs ?? BOUNCE_WAIT_MS;
   return {
     async send(to: string, message: JabberMessage): Promise<void> {
       if (!BARE_JID.test(to)) throw new XmppError('address check');
@@ -208,7 +218,10 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
             `<nick xmlns='http://jabber.org/protocol/nick'>${xmlEscape(SENDER_NAME)}</nick><store xmlns='urn:xmpp:hints'/></message>`,
         );
         write(`<iq type='get' id='ping1' to='${xmlEscape(domain)}'><ping xmlns='urn:xmpp:ping'/></iq>`);
-        await read.must(/<iq\b[^>]*\bid=['"]ping1['"][^>]*>/, 'ping');
+        const ping = await read.must(/<iq\b[^>]*\bid=['"]ping1['"][^>]*>/, 'ping');
+        if (bounceOf(id).test(ping.before)) throw new XmppError('delivery');
+        // A bounce from the recipient's server can follow the ping result: wait briefly for one.
+        if ((await read.until(bounceOf(id), 'delivery', { ms: bounceWaitMs, soft: true })) !== null) throw new XmppError('delivery');
         write('</stream:stream>');
       } finally {
         socket.end();

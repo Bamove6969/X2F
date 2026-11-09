@@ -285,7 +285,7 @@ async function setup(o: FakeOptions & { password?: string; socksReply?: number; 
   const socks = await fakeSocks(s.port, { reply: o.socksReply });
   const sender = xmppSender(
     { jid: 'x2f-alerts@xmpp.test', password: o.password ?? PASSWORD, host: ONION, port: 5223, socks: { host: '127.0.0.1', port: socks.port } },
-    { ca: s.root, ...o.opts },
+    { ca: s.root, bounceWaitMs: 100, ...o.opts },
   );
   return { ...s, socks, sender };
 }
@@ -473,6 +473,20 @@ describe('xmppSender: OMEMO is mandatory (owner ruling p11-31); never a plaintex
     expect(parsed!.identityKey).toHaveLength(33);
     expect(parseBundle(31, bundleXml({ badSignature: true }))).toBeNull();
     expect(parseBundle(31, bundleXml({ noPrekeys: true }))).toBeNull();
+  });
+});
+
+describe('xmppSender: review L2, a bounced message is a failed send', () => {
+  it('an error stanza for the message, before or shortly after the ping result, fails the send', async () => {
+    for (const bounce of ['early', 'late'] as const) {
+      const s = await setup({ bounce, opts: { encrypt: fakeEncrypt } });
+      await expect(s.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: delivery failed');
+    }
+  });
+
+  it('no error stanza: the send succeeds', async () => {
+    const s = await setup({ opts: { encrypt: fakeEncrypt } });
+    await expect(s.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).resolves.toBeUndefined();
   });
 });
 
