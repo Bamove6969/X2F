@@ -188,6 +188,23 @@ describe('posting a flexible offer (the owner numbers)', () => {
     const card = (await list('side=sell&method=ZELLE&currency=ILS')).at(-1)!;
     expect(card).toMatchObject({ amountUnit: 'xmr', minAtomic: (XMR / 2n).toString(), maxAtomic: (XMR * 3n).toString() });
   });
+
+  it("a method's price change is -5% to +10% in steps of 0.5% (the owner's rule, review I4): the API and the database refuse the rest", async () => {
+    const p = await person();
+    // Each of these keeps band + change within ±50% (the band is +1%): only the change rule refuses them.
+    for (const adjustBps of [-550, 1050, 37, 525, 2000, -2000]) {
+      const res = await p.browser.post('/v1/offers', flex('NOK', { methods: [method('ZELLE', adjustBps)] }));
+      expect(res.statusCode, `adjustBps ${adjustBps}`).toBe(400);
+    }
+    const ids: string[] = [];
+    for (const adjustBps of [-500, 1000, 50]) ids.push(await post(p, flex('NOK', { methods: [method('ZELLE', adjustBps)] })));
+    // The database's own check, for a row written past the API.
+    for (const adjustBps of [25, 1500, -550]) {
+      await expect(
+        deps.db.query(`insert into offer_methods (offer_id, position, method_id, instructions, adjust_bps) values ($1, 7, 'VENMO', '', $2)`, [ids[0], adjustBps]),
+      ).rejects.toThrow(/adjust_bps/);
+    }
+  });
 });
 
 describe('browsing by currency and method', () => {

@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'vitest';
 import {
+  ADJUST_MAX_BPS,
+  ADJUST_MIN_BPS,
+  ADJUST_STEP_BPS,
   ATOMIC_PER_XMR,
   BAND_DIFFER_DEFAULT,
   BAND_MIN_TRADES,
-  MAX_ADJUST_BPS,
   MAX_BANDS,
   MAX_CURRENCIES,
   MAX_METHODS,
+  adjustAllowed,
   bandsDiffer,
   bandsToTiers,
   checkBands,
@@ -30,11 +33,14 @@ const band = (min: string, max: string, marginBps = 0, minTrades: Band['minTrade
   methodIds === undefined ? { min, max, marginBps, minTrades } : { min, max, marginBps, minTrades, methodIds };
 
 describe('the owner numbers', () => {
-  test('3 bands, 5 payment types, 5 currencies; a method adjustment within 20%', () => {
+  test("3 bands, 5 payment types, 5 currencies; a method's price change -5% to +10% in 0.5% steps", () => {
     expect(MAX_BANDS).toBe(3);
     expect(MAX_METHODS).toBe(5);
     expect(MAX_CURRENCIES).toBe(5);
-    expect(MAX_ADJUST_BPS).toBe(2000);
+    // The owner's price-change rule (the web form's; review I4 put it on the API and the database too).
+    expect([ADJUST_MIN_BPS, ADJUST_MAX_BPS, ADJUST_STEP_BPS]).toEqual([-500, 1000, 50]);
+    for (const ok of [-500, -50, 0, 50, 1000]) expect(adjustAllowed(ok), String(ok)).toBe(true);
+    for (const no of [-550, 1050, 25, 37, 2000, -2000, 0.5, NaN, '50', null]) expect(adjustAllowed(no), String(no)).toBe(false);
     // The minimum completed trades are the fixed choice of 8 Nov (null: no minimum).
     expect(BAND_MIN_TRADES).toEqual([5, 10, 25, 50]);
   });
