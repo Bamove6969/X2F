@@ -97,11 +97,16 @@ describe('the abilities catalogue', () => {
     expect(hasAbility(['trades-release'], 'trades-release')).toBe(false);
   });
 
-  it('the old two roles map to the Offers and Trades presets, and back', () => {
-    expect(rolesToAbilities(['offers'])).toEqual(PRESETS.find((p) => p.id === 'offers')!.abilities);
-    expect(new Set(rolesToAbilities(['offers', 'trades']))).toEqual(
-      new Set([...PRESETS.find((p) => p.id === 'offers')!.abilities, ...PRESETS.find((p) => p.id === 'trades')!.abilities]),
-    );
+  it('the old two roles map to exactly what each let a member do before (no one widened), inside the Offers and Trades presets, and back', () => {
+    const offers = PRESETS.find((p) => p.id === 'offers')!.abilities;
+    const trades = PRESETS.find((p) => p.id === 'trades')!.abilities;
+    for (const id of rolesToAbilities(['offers'])) expect(offers, id).toContain(id);
+    for (const id of rolesToAbilities(['trades'])) expect(trades, id).toContain(id);
+    // Opening a dispute left the Trades role (D-066); funding never was a member's (R44).
+    expect(rolesToAbilities(['trades'])).not.toContain('disputes-open');
+    expect(rolesToAbilities(['trades'])).not.toContain('trades-fund');
+    expect(rolesToAbilities(['offers'])).not.toContain('trades-see-active');
+    expect(rolesToAbilities(['trades'])).not.toContain('offers-see');
     expect(legacyRoles(rolesToAbilities(['offers']))).toEqual(['offers']);
     expect(legacyRoles(rolesToAbilities(['trades']))).toEqual(['trades']);
     expect(legacyRoles(rolesToAbilities(['offers', 'trades']))).toEqual(['offers', 'trades']);
