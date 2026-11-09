@@ -99,3 +99,42 @@ Also for the lead, not the builder:
 - The "[lead writes the wording]" first-month privacy-tool line (p9-8 / Q47) is still owed by the lead. Once written, it goes after the "privacy tool hides..." line in all four lists, and the counts go up by one.
 - L2: should Back during the courtesy sheet still land the taker in the trade room? **Recommend yes:** show the sheet over the trade room instead of before it. That needs design's nod, because the boards draw it over the quote.
 - M1's board caption ("first 8 characters of the trade code") goes back to design, with G37 and the P4 Task 11 format.
+
+## Re-verify e47e8e43 (9 Nov 2026, independent, read-only on code)
+
+Branch wip/lead-trade-copy at e47e8e43: four fix commits on acec2f20 (2e8b8f85 M2, 5ce7500d M1, 6dba2940 L1, e47e8e43 nit). Six files, +91/-24, all under apps/web.
+
+### Verdict: APPROVED. M1 and M2 are closed as asked; L1 and the nit are done. No assertion weakened.
+
+### Tests run (serialised runner, @x2f/web)
+- apps/web/test/devicesBoards.test.tsx: **38 passed, 0 failed** (36 before + 2 new M2 cases).
+- apps/web/test/accountFrozen.test.tsx: **5 passed, 0 failed** (the derived-ID unit test replaced by a render test, same count).
+- apps/web/test/quoteScreen.test.tsx: **42 passed, 0 failed** (40 before + 2 new L1 cases).
+- `npm run typecheck -w @x2f/web`: **exit 0, 0 errors**.
+- Not run: e2e, cantDoThat-lint.test.ts (e47e8e43 changes a comment only, no code or threshold).
+
+### M2 (Devices team card, vendors only): CLOSED
+- Devices.tsx keeps the raw `GET /v1/team` reply in `teamReply` and sets `teamSize = vendor ? teamReply : null`, with `vendor` from `isVendor(m)` on the `me()` reply. `isVendor` is the shared helper in packages/auth-client/src/api.ts (`me?.accountType === 'vendor'`, exported from the package index, the same one AccountType.tsx uses). Not a local re-implementation.
+- Every empty/none-logged-in branch keys off `teamSize` (lines 255, 368, 377, 407), so a trader with a 200 `{ members: [], max: 3 }` reply gets no card, no "Add a team member", no "No team members are logged in.". Members logged in still show from the session list (`team.length > 0`), as the review asked.
+- An older API without `accountType` gives `isVendor` false, so no card either (tested). A `me()` failure (staff/owner) leaves `vendor` false; those get 403 on /v1/team anyway.
+- Tests: the two G-007 vendor cases now stub `accountType: 'vendor'`; new: a trader with a 200 empty team (asserts the call was made and no card, no copy) and a `me()` without accountType. The stub's `kind: 'vendor'` became `kind: 'trader'`: `AccountKind` is `'trader' | 'staff' | 'owner' | 'member'`, so 'vendor' was never a valid kind. That is a corrected stub, not a weakened one. The pre-existing 403 "no team" case is still there.
+
+### M1 (AccountFrozen incident ID from the API): CLOSED
+- `incidentId()` and its test are gone. `FrozenState.dispute.incidentId: string | null` is supplied by the caller (API), rendered as `#<id>` only when non-null; null renders "Selling 0.500000 XMR to nightowl_44" with no "#". NEEDS_API_FROZEN_STATE and the COPY-UNSIGNED header remain. No wording changed.
+- The shape (`string | null`) matches what wip/third-p4-task11 gives the web's dispute API type (apps/web/src/screens/dispute/api.ts `incidentId?: string | null`), so wiring later is a straight pass-through.
+- Grep of apps/web/src for incident IDs: only AccountFrozen.tsx mentions them, and it derives nothing. The remaining `replace(/-/g, '')` sites are trade-code normalisers (chat/live.ts, trade/seams.ts) and DesktopShell.tsx's 4-character trade chip under the logo, none of them presented as an incident ID. Nothing else derives one client-side.
+- **Fixture K7QM4T2X9 is a valid incident ID.** Recomputed with the Task 11 algorithm (origin/wip/third-p4-task11 packages/staff/src/incident.ts `incidentCheckChar`, the same Luhn mod 32 over the Crockford alphabet `0123456789ABCDEFGHJKMNPQRSTVWXYZ` as migration 208's `x2f_incident_id()`): payload K7QM4T2X, all 8 characters in the alphabet, computed check character **9** = the fixture's 9th character. For contrast the old derived "7F3A9C21" is 8 characters and would need check Z, so it would have failed `isIncidentId`, as the review said.
+- The test asserts the rendered mono span is exactly `#K7QM4T2X9` and that "7F3A" (the trade code) does not appear in the Dispute fact.
+
+### L1: DONE
+- Two new quoteScreen cases: Escape on the dialog and a click on `[data-part="backdrop"]` both close the sheet, land on `/trade/K7M2-9QXA-4FTR-8WPN` and carry `confirmed: { role: 'buyer' }`. Same assertions as the Got it case. (Swipe remains untested; it calls the same `onClose`, acceptable.)
+
+### Nit: DONE
+- cantDoThat-lint.test.ts comment now reads J-31. Comment only, ratchet still 53.
+
+### Assertions: none weakened
+- The only removed assertions are the obsolete `incidentId('7F3A-9C21-4FTR-8WPN') === '7F3A9C21'` test, which the review asked to drop, replaced by a stricter render test. Every other change adds a case or tightens a stub.
+
+### Still open (unchanged from the review, for the lead/owner, not blocking)
+- L2 (Back during the courtesy sheet), the six builder questions, L3 (SetupTerms 30-day line), the board caption "first 8 characters" back to design, and `formatXmr(BigInt(...))` guarding when the API source lands.
+- The review file edit is uncommitted in the comms worktree.
