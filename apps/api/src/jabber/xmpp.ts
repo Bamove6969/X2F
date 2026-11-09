@@ -14,8 +14,8 @@
  *   bind, X2F's own device list and bundle are published to its PEP nodes (open access); then the
  *   recipient's device list and bundles are fetched; with no bundle that checks out the send fails
  *   before any message is written. The message is the `<encrypted>` element the encryptor returns
- *   (OMEMO 0.3: a fresh session and PreKeySignalMessage per device), with no `<body>` at all: never
- *   plaintext.
+ *   (OMEMO 0.3: a fresh session and PreKeySignalMessage per device) plus the XEP-0380 hint that
+ *   names OMEMO, with no `<body>` at all: never plaintext.
  * - A ping (XEP-0199) after the message confirms the server took it; an error stanza for the
  *   message before the ping result or within `bounceWaitMs` after it fails the send (review L2), so a
  *   bounce never counts as sent.
@@ -36,8 +36,8 @@ import { connect, type ConnectionOptions, type TLSSocket } from 'node:tls';
 import type { XmppConfig } from '../config.js';
 import { BARE_JID } from '../config.js';
 import {
-  DEVICELIST_NODE, bundleNode, isEncryptedElement, isResultIq, itemsRequest, parseBundle, parseDeviceList, publishRequest, type OmemoAnnounce, type OmemoAnnouncement,
-  type OmemoBundle, type OmemoEncrypt,
+  DEVICELIST_NODE, OMEMO_NS, bundleNode, isEncryptedElement, isResultIq, itemsRequest, parseBundle, parseDeviceList, publishRequest, type OmemoAnnounce,
+  type OmemoAnnouncement, type OmemoBundle, type OmemoEncrypt,
 } from './omemo.js';
 import { SCRAM_MECHANISMS, scramClient } from './scram.js';
 import { messageText, SENDER_NAME, type JabberMessage, type JabberSender, type SendOptions } from './sender.js';
@@ -285,8 +285,9 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
         if (!isEncryptedElement(encrypted)) throw new XmppError('omemo');
 
         const id = `x2f${newId()}`;
+        // XEP-0380 (review L5): tells a client without OMEMO what it is looking at; still no <body> (owner p11-127).
         write(
-          `<message to='${xmlEscape(to)}' type='chat' id='${id}'>${encrypted}` +
+          `<message to='${xmlEscape(to)}' type='chat' id='${id}'>${encrypted}<encryption xmlns='urn:xmpp:eme:0' namespace='${OMEMO_NS}' name='OMEMO'/>` +
             `<nick xmlns='http://jabber.org/protocol/nick'>${xmlEscape(SENDER_NAME)}</nick><store xmlns='urn:xmpp:hints'/></message>`,
         );
         const pingId = newId();

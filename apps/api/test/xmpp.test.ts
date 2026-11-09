@@ -576,6 +576,9 @@ describe('xmppSender: OMEMO is mandatory (owner ruling p11-31); never a plaintex
     expect(messages[0]).not.toContain('<body');
     expect(messages[0]).not.toContain('An account change');
     expect(messages[0]).toContain("<store xmlns='urn:xmpp:hints'/>");
+    // Review L5: the XEP-0380 hint, so a client without OMEMO knows what it is looking at; still no <body> (owner p11-127).
+    expect(messages[0]).toContain("<encryption xmlns='urn:xmpp:eme:0' namespace='eu.siacs.conversations.axolotl' name='OMEMO'/>");
+    expect((messages[0]!.match(/<encryption\b/g) ?? []).length).toBe(1);
     await expect.poll(() => s.all()).toContain('</stream:stream>');
   });
 
