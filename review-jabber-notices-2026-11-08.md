@@ -175,3 +175,67 @@ The routes are listed in both `LIVE_SESSION_ROUTES` and `HOLD_BLOCKED_ROUTES` (`
 - **Migration number.** 331 is chosen as clear of the 3xx numbers already taken (up to 324) on other branches. Re-check at landing. Also check the launch-rules 123 / chat-shred-2 123 clash, which is unrelated but lands in the same batch.
 - **Tests did not run in this review** (Docker port error in the Postgres global setup, twice). Before landing, run `xmpp.test.ts`, `jabber-paths.test.ts`, `jabber.test.ts`, `coolingOff.test.ts`, and the web `jabberSetup.test.tsx`, one file at a time, plus semgrep on the new files.
 - **Keep it dark.** Do not set `X2F_XMPP_*` or `X2F_JABBER_KEYS` in any deployment until owner questions 1-2 are answered.
+
+## Re-verify 5b25de30 (cloud lead reviewer, 9 Nov)
+
+Branch `wip/lead-jabber-notices`, head `5b25de30` (9 commits on `4446e3c5`). Read-only on code. Tests run this pass: `apps/api/test/xmpp.test.ts` 20/20 passed, `apps/api/test/jabber.test.ts` 23/23 passed (Postgres in Docker). Not run here: `purge.test.ts`, `jabber-paths.test.ts`, web `jabberSetup.test.tsx`, semgrep.
+
+### Verdict
+
+**MAY LAND DARK** (no `X2F_XMPP_*` set, so there is no sender and the set-up answers `jabber-unavailable`). H1 and H2 are met as far as is needed to land: no path sends plaintext, and no path connects without Tor. **It must still not be switched on.** As built every send stops at the NEEDS_OMEMO_RATCHET tripwire, so test codes never arrive and nobody can finish setting up. M1-M3 are still open (owner questions 2-4 and p11-42, X2F's own onion server, have no answer yet).
+
+### Claims checked
+
+- **H2, SOCKS5 and Tor (`socks.ts`, `config.ts`, `xmpp.ts`): verified.**
+  - The proxy must be an IP literal, and this is checked twice: once in `parseSocks` and once in `xmppSender`. Node never calls `lookup` for an IP literal, and `refuseLookup` is a second guard behind that.
+  - The target goes to the proxy as ATYP 3, the host name, unresolved. `X2F_XMPP_HOST` is limited to `[a-z0-9.-]`, so the ASCII buffer is exact.
+  - Nothing in `jabber/` calls DNS. The test spies on `dns.lookup` and finds no call.
+  - `socks5://` is refused. Only `socks5h` or a bare `ip:port` is accepted.
+  - TLS: `servername` is the JID domain, so SNI and the certificate check both use the domain, not the `.onion` host (Node's `checkServerIdentity` uses `servername`). `rejectUnauthorized` is on and `socket.authorized` is checked again. The minimum is TLS 1.2.
+  - CA: production passes no `ca`, so the trust anchors are Node's bundled Mozilla roots.
+  - Reply parsing is bounded: it needs at least 5 bytes before reading `buf[4]`, and bytes after the reply are unshifted into the TLS stream.
+- **H1, OMEMO (`omemo.ts`, `xmpp.ts`): verified, with the tripwire holding.**
+  - I grepped every stanza builder in `apps/api/src/jabber/`. The only `<message>` is built at `xmpp.ts:217`, and it contains only `encrypted`, which the encryptor returns and `isEncryptedElement` checks.
+  - No `<body>` is built anywhere. `text` goes only into `encrypt()`.
+  - Production uses `ratchetEncryptor`, which always throws, and the default `needsRatchet` throws too. A send with zero checked bundles fails before the encryptor is called.
+  - The outbox treats the throw as a failure: it retries, then drops the notice after 4 attempts. A notice is never counted as sent.
+  - The test-code route uses the same sender.
+- **XEdDSA bundle check: correct.** It follows libsignal's `curve25519_verify`:
+  - Montgomery u (top bit masked) is mapped to Edwards y = (u-1)/(u+1). u = p-1 is rejected.
+  - The sign bit is taken from `sig[63]` and then cleared.
+  - Verification is OpenSSL Ed25519.
+  - The signed message is the 33-byte serialized signed prekey (0x05 prefix included), as libsignal signs it.
+  - Key lengths and the 0x05 type byte are enforced, and at least one prekey is required.
+- **L7, HKDF (`address.ts`): correct.** HKDF-SHA-256 over the ring's current key, with an empty salt (fine for a uniformly random IKM), info `x2f/jabber-code` and a 32-byte output. That subkey keys the HMAC. The raw key is now used only by AES-256-GCM (`keystore.ts`). Side effect: a rotation between the test message and entering the code fails the code. This is documented.
+- **M4, rewrap and the reseal rule in migration 332: sound.** Can a normal request suppress the "address changed" notice by setting `x2f.jabber_rewrap`? No.
+  - The only `set_config('x2f.jabber_rewrap', ...)` in the codebase is in `rewrap.ts`. It is transaction-local, takes no user input, and runs on the tool's own pool, not the API's pool.
+  - A placeholder GUC can be set by any SQL session. Exploiting that needs arbitrary SQL, which already beats the trigger in other ways.
+  - The exemption also needs `verified_at` unchanged. Every prove sets `verified_at = clock()` (`routes.ts:182`).
+  - Disable and delete are never exempted.
+  - The rewrap's updates are conditional (`where col = old blob`), so a concurrent change wins.
+  - `state: 'broken'` shows when the ring is present and the proven blob does not open, and the web hides the switch in that state.
+- **L1, SCRAM (`scram.ts`): correct.**
+  - The server nonce must extend ours. `m=` is refused. The iteration count must be between 4096 and 1e6.
+  - The server signature is checked with `timingSafeEqual` before anything else is sent.
+  - PLAIN is used only when no SCRAM mechanism is offered, and only inside the verified TLS session.
+- **L2, a bounce fails the send: verified.** An error stanza before the ping result, or within 1.5 s after it, fails the send.
+- **L3, the mask: verified.** A local part of 4 characters or fewer shows 1 character.
+- **L4, purge of unproven addresses: verified.** It deletes a row that holds only a pending address, and clears the pending columns of a row that also holds a proven one. Neither touches `jid_sealed` or `enabled`, so no notice is queued.
+
+### New or residual findings
+
+- **R1 (Low, before lighting): `isEncryptedElement` is a shape check, not a guarantee.** It accepts `<encrypted xmlns=…>…</encrypted><x>…</x></encrypted>` (one opening tag, trailing close). It also accepts XHTML-IM `<html>` content, because only `<body` is refused. This is harmless today: the encryptor is internal and always throws. When the ratchet lands, the sender should build the `<encrypted>` element itself from typed parts (header, keys, IV, payload as base64) rather than accept an XML string.
+- **R2 (Low, before lighting): the XEdDSA test is round-trip only.** The test signs with its own XEdDSA signer and verifies with ours. Add a known-answer vector from libsignal, or a real Conversations, Dino or Gajim bundle, so that a shared misreading of the spec cannot pass both sides.
+- **R3 (Info, owner, tied to p11-42): trust anchor for an onion-only server.** There is no `X2F_XMPP_CA` or pinning option, so the server's certificate must chain to a public root for the JID domain.
+  - If X2F's own server uses a clearnet JID domain reached at a `.onion` host: works as built.
+  - If the JID domain is itself `.onion`: it needs a DigiCert or HARICA `.onion` certificate, or a new CA/pin setting (an engineering change once the owner picks the server).
+- **R4 (Info): the stored OMEMO identity is compatible with a real implementation.**
+  - Key format: raw 32-byte X25519 public and private keys (the private one is JWK `d`, unclamped). A real implementation publishes the public key as `0x05‖pub` and must clamp the private key on import before XEdDSA signing; libsignal and x25519-dalek clamp on use.
+  - Device id: random, between 1 and 2^31-1, and never published yet.
+  - The row is created lazily, only when the sender is lit, so it does not exist while dark.
+  - A future implementation that uses libsignal's own store must import this row instead of generating a new identity. If it does not, the old row is orphaned. That is harmless because it was never published.
+  - The rewrap covers this row.
+- **R5 (Low, if lit before the ratchet): queries go out before the tripwire.** The sender logs in and sends PEP device-list and bundle queries for every recipient before the tripwire throws. X2F's server and each recipient's server then see X2F querying that JID, up to 4 times per notice, and nothing is delivered. This is one more reason not to light it until the ratchet exists. Optionally, check for the tripwire before connecting.
+- **R6 (Info): operations.** The rewrap runs as one transaction and holds row locks on every resealed contact until it commits. That is fine at current sizes; batch it if the table grows.
+- **R7 (Info): the mask for a 5-character local part shows 4 of the 5 characters.** Accepted as specified.
+- **Still open from the first review:** M1, M2 and M3 need owner rulings (questions 2-4 and p11-42). L5, L6, L8 and L9 are unchanged. Landing notes still apply: revert the revert, classify `changePaths.ts` at landing, and re-check migration numbers 331 and 332.
