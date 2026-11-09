@@ -108,6 +108,24 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'The proof slot hint on the BuyerPay phone board reads "Private details are blurred for you to check next. Location and device info are removed."; the phone board wins.',
     },
   ],
+  // Owner S-017 (1 Nov 2026, lead job J-09): the recovery codes are required, so the backup step
+  // first shows "Save your recovery codes" and only then the board's optional choice. setup.spec
+  // checks the board on that second view, which keeps the board's options, "Add …" and "Skip for
+  // now"; the board itself is not updated yet (its copy here is COPY-UNSIGNED, for design).
+  SetupBackup: [
+    {
+      text: 'Add a backup way to log in',
+      why: 'S-017: by the time the optional backups show, a recovery code is already saved, so the heading reads "Add another backup (optional)" (COPY-UNSIGNED); the board predates S-017.',
+    },
+    {
+      text: 'We recommend it. X2F has no email address or phone number for you, so if you lose your key or forget your password, we have no way to let you back in.',
+      why: 'S-017: the recommendation moved to the required recovery-code view before it ("…a recovery code is your emergency way back in", COPY-UNSIGNED); the optional view says a security key or second PGP key also gets you back in. The board predates S-017.',
+    },
+    {
+      text: "Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.",
+      why: 'S-017: shown, word for word, on the required recovery-code view before the one checked here, not again once a backup exists. The board predates S-017.',
+    },
+  ],
   SetupTerms: [
     {
       text: '[TERMS TEXT: X2F connects buyers and sellers of Monero. It is not a party to any trade and never holds funds.]',
@@ -166,10 +184,27 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'The inner value of "Expires in 4:12": the page\'s masked Countdown already stands for it in that sentence, and one masked element covers one board text (Task 28).',
     },
   ],
+  // Design real-app review item 6 (766747ea, owner Q54): this step now asks for the ONE private
+  // username, and the public display name has its own screen after it (DisplayName.tsx). The board
+  // still draws the old public username; it is not updated yet (the page's copy is for design).
   SetupUsername: [
     {
       text: 'lumen.k is available',
-      why: 'No API answers whether a name is free before sign-up (Plan 2 and FU-A have none), so the page cannot claim it; a taken name comes back from the register call and returns the person to this screen. The page shows how the name will look instead (Task 28; open question for the lead).',
+      why: "The board's example name. The page's live tick (POST /v1/register/name-check) says the same sentence for the name typed (\"lumen-login-7 is available\" in setup.spec), which is not the board's public example.",
+    },
+    {
+      text: 'This is how traders see you. No email or phone number needed, now or ever.',
+      why: 'Item 6: the username here is private ("You type this to log in. Only you see it. …"); "This is how traders see you" moved to the display-name screen. The board predates item 6.',
+    },
+    {
+      text: "5 to 20 characters: letters, numbers, dots, dashes and underscores. It shows exactly as you type it. Pick something that isn't your real name or used elsewhere.",
+      why: 'Item 6: split between the two names. The username\'s help keeps the rules and "Pick something that isn\'t your real name or used elsewhere."; "It shows exactly as you type it." is on the display-name screen, the name traders see. The board predates item 6.',
+    },
+  ],
+  SetupWelcome: [
+    {
+      text: 'Authenticator app',
+      why: 'The board\'s example backup login. An authenticator app is no backup login any more (design build gaps Job 1, 5fee431d), and the recovery codes are required at sign-up (owner S-017), so after the backup step the summary reads "Recovery codes" (asserted in setup.spec). The board predates both.',
     },
   ],
   SetupWallet: [

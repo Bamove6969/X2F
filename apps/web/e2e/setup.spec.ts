@@ -214,9 +214,14 @@ for (const v of PHONES) {
     await expect(page).toHaveURL(/\/setup\/backup\?/);
     // The URL changes before the router commits the new screen: wait for the screen itself.
     await expect(page.locator('[data-screen="setup-backup"]')).toBeVisible();
-    await expectParity(page, 'SetupBackup', { viewport: v });
     // Owner S-017: the recovery codes come first and are required; then the extras are optional.
+    // The first view keeps the board's panel ("Your coins stay…"); the board is checked on the
+    // optional view after it, which is the board's own choice (parity.ts SetupBackup exceptions).
+    await expect(page.locator('[data-part="recovery-make"]')).toBeVisible();
+    await expect(page.getByText("Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.")).toBeVisible();
     await saveRecoveryCodes(page);
+    await expect(page.locator('[data-part="backup-skip"]')).toBeVisible();
+    await expectParity(page, 'SetupBackup', { viewport: v });
     // Design build gaps Job 1: no authenticator app as a backup.
     await expect(page.locator('[data-backup="totp"]')).toHaveCount(0);
     await expect(page.locator('[data-backup="security-key"]')).toHaveAttribute('aria-checked', 'true');
@@ -231,6 +236,8 @@ for (const v of PHONES) {
 
     await expect(page).toHaveURL(/\/setup\/welcome\?/);
     await expect(page.locator('h1')).toHaveText('Welcome to X2F, lumen.k');
+    // Owner S-017: the backup login is the recovery codes saved on the backup step (parity.ts SetupWelcome).
+    await expect(page.locator('[data-part="summary-backup"]')).toHaveText('Recovery codes');
     await expectParity(page, 'SetupWelcome', { viewport: v });
     await page.click('[data-part="start-trading"]');
     await expect(page).toHaveURL(new RegExp(`${TAKE.replace(/[?]/g, '\\?')}$`));
@@ -400,11 +407,13 @@ test('a taken display name at register sends the person back to change their nam
   await page.fill('#pw2', 'Quiet-harbour-58');
   await page.click('[data-part="password-set"]');
   await expect(page.locator('[data-part="register-error"]')).toContainText('That display name is taken.');
+  // Review F8: "Change your names" opens the screen of the name that was refused (the display name).
   await page.click('[data-part="change-names"]');
+  await expect(page).toHaveURL(/\/setup\/display-name\?/);
+  await expect(page.locator('#display-name')).toHaveValue('lumen.k');
+  await page.click('[aria-label="Back"]');
   await expect(page).toHaveURL(/\/setup\/name\?/);
   await expect(page.locator('#uname')).toHaveValue('lumen-login-7');
-  await page.click('[data-part="names-continue"]');
-  await expect(page.locator('#display-name')).toHaveValue('lumen.k');
 });
 
 test('a step opened without the earlier ones goes back to the Terms', async ({ page }) => {
@@ -460,6 +469,10 @@ test('a visitor who taps Trade comes back to the same quote, amount kept, throug
   await page.click('[data-part="pgp-verify"]');
   await page.click('[data-part="pgp-continue"]');
   await at('setup-backup');
+  // Owner S-017 (recovery codes required) knowingly overrides this test's "one tap per board" rule
+  // for this step: it needs a tap to show the codes, a tick and one code typed back before
+  // "Skip for now" appears (review S2b; confirmation asked of the owner).
+  await saveRecoveryCodes(page);
   await page.click('[data-part="backup-skip"]');
   await at('setup-wallet');
   await page.fill('#addr', ADDRESS);
@@ -643,6 +656,8 @@ test.describe('review fix round', () => {
     await page.route('**/v1/account/pgp/start', json({ challengeId: 'b1', encryptedMessage: BOARD_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z' }));
     await page.route('**/v1/account/pgp/finish', json({ error: 'key-in-use' }, 409));
     await page.goto(`/setup/backup?returnTo=${encodeURIComponent('/post')}`);
+    // Owner S-017: the extra backups are offered once the recovery codes are saved.
+    await saveRecoveryCodes(page);
     await page.click('[data-backup="pgp"]');
     await page.click('[data-part="backup-add"]');
     await page.fill('#backup-pub', realKey);
@@ -752,9 +767,12 @@ test.describe('review fix round', () => {
     await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
     await expect(page.locator('[data-part="terms-tick"]')).toBeDisabled();
     await acceptTerms(page);
-    // The names are kept; the person picks the method again.
-    await expect(page.locator('#uname')).toHaveValue('lumen.k');
+    // The names are kept (the private username, then the display name on its own screen); the
+    // person picks the method again.
+    await expect(page.locator('#uname')).toHaveValue('lumen-login-7');
     await page.click('[data-part="names-continue"]');
+    await expect(page.locator('#display-name')).toHaveValue('lumen.k');
+    await page.click('[data-part="display-continue"]');
     await page.click('[data-method="password"]');
     await page.click('[data-part="method-continue"]');
     await page.fill('#pw', 'Quiet-harbour-58');
@@ -869,12 +887,21 @@ test.describe('review fix round', () => {
     const hint = await page.locator('[data-part="terms-tick"]').getAttribute('aria-describedby');
     await expect(page.locator(`[id="${hint}"]`)).toHaveText('Scroll to the end to continue');
     await acceptTerms(page);
-    for (const id of ['uname', 'login-name']) {
-      const d = await page.locator(`#${id}`).getAttribute('aria-describedby');
-      expect(d).toBeTruthy();
-      await expect(page.locator(`[id="${d}"]`)).toBeVisible();
-    }
-    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    // Each name's input is described by its help text (the username also by its live tick line,
+    // which is empty until a check answers): every id it names exists, and the help is shown.
+    const described = async (id: string, help: string) => {
+      const ids = ((await page.locator(`#${id}`).getAttribute('aria-describedby')) ?? '').split(/\s+/).filter(Boolean);
+      expect(ids).toContain(help);
+      for (const d of ids) await expect(page.locator(`[id="${d}"]`)).toHaveCount(1);
+      await expect(page.locator(`[id="${help}"]`)).toBeVisible();
+    };
+    await described('uname', 'uname-help');
+    await page.fill('#uname', 'lumen-login-7');
+    await expect(page.locator('[data-part="name-status"]')).toHaveText('lumen-login-7 is available');
+    await page.click('[data-part="names-continue"]');
+    await described('display-name', 'display-name-help');
+    await page.fill('#display-name', 'lumen.k');
+    await page.click('[data-part="display-continue"]');
     const radios = page.locator('[role="radiogroup"][aria-label="Login method"] [role="radio"]');
     await expect(radios.nth(0)).toHaveAttribute('tabindex', '0');
     await expect(radios.nth(1)).toHaveAttribute('tabindex', '-1');
