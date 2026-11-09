@@ -46,8 +46,10 @@ const CONTROL_BUT_NEWLINE = new RegExp('[\\u0000-\\u0009\\u000b-\\u001f\\u007f-\
  *   (`planned` | `emergency`, default `emergency`); off clears all three. The trader API answers 503
  *   `maintenance` meanwhile (site/routes.ts). Nothing pauses the trade timers yet (lead review 7 Nov:
  *   `timerEvents` has no caller; the loop is on held work): the owner decides on the timer loop.
- * A request that changes nothing (stop while stopped, removing no banner) consumes its tap but
- * writes no log entry.
+ * - `POST /staff/v1/site/auto-close/resume {}` (security review 8 Nov M1): turns the 60-day close
+ *   (accountInactivity.ts) back on after a pass that hit its cap switched it off (`auto_close_off_at`).
+ * A request that changes nothing (stop while stopped, removing no banner, resuming a close that is
+ * on) consumes its tap but writes no log entry.
  */
 export function staffSiteRoutes(app: FastifyInstance): void {
   const perm = 'site.control' as const;
@@ -75,6 +77,15 @@ export function staffSiteRoutes(app: FastifyInstance): void {
       });
     });
   }
+
+  app.post('/staff/v1/site/auto-close/resume', opts, async (req) => {
+    bodyOf(req, []);
+    return tx(req, async (c) => {
+      const { rowCount } = await c.query('update site_flags set auto_close_off_at = null where auto_close_off_at is not null');
+      if (rowCount) await log(c, req, 'site.auto-close-resumed');
+      return { autoClose: 'on' as const };
+    });
+  });
 
   app.put('/staff/v1/site/banner', opts, async (req) => {
     const b = bodyOf(req, ['text', 'kind']);

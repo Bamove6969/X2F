@@ -15,15 +15,21 @@
  *   there, so a take that locks the same account (take.ts) can't race it.
  * - A wrong mass close can't happen by accident (lead vendor review item 4): the first pass after a
  *   gap in the schedule (or after a start) only records the time and closes nothing, no pass runs
- *   during maintenance, and one pass closes at most CLOSE_CAP accounts; when more were due the owner
- *   gets an alert.
+ *   during maintenance, and one pass closes at most CLOSE_CAP accounts. When more were due, the
+ *   close switches itself off (`site_flags.auto_close_off_at`, security review 8 Nov M1) and the
+ *   owner gets an alert; nothing closes until the owner turns it back on
+ *   (POST /staff/v1/site/auto-close/resume).
  * - An account a moderator already disabled is left as it is; staff, owner and team-member logins
  *   are not trader accounts and never close here.
  * - Names stay taken, offers stay as rows, reviews and the ban list are untouched; the account's PGP
- *   keys are deleted so the person can reuse one (owner G14).
+ *   keys are deleted so the person can reuse one (owner G14). What a ban would record of them is
+ *   kept first, as keyed tags only (`closed_account_keys`, M2), so a ban recorded after the close
+ *   still covers them.
  */
 import type pg from 'pg';
 import { addOwnerAlert } from './alerts.js';
+import type { Deps } from './app.js';
+import { keepClosedAccountKeys } from './bans.js';
 import type { RetentionJob } from './retention.js';
 
 export const INACTIVE_MS = 60 * 86_400_000;
@@ -42,19 +48,26 @@ export function inactivityJob(): RetentionJob {
   let lastPass: number | null = null;
   return {
     name: 'closeInactiveAccounts',
-    async run(db: pg.Pool, now: Date): Promise<number> {
+    async run(db: pg.Pool, now: Date, deps?: Partial<Pick<Deps, 'config'>>): Promise<number> {
+      if (!deps?.config) throw new Error('closeInactiveAccounts needs the config');
       const previous = lastPass;
       lastPass = now.getTime();
       if (previous === null || now.getTime() - previous > INACTIVITY_GAP_MS) return 0;
       const { rows: flags } = await db.query<{ on: boolean }>('select maintenance_since is not null as on from site_flags');
       if (flags[0]?.on === true) return 0;
-      return closeDueAccounts(db, now);
+      return closeDueAccounts({ db, config: deps.config }, now);
     },
   };
 }
 
-/** One pass: closes up to CLOSE_CAP due accounts, each under its own lock; alerts the owner when more were due. */
-export async function closeDueAccounts(db: pg.Pool, now: Date): Promise<number> {
+/**
+ * One pass: closes up to CLOSE_CAP due accounts, each under its own lock. When more were due, it
+ * switches the close off and alerts the owner (M1). Closes nothing while switched off.
+ */
+export async function closeDueAccounts(deps: Pick<Deps, 'db' | 'config'>, now: Date): Promise<number> {
+  const { db } = deps;
+  const { rows: off } = await db.query<{ off: boolean }>('select auto_close_off_at is not null as off from site_flags');
+  if (off[0]?.off === true) return 0;
   const params = [now, new Date(now.getTime() - INACTIVE_MS)];
   const { rows: due } = await db.query<{ id: string }>(`select a.id from accounts a where $1::timestamptz is not null and ${DUE} order by a.id limit $3`, [...params, CLOSE_CAP + 1]);
   let closed = 0;
@@ -72,6 +85,8 @@ export async function closeDueAccounts(db: pg.Pool, now: Date): Promise<number> 
         // Owner G14 (7 Nov): the person may reuse their PGP key on a new account (a key's
         // fingerprint is unique across accounts); names stay taken. A closed account never logs in
         // again, so its keys go. Passkeys and security keys make a new credential for each account.
+        // Security review 8 Nov M2: what a ban would record of them is kept first (keyed tags only).
+        await keepClosedAccountKeys({ db: c, config: deps.config }, id, now);
         await c.query('delete from pgp_keys where account_id = $1', [id]);
         closed++;
       }
@@ -83,7 +98,12 @@ export async function closeDueAccounts(db: pg.Pool, now: Date): Promise<number> 
       c.release();
     }
   }
-  if (due.length > CLOSE_CAP) await addOwnerAlert(db, 'auto-close-capped', { closed, cap: CLOSE_CAP }, now);
+  if (due.length > CLOSE_CAP) {
+    // M1: a cap that is hit is a sign something is wrong (a clock jump, a long outage): the close
+    // stays off until the owner turns it back on, rather than closing CLOSE_CAP more every pass.
+    const { rowCount } = await db.query('update site_flags set auto_close_off_at = $1 where auto_close_off_at is null', [now]);
+    if ((rowCount ?? 0) > 0) await addOwnerAlert(db, 'auto-close-capped', { closed, cap: CLOSE_CAP, switchedOff: true }, now);
+  }
   return closed;
 }
 

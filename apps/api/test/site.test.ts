@@ -177,6 +177,19 @@ describe('banner', () => {
   });
 });
 
+describe('the 60-day close switch (security review 8 Nov M1)', () => {
+  it('POST /staff/v1/site/auto-close/resume turns the close back on and logs it; when it is on, it changes and logs nothing', async () => {
+    await deps.db.query('update site_flags set auto_close_off_at = $1', [T0]);
+    const res = await owner.post('/staff/v1/site/auto-close/resume', {});
+    expect([res.statusCode, res.json()]).toEqual([200, { autoClose: 'on' }]);
+    expect((await deps.db.query('select auto_close_off_at from site_flags')).rows).toEqual([{ auto_close_off_at: null }]);
+    expect((await logEntries(deps, 'site.auto-close-resumed')).length).toBe(1);
+    expect((await owner.post('/staff/v1/site/auto-close/resume', {})).statusCode).toBe(200);
+    expect((await logEntries(deps, 'site.auto-close-resumed')).length).toBe(1);
+    expect(errorOf(await owner.post('/staff/v1/site/auto-close/resume', { on: true }))).toBe('bad-request');
+  });
+});
+
 describe('maintenance', () => {
   it('turns the trader API to 503 maintenance except GET /v1/site; the staff API still answers; off again restores it', async () => {
     setNow(T0);
