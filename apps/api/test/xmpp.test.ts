@@ -1,15 +1,17 @@
 // Owner rule p5-7: the XMPP sender against a local fake server, reached through a fake SOCKS5 proxy
 // (owner ruling p11-31: Tor is mandatory). TLS from the first byte, the certificate checked against
 // the account's domain, no plaintext path, SCRAM before PLAIN, and (owner ruling p11-31: OMEMO is
-// mandatory) never a plaintext message: no OMEMO bundle, no message; OMEMO itself is the
-// NEEDS_OMEMO_RATCHET tripwire until the Double Ratchet is built.
+// mandatory) never a plaintext message: no OMEMO bundle, no message; with bundles, a real OMEMO 0.3
+// message (@x2f/omemo) that a receiving device decrypts, after X2F's own device list and bundle
+// were published.
 import { X509Certificate, createHash, createHmac, generateKeyPairSync, pbkdf2Sync, randomBytes, sign, timingSafeEqual, type KeyObject } from 'node:crypto';
 import dns from 'node:dns';
 import { connect as tcpConnect, createServer as createTcpServer, type AddressInfo, type Server, type Socket } from 'node:net';
 import { createServer as createTlsServer, type TLSSocket } from 'node:tls';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../src/config.js';
-import { NEEDS_OMEMO_RATCHET, OMEMO_NS, parseBundle, xeddsaVerify, type OmemoEncrypt } from '../src/jabber/omemo.js';
+import { OmemoDevice, generateBundleSecrets, x25519KeyPair } from '@x2f/omemo';
+import { OMEMO_NS, omemoEncryptorFrom, parseBundle, xeddsaVerify, type OmemoEncrypt } from '../src/jabber/omemo.js';
 import { xmlEscape, xmppSender, type XmppSenderOptions } from '../src/jabber/xmpp.js';
 import { certificate } from './helpers/der.js';
 import { VAPID_ENV } from './helpers/vapid.js';
@@ -112,12 +114,16 @@ interface FakeOptions {
   devices?: Devices;
   /** Answer the message with an error stanza before the ping result, or after it. */
   bounce?: 'early' | 'late';
+  /** Refuse PEP publishes (a server without PEP, or one that refuses the open access model). */
+  rejectPublish?: boolean;
 }
 
 async function fakeServer(o: FakeOptions = {}) {
   const pki = ca();
   const { key, cert } = pki.leaf(o.host ?? 'xmpp.test');
   const transcript: string[] = [];
+  /** What the sender published to its own PEP nodes, in order. */
+  const published: Array<{ node: string; id: string; item: string; options: string }> = [];
   const mechanisms = o.mechanisms ?? ALL_MECHANISMS;
   const devices: Devices = o.devices ?? [{ id: 4242, bundle: bundleXml() }];
   const pubsub = (node: string, inner: string) =>
@@ -201,6 +207,14 @@ async function fakeServer(o: FakeOptions = {}) {
             sock.write(`<iq type='result' id='${id}'><bind xmlns='urn:ietf:params:xml:ns:xmpp-bind'><jid>x2f-alerts@xmpp.test/x2f-alerts</jid></bind></iq>`);
           } else if (/<ping /.test(inner!)) {
             sock.write(`<iq type='result' id='${id}' from='xmpp.test'/>`);
+          } else if (/<publish /.test(inner!)) {
+            const pub = /<publish node='([^']+)'><item id='([^']+)'>([\s\S]*?)<\/item><\/publish>(?:<publish-options>([\s\S]*?)<\/publish-options>)?/.exec(inner!);
+            if (!pub || o.rejectPublish) {
+              sock.write(`<iq type='error' id='${id}'><error type='cancel'><feature-not-implemented xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></iq>`);
+            } else {
+              published.push({ node: pub[1]!, id: pub[2]!, item: pub[3]!, options: pub[4] ?? '' });
+              sock.write(`<iq type='result' id='${id}'><pubsub xmlns='http://jabber.org/protocol/pubsub'><publish node='${pub[1]}'><item id='${pub[2]}'/></publish></pubsub></iq>`);
+            }
           } else if (node === `${OMEMO_NS}.devicelist`) {
             sock.write(devices === 'item-not-found'
               ? `<iq type='error' id='${id}' from='mira@xmpp.example.org'><error type='cancel'><item-not-found xmlns='urn:ietf:params:xml:ns:xmpp-stanzas'/></error></iq>`
@@ -222,7 +236,7 @@ async function fakeServer(o: FakeOptions = {}) {
   servers.push(server);
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const port = (server.address() as AddressInfo).port;
-  return { port, root: pki.root, transcript, all: () => transcript.join('') };
+  return { port, root: pki.root, transcript, published, all: () => transcript.join('') };
 }
 
 /**
@@ -398,16 +412,59 @@ describe('xmppSender: TLS, SASL', () => {
 });
 
 describe('xmppSender: OMEMO is mandatory (owner ruling p11-31); never a plaintext message', () => {
-  it('as built, every send stops at the NEEDS_OMEMO_RATCHET tripwire after fetching the bundles: no message is written', async () => {
-    const s = await setup({ devices: [{ id: 11, bundle: bundleXml() }, { id: 12, bundle: bundleXml() }] });
+  /** X2F's identity and bundle as the production encryptor loads them from the database. */
+  const realOmemo = (deviceId = 777) => {
+    const kp = x25519KeyPair();
+    const identity = { deviceId, publicKey: kp.publicKey, privateKey: kp.privateKey };
+    return omemoEncryptorFrom(identity, generateBundleSecrets(kp.privateKey, 20));
+  };
+
+  it('with the real encryptor: publishes our device list and bundle (open access), then a message every recipient device decrypts to the fixed text', async () => {
+    const phone = new OmemoDevice(11, 20);
+    const laptop = new OmemoDevice(12, 20);
+    const omemo = realOmemo();
+    const s = await setup({ devices: [{ id: 11, bundle: phone.bundleXml() }, { id: 12, bundle: laptop.bundleXml() }], opts: omemo });
+    await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
+    const messages = messagesIn(s.all());
+    expect(messages).toHaveLength(1);
+    const encrypted = /<encrypted[\s\S]*?<\/encrypted>/.exec(messages[0]!)![0];
+    expect(phone.decrypt(encrypted)).toBe('An account change was made on your X2F account.');
+    expect(laptop.decrypt(encrypted)).toBe('An account change was made on your X2F account.');
+    expect(new OmemoDevice(13, 20).decrypt(encrypted)).toBeNull();
+    expect(messages[0]).not.toContain('<body');
+    expect(s.all()).not.toContain('An account change');
+    // Our own PEP nodes, published before the recipient's were read, with the open access model so other servers' users can read them.
+    expect(s.published.map((p) => [p.node, p.id])).toEqual([[`${OMEMO_NS}.devicelist`, 'current'], [`${OMEMO_NS}.bundles:777`, 'current']]);
+    expect(s.published[0]!.item).toBe(`<list xmlns='${OMEMO_NS}'><device id='777'/></list>`);
+    const ours = parseBundle(777, s.published[1]!.item);
+    expect(ours).not.toBeNull();
+    expect(ours!.preKeys).toHaveLength(20);
+    for (const p of s.published) {
+      expect(p.options).toContain("<field var='pubsub#access_model'><value>open</value></field>");
+      expect(p.options).toContain("<field var='pubsub#persist_items'><value>true</value></field>");
+    }
+    expect(s.all().indexOf('<publish ')).toBeLessThan(s.all().indexOf(`<items node='${OMEMO_NS}.devicelist'/>`));
+    // A test code goes the same way, and a second notice is a fresh session (another prekey), which the device also reads.
+    await s.sender.send('mira@xmpp.example.org', { kind: 'test-code', code: '123456' });
+    const second = /<encrypted[\s\S]*?<\/encrypted>/.exec(messagesIn(s.all())[1]!)![0];
+    expect(phone.decrypt(second)).toBe('Your X2F test code is 123456.');
+    expect(s.all()).not.toContain('123456');
+  });
+
+  it('a server that refuses the publish fails the send before the recipient is looked up and before any message', async () => {
+    const s = await setup({ devices: [{ id: 11, bundle: new OmemoDevice(11, 20).bundleXml() }], rejectPublish: true, opts: realOmemo() });
+    await expect(s.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: publish failed');
+    expect(s.all()).not.toContain('<message');
+    expect(s.all()).not.toContain(`<items node='${OMEMO_NS}.devicelist'/>`);
+  });
+
+  it('without an encryptor the send fails after fetching the bundles and no message is written (the production wiring always passes one)', async () => {
+    const s = await setup({ devices: [{ id: 11, bundle: bundleXml() }] });
     for (const message of [{ kind: 'account-change' } as const, { kind: 'test-code', code: '123456' } as const]) {
-      const e = await s.sender.send('mira@xmpp.example.org', message).catch((x: Error) => x);
-      expect((e as Error).message).toMatch(new RegExp(`^${NEEDS_OMEMO_RATCHET}`));
+      await expect(s.sender.send('mira@xmpp.example.org', message)).rejects.toThrow('xmpp: omemo failed');
     }
     const all = s.all();
-    expect(all).toContain(`<items node='${OMEMO_NS}.devicelist'/>`);
     expect(all).toContain(`<items node='${OMEMO_NS}.bundles:11'/>`);
-    expect(all).toContain(`<items node='${OMEMO_NS}.bundles:12'/>`);
     expect(all).not.toContain('<message');
     expect(all).not.toContain('An account change');
     expect(all).not.toContain('123456');

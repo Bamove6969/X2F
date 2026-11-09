@@ -8,7 +8,8 @@ import { startHold, withTx } from '../src/auth/hold.js';
 import { startDispute } from '../src/disputes/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { codeHash, maskJid, normalizeJid, openJid, sealJid } from '../src/jabber/address.js';
-import { NEEDS_OMEMO_RATCHET, loadOmemoIdentity, ratchetEncryptor } from '../src/jabber/omemo.js';
+import { OmemoDevice, parseBundleSecrets } from '@x2f/omemo';
+import { loadOmemoBundle, loadOmemoIdentity, omemoEncryptor, parseBundle } from '../src/jabber/omemo.js';
 import { rewrapJabberSecrets } from '../src/jabber/rewrap.js';
 import { PENDING_RETENTION_MS, purgeJabberPending } from '../src/jabber/retention.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
@@ -384,11 +385,9 @@ describe('review M4: a key removed from X2F_JABBER_KEYS', () => {
   });
 });
 
-describe("review H1 (owner ruling p11-31, OMEMO mandatory): X2F's own OMEMO identity", () => {
-  it('is created once with its private key stored only sealed; the production encryptor loads it and stops at NEEDS_OMEMO_RATCHET; the rewrap moves it', async () => {
+describe("review H1 (owner ruling p11-31, OMEMO mandatory): X2F's own OMEMO identity and bundle", () => {
+  it('are created once with the private keys stored only sealed; the production encryptor announces and encrypts with them; the rewrap moves both', async () => {
     const ring = deps.config.jabberKeys!;
-    await expect(ratchetEncryptor(() => loadOmemoIdentity(deps.db, ring, deps.clock()))({ to: 'x@y.org', plaintext: 'p', bundles: [] }))
-      .rejects.toThrow(new RegExp(`^${NEEDS_OMEMO_RATCHET}`));
     const a = await loadOmemoIdentity(deps.db, ring, deps.clock());
     const b = await loadOmemoIdentity(deps.db, ring, deps.clock());
     expect(b.deviceId).toBe(a.deviceId);
@@ -399,15 +398,36 @@ describe("review H1 (owner ruling p11-31, OMEMO mandatory): X2F's own OMEMO iden
     // The pair is a real X25519 pair: the public key is the private key's own.
     const derived = createPublicKey(createPrivateKey({ key: { kty: 'OKP', crv: 'X25519', d: a.privateKey.toString('base64url'), x: a.publicKey.toString('base64url') }, format: 'jwk' }));
     expect(derived.export({ format: 'jwk' }).x).toBe(a.publicKey.toString('base64url'));
-    const { rows } = await deps.db.query<{ n: number; sealed: Buffer }>('select count(*) over ()::int as n, identity_sealed as sealed from jabber_omemo_identity');
+    const bundle1 = await loadOmemoBundle(deps.db, ring, a);
+    const bundle2 = await loadOmemoBundle(deps.db, ring, a);
+    expect(bundle2).toEqual(bundle1);
+    expect(bundle1.preKeys).toHaveLength(100);
+    const { rows } = await deps.db.query<{ n: number; sealed: Buffer; bundle: Buffer }>('select count(*) over ()::int as n, identity_sealed as sealed, bundle_sealed as bundle from jabber_omemo_identity');
     expect(rows).toHaveLength(1);
     expect(rows[0]!.sealed.includes(a.privateKey)).toBe(false);
+    expect(rows[0]!.bundle.includes(bundle1.signedPreKey.privateKey)).toBe(false);
+    expect(rows[0]!.bundle.includes(bundle1.signedPreKey.privateKey.toString('hex'))).toBe(false);
+
+    // The production encryptor: announces our device list and a bundle the sender's own parser accepts, and encrypts to a device that can read it.
+    const encryptor = omemoEncryptor(deps.db, ring, deps.clock);
+    const announced = await encryptor.announce();
+    expect(announced.deviceId).toBe(a.deviceId);
+    expect(announced.deviceList).toBe(`<list xmlns='eu.siacs.conversations.axolotl'><device id='${a.deviceId}'/></list>`);
+    expect(parseBundle(a.deviceId, announced.bundle)?.preKeys).toHaveLength(100);
+    const device = new OmemoDevice(4242, 20);
+    const element = await encryptor.encrypt({ to: 'x@y.org', plaintext: 'An account change was made on your X2F account.', bundles: [parseBundle(4242, device.bundleXml())!] });
+    expect(device.decrypt(element)).toBe('An account change was made on your X2F account.');
 
     const fresh = new Uint8Array(randomBytes(32));
     const next: Keyring = { current: 60, keys: new Map([[60, fresh], ...ring.keys]) };
-    await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: next } });
-    const moved = await loadOmemoIdentity(deps.db, { current: 60, keys: new Map([[60, fresh]]) }, deps.clock());
+    // (Earlier tests in this file left contacts sealed under rings `next` does not hold; those count as failed, not ours.)
+    expect((await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: next } })).rewrapped).toBeGreaterThanOrEqual(2);
+    const onlyNew: Keyring = { current: 60, keys: new Map([[60, fresh]]) };
+    const moved = await loadOmemoIdentity(deps.db, onlyNew, deps.clock());
     expect(moved.privateKey.equals(a.privateKey)).toBe(true);
+    expect(await loadOmemoBundle(deps.db, onlyNew, moved)).toEqual(bundle1);
     await expect(loadOmemoIdentity(deps.db, ring, deps.clock())).rejects.toThrow();
+    const sealedBundle = (await deps.db.query<{ bundle_sealed: Buffer }>('select bundle_sealed from jabber_omemo_identity')).rows[0]!.bundle_sealed;
+    expect(() => parseBundleSecrets(sealedBundle, a.privateKey)).toThrow(); // still sealed, not readable as is
   });
 });

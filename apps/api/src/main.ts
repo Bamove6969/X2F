@@ -27,7 +27,7 @@ import { ownerAlertSink } from './push/ownerAlert.js';
 import { staffListenFromEnv, startStaffApi } from './staff/main.js';
 import { assertOneSiteFlagsRow } from './site/flags.js';
 import { startOutbox } from './jabber/outbox.js';
-import { loadOmemoIdentity, ratchetEncryptor } from './jabber/omemo.js';
+import { omemoEncryptor } from './jabber/omemo.js';
 import { xmppSender } from './jabber/xmpp.js';
 
 function port(raw: string | undefined): number {
@@ -87,10 +87,10 @@ const deps: Deps = {
   nudges: productionNudgeWiring(db),
   // Owner rule p5-7: Jabber account-change notices, only when X2F_XMPP_* name X2F's sending account
   // (GAP: the production account and server are not set up; unset, the set-up answers jabber-unavailable).
-  // Owner ruling p11-31: only through Tor (config.xmpp.socks) and only OMEMO-encrypted; as built the
-  // encryptor is the NEEDS_OMEMO_RATCHET tripwire (jabber/omemo.ts), so no message is ever sent.
+  // Owner ruling p11-31: only through Tor (config.xmpp.socks) and only OMEMO-encrypted (jabber/omemo.ts,
+  // @x2f/omemo; docs/jabber/omemo-plan.md): X2F's identity and bundle live sealed in jabber_omemo_identity.
   ...(config.xmpp && config.jabberKeys
-    ? { jabberSender: xmppSender(config.xmpp, { encrypt: ratchetEncryptor(() => loadOmemoIdentity(db, config.jabberKeys!, clock())) }) }
+    ? { jabberSender: xmppSender(config.xmpp, omemoEncryptor(db, config.jabberKeys, clock)) }
     : {}),
 };
 

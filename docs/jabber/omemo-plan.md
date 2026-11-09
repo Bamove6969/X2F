@@ -147,6 +147,15 @@ data with a fresh 64-byte nonce. The protobuf framing is two varint field types 
 Not in this plan: receiving (X2F never reads replies), OMEMO 2, key verification UI, our prekey
 replenishment (never consumed), group chats.
 
+As built (2026-11-09, this branch): `packages/omemo/src/` is `protobuf.ts`, `x25519.ts`, `edwards.ts`,
+`kdf.ts`, `message.ts`, `ratchet.ts` (X3DH and the Double Ratchet together), `envelope.ts`,
+`bundle.ts`, `omemo.ts` (`encryptMessage`) and `device.ts` (`OmemoDevice`, the receiving half for
+tests). `apps/api/src/jabber/omemo.ts` keeps the PEP parsing and adds `loadOmemoBundle`,
+`omemoEncryptor` (production) and `omemoEncryptorFrom` (tests); migration 333 adds `bundle_sealed`
+to `jabber_omemo_identity`; the sender publishes before it fetches (`xmpp.ts`). Still to do before
+lighting: an interop run against Conversations, Dino, Gajim and Monal (a real server, outside CI),
+and the owner questions below.
+
 ## 5. Owner questions
 
 1. **Trust.** May a notice go to a device whose key nobody verified? Recommendation: yes, blind trust

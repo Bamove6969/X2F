@@ -10,11 +10,12 @@
  *   and no STARTTLS, so there is nothing to downgrade.
  * - SASL SCRAM-SHA-256, else SCRAM-SHA-1, else PLAIN (review L1; scram.ts), only ever inside that
  *   TLS session, then resource binding (RFC 6120).
- * - **OMEMO only** (owner ruling p11-31; omemo.ts). The recipient's OMEMO device list and bundles are
- *   fetched (PEP); with no bundle that checks out the send fails before any message is written. The
- *   message is the `<encrypted>` element the encryptor returns, with no `<body>` at all: never
- *   plaintext. GAP: the encryptor is the NEEDS_OMEMO_RATCHET tripwire, so as built every send fails
- *   there, after the bundles and before the message.
+ * - **OMEMO only** (owner ruling p11-31; omemo.ts, @x2f/omemo; docs/jabber/omemo-plan.md). After
+ *   bind, X2F's own device list and bundle are published to its PEP nodes (open access); then the
+ *   recipient's device list and bundles are fetched; with no bundle that checks out the send fails
+ *   before any message is written. The message is the `<encrypted>` element the encryptor returns
+ *   (OMEMO 0.3: a fresh session and PreKeySignalMessage per device), with no `<body>` at all: never
+ *   plaintext.
  * - A ping (XEP-0199) after the message confirms the server took it; an error stanza for the
  *   message before the ping result or within `bounceWaitMs` after it fails the send (review L2), so a
  *   bounce never counts as sent.
@@ -22,15 +23,16 @@
  * Errors never quote the address, the password or anything the server said.
  *
  * GAP (owner p5-7 build, 2026-11-08): X2F's production Jabber account and server are not set up,
- * so `X2F_XMPP_*` are unset and the set-up answers `jabber-unavailable`. Not built yet: OMEMO's
- * Double Ratchet (above), SCRAM's -PLUS channel binding, ALPN.
+ * so `X2F_XMPP_*` are unset and the set-up answers `jabber-unavailable`. Not built yet: SCRAM's
+ * -PLUS channel binding, ALPN, interop tests against real clients (plan, section 4).
  */
 import { isIP } from 'node:net';
 import { connect, type ConnectionOptions, type TLSSocket } from 'node:tls';
 import type { XmppConfig } from '../config.js';
 import { BARE_JID } from '../config.js';
 import {
-  DEVICELIST_NODE, bundleNode, isEncryptedElement, itemsRequest, needsRatchet, parseBundle, parseDeviceList, type OmemoBundle, type OmemoEncrypt,
+  DEVICELIST_NODE, bundleNode, isEncryptedElement, isResultIq, itemsRequest, parseBundle, parseDeviceList, publishRequest, type OmemoAnnounce, type OmemoBundle,
+  type OmemoEncrypt,
 } from './omemo.js';
 import { SCRAM_MECHANISMS, scramClient } from './scram.js';
 import { messageText, SENDER_NAME, type JabberMessage, type JabberSender } from './sender.js';
@@ -123,8 +125,10 @@ const SASL_NS = 'urn:ietf:params:xml:ns:xmpp-sasl';
 export interface XmppSenderOptions {
   /** Extra trust anchors (tests use their own CA); production uses the system's. */
   ca?: ConnectionOptions['ca'];
-  /** Encrypts the message to the recipient's OMEMO devices. Default: the NEEDS_OMEMO_RATCHET tripwire. */
+  /** Encrypts the message to the recipient's OMEMO devices (omemo.ts `omemoEncryptor`). Without one, every send fails at that step. */
   encrypt?: OmemoEncrypt;
+  /** X2F's own device list and bundle, published after bind on every connection; without it nothing is published. */
+  announce?: OmemoAnnounce;
   /** How long to wait for a bounce after the ping result (default `BOUNCE_WAIT_MS`). */
   bounceWaitMs?: number;
 }
@@ -139,7 +143,9 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
   const at = cfg.jid.indexOf('@');
   const local = cfg.jid.slice(0, at);
   const domain = cfg.jid.slice(at + 1);
-  const encrypt = opts.encrypt ?? needsRatchet;
+  const encrypt: OmemoEncrypt = opts.encrypt ?? (async () => {
+    throw new XmppError('omemo');
+  });
   const bounceWaitMs = opts.bounceWaitMs ?? BOUNCE_WAIT_MS;
   return {
     async send(to: string, message: JabberMessage): Promise<void> {
@@ -199,7 +205,15 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
         const bound = await read.iq('bind1', 'bind');
         if (!/^<iq\b[^>]*\btype=['"]result['"]/.test(bound)) throw new XmppError('bind');
 
-        // OMEMO (owner ruling p11-31): the recipient's devices and their bundles, or no message.
+        // OMEMO (owner ruling p11-31). Our own device list and bundle first, so the recipient's client can read our keys.
+        if (opts.announce) {
+          const ours = await opts.announce();
+          write(publishRequest('omemo-pub-dl', DEVICELIST_NODE, ours.deviceList, xmlEscape));
+          if (!isResultIq(await read.iq('omemo-pub-dl', 'publish'))) throw new XmppError('publish');
+          write(publishRequest('omemo-pub-b', bundleNode(ours.deviceId), ours.bundle, xmlEscape));
+          if (!isResultIq(await read.iq('omemo-pub-b', 'publish'))) throw new XmppError('publish');
+        }
+        // Then the recipient's devices and their bundles, or no message.
         write(itemsRequest(to, 'omemo-dl', DEVICELIST_NODE, xmlEscape));
         const devices = parseDeviceList(await read.iq('omemo-dl', 'omemo'));
         const bundles: OmemoBundle[] = [];
@@ -209,7 +223,12 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
           if (b) bundles.push(b);
         }
         if (bundles.length === 0) throw new XmppError('omemo');
-        const encrypted = await encrypt({ to, plaintext: text, bundles }); // NEEDS_OMEMO_RATCHET: throws as built
+        let encrypted: string;
+        try {
+          encrypted = await encrypt({ to, plaintext: text, bundles });
+        } catch {
+          throw new XmppError('omemo'); // never the encryptor's own words
+        }
         if (!isEncryptedElement(encrypted)) throw new XmppError('omemo');
 
         const id = `x2f${Date.now().toString(36)}`;
