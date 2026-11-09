@@ -9,6 +9,7 @@ Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's a
 - **Offer cap (owner Q31, 6 Nov):** 3 buying + 3 selling per account in total, paused offers counted, no seventh; built on main (`OFFER_CAP_DEFAULTS`, keys `offers_max_buy` / `offers_max_sell`). Task 34 must not change the cap; the "2 per side per currency, 20 in total" text below is superseded.
 - **Bands and methods (owner Q23, 6 Nov):** Task 34 limits are 3 bands per currency and 5 payment types per offer (the code has 5 and 10: change to 3 and 5).
 - **Price sources (owner Q7, 6 Nov):** Task 3 maximum source gap is 3% (`maxSpreadBps` 300); fourth source off by default.
+- **Disputed trades are kept 90 days from the dispute closing (owner p11-11),** not from the dispute button; the older lines below carry a struck-through note.
 
 ## Revision 2026-10-29 (Task 10 as built, second, `wip/second-p3-task10`; not reviewed yet)
 
@@ -428,7 +429,7 @@ Revision 2026-10-29 (lead decision, Task 5 review I2; supersedes "locks exactly 
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(api): trade store, role-aware view, guarded events, retention`.
 
-**Revision 2026-10-29 (owner):** retention changes: an undisputed trade is deleted whole 30 days after it ends; a disputed trade is kept 90 days from the dispute button. `purgeTradeAddresses` moves from 90 to 30 days now; the whole-trade delete is Plan 7 Task 2. See "Revision 2026-10-29 (owner)" at the end.
+**Revision 2026-10-29 (owner):** retention changes: an undisputed trade is deleted whole 30 days after it ends; a disputed trade is kept 90 days from ~~the dispute button~~ the dispute closing (owner p11-11, 2026-11-09). `purgeTradeAddresses` moves from 90 to 30 days now; the whole-trade delete is Plan 7 Task 2. See "Revision 2026-10-29 (owner)" at the end.
 
 ### Task 7: Plan 1 amendments — incoming funds, buyer-cancel guard, security follow-ups, relay registration and close
 
@@ -783,7 +784,7 @@ Revision 2026-10-29 (lead decision, Task 5 review I2; supersedes "locks exactly 
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat: end-to-end encrypted chat`.
 
-**Revision 2026-10-29 (owner):** `purgeChats` deletes envelopes 30 days after the trade closes (`TRADE_KEEP_DAYS`), or 90 days after the dispute button for a disputed trade, not 90 days after close. See "Revision 2026-10-29 (owner)" at the end.
+**Revision 2026-10-29 (owner):** `purgeChats` deletes envelopes 30 days after the trade closes (`TRADE_KEEP_DAYS`), or 90 days after ~~the dispute button~~ the dispute closing (owner p11-11, 2026-11-09) for a disputed trade, not 90 days after close. See "Revision 2026-10-29 (owner)" at the end.
 
 ### Task 21: PostOffer
 
@@ -1092,7 +1093,7 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
   - **Pause and resume all offers** is new Task 36, built on the existing per-offer `PATCH status`.
 - **Task 6 (retention).**
   - **An undisputed trade self-destructs 30 days after it ends** (`closed_at`). This is the advertised self-destruct. There are no user-chosen delete times and no early or manual delete.
-  - **A disputed trade is kept 90 days from the moment the dispute button was pressed** (`disputes.opened_at`), then deleted (Plan 4 Task 23).
+  - **A disputed trade is kept 90 days from ~~the moment the dispute button was pressed~~ the dispute closing (owner p11-11, 2026-11-09)** (`disputes.opened_at`), then deleted (Plan 4 Task 23).
   - `purgeTradeAddresses` changes from 90 to 30 days after `closed_at` (constant `TRADE_KEEP_DAYS = 30`), still skipping a trade with a dispute. Task 20's `chatPurgeDue` takes the same 30 days.
   - **No per-trade stub.** Plan 7 Task 2 deletes the trade row itself, with its events, identities, attestations and chat, after first adding the trade to the account's running totals (completed trades and so on). So every table with a foreign key to `trades(code)` needs `on delete cascade`, or the purge deletes children first; the `trade_events` trigger already lets `x2f_purge` delete.
   - **Open (not decided here):** P3-M10 `disputeAfterRefundDays: 90` is longer than the 30-day delete. Either the window shrinks to 30 days or less, or a refunded trade is kept until its window closes. The lead or the owner decides; until then Plan 7 Task 2 skips a refunded trade still inside that window.

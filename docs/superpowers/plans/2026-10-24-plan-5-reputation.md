@@ -628,7 +628,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat: encrypted proof storage, moderator-only unblurred copies, retention`.
 
-**Revision 2026-10-29 (owner):** `purgeProofs` follows the new retention: proofs go with the trade 30 days after it ends, or 90 days after the dispute button for a disputed trade (Plan 7 Task 2, Plan 4 Task 23). See "Revision 2026-10-29 (owner)" at the end.
+**Revision 2026-10-29 (owner):** `purgeProofs` follows the new retention: proofs go with the trade 30 days after it ends, or 90 days after ~~the dispute button~~ the dispute closing (owner p11-11, 2026-11-09) for a disputed trade (Plan 7 Task 2, Plan 4 Task 23). See "Revision 2026-10-29 (owner)" at the end.
 
 ### Task 15: Proof screens — upload, blur editor, paid card, evidence and the unblurred copy (`apps/web`)
 
@@ -768,7 +768,7 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 - **Running totals instead of per-trade rows.** After the 30-day delete, stats can't be computed from `trades`. New Task 20 keeps per-account running totals (completed trades, lost disputes, cancels, trades reaching funding) updated when each trade or dispute ends. **Decided (lead call, 2026-10-29):** P5-A8 `typicalMinutes` (median of the last 20 action times) and P5-A9 cancel rate need more than a count, so each account keeps its last 20 action durations, in minutes, with no trade code or date. The owner still has to confirm the running-totals approach (answers, Q3 "pending confirmation").
 - **Feedback link on every "can't do that" popup** (owner): new Task 21 adds the feedback form (complaint, feedback or recommendation; named or anonymous) and the shared `CantDoThat` popup. Task 4's "How's X2F doing?" card stays as it is.
 - **P5-A29** (the buyer keeps the unblurred original on the device until no dispute is possible) follows the dispute-after-refund window, which is open (Plan 3 Revision 2026-10-29).
-- **The self-delete lines of Revision 2026-10-28 are superseded.** There are no per-side self-delete times. Proofs are deleted with the trade, 30 days after it ends, or 90 days after the dispute button for a disputed trade (Task 14's `purgeProofs` takes both numbers).
+- **The self-delete lines of Revision 2026-10-28 are superseded.** There are no per-side self-delete times. Proofs are deleted with the trade, 30 days after it ends, or 90 days after ~~the dispute button~~ the dispute closing (owner p11-11, 2026-11-09) for a disputed trade (Task 14's `purgeProofs` takes both numbers).
 - **Delete my account** is decided (yes) and planned in Plan 7 (new Task 18). Reviews by and about a deleted account stay (they are permanent) and show "Deleted user".
 
 ### Task 19: Review disputes — NEW 2026-10-29
