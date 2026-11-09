@@ -22,6 +22,7 @@ export const LANDING_COPY = {
   sloganTop: 'You’ll need Fiat',
   sloganBottom: 'to believe it.',
   promises: [
+    // not-a-refusal: a reassurance about escrow, not a rule the user ran into
     'Your coins sit in 2-of-3 escrow. X2F can’t move them alone.',
     'No IP addresses logged. Chats are end-to-end encrypted.',
     'Members only. Nothing here is public.',

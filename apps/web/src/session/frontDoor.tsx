@@ -12,6 +12,7 @@
  * the session loads nothing behind the door renders. The API is the real enforcement
  * (apps/api/src/auth/frontDoor.ts); this keeps the screens from ever showing an empty shell of it.
  */
+import { useRef } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router';
 import { safeReturnTo } from '../api/client.js';
 import type { Session } from './useSession.js';
@@ -70,12 +71,19 @@ export function doorVerdict(session: Session, pathname: string, search: string):
   return { kind: 'go', to: `/login?returnTo=${returnTo}` };
 }
 
-/** The route element around every screen behind the front door. */
+/**
+ * The route element around every screen behind the front door. On the first load nothing renders
+ * until the session is known. A re-check (`refreshSession()`, e.g. after a screen changed the
+ * account) also reads `loading`; a screen already let in on this same path stays mounted through it,
+ * so it keeps its own state (a status line, a form), and the new answer then decides as usual.
+ */
 export function BehindTheDoor() {
   const session = useSession();
   const { pathname, search } = useLocation();
   const v = doorVerdict(session, pathname, search);
-  if (v.kind === 'wait') return null;
+  const letIn = useRef<string | null>(null);
+  if (v.kind === 'wait') return letIn.current === pathname ? <Outlet /> : null;
+  letIn.current = v.kind === 'in' ? pathname : null;
   if (v.kind === 'go') return <Navigate to={v.to} replace />;
   return <Outlet />;
 }
