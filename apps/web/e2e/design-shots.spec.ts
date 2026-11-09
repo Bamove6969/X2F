@@ -667,7 +667,7 @@ test("38-39 Task 39: the two-step I've paid, marked as paid", async ({ page }) =
   await page.locator('[data-primary]').first().click();
   const sheet = page.getByRole('dialog');
   await expect(sheet).toContainText('Mark this trade as paid?');
-  await sheet.getByRole('checkbox').check();
+  await sheet.getByRole('checkbox', { name: /I sent exactly/ }).check();
   await shot(page, '38-trade-paid-confirm-sheet');
   await page.getByRole('button', { name: 'Yes, mark as paid' }).click();
   await roomState(page, 'paid');
