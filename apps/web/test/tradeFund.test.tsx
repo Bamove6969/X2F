@@ -731,7 +731,7 @@ describe('the buyer while waiting for funding (design proto review P1, 8 Nov)', 
   it('once the time to fund is over, the screen says the trade is being cancelled (the server cancels it)', async () => {
     current = buyerView({ serverNow: '2026-10-25T11:40:05.000Z' });
     const host = await room();
-    expect(host.querySelector('[data-fund-over]')?.textContent).toBe("The time to fund ran out. satoshi_ghost didn't fund the escrow in time, so X2F is cancelling this trade. Don't send any money.");
+    expect(host.querySelector('[data-fund-over]')?.textContent).toBe("The time to fund ran out. The seller didn't fund the escrow in time, so X2F is cancelling this trade. Don't send any money.");
     expect(button(host, 'Cancel trade')).toBeUndefined();
   });
 
@@ -741,7 +741,7 @@ describe('the buyer while waiting for funding (design proto review P1, 8 Nov)', 
     expect(host.querySelector('.x2f-chip')?.getAttribute('data-tone')).toBe('neutral');
     expect(host.querySelector('.x2f-chip')?.textContent).toBe('Cancelled');
     expect(host.textContent).toContain('The time to fund ran out');
-    expect(host.textContent).toContain("satoshi_ghost didn't fund the escrow in time, so X2F cancelled this trade. You don't need to do anything.");
+    expect(host.textContent).toContain("The seller didn't fund the escrow in time, so X2F cancelled this trade. You don't need to do anything.");
     expect(button(host, 'Cancel trade')).toBeUndefined();
   });
 

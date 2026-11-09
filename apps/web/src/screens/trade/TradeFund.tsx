@@ -460,7 +460,7 @@ export function BuyerWaitFund({ view, escrow, serverClock, refresh }: TradeScree
           {over ? (
             <p className="x2f-notice" role="status" data-fund-over="">
               {/* COPY-UNSIGNED (TradeFund draws only the seller's view) */}
-              The time to fund ran out. <Name view={view} /> didn't fund the escrow in time, so X2F is cancelling this trade. Don't send any money.
+              The time to fund ran out. The seller didn't fund the escrow in time, so X2F is cancelling this trade. Don't send any money.
             </p>
           ) : view.state === 'funding' ? (
             <p className="x2f-trade-lead">
@@ -528,8 +528,9 @@ export function BuyerFundEnded({ view }: TradeScreenProps) {
           <h1 className="x2f-trade-title">{lapsed ? 'The time to fund ran out' : 'This trade is cancelled'}</h1>
           {lapsed ? (
             <p className="x2f-trade-lead">
-              <Name view={view} /> didn't fund the escrow in time, so X2F cancelled this trade.
-              {coins ? <> The XMR already sent goes back to <Name view={view} />.</> : null} You don't need to do anything.
+              {/* "the seller", never the name, on cancel and refund results (owner 2026-10-29). */}
+              The seller didn't fund the escrow in time, so X2F cancelled this trade.
+              {coins ? <> The XMR already sent goes back to the seller.</> : null} You don't need to do anything.
             </p>
           ) : (
             <p className="x2f-trade-lead">Nothing was funded, so nothing needs to go back. You don't need to do anything.</p>

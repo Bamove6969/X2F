@@ -1,4 +1,4 @@
-import { apply, newTrade, TradeRuleError, type AttestedTerms, type By, type Trade, type TradeEvent } from '@x2f/trade';
+import { apply, MAX_CONFIRM_WINDOW_MIN, newTrade, TradeRuleError, type AttestedTerms, type By, type Trade, type TradeEvent } from '@x2f/trade';
 
 /**
  * The moderation service's shadow Trade (Plan 3 Task 10): its own copy of the trade, built from the
@@ -10,7 +10,7 @@ import { apply, newTrade, TradeRuleError, type AttestedTerms, type By, type Trad
  *
  * Fields the attested deal does not carry are filled so they can never loosen a rule: the offer's
  * minimum (1 minor unit: only growth reads the limits, and it reads the maximum), the confirm window
- * (the longest, 24 h; only disputes after paid read it), placeholder ids. The trade's code is the
+ * (the longest the machine allows, MAX_CONFIRM_WINDOW_MIN; only disputes after paid read it), placeholder ids. The trade's code is the
  * real one.
  */
 export function newShadow(code: string, terms: AttestedTerms, takenAt: Date): Trade {
@@ -25,7 +25,7 @@ export function newShadow(code: string, terms: AttestedTerms, takenAt: Date): Tr
       methodId: 'shadow',
       amountAtomic: BigInt(d.takeAmountAtomic),
       lockedRate: { currency: d.currency, centsPerXmr: BigInt(d.centsPerXmr) },
-      confirmWindowMin: 1440,
+      confirmWindowMin: MAX_CONFIRM_WINDOW_MIN,
       minFiatCents: 1n,
       maxFiatCents: BigInt(d.maxFiatCents),
     },
