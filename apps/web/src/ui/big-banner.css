@@ -1,0 +1,44 @@
+/* J-04 (owner G19, 7 Nov): the maintenance message "in a big bright banner", up to 500 characters.
+   A solid caution fill with the surface colour as ink (dark on amber in the dark theme, light on
+   dark amber in the light one), larger type, and the clock icon so the colour is not the only cue.
+   DESIGN: no board yet (design renames the chip "Unplanned maintenance", W-004); design to draw it. */
+.x2f-big-banner {
+  display: flex;
+  gap: var(--x2f-space-3);
+  align-items: flex-start;
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-caution);
+  color: var(--x2f-surface);
+  font-size: 17px;
+  line-height: 24px;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.x2f-big-banner__icon {
+  display: flex;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.x2f-big-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  min-width: 0;
+}
+
+.x2f-big-banner__title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.x2f-big-banner p {
+  margin: 0;
+}
+
+.x2f-planned-banner {
+  padding: var(--x2f-space-2) var(--x2f-space-4) 0;
+}
