@@ -258,6 +258,13 @@ export function SetupTerms() {
       }
       onAccept={async (version, signature) => {
         update({ terms: { version, signature } });
+        // NEEDS_OWNER_SITE_RULES (owner p11-24, 9 Nov 2026): "maybe we'll have a terms of service
+        // that comes up, you agree to it, then we're going to have site rules that we expect people
+        // to abide by, and they are then going to click and acknowledge that." A separate site
+        // rules page would go here, between the Terms and the names (a `rules` step in
+        // SetupFlow.tsx, acknowledged before "continue creating your account"). Not built: no rules
+        // text exists yet, and whether the rules get their own page or stay in these Terms ("X2F's
+        // rules and terms", design p11-15) is the owner's call.
         go('name');
       }}
     />
