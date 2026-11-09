@@ -86,7 +86,8 @@ export function Login() {
     <SetupFrame
       screen="setup-login"
       step={2}
-      back={path('name')}
+      // Review F8: the screen before this one is the display name.
+      back={path('display-name')}
       footer={
         <Button variant="primary" disabled={busy} onClick={() => void next()} data-part="method-continue">
           {current.cta}

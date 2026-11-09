@@ -245,8 +245,9 @@ const BANNED_NAMES = ['display-name', 'login-name'] as const;
 async function namesTaken(
   db: Queryable,
   q: { self: string | null; loginKey: string; login: LoginTags; display: LoginTags | null },
+  o: { lock: boolean } = { lock: true },
 ): Promise<boolean> {
-  await lockNames(db);
+  if (o.lock) await lockNames(db);
   const pending = (ids: number) =>
     `exists (select 1 from account_holds h
               where h.pending_change->>'kind' = 'login-name' and h.account_id is distinct from $4
@@ -266,6 +267,18 @@ async function namesTaken(
 /** True when `loginKey` is taken in either namespace (under `NAMES_LOCK`, in the caller's transaction); Task 17 checks it before a login name waits out the hold. */
 export async function loginNameTaken(db: Queryable, config: Config, accountId: string, loginKey: string): Promise<boolean> {
   return namesTaken(db, { self: accountId, loginKey, login: loginTags(config, loginKey), display: null });
+}
+
+/**
+ * The sign-up's live "is available" tick (`POST /v1/register/name-check`): whether `loginKey` is
+ * free as a new account's login name, in both namespaces, as `createAccount` will check it (a login
+ * name waiting out a hold counts as taken). A read without `NAMES_LOCK`: the answer is advice only,
+ * and `createAccount` checks again under the lock. This deliberately lets a visitor learn whether a
+ * private login name exists (the design's tick), which FU-A review I1 had kept to the end of a
+ * sign-up; the route's budgets (limits.ts `NAME_CHECK_*`) are what bound it.
+ */
+export async function loginNameAvailable(db: Queryable, config: Config, loginKey: string): Promise<boolean> {
+  return !(await namesTaken(db, { self: null, loginKey, login: loginTags(config, loginKey), display: null }, { lock: false }));
 }
 
 /**

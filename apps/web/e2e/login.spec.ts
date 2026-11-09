@@ -384,13 +384,14 @@ test('security-key login: a second step that needs PGP asks for the PGP key, wit
   await expect(page).toHaveURL(/\/buy$/);
 });
 
-test('a TOTP backup login says when changes can be made, then carries on', async ({ page }) => {
+test('a recovery-code backup login says when changes can be made, then carries on', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview({ level: 'recovery', holdUntil: '2099-01-02T15:00:00.000Z' })));
   await page.route('**/v1/login/backup', json({ status: 'ok', level: 'recovery', holdUntil: '2099-01-02T15:00:00.000Z' }));
   await page.goto('/login/backup?returnTo=%2Fbuy');
-  await page.click('[data-kind="totp"]');
+  // Design build gaps Job 1: a recovery code is the only backup; there is no authenticator choice.
+  await expect(page.locator('[data-kind="totp"]')).toHaveCount(0);
   await page.fill('#backup-login-name', 'nightowl');
-  await page.fill('#backup-code', '123456');
+  await page.fill('#backup-code', 'ABCD-EFGH-JKMN-PQRT');
   await page.click('[data-part="backup-login"]');
   await expect(page.locator('[data-part="hold-note"]')).toContainText('Your account is on a 24-hour hold');
   await expect(page).toHaveURL(/\/login\/backup/);
@@ -400,13 +401,12 @@ test('a TOTP backup login says when changes can be made, then carries on', async
   await expect(page).toHaveURL(/\/settings\/security$/);
 });
 
-test('the TOTP backup daily cap says when to try again', async ({ page }) => {
+test('a paced backup login says when to try again', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview(), 401));
   await page.route('**/v1/login/backup', json({ error: 'slow-down', retryAfterSeconds: 5 * 3600 }, 429));
   await page.goto('/login/backup');
-  await page.click('[data-kind="totp"]');
   await page.fill('#backup-login-name', 'nightowl');
-  await page.fill('#backup-code', '123456');
+  await page.fill('#backup-code', 'ABCD-EFGH-JKMN-PQRT');
   await page.click('[data-part="backup-login"]');
   await expect(page.locator('[role="alert"]')).toContainText('Too many tries. Try again after');
 });
