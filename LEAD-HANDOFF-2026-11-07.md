@@ -154,3 +154,11 @@ Landing order after audit batch 2: job1a + job1b together (BuyerPay overlap: onI
 - 9 Nov 23:17 MT (cloud lead): LANDED batch 2 -> main 22b379e8 (vitest 5168, PW 474+exception, semgrep 0, audit 0). Batch 3 on wip/lead-land-3 be73600a goes to full check next.
 - 9 Nov 14:15 MT (cloud lead): batch 3 (wip/lead-land-3 5b3b38c5) full check #2: 5390 passed / 57 failed in 12 files (all branch interactions: trade-rules dispute waits vs Task 11 staff dispute tests; MOD_INTERNAL_SOCKET_GID under root; front-door gate vs fixtures; final-alert route in OWN_DATA_WRITES; pragma ratchet; terms fixture); PW 482/483 (EUR flake). Fixer round 2 running. claude2's J-02/J-04/J-17 approved for batch 4; J-14 held on owner p11-78..80.
 - 9 Nov 14:17 MT (cloud lead): wip/lead-results-port db357970 = batch 3 + design-results + quote-bands ported (bell in rail head, XMR-set bands with ≈ fiat, cap 409 {buy, sell}); design asked 4 questions in the room. Note for me: never rebase --exec across merge commits; the helper branches with merges already carry committer Claude.
+
+### 9 Nov 21:40 UTC (cloud lead)
+- hold-v3-port f00a102a re-verified: APPROVED WITH MINOR (m1 stale comments in held.ts, m2 restore secured-case G7 test, m3 run hold check before the machine on open-dispute). Owner question p11-97 (partner buyer dispute during hold).
+- flex-offers 088199a7 review: CHANGES REQUIRED (review-flex-offers-2026-11-09.md). Migration 440 clashes with J-07's range: J-16 now owns 490-499. Owner questions p11-94 (purge method_instructions), p11-95 (relist with unpriced currency), p11-96 (margin-only bands).
+- signup-rules S1/S2/S4 fixed (473e8f3b, 3844d89e, 7bd9532a); re-verify next. Owner questions p11-98 (S-017 vs one tap), p11-99 (meter "Checking…").
+- revenue-ledger F1-F7 done at 64fc8c56 (main merged); security re-verify next.
+- trade-copy M1/M2/L1 done at e47e8e43; re-verify next.
+- Page 11 now at 99 questions.

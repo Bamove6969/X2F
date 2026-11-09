@@ -45,6 +45,7 @@ Rules for every builder (they go in every brief):
 | J-24 | 390-394 | |
 | J-27 | 480-489 | |
 | J-07 | 440-449 | |
+| J-16 | 490-499 | |
 
 Main uses up to 113, 119 and 122. The branches use 016, 017, 120, 121, 123 (clash), 198, 200, 204, 208, 210, 307-325, 331, and moderation 007 (clash).
 
