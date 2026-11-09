@@ -34,7 +34,7 @@ const LABEL = 'Browser on Linux';
  * Push and the final-alert receipts; Task 24: the release confirmations; Task 26: nudges, nudge settings
   * and blocks; Task 27: the dispute and the appeal; Task 36: My offers; Task 37: the Blocked list and unblock; Plan 5 Tasks 4 and 21: the two feedback
  * routes; Plan 5 Task 3 and C12b: reviews, Skip review, the pending reviews and the traded-total setting; Plan 5 Task 10: the four past-reputation routes;
- * Plan 4 Task 8: the site state, read by the web shell). Any other new route still needs a client method.
+ * Plan 4 Task 8: the site state, read by the web shell; Plan 4 Task 31 / J-14: the six support-ticket routes). Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
@@ -58,6 +58,8 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/price',
   'GET /v1/reviews/pending',
   'GET /v1/site',
+  'GET /v1/tickets',
+  'GET /v1/tickets/:id',
   'GET /v1/trades/:code',
   'GET /v1/trades/:code/attestation',
   'GET /v1/trades/:code/confirmations',
@@ -78,6 +80,10 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/nudges',
   'POST /v1/offers',
   'POST /v1/offers/:id/take',
+  'POST /v1/tickets',
+  'POST /v1/tickets/:id/close',
+  'POST /v1/tickets/:id/messages',
+  'POST /v1/tickets/compromised',
   'POST /v1/trades/:code/appeal',
   'POST /v1/trades/:code/chat',
   'POST /v1/trades/:code/dispute',
