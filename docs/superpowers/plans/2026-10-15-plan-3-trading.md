@@ -2,6 +2,12 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Revision 2026-11-09 (owner)
+
+Source: owner-decisions-2026-11-06.md (page 11, answers 17-40) and the owner's answers register of 2026-11-09. Where this list differs from older text, this list wins.
+
+- **Offer cap (owner Q31, 6 Nov):** 3 buying + 3 selling per account in total, paused offers counted, no seventh; built on main (`OFFER_CAP_DEFAULTS`, keys `offers_max_buy` / `offers_max_sell`). Task 34 must not change the cap; the "2 per side per currency, 20 in total" text below is superseded.
+
 ## Revision 2026-10-29 (Task 10 as built, second, `wip/second-p3-task10`; not reviewed yet)
 
 Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note. Details: `docs/coordination.md`, "Plan 3 Task 10".
@@ -358,7 +364,7 @@ Rules the tests pin (one test each):
 
 **Revision 2026-10-27 (lead):** offers for gift-card methods carry `country` (ISO 3166-1 alpha-2); the API refuses a gift-card offer without it.
 
-**Revision 2026-10-29 (owner):** the offer caps change to 2 per side per currency and 20 in total when flexible offers land (new Task 34); until then the built 3 per (side, method, currency) and 20 stay. Pause and resume of all offers is new Task 36. See "Revision 2026-10-29 (owner)" at the end.
+**Revision 2026-10-29 (owner):** the offer caps change to 2 per side per currency and 20 in total when flexible offers land (new Task 34); until then the built 3 per (side, method, currency) and 20 stay. **Superseded 2026-11-09 (owner Q31, 6 Nov): 3 buying + 3 selling per account in total, no seventh; see Revision 2026-11-09 (owner) at the top.** Pause and resume of all offers is new Task 36. See "Revision 2026-10-29 (owner)" at the end.
 
 ### Task 5: Taking an offer (`apps/api`)
 
@@ -1079,8 +1085,8 @@ Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note. Sour
 Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revisions > this note. Source: the owner's answers of 2026-10-29 (`~/x2f-comms/owner-answers-2026-10-28.md`), recorded in the spec's "Revision 2026-10-29 (owner)" and `HANDOFF.md` "Decided 2026-10-29 (owner)".
 
 - **Task 4 (offers).**
-  - **Caps.** The owner set **2 offers per side (buy or sell) per currency, and 20 in total**, as part of flexible offers (one offer can carry several methods and price tiers). The built cap of 3 per (side, method, currency) and 20 in total stays until new Task 34 lands; Task 34 changes the count to (side, currency) and the default `offers_max_per_market` to 2. Plan 4's Settings screen shows both numbers.
-  - **The cap refusal** (409 `too-many-offers`) is a "can't do that" case: the web shows "Sorry, you're limited to 2 offers per side ..." `// COPY-UNSIGNED` with the feedback link (Plan 5 new Task 21).
+  - **Caps.** *Superseded 2026-11-09 (owner Q31, 6 Nov): 3 buying + 3 selling per account in total, across every method and currency, paused offers counted, no seventh and no on-hold seventh; already built on main (`OFFER_CAP_DEFAULTS`), so Task 34 must not change the cap.* Older text: The owner set **2 offers per side (buy or sell) per currency, and 20 in total**, as part of flexible offers (one offer can carry several methods and price tiers). The built cap of 3 per (side, method, currency) and 20 in total stays until new Task 34 lands; Task 34 changes the count to (side, currency) and the default `offers_max_per_market` to 2. Plan 4's Settings screen shows both numbers.
+  - **The cap refusal** (409 `too-many-offers`) is a "can't do that" case: the web shows "Sorry, you're limited to 3 offers per side ..." (N = 3, owner Q31) `// COPY-UNSIGNED` with the feedback link (Plan 5 new Task 21).
   - **Pause and resume all offers** is new Task 36, built on the existing per-offer `PATCH status`.
 - **Task 6 (retention).**
   - **An undisputed trade self-destructs 30 days after it ends** (`closed_at`). This is the advertised self-destruct. There are no user-chosen delete times and no early or manual delete.
@@ -1118,8 +1124,8 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
   - Tables `offer_tiers(offer_id, min_fiat_cents, max_fiat_cents, margin_bps, min_trades)` and `offer_methods(offer_id, method_id, instructions, adjust_bps)`; the old single `method_id`, margin and range become the first rows (migration copies them).
   - `POST /v1/offers` accepts `tiers` and `methods`; `GET /v1/offers?amount&method` returns each card's final rate for that amount and method (`null` when the amount falls in a gap).
   - `POST /v1/offers/:id/take` requires `methodId` (one of the offer's methods); the chosen method, its instructions and the final rate are **locked into the signed trade terms**.
-  - **Cap:** 2 per (side, currency) and 20 in total (`offers_max_per_market` default 2, counted per side and currency). Refusal 409 `too-many-offers`.
-- [ ] **Step 1: Write the failing tests:** overlapping tiers → 400; a gap amount gets no rate and a take in a gap → 409 `out-of-range`; a tier rule (`minTrades`) refuses a taker below it; the take locks the chosen method and the attested terms carry it; a method not on the offer → 400; the third offer on one side and currency → `too-many-offers`; the 21st offer → `too-many-offers`; an old single-method offer still lists and takes after the migration.
+  - **Cap:** *not changed by this task (owner Q31, 2026-11-09): 3 buying + 3 selling per account in total, keys `offers_max_buy` and `offers_max_sell`, already on main.* Refusal 409 `too-many-offers`. (Older text: 2 per (side, currency) and 20 in total, `offers_max_per_market` default 2.)
+- [ ] **Step 1: Write the failing tests:** overlapping tiers → 400; a gap amount gets no rate and a take in a gap → 409 `out-of-range`; a tier rule (`minTrades`) refuses a taker below it; the take locks the chosen method and the attested terms carry it; a method not on the offer → 400; the fourth offer on one side (any currency or method) → `too-many-offers`; the seventh offer → `too-many-offers` (owner Q31); an old single-method offer still lists and takes after the migration.
 - [ ] **Step 2:** Run `flock ~/x2f-comms/check.lock npm test -- --project @x2f/trade` and `--project @x2f/api`; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
@@ -1134,7 +1140,7 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 - Test: `apps/web/e2e/flexOffer.spec.ts`
 
 **Interfaces:**
-- Produces: PostOffer "+" adds a tier (amount range, margin, optional "buyer must have X completed trades"), with overlap shown inline; "Add payment method" adds a method with its own instructions and optional price adjustment. *2026-10-29b (design reports the owner's answer):* the adjustment is a percent only; on the quote, a method outside the buyer's amount is greyed out with the reason ("PayPal: up to $500"), never hidden. The offer lists show each offer's final price for the buyer's amount and method. The quote has a method dropdown when the offer has more than one method. Hitting the cap shows the `CantDoThat` popup: "Sorry, you're limited to 2 offers per side ..." `// COPY-UNSIGNED` with the feedback link (Plan 5 Task 21).
+- Produces: PostOffer "+" adds a tier (amount range, margin, optional "buyer must have X completed trades"), with overlap shown inline; "Add payment method" adds a method with its own instructions and optional price adjustment. *2026-10-29b (design reports the owner's answer):* the adjustment is a percent only; on the quote, a method outside the buyer's amount is greyed out with the reason ("PayPal: up to $500"), never hidden. The offer lists show each offer's final price for the buyer's amount and method. The quote has a method dropdown when the offer has more than one method. Hitting the cap shows the `CantDoThat` popup: "Sorry, you're limited to 3 offers per side ..." `// COPY-UNSIGNED` with the feedback link (Plan 5 Task 21).
 - [ ] **Step 1: Write the failing tests:** parity at 390×844; an overlapping tier is refused inline; the list price changes with the amount and the method; the take sends the chosen method; the cap popup has the feedback link.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
