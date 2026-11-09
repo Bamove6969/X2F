@@ -34,6 +34,7 @@ import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { teamRoutes } from './routes/team.js';
+import { noteRoutes } from './team/notes.js';
 import { tradeIdentityRoutes } from './trades/identity.js';
 import { chatRoutes } from './chat/routes.js';
 import { newBudgets, type Budgets } from './limits.js';
@@ -333,6 +334,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   pastRepRoutes(app);
   // Plan 2, Task 18: team members (invites, the member's sign-up, roles, the owner's audit log).
   teamRoutes(app);
+  // Job 1c (J-10, S-094): notes on traders.
+  noteRoutes(app);
   // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.
   feedbackRoutes(app);
 
