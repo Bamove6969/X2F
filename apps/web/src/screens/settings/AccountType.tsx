@@ -150,7 +150,12 @@ function AccountTypeScreen() {
                         </Link>
                       )}
                     </div>
-                    <StatusChip tone={keyMet ? 'escrow' : 'caution'} icon={keyMet ? 'check-circle' : 'alert'} label={keyMet ? C.met : C.notMet} />
+                    {/* Literal tones, one chip per case (moderator-badge-scope: no tone from a variable outside the dispute screens). */}
+                    {keyMet ? (
+                      <StatusChip tone="escrow" icon="check-circle" label={C.met} />
+                    ) : (
+                      <StatusChip tone="caution" icon="alert" label={C.notMet} />
+                    )}
                   </li>
                 </ul>
                 <Button

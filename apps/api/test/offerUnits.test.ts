@@ -62,8 +62,6 @@ async function person(): Promise<Who> {
     [t.id, fakeAddress(), new Date(now.getTime() - 2 * DAY), new Date(now.getTime() - DAY)],
   );
   await deps.db.query('update accounts set created_at = $2 where id = $1', [t.id, new Date(now.getTime() - 40 * DAY)]);
-  // Owner 2 Nov 2026: only vendors post (403 not-vendor); every person here may post.
-  await makeVendor(deps, t.id);
   for (let i = 0; i < 2; i++) {
     const other = await seedAccount(deps, { loginName: `cp${Math.random().toString(36).slice(2, 12)}` });
     const { code } = await seedTrade(deps, { sellerId: t.id, buyerId: other, poster: 'seller' });
@@ -80,6 +78,8 @@ const XMR_OFFER = { ...BASE, amountUnit: 'xmr', minAtomic: (1n * XMR).toString()
 const FIAT_OFFER = { ...BASE, amountUnit: 'fiat', minFiatCents: '50000', maxFiatCents: '300000' };
 
 async function post(who: Who, b: Record<string, unknown>): Promise<string> {
+  // Only vendors post offers (owner 2 Nov 2026, vendor.test.ts); the poster becomes one here.
+  await makeVendor(deps, who.id);
   const res = await who.browser.post('/v1/offers', b);
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;

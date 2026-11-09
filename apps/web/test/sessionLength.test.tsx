@@ -194,7 +194,8 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     // Review M2: no fixed "5 minutes" or stored length in the words; the countdown tells the time.
     expect(document.body.textContent).toContain("Your session is about to end. Confirm it's you to stay logged in.");
     expect(document.body.textContent).not.toContain('5 minutes');
-    expect(document.querySelector('[data-part="session-countdown"]')?.textContent).toContain('Logging out in 4:59');
+    // Kit handoff 1.5 timer rule (on main since 2af5a10b): parts, no colon.
+    expect(document.querySelector('[data-part="session-countdown"]')?.textContent).toContain('Logging out in 4 min 59 s');
     // The same choices as at login, the session's own length picked.
     const select = document.querySelector('[data-part="session-extend"] [data-part="session-length-select"]') as HTMLSelectElement;
     expect([...select.options].filter((o) => !o.disabled).map((o) => o.value)).toEqual(['2', '4', '8', '12']);

@@ -98,7 +98,7 @@ async function timedTrade(sellerId: string, buyerId: string, pay: number, releas
 const OFFER = { methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 }, minTrades: null, terms: '', amountUnit: 'xmr', minAtomic: (XMR / 10n).toString(), maxAtomic: XMR.toString() };
 
 async function post(who: Who, side: 'sell' | 'buy'): Promise<string> {
-  // Owner 2 Nov 2026: only vendors post (403 not-vendor).
+  // Only vendors post offers (owner 2 Nov 2026, vendor.test.ts); the poster becomes one here.
   await makeVendor(deps, who.id);
   const res = await who.browser.post('/v1/offers', { ...OFFER, side });
   expect(res.statusCode, res.body).toBe(201);

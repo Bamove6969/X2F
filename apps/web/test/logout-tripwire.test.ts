@@ -22,6 +22,15 @@ const OWNER = 'push/usePush.ts';
  */
 const REMOTE_SESSION_END = new Set(['screens/settings/Devices.tsx']);
 const SHOWS_LOG_OUT = 'shows "Log out" without calling logOut(env)';
+/**
+ * Owner G25 (6 Nov 2026): right after sign-up, setup's Welcome ends the sign-up session it just
+ * opened (`authApi.logout()`) and sends the person to Log in, to test the login they set up. It
+ * shows no "Log out" control. That session is minutes old and setup offers no push opt-in, so there
+ * is no subscription for `logOut(env)` to remove. Exempt from the auth-client rule only; it may
+ * still never call /v1/logout itself. If setup ever offers pushes, this must move to logOut(env).
+ */
+const SIGNUP_SESSION_END = new Set(['screens/setup/Welcome.tsx']);
+const CALLS_CLIENT_LOGOUT = "calls the auth client's logout()";
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -37,7 +46,7 @@ function bypasses(code: string): string[] {
   const out: string[] = [];
   if (/\/v1\/logout\b/.test(c)) out.push('calls /v1/logout itself');
   // The auth client's `logout()` (packages/auth-client) posts /v1/logout without the push step.
-  if (/\.logout\s*\(/.test(c) || /\{\s*[^}]*\blogout\b[^}]*\}\s*=/.test(c)) out.push("calls the auth client's logout()");
+  if (/\.logout\s*\(/.test(c) || /\{\s*[^}]*\blogout\b[^}]*\}\s*=/.test(c)) out.push(CALLS_CLIENT_LOGOUT);
   // A visible "Log out" control must be wired to logOut(env).
   if (/>\s*Log out\b|['"`]Log out\b/i.test(c) && !/\blogOut\s*\(/.test(c)) out.push('shows "Log out" without calling logOut(env)');
   return out;
@@ -61,6 +70,7 @@ describe('TRIPWIRE (L2): every UI log-out path calls logOut(env)', () => {
       if (rel === OWNER) continue;
       for (const why of bypasses(readFileSync(file, 'utf8'))) {
         if (why === SHOWS_LOG_OUT && REMOTE_SESSION_END.has(rel)) continue;
+        if (why === CALLS_CLIENT_LOGOUT && SIGNUP_SESSION_END.has(rel)) continue;
         found.push(`${rel}: ${why}`);
       }
     }
@@ -72,6 +82,14 @@ describe('TRIPWIRE (L2): every UI log-out path calls logOut(env)', () => {
       const code = strip(readFileSync(join(SRC, rel), 'utf8'));
       expect(code, rel).toMatch(/\bendSession\s*\(/);
       expect(bypasses(code), rel).toEqual([SHOWS_LOG_OUT]);
+    }
+  });
+
+  it('each sign-up exempt screen exists, ends the session as G25 asks, and bypasses nothing else', () => {
+    for (const rel of SIGNUP_SESSION_END) {
+      const code = strip(readFileSync(join(SRC, rel), 'utf8'));
+      expect(code, rel).toMatch(/\bauthApi\.logout\s*\(/);
+      expect(bypasses(code), rel).toEqual([CALLS_CLIENT_LOGOUT]);
     }
   });
 
