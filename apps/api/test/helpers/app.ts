@@ -43,6 +43,8 @@ export function testConfig(over: Partial<Config> = {}): Config {
     totpKeys: testRing(),
     loginNameKeys: testRing(),
     legacySecrets: true,
+    jabberKeys: testRing(),
+    xmpp: null,
     ...over,
   };
 }

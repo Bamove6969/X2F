@@ -37,6 +37,28 @@ export interface Config {
    * once their counts reach 0 (docs/dev-setup.md); with `off` each fails like a wrong credential.
    */
   legacySecrets: boolean;
+  /**
+   * Owner rule p5-7 (Jabber account-change notices): the key ring that seals each Jabber address at
+   * rest (`X2F_JABBER_KEYS`, env or file, like the other rings). Optional: without it, or without
+   * `xmpp`, the Jabber set-up answers 503 `jabber-unavailable`.
+   */
+  jabberKeys: Keyring | null;
+  /** X2F's own sending account (`X2F_XMPP_*`). GAP: the production account and server are not set up yet. */
+  xmpp: XmppConfig | null;
+}
+
+/**
+ * X2F's Jabber sending account. The connection is direct TLS only (XEP-0368, default port 5223),
+ * certificate checked against `domain`; there is no plaintext or STARTTLS path at all.
+ */
+export interface XmppConfig {
+  /** The bare address messages come from, e.g. `x2f-alerts@xmpp.example.org`. */
+  jid: string;
+  /** Its password (`X2F_XMPP_PASSWORD` or `X2F_XMPP_PASSWORD_FILE`). Never logged. */
+  password: string;
+  /** Where to connect (default: the address's domain) and its direct-TLS port (default 5223). */
+  host: string;
+  port: number;
 }
 
 /**
@@ -211,9 +233,13 @@ export function loadConfig(env: Env): Config {
   const legacy = env.X2F_LEGACY_SECRETS || 'on';
   if (legacy !== 'on' && legacy !== 'off') throw malformed('X2F_LEGACY_SECRETS', 'on or off');
   const legacySecrets = legacy === 'on';
+  const hasRing = (name: string) => Boolean(env[name] || env[`${name}_FILE`]);
+  const jabberKeys = hasRing('X2F_JABBER_KEYS') ? parseKeyring('X2F_JABBER_KEYS', ringSource(env, 'X2F_JABBER_KEYS')) : null;
+  const xmpp = parseXmpp(env);
+  if (xmpp !== null && jabberKeys === null) throw missing('X2F_JABBER_KEYS');
   assertSeparate(serverKey, [
     ['X2F_PASSWORD_PEPPERS', passwordPeppers], ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
-    ['X2F_LOGIN_NAME_KEYS', loginNameKeys],
+    ['X2F_LOGIN_NAME_KEYS', loginNameKeys], ...(jabberKeys ? [['X2F_JABBER_KEYS', jabberKeys] as [string, Keyring]] : []),
   ]);
 
   // Task 19: Web Push needs a VAPID key pair (docs/dev-setup.md says how to make one).
@@ -231,8 +257,35 @@ export function loadConfig(env: Env): Config {
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources,
+    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources, jabberKeys, xmpp,
   };
+}
+
+/** A bare Jabber address: `local@domain`, lower-case ASCII, no resource. Also used for users' addresses (jabber/address.ts). */
+export const BARE_JID = /^[a-z0-9._%+!#$*=?^`{|}~-]{1,64}@(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+
+/**
+ * `X2F_XMPP_JID` turns sending on; then `X2F_XMPP_PASSWORD` (or `_FILE`) is required and
+ * `X2F_XMPP_HOST` / `X2F_XMPP_PORT` are optional. GAP (owner p5-7 build): X2F's production Jabber
+ * account and server are not set up; nothing here has a default account or credential.
+ */
+function parseXmpp(env: Env): XmppConfig | null {
+  const jid = env.X2F_XMPP_JID;
+  if (jid === undefined || jid === '') {
+    for (const n of ['X2F_XMPP_PASSWORD', 'X2F_XMPP_PASSWORD_FILE', 'X2F_XMPP_HOST', 'X2F_XMPP_PORT']) {
+      if (env[n]) throw malformed(n, 'set X2F_XMPP_JID too, or none of the X2F_XMPP_ settings');
+    }
+    return null;
+  }
+  if (!BARE_JID.test(jid)) throw malformed('X2F_XMPP_JID', 'a lower-case bare address such as x2f-alerts@xmpp.example.org');
+  const password = ringSource(env, 'X2F_XMPP_PASSWORD').replace(/\r?\n$/, '');
+  if (password === '' || password.length > 1024) throw malformed('X2F_XMPP_PASSWORD', '1 to 1024 characters');
+  const host = env.X2F_XMPP_HOST || jid.slice(jid.indexOf('@') + 1);
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host)) throw malformed('X2F_XMPP_HOST', 'a lower-case host name');
+  const rawPort = env.X2F_XMPP_PORT || '5223';
+  const port = Number(rawPort);
+  if (!/^[1-9][0-9]{0,4}$/.test(rawPort) || port > 65_535) throw malformed('X2F_XMPP_PORT', '1-65535');
+  return { jid, password, host, port };
 }
 
 /**
