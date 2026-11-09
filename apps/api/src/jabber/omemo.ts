@@ -62,6 +62,9 @@ export interface OmemoEncryptor {
   encrypt: OmemoEncrypt;
 }
 
+/** The encryptor's only log line: a recipient device skipped for a key the agreement refuses (review L2), by its id. */
+export type OmemoLog = (e: { jabber: 'omemo'; skippedDevice: number }) => void;
+
 // ---------------------------------------------------------------------------------------------
 // PEP requests and answers. The sender passes the answer of one `<iq>`; anything unexpected is
 // treated as no devices or no bundle (the send is then refused, never sent in plaintext).
@@ -206,10 +209,14 @@ export async function loadOmemoBundle(db: pg.Pool, ring: Keyring, identity: Omem
 }
 
 /** The encryptor for a loaded identity and bundle (tests build one in memory). */
-export function omemoEncryptorFrom(identity: OmemoIdentity, bundle: BundleSecrets): OmemoEncryptor {
+export function omemoEncryptorFrom(identity: OmemoIdentity, bundle: BundleSecrets, log?: OmemoLog): OmemoEncryptor {
   return {
     announce: async () => ({ deviceId: identity.deviceId, deviceList: deviceListXml([identity.deviceId]), bundle: bundleXml(identity.publicKey, bundle) }),
-    encrypt: async ({ to, plaintext, bundles, preKeys }) => encryptMessage(identity, plaintext, bundles, preKeys ? { pickPreKey: preKeys.picker(to) } : {}),
+    encrypt: async ({ to, plaintext, bundles, preKeys }) =>
+      encryptMessage(identity, plaintext, bundles, {
+        ...(preKeys ? { pickPreKey: preKeys.picker(to) } : {}),
+        onSkip: (deviceId) => log?.({ jabber: 'omemo', skippedDevice: deviceId }),
+      }),
   };
 }
 
@@ -217,7 +224,7 @@ export function omemoEncryptorFrom(identity: OmemoIdentity, bundle: BundleSecret
  * The production encryptor: loads (or creates) X2F's identity and bundle for each use, so a
  * rotated key ring is picked up and the private keys are not kept in memory between sends.
  */
-export function omemoEncryptor(db: pg.Pool, ring: Keyring, clock: () => Date): OmemoEncryptor {
+export function omemoEncryptor(db: pg.Pool, ring: Keyring, clock: () => Date, log?: OmemoLog): OmemoEncryptor {
   const load = async () => {
     const identity = await loadOmemoIdentity(db, ring, clock());
     try {
@@ -244,7 +251,7 @@ export function omemoEncryptor(db: pg.Pool, ring: Keyring, clock: () => Date): O
     encrypt: async (input) => {
       const { identity, bundle } = await load();
       try {
-        return await omemoEncryptorFrom(identity, bundle).encrypt(input);
+        return await omemoEncryptorFrom(identity, bundle, log).encrypt(input);
       } finally {
         done(identity, bundle);
       }

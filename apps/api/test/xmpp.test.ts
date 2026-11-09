@@ -489,6 +489,27 @@ describe('xmppSender: OMEMO is mandatory (owner ruling p11-31); never a plaintex
     for (const e of elements) expect(phone.decrypt(e)).toBe('An account change was made on your X2F account.');
   });
 
+  it('review L2: a device whose bundle has a small-order key is skipped and logged by its id only; the notice still reaches the good device', async () => {
+    const phone = new OmemoDevice(11, 20);
+    const broken = new OmemoDevice(12, 3);
+    // Every prekey of device 12 is u = 0: OpenSSL refuses the agreement, so it cannot be encrypted to.
+    const brokenXml = broken.bundleXml().replace(/<preKeyPublic preKeyId='(\d+)'>[^<]*<\/preKeyPublic>/g, (_, id: string) => `<preKeyPublic preKeyId='${id}'>${b64(djb(Buffer.alloc(32)))}</preKeyPublic>`);
+    expect(parseBundle(12, brokenXml)?.preKeys).toHaveLength(3); // the parser cannot tell; the encryptor does
+    const logged: unknown[] = [];
+    const kp = x25519KeyPair();
+    const omemo = omemoEncryptorFrom({ deviceId: 777, publicKey: kp.publicKey, privateKey: kp.privateKey }, generateBundleSecrets(kp.privateKey, 20), (e) => logged.push(e));
+    const s = await setup({ devices: [{ id: 12, bundle: brokenXml }, { id: 11, bundle: phone.bundleXml() }], opts: omemo });
+    await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' });
+    const encrypted = /<encrypted[\s\S]*?<\/encrypted>/.exec(messagesIn(s.all())[0]!)![0];
+    expect(phone.decrypt(encrypted)).toBe('An account change was made on your X2F account.');
+    expect(encrypted).not.toContain("rid='12'");
+    expect(logged).toEqual([{ jabber: 'omemo', skippedDevice: 12 }]);
+    // Only broken devices: the send fails as before, with the fixed error.
+    const none = await setup({ devices: [{ id: 12, bundle: brokenXml }], opts: omemo });
+    await expect(none.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: omemo failed');
+    expect(none.all()).not.toContain('<message');
+  });
+
   it('a server that refuses the publish fails the send before the recipient is looked up and before any message', async () => {
     const s = await setup({ devices: [{ id: 11, bundle: new OmemoDevice(11, 20).bundleXml() }], rejectPublish: true, opts: realOmemo() });
     await expect(s.sender.send('mira@xmpp.example.org', { kind: 'account-change' })).rejects.toThrow('xmpp: publish failed');

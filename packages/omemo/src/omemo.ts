@@ -40,6 +40,8 @@ export interface EncryptOptions {
   pickPreKey?: PickPreKey;
   /** The base key per device (default: fresh); tests only. */
   baseKey?: () => KeyPair;
+  /** Told the id of each device that was skipped (review L2); the id is the only thing worth logging. */
+  onSkip?: (deviceId: number) => void;
 }
 
 const randomPreKey: PickPreKey = (b) => b.preKeys[randomInt(b.preKeys.length)]!;
@@ -69,27 +71,42 @@ export class PreKeyLedger {
   }
 }
 
-/** Encrypts `text` to every device in `bundles`; returns the `<encrypted>` element. Throws when a bundle does not verify or `bundles` is empty. */
+/**
+ * Encrypts `text` to every device in `bundles` and returns the `<encrypted>` element. A device
+ * whose bundle does not verify, has no prekeys, or has a key the agreement refuses (small-order or
+ * not on the curve: OpenSSL returns an error for an all-zero shared secret) is skipped, so one
+ * broken client never silences a user's other devices (review L2). Throws when no device is left or
+ * `bundles` is empty, naming only the fixed reasons, never a key.
+ */
 export function encryptMessage(identity: SenderIdentity, text: string, bundles: RecipientBundle[], o: EncryptOptions = {}): string {
   if (bundles.length === 0) throw new RangeError('omemo: no recipient device');
   const payload = encryptPayload(text);
   const secret = keyAndTag(payload);
   const ourIdentity: KeyPair = { publicKey: identity.publicKey, privateKey: identity.privateKey };
-  const keys = bundles.map((b) => {
-    const theirIdentity = rawKey(b.identityKey);
-    if (!xeddsaVerify(theirIdentity, b.signedPreKey, b.signedPreKeySignature)) throw new RangeError('omemo: bundle signature does not verify');
-    if (b.preKeys.length === 0) throw new RangeError('omemo: bundle without prekeys');
-    const pre = (o.pickPreKey ?? randomPreKey)(b);
-    const session = initAlice({
-      ourIdentity,
-      ourBaseKey: (o.baseKey ?? x25519KeyPair)(),
-      theirIdentity,
-      theirSignedPreKey: rawKey(b.signedPreKey),
-      ...(pre === null ? {} : { theirOneTimePreKey: rawKey(pre.key), preKeyId: pre.id }),
-      signedPreKeyId: b.signedPreKeyId,
-      registrationId: registrationIdFor(identity.deviceId),
-    });
-    return { rid: b.deviceId, prekey: true, data: encrypt(session, secret) };
-  });
+  const keys: Array<{ rid: number; prekey: boolean; data: Buffer }> = [];
+  const reasons = new Set<string>();
+  for (const b of bundles) {
+    try {
+      const theirIdentity = rawKey(b.identityKey);
+      if (!xeddsaVerify(theirIdentity, b.signedPreKey, b.signedPreKeySignature)) throw new RangeError('omemo: bundle signature does not verify');
+      if (b.preKeys.length === 0) throw new RangeError('omemo: bundle without prekeys');
+      const pre = (o.pickPreKey ?? randomPreKey)(b);
+      const session = initAlice({
+        ourIdentity,
+        ourBaseKey: (o.baseKey ?? x25519KeyPair)(),
+        theirIdentity,
+        theirSignedPreKey: rawKey(b.signedPreKey),
+        ...(pre === null ? {} : { theirOneTimePreKey: rawKey(pre.key), preKeyId: pre.id }),
+        signedPreKeyId: b.signedPreKeyId,
+        registrationId: registrationIdFor(identity.deviceId),
+      });
+      keys.push({ rid: b.deviceId, prekey: true, data: encrypt(session, secret) });
+    } catch (e) {
+      // Our own checks have fixed texts; anything else (OpenSSL refusing a key) becomes one.
+      reasons.add(e instanceof RangeError && e.message.startsWith('omemo: ') ? e.message.slice('omemo: '.length) : 'key rejected');
+      o.onSkip?.(b.deviceId);
+    }
+  }
+  if (keys.length === 0) throw new RangeError(`omemo: no usable device (${[...reasons].join('; ')})`);
   return encryptedElement({ sid: identity.deviceId, keys, iv: payload.iv, payload: payload.ciphertext });
 }

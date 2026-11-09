@@ -6,7 +6,7 @@ import {
   DEVICELIST_NODE, bundleNode, bundleXml, deviceListXml, generateBundleSecrets, newDeviceId, parseBundleSecrets, serializeBundleSecrets,
 } from '../src/bundle.js';
 import { OmemoDevice } from '../src/device.js';
-import { xeddsaVerify } from '../src/edwards.js';
+import { xeddsaSign, xeddsaVerify } from '../src/edwards.js';
 import { OMEMO_NS, parseEncryptedElement } from '../src/envelope.js';
 import { parsePreKeyMessage, wireKey } from '../src/message.js';
 import { PreKeyLedger, encryptMessage, registrationIdFor, type RecipientBundle, type SenderIdentity } from '../src/omemo.js';
@@ -145,6 +145,28 @@ describe('encryptMessage', () => {
     expect(() => encryptMessage(me, TEXT, [{ ...recipientBundle(d), preKeys: [] }])).toThrow(/prekeys/);
     expect(() => encryptMessage(me, TEXT, [])).toThrow(/no recipient/);
     expect(() => encryptMessage(me, TEXT, [{ ...recipientBundle(d), identityKey: randomBytes(33) }])).toThrow();
+  });
+
+  it('review L2: a device with a small-order or non-canonical key is skipped (reported by id) and the notice still reaches the others; with none left it fails', () => {
+    const me = sender();
+    const good = new OmemoDevice(61, 20);
+    const P = 2n ** 255n - 19n;
+    const le = (n: bigint) => { const out = Buffer.alloc(32); for (let i = 0; i < 32; i++, n >>= 8n) out[i] = Number(n & 0xffn); return out; };
+    // 62: every prekey is u = 0 (order 1); 63: the signed prekey is u = 1 (order 4), properly signed; 64: the identity key is u = p (0, written non-canonically).
+    const zeroPreKeys: RecipientBundle = { ...recipientBundle(new OmemoDevice(62, 3)), preKeys: [1, 2, 3].map((id) => ({ id, key: wireKey(Buffer.alloc(32)) })) };
+    const spkDevice = new OmemoDevice(63, 3);
+    const one = wireKey(le(1n));
+    const smallSpk: RecipientBundle = { ...recipientBundle(spkDevice), signedPreKey: one, signedPreKeySignature: xeddsaSign(spkDevice.identity.privateKey, one, randomBytes(64)) };
+    const nonCanonical: RecipientBundle = { ...recipientBundle(new OmemoDevice(64, 3)), identityKey: wireKey(le(P)) };
+    const skipped: number[] = [];
+    const xml = encryptMessage(me, TEXT, [zeroPreKeys, recipientBundle(good), smallSpk, nonCanonical], { onSkip: (id) => skipped.push(id) });
+    expect(skipped).toEqual([62, 63, 64]);
+    expect(parseEncryptedElement(xml).keys.map((k) => k.rid)).toEqual([61]);
+    expect(good.decrypt(xml)).toBe(TEXT);
+    expect(() => encryptMessage(me, TEXT, [zeroPreKeys, smallSpk])).toThrow(/^omemo: no usable device/);
+    // A skip never quotes a key: the error names the fixed reasons only.
+    const e = (() => { try { encryptMessage(me, TEXT, [nonCanonical]); return null; } catch (x) { return x as Error; } })()!;
+    expect(e.message).toBe('omemo: no usable device (bundle signature does not verify)');
   });
 
   it('a message to one device is unreadable by another device of the same user, and the text is not in the element', () => {

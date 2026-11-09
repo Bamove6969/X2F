@@ -65,7 +65,7 @@ await assertOneSiteFlagsRow(db);
 const clock = () => new Date();
 let onAlert: (a: PriceAlert) => Promise<void> = (a) => addOwnerAlert(db, a.kind, a.detail, clock());
 // A lost alert is logged once the app's logger exists (the sink only runs after prices.start()).
-let alertLog: { error(obj: { error: string }, msg: string): void } | null = null;
+let alertLog: { error(obj: { error: string }, msg: string): void; info(obj: object, msg: string): void } | null = null;
 const prices = createMarketPrices({
   xmr: createPriceFeed(priceSources(config.priceSources), { ...PRICE_FEED_DEFAULTS, clock }),
   fx: createFxRates(fxSources(config.fxSources), { clock, settings: () => loadFxSettings(db) }),
@@ -90,7 +90,7 @@ const deps: Deps = {
   // Owner ruling p11-31: only through Tor (config.xmpp.socks) and only OMEMO-encrypted (jabber/omemo.ts,
   // @x2f/omemo; docs/jabber/omemo-plan.md): X2F's identity and bundle live sealed in jabber_omemo_identity.
   ...(config.xmpp && config.jabberKeys
-    ? { jabberSender: xmppSender(config.xmpp, omemoEncryptor(db, config.jabberKeys, clock)) }
+    ? { jabberSender: xmppSender(config.xmpp, omemoEncryptor(db, config.jabberKeys, clock, (e) => alertLog?.info(e, 'jabber omemo'))) }
     : {}),
 };
 
