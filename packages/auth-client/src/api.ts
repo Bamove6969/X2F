@@ -241,7 +241,12 @@ export interface AccountOverview {
    * Plan 2 Task 18: set when the caller is a team member (the overview is of the account they work
    * for, with their own login methods); null for the account owner. Optional: older API builds do not send it.
    */
-  member?: { name: string; roles: TeamRole[] } | null;
+  member?: {
+    name: string;
+    roles: TeamRole[];
+    /** J-20 review F8 (owner question p11-136): the member's own limits; absent while the API's MEMBER_SEES_OWN_LIMITS is off, or on older builds. */
+    limits?: { band: TradeBand | null; hours: WorkingHours };
+  } | null;
   /**
    * The calling session's length (owner, 2 Nov 2026): set for a full trader session, null for staff,
    * owner and backup sessions. Optional: older API builds do not send it.

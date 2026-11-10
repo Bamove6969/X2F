@@ -276,7 +276,8 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     const me = (await b.get('/v1/account/me')).json() as { displayName: string; member: unknown; termsCurrent: boolean };
     expect(me.displayName).toBe(owner.displayName);
     // Job 1c: the member's boxes (the old Trades role's), their preset (none: Custom) and the old roles they read as.
-    expect(me.member).toEqual({ name: `Joiner${n}x`, abilities: rolesToAbilities(['trades']), preset: null, roles: ['trades'] });
+    // J-20 F8 (MEMBER_SEES_OWN_LIMITS, lead default on): and their own limits, none yet.
+    expect(me.member).toEqual({ name: `Joiner${n}x`, abilities: rolesToAbilities(['trades']), preset: null, roles: ['trades'], limits: { band: null, hours: 'any' } });
     // The member's own login account carries the Terms they signed, and they are inside.
     expect(me.termsCurrent).toBe(true);
     const signed = await deps.db.query<{ id: string; terms_version: string | null; terms_accepted_at: Date | null; terms_signature: Buffer | null }>(

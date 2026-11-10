@@ -12,7 +12,7 @@ import { tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { abilitiesView } from '../team/members.js';
-import { assertSessionEndInHours, endWithinHours } from '../team/limits.js';
+import { assertSessionEndInHours, endWithinHours, ownLimitsView, type MemberLimitsView } from '../team/limits.js';
 import type { PresetId, TeamRole } from '../team/abilities.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
@@ -136,6 +136,11 @@ export interface MemberOverview {
   preset: PresetId | null;
   /** The old roles the boxes read as (the web's Post offer tab and room still read these). */
   roles: TeamRole[];
+  /**
+   * J-20 review F8: the member's own trade-size band (XMR atomic, null: none) and working hours, as
+   * the lead set them. Absent while MEMBER_SEES_OWN_LIMITS is off (owner question p11-136).
+   */
+  limits?: MemberLimitsView;
 }
 
 /** How many of each login method an account holds (read straight from the method tables). */
@@ -265,7 +270,13 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
   if (!row) throw new ApiError(401, 'not-authenticated');
   const counts = await methodCounts(deps.db, methodsOf);
   const now = deps.clock();
-  const member = req.auth.memberId !== null ? { name: req.auth.memberName ?? '', ...abilitiesView(req.auth.memberAbilities) } : null;
+  let member: MemberOverview | null = null;
+  if (req.auth.memberId !== null) {
+    member = { name: req.auth.memberName ?? '', ...abilitiesView(req.auth.memberAbilities) };
+    // J-20 review F8 (owner question p11-136; MEMBER_SEES_OWN_LIMITS): the member's own band and hours.
+    const limits = await ownLimitsView(deps.db, req.auth.memberId);
+    if (limits !== undefined) member.limits = limits;
+  }
   const held = row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime();
   return {
     displayName: row.display_name,

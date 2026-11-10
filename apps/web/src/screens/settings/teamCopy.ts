@@ -153,6 +153,9 @@ export const TEAM_COPY = {
   badBand: 'Enter the smallest and largest trade in XMR, the largest above zero and not below the smallest.',
   badHours: 'Pick at least one day, and a start and end that differ.',
   firstLoginNote: 'A new member needs no approval to log in. You are told when they log in for the first time.',
+  // J-20 review F8 (owner question p11-136, lead default: a member sees their own limits). COPY-UNSIGNED // DESIGN: wording
+  myLimitsTitle: 'Your limits',
+  myLimitsNote: 'The account owner set these for you.',
 } as const;
 
 export const JOIN_COPY = {

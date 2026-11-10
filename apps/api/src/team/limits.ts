@@ -55,6 +55,29 @@ export interface MemberLimitsView {
   hours: LoginHours;
 }
 
+/**
+ * OWNER QUESTION p11-136 (review F8 / Q4): does a member see their own band and hours? The lead's
+ * recommendation is yes, so this is on: `GET /v1/account/me`'s `member.limits` carries them and the
+ * web's Team screen shows a member "Your limits". Off: `/me` leaves `limits` out (the web then
+ * shows nothing; a member learns a limit only from a refusal). Enforcement is the same either way.
+ */
+export const MEMBER_SEES_OWN_LIMITS: boolean = true;
+
+/** A member's own limits as `/v1/account/me` carries them; undefined when MEMBER_SEES_OWN_LIMITS is off, or the row is gone or unreadable. */
+export async function ownLimitsView(q: Queryable, memberId: string): Promise<MemberLimitsView | undefined> {
+  if (!MEMBER_SEES_OWN_LIMITS) return undefined;
+  const { rows } = await q.query<{ band_min_atomic: string | null; band_max_atomic: string | null; hours: unknown }>(
+    'select band_min_atomic::text, band_max_atomic::text, hours from team_members where id = $1',
+    [memberId],
+  );
+  const r = rows[0];
+  // Every write is checked (`parseHours`); a stored value that is still not valid hours (enforced as
+  // never inside) is not shown rather than shown wrong.
+  const hours = r ? storedHours(r.hours) : null;
+  if (!r || hours === null) return undefined;
+  return { band: bandView(bandOf(r.band_min_atomic, r.band_max_atomic)), hours };
+}
+
 /** numeric(30, 0): at most 30 digits. */
 const ATOMIC = /^(0|[1-9]\d{0,29})$/;
 

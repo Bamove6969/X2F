@@ -204,6 +204,8 @@ export function Team() {
   // The activity log's member filter ('' = every member; review e2e area 8).
   const [logMember, setLogMember] = useState('');
   const [logWho, setLogWho] = useState<{ id: string; name: string }[]>([]);
+  // J-20 review F8: a member's own band and hours (null: not a member, or the API sends none).
+  const [mine, setMine] = useState<{ band: TradeBand | null; hours: WorkingHours } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -223,6 +225,8 @@ export function Team() {
       if (c !== null) {
         setCantDo(c);
         setState('ready');
+        // J-20 review F8: a team member (refused here) is shown their own limits when the API sends them.
+        authApi.me().then((me) => setMine(me.member?.limits ?? null), () => undefined);
       } else setState(e instanceof AuthApiError && e.status === 401 ? 'signed-out' : 'load-failed');
     }
   }, []);
@@ -356,6 +360,16 @@ export function Team() {
           <p className="x2f-note">{C.oneReputation}</p>
           <p className="x2f-note">{C.firstLoginNote}</p>
         </section>
+
+        {mine !== null ? (
+          <section className="x2f-card" data-part="my-limits" aria-labelledby="team-my-limits-h">
+            <h2 className="x2f-card__title" id="team-my-limits-h">
+              {C.myLimitsTitle}
+            </h2>
+            <p className="x2f-note">{C.myLimitsNote}</p>
+            <p className="x2f-note">{C.limits(mine.band, mine.hours)}</p>
+          </section>
+        ) : null}
 
         {error !== null ? (
           <p className="x2f-error" role="alert">
