@@ -116,9 +116,10 @@ describe('bands', () => {
 });
 
 describe('payment methods', () => {
-  it('a price change in steps of 0.5%, −5% to +10%, shown as the board', () => {
+  it('a price change in steps of 0.5%, −5% to +10%, in words, never a signed figure (Wording Room w10-40)', () => {
     expect([stepAdjust(0, 1), stepAdjust(0, -1), stepAdjust(1000, 1), stepAdjust(-500, -1)]).toEqual([50, -50, 1000, -500]);
-    expect([adjustText(0), adjustText(200), adjustText(-50)]).toEqual(['No change', '+2.0%', '−0.5%']);
+    expect([adjustText(0), adjustText(200), adjustText(-50), adjustText(1000), adjustText(-500)]).toEqual(['Same as band', '2.0% more', '0.5% less', '10.0% more', '5.0% less']);
+    for (const bps of [-500, -50, 50, 200, 1000]) expect(adjustText(bps)).not.toMatch(/[+−-]/);
   });
 
   it('instructions shared, or per currency where they differ (owner Q3)', () => {

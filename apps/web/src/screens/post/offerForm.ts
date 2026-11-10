@@ -379,10 +379,14 @@ export const POST_COPY = {
   whoCanTrade: 'Minimum completed trades',
 } as const;
 
-/** A method's price change as the board shows it: "No change", "+2.0%", "−0.5%" (a minus sign). */
+/**
+ * A method's price change in words, never a signed figure (design, Wording Room w10-40): "Same as
+ * band", "2.0% more", "0.5% less".
+ * COPY-UNSIGNED: "Same as band", "… more", "… less".
+ */
 export function adjustText(bps: number): string {
-  if (bps === 0) return 'No change';
-  return `${bps > 0 ? '+' : '−'}${(Math.abs(bps) / 100).toFixed(1)}%`;
+  if (bps === 0) return 'Same as band';
+  return `${(Math.abs(bps) / 100).toFixed(1)}% ${bps > 0 ? 'more' : 'less'}`;
 }
 
 export function stepAdjust(bps: number, dir: 1 | -1): number {
