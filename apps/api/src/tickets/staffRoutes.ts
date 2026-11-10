@@ -6,7 +6,7 @@
 // - `GET /staff/v1/tickets?status=open|answered|closed` → `{ tickets }`: open and answered oldest
 //   first (the queue by age), closed newest first; 100 at most.
 // - `GET /staff/v1/tickets/:id` → `{ ticket, displayName, messages }` (staff messages name the staff
-//   member, for the staff side only).
+//   member, for the staff side only). Logged `ticket.viewed`, ids only (review J6).
 // - `POST /staff/v1/tickets/:id/messages { body }` → 201; the ticket becomes `answered`. Logged
 //   `ticket.replied` with the ticket id only, never the text. Closed → 409 `ticket-closed`.
 // - `POST /staff/v1/tickets/:id/close` → `{ ticket }`, logged `ticket.closed`.
@@ -17,7 +17,8 @@
 // - `GET /staff/v1/compromised?status=open|closed` → `{ tickets }` with `matched`, `locked`.
 // - `GET /staff/v1/compromised/:id` → the ticket, the sender's comment and ticked methods, and the
 //   matched account's status (display name, kind, created, lock, its open trades' codes and states:
-//   owner, "the account's trade info helps staff identify the real owner").
+//   owner, "the account's trade info helps staff identify the real owner"). Logged
+//   `compromised.viewed`, ids only (review J6).
 // - `POST /staff/v1/compromised/:id/unlock { tapId }` (tap `unlock-account` bound to the account) →
 //   `{ status: 'unlocked' }`: the lock is lifted (tickets/lock.ts `unlockAccount`), logged
 //   `account.unlocked`; trades resume on the timer loop's next pass. No active lock → 409 `wrong-state`.
@@ -82,6 +83,8 @@ export function staffTicketRoutes(app: FastifyInstance): void {
       ...m,
       staffName: staffId !== null ? (names.get(staffId) ?? null) : null,
     }));
+    // J-14 review J6: staff reads are audited, ids only.
+    await withTx(req.server.deps.db, (c) => appendLog(c, { at: req.server.deps.clock(), actor: actorOf(req), tradeCode: null, action: 'ticket.viewed', detail: { ticketId: t.id } }));
     return { ticket: ticketView(t), displayName: t.display_name, messages };
   });
 
@@ -160,6 +163,8 @@ export function staffTicketRoutes(app: FastifyInstance): void {
           }
         : null;
     }
+    // J-14 review J6: staff reads are audited, ids only.
+    await withTx(db, (c) => appendLog(c, { at: req.server.deps.clock(), actor: actorOf(req), tradeCode: null, action: 'compromised.viewed', detail: { ticketId: t.id } }));
     return { ticket: ticketView(t), methodsLeft: t.methods_left, comment, account };
   });
 

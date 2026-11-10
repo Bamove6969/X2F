@@ -168,6 +168,10 @@ export const LOG_ACTIONS = {
   // Support tickets (Task 30): never the text.
   'ticket.replied': { ticketId: 'id' },
   'ticket.closed': { ticketId: 'id' },
+  // J-14 review J6: a staff member read a support ticket, or a compromised-account ticket (with the
+  // locked account's open trades and the sender's comment). Ids only.
+  'ticket.viewed': { ticketId: 'id' },
+  'compromised.viewed': { ticketId: 'id' },
   // J-14 (D-059): a "My account has been compromised" ticket locked the account (by the system, at
   // the sender's word), and a senior moderator or the owner lifted the lock. Ids only.
   'account.locked': { accountId: 'uuid', ticketId: 'id' },

@@ -29,8 +29,11 @@
 //   login method the sender says are still theirs (COMPROMISED_METHODS), never a secret.
 //   - The answer is the same for a name that matched nothing, a staff or owner name (never locked by
 //     the form), and an account already locked, so the form never says whether a name exists.
+//     The 202 is sent before the after-lock work (session revokes, trade pauses) runs (review J4),
+//     so its timing says nothing either.
 //   - At most COMPROMISED_PER_NAME_DAILY a day per typed name (by its HMAC tag, `daily_counts`), and
-//     the app-wide login-start budget (503 `busy`).
+//     the form's own app-wide budget, COMPROMISED_BUCKET, apart from the login starts (review J5;
+//     503 `busy`).
 import { normalizeTradeCode, COMPROMISED_METHODS, TICKETS_DAILY, TICKET_BODY_MAX, TICKET_CATEGORIES } from '@x2f/core';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
@@ -235,6 +238,8 @@ function compromisedForm(v: unknown): CompromisedForm {
 export function ticketRoutes(app: FastifyInstance, o: { publish?: TradePublisher } = {}): void {
   const trader = requireSession({ kinds: ['trader'], allowRecovery: true, allowHeld: true, allowStaleTerms: true, member: 'any' });
   const reader = requireSession({ kinds: ['trader'], allowRecovery: true, allowHeld: true, allowStaleTerms: true, member: 'any', touch: false });
+  // J4: the after-lock work runs after the reply; closing the app waits for it.
+  app.addHook('onClose', afterLocksSettled);
 
   app.post('/v1/tickets', { preHandler: trader }, async (req, reply) => {
     const t = await withTx(req.server.deps.db, (c) => openTicket(c, req));
@@ -290,7 +295,8 @@ export function ticketRoutes(app: FastifyInstance, o: { publish?: TradePublisher
   // reads or changes an account except the lock itself.
   app.post('/v1/tickets/compromised', async (req, reply) => {
     const deps = req.server.deps;
-    req.server.budgets.start.take();
+    // J-14 review J5: its own budget, so reports never starve the login starts.
+    req.server.budgets.compromised.take();
     const f = compromisedForm(req.body);
     const name = loginNameLookup(deps.config, f.loginName);
     await dailyCap(deps, `ticket-compromised:${name.tag}`, COMPROMISED_PER_NAME_DAILY);
@@ -316,11 +322,23 @@ export function ticketRoutes(app: FastifyInstance, o: { publish?: TradePublisher
       const lock: PlacedLock | null = accountId !== null ? await placeLock(c, accountId, t.id, now) : null;
       return { number: Number(t.number), lock };
     });
+    // J-14 review J4: the answer goes out first, the same for every name; the session revokes and
+    // trade pauses run once it has been sent, so the reply's timing never says whether a name
+    // matched. The account is refused and its trades held from the commit on (disabled_at,
+    // tradeHeldSql), so nothing waits on this; a pause that fails is left to the timer loop.
     if (lock !== null) {
-      await afterLock(
-        { db: deps.db, clock: deps.clock, events: req.server.events, ...(o.publish ? { publish: o.publish } : {}), log: (reason) => req.log.warn({ reason }) },
-        lock,
-      );
+      const afterDeps = { db: deps.db, clock: deps.clock, events: req.server.events, ...(o.publish ? { publish: o.publish } : {}), log: (reason: string) => req.log.warn({ reason }) };
+      let started = false;
+      const run = () => {
+        if (started) return;
+        started = true;
+        const p: Promise<void> = afterLock(afterDeps, lock)
+          .catch(() => req.log.warn({ reason: 'lock-after-failed' }))
+          .finally(() => pendingAfterLocks.delete(p));
+        pendingAfterLocks.add(p);
+      };
+      reply.raw.once('finish', run);
+      reply.raw.once('close', run);
     }
     return reply.code(202).send({ number });
   });

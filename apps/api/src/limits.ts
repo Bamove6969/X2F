@@ -167,6 +167,8 @@ export const PAST_REP_FINISH_BUCKET: BucketSize = { capacity: PAST_REP_FINISHES_
 export interface Budgets {
   register: TokenBucket;
   start: TokenBucket;
+  /** `POST /v1/tickets/compromised`, app-wide, apart from `start` (J-14 review J5). */
+  compromised: TokenBucket;
   suggest: TokenBucket;
   /** Per session: `PUT /v1/account/password` (review round 3 R3-I1). */
   securityChange: KeyedBuckets;
@@ -187,6 +189,7 @@ export function newBudgets(clock: () => Date): Budgets {
   return {
     register: new TokenBucket(REGISTER_BUCKET.capacity, REGISTER_BUCKET.perMinute, clock),
     start: new TokenBucket(START_BUCKET.capacity, START_BUCKET.perMinute, clock),
+    compromised: new TokenBucket(COMPROMISED_BUCKET.capacity, COMPROMISED_BUCKET.perMinute, clock),
     suggest: new TokenBucket(SUGGEST_BUCKET.capacity, SUGGEST_BUCKET.perMinute, clock),
     securityChange: new KeyedBuckets(SECURITY_CHANGE_BUCKET, clock),
     approvalDecision: new KeyedBuckets(APPROVAL_DECISION_BUCKET, clock),
