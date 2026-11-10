@@ -148,7 +148,7 @@ describe('posting and listing in the poster\'s unit', () => {
     expect(await card(below)).toMatchObject({ rate: '16500', minFiatCents: '16500', maxFiatCents: '82500' });
     market.usdCentsPerXmr = null;
     expect(await card(mkt)).toBeUndefined();
-    const one = async (id: string): Promise<Card> => (await anon.get(`/v1/offers/${id}`)).json() as Card;
+    const one = async (id: string): Promise<Card> => (await viewer.get(`/v1/offers/${id}`)).json() as Card;
     expect(await one(mkt)).toMatchObject({ rate: null, amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: null, maxFiatCents: null });
     expect(await one(below)).toMatchObject({ rate: null, amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: null, maxFiatCents: null });
     expect(await one(fiat)).toMatchObject({ rate: null, minFiatCents: '50000', minAtomic: null, maxAtomic: null });

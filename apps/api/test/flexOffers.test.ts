@@ -43,11 +43,16 @@ const prices: MarketPrices = {
 let app: FastifyInstance;
 let deps: Deps;
 let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
-let anon: Browser;
+/**
+ * Browsing is behind the front door (owner, 8 Nov 2026): the lists and offers are read by a
+ * bystander, a Graduated vendor with 20 released trades and no ties to anyone (as offers.test).
+ */
+let viewer: Browser;
+const VIEWER_TRADES = 20;
 
 beforeAll(async () => {
   ({ app, deps, trader } = await tradeApp({}, { prices }));
-  anon = new Browser(app);
+  viewer = (await person(VIEWER_TRADES)).browser;
 });
 afterAll(async () => {
   await app.close();
@@ -107,7 +112,7 @@ async function post(who: Who, b: Record<string, unknown>): Promise<string> {
 
 type Card = Record<string, unknown> & { id: string; rate: string | null };
 
-async function list(q: string, who: Browser = anon): Promise<Card[]> {
+async function list(q: string, who: Browser = viewer): Promise<Card[]> {
   const res = await who.get(`/v1/offers?${q}`);
   expect(res.statusCode, res.body).toBe(200);
   return res.json() as Card[];
@@ -247,13 +252,14 @@ describe('browsing by currency and method', () => {
     expect(z.rate).toBe(rateFor(m, 50).centsPerXmr.toString());
     const pp = (await list('side=sell&method=PAYPAL&currency=BHD&amount=50000', seasoned.browser)).find((c) => c.id === id)!;
     expect(pp.rate).toBe(rateFor(m, 400).centsPerXmr.toString());
-    expect((await list('side=sell&method=ZELLE&currency=BHD&amount=50000')).find((c) => c.id === id)!.rate).toBe(rateFor(m, 200).centsPerXmr.toString());
-    // The signed-in viewer's own completed trades travel with the card, so the quote picks the band
-    // the take will (pickTier); a signed-out list has none.
-    expect((z as { viewerTrades?: number }).viewerTrades).toBe(5);
+    // A viewer short of the rule sees the band anyone gets.
     const fresh = await person(0);
+    expect((await list('side=sell&method=ZELLE&currency=BHD&amount=50000', fresh.browser)).find((c) => c.id === id)!.rate).toBe(rateFor(m, 200).centsPerXmr.toString());
+    // The signed-in viewer's own completed trades travel with the card, so the quote picks the band
+    // the take will (pickTier); every list is a signed-in one (the front door).
+    expect((z as { viewerTrades?: number }).viewerTrades).toBe(5);
     expect(((await list('side=sell&method=ZELLE&currency=BHD', fresh.browser)).find((c) => c.id === id) as { viewerTrades?: number }).viewerTrades).toBe(0);
-    expect((await list('side=sell&method=ZELLE&currency=BHD')).find((c) => c.id === id)).not.toHaveProperty('viewerTrades');
+    expect(((await list('side=sell&method=ZELLE&currency=BHD')).find((c) => c.id === id) as { viewerTrades?: number }).viewerTrades).toBe(VIEWER_TRADES);
   });
 
   it('a currency with no market price lists nothing; the offer still lists under its other currencies', async () => {
@@ -265,7 +271,7 @@ describe('browsing by currency and method', () => {
     expect(await list('side=sell&method=ZELLE&currency=THB')).toEqual([]);
     expect((await list('side=sell&method=ZELLE&currency=MYR')).find((c) => c.id === id)).toMatchObject({ currency: 'MYR', currencies: ['THB', 'MYR'] });
     // The single offer still opens in THB, with no rate.
-    expect((await anon.get(`/v1/offers/${id}?currency=THB`)).json()).toMatchObject({ currency: 'THB', rate: null });
+    expect((await viewer.get(`/v1/offers/${id}?currency=THB`)).json()).toMatchObject({ currency: 'THB', rate: null });
     market.unpriced = new Set(['THB', 'MYR']);
     const mine = (await p.browser.get('/v1/account/offers')).json() as { id: string; hidden?: string }[];
     expect(mine.find((o) => o.id === id)?.hidden).toBe('no-price');
@@ -274,7 +280,7 @@ describe('browsing by currency and method', () => {
 
 describe('the currency picker (owner Q28, Q24)', () => {
   it('USD, EUR, GBP, CAD, AUD, JPY first, then A-Z with flags; no rate: kept, unavailable, and back with its rate', async () => {
-    const get = async () => ((await anon.get('/v1/currencies')).json() as { currencies: { code: string; flag: string; available: boolean }[] }).currencies;
+    const get = async () => ((await viewer.get('/v1/currencies')).json() as { currencies: { code: string; flag: string; available: boolean }[] }).currencies;
     const all = await get();
     expect(all.slice(0, 6).map((c) => c.code)).toEqual(['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'JPY']);
     const rest = all.slice(6).map((c) => c.code);
@@ -388,12 +394,13 @@ describe('review M1: the band the taker gets, the instructions once secured, the
   });
 
   it("offer detail: anyone but the poster gets the currency's methods without their instructions; the poster gets them (M1c)", async () => {
+    // Behind the front door a bystander and another trader read it; a logged-out visitor gets 401 (frontDoor.test).
     const p = await person();
     const id = await post(p, flex('IDR', {
       methods: [method('ZELLE', 0, 'Zelle to pay@example.test'), method('PAYPAL', 200, 'PayPal shared', { instructionsByCurrency: { IDR: 'PayPal IDR to id@example.test' } })],
     }));
     const other = await person();
-    for (const who of [anon, other.browser]) {
+    for (const who of [viewer, other.browser]) {
       const res = await who.get(`/v1/offers/${id}?currency=IDR`);
       expect(res.statusCode, res.body).toBe(200);
       expect((res.json() as { methods: unknown[] }).methods).toEqual([{ methodId: 'ZELLE', adjustBps: 0 }, { methodId: 'PAYPAL', adjustBps: 200 }]);
