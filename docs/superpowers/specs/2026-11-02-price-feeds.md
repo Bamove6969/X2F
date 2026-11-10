@@ -8,7 +8,7 @@ Branch `wip/second-price-feeds` from main line e7636c74.
 ## What exists (Plan 3 Task 3/5, spec 11 item 6, decided 2026-10-24)
 
 - **XMR/USD:** the median of Kraken, Bitfinex and CoinGecko (`price/feed.ts`, `price/sources.ts`), from
-  at least 2 sources agreeing within 5% (2% when only two quote), dated by its oldest quote, refused
+  at least 2 sources agreeing within 3% (owner Q7; 2% when only two quote), dated by its oldest quote, refused
   after 5 min; a timestamp-less quote that stops moving while others move is dropped after 30 min.
 - **USD→X exchange rates:** Coinbase, BitPay, CoinGecko in a FIXED trust order (`price/fx.ts`): per
   currency the highest-ranked fresh source wins; never an average. Stale after 1 h by fetch time (owner
