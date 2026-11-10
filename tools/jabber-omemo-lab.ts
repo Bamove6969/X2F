@@ -17,6 +17,10 @@
  *     npx tsx tools/jabber-omemo-lab.ts bad-bundle --device-id 12 --out f           (a bundle that verifies but cannot be agreed with)
  *     npx tsx tools/jabber-omemo-lab.ts identity                                    (our device id and public identity key)
  *
+ * It refuses to run unless X2F_XMPP_JID is on a `.lab` domain, and with NODE_ENV=production
+ * (jabber-omemo-lab-guard.ts, review R6). Without `--ledger` it picks prekeys at random: that is the
+ * lab, not production, which always goes through the database record (apps/api/src/jabber/prekeys.ts).
+ *
  * Records carry public data only: device ids, key ids, the public base key, lengths. Never a private key.
  */
 import { readFileSync, writeFileSync, appendFileSync, existsSync } from 'node:fs';
@@ -28,6 +32,7 @@ import {
 import { omemoEncryptorFrom, type OmemoEncryptor } from '../apps/api/src/jabber/omemo.js';
 import type { JabberMessage } from '../apps/api/src/jabber/sender.js';
 import { xmppSender } from '../apps/api/src/jabber/xmpp.js';
+import { labRefusal } from './jabber-omemo-lab-guard.js';
 
 function arg(name: string, fallback?: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -135,6 +140,9 @@ const record = (file: string | undefined, rec: Record<string, unknown>) => {
 };
 
 async function main(): Promise<void> {
+  // Review R6: only against a .lab account, never with NODE_ENV=production.
+  const refusal = labRefusal(process.env);
+  if (refusal) throw new Error(refusal);
   const cmd = process.argv[2];
   if (cmd === 'bad-bundle') {
     // Signature verifies (the sender's parseBundle takes it); every prekey is u = 0, which OpenSSL's X25519 refuses (review L2).
