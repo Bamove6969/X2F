@@ -170,4 +170,9 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'team_members.member_account_id': "a member's login account; its changes notify the team account through the trigger",
   // J-23 groundwork (migration 500; lead default, owner p11-119 pattern): silent.
   'chat_key_envelopes.account_id': "a sealed chat key in flight between the account's own strong devices (ciphertext the API cannot open); the login that brought the device notifies",
+  // J-14 support tickets and the compromised-account lock (migrations 450, 451; lead default, owner p11-119 pattern): silent here.
+  'tickets.account_id': 'a support ticket or compromised report: help asked, not an account change; the lock a report starts sets accounts.disabled_at, which notifies',
+  'ticket_messages.staff_id': 'the staff member who answered a ticket (staff records)',
+  'account_locks.account_id': 'the compromised-account lock record; the lock sets accounts.disabled_at and the unlock clears it, which notify',
+  'account_locks.unlocked_by': 'the staff member who lifted a lock (staff records)',
 };
