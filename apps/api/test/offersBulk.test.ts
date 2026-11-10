@@ -280,14 +280,9 @@ describe('POST /v1/account/offers/status', () => {
     const sells = [await post(p, { currency: 'GBP' }), await post(p, { currency: 'CHF' }), await post(p, { currency: 'EUR' })];
     const buy = await post(p, { side: 'buy', currency: 'EUR' });
     await setStatus(p, 'all', 'paused');
-    // As if posted before the per-side cap: a fourth selling offer, paused.
-    const { rows } = await deps.db.query<{ id: string }>(
-      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, fixed_cents_per_xmr, min_fiat_cents, max_fiat_cents, min_trades, terms, country, status, created_at, updated_at)
-       select account_id, side, method_id, 'USD', price_mode, margin_bps, fixed_cents_per_xmr, min_fiat_cents, max_fiat_cents, min_trades, terms, country, 'paused', created_at, updated_at from offers where id = $1
-       returning id`,
-      [sells[0]],
-    );
-    const fourth = rows[0]!.id;
+    // As if posted before the per-side cap: a fourth selling offer, paused (written straight to the
+    // database in migration 490's shape: one currency, one band, one method).
+    const fourth = await insertOffer(deps.db, { accountId: p.id, side: 'sell', methodId: 'ZELLE', currency: 'USD', min: 5000, max: 200_000, status: 'paused', at: deps.clock() });
     const on = await setStatus(p, [...sells, fourth, buy], 'live');
     for (const r of on.filter((x) => x.id !== buy)) expect(r).toEqual({ id: r.id, status: 'paused', refused: 'too-many-offers' });
     expect(on.find((r) => r.id === buy)).toEqual({ id: buy, status: 'live' });

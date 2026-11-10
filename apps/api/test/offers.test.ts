@@ -197,8 +197,12 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     expect(card).toMatchObject({ id, rate: '29403', pricing: { mode: 'market', marginBps: -100 } });
     const one = await viewer.get(`/v1/offers/${id}`);
     expect(one.statusCode).toBe(200);
+    // The list card carries the signed-in viewer's completed trades (the quote reads the offer from
+    // its list and picks its band with them, J-16); the single-offer route answers the offer itself.
+    const { viewerTrades, ...shown } = card!;
+    expect(viewerTrades).toBe(20);
     expect(one.json()).toEqual({
-      ...card, side: 'sell', methodId: 'ZELLE', terms: BODY.terms, status: 'live',
+      ...shown, side: 'sell', methodId: 'ZELLE', terms: BODY.terms, status: 'live',
     });
     expect((await viewer.get('/v1/offers/00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);
     expect((await viewer.get('/v1/offers/not-a-uuid')).statusCode).toBe(404);
@@ -215,7 +219,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
     market.usdCentsPerXmr = null;
     expect(await list('side=sell&method=ZELLE&currency=GBP')).toEqual([]);
     for (const [id, marginBps] of [[high, 1000], [low, -1000]] as const) {
-      expect((await anon.get(`/v1/offers/${id}`)).json()).toMatchObject({ rate: null, pricing: { mode: 'market', marginBps } });
+      expect((await viewer.get(`/v1/offers/${id}`)).json()).toMatchObject({ rate: null, pricing: { mode: 'market', marginBps } });
     }
   });
 
@@ -623,7 +627,7 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'NZD' }))).statusCode).toBe(409);
     await p.browser.patch(`/v1/offers/${ids[0]}`, { status: 'removed' });
     await post(p, { currency: 'NZD' });
-    expect((await p.browser.post('/v1/offers', { ...BODY, currency: 'AUD' })).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 3 });
+    expect((await p.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'AUD' }))).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 3 });
   });
 
   it('Q31: exactly 3 buying + 3 selling offers per account, a seventh refused; the owner settings move each side, relisting included', async () => {
@@ -647,7 +651,7 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     await q.browser.patch(`/v1/offers/${b}`, { status: 'paused' });
     await deps.db.query(`insert into owner_settings (key, value, updated_at) values ('offers_max_sell', 1, now())`);
     try {
-      expect((await q.browser.post('/v1/offers', { ...BODY, currency: 'NZD' })).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 1 });
+      expect((await q.browser.post('/v1/offers', flexBody({ ...BODY, currency: 'NZD' }))).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 1 });
       // Relisting counts the others on its side: one other paused selling offer is already the cap of 1.
       expect((await q.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'too-many-offers', buy: 3, sell: 1 });
       // The buying side keeps its own cap of 3.
@@ -659,7 +663,7 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     }
     await deps.db.query(`insert into owner_settings (key, value, updated_at) values ('offers_max_buy', 2, now())`);
     try {
-      expect((await q.browser.post('/v1/offers', { ...BODY, side: 'buy', currency: 'CAD' })).json()).toEqual({ error: 'too-many-offers', buy: 2, sell: 3 });
+      expect((await q.browser.post('/v1/offers', flexBody({ ...BODY, side: 'buy', currency: 'CAD' }))).json()).toEqual({ error: 'too-many-offers', buy: 2, sell: 3 });
       await post(q, { currency: 'CAD' });
     } finally {
       await deps.db.query(`delete from owner_settings where key = 'offers_max_buy'`);

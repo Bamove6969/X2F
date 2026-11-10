@@ -228,9 +228,12 @@ describe('browsing by currency and method', () => {
       ],
       methods: [{ methodId: 'ZELLE', adjustBps: 0 }, { methodId: 'PAYPAL', adjustBps: 200 }],
     });
-    // Signed out: 0 trades, so the headline is the +1% band.
-    expect(zelle.rate).toBe(rateFor(usd, 100).centsPerXmr.toString());
-    const paypal = (await list('side=sell&method=PAYPAL&currency=AED&amount=20000')).find((c) => c.id === id)!;
+    // The bystander's 20 trades meet the second band's rule, so the headline is its +0.5%; a viewer
+    // with 0 trades gets the +1% band (the front door: every list is a signed-in one).
+    expect(zelle.rate).toBe(rateFor(usd, 50).centsPerXmr.toString());
+    const fresh = await person(0);
+    expect((await list('side=sell&method=ZELLE&currency=AED', fresh.browser)).find((c) => c.id === id)!.rate).toBe(rateFor(usd, 100).centsPerXmr.toString());
+    const paypal = (await list('side=sell&method=PAYPAL&currency=AED&amount=20000', fresh.browser)).find((c) => c.id === id)!;
     expect(paypal.rate).toBe(rateFor(usd, 250).centsPerXmr.toString());
     expect(paypal.pricing).toEqual({ mode: 'market', marginBps: 250 });
     expect((await list('side=sell&method=ZELLE&currency=AED&amount=999')).find((c) => c.id === id)!.rate).toBeNull();
@@ -434,7 +437,8 @@ describe('review M1: the band the taker gets, the instructions once secured, the
     market.unpriced = new Set(['SGD']);
     expect(await list(q)).toEqual([]);
     market.unpriced = new Set();
-    expect((await list(q)).find((c) => c.id === id)).toMatchObject({ currency: 'SGD', rate: rateFor(market$('SGD'), 100).centsPerXmr.toString() });
+    // Back with its rate (the bystander's 20 trades meet the second band's rule: its +0.5%).
+    expect((await list(q)).find((c) => c.id === id)).toMatchObject({ currency: 'SGD', rate: rateFor(market$('SGD'), 50).centsPerXmr.toString() });
   });
 
   it('band edges through a take (owner 2 Nov: 200-500 then 501-800): 500.50 and 500.99 lock the first band, 501.00 the second; 199.99 and 800.01 are out of range (M1f)', async () => {
@@ -510,7 +514,8 @@ describe('the 3 + 3 cap counts an offer once, whatever its currencies', () => {
     const p = await person();
     const two = { currencies: [{ currency: 'BDT', bands: [band('10', '100')] }, { currency: 'LKR', bands: [band('10', '100')] }] };
     for (let i = 0; i < 3; i++) await post(p, flex('BDT', two));
-    expect(refusal(await p.browser.post('/v1/offers', flex('PKR')))).toEqual({ status: 409, error: 'too-many-offers' });
+    // The refusal names the caps (offer-rules review M2, on main): 3 buying and 3 selling.
+    expect(refusal(await p.browser.post('/v1/offers', flex('PKR')))).toEqual({ status: 409, error: 'too-many-offers', buy: 3, sell: 3 });
     await post(p, flex('PKR', { side: 'buy' }));
   });
 });
