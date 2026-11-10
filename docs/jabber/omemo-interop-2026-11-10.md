@@ -160,6 +160,16 @@ reached only when one pass sends a device more notices than it publishes prekeys
 refills to 100 after every message) and possible only against one publishing fewer than 25.
 See the questions at the end.
 
+**Changed after this run (lead decision, 2026-11-10).** The no-prekey fallback is removed: when a
+device's prekeys are all used within one pass, the notice is not sent in that pass; it stays in the
+outbox untried and goes on the next pass against the bundle fetched then, and the pass logs only a
+`deferred` count. A session is never set up without a one-time prekey and a prekey is never reused
+within a pass. A notice to several devices waits whole when one of them is used up (one outbox row
+and one message per notice). Tests: `packages/omemo/test/omemo.test.ts` (101 notices to a
+100-prekey device in one ledger: 100 sent on 100 distinct prekeys, 1 deferred, none without a
+prekey) and `apps/api/test/jabber.test.ts` (the deferred notice goes on the next pass against a
+refreshed bundle). Step 4b was not re-run against the lab after the change.
+
 ### 5. Replenishment
 
 After 130 prekey messages had been consumed across the run, the client's published bundle still held
@@ -305,6 +315,10 @@ libsignal family remains to be run before the flag is set, as the review says.
    pass sees a republished bundle if the client was online in between; if it was not, the same
    problem returns). Recommendation: keep the fallback, and let owner question 5 (coalescing unsent
    notices per account and kind) remove the burst that gets there; note it in the plan.
+   **Decided (lead, 2026-11-10): the second option.** The fallback is gone; a used-up device's notice
+   waits for the next pass (see step 4b, "Changed after this run"). Still open: the ledger is per
+   pass, so a client that stays offline across two passes shows the next pass the prekeys the
+   earlier one used, and the next pass may pick one of them again.
 2. **Offline store (owner question 7, now with a number).** 136 notices produced 136 unread
    key-transport messages (about 600 bytes each) in X2F's offline store, plus whatever strangers send.
    Recommendation unchanged: cap or expire that account's offline store on p11-42.

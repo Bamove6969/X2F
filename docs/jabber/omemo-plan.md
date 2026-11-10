@@ -61,8 +61,20 @@ and Dino use libsignal, Gajim uses omemo-dr, Monal its own port of the same). So
    all, so the sender picks). Review M2 (2026-11-09): within one outbox pass no prekey of a device is
    picked twice (`PreKeyLedger`, one per pass, keyed by recipient, device id and identity key), since
    a client deletes a prekey after its first use and an offline client's bundle does not change
-   between notices; once a device's prekeys are all used in a pass the session is set up without
-   `OPK` (X3DH allows it; libsignal's `processV3` reads it) rather than on a reused one. Master secret =
+   between notices. Once a device's prekeys are all used in a pass, the notice is **not sent in that
+   pass** (`PreKeysExhausted` in the package, `NoticeDeferred` in the API): it stays in the outbox,
+   untried (its attempt count unchanged, due at once), and the next pass sends it against the bundle
+   fetched then (a client republishes fresh prekeys after reading); the outbox logs only a
+   `deferred` count. Lead decision 2026-11-10, after interop step 4b: python-omemo (Gajim and other
+   clients) refuses a PreKeySignalMessage without `OPK` ("No pre key with id 0 known"), so the
+   earlier no-`OPK` fallback is gone; a prekey is never reused and a session never set up without
+   one. The outbox keeps one row per notice, sent as one message keyed to every device, so a notice
+   with several devices waits whole when one of them is used up (the prekeys picked for the others
+   are given back to the ledger, as is the one picked for a device then skipped for a bad key).
+   Within one pass this is reachable only for a device publishing fewer prekeys than
+   `OUTBOX_BATCH` (25). Across passes the ledger starts empty: a client that stayed offline between
+   two passes still shows the prekeys the earlier pass used (open point in the interop report).
+   Master secret =
    `0xFF×32 ‖ DH(IK_A, SPK_B) ‖ DH(EK_A, IK_B) ‖ DH(EK_A, SPK_B) ‖ DH(EK_A, OPK_B)`;
    `HKDF-SHA-256(salt = 32 zero bytes, ikm = master, info = "WhisperText", 64)` → root key (32),
    receiving chain key (32, unused by a sender).
