@@ -1,6 +1,7 @@
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it } from 'vitest';
 import { DB_NAME, KEYS, SECRETS, TRADES, openEscrowStore, type EscrowRecord } from '../src/escrow/store.js';
+import { readOpenEscrowCodes } from '../src/screens/Wallets.js';
 
 const CODE_A = 'AAAA-BBBB-CCCC-DDDD';
 const CODE_B = 'EEEE-FFFF-GGGG-HHHH';
@@ -167,5 +168,124 @@ describe('escrowStore', () => {
     expect(await store.load(CODE_A)).toBeNull();
     expect(await store.password(CODE_A)).toBeNull();
     expect(await store.codes()).toEqual([]);
+  });
+});
+
+// Lead 10 Nov (J-23 follow-up): an open tab never stalls another tab's upgrade or delete of the
+// escrow database. Every connection closes itself on `versionchange`; the store reopens on next use
+// only onto the existing database with its existing wrap key: it never creates an empty database
+// or a fresh key in place of the one that held the escrow keys, and it deletes nothing.
+describe('version changes from another tab', () => {
+  /** Opens `x2f-escrow` at `version`: 'opened' (the connection), or 'blocked' when an open connection holds it back. */
+  const openRaw = (idb: IDBFactory, version?: number) =>
+    new Promise<{ outcome: 'opened' | 'blocked'; db: IDBDatabase | null; created: boolean }>((res, rej) => {
+      const r = version === undefined ? idb.open(DB_NAME) : idb.open(DB_NAME, version);
+      let created = false;
+      r.onupgradeneeded = (e) => {
+        created = e.oldVersion === 0;
+      };
+      r.onblocked = () => res({ outcome: 'blocked', db: null, created });
+      r.onsuccess = () => res({ outcome: 'opened', db: r.result, created });
+      r.onerror = () => rej(r.error);
+    });
+  const deleteRaw = (idb: IDBFactory) =>
+    new Promise<'deleted' | 'blocked'>((res, rej) => {
+      const r = idb.deleteDatabase(DB_NAME);
+      r.onblocked = () => res('blocked');
+      r.onsuccess = () => res('deleted');
+      r.onerror = () => rej(r.error);
+    });
+  const exists = async (idb: IDBFactory) => (await idb.databases()).some((d) => d.name === DB_NAME);
+
+  it("a newer build's upgrade is not blocked; the records are all still there; this store then fails unavailable, never a hang", async () => {
+    const idb = new IDBFactory();
+    const store = await openEscrowStore({ indexedDB: idb });
+    await store.save(record(CODE_A, 3));
+    const pw = await store.createPassword(CODE_A);
+    const next = await openRaw(idb, 2);
+    expect(next.outcome).toBe('opened');
+    next.db!.close();
+    expect((await raw(idb, TRADES)).map((x) => x.key)).toEqual([CODE_A]);
+    expect((await raw(idb, SECRETS)).map((x) => x.key)).toEqual([CODE_A]);
+    expect(await raw(idb, KEYS)).toHaveLength(1);
+    await expect(store.load(CODE_A)).rejects.toMatchObject({ code: 'unavailable' });
+    await expect(store.save(record(CODE_B, 1))).rejects.toMatchObject({ code: 'unavailable' });
+    // A store of the newer build would read them; this build's fresh open is refused cleanly too.
+    await expect(openEscrowStore({ indexedDB: idb })).rejects.toMatchObject({ code: 'unavailable' });
+    expect(pw).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('a delete elsewhere is not blocked; the store never recreates the database or a key on its next use', async () => {
+    const idb = new IDBFactory();
+    const store = await openEscrowStore({ indexedDB: idb });
+    await store.save(record(CODE_A, 3));
+    expect(await deleteRaw(idb)).toBe('deleted');
+    await expect(store.codes()).rejects.toMatchObject({ code: 'unavailable' });
+    await expect(store.save(record(CODE_A, 3))).rejects.toMatchObject({ code: 'unavailable' });
+    await expect(store.createPassword(CODE_A)).rejects.toMatchObject({ code: 'unavailable' });
+    expect(await exists(idb)).toBe(false);
+  });
+
+  it('a database without its wrap key is never given a fresh one by a reopen', async () => {
+    const idb = new IDBFactory();
+    const store = await openEscrowStore({ indexedDB: idb });
+    await store.save(record(CODE_A, 3));
+    expect(await deleteRaw(idb)).toBe('deleted');
+    // Something else makes the database again with the stores but no key in it.
+    const bare = await new Promise<IDBDatabase>((res, rej) => {
+      const r = idb.open(DB_NAME, 1);
+      r.onupgradeneeded = () => {
+        for (const n of [TRADES, SECRETS, KEYS]) r.result.createObjectStore(n);
+      };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    bare.close();
+    await expect(store.codes()).rejects.toMatchObject({ code: 'unavailable' });
+    expect(await raw(idb, KEYS)).toEqual([]);
+  });
+
+  it('reopens on next use onto the database as it now is, with the wrap key stored in it', async () => {
+    const idb = new IDBFactory();
+    const old = await openEscrowStore({ indexedDB: idb });
+    await old.save(record(CODE_A, 3));
+    expect(await deleteRaw(idb)).toBe('deleted');
+    // Another tab of this build makes the database again and keeps a trade in it.
+    const other = await openEscrowStore({ indexedDB: idb });
+    await other.save(record(CODE_B, 5));
+    const pw = await other.createPassword(CODE_B);
+    // The old store reopens (no upgrade, no new key) and reads and writes under the stored key.
+    expect(await old.codes()).toEqual([CODE_B]);
+    expect(await old.password(CODE_B)).toBe(pw);
+    await old.save(record(CODE_A, 3));
+    expect(await raw(idb, KEYS)).toHaveLength(1);
+    other.close();
+    const fresh = await openEscrowStore({ indexedDB: idb });
+    expect((await fresh.load(CODE_A))?.code).toBe(CODE_A);
+    expect((await fresh.load(CODE_B))?.code).toBe(CODE_B);
+  });
+
+  it('close() is final: the store does not reopen after it', async () => {
+    const idb = new IDBFactory();
+    const store = await openEscrowStore({ indexedDB: idb });
+    await store.save(record(CODE_A, 3));
+    store.close();
+    await expect(store.load(CODE_A)).rejects.toMatchObject({ code: 'unavailable' });
+  });
+
+  it("the wallets screen's read of the trade codes does not block an upgrade either", async () => {
+    const idb = new IDBFactory();
+    const store = await openEscrowStore({ indexedDB: idb });
+    await store.save(record(CODE_A, 3));
+    store.close();
+    const reading = readOpenEscrowCodes(idb);
+    const next = await openRaw(idb, 2);
+    expect(next.outcome).toBe('opened');
+    next.db!.close();
+    expect(Array.isArray(await reading)).toBe(true);
+    // And it never creates the database where there is none.
+    const empty = new IDBFactory();
+    expect(await readOpenEscrowCodes(empty)).toEqual([]);
+    expect(await exists(empty)).toBe(false);
   });
 });

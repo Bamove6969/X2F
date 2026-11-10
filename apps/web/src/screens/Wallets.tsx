@@ -79,15 +79,19 @@ function addError(e: unknown): string {
 const ESCROW_DB = 'x2f-escrow';
 const SECRETS_STORE = 'x2f-escrow-secrets';
 
-function readOpenEscrowCodes(): Promise<string[]> {
+/**
+ * Exported for tests (`idb` defaults to the browser's). Lead 10 Nov: the short-lived connection also
+ * closes itself on `versionchange`, so this read never stalls another tab's upgrade or delete.
+ */
+export function readOpenEscrowCodes(idb: IDBFactory | undefined = typeof indexedDB === 'undefined' ? undefined : indexedDB): Promise<string[]> {
   return new Promise((resolve) => {
-    if (typeof indexedDB === 'undefined') {
+    if (idb === undefined) {
       resolve([]);
       return;
     }
     let req: IDBOpenDBRequest;
     try {
-      req = indexedDB.open(ESCROW_DB);
+      req = idb.open(ESCROW_DB);
     } catch {
       resolve([]);
       return;
@@ -105,6 +109,7 @@ function readOpenEscrowCodes(): Promise<string[]> {
     req.onerror = () => resolve([]);
     req.onsuccess = () => {
       const db = req.result;
+      db.onversionchange = () => db.close();
       try {
         const names = [...db.objectStoreNames].filter((n) => n !== SECRETS_STORE);
         if (names.length === 0) {
