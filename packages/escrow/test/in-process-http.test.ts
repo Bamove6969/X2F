@@ -4,7 +4,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DAEMON_TIMEOUT_MS } from '../src/engine.js';
-import { inProcessHttp } from '../src/inProcessHttp.js';
+import { allowDaemonOrigin, inProcessHttp } from '../src/inProcessHttp.js';
 
 let server: Server;
 let uri: string;
@@ -30,6 +30,7 @@ beforeAll(async () => {
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const a = server.address();
   uri = `http://127.0.0.1:${typeof a === 'object' && a ? a.port : 0}`;
+  allowDaemonOrigin(`${uri}/`); // what the engine does with the configured daemonUri
 });
 
 afterAll(async () => {
@@ -92,5 +93,16 @@ describe('inProcessHttp', () => {
       globalThis.fetch = real;
     }
     expect(inits[0]).toMatchObject({ redirect: 'error', credentials: 'omit', cache: 'no-store' });
+  });
+
+  it('only the configured daemon\'s origin is ever asked (re-verify R1)', async () => {
+    const n = seen.length;
+    const port = Number(new URL(uri).port);
+    for (const other of [`http://localhost:${port}/json_rpc`, `http://127.0.0.1:${port + 1}/json_rpc`, `https://127.0.0.1:${port}/json_rpc`, 'http://example.test/json_rpc', 'not a url']) {
+      await expect(inProcessHttp.request({ method: 'POST', uri: other, body: '{}' }), other).rejects.toThrow(/configured daemon/);
+    }
+    expect(seen.length).toBe(n); // nothing reached our server either (localhost is another origin)
+    expect((await inProcessHttp.request({ method: 'POST', uri: `${uri}/json_rpc`, body: '{}' })).statusCode).toBe(200);
+    expect(() => allowDaemonOrigin('')).toThrow();
   });
 });

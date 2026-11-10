@@ -469,7 +469,7 @@ export class MoneroMultisigEngine implements EscrowEngine {
     // monero-ts's own in-process client cannot send, so a reloaded page never synced (10 Nov).
     if (this.opts.network === 'regtest') {
       config.setProxyToWorker(false);
-      await useFetchForInProcessWallets();
+      await useFetchForInProcessWallets(o.daemonUri);
     }
     let wallet: MoneroWalletFull;
     try {
