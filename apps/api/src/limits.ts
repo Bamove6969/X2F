@@ -83,6 +83,13 @@ export const SECURITY_CHANGE_BUCKET: BucketSize = { capacity: 10, perMinute: 5 }
  */
 export const APPROVAL_DECISION_BUCKET: BucketSize = { capacity: 10, perMinute: 5 };
 
+/**
+ * `POST /v1/tickets/compromised` (J-14 review J5): its own app-wide budget, apart from the login
+ * starts, so a flood of reports (each writes a ticket row) never starves logins. A lead default; the
+ * 3 a day per typed name (COMPROMISED_PER_NAME_DAILY) still applies.
+ */
+export const COMPROMISED_BUCKET: BucketSize = { capacity: 30, perMinute: 30 };
+
 /** `POST /v1/method-suggestions` (Plan 3 Task 3): rows carry no account, so one budget for everyone. */
 export const SUGGEST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 

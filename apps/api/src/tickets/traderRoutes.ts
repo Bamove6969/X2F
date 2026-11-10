@@ -72,6 +72,14 @@ export const purgeTickets: RetentionJob = {
 /** Compromised-form sends per typed login name per UTC day (its HMAC tag; a lead default). */
 export const COMPROMISED_PER_NAME_DAILY = 3;
 
+/** The after-lock work still running (J4: it runs after the reply). */
+const pendingAfterLocks = new Set<Promise<void>>();
+
+/** Resolves once every after-lock run started so far has finished (tests, shutdown). */
+export async function afterLocksSettled(): Promise<void> {
+  while (pendingAfterLocks.size > 0) await Promise.allSettled([...pendingAfterLocks]);
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type TicketStatus = 'open' | 'answered' | 'closed';

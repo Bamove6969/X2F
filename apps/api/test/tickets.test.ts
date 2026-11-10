@@ -5,8 +5,11 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { PUBLIC_ROUTES } from '../src/auth/frontDoor.js';
+import { hashPassword } from '../src/auth/password.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
-import { COMPROMISED_PER_NAME_DAILY, TICKET_KEEP_DAYS, purgeTickets } from '../src/tickets/traderRoutes.js';
+import { COMPROMISED_BUCKET } from '../src/limits.js';
+import { tradeHeldSql } from '../src/tickets/held.js';
+import { COMPROMISED_PER_NAME_DAILY, TICKET_KEEP_DAYS, afterLocksSettled, purgeTickets } from '../src/tickets/traderRoutes.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { startTimers } from '../src/trades/timers.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -34,6 +37,9 @@ beforeEach(() => {
   setNow(T0);
   // The app-wide login-start budget is in memory; refill it for each test.
   (app as unknown as { budgets: { start: { tokens: number } } }).budgets.start.tokens = 120;
+  // J5: the compromised form's own budget, refilled the same way.
+  const own = (app as unknown as { budgets: { compromised?: { tokens: number } } }).budgets.compromised;
+  if (own) own.tokens = COMPROMISED_BUCKET.capacity;
 });
 
 interface Trader {
@@ -72,7 +78,12 @@ async function staff(role: 'owner' | 'senior' | 'mod' | 'helper', grants: string
   return { ...s, sessionId, b: new StaffBrowser(staffApp).withSession(token) };
 }
 
-const report = (body: unknown) => new Browser(app).post('/v1/tickets/compromised', body);
+/** Sends the form and waits for its after-lock work (J4: it runs after the reply). */
+const report = async (body: unknown) => {
+  const res = await new Browser(app).post('/v1/tickets/compromised', body);
+  await afterLocksSettled();
+  return res;
+};
 const open = (b: Browser, body = 'I cannot see my trade', category = 'trades') => b.post('/v1/tickets', { category, body });
 
 describe('support tickets: trader side', () => {
@@ -386,6 +397,112 @@ describe('"My account has been compromised" (D-059): full lockout', () => {
     const tapId = await seedTap(deps, owner.id, { kind: 'unlock-account', accountId: closed.id });
     expect((await owner.b.post(`/staff/v1/compromised/${rows[0]!.id}/unlock`, { tapId })).statusCode).toBe(200);
     expect((await deps.db.query<{ disabled_at: Date | null }>('select disabled_at from accounts where id = $1', [closed.id])).rows[0]!.disabled_at).not.toBeNull();
+  });
+});
+
+describe('J-14 review minors (J4-J7)', () => {
+  // J4: no timing oracle. The 202 goes out before the session revokes and trade pauses run; the
+  // trades are held from the lock's commit anyway (tradeHeldSql).
+  it('J4: the 202 never waits on the after-lock work (a trade row held elsewhere does not delay it); the work still completes after', async () => {
+    const victim = await trader();
+    const other = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: victim.id, buyerId: other.id, poster: 'seller' });
+    await driveTo(deps, trade, 'secured');
+    const blocker = await deps.db.connect();
+    try {
+      await blocker.query('begin');
+      await blocker.query('select 1 from trades where code = $1 for update', [trade.code]);
+      const res = await Promise.race([
+        new Browser(app).post('/v1/tickets/compromised', { loginName: victim.loginName, methodsLeft: [], comment: '' }),
+        new Promise<'waited'>((r) => setTimeout(() => r('waited'), 3000)),
+      ]);
+      expect(res === 'waited' ? 'the reply waited on afterLock' : res.statusCode).toBe(202);
+      // Held from the commit already: no trader event moves it while the pause is still queued.
+      expect((await deps.db.query(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [trade.code])).rows[0]).toEqual({ held: true });
+    } finally {
+      await blocker.query('rollback');
+      blocker.release();
+    }
+    await afterLocksSettled();
+    expect((await loadTrade(deps.db, trade.code))!.pausedAt).toEqual(T0);
+    expect((await deps.db.query('select 1 from sessions where account_id = $1 and revoked_at is null', [victim.id])).rowCount).toBe(0);
+  });
+
+  // J5: the form has its own budget; a flood of reports never starves login starts (nor the reverse).
+  it('J5: its own budget, apart from login starts: an empty start bucket does not stop it, and an empty form bucket answers 503 busy without touching login starts', async () => {
+    const budgets = (app as unknown as { budgets: { start: { tokens: number }; compromised: { tokens: number } } }).budgets;
+    budgets.compromised.tokens = COMPROMISED_BUCKET.capacity;
+    budgets.start.tokens = 0;
+    expect((await report({ loginName: 'nobody-j5-a', methodsLeft: [], comment: '' })).statusCode).toBe(202);
+    budgets.start.tokens = 5;
+    budgets.compromised.tokens = 0;
+    const busy = await report({ loginName: 'nobody-j5-b', methodsLeft: [], comment: '' });
+    expect(busy.statusCode).toBe(503);
+    expect(errorOf(busy)).toBe('busy');
+    expect(budgets.start.tokens).toBe(5);
+    budgets.compromised.tokens = COMPROMISED_BUCKET.capacity;
+  });
+
+  // J6: staff reads of a ticket are audited, ids only (as dispute evidence reads are).
+  it('J6: a staff read of a support ticket logs ticket.viewed, of a compromised ticket compromised.viewed, ids only', async () => {
+    const a = await trader();
+    const t = (await open(a.b, 'The secret word is kumquat')).json().ticket;
+    const helper = await staff('helper', ['tickets.handle']);
+    expect((await helper.b.get(`/staff/v1/tickets/${t.id}`)).statusCode).toBe(200);
+    const viewed = (await logEntries(deps, 'ticket.viewed')).map((e) => ({ actor: e.actor_kind, detail: JSON.parse(e.detail) as unknown }));
+    expect(viewed).toContainEqual({ actor: 'staff', detail: { ticketId: t.id } });
+
+    const v = await trader();
+    const number = (await report({ loginName: v.loginName, methodsLeft: [], comment: 'kumquat again' })).json().number;
+    const id = (await deps.db.query<{ id: string }>("select id from tickets where kind = 'compromised' and number = $1", [number])).rows[0]!.id;
+    const senior = await staff('senior');
+    expect((await senior.b.get(`/staff/v1/compromised/${id}`)).statusCode).toBe(200);
+    const cv = (await logEntries(deps, 'compromised.viewed')).map((e) => ({ actor: e.actor_kind, detail: JSON.parse(e.detail) as unknown }));
+    expect(cv).toContainEqual({ actor: 'staff', detail: { ticketId: id } });
+    for (const e of [...(await logEntries(deps, 'ticket.viewed')), ...(await logEntries(deps, 'compromised.viewed'))]) {
+      expect(JSON.stringify(e)).not.toMatch(/kumquat/);
+    }
+  });
+
+  // J7: the real login finishes (not /t/login) refuse a locked account.
+  it('J7: a real password login and a recovery-code login are refused on a locked account (403 account-disabled), and the code stays unused', async () => {
+    const { id, loginName } = await trader();
+    const password = 'Correct-Horse-9-locked';
+    // A real stored password (Argon2id, peppered), as the password routes write it.
+    const { hash, pepperId } = await hashPassword(deps.config, password);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [id, hash, pepperId, deps.clock()]);
+    // Before the lock both finishes work (so the refusals below are the lock's).
+    expect((await new Browser(app).post('/v1/login/password', { loginName, password, deviceLabel: 'My browser' })).statusCode).toBe(200);
+    // A first session may make recovery codes without a confirm (as recovery.test.ts does).
+    const owner = new Browser(app);
+    expect((await owner.post('/t/login', { accountId: id, firstSession: true })).statusCode).toBe(200);
+    const codes = await owner.post('/v1/account/recovery-codes', {});
+    expect(codes.statusCode, codes.body).toBe(200);
+    const code = (codes.json() as { codes: string[] }).codes[0]!;
+    expect((await report({ loginName, methodsLeft: ['password'], comment: '' })).statusCode).toBe(202);
+    const pw = await new Browser(app).post('/v1/login/password', { loginName, password, deviceLabel: 'Thief browser' });
+    expect({ status: pw.statusCode, body: pw.json() }).toEqual({ status: 403, body: { error: 'account-disabled' } });
+    const rc = await new Browser(app).post('/v1/login/backup', { loginName, kind: 'recovery-code', code, deviceLabel: 'Thief browser' });
+    expect({ status: rc.statusCode, body: rc.json() }).toEqual({ status: 403, body: { error: 'account-disabled' } });
+    expect((await deps.db.query('select 1 from recovery_codes where account_id = $1 and used_at is not null', [id])).rowCount).toBe(0);
+    expect((await deps.db.query('select 1 from sessions where account_id = $1 and revoked_at is null', [id])).rowCount).toBe(0);
+  });
+
+  // J7 / J2: today's behaviour, pinned until the owner answers J2 (p11-79): the other party of a held
+  // trade cannot open a dispute either (409 trade-held), and no dispute row is written.
+  it("J7: the counterparty's open-dispute on a held trade is refused today (409 trade-held)", async () => {
+    const victim = await trader();
+    const buyer = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: victim.id, buyerId: buyer.id, poster: 'seller' });
+    const paid = await driveTo(deps, trade, 'paid');
+    expect((await report({ loginName: victim.loginName, methodsLeft: [], comment: '' })).statusCode).toBe(202);
+    // Past the confirm window, when the buyer could dispute (trade-rules P1); trader sessions end
+    // 2 h after start, so the buyer logs in again after the clock jump.
+    setNow(new Date(paid.confirmBy!.getTime() + 60_000));
+    expect((await buyer.b.post('/t/login', { accountId: buyer.id })).statusCode).toBe(200);
+    const res = await buyer.b.post(`/v1/trades/${trade.code}/dispute`, { reason: 'paid', note: '' });
+    expect({ status: res.statusCode, error: errorOf(res) }).toEqual({ status: 409, error: 'trade-held' });
+    expect((await deps.db.query('select 1 from disputes where code = $1', [trade.code])).rowCount).toBe(0);
   });
 });
 
