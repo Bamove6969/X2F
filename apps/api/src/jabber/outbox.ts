@@ -18,6 +18,8 @@ export const OUTBOX_ATTEMPTS = 4;
 const RETRY_WAIT_MS = [60_000, 5 * 60_000, 30 * 60_000];
 /** Notices per pass; a pass sends them one after another. */
 export const OUTBOX_BATCH = 25;
+/** A notice deferred for longer than this counts as a failed try (review R1, lead decision). */
+export const DEFERRAL_LIMIT_MS = 24 * 3_600_000;
 /** A send that has not finished by then counts as failed. */
 export const SEND_TIMEOUT_MS = 30_000;
 
@@ -57,17 +59,19 @@ export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
  * 2026-11-10, step 4b: python-omemo refuses that). The whole notice waits, not only that device:
  * a row is one notice to the address, sent as one message keyed to every device at once, so the
  * outbox cannot record which devices already have it. Once a recipient is found used up, its
- * remaining notices in the pass are deferred the same way without connecting.
+ * remaining notices in the pass are deferred the same way without connecting. A notice first
+ * deferred more than `DEFERRAL_LIMIT_MS` ago counts as a failed try instead (`deferred_since`,
+ * migration 335), so the retry and drop rules end it.
  */
 export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
   const out: OutboxResult = { sent: 0, retried: 0, dropped: 0, deferred: 0 };
   const ring = deps.config.jabberKeys;
   if (ring === null) return out;
   const now = deps.clock();
-  const { rows } = await deps.db.query<{ account_id: string; jid_sealed: Buffer; txid: string; kind: NoticeKind; attempts: number }>(
+  const { rows } = await deps.db.query<{ account_id: string; jid_sealed: Buffer; txid: string; kind: NoticeKind; attempts: number; deferred_since: Date | null }>(
     `delete from jabber_outbox where id in (
        select id from jabber_outbox where next_at is null or next_at <= $1 order by id limit $2 for update skip locked)
-     returning account_id, jid_sealed, txid, kind, attempts`,
+     returning account_id, jid_sealed, txid, kind, attempts, deferred_since`,
     [now, OUTBOX_BATCH],
   );
   // OMEMO review M2: one ledger per pass, so two notices to an offline device never use the same prekey.
@@ -87,12 +91,13 @@ export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
       out.sent++;
       await deps.db.query('update jabber_contacts set last_sent_at = $2 where account_id = $1', [row.account_id, deps.clock()]);
     } catch (e) {
-      if (e instanceof NoticeDeferred) {
+      const at = deps.clock();
+      if (e instanceof NoticeDeferred && (row.deferred_since === null || at.getTime() - row.deferred_since.getTime() <= DEFERRAL_LIMIT_MS)) {
         out.deferred++;
         await deps.db.query(
-          `insert into jabber_outbox (account_id, jid_sealed, txid, kind, attempts, next_at) values ($1, $2, $3, $4, $5, null)
+          `insert into jabber_outbox (account_id, jid_sealed, txid, kind, attempts, next_at, deferred_since) values ($1, $2, $3, $4, $5, null, $6)
            on conflict (account_id, txid, kind) do nothing`,
-          [row.account_id, row.jid_sealed, row.txid, row.kind, row.attempts],
+          [row.account_id, row.jid_sealed, row.txid, row.kind, row.attempts, row.deferred_since ?? at],
         );
         continue;
       }
@@ -103,9 +108,9 @@ export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
       }
       out.retried++;
       await deps.db.query(
-        `insert into jabber_outbox (account_id, jid_sealed, txid, kind, attempts, next_at) values ($1, $2, $3, $4, $5, $6)
+        `insert into jabber_outbox (account_id, jid_sealed, txid, kind, attempts, next_at, deferred_since) values ($1, $2, $3, $4, $5, $6, $7)
          on conflict (account_id, txid, kind) do nothing`,
-        [row.account_id, row.jid_sealed, row.txid, row.kind, attempts, new Date(deps.clock().getTime() + RETRY_WAIT_MS[attempts - 1]!)],
+        [row.account_id, row.jid_sealed, row.txid, row.kind, attempts, new Date(at.getTime() + RETRY_WAIT_MS[attempts - 1]!), row.deferred_since],
       );
     }
   }

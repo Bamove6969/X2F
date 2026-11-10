@@ -37,9 +37,16 @@ import type { RetentionJob } from '../retention.js';
  */
 export const PREKEY_RECORD_RETENTION_MS = 180 * 86_400_000;
 
-/** Runs one encryption against the record of `to`'s devices (see the file header). */
+/**
+ * Runs one encryption against the record of `to`'s devices (see the file header). `encrypt` gets
+ * the devices to send to: every bundle but those used up before this pass (review R1, lead
+ * decision: every prekey the device lists was recorded as used, none of them in this pass, so it
+ * has read nothing since; it is left out, and `onUsedUp` told how many, so a dead device never
+ * holds back the user's other ones). A device used up within this pass stays in, and its picker
+ * answers null (the notice is deferred: its fresh prekeys may already be published).
+ */
 export interface PreKeyStore {
-  withRecord<T>(to: string, bundles: RecipientBundle[], ledger: PreKeyLedger, encrypt: () => T): Promise<T>;
+  withRecord<T>(to: string, bundles: RecipientBundle[], ledger: PreKeyLedger, encrypt: (usable: RecipientBundle[]) => T, onUsedUp?: (devices: number) => void): Promise<T>;
 }
 
 /** The sealed device's binding: the row's recipient tag, so a blob cannot be moved to another recipient's row. */
@@ -77,7 +84,7 @@ const deviceBytes = (b: RecipientBundle) => {
 export function dbPreKeyStore(db: pg.Pool, ring: Keyring, clock: () => Date): PreKeyStore {
   const box: SecretBox = keyringBox(ring);
   return {
-    async withRecord<T>(to: string, bundles: RecipientBundle[], ledger: PreKeyLedger, encrypt: () => T): Promise<T> {
+    async withRecord<T>(to: string, bundles: RecipientBundle[], ledger: PreKeyLedger, encrypt: (usable: RecipientBundle[]) => T, onUsedUp?: (devices: number) => void): Promise<T> {
       const tags = recipientTags(ring, to);
       const current = tags[0]!;
       const c = await db.connect();
@@ -99,6 +106,7 @@ export function dbPreKeyStore(db: pg.Pool, ring: Keyring, clock: () => Date): Pr
         });
         /** Per device, the record kept as it is because this fetch is partial (review R4). */
         const kept = new Map<RecipientBundle, { ids: number[]; listed: number[] }>();
+        const usedUp = new Set<RecipientBundle>();
         for (const b of bundles) {
           const listed = new Set(b.preKeys.map((p) => p.id));
           const mine = deviceBytes(b);
@@ -107,11 +115,15 @@ export function dbPreKeyStore(db: pg.Pool, ring: Keyring, clock: () => Date): Pr
             // Fewer prekeys than last seen and none new: a cut or partly unparsable answer, not a republish.
             if (listed.size < r.listed.length && [...listed].every((id) => r.listed.includes(id))) kept.set(b, r);
             ledger.seed(to, b, r.ids.filter((id) => listed.has(id)));
+            // Review R1: every listed id recorded as used, none of them in this pass.
+            const picked = new Set(ledger.pickedIds(to, b));
+            if (listed.size > 0 && [...listed].every((id) => r.ids.includes(id) && !picked.has(id))) usedUp.add(b);
           }
         }
+        if (usedUp.size > 0) onUsedUp?.(usedUp.size);
         let result: T;
         try {
-          result = encrypt();
+          result = encrypt(bundles.filter((b) => !usedUp.has(b)));
         } finally {
           // Written back whatever the encryption did: the ledger gave back every prekey it did not use.
           const now = clock();

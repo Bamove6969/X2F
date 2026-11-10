@@ -22,3 +22,7 @@ create table jabber_omemo_prekeys (
 );
 create index jabber_omemo_prekeys_recipient on jabber_omemo_prekeys (recipient_tag);
 create index jabber_omemo_prekeys_updated on jabber_omemo_prekeys (updated_at);
+
+-- Review R1 (lead decision): when a queued notice was first deferred for a used-up device
+-- (jabber/outbox.ts). Kept through retries; after 24 hours a deferral counts as a failed try.
+alter table jabber_outbox add column deferred_since timestamptz;

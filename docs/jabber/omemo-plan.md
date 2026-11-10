@@ -66,7 +66,11 @@ and Dino use libsignal, Gajim uses omemo-dr, Monal its own port of the same). So
    untried (its attempt count unchanged, due at once), and the next pass sends it against the bundle
    fetched then (a client republishes fresh prekeys after reading); the outbox logs only a
    `deferred` count; once a recipient is found used up, its remaining notices in that pass are
-   deferred without connecting (`PreKeyLedger.usedUp`). Lead decision 2026-11-10, after interop step 4b: python-omemo (Gajim and other
+   deferred without connecting (`PreKeyLedger.usedUp`). Review R1 (lead decision): a device whose
+   every listed prekey was recorded as used before the pass (it has read nothing since) is left
+   out of the send and counted in the log (`skippedUsedUp`, no id), and the notice goes to the
+   user's other devices; with none left the send fails as a normal try. A notice deferred for more
+   than 24 hours (`jabber_outbox.deferred_since`) counts as a failed try. Lead decision 2026-11-10, after interop step 4b: python-omemo (Gajim and other
    clients) refuses a PreKeySignalMessage without `OPK` ("No pre key with id 0 known"), so the
    earlier no-`OPK` fallback is gone; a prekey is never reused and a session never set up without
    one. The outbox keeps one row per notice, sent as one message keyed to every device, so a notice

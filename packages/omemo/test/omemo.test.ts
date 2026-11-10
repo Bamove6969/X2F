@@ -218,6 +218,22 @@ describe('encryptMessage', () => {
       expect(() => encryptMessage(me, 'n1', [recipientBundle(phone)], ledger.forRecipient('mira@xmpp.example.org'))).toThrow(PreKeysExhausted);
     });
 
+    it('pickedIds (review R1): the ids picked in this pass, apart from those seeded from the record; a given-back pick is not one', () => {
+      const me = sender();
+      const phone = new OmemoDevice(60, 3);
+      const laptop = new OmemoDevice(61, 3);
+      const ledger = new PreKeyLedger();
+      const mira = 'mira@xmpp.example.org';
+      ledger.seed(mira, recipientBundle(phone), [1]);
+      const xml = encryptMessage(me, 'n0', [recipientBundle(phone)], ledger.forRecipient(mira));
+      expect(ledger.pickedIds(mira, recipientBundle(phone))).toEqual([preKeyIdOf(xml)]);
+      expect(ledger.usedIds(mira, recipientBundle(phone)).sort()).toEqual([1, preKeyIdOf(xml)].sort());
+      // The laptop's pick is given back when the phone turns out used up: not picked after all.
+      ledger.seed(mira, recipientBundle(phone), [1, 2, 3]);
+      expect(() => encryptMessage(me, 'n1', [recipientBundle(laptop), recipientBundle(phone)], ledger.forRecipient(mira))).toThrow(PreKeysExhausted);
+      expect(ledger.pickedIds(mira, recipientBundle(laptop))).toEqual([]);
+    });
+
     it('usedUp: once a device of a recipient had no prekey left, the ledger says so for that recipient alone, so the outbox can skip the rest of the pass', () => {
       const me = sender();
       const phone = new OmemoDevice(59, 1);

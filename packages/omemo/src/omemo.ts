@@ -76,13 +76,23 @@ export class PreKeysExhausted extends Error {
  */
 export class PreKeyLedger {
   private readonly used = new Map<string, Set<number>>();
+  /** The ids picked in this pass (and not given back), apart from those seeded from a record. */
+  private readonly picked = new Map<string, Set<number>>();
   private readonly exhausted = new Set<string>();
 
+  private static device(recipient: string, b: RecipientBundle): string {
+    return `${recipient}\n${b.deviceId}\n${b.identityKey.toString('hex')}`;
+  }
+
+  private setOf(map: Map<string, Set<number>>, recipient: string, b: RecipientBundle): Set<number> {
+    const device = PreKeyLedger.device(recipient, b);
+    let s = map.get(device);
+    if (s === undefined) map.set(device, (s = new Set()));
+    return s;
+  }
+
   private usedBy(recipient: string, b: RecipientBundle): Set<number> {
-    const device = `${recipient}\n${b.deviceId}\n${b.identityKey.toString('hex')}`;
-    let used = this.used.get(device);
-    if (used === undefined) this.used.set(device, (used = new Set()));
-    return used;
+    return this.setOf(this.used, recipient, b);
   }
 
   /** The picker for notices to `recipient` (a bare JID) in this pass. */
@@ -96,6 +106,7 @@ export class PreKeyLedger {
       }
       const pick = left[randomInt(left.length)]!;
       used.add(pick.id);
+      this.setOf(this.picked, recipient, b).add(pick.id);
       return pick;
     };
   }
@@ -117,12 +128,26 @@ export class PreKeyLedger {
 
   /** The ids used for `recipient`'s device `b` (by device id and identity key), in no order. */
   usedIds(recipient: string, b: RecipientBundle): number[] {
-    return [...(this.used.get(`${recipient}\n${b.deviceId}\n${b.identityKey.toString('hex')}`) ?? [])];
+    return [...(this.used.get(PreKeyLedger.device(recipient, b)) ?? [])];
+  }
+
+  /**
+   * The ids picked for `recipient`'s device `b` in this pass, in no order (review R1: the API tells a
+   * device used up within the pass, which defers, from one that was used up before it, which it skips).
+   */
+  pickedIds(recipient: string, b: RecipientBundle): number[] {
+    return [...(this.picked.get(PreKeyLedger.device(recipient, b)) ?? [])];
   }
 
   /** Picker and releaser for notices to `recipient`, as `encryptMessage` options. */
   forRecipient(recipient: string): Required<Pick<EncryptOptions, 'pickPreKey' | 'releasePreKey'>> {
-    return { pickPreKey: this.picker(recipient), releasePreKey: (b, p) => this.usedBy(recipient, b).delete(p.id) };
+    return {
+      pickPreKey: this.picker(recipient),
+      releasePreKey: (b, p) => {
+        this.usedBy(recipient, b).delete(p.id);
+        this.setOf(this.picked, recipient, b).delete(p.id);
+      },
+    };
   }
 }
 

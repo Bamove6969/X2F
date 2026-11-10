@@ -67,7 +67,7 @@ export interface OmemoEncryptor {
 }
 
 /** The encryptor's only log line: a recipient device skipped for a key the agreement refuses (review L2), by its id. */
-export type OmemoLog = (e: { jabber: 'omemo'; skippedDevice: number }) => void;
+export type OmemoLog = (e: { jabber: 'omemo'; skippedDevice: number } | { jabber: 'omemo'; skippedUsedUp: number }) => void;
 
 // ---------------------------------------------------------------------------------------------
 // PEP requests and answers. The sender passes the answer of one `<iq>`; anything unexpected is
@@ -239,13 +239,14 @@ export function omemoEncryptorFrom(identity: OmemoIdentity, bundle: BundleSecret
     announce: async () => ({ deviceId: identity.deviceId, deviceList: deviceListXml([identity.deviceId]), bundle: bundleXml(identity.publicKey, bundle) }),
     encrypt: async ({ to, plaintext, bundles, preKeys }) => {
       const ledger = preKeys ?? (store ? new PreKeyLedger() : undefined);
-      const run = () =>
-        encryptMessage(identity, plaintext, bundles, {
+      const run = (usable: OmemoBundle[] = bundles) =>
+        encryptMessage(identity, plaintext, usable, {
           ...(ledger ? ledger.forRecipient(to) : {}),
           onSkip: (deviceId) => log?.({ jabber: 'omemo', skippedDevice: deviceId }),
         });
       try {
-        return store && ledger ? await store.withRecord(to, bundles, ledger, run) : run();
+        // A device used up before this pass is left out and counted, never by id (review R1).
+        return store && ledger ? await store.withRecord(to, bundles, ledger, run, (n) => log?.({ jabber: 'omemo', skippedUsedUp: n })) : run();
       } catch (e) {
         if (e instanceof PreKeysExhausted) throw new NoticeDeferred();
         throw e;
