@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type CardTrade, type HiddenKind, type OcrWord, type ProofCheck, checkProof, proofCardLines } from '../src/index.js';
+import { type CardTrade, type HiddenKind, type OcrWord, type ProofCheck, checkProof, posterDateLine, proofCardLines, proofDate } from '../src/index.js';
 import { ocr } from './ocr.js';
 
 // Plan 5 Task 9: the smart proof check and the lines of the seller's proof card (board SellerConfirm).
@@ -33,8 +33,8 @@ function receipt(o: { amount?: string; note?: string | null; date?: string | nul
   return ocr(...lines);
 }
 
-function check(words: OcrWord[], hidden: HiddenKind[] = ['name'], expected: Partial<typeof EXPECTED> = {}): ProofCheck {
-  return checkProof(words, { ...EXPECTED, ...expected }, hidden);
+function check(words: OcrWord[], hidden: HiddenKind[] = ['name'], expected: Partial<typeof EXPECTED> = {}, takenAt: Date | null = null): ProofCheck {
+  return checkProof(words, { ...EXPECTED, ...expected }, hidden, takenAt);
 }
 
 describe('checkProof and proofCardLines: the board example', () => {
@@ -224,11 +224,76 @@ describe('date', () => {
     expect(check(receipt({ date: '2026-02-30' })).date).toBe('not-found');
   });
 
-  // PENDING LEAD (copy): the plan gives no date line; the card shows none for any status.
-  it('shows no date line', () => {
-    const lines = proofCardLines(check(receipt({ date: 'Oct 2, 2026' })), TRADE);
-    expect(lines).toEqual(proofCardLines(check(receipt()), TRADE));
+  it('shows no date line for a date in range', () => {
+    expect(proofCardLines(check(receipt()), TRADE).some((l) => /dated|when this proof/.test(l.text))).toBe(false);
   });
+});
+
+// Owner G16 (2026-11-07): the photo's own date first, then the screenshot's; neither → warn both
+// sides, posting stays allowed. Q42: a stale date asks for a fresh screenshot.
+const NOT_CONFIRMED = {
+  tone: 'caution',
+  text: "We couldn't confirm when this proof was made. That doesn't make it invalid, but take extra care with this trade.",
+} as const;
+const STALE = { tone: 'caution', text: 'This proof is dated outside this trade. Ask mira.k for a fresh screenshot.' } as const;
+
+describe('date: the photo\'s own time (owner G16)', () => {
+  it('decides the date over what the screenshot shows', () => {
+    expect(check(receipt({ date: null }), ['name'], {}, new Date('2026-10-16T14:14:00Z')).date).toBe('in-range');
+    expect(check(receipt(), ['name'], {}, new Date('2026-10-01T14:14:00Z')).date).toBe('out-of-range');
+    expect(check(receipt({ date: 'Oct 2, 2026' }), ['name'], {}, new Date('2026-10-16T14:14:00Z')).date).toBe('in-range');
+  });
+
+  it('is in range within 14 hours of the window, either side', () => {
+    const e = EXPECTED.earliest.getTime();
+    const l = EXPECTED.latest.getTime();
+    const h = 60 * 60 * 1000;
+    expect(check(receipt({ date: null }), ['name'], {}, new Date(e - 14 * h)).date).toBe('in-range');
+    expect(check(receipt({ date: null }), ['name'], {}, new Date(e - 14 * h - 1000)).date).toBe('out-of-range');
+    expect(check(receipt({ date: null }), ['name'], {}, new Date(l + 14 * h)).date).toBe('in-range');
+    expect(check(receipt({ date: null }), ['name'], {}, new Date(l + 14 * h + 1000)).date).toBe('out-of-range');
+  });
+
+  it('still gives the date when the screenshot cannot be read', () => {
+    const low = receipt().map((w) => ({ ...w, conf: 10 }));
+    expect(check(low, ['name'], {}, new Date('2026-10-16T14:14:00Z')).date).toBe('in-range');
+    expect(check(low, ['name'], {}, new Date('2026-09-16T14:14:00Z')).date).toBe('out-of-range');
+    expect(check(low, ['name']).date).toBe('not-found');
+  });
+
+  it('an invalid Date counts as no date', () => {
+    expect(check(receipt({ date: null }), ['name'], {}, new Date(Number.NaN)).date).toBe('not-found');
+  });
+});
+
+describe('date lines (owner G16, Q42)', () => {
+  it('no date anywhere: the seller is told to take extra care, not that the proof is invalid', () => {
+    const lines = proofCardLines(check(receipt({ date: null })), TRADE);
+    expect(lines.at(-2)).toEqual(NOT_CONFIRMED);
+    expect(lines).toHaveLength(5);
+  });
+
+  it('a stale date asks for a fresh screenshot', () => {
+    expect(proofCardLines(check(receipt({ date: 'Oct 2, 2026' })), TRADE).at(-2)).toEqual(STALE);
+    expect(proofCardLines(check(receipt(), ['name'], {}, new Date('2026-09-01T00:00:00Z')), TRADE).at(-2)).toEqual(STALE);
+  });
+
+  it('the poster: warned when no date is found, asked for a fresh screenshot when stale, nothing when in range', () => {
+    const w = { earliest: EXPECTED.earliest, latest: EXPECTED.latest };
+    expect(proofDate(receipt(), null, w)).toBe('in-range');
+    expect(proofDate(receipt({ date: null }), new Date('2026-10-16T14:14:00Z'), w)).toBe('in-range');
+    expect(proofDate(receipt({ date: null }), null, w)).toBe('not-found');
+    expect(proofDate(receipt({ date: 'Oct 2, 2026' }), null, w)).toBe('out-of-range');
+    expect(proofDate(receipt().map((x) => ({ ...x, conf: 10 })), null, w)).toBe('not-found');
+    expect(() => proofDate(receipt(), null, { earliest: w.latest, latest: w.earliest })).toThrow(RangeError);
+    expect(posterDateLine('in-range')).toBeNull();
+    expect(posterDateLine('not-found')).toEqual({
+      tone: 'caution',
+      text: "We couldn't detect the date of this proof. You can still post it, and the seller will be told to take extra care.",
+    });
+    expect(posterDateLine('out-of-range')).toEqual({ tone: 'caution', text: 'This screenshot is dated outside this trade. Take a fresh screenshot of the payment.' });
+  });
+
 });
 
 describe('name (P5-A28)', () => {
@@ -279,7 +344,10 @@ describe('readable', () => {
   it('unreadable OCR → one "couldn\'t read" line plus the closing line', () => {
     const c = check(low(receipt(), 59));
     expect(c.readable).toBe(false);
-    expect(proofCardLines(c, TRADE)).toEqual([{ tone: 'caution', text: "We couldn't read this screenshot" }, CLOSING]);
+    expect(proofCardLines(c, TRADE)).toEqual([{ tone: 'caution', text: "We couldn't read this screenshot" }, NOT_CONFIRMED, CLOSING]);
+    // With the photo's own date in range, only the "couldn't read" line.
+    const dated = check(low(receipt(), 59), ['name'], {}, new Date('2026-10-16T14:14:00Z'));
+    expect(proofCardLines(dated, TRADE)).toEqual([{ tone: 'caution', text: "We couldn't read this screenshot" }, CLOSING]);
   });
 
   it('needs 3 words with conf >= 60', () => {
@@ -340,7 +408,7 @@ describe('the closing line (property)', () => {
                 const closing = `Look for a ${t.total} payment with the note ${t.code} in your bank. Screenshot checks catch mistakes, but only your bank proves the money arrived.`;
                 expect(lines.at(-1)).toEqual({ tone: 'caution', text: closing });
                 expect(lines.filter((l) => l.text === closing)).toHaveLength(1);
-                if (!readable) expect(lines).toHaveLength(2);
+                if (!readable) expect(lines).toHaveLength(date === 'in-range' ? 2 : 3);
                 cases++;
               }
     expect(cases).toBe(2 * 4 * 2 * 3 * 3 * 53);

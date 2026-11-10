@@ -5,7 +5,8 @@ export { type Box, type DetectOptions, type HiddenKind, type Keep, type Region, 
 export { padAndMerge, redact } from './redact.js';
 export { CleanError, type CleanErrorCode, assertClean, cleanImage } from './clean.js';
 export { parseAmounts } from './amounts.js';
-export { type CardLine, type CardTrade, type ProofCheck, type ProofExpected, checkProof, proofCardLines } from './check.js';
+export { type PhotoTime, readPhotoTime } from './photoDate.js';
+export { type CardLine, type CardTrade, type ProofCheck, type ProofExpected, checkProof, posterDateLine, proofCardLines, proofDate } from './check.js';
 export {
   type ProofBinding,
   type ProofErrorCode,
@@ -26,6 +27,8 @@ export {
   type ProofUnblurredPayload,
   PROOF_MAX_SIDE,
   PROOF_RECIPIENTS,
+  isUtcSecond,
+  toUtcSecond,
   parseProofPayload,
   proofKeyFromBase64,
   proofKeyToBase64,

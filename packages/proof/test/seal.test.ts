@@ -11,11 +11,13 @@ import {
   decryptProof,
   encryptProof,
   isProofId,
+  isUtcSecond,
   newProofId,
   parseProofPayload,
   proofKeyFromBase64,
   proofKeyToBase64,
   sealProofEnvelope,
+  toUtcSecond,
   type ProofKind,
 } from '../src/index.js';
 
@@ -296,7 +298,7 @@ describe('sealed key payloads (Plan 1 seal/open)', () => {
     const { ids, parts } = await participants();
     const proofId = newProofId();
     const enc = await encryptProof(image(), { code: CODE, proofId, kind: 'proof' });
-    const payload = { proofId, kind: 'proof', key: await b64(enc.key), sha256: enc.sha256, width: 1170, height: 2532, mime: 'image/jpeg', hidden: ['card', 'email'] };
+    const payload = { proofId, kind: 'proof', key: await b64(enc.key), sha256: enc.sha256, width: 1170, height: 2532, mime: 'image/jpeg', hidden: ['card', 'email'], takenAt: '2026-10-16T12:32:05Z' };
     const env = await seal({ trade: CHANNEL, from: 'buyer', seq: 1, type: 'proof.attached', payload, to: ['buyer', 'seller', 'mod'], me: ids.buyer, participants: parts });
     const opened = await open(env, { me: ids.seller, myRole: 'seller', participants: parts, trade: CHANNEL, guard: new ReplayGuard(CHANNEL) });
     const parsed = parseProofPayload(opened.type, opened.payload);
@@ -319,6 +321,7 @@ describe('parseProofPayload', () => {
     height: 600,
     mime: 'image/png',
     hidden: [],
+    takenAt: null,
   });
   const unblurred = (): Record<string, unknown> => ({ proofId: newProofId(), key: KEY, sha256: SHA, width: 800, height: 600, mime: 'image/jpeg' });
   const bad = (type: string, p: unknown): string => payloadCode(() => parseProofPayload(type, p));
@@ -329,6 +332,29 @@ describe('parseProofPayload', () => {
     expect(bad('proof.unblurred', unblurred())).toBe('no error');
     expect(bad('proof.attached', { ...attached(), hidden: ['name', 'account', 'card', 'iban', 'address', 'phone', 'email', 'handle', 'manual'] })).toBe('no error');
     expect(bad('proof.attached', { ...attached(), width: PROOF_MAX_SIDE, height: 1 })).toBe('no error');
+  });
+
+  it('takenAt is null or a UTC instant to the second (owner G16), nothing else', () => {
+    for (const t of [null, '2026-10-16T12:32:05Z', '1990-01-01T00:00:00Z', '2026-02-28T23:59:59Z']) {
+      expect(bad('proof.attached', { ...attached(), takenAt: t }), String(t)).toBe('no error');
+    }
+    for (const t of [
+      undefined,
+      '',
+      '2026-10-16T12:32:05.000Z',
+      '2026-10-16T12:32:05+02:00',
+      '2026-10-16T12:32:05',
+      '2026-10-16',
+      '2026-02-30T00:00:00Z',
+      '2026-10-16T24:00:00Z',
+      '1989-12-31T23:59:59Z',
+      1760617925000,
+      { exif: 'DateTimeOriginal' },
+    ]) {
+      expect(bad('proof.attached', { ...attached(), takenAt: t }), String(t)).toBe('bad-payload');
+    }
+    expect(isUtcSecond(toUtcSecond(new Date('2026-10-16T12:32:05.789Z')))).toBe(true);
+    expect(toUtcSecond(new Date('2026-10-16T12:32:05.789Z'))).toBe('2026-10-16T12:32:05Z');
   });
 
   it('refuses an extra filename field, and any other extra or missing field', () => {
@@ -416,7 +442,7 @@ describe('sealProofEnvelope (M2)', () => {
   it('proof.attached opens for buyer (allowSelf), seller and mod', async () => {
     const { ids, parts } = await participants();
     const enc = await encryptProof(image(), { code: CODE, proofId: newProofId(), kind: 'proof' });
-    const payload = { proofId: newProofId(), kind: 'proof' as const, key: await proofKeyToBase64(enc.key), sha256: enc.sha256, width: 1, height: 1, mime: 'image/jpeg' as const, hidden: [] };
+    const payload = { proofId: newProofId(), kind: 'proof' as const, key: await proofKeyToBase64(enc.key), sha256: enc.sha256, width: 1, height: 1, mime: 'image/jpeg' as const, hidden: [], takenAt: null };
     const env = await sealProofEnvelope({ type: 'proof.attached', payload }, { trade: CHANNEL, from: 'buyer', seq: 0, me: ids.buyer, participants: parts });
     for (const role of ['buyer', 'seller', 'mod'] as const) {
       const o = await open(env, { me: ids[role], myRole: role, participants: parts, trade: CHANNEL, guard: guard(), allowSelf: true });
