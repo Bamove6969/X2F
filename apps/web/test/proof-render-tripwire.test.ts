@@ -9,8 +9,14 @@
 // lands, each of those places mounts ProofThumb with the decrypted bytes and the envelope's mime, width
 // and height, and this test keeps passing without a change. Extend IMG_ALLOWED only for an image that
 // is not a proof (a logo or avatar from the app's own files), never for a proof.
+// Re-verify of f8c9fa78 (10 Nov 2026, F-R1): the wire also catches the other ways to put bytes on the
+// screen (createElement('img'), new Image(), HTML strings, SVG <image>, CSS url(), <video poster>,
+// <input type="image">, any "data:" string literal), scans .js/.jsx/.mjs/.cjs too, and strips comments
+// with a real parser (oxc, through the root devDependency rolldown), so a '//' inside a string or JSX
+// text no longer hides the rest of the line.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { parseSync } from 'rolldown/utils';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -26,17 +32,36 @@ function sources(dir: string): string[] {
   for (const name of readdirSync(`${ROOT}${dir}`)) {
     const rel = `${dir}/${name}`;
     if (statSync(`${ROOT}${rel}`).isDirectory()) out.push(...sources(rel));
-    else if (/\.(ts|tsx)$/.test(name) && !/\.d\.ts$/.test(name)) out.push(rel);
+    else if (/\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$/.test(name) && !/\.d\.[mc]?ts$/.test(name)) out.push(rel);
   }
   return out;
 }
 
-/** The file's code, comments removed, so a comment that says "never an <img>" does not trip the wire. */
+/**
+ * The file's code, comments removed, so a comment that says "never an <img>" does not trip the wire.
+ * The comments are the ones the parser finds, so '//' inside a string, a template, a regex or JSX text
+ * stays code. Each comment becomes spaces (its line breaks kept). A file the parser cannot read fails.
+ */
+const parsed = new Map<string, string>();
 function code(rel: string): string {
-  return readFileSync(`${ROOT}${rel}`, 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
+  const hit = parsed.get(rel);
+  if (hit !== undefined) return hit;
+  const src = readFileSync(`${ROOT}${rel}`, 'utf8');
+  const { comments, errors } = parseSync(rel, src);
+  expect(errors.map((e) => e.message), `${rel}: the tripwire cannot parse this file`).toEqual([]);
+  let out = '';
+  let at = 0;
+  for (const c of [...comments].sort((a, b) => a.start - b.start)) {
+    out += src.slice(at, c.start) + src.slice(c.start, c.end).replace(/[^\n]/g, ' ');
+    at = c.end;
+  }
+  out += src.slice(at);
+  parsed.set(rel, out);
+  return out;
 }
+
+/** Tags that put a picture, a frame or media on the screen, as JSX or as createElement's tag name. */
+const MEDIA_TAGS = 'img|image|feImage|picture|object|embed|iframe|frame|video|audio|source|track';
 
 const files = APPS.flatMap(sources);
 
@@ -52,8 +77,29 @@ describe('Task 15 wiring: a proof image is shown only through ProofThumb', () =>
     for (const f of files) {
       const c = code(f);
       if (!IMG_ALLOWED.includes(f)) expect(c, `${f}: an <img> outside ProofThumb; a proof image goes through <ProofThumb>`).not.toMatch(/<img[\s/>]/);
-      expect(c, f).not.toMatch(/<(picture|object|embed|iframe)[\s/>]/);
+      expect(c, f).not.toMatch(/<(picture|object|embed|i?frame|image|feImage|video|audio|source|track)[\s/>]/);
       expect(c, f).not.toMatch(/\bsrc[sS]et\b/);
+      expect(c, `${f}: <video poster> shows a picture`).not.toMatch(/\bposter=[{'"`]/);
+      expect(c, `${f}: <input type="image"> shows a picture`).not.toMatch(/\btype\s*[=:]\s*\{?\s*['"`]image['"`]/);
+    }
+  });
+
+  it('no element built outside JSX: no createElement of a media tag, no new Image(), no HTML from a string', () => {
+    for (const f of files) {
+      const c = code(f);
+      expect(c, `${f}: createElement of a media tag`).not.toMatch(new RegExp(`\\bcreateElement(NS)?\\s*\\([^)]*?['"\`](${MEDIA_TAGS})['"\`]`, 'i'));
+      expect(c, `${f}: new Image()`).not.toMatch(/\bnew\s+Image\s*\(/);
+      expect(c, `${f}: HTML from a string`).not.toMatch(/\b(innerHTML|outerHTML|insertAdjacentHTML|dangerouslySetInnerHTML|createContextualFragment|DOMParser|srcdoc|srcDoc)\b|\bdocument\.write(ln)?\b/);
+    }
+  });
+
+  it('no CSS picture: no url() and no *-image property in the TypeScript or JavaScript of either app', () => {
+    for (const f of files) {
+      const c = code(f);
+      // url( in lower case anywhere (new URL( is not CSS), and in any case right after a quote or a colon.
+      expect(c, `${f}: a CSS url() in code`).not.toMatch(/\burl\s*\(/);
+      expect(c, `${f}: a CSS url() in a string`).not.toMatch(/['"`:]\s*url\s*\(/i);
+      expect(c, `${f}: a CSS image property in code`).not.toMatch(/\b(backgroundImage|borderImage|borderImageSource|maskImage|WebkitMaskImage|listStyleImage)\b|-image\s*:/);
     }
   });
 
@@ -63,7 +109,10 @@ describe('Task 15 wiring: a proof image is shown only through ProofThumb', () =>
       expect(c, f).not.toMatch(/createObjectURL|revokeObjectURL/);
       expect(c, f).not.toMatch(/readAsDataURL|readAsBinaryString/);
       expect(c, f).not.toMatch(/\bdownload(=|:)/);
-      if (!RECEIVE_PATH.includes(f)) expect(c, `${f}: a data: image URL outside the receive path`).not.toMatch(/data:image\//);
+      if (RECEIVE_PATH.includes(f)) continue;
+      expect(c, `${f}: a data: image URL outside the receive path`).not.toMatch(/data:image\//);
+      // Any string or template literal that starts "data:", so "data:" + "image/png" is caught too.
+      expect(c, `${f}: a data: URL outside the receive path`).not.toMatch(/['"`]\s*data:/i);
     }
   });
 
