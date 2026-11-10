@@ -126,7 +126,8 @@ test.describe('/buy/:methodId (BuyOffers board)', () => {
     await stub(page);
     await page.goto('/buy/ZELLE');
     const satoshi = page.locator('article', { has: page.locator('[data-username]', { hasText: 'satoshi_ghost' }) });
-    await expect(satoshi.locator('[data-part="markup"]')).toHaveText('+0.03%Vendor markup');
+    // Design final call (10 Nov 2026): the one price wording, ui/margin.ts.
+    await expect(satoshi.locator('[data-part="markup"]')).toHaveText('0.03% above market');
     await expect(page.getByText(/fixed price/i)).toHaveCount(0);
   });
 

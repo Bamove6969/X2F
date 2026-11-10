@@ -13,6 +13,7 @@ import { ApiCallError, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { CantDoThat, type CantDoCode } from '../ui/CantDoThat.js';
 import { Icon } from '../ui/icons.js';
+import { marginParts, marginWords } from '../ui/margin.js';
 import { RadioChips } from './browse/RadioChips.js';
 import { fetchCurrencies, fetchMethods, fetchPrice, postOffer, type PickMethod, type PriceQuote, type Side } from './post/api.js';
 import { COUNTRIES } from './post/countries.js';
@@ -48,8 +49,6 @@ import {
   formatPrice,
   loadDraft,
   marginBpsOf,
-  marginText,
-  marginWord,
   parseRangeAmount,
   posterGiftCardRole,
   previewLine,
@@ -300,14 +299,15 @@ function PostOfferForm() {
     const e = errors.bands?.[currency]?.rows[b.key] ?? {};
     const id = (part: string) => `${currency}-${b.key}-${part}`;
     const change = (patch: Partial<Omit<BandDraft, 'key'>>) => edit((f) => setBand(f, currency, b.key, patch));
-    // Under each box, the other unit at this band's price (boards v142). COPY-UNSIGNED: "≈ … at your price (+N%)".
+    // Under each box, the other unit at this band's price (boards v142): "≈ $165.77 at your price (0.5%
+    // above market)", the margin in the one form (ui/margin.ts). COPY-UNSIGNED: "≈ … at your price (…)".
     const other = (raw: string) => {
       const v = parseRangeAmount(raw, form.unit);
       if (v === null || v === 0n || price === null) return null;
       const minor = form.unit === 'fiat' ? v * 100n : v;
       return (
         <span className="post-muted post-other-unit" data-part="other-unit">
-          {`${otherUnit(minor, form.unit, currency, { currency, centsPerXmr: price })} at your price (${marginText(bps!)})`}
+          {`${otherUnit(minor, form.unit, currency, { currency, centsPerXmr: price })} at your price (${marginWords(bps!)})`}
         </span>
       );
     };
@@ -356,8 +356,14 @@ function PostOfferForm() {
               </span>
             </div>
             {bps !== null ? (
+              // "0.5% above market" / "at market", the one form everywhere (ui/margin.ts); the figure in mono.
               <span className="post-muted" data-part="margin-reads">
-                <span className="post-mono post-ink">{marginText(bps)}</span> <span>{marginWord(bps)}</span>
+                {marginParts(bps).figure !== null ? (
+                  <>
+                    <span className="post-mono post-ink">{marginParts(bps).figure}</span>{' '}
+                  </>
+                ) : null}
+                <span>{marginParts(bps).words}</span>
                 {price !== null ? <span>{` · ${formatPrice(price, currency)}`}</span> : null}
               </span>
             ) : null}

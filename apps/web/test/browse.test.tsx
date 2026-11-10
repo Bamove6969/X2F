@@ -106,8 +106,10 @@ describe('OfferCard', () => {
     const texts = [...host.querySelectorAll('span')].map((s) => s.textContent);
     expect(texts).toContain('Online · 212 trades · 99% positive');
     expect(texts).toContain('$331.20');
-    expect(texts).toContain('+0.4%');
-    expect(texts).toContain('Vendor markup');
+    // Design final call (10 Nov 2026): the price in the one form, the figure in mono over the words.
+    expect(texts).toContain('0.4%');
+    expect(texts).toContain('above market');
+    expect(host.querySelector('[data-part="markup"]')?.textContent).toBe('0.4% above market');
     expect(texts).toContain('$50 – $2,000 USD');
     expect(texts).toContain('Pays in ~6 min');
   });

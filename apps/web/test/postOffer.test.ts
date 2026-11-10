@@ -24,8 +24,6 @@ import {
   formatPrice,
   loadDraft,
   marginBpsOf,
-  marginText,
-  marginWord,
   parseAmount,
   previewLine,
   priceWithMargin,
@@ -161,19 +159,6 @@ describe('margin (owner F1, 7 Nov: pick above or below, type the percentage, at 
     }
     expect(validate(form({ marginPct: '' })).errors).toEqual({ bands: { USD: { rows: { 1: { margin: MARGIN_ERROR } } } } });
     expect(MARGIN_ERROR).not.toContain('!');
-  });
-
-  it('reads like the board', () => {
-    expect(marginText(50)).toBe('+0.5%');
-    expect(marginText(0)).toBe('0.0%');
-    expect(marginText(-120)).toBe('-1.2%');
-    // A typed hundredth is shown, never rounded away (owner F1: the percentage is typed).
-    expect(marginText(-1225)).toBe('-12.25%');
-    expect(marginText(3)).toBe('+0.03%');
-    expect(marginText(5000)).toBe('+50.0%');
-    expect(marginWord(50)).toBe('above market');
-    expect(marginWord(0)).toBe('at market');
-    expect(marginWord(-10)).toBe('below market');
   });
 
   it('moves the market price by the margin, rounded half up', () => {

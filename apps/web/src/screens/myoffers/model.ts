@@ -3,7 +3,8 @@
 // (origin/wip/design-brief docs/design-boards/MyOffers.dc.html, 2026-10-29); anything the board does
 // not give is lead wording until the owner signs it off (COPY-UNSIGNED).
 import { CANT_DO_CODES, MY_OFFERS_HIDDEN, OFFER_CAP_LINE, TRADING_HOLD_CODE, isCantDoCode, myOffersRowText, type CantDoCode, type MyOffersHidden } from '../../ui/cantDoCodes.js';
-import { formatAmount, marginText } from '../post/offerForm.js';
+import { marginWords } from '../../ui/margin.js';
+import { formatAmount } from '../post/offerForm.js';
 import { xmrRangeText } from '../browse/offerAmounts.js';
 import type { MyOffer, OfferState, SwitchResult } from './api.js';
 
@@ -68,12 +69,16 @@ export function offerMethods(o: MyOffer): string {
   return `${o.methodNames.join(', ')}${o.country ? ` (${o.country})` : ''}`;
 }
 
-/** The price line in two parts, as the board: ["+0.5%", "follows the market"] (every offer is market ± %, owner Q1). */
+/**
+ * The price line in two parts: ["0.5% above market", "follows the market"] (every offer is market +/- %,
+ * owner Q1; the margin in the one form everywhere, ui/margin.ts, design final call 10 Nov 2026, in place
+ * of the board's "+0.5%").
+ */
 export function offerPriceParts(o: MyOffer): [string, string] {
-  return [marginText(o.pricing.marginBps), 'follows the market'];
+  return [marginWords(o.pricing.marginBps), 'follows the market'];
 }
 
-/** The price line: "+0.5% · follows the market". */
+/** The price line: "0.5% above market · follows the market". */
 export function offerPrice(o: MyOffer): string {
   return offerPriceParts(o).join(' · ');
 }

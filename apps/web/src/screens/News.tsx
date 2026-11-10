@@ -23,55 +23,11 @@ import { Button } from '../ui/Button.js';
 import { CheckRow } from '../ui/CheckRow.js';
 import { FlowScreen } from '../ui/FlowScreen.js';
 import { Icon } from '../ui/icons.js';
-import { When } from '../ui/When.js';
 import { fetchNews, markSeen, readHideAfterLogin, readLastSeen, rememberNews, setHideAfterLogin, type NewsItem } from './news-model.js';
+import { NewsPost } from './NewsPost.js';
 import './screens.css';
 
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; items: NewsItem[]; seenBefore: number };
-
-/** A post (News board): a button opens and closes it; new posts have the escrow edge and "New". */
-function Post({ item, isNew, open, onToggle }: { item: NewsItem; isNew: boolean; open: boolean; onToggle: () => void }) {
-  const titleId = `news-${item.id}-title`;
-  const bodyId = `news-${item.id}-body`;
-  return (
-    <article className="x2f-post" data-part="news-item" data-new={isNew ? '' : undefined} aria-labelledby={titleId}>
-      <h2 className="x2f-post__heading">
-        {/* Named by the title alone (review N9); the New/Read mark and the date stay visible. */}
-        <button type="button" className="x2f-post__toggle" aria-expanded={open} aria-controls={bodyId} aria-labelledby={titleId} onClick={onToggle}>
-          <span className="x2f-post__text">
-            <span className="x2f-post__meta" data-part="news-date">
-              {isNew ? (
-                <span className="x2f-post__new" data-part="news-new">
-                  New
-                </span>
-              ) : (
-                <span>Read</span>
-              )}
-              <When at={item.publishedAt} />
-              {item.editedAt !== null ? (
-                <span>
-                  {/* COPY-UNSIGNED */}
-                  Updated <When at={item.editedAt} />
-                </span>
-              ) : null}
-            </span>
-            <span className="x2f-post__title" id={titleId} data-part="news-title">
-              {item.title}
-            </span>
-          </span>
-          <span className="x2f-post__chevron">
-            <Icon name="chevron-down" size={18} />
-          </span>
-        </button>
-      </h2>
-      <div className="x2f-post__body" id={bodyId} hidden={!open}>
-        {item.body.split(/\n+/).map((para, i) => (
-          <p key={i}>{para}</p>
-        ))}
-      </div>
-    </article>
-  );
-}
 
 export function News() {
   const navigate = useNavigate();
@@ -208,7 +164,7 @@ export function News() {
             ) : null}
           </div>
           {state.items.map((i) => (
-            <Post key={i.id} item={i} isNew={i.id > state.seenBefore} open={open.has(i.id)} onToggle={() => toggle(i.id)} />
+            <NewsPost key={i.id} item={i} isNew={i.id > state.seenBefore} open={open.has(i.id)} onToggle={() => toggle(i.id)} />
           ))}
         </section>
       ) : null}

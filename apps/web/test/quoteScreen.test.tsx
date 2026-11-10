@@ -74,8 +74,9 @@ function json(status: number, body: unknown): Response {
 
 beforeEach(() => {
   sessionStorage.clear();
-  // The take tests below are about the take and the room it opens; the courtesy sheet between them
-  // (T-039) has its own block at the end, which turns it back on.
+  // The take tests below are about the take and the room it opens; the courtesy sheet (T-039) is the
+  // trade room's (test/tradeRoom.test.tsx) and never shows on the quote; the block at the end checks that
+  // with it turned on.
   turnCourtesyOff();
   arrivedState = null;
   session.status = 'signed-in';
@@ -741,8 +742,9 @@ describe("This offer's bands (BuyQuote board, canvas v142; owner 2026-11-08)", (
     expect(row.textContent).toContain('$338.25 / XMR');
     expect(part(row, 'band-range')).toBe('$50 – $1,500');
     expect(row.textContent).toContain('$50 – $1,500 USD');
-    expect(part(row, 'band-markup')).toBe('+2.50%');
-    expect(row.textContent).toContain('+2.50% markup');
+    // Design final call (10 Nov 2026): the one price wording, ui/margin.ts (was the board's "+2.50% markup").
+    expect(part(row, 'band-markup')).toBe('2.5% above market');
+    expect(row.querySelector('[data-part="band-markup"] .x2f-quote__mono')?.textContent).toBe('2.5%');
     expect(part(row, 'band-xmr')).toBe('≈ 0.147819 – 4.434589');
   });
 
@@ -1093,13 +1095,15 @@ describe('What applies to you on the quote (j31a section 1)', () => {
   });
 });
 
-// Build spec j31a section 2 (owner p9-3, T-039): the courtesy sheet between the take and the room.
-describe('the courtesy sheet after Trade (j31a section 2)', () => {
+// Build spec j31a section 2 (owner p9-3, T-039) and the design final call (10 Nov 2026): the courtesy
+// sheet "Trading with more than one person?" shows OVER the trade room the first time the room opens
+// (TradeRoom.tsx, test/tradeRoom.test.tsx), never on the quote between the take and the room, so the
+// browser's Back can no longer lose the step into the room (review L2, 9 Nov).
+describe('after Trade, the quote goes straight to the trade room (the courtesy sheet is the room\'s, j31a section 2)', () => {
   beforeEach(() => resetCourtesy());
   afterEach(() => resetCourtesy());
 
   const sheet = () => document.querySelector<HTMLElement>('[data-sheet="courtesy"]');
-  const gotIt = () => [...sheet()!.querySelectorAll('button')].find((b) => b.textContent === 'Got it')!;
 
   async function takeIt(host: HTMLElement) {
     pick(host, 'w-cake');
@@ -1107,91 +1111,27 @@ describe('the courtesy sheet after Trade (j31a section 2)', () => {
     await settle();
   }
 
-  it('the take goes through, then the sheet shows before the trade room; Got it opens the room', async () => {
+  it('the take goes through and the room opens at once, with the confirmed state; no sheet on the quote', async () => {
     const { host } = await open(`${BUY}&amount=412.50`);
     await takeIt(host);
     expect(stub.takes).toHaveLength(1);
-    expect(where(host)).toBeNull();
-    const dialog = sheet()!.closest('[role="dialog"]')!;
-    expect(dialog.querySelector('h2')?.textContent).toBe('Trading with more than one person?');
-    expect(sheet()!.textContent).toContain(
-      "If you opened trades with several people to see who answers first, close the others once you've picked one. That way nobody is left waiting on you.",
-    );
-    const tick = sheet()!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    expect(tick.checked).toBe(false);
-    expect(tick.closest('label')?.textContent).toBe("Don't show this again");
-    // "Got it" is the only action.
-    expect([...sheet()!.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Got it']);
-    fire(gotIt(), new MouseEvent('click', { bubbles: true }));
-    await settle();
+    expect(sheet()).toBeNull();
     expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
     expect(arrivedState).toMatchObject({ confirmed: { role: 'buyer' } });
   });
 
-  it('it shows on every trade until "Don\'t show this again" is ticked', async () => {
-    const first = await open(`${BUY}&amount=412.50`);
-    await takeIt(first.host);
-    fire(gotIt(), new MouseEvent('click', { bubbles: true }));
-    await settle();
-    expect(where(first.host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
-    first.unmount();
-    forgetQuotes();
-
-    const second = await open(`${BUY}&amount=412.50`);
-    await takeIt(second.host);
-    expect(where(second.host)).toBeNull();
-    fire(sheet()!.querySelector('input[type="checkbox"]')!, new MouseEvent('click', { bubbles: true }));
-    fire(gotIt(), new MouseEvent('click', { bubbles: true }));
-    await settle();
-    expect(where(second.host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
-    second.unmount();
-    forgetQuotes();
-
-    const third = await open(`${BUY}&amount=412.50`);
-    await takeIt(third.host);
-    expect(sheet()).toBeNull();
-    expect(where(third.host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
-  });
-
-  it('SellQuote: the same sheet, then the trade room', async () => {
+  it('SellQuote: the same, straight to the room', async () => {
     const { host } = await open(quotePath('buy', 'ZELLE', 'offer-mira', 'USD') + '&amount=1&unit=xmr');
     await takeIt(host);
-    expect(where(host)).toBeNull();
-    expect(sheet()).not.toBeNull();
-    fire(gotIt(), new MouseEvent('click', { bubbles: true }));
-    await settle();
-    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
-  });
-
-  // Review L1 (9 Nov 2026): every way of closing the sheet lands in the trade room, not only Got it.
-  it('Escape on the sheet lands in the trade room, with the confirmed state', async () => {
-    const { host } = await open(`${BUY}&amount=412.50`);
-    await takeIt(host);
-    expect(where(host)).toBeNull();
-    const dialog = sheet()!.closest<HTMLElement>('[role="dialog"]')!;
-    fire(dialog, new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await settle();
     expect(sheet()).toBeNull();
     expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
-    expect(arrivedState).toMatchObject({ confirmed: { role: 'buyer' } });
   });
 
-  it('a tap on the backdrop lands in the trade room, with the confirmed state', async () => {
-    const { host } = await open(`${BUY}&amount=412.50`);
-    await takeIt(host);
-    expect(where(host)).toBeNull();
-    const backdrop = sheet()!.closest('.x2f-sheet-layer')!.querySelector('[data-part="backdrop"]')!;
-    fire(backdrop, new MouseEvent('click', { bubbles: true }));
-    await settle();
-    expect(sheet()).toBeNull();
-    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
-    expect(arrivedState).toMatchObject({ confirmed: { role: 'buyer' } });
-  });
-
-  it('a refused take shows no sheet', async () => {
+  it('a refused take opens no room and no sheet', async () => {
     stub.take = () => ({ status: 409, json: { error: 'price-changed' } });
     const { host } = await open(`${BUY}&amount=412.50`);
     await takeIt(host);
     expect(sheet()).toBeNull();
+    expect(where(host)).toBeNull();
   });
 });

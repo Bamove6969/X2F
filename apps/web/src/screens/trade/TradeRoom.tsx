@@ -95,6 +95,8 @@ import { memberOf } from '../../session/member.js';
 import { displayNameOf, useSession } from '../../session/useSession.js';
 import { setConfirmUser } from './confirmSkip.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
+import { CourtesySheet } from '../quote/CourtesySheet.js';
+import { courtesyDue, markCourtesyShown } from '../quote/courtesy.js';
 import { tradeFromView } from '../dispute/api.js';
 import { DisputeEntry } from '../dispute/DisputeEntry.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
@@ -326,6 +328,14 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
   const stored = useMemo(() => (fromState ? null : readConfirmed(code)), [fromState, code]);
   const confirmed = fromState ?? stored ?? undefined;
   const escrow = useTradeEscrow(code, confirmed);
+  // "Trading with more than one person?" (j31a section 2, T-039; design final call 10 Nov 2026) over the
+  // room the first time the taker's new trade opens: arriving from the take (the history state), as the
+  // taker (posters never see it, T-038), unless ticked off on this device or shown for this trade already
+  // (a reload, Back then Forward). A room opened any other way (a new tab, a push) shows none.
+  const [courtesy, setCourtesy] = useState(() => fromState !== undefined && view.role !== view.poster && courtesyDue(code));
+  useEffect(() => {
+    if (courtesy) markCourtesyShown(code);
+  }, [courtesy, code]);
   // Once the escrow has stored the deal, the tab's copy (it holds the payout address) is not needed.
   const hasDeal = escrow.deal !== null;
   useEffect(() => {
@@ -379,6 +389,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
         sideLabel={`Chat with ${publicName(view.counterparty)}`}
       />
       <ChatHash hash={hash} layout={layout} chat={chat} chatPane={chatPane} name={publicName(view.counterparty)} screen={Screen} />
+      <CourtesySheet open={courtesy} onDone={() => setCourtesy(false)} />
     </main>
   );
 }

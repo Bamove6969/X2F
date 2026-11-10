@@ -375,7 +375,7 @@ describe('NewsEditor (owner; Plan 4 Task 28)', () => {
   const OWNER = { ...ME, displayName: 'lumen.k', role: 'owner', nav: NAV.owner };
   const ITEM = { id: 7, title: 'Maintenance tonight', body: 'Back by 02:00 UTC.', publishedAt: '2026-11-05T10:00:00Z', editedAt: null };
 
-  it('writes with a preview as the News page shows it, edits and deletes', async () => {
+  it('writes with a preview that is the trader view ("As traders will see it"), edits and deletes', async () => {
     let items = [ITEM];
     const api = fakeApi({
       'GET /staff/v1/me': { body: OWNER },
@@ -396,9 +396,25 @@ describe('NewsEditor (owner; Plan 4 Task 28)', () => {
     expect(publish().disabled).toBe(true);
     typeInto(field('Title'), 'Zelle delays');
     typeInto(field('Message'), 'Bank holiday.\nExpect delays.');
+    // Design final call (10 Nov 2026): the preview is the trader's own News post (apps/web NewsPost through
+    // the kit), open, marked New, under the heading "As traders will see it".
+    expect([...document.querySelectorAll('h2')].map((h) => h.textContent)).toContain('As traders will see it');
+    expect(document.body.textContent).not.toContain('Preview');
     const preview = document.querySelector('[data-part="news-preview"] [data-part="news-item"]')!;
-    expect(preview.querySelector('h2')?.textContent).toBe('Zelle delays');
-    expect([...preview.querySelectorAll('.x2f-sheet__body')].map((p) => p.textContent)).toEqual(['Bank holiday.', 'Expect delays.']);
+    expect(preview.classList.contains('x2f-post')).toBe(true);
+    expect(preview.hasAttribute('data-new')).toBe(true);
+    expect(preview.querySelector('[data-part="news-new"]')?.textContent).toBe('New');
+    expect(preview.querySelector('[data-part="news-title"]')?.textContent).toBe('Zelle delays');
+    const toggle = preview.querySelector<HTMLButtonElement>('.x2f-post__toggle')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const body = preview.querySelector<HTMLElement>('.x2f-post__body')!;
+    expect(body.hidden).toBe(false);
+    expect([...body.querySelectorAll('p')].map((p) => p.textContent)).toEqual(['Bank holiday.', 'Expect delays.']);
+    // The trader's toggle works on the preview too, and it opens again.
+    await click(toggle);
+    expect(preview.querySelector<HTMLElement>('.x2f-post__body')!.hidden).toBe(true);
+    await click(toggle);
+    expect(preview.querySelector<HTMLElement>('.x2f-post__body')!.hidden).toBe(false);
     await click(publish());
     expect(api.calls.find((c) => c.method === 'POST')?.body).toEqual({ title: 'Zelle delays', body: 'Bank holiday.\nExpect delays.' });
     expect(document.querySelectorAll('[data-part="news-row"]')).toHaveLength(2);

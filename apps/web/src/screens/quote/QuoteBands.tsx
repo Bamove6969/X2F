@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import { Icon } from '../../ui/icons.js';
-import { bandAt, bandOther, bandRange, bandRate, clipLines, markupText, money, offerBands, type BandAt } from '../browse/bands.js';
+import { marginParts } from '../../ui/margin.js';
+import { bandAt, bandOther, bandRange, bandRate, clipLines, money, offerBands, type BandAt } from '../browse/bands.js';
 import { RadioChips } from '../browse/RadioChips.js';
 import { quoteExponent, type MarketNow, type Quote, type QuoteOffer } from './quoteModel.js';
 
@@ -8,12 +9,13 @@ import { quoteExponent, type MarketNow, type Quote, type QuoteOffer } from './qu
 // XMR or fiat"): right under "You receive", so the buyer never goes back a screen to see where the
 // price clips. Each band: its range in the unit the poster set and, converted at the live rate, in
 // the other ("≈": XMR for a fiat-set offer, the currency for an XMR-set one, lead 9 Nov, design not
-// yet asked), its rate and markup; the
+// yet asked), its rate and its price against the market (ui/margin.ts, design final call 10 Nov
+// 2026: "0.4% above market", in place of the board's "+0.40% markup"); the
 // band holding the amount has the 2 px ink ring and a "Your amount" tag; under the list, where the
 // rate changes; "With markup / Without" converts the XMR at each band's price or at the market rate
 // (with the freshness line). Money maths is in browse/bands.ts, all bigint.
 // COPY-UNSIGNED (board, 8 Nov): "This offer's bands", "The price changes with the amount", "With
-// markup", "Without", "Band N", "Your amount", "markup" / "market rate", the clip lines, the
+// markup", "Without", "Band N", "Your amount", "market rate", the clip lines, the
 // freshness line. Not on the board, kept from the owner's rules (Q27): "N+ completed trades" on a
 // band that asks for them. SellQuote has no board yet (design draws it next); it shows the same card.
 
@@ -68,7 +70,7 @@ export function QuoteBands({ offer, quote, market }: { offer: QuoteOffer; quote:
         {bands.map((b, i) => {
           const here = at?.kind === 'in' && at.index === i;
           const rate = bandRate(b, offer.currency, marketCents, withMarkup);
-          const markup = withMarkup ? markupText(b.pricing, marketCents) : null;
+          const margin = withMarkup ? marginParts(b.pricing.marginBps) : null;
           return (
             <li key={i} data-part="band" className="x2f-quote__band" aria-current={here ? 'true' : undefined}>
               <span className="x2f-quote__band-line">
@@ -92,15 +94,15 @@ export function QuoteBands({ offer, quote, market }: { offer: QuoteOffer; quote:
                   </span>{' '}
                   {b.unit === 'xmr' ? <span className="x2f-quote__band-xmr-unit">XMR</span> : <span className="x2f-quote__band-unit">{offer.currency}</span>}
                 </span>
-                {withMarkup ? (
-                  markup === null ? null : (
-                    <span className="x2f-quote__band-markup">
-                      <span data-part="band-markup" className="x2f-quote__mono">
-                        {markup}
-                      </span>{' '}
-                      markup
-                    </span>
-                  )
+                {margin !== null ? (
+                  <span className="x2f-quote__band-markup" data-part="band-markup">
+                    {margin.figure !== null ? (
+                      <>
+                        <span className="x2f-quote__mono">{margin.figure}</span>{' '}
+                      </>
+                    ) : null}
+                    {margin.words}
+                  </span>
                 ) : (
                   <span className="x2f-quote__band-markup">market rate</span>
                 )}
