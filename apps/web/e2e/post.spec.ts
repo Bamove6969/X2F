@@ -132,7 +132,7 @@ test('the board copy and the default market price', async ({ page }) => {
   await expect(page.getByText('above market', { exact: true })).toBeVisible();
   // J-16: each currency's card carries its market line; the price at your margin is on the band.
   await expect(page.getByText('Market $329.90 / XMR right now. Your prices follow the market.', { exact: true })).toBeVisible();
-  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('+0.5% above market · $331.55 / XMR');
+  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('0.5% above market · $331.55 / XMR');
   const preview = page.getByRole('region', { name: 'Preview' });
   await expect(preview.getByText('Selling XMR via Zelle · USD · you', { exact: true })).toBeVisible();
   await expect(preview.getByText('$331.55 / XMR', { exact: true })).toBeVisible();
