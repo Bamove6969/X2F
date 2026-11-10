@@ -1,9 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
+import { signedIn } from './session.js';
 
 // J-04 (owner G19, 7 Nov; register W-004): maintenance is planned or unplanned, never "emergency"
 // to a trader; the message (up to 500 characters) is in a big bright banner; a planned maintenance
 // is announced ahead with its start and end. GET /v1/site is stubbed here; the API side is
-// apps/api/test/site.test.ts.
+// apps/api/test/site.test.ts. The trader screens sit behind the front door (owner 8 Nov), so
+// the banner tests sign in; the unplanned screen replaces the app for everyone.
 
 async function site(page: Page, body: unknown): Promise<void> {
   await page.route('**/v1/site', (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'cache-control': 'no-store' }, body: JSON.stringify(body) }));
@@ -19,6 +21,7 @@ test('a planned maintenance announced ahead shows its start, end and message in 
     if (/content security policy/i.test(m.text())) violations.push(m.text());
   });
   await site(page, { ...OFF, plannedMaintenance: { startsAt: '2026-11-10T12:00:00.000Z', endsAt: '2026-11-10T14:00:00.000Z', message: 'Database upgrade. Trades pause while it runs.' } });
+  await signedIn(page);
   await page.goto('/sell');
   const box = page.locator('[data-part="planned-maintenance"]');
   await expect(box).toBeVisible();
@@ -33,6 +36,7 @@ test('a planned maintenance announced ahead shows its start, end and message in 
 
 test('no plan, no banner', async ({ page }) => {
   await site(page, OFF);
+  await signedIn(page);
   await page.goto('/sell');
   await expect(page.locator('nav[aria-label="Main"]')).toBeAttached();
   await expect(page.locator('[data-part="planned-maintenance"]')).toHaveCount(0);
