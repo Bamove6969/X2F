@@ -221,3 +221,7 @@ Landing order after audit batch 2: job1a + job1b together (BuyerPay overlap: onI
 ## 2026-11-10T05:10:29Z batch 5 landed
 - main d87fe04f (from 177fa75e + 552fa654, 1bdf082b, d87fe04f). Checks: vitest 6503/0 fail, PW 506/0, escrow 87, regtest 4, regtest-verify 10, node-proxy 34.
 - Next: payfields-all fixes (F1-F7, Pago Movil cedula exception) then batch 6.
+
+## 2026-11-10T07:08:06Z batch 6 landed
+- main 8cca6d77 (payfields-all + review F1-F7 + R1). Checks: vitest 6525, PW 506, Monero 87/4/10/34.
+- Wording Room v7 adds the "Payment boxes" batch (w13, 101 questions). Open: F6 IMPS MMID, F8 buyer card for nothing-to-send, p11-144, p11-145, M-PESA till/paybill.
