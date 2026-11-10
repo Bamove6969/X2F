@@ -29,9 +29,9 @@ Every money guarantee of `review-flex-launch-2026-11-09.md` holds after the merg
 | `apps/web/test/quoteScreen.test.tsx` | 59/59 pass | `rvFL4-web-quoteScreen-005333.log` |
 | `apps/web/test/postOffer.test.ts` | 36/36 pass | `rvFL4-web-postOffer-005337.log` |
 | `apps/web/test/giftCards.test.tsx` | 7/7 pass | `rvFL4-web-giftCards-005338.log` |
-| `npx tsc -p apps/api --noEmit` | clean (exit 0); re-run after the restart: TSC_API | `rvFL4-tsc-api-005340.log`, `rvFL4b-tsc-api-*.log` |
-| `npx tsc -p apps/web --noEmit` | clean (exit 0); re-run after the restart: TSC_WEB | `rvFL4-tsc-web-005342.log`, `rvFL4b-tsc-web-*.log` |
-| `npx tsc -p packages/trade --noEmit` | clean (exit 0); re-run after the restart: TSC_TRADE | `rvFL4-tsc-trade-005344.log`, `rvFL4b-tsc-trade-*.log` |
+| `npx tsc -p apps/api --noEmit` | clean (exit 0); re-run after the restart: clean, 73 s | `rvFL4-tsc-api-005340.log`, `rvFL4b-tsc-api-005905.log` |
+| `npx tsc -p apps/web --noEmit` | clean (exit 0); re-run after the restart: clean, 11 s | `rvFL4-tsc-web-005342.log`, `rvFL4b-tsc-web-010018.log` |
+| `npx tsc -p packages/trade --noEmit` | clean (exit 0); re-run after the restart: clean, 9 s | `rvFL4-tsc-trade-005344.log`, `rvFL4b-tsc-trade-010029.log` |
 
 Not run (job scope): Playwright, moderation, the whole-project check. The red runs of `7a91e3a7` are claimed in the commit message; I did not reproduce them.
 
@@ -56,7 +56,7 @@ Not run (job scope): Playwright, moderation, the whole-project check. The red ru
 
 ### (3) One `tradeProfile` table
 
-- `apps/api/src/methods/profiles.ts:180-184`: own profile, else `OTHER_GIFT_CARD` for any catalog gift card, else `CUSTOM`; `profileOrFallback` is gone everywhere (`take.ts:394`, `offers/routes.ts:1133,1137`, `methods/routes.ts:98`). No method lost a profile: HEAD's 18 ids are exactly batch 4 `257e11b7`'s 18 (`LAUNCH_PROFILE_IDS` :50-53) and a superset of flex-launch `bfc46319`'s 17 (no `OTHER_GIFT_CARD` there).
+- `apps/api/src/methods/profiles.ts:180-184`: own profile, else `OTHER_GIFT_CARD` for any catalog gift card, else `CUSTOM`; `profileOrFallback` is gone everywhere (`take.ts:394`, `offers/routes.ts:1133,1136`, `methods/routes.ts:98`). No method lost a profile: HEAD's 18 ids are exactly batch 4 `257e11b7`'s 18 (`LAUNCH_PROFILE_IDS` :50-53) and a superset of flex-launch `bfc46319`'s 17 (no `OTHER_GIFT_CARD` there).
 - `MIN_PAY_WINDOW_MIN = TIMERS.payMin` (90) and `MAX_PAY_WINDOW_MIN` (1440) enforced at `profiles.ts:134-141` on every profile (not just the launch set); `profiles.test` "refuses a profile file whose time to pay is missing or out of range" pins `undefined, 89, 1441, 90.5, '90'`.
 - `data/payment-method-profiles.json`: `git diff 257e11b7 HEAD` on the file is the note plus one `payWindowMin` line per profile (18 lines), nothing else; the values are the launch-rules lead defaults (90 app/instant, 180 bank, 1440 cash by mail, 90 gift card). Against `bfc46319` the diff is the batch-4 wording and field keys (UPI `vpa` not `upiId`, SWIFT with a `bank` field, one-line field objects) plus `OTHER_GIFT_CARD`: the builder kept batch 4's text and added the launch-rules number, which is the right side to keep (batch 4 is what main becomes). Note: **main `58f3d186` has 8 profiles, not 18**; the 18 are batch 4's (`257e11b7`), which is what the brief meant.
 - Attested terms carry `payWindowMin` (`internal/routes.ts:93-108`, `sameTerms` :116) and moderation's shadow reads it (`apps/moderation/src/shadow.ts:45`), as launch-rules had it.
@@ -96,7 +96,7 @@ Seven hunks, all verified above: imports (`GIFT_CARD_TERMS_VERSION`, `recoveryHo
 
 **4. Owner/lead question. The "$15 minimum" for gift cards is not in the code, the tests, `owner-decisions-2026-11-06.md` (F13, G50-G53, p4-3, p5-6), `giftCards.ts`, `giftCardCopy.ts` or `rulings-and-lessons.md`.** Nothing refuses a gift-card band or take below any amount beyond the band's own minimum. If this is a ruling I could not find, it is unbuilt (a card-method band minimum at post, checked in the card's currency, is a small change in `offers/routes.ts:845-857` plus the form); if it is not, drop it from the checklist. Recommendation: ask the owner once; do not block the landing on it.
 
-**5. Note. `jabber.test.ts`'s 7 failures are batch 4's own**, as the handoff says: `PUT /v1/account/security/logout-timer` answers 404 (6 cases, e.g. :141) and `team_members.roles` no longer exists (:286). The merge touched no Jabber, team, auth or settings source (empty diffs), and the three dispute-trigger cases pass. Re-check after lead-land-4's fix lands under this branch.
+**5. Note. `jabber.test.ts`'s 7 failures are batch 4's own**, as the handoff says: `PUT /v1/account/security/logout-timer` answers 404 (6 cases, e.g. :141) and `team_members.roles` no longer exists (:281). The merge touched no Jabber, team, auth or settings source (empty diffs), and the three dispute-trigger cases pass. Re-check after lead-land-4's fix lands under this branch.
 
 **6. Low. Profile wording: HEAD keeps batch 4's text for the ten F9 profiles** (e.g. UPI "Payment ID (for example name@bank)", key `vpa`; SWIFT with a "Bank name and country" field), not launch-rules' (`upiId`, "Pix key", the PayPal/Venmo "pending is not yours" check prompts). Right side to keep, since batch 4 is main-to-be, but the launch-rules check prompts for PayPal and Venmo ("completed, not pending or on hold") said something useful that batch 4's do not. Copy item for the owner's wording pass, COPY-UNSIGNED either way.
 
