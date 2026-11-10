@@ -159,9 +159,10 @@ describe('timer loop decisions (Task 9, pure)', () => {
     const resumed = sys(paused, { type: 'resume' }, at(400));
     expect(resumed.payBy).toEqual(at(2 + TIMERS.payMin + 395));
     // A closed trade has no timer, held or not.
-    const closed = sys(taken('ZZZZ2345EFGH6789'), { type: 'tick' }, at(60));
+    // Past the setup window (setupMin, 60 since J-04): the request lapses and closes.
+    const closed = sys(taken('ZZZZ2345EFGH6789'), { type: 'tick' }, at(TIMERS.setupMin + 1));
     expect(closed.closedAt).not.toBeNull();
-    expect(decide([closed], null, at(61), none, new Set([closed.code])).events).toEqual([]);
+    expect(decide([closed], null, at(TIMERS.setupMin + 2), none, new Set([closed.code])).events).toEqual([]);
   });
 
   test('maintenance on for 20 min moves payBy by 20 min and no tick fires meanwhile', () => {
