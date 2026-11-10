@@ -79,6 +79,15 @@ test('a second open ticket is refused in CantDoThat, naming the open one', async
   await noSideScroll(page);
 });
 
+test('signed in, Support links to "My account has been compromised"', async ({ page }) => {
+  await page.route('**/v1/account/me', json(ME));
+  await page.route('**/v1/tickets', json({ tickets: [] }));
+  await page.goto('/support');
+  await page.getByRole('link', { name: 'My account has been compromised' }).click();
+  await expect(page).toHaveURL(/\/support\/compromised$/);
+  await expect(page.locator('[data-screen="compromised"]')).toBeVisible();
+});
+
 test('"My account has been compromised": no login needed, no secret field, kinds only; shows the number and how to reach staff', async ({ page }) => {
   let body: unknown = null;
   await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
@@ -87,8 +96,11 @@ test('"My account has been compromised": no login needed, no secret field, kinds
     body = r.request().postDataJSON();
     return json({ number: 1042 }, 202)(r);
   });
+  // The front door (main 58f3d186): logged out, /support itself is behind the door (the Landing
+  // board); the compromised form is a front-door screen, opened directly.
   await page.goto('/support');
-  await page.getByRole('link', { name: 'My account has been compromised' }).click();
+  await expect(page).toHaveURL(/\/\?returnTo=%2Fsupport$/);
+  await page.goto('/support/compromised');
   await expect(page).toHaveURL(/\/support\/compromised$/);
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
   await expect(page.locator('[data-primary]')).toHaveCount(1);
