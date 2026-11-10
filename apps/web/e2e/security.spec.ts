@@ -399,7 +399,7 @@ test('waiting changes (g65) are listed with their date and a countdown; untick o
   await page.goto('/settings/changes');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Account changes');
   const waiting = page.locator('[data-part="changes-waiting"]');
-  await expect(waiting.locator('[data-part="waiting-when"]')).toHaveText('2 changes take effect on 2 Jan 2099, 15:00 UTC');
+  await expect(waiting.locator('[data-part="waiting-when"]')).toHaveText('2 changes waiting. The next takes effect on 2 Jan 2099, 15:00 UTC');
   await expect(waiting.locator('[data-part="change"]').first()).toContainText('1 new wallet added: …k3Fzab');
   await expect(waiting.locator('[data-part="change"]').first()).toContainText('From Chrome on Windows');
   await expect(waiting.locator('[data-part="waiting-countdown"] [role="timer"]')).toBeVisible();

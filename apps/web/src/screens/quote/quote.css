@@ -165,8 +165,10 @@
   border-color: var(--x2f-danger);
 }
 
-/* In error the border stays danger; focus thickens it to 2 px so it still shows (an inner outline:
-   kit 1.5 keeps box-shadow for the nav-current lines only, kit-tokens.test). */
+/* In error the border stays danger; focus thickens it to 2 px so it still shows: a 1 px outline
+   just inside the border (kit 1.5 keeps box-shadow for the nav-current lines only, kit-tokens.test).
+   The forced-colors block below restates the Highlight outline for this case, since this rule
+   outranks `.x2f-quote__box:focus-within` there. */
 .x2f-quote__box[data-bad]:has(input:focus-visible) {
   outline: 1px solid var(--x2f-danger);
   outline-offset: -2px;
@@ -527,6 +529,12 @@
    outline, so the box draws one (WCAG 2.4.7; review I1). */
 @media (forced-colors: active) {
   .x2f-quote__box:focus-within {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  /* The error field's 1 px inner outline is more specific than the rule above: same Highlight. */
+  .x2f-quote__box[data-bad]:has(input:focus-visible) {
     outline: 2px solid Highlight;
     outline-offset: 2px;
   }

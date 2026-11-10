@@ -489,9 +489,10 @@ for (const viewport of PHONE_VIEWPORTS) {
     });
 
     // Design review 8 Nov item 4: the figure overflowed the card at 12 places, and the wallet group
-    // was missing before login.
-    test('BuyQuote logged out at $50: 6 places, the wallet group, phone layout', async ({ page }) => {
-      await stubApi(page, { ...base, signedIn: false, wallets: [] });
+    // was missing for a trader with no wallet yet. (It was written as a logged-out quote; since the
+    // front door, owner 8 Nov, a logged-out visitor never sees a quote: the test at line 208 above.)
+    test('BuyQuote with no wallet yet at $50: 6 places, the wallet group, phone layout', async ({ page }) => {
+      await stubApi(page, { ...base, wallets: [] });
       await page.goto(`${BUY}&amount=50`);
       await expect(card(page)).toContainText('0.151515 XMR');
       await expect(page.getByRole('group', { name: 'Which wallet gets paid?' })).toBeVisible();
