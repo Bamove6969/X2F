@@ -115,3 +115,41 @@ Seven hunks, all verified above: imports (`GIFT_CARD_TERMS_VERSION`, `recoveryHo
 - Then re-run `jabber.test.ts` after lead-land-4's logout-timer / abilities fix is merged under it (finding 5).
 - Migration order and the schema lists are right: `120, 121, 122, 123, 124, 125 … 331, 332, 334, 345, 350, 355, … 490` in all three `schema.test.ts` lists; 125 reads `offers.max_fiat_cents` before 490 drops it; 355 adds `gift_card_terms` to `offers` before 490 recreates `trades_deal_fixed`.
 - Deploy order unchanged (API before moderation).
+
+## Re-verify 6afb56b8 (10 Nov 2026)
+
+Re-verifier, independent, read-only on code. Worktree `/home/user/X2F/.claude/worktrees/flex-launch-4`, head `6afb56b8`, clean. Commits checked: `46d3ab5f` (red), `1c57e729` (fix), `6511971a`, `1ab7b831`, merge `8e34771a` (main `d421706c`), `6afb56b8`.
+
+### Verdict: APPROVED
+
+Finding 1 is fixed, findings 2 and 3 are ported, the merge is a clean union of both parents, and nothing is weakened. Findings 4-8 are unchanged (owner Q1, the $15 minimum, still open; finding 5 is now closed by the batch-4 fixes merged in, since the whole `@x2f/api` run is green).
+
+### Runs (serialised runner, logs in `.../scratchpad/logs/`)
+
+| Run | Result | Log |
+|---|---|---|
+| `apps/api/test/team.test.ts` + `apps/api/test/flexOffers.test.ts` | 2/2 files, 100/100 pass (70 + 30) | `rv4-api-022345.log` |
+| `apps/web/test/quoteScreen.test.tsx`, `postOffer.test.ts`, `giftCards.test.tsx`, `quoteFocus.test.ts` (added: main's quote.css change meets flex's Quote.tsx) | 4/4 files, 108/108 pass | runner output |
+| `npx tsc -p apps/api --noEmit` (src + test) | clean | - |
+| `npx tsc -p apps/web --noEmit` | clean | - |
+| Whole `@x2f/api` (lead's run, not repeated) | 102/102 files, 2442 pass + 1 todo | `fl4-api-021939.log` |
+
+### (1) The audit row
+
+- `team/audit.ts` `offerTerms` (`1c57e729`) reads only `offers.side, amount_unit, price_mode` (all three survive 490), then `offer_currencies` (by position), `offer_tiers` (`min_amount, max_amount, margin_bps, min_trades, method_ids`: range in the unit's minor units, margin, trade rule, method restriction, grouped under each currency), `offer_methods` (`method_id, adjust_bps`) and `offer_method_currencies` (`method_id, currency`, ordered by the currency's position). No `instructions` column is selected from either table that holds one, so payment instructions never reach `team_audit.detail` (jsonb, so the nested shape stores as is; `listAudit` returns `detail: unknown`). `fixed_cents_per_xmr` is no longer logged; 490's `offers_market_only` makes it always null, so nothing is lost.
+- All five calls pass `offerId`: post `offers/routes.ts:900` (after all four child inserts, same transaction), relist `:954`, remove `:965`, pause `:972`, bulk `:1255`. `assertLiveMember` still runs first; the owner still returns before any query.
+- The member's relist no longer 500s: `team.test` "an Offers-only member posts and turns off an offer" (member's bulk relist 200) and "each effectful member action writes exactly one row" (post, pause, relist each logged, each `detail` `toEqual` the J-16 terms, so no extra key such as instructions can be present) pass. The test's expected `max` is now `'500000'`, matching `OFFER`.
+- Nit, no action needed: the audit test's offer has one currency, one band, one method and empty instructions, so the multi-currency grouping and the instructions exclusion are shown by reading the code, not pinned by a test. A two-currency, two-method member post with non-empty instructions in a later team test would pin both.
+
+### (2) The merge 8e34771a
+
+- `git show --remerge-diff 8e34771a` is **empty**: the commit is exactly git's automatic merge, with no hand resolution. The only file both sides changed since the base `257e11b7` is `apps/web/e2e/quote.spec.ts`, and the auto-merge keeps flex's `methodId`/`currency` take-body assertions and main's "no wallet yet" rename of the $50 phone test (hunks do not overlap).
+- `git diff 1ab7b831 8e34771a -- apps/api/src/trades apps/api/src/offers apps/api/src/methods apps/api/src/team packages/trade data` is empty: the cap at post/relist/bulk/take, the growth ceiling, the per-method gift-card rules and the one `tradeProfile` table are byte-identical to what the review checked. `git diff d421706c 8e34771a -- apps/api/src/auth apps/api/src/team/abilities* apps/api/src/accountInactivity.ts` is empty: batch 4's front door, abilities, hold v3 and the 60-day Terms-signature erase come through untouched. The 15 files the merge brings over are main's 14 drift fixes only.
+
+### (3) GET /v1/currencies behind requireInside
+
+- `price/routes.ts:24` `preHandler: requireInside` (trader session, full, set up; member 'any'), same as `/v1/price`, `/v1/methods`, `/v1/offers`. Its only web caller is `PostOffer.tsx:161` via `post/api.ts:114`, a screen already behind the door, so no logged-out page breaks. `frontDoor.test` (`6afb56b8`) adds it to `READS`, so it is now checked logged out, half set up and on a recovery session, and its "READS covers every requireInside route" tripwire includes it; the same commit ports the file's offer post to `flexBody`. Correct.
+
+### (4) Nothing weakened
+
+- `6511971a`: one post wrapped in `flexBody`, assertion unchanged (201). `1ab7b831`: the two fixtures use `insertOffer` with the same side, range and minimum; the staff take adds only the two fields `parseTake` now requires, so the case still reaches and asserts 409 `trading-hold`; holdV3's method id became `ZELLE` (a real catalog id), assertion unchanged (404). `46d3ab5f` makes the audit expectation stricter (post and pause rows now carry the terms too). `6afb56b8` adds a route to the checked list. No test removed, skipped or loosened.
