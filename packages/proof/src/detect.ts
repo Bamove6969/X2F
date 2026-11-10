@@ -69,7 +69,20 @@ export const UPI_IDS = true;
 export interface DetectOptions {
   /** Mask UPI IDs (`name@bank`); defaults to `UPI_IDS`. */
   upiIds?: boolean;
+  /**
+   * `detectSensitiveText` only: the field-label kinds (owner G17, `numberLabels.ts`) that make the
+   * number after them a detail; defaults to all of them. Review notes pass `REVIEW_NOTE_NUMBER_LABELS`.
+   */
+  numberLabels?: readonly NumberLabelKind[];
 }
+
+/**
+ * Lead default pending owner p11-142 (review 2026-11-10 finding 5): review notes read only the
+ * account and IBAN field labels, not the card and phone ones, so `Paid with Visa 1500 EUR` or `Sent
+ * via mobile 2500 MXN` is feedback, not a card or phone number; a card or phone number is still
+ * refused by its own shape. Proof screenshots keep every label (F15: after `Card` it is the card).
+ */
+export const REVIEW_NOTE_NUMBER_LABELS: readonly NumberLabelKind[] = ['iban', 'account'];
 
 // ---------------------------------------------------------------------------------------------
 // Normalisation (reviews R3-I3 and R4). Detection runs on a copy of each line where every Unicode
@@ -988,7 +1001,8 @@ const TEXT_ORDER: HiddenKind[] = ['email', 'phone', 'card', 'iban', 'account'];
  * The personal-detail kinds in plain text (review notes, P5-A6): email, phone, card, IBAN, account
  * number and Monero address (as `account`). Each kind once, in a fixed order. Dates and trade codes
  * are not details. A number after a personal field label (`phone 612 345 678`, `Acct 4821`) is that
- * detail whatever its grouping (owner G17).
+ * detail whatever its grouping (owner G17), for the label kinds in `opts.numberLabels` (all by
+ * default; review notes pass `REVIEW_NOTE_NUMBER_LABELS`).
  */
 export function detectSensitiveText(s: string, opts: DetectOptions = {}): HiddenKind[] {
   const upi = opts.upiIds ?? UPI_IDS;
@@ -1019,7 +1033,8 @@ export function detectSensitiveText(s: string, opts: DetectOptions = {}): Hidden
   });
   // Owner G17: a number after a personal label is a detail even when the rules above allow it
   // (`phone 612 345 678`), unless it is a date.
-  const labelled = lines.map((line, i) => labelledNumbers(line, lines[i - 1]));
+  const labelKinds = opts.numberLabels ?? NUMBER_KINDS;
+  const labelled = lines.map((line, i) => labelledNumbers(line, lines[i - 1]).filter((sp) => labelKinds.includes(sp.kind as NumberLabelKind)));
   lines.forEach((line, i) => {
     const dates: boolean[] = new Array<boolean>(line.length).fill(false);
     markDates(line, dates);

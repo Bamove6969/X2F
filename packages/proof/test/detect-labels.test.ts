@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { amountBoxes, checkProof, detectSensitive, detectSensitiveText, type HiddenKind, type OcrWord } from '../src/index.js';
+import { REVIEW_NOTE_NUMBER_LABELS, amountBoxes, checkProof, detectSensitive, detectSensitiveText, type HiddenKind, type OcrWord } from '../src/index.js';
 import { covered, ocr } from './ocr.js';
 
 // Owner G17 (2026-11-07) and F15 (2026-11-06): read the field label before a number to decide what
@@ -138,5 +138,30 @@ describe('review notes read the label too (G17)', () => {
 
   it('a date after a label is not a detail', () => {
     expect(detectSensitiveText('card 16/10/2026')).toEqual([]);
+  });
+});
+
+// Review 2026-11-10 finding 5, lead default pending owner p11-142: review notes read only the account
+// and IBAN labels; proofs keep every label (F15: a number after `Card` is the card).
+describe('review notes: no card or phone field labels (REVIEW_NOTE_NUMBER_LABELS)', () => {
+  const notes = { numberLabels: REVIEW_NOTE_NUMBER_LABELS };
+  it('a payment method and an amount is feedback in a note, a detail by default', () => {
+    expect(REVIEW_NOTE_NUMBER_LABELS).toEqual(['iban', 'account']);
+    for (const s of ['Paid with Visa 1500 EUR', 'Sent via mobile 2500 MXN', 'Paid by card 1000', 'card 2024 trade went smoothly']) {
+      expect(detectSensitiveText(s, notes), s).toEqual([]);
+      expect(detectSensitiveText(s), s).not.toEqual([]);
+    }
+  });
+
+  it('account and IBAN labels, and details by their own shape, still count in notes', () => {
+    expect(detectSensitiveText('Acct 4821 if you want to pay again', notes)).toEqual(['account']);
+    expect(detectSensitiveText('IBAN: 1234 5678', notes)).toEqual(['iban']);
+    expect(detectSensitiveText('card 4111 1111 1111 1111', notes)).toEqual(['card']);
+    expect(detectSensitiveText('call +34 612 345 678', notes)).toEqual(['phone']);
+  });
+
+  it('proofs keep the strict labels', () => {
+    expect(masked(ocr('Visa 1500'))).toEqual([['1500', 'card']]);
+    expect(masked(ocr('Mobile 2500'))).toEqual([['2500', 'phone']]);
   });
 });
