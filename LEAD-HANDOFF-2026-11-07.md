@@ -229,3 +229,7 @@ Landing order after audit batch 2: job1a + job1b together (BuyerPay overlap: onI
 ## 2026-11-10T09:22:37Z owner decision: wording goes to design
 - Owner (10 Nov, chat): all wording questions (Wording Room batches, Payment boxes, similar copy) go to design from now on; design settles them and escalates to the owner only when needed. Owner moves to hands-on review in the working demo.
 - Lead: stop sending wording questions to page 11; route to design via Jetpost. Demo bring-up on main 8cca6d77 delegated.
+
+## 2026-11-10T15:38:22Z batch 7 landed
+- main 6ebed537 (release-settle-2 + regtest-reload + assert shim). Security review + re-verify approved. Checks green: vitest 6554, PW 506, Monero 104/4/10/34. Demo branch has it (41df907b).
+- Drive x2f folder skimmed: nothing to recover. Owner told to check claude_backup.tar.gz sharing.
