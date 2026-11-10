@@ -478,6 +478,8 @@
   font-size: 13px;
   line-height: 18px;
   text-align: right;
+}
+
 /* T-079 (BuyerPay board, confirm=noproof): the caution icon beside the body, 15/22. */
 .x2f-paid__noproof {
   display: flex;
