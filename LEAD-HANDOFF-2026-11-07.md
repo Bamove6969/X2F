@@ -217,3 +217,7 @@ Landing order after audit batch 2: job1a + job1b together (BuyerPay overlap: onI
 - 03:40 UTC (box) 10 Nov: J-23 groundwork 7a7d4450 re-verified: fine to land dormant; escrow-store reopen sound; Wallets fix correct. Joins batch 5.
 - 03:45 UTC (box) 10 Nov: proof-popups 525c1bf7 re-verified, ready to land with lead defaults p11-140..143. Joins batch 5 last.
 - 04:00 UTC (box) 10 Nov: OWNER ORDER: stop asking per-method payment-detail questions; research every payment type's mandatory payee fields and build them into the seller's boxes. 5 research agents on the 127 catalogue methods (scratchpad/payfields/group-1..5, BRIEF.md); then one builder updates packages/trade/src/payFields.ts. p11-108..114 marked no answer needed.
+
+## 2026-11-10T05:10:29Z batch 5 landed
+- main d87fe04f (from 177fa75e + 552fa654, 1bdf082b, d87fe04f). Checks: vitest 6503/0 fail, PW 506/0, escrow 87, regtest 4, regtest-verify 10, node-proxy 34.
+- Next: payfields-all fixes (F1-F7, Pago Movil cedula exception) then batch 6.
