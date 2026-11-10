@@ -15,8 +15,8 @@
  * - `openSealed(recipient, sealed)`: `crypto_box_seal_open` with the recipient's own pair (a device
  *   key or a chat identity's box keys). A box not sealed to this key, a tampered or truncated one,
  *   or bytes too short to be a box: `ProtocolError('not-for-me')`.
- * - Input that is not even a candidate (bad hex, a secret that does not derive the public key, a
- *   non-Uint8Array) is a `TypeError`, as `signProof` and `seal` do, so a mixed-up pair never opens
+ * - Input that is not even a candidate (bad hex, a low-order recipient key that libsodium refuses,
+ *   a secret that does not derive the public key, a non-Uint8Array) is a `TypeError`, as `signProof` and `seal` do, so a mixed-up pair never opens
  *   or seals anything.
  *
  * Browser-safe: libsodium hex only, no Node-only APIs.
@@ -52,7 +52,15 @@ function publicKeyOf(hex: unknown, where: string): Uint8Array {
 export async function sealTo(recipientPublicHex: string, bytes: Uint8Array): Promise<Uint8Array> {
   await sodium.ready;
   if (!(bytes instanceof Uint8Array)) throw new TypeError('sealTo: bytes must be a Uint8Array');
-  return sodium.crypto_box_seal(bytes, publicKeyOf(recipientPublicHex, 'sealTo'));
+  const pub = publicKeyOf(recipientPublicHex, 'sealTo');
+  try {
+    return sodium.crypto_box_seal(bytes, pub);
+  } catch {
+    // libsodium refuses a small-order (low-order) public key, whose shared secret would be all
+    // zeros, with a plain Error('invalid usage'): it is bad input, so TypeError as documented
+    // (J-23 review F7).
+    throw new TypeError('sealTo: boxPublic is a low-order point');
+  }
 }
 
 /** Opens a box sealed to `recipient` (`crypto_box_seal_open`); `ProtocolError('not-for-me')` for any box this pair does not open. */

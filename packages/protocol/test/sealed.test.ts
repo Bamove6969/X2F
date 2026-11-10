@@ -90,3 +90,23 @@ describe('sealTo / openSealed', () => {
     expect(await openSealed(device, await sealTo(device.boxPublic, big))).toEqual(big);
   });
 });
+
+describe('low-order recipient keys (J-23 review F7)', () => {
+  // Small-order Curve25519 points: the all-zero key (order 2), u = 1 (order 4) and an order-8 point.
+  const LOW_ORDER = [
+    '00'.repeat(32),
+    '01' + '00'.repeat(31),
+    'e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800',
+  ];
+  it('sealTo refuses each with TypeError, as documented, never a plain Error', async () => {
+    for (const key of LOW_ORDER) {
+      let caught: unknown = null;
+      try {
+        await sealTo(key, bytes('x'));
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, key).toBeInstanceOf(TypeError);
+    }
+  });
+});
