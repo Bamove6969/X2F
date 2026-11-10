@@ -74,6 +74,8 @@ import { applyPgpKey } from './pgp.js';
 import { applyRecoveryCodes } from './recovery.js';
 import { waits, type LoginStrength } from './strength.js';
 import { applyTotp } from './totp.js';
+import { CHAT_KEY_WRITE_ROUTES } from './chatKeyRouteList.js';
+import { JABBER_WRITE_ROUTES } from '../jabber/routeList.js';
 import { applyCredential, type StoredCredential } from './webauthn.js';
 import { applyAbilities, applyMemberRemoval } from '../team/members.js';
 import { rolesToAbilities, type TeamRole } from '../team/abilities.js';
@@ -340,6 +342,10 @@ export async function startHold(
  * weak session filling the device limit, would outlive the owner's answer. Alert `sessions-ended`
  * `{ count, reason: 'owner-login' }` when any did. Returns null when no hold ended, else the ids of
  * the sessions it ended (the caller closes their streams after commit).
+ *
+ * Hold v2 path: it drops the pending change on a strong login, whereas hold v3 (holdChanges.ts)
+ * approves or cancels the waiting changes per owner G58. Still reachable: approval.ts calls it on
+ * every login that proved a method (`a.proven`), so it ends a running hold of either model.
  */
 export async function endHoldIfOwner(db: Queryable, s: SettleDeps, accountId: string, proven: ProvenMethod, now: Date): Promise<string[] | null> {
   const hold = await holdInTx(db, s, accountId, now);
@@ -603,6 +609,11 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   // Plan 5 Task 10 review round 1 M3: the claim insert re-checks the session and the hold under the
   // account lock (as Task 18's ownerWriteGate).
   'POST /v1/account/past-rep/finish',
+  // Owner rule p5-7: the Jabber alert set-up (jabber/routes.ts `writeGate`).
+  ...JABBER_WRITE_ROUTES,
+  // J-23 groundwork: the chat-key courier re-checks the session (strong, strictly) and the hold
+  // under the account lock (auth/chatKeys.ts `strongCallerInTx`).
+  ...CHAT_KEY_WRITE_ROUTES,
 ];
 
 /**
@@ -672,6 +683,9 @@ export const WEAK_LIMITED_ROUTES: readonly string[] = [
   'DELETE /v1/account/push',
   'POST /v1/account/push',
   'POST /v1/account/alerts/:id/seen',
+  // J-23 groundwork: a weak session may not use the chat-key courier at all (strictly 'strong',
+  // auth/chatKeys.ts), on itself or anyone else.
+  ...CHAT_KEY_WRITE_ROUTES,
 ];
 
 /**
@@ -700,6 +714,11 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   // removing one's own claims stay open.
   'POST /v1/account/past-rep/start',
   'POST /v1/account/past-rep/finish',
+  // Owner rule p5-7 (lead default): the Jabber alert set-up waits out a hold like the other
+  // security settings; each also checks it under the account lock (jabber/routes.ts `writeGate`).
+  ...JABBER_WRITE_ROUTES,
+  // J-23 groundwork (design note 2.4): nothing is handed over during a hold (auth/chatKeys.ts).
+  ...CHAT_KEY_WRITE_ROUTES,
 ];
 
 /**

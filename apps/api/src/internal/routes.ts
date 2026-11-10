@@ -81,17 +81,19 @@ interface RegisteredRow {
   locked_currency: string;
   locked_cents_per_xmr: string;
   max_fiat_cents: string;
+  pay_window_min: number;
   buyer_payout: string | null;
   seller_refund: string | null;
 }
 
 /**
  * The trade record's columns behind the attested terms (lead answer 4): the deal fixed at take
- * (the amount at take is the pre-growth amount if the trade grew) and both addresses.
+ * (the amount at take is the pre-growth amount if the trade grew), the time to pay fixed at take
+ * (owner p9-6; the moderation shadow runs on it) and both addresses.
  */
 const TERMS_COLUMNS = `t.poster, coalesce(t.grown_from_atomic, t.amount_atomic)::text as take_amount, t.locked_currency,
                 t.locked_cents_per_xmr::text as locked_cents_per_xmr, t.max_fiat_cents::text as max_fiat_cents,
-                t.buyer_payout, t.seller_refund`;
+                t.pay_window_min, t.buyer_payout, t.seller_refund`;
 
 /** The terms the moderation service must sign for this trade, from the trade record. */
 function termsOf(r: RegisteredRow): AttestedTerms {
@@ -103,6 +105,7 @@ function termsOf(r: RegisteredRow): AttestedTerms {
       centsPerXmr: r.locked_cents_per_xmr,
       maxFiatCents: r.max_fiat_cents,
     },
+    payWindowMin: r.pay_window_min,
     buyerPayout: r.buyer_payout ?? '',
     sellerRefund: r.seller_refund ?? '',
   };
@@ -110,7 +113,7 @@ function termsOf(r: RegisteredRow): AttestedTerms {
 
 function sameTerms(a: AttestedTerms, b: AttestedTerms): boolean {
   return (
-    a.buyerPayout === b.buyerPayout && a.sellerRefund === b.sellerRefund &&
+    a.buyerPayout === b.buyerPayout && a.sellerRefund === b.sellerRefund && a.payWindowMin === b.payWindowMin &&
     a.deal.poster === b.deal.poster && a.deal.takeAmountAtomic === b.deal.takeAmountAtomic &&
     a.deal.currency === b.deal.currency && a.deal.centsPerXmr === b.deal.centsPerXmr && a.deal.maxFiatCents === b.deal.maxFiatCents
   );

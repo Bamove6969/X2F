@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { STAFF_CSP } from '../../src/staff/app.js';
 import { staffListenFromEnv } from '../../src/staff/main.js';
+import { fileUnderRoot } from '../../src/staff/web.js';
 import { staffApps } from '../helpers/staffApp.js';
 
 let app: FastifyInstance;
@@ -18,6 +19,9 @@ beforeAll(async () => {
   mkdirSync(join(root, 'assets'));
   writeFileSync(join(root, 'assets', 'app-1a2b.js'), 'console.log(1)');
   writeFileSync(join(root, '.env'), 'SECRET=1');
+  writeFileSync(join(root, 'assets', '.env.js'), 'DOTFILE-SECRET');
+  mkdirSync(join(root, '.vite'));
+  writeFileSync(join(root, '.vite', 'manifest.json'), '{"dot":"dir"}');
   ({ app, close } = await staffApps({}, { webRoot: root }));
 });
 afterAll(async () => {
@@ -46,6 +50,15 @@ describe('the staff web app on the staff origin', () => {
     expect((await app.inject({ method: 'GET', url: '/.env' })).body).not.toContain('SECRET');
     expect((await app.inject({ method: 'GET', url: '/assets/.env.js' })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: '/assets/%2e%2e/%2e%2e/package.json' })).statusCode).toBe(404);
+    // Traversal and malformed paths never reach sendFile: 404, never 500 or a file outside the root.
+    expect((await app.inject({ method: 'GET', url: '/assets/..%2F..%2Fpackage.json' })).statusCode).toBe(404);
+    // A malformed percent-escape is refused by the router (400) or by the route (404); never 500.
+    expect([400, 404]).toContain((await app.inject({ method: 'GET', url: '/assets/%E0%A4%A' })).statusCode);
+    expect((await app.inject({ method: 'GET', url: '/assets/a%00.js' })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/assets/..%5C..%5Cpackage.json' })).statusCode).toBe(404);
+    // A percent-encoded leading dot is still a dot file (the URL parser leaves %2E followed by letters alone).
+    expect((await app.inject({ method: 'GET', url: '/assets/%2Eenv.js' })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/%2Evite/manifest.json' })).statusCode).toBe(404);
     const api = await app.inject({ method: 'GET', url: '/staff/v1/nothing-here' });
     expect(api.statusCode).toBe(404);
     expect(api.body).not.toContain('X2F Staff');
@@ -56,5 +69,24 @@ describe('the staff web app on the staff origin', () => {
   it('X2F_STAFF_WEB_ROOT is read with the staff origin', () => {
     expect(staffListenFromEnv({ X2F_STAFF_ORIGIN: 'https://staff.x2f.test', X2F_STAFF_WEB_ROOT: '/srv/staff' })).toMatchObject({ webRoot: '/srv/staff' });
     expect(staffListenFromEnv({ X2F_STAFF_ORIGIN: 'https://staff.x2f.test' })).not.toHaveProperty('webRoot');
+  });
+});
+
+describe('fileUnderRoot', () => {
+  const root = '/srv/staff-web';
+  it('maps a plain path to a file under the root', () => {
+    expect(fileUnderRoot(root, '/assets/app.js')).toBe(join('assets', 'app.js'));
+    expect(fileUnderRoot(root, '//assets//app.js')).toBe(join('assets', 'app.js'));
+  });
+  it('refuses anything that is not a file strictly inside the root', () => {
+    expect(fileUnderRoot(root, '/')).toBeNull();
+    expect(fileUnderRoot(root, '/assets/../../etc/passwd')).toBeNull();
+    expect(fileUnderRoot(root, '/assets/%2e%2e/x')).toBeNull();
+    expect(fileUnderRoot(root, '/assets/./x')).toBeNull();
+    expect(fileUnderRoot(root, '/assets/%E0%A4%A')).toBeNull();
+    expect(fileUnderRoot(root, '/assets/a%00.js')).toBeNull();
+    expect(fileUnderRoot(root, '/assets/..%5Cx')).toBeNull();
+    expect(fileUnderRoot(root, '/assets/%2Eenv.js')).toBeNull();
+    expect(fileUnderRoot(root, '/.vite/manifest.json')).toBeNull();
   });
 });

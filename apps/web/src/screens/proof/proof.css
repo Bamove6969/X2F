@@ -1,0 +1,7 @@
+/* ProofThumb (row P-031): the proof image as redrawn on this device. */
+.x2f-proof-thumb {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--x2f-radius-md);
+}

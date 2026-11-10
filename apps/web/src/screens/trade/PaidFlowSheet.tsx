@@ -15,7 +15,8 @@ import { Sheet } from '../../ui/Sheet.js';
 import { confirmSkipped, skipConfirm } from './confirmSkip.js';
 import { PaidConfirmSheet, type YesResult } from './PaidConfirmSheet.js';
 import { payBlock, type PayBlock } from './payModel.js';
-import { payMethodOf, postPayEvent } from './paySeams.js';
+import { payMethodOf, postPayEvent, proofStateOf } from './paySeams.js';
+import { NoProofSheet } from './NoProofSheet.js';
 import type { TradeEscrow, TradeView } from './payTypes.js';
 import { errorSentence } from './SetupStatus.js';
 
@@ -108,16 +109,19 @@ export function PaidFlowSheet({ view, escrow, refresh, open, onClose }: PaidFlow
   /**
    * Owner p7-2: this user ticked "Do not show me this warning again", so an opening marks paid at
    * once with this device's total ('direct'); anything but a clean yes ('ask') shows the sheet.
-   * Only this "Are you sure…?" step can be skipped. The no-proof warning ("Mark paid without
-   * proof?", ProofBlur, not built yet) goes BEFORE this point and is always shown (lead, 8 Nov):
-   * when it lands, an opening without proof shows it first and only its answer may lead here.
+   * Only this "Are you sure…?" step can be skipped. The no-proof ask ("Mark paid without proof?",
+   * T-079, NoProofSheet) comes BEFORE it and is always shown (lead, 8 Nov; batch 4): an opening with
+   * no proof shows it first, and only its "Mark paid without proof" answer may lead here.
    */
   const [direct, setDirect] = useState<'idle' | 'running' | 'ask'>('idle');
+  // T-079: past "Mark paid without proof?" for this opening of the step; asked again next time.
+  const [withoutProof, setWithoutProof] = useState(false);
   const total = deviceTotal(view, escrow);
   const block = payBlock(view, escrow);
   const close = () => {
     setGrew(false);
     setDirect('idle');
+    setWithoutProof(false);
     onClose();
   };
 
@@ -132,12 +136,14 @@ export function PaidFlowSheet({ view, escrow, refresh, open, onClose }: PaidFlow
   useEffect(() => {
     if (!open) return setDirect('idle');
     if (direct !== 'idle' || block !== null || total === null || !confirmSkipped('paid')) return;
+    // The no-proof ask comes first and is never skipped: the direct mark waits for its answer.
+    if (!withoutProof && proofStateOf(view.code) === 'none') return;
     setDirect('running');
     void yesRef.current(total.cents).then((r) => {
       if (!r.ok) setDirect('ask');
     });
-    // Once per opening: only `open` re-runs it.
-  }, [open]);
+    // Once per opening (`direct` guards a repeat): `open`, and the no-proof answer, re-run it.
+  }, [open, withoutProof]);
 
   const markPaid = async (fiatCents: bigint): Promise<YesResult> => {
     // Only the device's own total, and only while the API shows the same one.
@@ -185,6 +191,9 @@ export function PaidFlowSheet({ view, escrow, refresh, open, onClose }: PaidFlow
         </div>
       </Sheet>
     );
+  }
+  if (open && total !== null && !withoutProof && proofStateOf(view.code) === 'none') {
+    return <NoProofSheet onAddProof={close} onWithoutProof={() => setWithoutProof(true)} />;
   }
   return (
     <PaidConfirmSheet

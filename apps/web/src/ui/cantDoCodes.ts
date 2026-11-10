@@ -12,6 +12,10 @@
  * This file is the refusal text map: tools/copy-lint.ts judges refusal wording everywhere else
  * piece by piece, and passes it here. A plain module (no React, no CSS) so the lint can read it.
  */
+import { LAUNCH_TRADE_CAP_USD_CENTS } from '@x2f/trade';
+
+/** The launch cap as words ("$5,000"), from the one constant the API enforces. */
+export const LAUNCH_CAP_TEXT = `$${(LAUNCH_TRADE_CAP_USD_CENTS / 100n).toLocaleString('en-US')}`;
 
 export const CANT_DO_CODES = [
   // Plan 3 Task 5 (take; on the main line since 2026-10-29).
@@ -20,6 +24,8 @@ export const CANT_DO_CODES = [
   'own-offer',
   'already-waiting',
   'offer-busy',
+  // Owner p11-6: the launch cap on one trade, at take and at post.
+  'launch-cap',
   // Plan 3 Task 4 (post an offer).
   'trading-hold',
   'too-many-offers',
@@ -146,6 +152,20 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'wallet-exists': 'an input check (already linked)',
   'terms-not-accepted': 'sends the person to the Terms',
   'terms-required': 'sends the person to the Terms',
+  // Owner, 8 Nov 2026: the signature given with the Terms; the pad never sends these.
+  'signature-required': 'an input check on the Terms signature',
+  'signature-invalid': 'an input check on the Terms signature',
+  'signature-too-large': 'an input check on the Terms signature',
+  // Owner rule p5-7: the Jabber set-up.
+  'jabber-unavailable': 'the deployment has no Jabber sending account yet (a missing feature, not a rule)',
+  'jabber-address-invalid': 'an input check on a typed Jabber address',
+  // J-08 pay-details (ChatPanel's payErrorText, PayDetailsError and ChatFailed codes): the boxes' own input checks and a wait.
+  'not-ready': 'the escrow is not secured yet, so the payment details wait (ChatFailed; a wait, not a rule)',
+  'missing': 'an input check on a payment-details box (PayDetailsError)',
+  'one-of': 'an input check on a group of payment-details boxes (PayDetailsError)',
+  'too-long': 'an input check on a payment-details box (PayDetailsError)',
+  'bad-value': 'an input check on a payment-details box (PayDetailsError)',
+  'bad-chars': 'an input check on a payment-details box (PayDetailsError)',
   'price-unavailable': 'the price feed is down (a fault)',
   'price-changed': 'the market moved (re-quote)',
   'method-unavailable': 'a catalog fact (the method is off the list); Suggest a method covers it',
@@ -264,6 +284,9 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
       if (o.stageName === null) return 'This trade is above a trading limit right now. Try a smaller amount or another offer.';
       if (o.maxOpen !== null) return `Your account is on ${o.stageName} limits: at most ${o.maxOpen} open ${o.maxOpen === 1 ? 'trade' : 'trades'} at once. Finish one first.`;
       return `Your account is on ${o.stageName} limits${o.capText === null ? '' : ` up to ${o.capText} per trade`}. Try a smaller amount.`;
+    case 'launch-cap':
+      // COPY-UNSIGNED (owner p11-6: the launch cap; design writes the final words).
+      return `For now, one trade can be worth at most ${LAUNCH_CAP_TEXT}. Try a smaller amount.`;
     case 'own-offer':
       return 'This is your own offer.';
     case 'not-enough-trades':
@@ -290,13 +313,48 @@ export function chatCantDoText(code: CantDoCode): string {
   return code === 'own-offer' ? 'This is your own offer.' : "You can't open this chat right now.";
 }
 
-/** What a refused Post offer says. */
-export function postCantDoText(code: CantDoCode): string {
+/**
+ * The offer cap the API enforces (owner 6 Nov 2026, Q31: 3 buying and 3 selling offers per
+ * account; apps/api/src/offers/routes.ts OFFER_CAP_DEFAULTS), said wherever the cap is explained:
+ * PostOffer's and My offers' CantDoThat for `too-many-offers` and the My offers footnote.
+ * PostOffer says the 409's own number (`offerCapLine`, review M2); the My offers footnote and its
+ * bulk turn-on refusal (whose per-offer result carries no cap) say this default. COPY-UNSIGNED
+ */
+export const OFFER_CAP_LINE = 'You can have 3 buying and 3 selling offers.'; // COPY-UNSIGNED
+
+/**
+ * The offer caps a 409 `too-many-offers` carries (cap-dispute review M2: the caps are owner
+ * settings, not fixed numbers). The API sends `{ buy, sell }` on POST and PATCH (owner Q31: the
+ * settings `offers_max_buy` and `offers_max_sell`, apps/api/src/offers/routes.ts OFFER_CAP_KEYS).
+ */
+export interface OfferCaps {
+  buy: number;
+  sell: number;
+}
+
+/** The caps from a refusal's extra fields, or null when the API sent none (or nonsense). */
+export function offerCapsOf(extra: Record<string, unknown> | undefined): OfferCaps | null {
+  const ok = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 1 && v <= 1000;
+  return extra && ok(extra.buy) && ok(extra.sell) ? { buy: extra.buy, sell: extra.sell } : null;
+}
+
+/** The cap line with the numbers the API sent (the owner settings), else the default line. COPY-UNSIGNED */
+export function offerCapLine(caps: OfferCaps | null): string {
+  if (caps === null || (caps.buy === 3 && caps.sell === 3)) return OFFER_CAP_LINE;
+  const { buy, sell } = caps;
+  return `You can have ${buy} buying and ${sell} selling ${sell === 1 ? 'offer' : 'offers'}.`;
+}
+
+/** What a refused Post offer says; `caps` from the API's refusal (offerCapsOf). */
+export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null): string {
   switch (code) {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'too-many-offers':
-      return 'You have as many offers as you can post for now. Remove one you no longer need, then post this one.';
+      return `${offerCapLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED
+    case 'launch-cap':
+      // COPY-UNSIGNED (owner p11-6: the launch cap; design writes the final words).
+      return `For now, one trade can be worth at most ${LAUNCH_CAP_TEXT}. Lower your offer's maximum to ${LAUNCH_CAP_TEXT} or less.`;
     // Plan 2 Task 18: a team member without the Offers role; J-20: an offer outside their band.
     case 'forbidden':
     case 'owner-only':
@@ -355,9 +413,10 @@ export function myOffersCantDoText(code: CantDoCode, n: number): string {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.";
     case 'too-many-offers':
+      // C2-A1: the cap is per side now (owner 2026-11-01), not per market. COPY-UNSIGNED
       return n === 1
-        ? 'You have more offers in this market than the limit allows now. Remove one you no longer need, then turn this one on.'
-        : 'You have more offers in some markets than the limit allows now. Remove ones you no longer need, then turn these on.';
+        ? `${OFFER_CAP_LINE} Remove one you no longer need, then turn this one on.`
+        : `${OFFER_CAP_LINE} Remove ones you no longer need, then turn these on.`;
     default:
       return "Your account can't turn these offers on right now.";
   }
@@ -371,7 +430,7 @@ export function myOffersCantDoRow(code: CantDoCode): string {
     case 'trading-hold':
       return 'Stayed off: your account has a trading hold.';
     case 'too-many-offers':
-      return 'Stayed off: over the offer limit for this market.';
+      return 'Stayed off: over the offer limit.'; // C2-A1: per side, not per market. COPY-UNSIGNED
     default:
       return 'Stayed off.';
   }
@@ -419,6 +478,8 @@ export const MY_OFFERS_HIDDEN = {
   'trading-hold': 'On, hidden while your account has a trading hold',
   'review-pending': 'On, hidden until you rate your last trade', // COPY-UNSIGNED (Plan 5 Task 3 review M3)
   'method-unavailable': "On, hidden: this payment method isn't available right now",
+  // COPY-UNSIGNED (J-16; Task 34 review M4): none of the offer's currencies has a market price now.
+  'no-price': 'On, hidden: no market price for its currencies right now',
 } as const;
 export type MyOffersHidden = keyof typeof MY_OFFERS_HIDDEN;
 
@@ -445,7 +506,7 @@ export function holdText(when: string): string {
 
 /**
  * 403 `recovery-hold` on the login screen (review round 3 R3-M3): this login was refused a session
- * because it waits, and the hold is still running. `when` is "until Tue 3:05 PM" or "for a day".
+ * because it waits, and the hold is still running. `when` is "until 6 Nov 2026, 15:00 UTC" or "for a day".
  * It says what this login cannot do and what the reader can do, whatever methods the account has
  * (the login screen does not know them). It offers no backup login (lead review 8 Nov: the used
  * code is spent and its replacement sealed until the owner's next login). COPY-UNSIGNED

@@ -1,53 +1,75 @@
-// PostOffer (Task 21), board design/x2f-app/PostOffer.dc.html. Price is Market ± % (the default)
-// or Fixed price per XMR (spec 2.2 step 5); every price shows its US-dollar value in another
-// currency (spec 11.6); the minimum completed trades is shown openly in the preview (spec 2.3).
-// The form is kept in sessionStorage, so a signed-out poster (sent to setup) or one with no
-// wallet (sent to Add a wallet by the API client) comes back to it filled in.
-import { useEffect, useId, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
+// PostOffer (Task 21; J-16, Plan 3 Tasks 34/35: flexible offers), board design/x2f-app/PostOffer.dc.html
+// and FlexOffer-Post. An offer lists up to 5 currencies, each with up to 3 amount bands (owner Q23),
+// and up to 5 payment methods (owner Q23), each with its own price change and payment instructions.
+// Every band's price is the market ± %: the vendor picks above or below and types the percentage, at
+// most 50% (owner Q1, 6 Nov: no fixed-price offers; F1, 7 Nov, over the board's ±10% stepper); every
+// price shows its US-dollar value in another currency (spec 11.6); each band's minimum completed
+// trades is shown openly (spec 2.3). The form is kept in sessionStorage, so a signed-out poster
+// (sent to setup) or one with no wallet (sent to Add a wallet by the API client) comes back to it.
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
+import type { CurrencyChoice } from '@x2f/trade';
 import { ApiCallError, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { CantDoThat, type CantDoCode } from '../ui/CantDoThat.js';
 import { Icon } from '../ui/icons.js';
+import { marginParts, marginWords } from '../ui/margin.js';
 import { RadioChips } from './browse/RadioChips.js';
-import { fetchMethods, fetchPrice, postOffer, type PickMethod, type PriceQuote, type Side } from './post/api.js';
+import { fetchCurrencies, fetchMethods, fetchPrice, postOffer, type PickMethod, type PriceQuote, type Side } from './post/api.js';
 import { COUNTRIES } from './post/countries.js';
+import { GiftCardTerms } from './giftcard/GiftCardRules.js';
 import { UnitSwitch } from './post/UnitSwitch.js';
 import { marketUpdated, otherUnit, rowsAt } from './browse/offerAmounts.js';
+import { methodUpToLine } from './browse/methodTime.js';
 import { MY_OFFERS_PATH } from './myoffers/model.js';
 import {
   DEFAULT_FORM,
   FEE_SENTENCE,
-  FIXED_STALE_WARNING,
   GIFT_CARD_WARNING,
+  MARGIN_SIDES,
+  MAX_BANDS,
+  MAX_CURRENCIES,
+  MAX_METHODS,
   METHODS_FAILED,
   MIN_TRADES_OPTIONS,
+  POST_COPY,
   POST_CURRENCIES,
   PRICE_UNAVAILABLE,
   UNIT_HELP,
+  addBand,
+  addCurrency,
+  addMethod,
+  adjustText,
   afterPostPath,
+  canSwitchUnit,
   clearDraft,
-  fixedPriceCheck,
+  currencyLabel,
+  currencyOptions,
   formatMoney,
   formatPrice,
   loadDraft,
-  marginText,
-  marginWord,
-  parseAmount,
+  marginBpsOf,
   parseRangeAmount,
+  posterGiftCardRole,
   previewLine,
   priceWithMargin,
   POST_CANT_TITLE,
   postCantDo,
   refusalText,
+  removeBand,
+  removeCurrency,
+  removeMethod,
   saveDraft,
-  stepMargin,
+  setBand,
+  setMethod,
+  stepAdjust,
   switchUnit,
   usdValue,
   validate,
-  type FieldError,
+  type BandDraft,
+  type FormErrors,
   type FormState,
-  type PriceMode,
+  type MinTrades,
 } from './post/offerForm.js';
 import './post/PostOffer.css';
 import { accountTypeOf } from '../session/member.js';
@@ -57,14 +79,16 @@ import { ACCOUNT_TYPE_COPY, ACCOUNT_TYPE_PATH } from './settings/accountTypeCopy
 
 /** Re-asks the feed this often, so "right now" stays true while the form is open. */
 const PRICE_REFRESH_MS = 60_000;
+/**
+ * Re-asks GET /v1/currencies this often, so a currency whose rate comes back is offered again
+ * without a reload (owner Q24: "comes back in an instant"); a picked currency is back the moment its
+ * own price arrives (`currencyOptions`' `priced`).
+ */
+const CURRENCIES_REFRESH_MS = 30_000;
 
 const SIDES: readonly { id: Side; label: string }[] = [
   { id: 'sell', label: 'Sell XMR' },
   { id: 'buy', label: 'Buy XMR' },
-];
-const MODES: readonly { id: PriceMode; label: string }[] = [
-  { id: 'market', label: 'Market ± %' },
-  { id: 'fixed', label: 'Fixed price per XMR' },
 ];
 
 function storage(): Storage | null {
@@ -86,12 +110,13 @@ function initialForm(search: string): FormState {
   const q = new URLSearchParams(search);
   const side = q.get('side');
   const currency = q.get('currency');
-  return {
-    ...DEFAULT_FORM,
-    side: side === 'buy' ? 'buy' : 'sell',
-    methodId: q.get('method') ?? '',
-    currency: currency !== null && POST_CURRENCIES.includes(currency) ? currency : DEFAULT_FORM.currency,
-  };
+  const method = q.get('method');
+  let f: FormState = { ...DEFAULT_FORM, side: side === 'buy' ? 'buy' : 'sell' };
+  if (currency !== null && POST_CURRENCIES.includes(currency) && currency !== f.currencies[0]) {
+    const first = f.currencies[0]!;
+    f = removeCurrency(addCurrency(f, currency), first);
+  }
+  return method === null || method === '' ? f : addMethod(f, method);
 }
 
 /** Where Close goes: the Buy side when the poster came from it (router state `from`, set by the tab bar), else Sell. */
@@ -100,24 +125,47 @@ export function closePath(state: unknown): string {
   return typeof from === 'string' && /^\/buy(\/|\?|$)/.test(from) ? '/buy' : '/sell';
 }
 
-function usePrice(currency: string): PriceQuote | null | undefined {
-  const [quote, setQuote] = useState<{ currency: string; q: PriceQuote | null } | undefined>();
+/** Each picked currency's market price: undefined while loading, null when the feed has none. */
+function usePrices(currencies: readonly string[]): Record<string, PriceQuote | null | undefined> {
+  const [quotes, setQuotes] = useState<Record<string, PriceQuote | null>>({});
+  const key = currencies.join(',');
   useEffect(() => {
     const ctl = new AbortController();
-    const load = () =>
-      void fetchPrice(currency, ctl.signal).then(
-        (q) => setQuote({ currency, q: q?.currency === currency ? q : null }),
-        () => undefined,
-      );
+    const list = key === '' ? [] : key.split(',');
+    const load = () => {
+      for (const currency of list) {
+        void fetchPrice(currency, ctl.signal).then(
+          (q) => setQuotes((all) => ({ ...all, [currency]: q?.currency === currency ? q : null })),
+          () => undefined,
+        );
+      }
+    };
     load();
     const t = window.setInterval(load, PRICE_REFRESH_MS);
     return () => {
       ctl.abort();
       window.clearInterval(t);
     };
-  }, [currency]);
-  // undefined while loading this currency's price, null when the feed has none.
-  return quote?.currency === currency ? quote.q : undefined;
+  }, [key]);
+  const out: Record<string, PriceQuote | null | undefined> = {};
+  for (const c of currencies) out[c] = quotes[c];
+  return out;
+}
+
+/** GET /v1/currencies, read now and every CURRENCIES_REFRESH_MS; null until it first answers (or while it fails). */
+function useCurrencyChoices(): CurrencyChoice[] | null {
+  const [choices, setChoices] = useState<CurrencyChoice[] | null>(null);
+  useEffect(() => {
+    const ctl = new AbortController();
+    const load = () => void fetchCurrencies(ctl.signal).then(setChoices, () => undefined);
+    load();
+    const t = window.setInterval(load, CURRENCIES_REFRESH_MS);
+    return () => {
+      ctl.abort();
+      window.clearInterval(t);
+    };
+  }, []);
+  return choices;
 }
 
 type Methods = { kind: 'loading' } | { kind: 'ready'; list: PickMethod[] } | { kind: 'failed' };
@@ -129,7 +177,7 @@ function useMethods(): [Methods, () => void] {
   useEffect(() => {
     let live = true;
     setMethods({ kind: 'loading' });
-    fetchMethods(DEFAULT_FORM.side, DEFAULT_FORM.currency).then(
+    fetchMethods(DEFAULT_FORM.side, DEFAULT_FORM.currencies[0]!).then(
       (m) => live && setMethods({ kind: 'ready', list: m }),
       () => live && setMethods({ kind: 'failed' }),
     );
@@ -145,12 +193,17 @@ function PostOfferForm() {
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(() => initialForm(location.search));
   const [methods, retryMethods] = useMethods();
-  const [errors, setErrors] = useState<Partial<Record<FieldError, string>>>({});
+  const [errors, setErrors] = useState<FormErrors>({});
+  // J-17 (F13): the gift-card terms ticked; never kept in the draft, and cleared when the side (so
+  // the poster's part with the card) changes.
+  const [giftTicked, setGiftTicked] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => setGiftTicked(new Set()), [form.side]);
   const [refusal, setRefusal] = useState<string | null>(null);
   // A refusal by a rule (trading hold, maintenance) opens CantDoThat until closed (Plan 5 Task 21).
   const [cantDo, setCantDo] = useState<CantDoCode | null>(null);
   const [busy, setBusy] = useState(false);
-  const quote = usePrice(form.currency);
+  const quotes = usePrices(form.currencies);
+  const choices = useCurrencyChoices();
   const ids = useId();
 
   // The draft is in state now; drop it so a later visit starts from its own query. (Not in the
@@ -160,66 +213,38 @@ function PostOfferForm() {
     if (s) clearDraft(s);
   }, []);
 
-  // A method that is not on the list (unavailable, P3-I20, or unknown) is never kept selected.
+  // A method that is not on the list (unavailable, P3-I20, or unknown) is never kept on the offer.
   const list = methods.kind === 'ready' ? methods.list : null;
-  const method = list?.find((m) => m.id === form.methodId) ?? null;
+  const nameOf = (id: string) => list?.find((m) => m.id === id)?.name ?? id;
   useEffect(() => {
-    if (list && form.methodId !== '' && !method) setForm((f) => ({ ...f, methodId: '' }));
-  }, [list, method, form.methodId]);
+    if (!list) return;
+    const gone = form.methods.filter((m) => !list.some((x) => x.id === m.methodId));
+    if (gone.length > 0) setForm((f) => gone.reduce((g, m) => removeMethod(g, m.methodId), f));
+  }, [list, form.methods]);
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((f) => ({ ...f, [key]: value }));
+  const edit = (change: (f: FormState) => FormState) => {
+    setForm(change);
     setRefusal(null);
     setCantDo(null);
   };
-  const text = (key: 'min' | 'max' | 'fixed' | 'terms') => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set(key, e.target.value);
-  // One unit per offer (lead default, 8 Nov): either box's switch swaps both, converting what is typed
-  // at your price, or clearing it with no price (review H1: a typed number never changes unit).
-  const changeUnit = (u: FormState['unit']) => {
-    setForm((f) => switchUnit(f, u, yourPrice));
-    setRefusal(null);
-    setCantDo(null);
-  };
-  const unitSwitch = (box: string) => <UnitSwitch box={box} currency={form.currency} unit={form.unit} onChange={changeUnit} />;
-  // Under each box, the other unit at your price (boards v142): "≈ $165.77 at your price (+0.5%)".
-  // COPY-UNSIGNED: "≈ … at your price (+N%)" and "≈ … at your price".
-  const otherLine = (raw: string) => {
-    const v = parseRangeAmount(raw, form.unit);
-    if (v === null || v === 0n || yourPrice === null) return null;
-    const at = form.priceMode === 'market' ? `at your price (${marginText(form.marginBps)})` : 'at your price';
-    return (
-      <span className="post-muted post-other-unit" data-part="other-unit">
-        {`${otherUnit(v, form.unit, form.currency, { currency: form.currency, centsPerXmr: yourPrice })} ${at}`}
-      </span>
-    );
-  };
+  const set = <K extends keyof FormState>(key: K, value: FormState[K]) => edit((f) => ({ ...f, [key]: value }));
 
-  const market = quote ? quote.centsPerXmr : null;
-  const fixedCents = useMemo(() => {
-    const p = parseAmount(form.fixed);
-    return p !== null && p > 0n ? p : null;
-  }, [form.fixed]);
-  const yourPrice = useMemo(() => {
-    if (form.priceMode === 'fixed') return fixedCents;
-    return market === null ? null : priceWithMargin(market, form.marginBps);
-  }, [form.priceMode, fixedCents, form.marginBps, market]);
-  // The fixed price against the market: a caution line from 10% off; from 50% off, Post offer refuses it.
-  const sanity = form.priceMode === 'fixed' && fixedCents !== null && market !== null && market > 0n ? fixedPriceCheck(fixedCents, market, form.currency) : null;
-  const nonUsd = form.currency !== 'USD';
-  const usd = (cents: bigint) => (quote && nonUsd ? formatPrice(usdValue(cents, quote), 'USD') : null);
+  const marketOf = (c: string): bigint | null => quotes[c]?.centsPerXmr ?? null;
+  const markets: Record<string, bigint | null> = {};
+  for (const c of form.currencies) markets[c] = marketOf(c);
+  // One unit per offer (lead default, 8 Nov): the switch converts every band at its own price, or
+  // clears it with no price (review H1: a typed number never changes unit). In XMR a currency has one band.
+  const changeUnit = (u: FormState['unit']) => edit((f) => switchUnit(f, u, markets));
+  const xmrBlocked = form.unit === 'fiat' && !canSwitchUnit(form, 'xmr');
+  const unitLabel = form.currencies.length === 1 ? form.currencies[0]! : 'Currency'; // COPY-UNSIGNED: the fiat side of the switch with several currencies
 
-  const min = parseRangeAmount(form.min, form.unit);
-  const max = parseRangeAmount(form.max, form.unit);
-  // The preview shows the range in both units at your price, as takers see it with the markup on
-  // (owner, 8 Nov); the unit you typed in is exact, the other is worked out at today's rate.
-  const rangeRows =
-    min !== null && max !== null && min > 0n && max >= min
-      ? rowsAt({ unit: form.unit, min, max }, form.currency, yourPrice === null ? null : { currency: form.currency, centsPerXmr: yourPrice })
-      : null;
-  const giftCard = method?.giftCard === true;
+  const options = currencyOptions(choices, (c) => quotes[c] != null);
+  const picked = new Set(form.currencies);
+  const optionOf = (c: string) => options.find((o) => o.code === c);
+  const giftCard = form.methods.some((m) => list?.find((x) => x.id === m.methodId)?.giftCard === true);
 
   async function submit(): Promise<void> {
-    const r = validate(form, { giftCard, market });
+    const r = validate(form, { giftCard: (id) => list?.find((m) => m.id === id)?.giftCard === true, giftCardTicked: giftTicked });
     setErrors(r.errors);
     setRefusal(null);
     setCantDo(null);
@@ -231,7 +256,7 @@ function PostOfferForm() {
     try {
       await postOffer(r.body);
       if (s) clearDraft(s);
-      void navigate(afterPostPath(form.side, form.methodId, form.currency));
+      void navigate(afterPostPath(form.side, form.methods[0]!.methodId, form.currencies[0]!));
     } catch (e) {
       setBusy(false);
       if (e instanceof ApiCallError && e.status === 401) {
@@ -242,29 +267,202 @@ function PostOfferForm() {
       // terms-required and no-wallet have already sent the page on (api client); the draft waits.
       if (e instanceof ApiCallError && (e.code === 'terms-required' || e.code === 'no-wallet')) return;
       const code = e instanceof ApiCallError ? e.code : 'network';
-      setRefusal(refusalText(code));
+      setRefusal(refusalText(code, e instanceof ApiCallError ? e.extra : undefined));
       setCantDo(postCantDo(code));
     }
   }
 
-  const errorId = (k: FieldError) => `${ids}-${k}-error`;
-  const invalid = (k: FieldError) =>
-    errors[k] ? { 'aria-invalid': true as const, 'aria-describedby': errorId(k) } : {};
   // The error comes after the <label>, never inside it: it describes the control (aria-describedby)
   // and is no part of the control's name.
-  const fieldError = (k: FieldError) =>
-    errors[k] ? (
+  const errorId = (k: string) => `${ids}-${k}-error`;
+  const invalid = (k: string, e: string | undefined) => (e ? { 'aria-invalid': true as const, 'aria-describedby': errorId(k) } : {});
+  const fieldError = (k: string, e: string | undefined) =>
+    e ? (
       <span className="post-error" id={errorId(k)}>
-        {errors[k]}
+        {e}
       </span>
     ) : null;
-  const field = (id: string, label: string, control: ReactNode, error: FieldError | null = null) => (
+  const field = (id: string, label: string, control: ReactNode, error?: string) => (
     <div className="post-field">
       <label htmlFor={id}>{label}</label>
       {control}
-      {error ? fieldError(error) : null}
+      {fieldError(id, error)}
     </div>
   );
+
+  /** One band of `currency`: its two ends, its price above or below the market, and its trade rule. */
+  const bandRow = (currency: string, b: BandDraft, i: number, count: number) => {
+    const quote = quotes[currency];
+    const market = quote ? quote.centsPerXmr : null;
+    const bps = marginBpsOf(b);
+    const price = market === null || bps === null ? null : priceWithMargin(market, bps);
+    const e = errors.bands?.[currency]?.rows[b.key] ?? {};
+    const id = (part: string) => `${currency}-${b.key}-${part}`;
+    const change = (patch: Partial<Omit<BandDraft, 'key'>>) => edit((f) => setBand(f, currency, b.key, patch));
+    // Under each box, the other unit at this band's price (boards v142): "≈ $165.77 at your price (0.5%
+    // above market)", the margin in the one form (ui/margin.ts). COPY-UNSIGNED: "≈ … at your price (…)".
+    const other = (raw: string) => {
+      const v = parseRangeAmount(raw, form.unit);
+      if (v === null || v === 0n || price === null) return null;
+      const minor = form.unit === 'fiat' ? v * 100n : v;
+      return (
+        <span className="post-muted post-other-unit" data-part="other-unit">
+          {`${otherUnit(minor, form.unit, currency, { currency, centsPerXmr: price })} at your price (${marginWords(bps!)})`}
+        </span>
+      );
+    };
+    const box = (part: 'min' | 'max', label: string) =>
+      field(
+        id(part),
+        label,
+        <>
+          <div className="post-amount">
+            <input id={id(part)} type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={b[part]} onChange={(ev) => change({ [part]: ev.target.value })} {...invalid(id(part), e[part])} />
+            <UnitSwitch box={label} currency={unitLabel} unit={form.unit} onChange={changeUnit} />
+          </div>
+          {other(b[part])}
+        </>,
+        e[part],
+      );
+    return (
+      <div className="post-band" key={b.key} data-part="band" data-currency={currency}>
+        {count > 1 ? (
+          <div className="post-band-head">
+            {/* COPY-UNSIGNED: "Band N". */}
+            <span className="post-label">{`Band ${i + 1}`}</span>
+            <Button variant="quiet" onClick={() => edit((f) => removeBand(f, currency, b.key))} aria-label={`${POST_COPY.removeBand} (${currency}, band ${i + 1})`}>
+              {POST_COPY.removeBand}
+            </Button>
+          </div>
+        ) : null}
+        <section className="post-ranges">
+          {box('min', 'Smallest trade')}
+          {box('max', 'Largest trade')}
+        </section>
+        <span className="post-label" id={`${ids}-${id('side')}`}>
+          Your price
+        </span>
+        {/* Owner F1: above or below the market, then the percentage typed in, 0 to 50. */}
+        <RadioChips label={{ by: `${ids}-${id('side')}` }} options={MARGIN_SIDES} value={b.marginSide} onChange={(v) => change({ marginSide: v })} className="post-two post-choices post-choices--small" />
+        {/* DESIGN: wording. COPY-UNSIGNED: "Percentage". */}
+        {field(
+          id('margin'),
+          'Percentage',
+          <>
+            <div className="post-amount post-margin-box">
+              <input id={id('margin')} type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={b.marginPct} onChange={(ev) => change({ marginPct: ev.target.value })} {...invalid(id('margin'), e.margin)} />
+              <span className="post-margin-unit" aria-hidden="true">
+                %
+              </span>
+            </div>
+            {bps !== null ? (
+              // "0.5% above market" / "at market", the one form everywhere (ui/margin.ts); the figure in mono.
+              <span className="post-muted" data-part="margin-reads">
+                {marginParts(bps).figure !== null ? (
+                  <>
+                    <span className="post-mono post-ink">{marginParts(bps).figure}</span>{' '}
+                  </>
+                ) : null}
+                <span>{marginParts(bps).words}</span>
+                {price !== null ? <span>{` · ${formatPrice(price, currency)}`}</span> : null}
+              </span>
+            ) : null}
+          </>,
+          e.margin,
+        )}
+        <span className="post-label" id={`${ids}-${id('mintrades')}`}>
+          {POST_COPY.whoCanTrade}
+        </span>
+        {/* Owner, 8 Nov: a fixed choice, No minimum (the default) or 5, 10, 25, 50 (O-017). */}
+        <RadioChips
+          label={{ by: `${ids}-${id('mintrades')}` }}
+          options={MIN_TRADES_OPTIONS}
+          value={MIN_TRADES_OPTIONS.find((o) => o.value === b.minTrades)!.id}
+          onChange={(v) => change({ minTrades: MIN_TRADES_OPTIONS.find((o) => o.id === v)!.value })}
+          className="post-choices post-choices--small post-mintrades"
+        />
+      </div>
+    );
+  };
+
+  /** A picked currency's card: its market line and its bands. */
+  const currencyCard = (currency: string) => {
+    const quote = quotes[currency];
+    const market = quote ? quote.centsPerXmr : null;
+    const bands = form.bands[currency] ?? [];
+    const all = errors.bands?.[currency]?.all;
+    const opt = optionOf(currency);
+    return (
+      <section key={currency} className="post-section post-card" data-part="currency" data-currency={currency} aria-labelledby={`${ids}-${currency}-title`}>
+        <span className="x2f-section-title" id={`${ids}-${currency}-title`}>
+          {opt ? currencyLabel(opt) : currency}
+        </span>
+        {market === null || quote === undefined ? (
+          <span className="post-note">{quote === undefined ? '' : PRICE_UNAVAILABLE}</span>
+        ) : (
+          <span className="post-note">
+            Market {formatPrice(market, currency)}
+            {quote && currency !== 'USD' ? ` (about ${formatMoney(usdValue(market, quote), 'USD')})` : ''} right now. Your prices follow the market.
+          </span>
+        )}
+        {quote && marketUpdated(quote.at) !== null ? (
+          <span className="post-note" data-part="market-updated">
+            {marketUpdated(quote.at)}
+          </span>
+        ) : null}
+        {bands.map((b, i) => bandRow(currency, b, i, bands.length))}
+        {all ? (
+          <span className="post-error" role="alert" data-part="bands-error">
+            {all}
+          </span>
+        ) : null}
+        {form.unit === 'fiat' ? (
+          bands.length < MAX_BANDS ? (
+            <Button variant="secondary" onClick={() => edit((f) => addBand(f, currency))} data-part="add-band">
+              {POST_COPY.addBand}
+            </Button>
+          ) : (
+            <span className="post-muted">{POST_COPY.bandsFull}</span>
+          )
+        ) : (
+          <span className="post-muted">{POST_COPY.xmrOneBand}</span>
+        )}
+      </section>
+    );
+  };
+
+  // The preview: the first currency, its lowest band's price with the first method's change.
+  const first = form.currencies[0];
+  const firstQuote = first === undefined ? undefined : quotes[first];
+  const firstBand = first === undefined ? undefined : form.bands[first]?.[0];
+  const firstBps = firstBand === undefined ? null : marginBpsOf(firstBand);
+  const adjust = form.methods[0]?.adjustBps ?? 0;
+  const previewPrice = firstQuote && firstBps !== null ? priceWithMargin(firstQuote.centsPerXmr, firstBps + adjust) : null;
+  // The preview's trade sizes in both units (owner #11, 8 Nov; boards v142): the first currency's
+  // envelope, its lowest band start to its highest band end, as that currency's card shows it. The
+  // typed unit is exact, the other is worked out at the preview's price; null while a box is not an
+  // amount yet.
+  const previewRange = (() => {
+    if (first === undefined) return null;
+    let min: bigint | null = null;
+    let max: bigint | null = null;
+    for (const b of form.bands[first] ?? []) {
+      const lo = parseRangeAmount(b.min, form.unit);
+      const hi = parseRangeAmount(b.max, form.unit);
+      if (lo === null || hi === null || lo === 0n || hi < lo) return null;
+      if (min === null || lo < min) min = lo;
+      if (max === null || hi > max) max = hi;
+    }
+    if (min === null || max === null) return null;
+    // Fiat boxes are whole units (O-018); rowsAt takes minor units (the form's currencies are two-decimal, as `other`).
+    const minor = (v: bigint) => (form.unit === 'fiat' ? v * 100n : v);
+    return rowsAt({ unit: form.unit, min: minor(min), max: minor(max) }, first, previewPrice === null ? null : { currency: first, centsPerXmr: previewPrice });
+  })();
+  const lowestRule = (): MinTrades => {
+    const rules = form.currencies.flatMap((c) => (form.bands[c] ?? []).map((b) => b.minTrades));
+    if (rules.length === 0 || rules.some((r) => r === null)) return null;
+    return Math.min(...(rules as number[])) as MinTrades;
+  };
 
   return (
     <div className="post" data-screen="post">
@@ -284,49 +482,161 @@ function PostOfferForm() {
             <RadioChips label={{ by: `${ids}-side` }} options={SIDES} value={form.side} onChange={(v) => set('side', v)} className="post-two post-choices" />
           </section>
 
-          <section className="post-method-row">
-            {methods.kind === 'failed' ? (
-              <div className="post-field">
-                <span className="post-caption">Payment method</span>
-                <span className="post-error post-load-failed">{METHODS_FAILED}</span>
-                <Button variant="secondary" onClick={retryMethods}>
-                  Retry
-                </Button>
-              </div>
-            ) : (
+          <section className="post-section" data-part="currencies" aria-label="Currencies">
+            <span className="post-label">Currencies</span>
+            <span className="post-muted">{POST_COPY.currenciesHelp}</span>
+            <div className="post-picked">
+              {form.currencies.map((c) => {
+                const opt = optionOf(c);
+                return (
+                  <Button key={c} variant="secondary" onClick={() => edit((f) => removeCurrency(f, c))} aria-label={`Remove ${c}`} data-part="picked-currency">
+                    {opt ? currencyLabel(opt) : c} <Icon name="close" size={16} />
+                  </Button>
+                );
+              })}
+            </div>
+            {form.currencies.length < MAX_CURRENCIES ? (
               field(
-                'method',
-                'Payment method',
-                <select id="method" value={form.methodId} onChange={(e) => set('methodId', e.target.value)} {...invalid('method')}>
+                'currency',
+                POST_COPY.addCurrency,
+                <select
+                  id="currency"
+                  value=""
+                  onChange={(e) => {
+                    const c = e.target.value;
+                    if (c !== '') edit((f) => addCurrency(f, c));
+                  }}
+                  {...invalid('currency', errors.currencies)}
+                >
                   <option value="" disabled>
-                    Choose a method
+                    {POST_COPY.addCurrency}
                   </option>
-                  {(list ?? []).map((m) => (
+                  {options
+                    .filter((o) => !picked.has(o.code))
+                    .map((o) => (
+                      <option key={o.code} value={o.code} data-available={o.available ? 'true' : 'false'}>
+                        {currencyLabel(o)}
+                      </option>
+                    ))}
+                </select>,
+                errors.currencies,
+              )
+            ) : (
+              <span className="post-muted">{POST_COPY.currenciesFull}</span>
+            )}
+          </section>
+        </div>
+
+        <section className="post-section post-card" data-part="methods" aria-label="Payment methods">
+          <span className="x2f-section-title">Payment methods</span>
+          <span className="post-muted">{POST_COPY.methodsHelp}</span>
+          {form.methods.map((m) => {
+            const name = nameOf(m.methodId);
+            const mid = (part: string) => `method-${m.methodId}-${part}`;
+            const upToMin = list?.find((x) => x.id === m.methodId)?.upToMin ?? null;
+            return (
+              <div key={m.methodId} className="post-method" data-part="method" data-method={m.methodId}>
+                <div className="post-band-head">
+                  <span className="post-ink">{name}</span>
+                  <Button variant="quiet" onClick={() => edit((f) => removeMethod(f, m.methodId))} aria-label={`${POST_COPY.removeMethod} ${name}`}>
+                    {POST_COPY.removeMethod}
+                  </Button>
+                </div>
+                {/* Owner p9-4: how long this method can take, up front where it is picked. */}
+                {upToMin !== null ? (
+                  <span className="post-note" data-part="method-up-to">
+                    {methodUpToLine(upToMin)}
+                  </span>
+                ) : null}
+                <span className="post-label" id={`${ids}-${mid('adjust')}`}>
+                  {POST_COPY.priceChange}
+                </span>
+                <div className="post-stepper" role="group" aria-labelledby={`${ids}-${mid('adjust')}`}>
+                  <Button variant="secondary" aria-label={`Lower the price change for ${name}`} onClick={() => edit((f) => setMethod(f, m.methodId, { adjustBps: stepAdjust(m.adjustBps, -1) }))}>
+                    −
+                  </Button>
+                  <span className="post-mono" data-part="adjust">
+                    {adjustText(m.adjustBps)}
+                  </span>
+                  <Button variant="secondary" aria-label={`Raise the price change for ${name}`} onClick={() => edit((f) => setMethod(f, m.methodId, { adjustBps: stepAdjust(m.adjustBps, 1) }))}>
+                    +
+                  </Button>
+                </div>
+                {form.currencies.length > 1 ? (
+                  <label className="post-check">
+                    <input type="checkbox" checked={m.same} onChange={(e) => edit((f) => setMethod(f, m.methodId, { same: e.target.checked }))} />
+                    {POST_COPY.sameForAll}
+                  </label>
+                ) : null}
+                {m.same || form.currencies.length <= 1
+                  ? field(
+                      mid('instructions'),
+                      POST_COPY.instructions,
+                      <textarea id={mid('instructions')} rows={3} placeholder={POST_COPY.instructionsHint} value={m.instructions} onChange={(e) => edit((f) => setMethod(f, m.methodId, { instructions: e.target.value }))} />,
+                    )
+                  : form.currencies.map((c) =>
+                      field(
+                        mid(`instructions-${c}`),
+                        `${POST_COPY.instructions} (${c})`,
+                        <textarea
+                          id={mid(`instructions-${c}`)}
+                          rows={3}
+                          placeholder={POST_COPY.instructionsFor(c)}
+                          value={m.byCurrency[c] ?? ''}
+                          onChange={(e) => edit((f) => setMethod(f, m.methodId, { byCurrency: { ...m.byCurrency, [c]: e.target.value } }))}
+                        />,
+                      ),
+                    )}
+              </div>
+            );
+          })}
+          {methods.kind === 'failed' ? (
+            <div className="post-field">
+              <span className="post-caption">Payment method</span>
+              <span className="post-error post-load-failed">{METHODS_FAILED}</span>
+              <Button variant="secondary" onClick={retryMethods}>
+                Retry
+              </Button>
+            </div>
+          ) : form.methods.length < MAX_METHODS ? (
+            field(
+              'method',
+              POST_COPY.addMethod,
+              <select
+                id="method"
+                value=""
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (id !== '') edit((f) => addMethod(f, id));
+                }}
+                {...invalid('method', errors.methods)}
+              >
+                <option value="" disabled>
+                  Choose a method
+                </option>
+                {(list ?? [])
+                  .filter((m) => !form.methods.some((x) => x.methodId === m.id))
+                  .map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name}
                     </option>
                   ))}
-                </select>,
-                'method',
-              )
-            )}
-            {field(
-              'currency',
-              'Currency',
-              <select id="currency" value={form.currency} onChange={(e) => set('currency', e.target.value)}>
-                {POST_CURRENCIES.map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
               </select>,
-            )}
-          </section>
+              errors.methods,
+            )
+          ) : (
+            <>
+              <span className="post-muted">{POST_COPY.methodsFull}</span>
+              {fieldError('method', errors.methods)}
+            </>
+          )}
 
           {giftCard ? (
             <>
               {field(
                 'country',
                 'Country',
-                <select id="country" value={form.country} onChange={(e) => set('country', e.target.value)} {...invalid('country')}>
+                <select id="country" value={form.country} onChange={(e) => set('country', e.target.value)} {...invalid('country', errors.country)}>
                   <option value="" disabled>
                     Choose the card's country
                   </option>
@@ -336,109 +646,26 @@ function PostOfferForm() {
                     </option>
                   ))}
                 </select>,
-                'country',
+                errors.country,
               )}
               <p className="post-giftcard">
                 <strong>{GIFT_CARD_WARNING}</strong>
               </p>
+              <GiftCardTerms role={posterGiftCardRole(form.side)} ticked={giftTicked} onChange={setGiftTicked} />
+              {fieldError('giftCardTerms', errors.giftCardTerms)}
             </>
-          ) : null}
-        </div>
-
-        <section className="post-section post-card">
-          <span className="x2f-section-title" id={`${ids}-price`}>
-            Your price
-          </span>
-          <RadioChips
-            label={{ by: `${ids}-price` }}
-            options={MODES}
-            value={form.priceMode}
-            onChange={(v) => set('priceMode', v)}
-            className="post-two post-choices post-choices--small"
-          />
-          {form.priceMode === 'market' ? (
-            <div className="post-margin">
-              <button type="button" aria-label="Lower margin by 0.1%" className="post-step" onClick={() => set('marginBps', stepMargin(form.marginBps, -1))}>
-                −
-              </button>
-              <div className="post-margin-value">
-                <span className="post-mono post-big">{marginText(form.marginBps)}</span>
-                <span className="post-muted">{marginWord(form.marginBps)}</span>
-              </div>
-              <button type="button" aria-label="Raise margin by 0.1%" className="post-step" onClick={() => set('marginBps', stepMargin(form.marginBps, 1))}>
-                +
-              </button>
-            </div>
-          ) : (
-            field(
-              'fixed',
-              'Your price per XMR',
-              <input id="fixed" type="text" inputMode="decimal" autoComplete="off" value={form.fixed} onChange={text('fixed')} {...invalid('fixed')} />,
-              'fixed',
-            )
-          )}
-          {market === null || quote === undefined ? (
-            <span className="post-note">{quote === undefined ? '' : PRICE_UNAVAILABLE}</span>
-          ) : (
-            <span className="post-note">
-              Market {formatPrice(market, form.currency)}
-              {quote && nonUsd ? ` (about ${formatMoney(usdValue(market, quote), 'USD')})` : ''} right now.
-              {form.priceMode === 'market' && yourPrice !== null ? (
-                <>
-                  {' '}
-                  Your price follows the market, so it's always <span className="post-ink">{formatPrice(yourPrice, form.currency)}</span> at today's rate.
-                </>
-              ) : null}
-            </span>
-          )}
-          {quote && marketUpdated(quote.at) !== null ? (
-            <span className="post-note" data-part="market-updated">
-              {marketUpdated(quote.at)}
-            </span>
-          ) : null}
-          {form.priceMode === 'fixed' ? (
-            <span className="post-caution">
-              <Icon name="alert" size={20} />
-              {FIXED_STALE_WARNING}
-            </span>
-          ) : null}
-          {sanity?.kind === 'caution' ? (
-            <span className="post-caution">
-              <Icon name="alert" size={20} />
-              {sanity.text}
-            </span>
           ) : null}
         </section>
 
         <div className="post-card">
-          <section className="post-ranges">
-            {field(
-              'min',
-              'Smallest trade',
-              <>
-              <div className="post-amount">
-                <input id="min" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.min} onChange={text('min')} {...invalid('min')} />
-                {unitSwitch('Smallest trade')}
-              </div>
-              {otherLine(form.min)}
-              </>,
-              'min',
-            )}
-            {field(
-              'max',
-              'Largest trade',
-              <>
-              <div className="post-amount">
-                <input id="max" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.max} onChange={text('max')} {...invalid('max')} />
-                {unitSwitch('Largest trade')}
-              </div>
-              {otherLine(form.max)}
-              </>,
-              'max',
-            )}
-            <span className="post-muted post-unit-help">{UNIT_HELP}</span>
-          </section>
+          <span className="x2f-section-title">Trade sizes and prices</span>
+          <span className="post-muted">{POST_COPY.bandsHelp}</span>
+          <span className="post-muted post-unit-help">{UNIT_HELP}</span>
+          {xmrBlocked ? <span className="post-muted">{POST_COPY.noXmrWithBands}</span> : null}
+        </div>
+        {form.currencies.map(currencyCard)}
 
+        <div className="post-card">
           {field(
             'terms',
             'Your terms (optional)',
@@ -447,56 +674,54 @@ function PostOfferForm() {
               rows={3}
               placeholder="e.g. Zelle only from an account in your own name. Put the trade number in the memo."
               value={form.terms}
-              onChange={text('terms')}
-              {...invalid('terms')}
+              onChange={(e) => set('terms', e.target.value)}
+              {...invalid('terms', errors.terms)}
             />,
-            'terms',
+            errors.terms,
           )}
         </div>
-
-        <section className="post-section post-card">
-          <span className="x2f-section-title">Who can trade with you</span>
-          <span className="post-label" id={`${ids}-mintrades`}>
-            Minimum completed trades
-          </span>
-          {/* Owner, 8 Nov: a fixed choice, No minimum (the default) or 5, 10, 25, 50. */}
-          <RadioChips
-            label={{ by: `${ids}-mintrades` }}
-            options={MIN_TRADES_OPTIONS}
-            value={MIN_TRADES_OPTIONS.find((o) => o.value === form.minTrades)!.id}
-            onChange={(id) => set('minTrades', MIN_TRADES_OPTIONS.find((o) => o.id === id)!.value)}
-            className="post-choices post-choices--small post-mintrades"
-          />
-        </section>
 
         <section aria-label="Preview" className="post-section">
           <span className="post-label">How others will see it</span>
           <div className="post-preview">
-            <span className="post-muted">{previewLine(form.side, method?.name ?? 'your method', form.currency, form.minTrades)}</span>
+            <span className="post-muted">
+              {previewLine(
+                form.side,
+                form.methods.length === 0 ? ['your method'] : form.methods.map((m) => nameOf(m.methodId)),
+                form.currencies,
+                lowestRule(),
+              )}
+            </span>
             <div className="post-preview-row">
               <span className="post-preview-price">
-                <span className="post-mono post-big">{yourPrice !== null ? formatPrice(yourPrice, form.currency) : form.priceMode === 'fixed' ? 'Set your price' : PRICE_UNAVAILABLE}</span>
-                {yourPrice !== null && usd(yourPrice) ? <span className="post-muted">{`about ${usd(yourPrice)}`}</span> : null}
+                {/* DESIGN: wording. COPY-UNSIGNED: "Set your percentage" (while the first band's percentage box is not 0 to 50). */}
+                <span className="post-mono post-big">
+                  {previewPrice !== null && first !== undefined ? formatPrice(previewPrice, first) : firstBps === null ? 'Set your percentage' : PRICE_UNAVAILABLE}
+                </span>
+                {previewPrice !== null && firstQuote && first !== 'USD' ? <span className="post-muted">{`about ${formatPrice(usdValue(previewPrice, firstQuote), 'USD')}`}</span> : null}
               </span>
               <span className="post-preview-range">
-                {rangeRows === null ? (
+                {previewRange === null ? (
                   <span className="post-muted">Set your smallest and largest trade</span>
                 ) : (
                   <>
-                    {rangeRows.xmr !== null ? (
+                    {previewRange.xmr !== null ? (
                       <span className="post-muted" data-part="preview-xmr">
-                        {`${rangeRows.xmr} XMR`}
+                        {`${previewRange.xmr} XMR`}
                       </span>
                     ) : null}
-                    {rangeRows.fiat !== null ? (
+                    {previewRange.fiat !== null ? (
                       <span className="post-muted" data-part="preview-fiat">
-                        {`${rangeRows.fiat} ${form.currency}`}
+                        {`${previewRange.fiat} ${first}`}
                       </span>
                     ) : null}
                   </>
                 )}
               </span>
             </div>
+            <span className="post-muted" data-part="preview-methods">
+              {form.methods.length === 0 ? '' : form.methods.map((m) => (m.adjustBps === 0 ? nameOf(m.methodId) : `${nameOf(m.methodId)} ${adjustText(m.adjustBps)}`)).join(' · ')}
+            </span>
           </div>
           <span className="post-muted">{FEE_SENTENCE}</span>
         </section>

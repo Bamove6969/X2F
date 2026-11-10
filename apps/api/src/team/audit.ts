@@ -89,29 +89,59 @@ async function tradeAmount(q: Queryable, code: string): Promise<Record<string, s
   return r ? { amountAtomic: r.amount_atomic, fiatCents: r.fiat_cents, currency: r.locked_currency } : {};
 }
 
-type Detail = Record<string, string | number | boolean | null>;
+/** A JSON value a log row's detail may hold (plain facts: ids, numbers, flags, lists of them). */
+type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+type Detail = Record<string, Json>;
+
+/** One band of an offer in the log (migration 490's offer_tiers): its range in the offer's unit, its margin and its conditions. */
+type AuditBand = { min: string; max: string; marginBps: number; minTrades: number | null; methodIds: string[] | null };
 
 /**
  * An offer's terms, for its log rows (review 2026-11-09 M2, the owner's "name and amount" rule: an
- * offer has no single amount, so its side, currency, method, price and limits; a removed offer may
- * be deleted later, and then the log is the only record of what a member posted or switched).
+ * offer has no single amount, so what a reader can check it against: its side and amount unit, each
+ * currency with its bands (J-16, migration 490: the range in the unit's minor units, the margin over
+ * that currency's market, the trade rule and the methods the band is for) and each method with its
+ * price adjustment and the currencies it is offered in). Never the methods' payment instructions
+ * (payment details stay out of the log, and a removed offer blanks them). A removed offer may be
+ * deleted later, and then the log is the only record of what a member posted or switched.
  */
 async function offerTerms(q: Queryable, offerId: string): Promise<Detail> {
-  const { rows } = await q.query<{
-    side: string; currency: string; method_id: string; price_mode: string; margin_bps: number | null; fixed_cents_per_xmr: string | null;
-    amount_unit: string; min_atomic: string | null; max_atomic: string | null; min_fiat_cents: string | null; max_fiat_cents: string | null;
-  }>(
-    `select side, currency, method_id, price_mode, margin_bps, fixed_cents_per_xmr::text, amount_unit,
-            min_atomic::text, max_atomic::text, min_fiat_cents::text, max_fiat_cents::text
-       from offers where id = $1`,
+  const { rows } = await q.query<{ side: string; amount_unit: string; price_mode: string }>(
+    'select side, amount_unit, price_mode from offers where id = $1',
     [offerId],
   );
   const r = rows[0];
   if (!r) return { offerId };
+  // Read in the caller's transaction, one statement at a time (the four tables are written once, in the post).
+  const currencies = await q.query<{ currency: string }>('select currency from offer_currencies where offer_id = $1 order by position', [offerId]);
+  const tiers = await q.query<{ currency: string; min_amount: string; max_amount: string; margin_bps: number; min_trades: number | null; method_ids: string[] | null }>(
+    `select currency, min_amount::text, max_amount::text, margin_bps, min_trades, method_ids
+       from offer_tiers where offer_id = $1 order by currency, position`,
+    [offerId],
+  );
+  const methods = await q.query<{ method_id: string; adjust_bps: number }>('select method_id, adjust_bps from offer_methods where offer_id = $1 order by position', [offerId]);
+  const pairs = await q.query<{ method_id: string; currency: string }>(
+    `select p.method_id, p.currency from offer_method_currencies p join offer_currencies c using (offer_id, currency)
+      where p.offer_id = $1 order by c.position`,
+    [offerId],
+  );
+  const bands = new Map<string, AuditBand[]>();
+  for (const t of tiers.rows) {
+    const list = bands.get(t.currency) ?? [];
+    list.push({ min: t.min_amount, max: t.max_amount, marginBps: t.margin_bps, minTrades: t.min_trades, methodIds: t.method_ids });
+    bands.set(t.currency, list);
+  }
   return {
-    offerId, side: r.side, currency: r.currency, methodId: r.method_id, priceMode: r.price_mode, marginBps: r.margin_bps,
-    fixedCentsPerXmr: r.fixed_cents_per_xmr, amountUnit: r.amount_unit, minAtomic: r.min_atomic, maxAtomic: r.max_atomic,
-    minFiatCents: r.min_fiat_cents, maxFiatCents: r.max_fiat_cents,
+    offerId,
+    side: r.side,
+    amountUnit: r.amount_unit,
+    priceMode: r.price_mode,
+    currencies: currencies.rows.map((c) => ({ currency: c.currency, bands: bands.get(c.currency) ?? [] })),
+    methods: methods.rows.map((m) => ({
+      methodId: m.method_id,
+      adjustBps: m.adjust_bps,
+      currencies: pairs.rows.filter((p) => p.method_id === m.method_id).map((p) => p.currency),
+    })),
   };
 }
 
@@ -119,9 +149,9 @@ async function offerTerms(q: Queryable, offerId: string): Promise<Detail> {
  * Writes one audit row for a member's action (nothing for the account owner). `detail` must hold
  * no wallet address, key, token, secret, IP address or user agent: ids and plain facts only. On a
  * trade the row also gets the trade's amount (XMR atomic, fiat cents and currency), on an offer its
- * terms (side, currency, method, price and limits: `offerTerms`, read in the action's transaction
- * after its write); the member's
- * name is the log's join on `team_members` (the row stays after removal).
+ * terms (side, unit, currencies with their bands, methods: `offerTerms`, read in the action's
+ * transaction after its write, so every offer route passes `offerId`); the member's name is the
+ * log's join on `team_members` (the row stays after removal).
  *
  * Review M1: `requireSession` checked the member before the handler ran, and a removal or a box
  * change may have committed since. So the member's row is read again here `for share`, inside the

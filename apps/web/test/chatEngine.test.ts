@@ -1,9 +1,9 @@
-import { newTradeCode } from '@x2f/core';
+import { newTradeCode, type Role } from '@x2f/core';
 import { seal, type Envelope, type Identity, type Participants } from '@x2f/protocol';
-import { attestationBytes, channelFor, chatIdentityProofValid, type Attestation } from '@x2f/trade';
+import { attestationBytes, channelFor, chatIdentityProofValid, checkChatEnvelope, type Attestation, type PayDetailsPayload } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { newChatState, sealChatMessage, type ChatState } from '../src/chat/chatCrypto.js';
+import { newChatState, sealChatMessage, sealPayDetails, type ChatState } from '../src/chat/chatCrypto.js';
 import { ChatSendFailed, createChatEngine, type ApiEnvelope, type ChatApi, type ChatApiView, type ChatEngine } from '../src/chat/engine.js';
 import { memoryChatStore } from '../src/chat/store.js';
 
@@ -31,12 +31,14 @@ beforeAll(async () => {
 
 /** An in-memory chat API standing in for apps/api's routes (one chat, seen as the buyer). */
 class FakeApi implements ChatApi {
-  view: ChatApiView = { role: 'buyer', counterparty: 'Sam', disputeOpen: false, mySignPublic: null };
+  view: ChatApiView = { role: 'buyer', counterparty: 'Sam', disputeOpen: false, tradeSecuredAt: '2026-10-28T11:00:00.000Z', mySignPublic: null };
   identities: Partial<Record<'buyer' | 'seller', { signPublic: string; boxPublic: string; proof: string }>> = {};
   attestation: { attestation: unknown; sig: unknown } | null = null;
   refused = false;
   envelopes: ApiEnvelope[] = [];
   posted: unknown[] = [];
+  /** Every `after` the engine asked for (which envelopes a sync fetched). */
+  afters: string[] = [];
   nextId = 1;
   /** The API purged the chat: every route answers 410 chat-purged (or 404 for `blocked`). */
   gone: 410 | 404 | null = null;
@@ -64,6 +66,7 @@ class FakeApi implements ChatApi {
   }
   async listEnvelopes(_chat: string, after: string) {
     this.check();
+    this.afters.push(after);
     const list = this.envelopes.filter((e) => BigInt(e.id) > BigInt(after));
     return { envelopes: list.slice(0, 2), more: list.length > 2 };
   }
@@ -471,7 +474,7 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
   it('review M3: sweeps the stored chats for purged ones when the worker starts, before any chat message, and once', async () => {
     const { serveChat } = await import('../src/chat/serve.js');
     let sweeps = 0;
-    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sweep: async () => (sweeps++, []) };
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sweep: async () => (sweeps++, []) };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
@@ -499,7 +502,7 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
       async () => [],
     ];
     let sweeps = 0;
-    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sweep: () => results[Math.min(sweeps++, 1)]!() };
+    const fake = { sync: async () => ({}) as never, send: async () => ({}) as never, sendPay: async () => ({}) as never, sweep: () => results[Math.min(sweeps++, 1)]!() };
     let handler: (e: { data: unknown }) => void = () => undefined;
     const out: unknown[] = [];
     serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => fake);
@@ -548,5 +551,186 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
     expect(out.shift()).toEqual({ t: 'chat', id: 5, ok: false, error: 'not-found' });
     expect(() => chatConfig({})).toThrow();
     expect(chatConfig({ VITE_MOD_SIGNING_PUBLIC: modSigningPublic })).toEqual({ modSigningPublic });
+  });
+});
+
+describe('chat engine: the payment details package (J-08, S-090)', () => {
+  const INTERAC: PayDetailsPayload = { v: 1, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }] };
+  const TEXT = 'Payment details\nFull name: Jane Doe\nEmail: jane@example.ca';
+
+  /** The seller's device sends a package (this device is the buyer here, as everywhere in this file). */
+  async function sellerPay(pay: PayDetailsPayload, parts: Participants): Promise<Envelope> {
+    const r = await sealPayDetails({ role: 'seller', me: seller, participants: parts, state: sellerState, pay });
+    sellerState = r.state;
+    api.add('seller', r.envelope);
+    return r.envelope;
+  }
+
+  it('sendPay posts one sealed envelope; every request body the API gets carries none of the boxes in the clear', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const snap = await e.sendPay(chat, INTERAC);
+    expect(snap.lines).toEqual([{ id: '1', from: 'buyer', text: TEXT, pay: INTERAC, at: expect.any(String), mine: true, gapBefore: false }]);
+    expect(api.posted).toHaveLength(1);
+    // The one body posted: a well-formed envelope, and nothing of the package readable in it (each probe has a character base64/hex never produce).
+    const wire = JSON.stringify(api.posted[0]);
+    expect(() => checkChatEnvelope(JSON.parse(wire), channel, 'buyer')).not.toThrow();
+    for (const s of ['Jane Doe', 'jane@example.ca', 'Full name', 'Payment details', 'INTERAC_E_TRANSFER', '"pay"', '"text"', '"name"', '"email"']) expect(wire, s).not.toContain(s);
+    // The other side and the mod identity open the same package.
+    const { open, ReplayGuard } = await import('@x2f/protocol');
+    const o = await open(api.posted[0] as Envelope, { me: seller, myRole: 'seller', participants: parts, trade: channel, guard: new ReplayGuard(channel) });
+    expect(o.payload).toEqual({ text: TEXT, pay: INTERAC });
+  });
+
+  it('a bad package is refused as bad-details with nothing posted, and the seq is kept for the next line', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await expect(e.sendPay(chat, { ...INTERAC, fields: [{ key: 'email', value: 'jane@example.ca' }] })).rejects.toMatchObject({ code: 'bad-details' });
+    await expect(e.sendPay(chat, 'not a package' as unknown as PayDetailsPayload)).rejects.toMatchObject({ code: 'bad-details' });
+    expect(api.posted).toHaveLength(0);
+    await e.send(chat, 'ok');
+    expect((api.posted[0] as Envelope).seq).toBe(0);
+  });
+
+  it('review M2 (pay details): the worker itself refuses a package while the trade is not secured (not-ready): nothing sealed or posted, the seq kept; a plain line still goes', async () => {
+    api.view.tradeSecuredAt = null;
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await expect(e.sendPay(chat, INTERAC)).rejects.toMatchObject({ code: 'not-ready' });
+    expect(api.posted).toHaveLength(0);
+    expect((await store.load(chat))!.state?.nextSeq ?? 0).toBe(0);
+    await e.send(chat, 'the escrow is still securing');
+    expect((api.posted[0] as Envelope).seq).toBe(0);
+    // Secured: the same package goes.
+    api.view.tradeSecuredAt = '2026-10-28T12:30:00.000Z';
+    const snap = await e.sendPay(chat, INTERAC);
+    expect(snap.lines.map((l) => [l.text, l.pay ?? null])).toEqual([
+      ['the escrow is still securing', null],
+      [TEXT, INTERAC],
+    ]);
+    expect(api.posted).toHaveLength(2);
+  });
+
+  it("shows the seller's package as a line with `pay`, and again after a reopen (no text or boxes kept on the device)", async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('Here you go', parts);
+    await sellerPay(INTERAC, parts);
+    const snap = await engine().sync(chat);
+    expect(snap.lines.map((l) => [l.text, l.pay ?? null])).toEqual([
+      ['Here you go', null],
+      [TEXT, INTERAC],
+    ]);
+    // Nothing of it on the device.
+    const saved = JSON.stringify(store.records.get(chat));
+    for (const s of ['Jane Doe', 'jane@example.ca', 'INTERAC_E_TRANSFER']) expect(saved, s).not.toContain(s);
+    // A new engine (a reopened app) decrypts it again and shows the package again.
+    expect((await engine().sync(chat)).lines[1]?.pay).toEqual(INTERAC);
+  });
+
+  it("owner Q12: a package is held while the trade is not secured (the snapshot says so) and shown once it is; a plain line is not held", async () => {
+    api.view.tradeSecuredAt = null;
+    await engine().sync(chat);
+    const parts = attest();
+    await sellerPay(INTERAC, parts);
+    await fromSeller('sent too early, sorry', parts);
+    const early = await engine().sync(chat);
+    expect(early.paySecured).toBe(false);
+    expect(early.lines.map((l) => l.text)).toEqual(['sent too early, sorry']);
+    expect(api.calls).toBeGreaterThan(0);
+    // Still not secured on the next sync (and after a reopen): still held, not shown. The guard took
+    // it (a held receipt), so the line after it was not stuck behind it, and nothing of it is on the device.
+    expect((await engine().sync(chat)).lines.map((l) => l.text)).toEqual(['sent too early, sorry']);
+    expect((await store.load(chat))!.receipts.map((r) => [r.seq, r.heldPay === true])).toEqual([[0, true], [1, false]]);
+    for (const s of ['Jane Doe', 'jane@example.ca', 'INTERAC_E_TRANSFER']) expect(JSON.stringify(store.records.get(chat)), s).not.toContain(s);
+    // Secured: the held envelope is read again and shown, in its place.
+    api.view.tradeSecuredAt = '2026-10-28T12:30:00.000Z';
+    const now = await engine().sync(chat);
+    expect(now.paySecured).toBe(true);
+    expect(now.lines.map((l) => [l.text, l.pay ?? null])).toEqual([
+      [TEXT, INTERAC],
+      ['sent too early, sorry', null],
+    ]);
+  });
+
+  /** A tampered seller client: an arbitrary inner payload sealed as the seller, bypassing the chat's own checks. */
+  async function sellerRaw(payload: unknown, seq: number, parts: Participants, from: Role = 'seller'): Promise<Envelope> {
+    return seal({ trade: channel, from, seq, type: 'chat.msg', payload, to: ['buyer', 'seller', 'mod'], me: from === 'mod' ? mod : seller, participants: parts });
+  }
+
+  it('review M1 (pay details): an envelope that can never become valid is skipped for good: the cursor passes it, later lines show, and the next sync fetches nothing again', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    await fromSeller('before', parts);
+    // A lying package (the text is not the rendering of its boxes), a malformed payload, a mod-signed package.
+    api.add('seller', await sellerRaw({ text: 'Payment details\nFull name: Jane Doe\nEmail: other@example.ca', pay: INTERAC }, 1, parts));
+    api.add('seller', await sellerRaw({ text: 7 }, 2, parts));
+    api.add('mod', await sellerRaw({ text: TEXT, pay: INTERAC }, 0, parts, 'mod'));
+    // The guard did not move for any of them, so the seller may reuse seq 1 (chatCrypto's contract).
+    await fromSeller('after', parts, 'seller', 1);
+    const e = engine();
+    const first = await e.sync(chat);
+    expect(first.lines.map((l) => [l.text, l.missing ?? false, l.gapBefore])).toEqual([
+      ['before', false, false],
+      ['after', false, false],
+    ]);
+    // The next sync asks only past the last envelope: the refused ones are not fetched again.
+    api.afters = [];
+    expect((await e.sync(chat)).lines.map((l) => l.text)).toEqual(['before', 'after']);
+    expect(api.afters).toEqual(['5']);
+    // Each refused envelope has a receipt marked refused and nothing else of it; the cursor is past them.
+    const rec = (await store.load(chat))!;
+    expect(rec.cursor).toBe('5');
+    expect(rec.receipts.map((r) => [r.id, r.refused === true])).toEqual([['1', false], ['2', true], ['3', true], ['4', true], ['5', false]]);
+    for (const s of ['Jane Doe', 'other@example.ca', 'INTERAC_E_TRANSFER']) expect(JSON.stringify(store.records.get(chat)), s).not.toContain(s);
+    // A reopened app (a new engine) re-reads the chat: the refused ones are neither lines nor placeholders.
+    api.afters = [];
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.missing ?? false])).toEqual([['before', false], ['after', false]]);
+    expect(api.afters[0]).toBe('0');
+  });
+
+  it('review M1 (pay details): only what may become valid later is tried again: a moderator line outside a dispute, a package before the escrow is secured', async () => {
+    api.view.tradeSecuredAt = null;
+    await engine().sync(chat);
+    const parts = attest();
+    api.add('mod', await sellerRaw({ text: 'Moderator here' }, 0, parts, 'mod'));
+    await sellerPay(INTERAC, parts);
+    await fromSeller('later', parts);
+    const e = engine();
+    expect((await e.sync(chat)).lines.map((l) => l.text)).toEqual(['later']);
+    // The next sync fetches from before the moderator line (the cursor stopped there), and the held package is a held receipt.
+    api.afters = [];
+    await e.sync(chat);
+    expect(api.afters[0]).toBe('0');
+    expect((await store.load(chat))!.receipts.map((r) => [r.id, r.heldPay === true, r.refused === true])).toEqual([['2', true, false], ['3', false, false]]);
+    // Both become valid: the dispute opens and the escrow is secured.
+    api.view.disputeOpen = true;
+    api.view.tradeSecuredAt = '2026-10-28T12:30:00.000Z';
+    expect((await e.sync(chat)).lines.map((l) => [l.from, l.text])).toEqual([['mod', 'Moderator here'], ['seller', TEXT], ['seller', 'later']]);
+  });
+
+  it('the worker answers chat-send-pay like a send, and a non-package is bad-details', async () => {
+    const { serveChat } = await import('../src/chat/serve.js');
+    const out: unknown[] = [];
+    let handler: (e: { data: unknown }) => void = () => undefined;
+    serveChat({ postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) } as never, async () => engine());
+    const settle = async () => {
+      for (let i = 0; i < 200 && out.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
+    };
+    handler({ data: { t: 'chat-sync', id: 1, chat } });
+    await settle();
+    out.shift();
+    attest();
+    handler({ data: { t: 'chat-send-pay', id: 2, chat, pay: INTERAC } });
+    await settle();
+    expect(out.shift()).toMatchObject({ t: 'chat', id: 2, ok: true, snapshot: { lines: [{ text: TEXT, pay: INTERAC, mine: true }] } });
+    handler({ data: { t: 'chat-send-pay', id: 3, chat, pay: 'x' } });
+    await settle();
+    expect(out.shift()).toEqual({ t: 'chat', id: 3, ok: false, error: 'bad-details' });
+    expect(api.posted).toHaveLength(1);
   });
 });

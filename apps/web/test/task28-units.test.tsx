@@ -12,7 +12,7 @@ import { groupFingerprint } from '../src/screens/setup/PgpKey.js';
 import { KEY_UNAVAILABLE } from '../src/screens/auth/refusals.js';
 import { KEY_IN_USE, nameError, setupError, termsChanged } from '../src/screens/setup/register.js';
 import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
-import { TERMS } from '../src/screens/setup/termsText.js';
+import { KEY_POINTS, TERMS } from '../src/screens/setup/termsText.js';
 import { FEE_SENTENCE, startTradingPath, summarize } from '../src/screens/setup/Welcome.js';
 
 const wallet = (over: Partial<Wallet> = {}): Wallet => ({
@@ -154,8 +154,14 @@ describe('setupError (review fix round M1, M2, I1)', () => {
     );
   });
   it('names refusals link back to the names screen; anything else is the fallback', () => {
-    expect(setupError(new AuthApiError(409, 'display-name-taken'), fallback)).toEqual({ text: 'That display name is taken. Pick another.', names: true });
+    expect(setupError(new AuthApiError(409, 'display-name-taken'), fallback)).toEqual({ text: 'That display name is taken. Pick another.', names: 'display-name' });
     expect(setupError(new TypeError('network'), fallback)).toEqual({ text: fallback });
+  });
+});
+
+describe('SetupTerms key points (build spec j33a section 1, S-043)', () => {
+  it('ends with the 60-day line, saying why: X2F is for people who trade regularly', () => {
+    expect(KEY_POINTS.at(-1)).toBe('X2F is built to last, for people who trade regularly, so an account not signed into for 60 days is closed.');
   });
 });
 

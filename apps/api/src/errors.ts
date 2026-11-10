@@ -50,6 +50,10 @@ export type ApiErrorCode =
   | 'wallet-exists'
   | 'terms-not-accepted'
   | 'terms-required'
+  // Owner, 8 Nov 2026: the signature given with the Terms (src/termsSignature.ts).
+  | 'signature-required'
+  | 'signature-invalid'
+  | 'signature-too-large'
   // Plan 2 Task 16: new-device approval.
   | 'approval-ended'
   | 'too-many-devices'
@@ -82,6 +86,8 @@ export type ApiErrorCode =
   | 'ad-busy'
   | 'price-changed'
   | 'starter-limit'
+  // Owner p11-6: the launch cap on one trade's USD value (trades/launchCap.ts), at post and take.
+  | 'launch-cap'
   | 'offer-busy'
   // Plan 4, Task 5: a security-key tap that is missing, expired, used, another account's or for another intent.
   | 'tap-invalid'
@@ -174,7 +180,10 @@ export type ApiErrorCode =
   | 'freeze-not-allowed'
   | 'no-chat'
   | 'no-proof'
-  | 'moderation-unavailable';
+  | 'moderation-unavailable'
+  // Owner rule p5-7: secure Jabber account-change alerts.
+  | 'jabber-unavailable'
+  | 'jabber-address-invalid';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

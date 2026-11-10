@@ -19,6 +19,7 @@ import { keyTapRoutes } from './keyTap.js';
 import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from '../push/send.js';
 import { staffAccountRoutes } from './account.js';
 import { staffFeedbackRoutes } from './feedback.js';
+import { staffFeeSweepRoutes } from './feeSweep.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { staffHoldRoutes } from './holds.js';
@@ -26,6 +27,7 @@ import { staffPastRepRoutes } from './pastrep.js';
 import { staffPriceHealthRoutes } from './priceHealth.js';
 import { ownerSetupRoutes } from './ownerSetup.js';
 import { serveStaffWeb } from './web.js';
+import { staffRevenueRoutes } from './revenue.js';
 import { staffSettingsRoutes } from './settings.js';
 import { staffSiteRoutes } from './site.js';
 
@@ -173,6 +175,10 @@ export async function buildStaffApi(
     ...(deps.traderEvents ? { traderEvents: deps.traderEvents } : {}),
     ...(deps.appendLog ? { appendLog: deps.appendLog } : {}),
   });
+  // Plan 4 Task 32: the owner's revenue totals from the internal revenue ledger (earnings.read).
+  staffRevenueRoutes(app);
+  // B-006 / Plan 4 Task 9: the fee wallet's sweep settings (settings.write; the send waits on Plan 6).
+  staffFeeSweepRoutes(app);
   // Plan 4 Task 16: the staff web app's pages, last, so every API route above wins.
   if (deps.staffWebRoot !== undefined) await serveStaffWeb(app, deps.staffWebRoot);
 

@@ -2,7 +2,9 @@
 // Shapes: GET /v1/price and GET /v1/methods from Task 3 (apps/api/src/price, apps/api/src/methods;
 // on the main line, checked against these parsers 2026-10-27); POST /v1/offers from the plan's
 // Task 4 (apps/api/src/offers/routes.ts; checked against these shapes 2026-10-28).
+import type { AmountUnit, CurrencyChoice } from '@x2f/trade';
 import { api } from '../../api/client.js';
+import type { PostBand, PostMethod } from './offerForm.js';
 
 /** GET /v1/price?currency: the market price in the currency's minor units, and the same XMR in US cents. */
 export interface PriceQuote {
@@ -17,26 +19,28 @@ export interface PickMethod {
   id: string;
   name: string;
   giftCard: boolean;
+  /** How long the method's money can take to arrive, in minutes (owner p9-4); null from an older API. */
+  upToMin: number | null;
 }
 
 export type Side = 'sell' | 'buy';
 
-/** POST /v1/offers (plan Task 4); bigints go as decimal strings. */
+/**
+ * POST /v1/offers (J-16, Plan 3 Task 34; apps/api/src/offers/routes.ts parseNewOffer): the side, the
+ * unit every band is in, up to 5 currencies each with up to 3 bands, up to 5 payment methods. Band
+ * ends are decimal strings: whole units in fiat (O-018), atomic units in XMR. Prices are always the
+ * market moved by a band's margin and a method's change (owner Q1: no fixed price; F1: at most 50%).
+ */
 export interface PostOfferBody {
   side: Side;
-  methodId: string;
-  currency: string;
-  pricing: { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
-  /**
-   * The trade size in the unit the poster chose (owner, 8 Nov): XMR in atomic units, or fiat in the
-   * currency's minor units. Either way the offer sells or buys XMR.
-   */
-  amounts: { amountUnit: 'xmr'; minAtomic: bigint; maxAtomic: bigint } | { amountUnit: 'fiat'; minFiatCents: bigint; maxFiatCents: bigint };
-  /** No minimum (null) or 5, 10, 25 or 50 completed trades (owner, 8 Nov). */
-  minTrades: null | 5 | 10 | 25 | 50;
+  amountUnit: AmountUnit;
+  currencies: { currency: string; bands: PostBand[] }[];
+  methods: PostMethod[];
   terms: string;
   /** The card's country for a gift-card method (ISO 3166-1 alpha-2, Revision 2026-10-21); absent otherwise. */
   country?: string;
+  /** J-17 (F13): the gift-card terms version the poster ticked; with `country` only. */
+  giftCardTerms?: string;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -66,7 +70,8 @@ export function parseMethods(raw: unknown): PickMethod[] {
   if (!isRecord(raw) || !Array.isArray(raw.all)) throw shape('methods');
   return raw.all.map((m: unknown) => {
     if (!isRecord(m) || typeof m.id !== 'string' || typeof m.name !== 'string' || typeof m.giftCard !== 'boolean') throw shape('methods');
-    return { id: m.id, name: m.name, giftCard: m.giftCard };
+    if (m.upToMin !== undefined && (typeof m.upToMin !== 'number' || !Number.isInteger(m.upToMin) || m.upToMin <= 0)) throw shape('methods');
+    return { id: m.id, name: m.name, giftCard: m.giftCard, upToMin: typeof m.upToMin === 'number' ? m.upToMin : null };
   });
 }
 
@@ -85,12 +90,27 @@ export async function fetchMethods(side: Side, currency: string): Promise<PickMe
   return parseMethods(await api(`/v1/methods?${q.toString()}`));
 }
 
-/** The wire body: the amounts' keys sit at the top level, as the API reads them. */
+/** The wire body: the body as the API reads it (J-16: every key at the top level already). */
 export function wireBody(body: PostOfferBody): Record<string, unknown> {
-  const { amounts, ...rest } = body;
-  return { ...rest, ...amounts };
+  return { ...body };
 }
 
 export async function postOffer(body: PostOfferBody): Promise<void> {
   await api('/v1/offers', { method: 'POST', body: wireBody(body) });
+}
+
+/**
+ * GET /v1/currencies (J-16, apps/api/src/price/routes.ts): every currency the feed knows, USD, EUR,
+ * GBP, CAD, AUD, JPY first and the rest A-Z, each with its flag and whether it has a market price now.
+ */
+export function parseCurrencies(raw: unknown): CurrencyChoice[] {
+  if (!isRecord(raw) || !Array.isArray(raw.currencies)) throw shape('currencies');
+  return raw.currencies.map((c: unknown) => {
+    if (!isRecord(c) || typeof c.code !== 'string' || !/^[A-Z]{3}$/.test(c.code) || typeof c.flag !== 'string' || typeof c.available !== 'boolean') throw shape('currencies');
+    return { code: c.code, flag: c.flag, available: c.available };
+  });
+}
+
+export async function fetchCurrencies(signal?: AbortSignal): Promise<CurrencyChoice[]> {
+  return parseCurrencies(await api('/v1/currencies', signal ? { signal } : {}));
 }

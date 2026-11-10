@@ -21,12 +21,14 @@ import { HOLD_CHANGE_ACTIONS_PER_DAY, MAX_HOLD_CHANGES, settleDueChanges } from 
 import { APPROVALS_PER_HOUR } from '../src/auth/approval.js';
 import { purgeExpired } from '../src/auth/challenges.js';
 import { RECOVERY_CODE_COUNT } from '../src/auth/recovery.js';
+import { SIG } from './helpers/signature.js';
 import { syncHeldTradesJob } from '../src/trades/held.js';
 import { applyEvent, noPublish } from '../src/trades/store.js';
 import { siteMaintenanceSince, startTimers } from '../src/trades/timers.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
 import { accountIdByLoginName, makeVendor } from './helpers/accounts.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
+import { insertOffer } from './helpers/offers.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
 import { FIAT, driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -100,7 +102,7 @@ const onboarding = (accountId: string, until: Date | null) =>
 /** A password trader signed up in `b`, its set-up window over. */
 async function passwordTrader(b = new Browser(app)) {
   const name = unique('hv3');
-  const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
+  const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
   expect(res.statusCode).toBe(201);
   const id = (await accountIdByLoginName(deps, name))!;
   await onboarding(id, null);
@@ -432,12 +434,12 @@ describe('a username + password session: changes are staged, reviewed, submitted
     const t = await passwordTrader();
     const id = ((await changePassword(t.b, t.id)).json() as { changeId: string }).changeId;
     expect((await submit(t.b, [id])).statusCode).toBe(200);
-    await deps.db.query('update site_flags set maintenance_since = $1', [now]);
+    await deps.db.query('update site_flags set maintenance_since = $1, maintenance_kind = $2', [now, 'unplanned']);
     try {
       later(HOLD_MS);
       expect(await settleDueChanges(deps.config, app.events).run(deps.db, now)).toBe(1);
     } finally {
-      await deps.db.query('update site_flags set maintenance_since = null');
+      await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     }
     expect((await passwordLogin(new Browser(app), t.name, NEW_PASSWORD)).statusCode).not.toBe(401);
   });
@@ -794,7 +796,7 @@ describe('a recovery-code login', () => {
     const { trade } = await seedTrade(deps, { sellerId: partner.id, buyerId: t.id, poster: 'seller' });
     const s = await driveTo(deps, trade, 'secured');
     expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
-    await deps.db.query('update site_flags set maintenance_since = $1', [now]);
+    await deps.db.query('update site_flags set maintenance_since = $1, maintenance_kind = $2', [now, 'unplanned']);
     try {
       expect(await endHoldByModerator(deps, t.id, { staffId: null })).toBe(true);
       await syncHeldTradesJob(noPublish).run(deps.db, now);
@@ -802,7 +804,7 @@ describe('a recovery-code login', () => {
       expect(row.rows[0]!.p).not.toBeNull();
       expect((await deps.db.query('select 1 from held_trades where code = $1', [s.code])).rowCount).toBe(1);
     } finally {
-      await deps.db.query('update site_flags set maintenance_since = null');
+      await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     }
     await syncHeldTradesJob(noPublish).run(deps.db, now);
     const after = await deps.db.query<{ p: Date | null }>('select paused_at as p from trades where code = $1', [s.code]);
@@ -826,11 +828,11 @@ describe('a recovery-code login', () => {
       later(10 * 60_000);
       expect(await mine()).toEqual([]);
       expect((await pausedAt())?.getTime()).toBe(held!.getTime());
-      await deps.db.query('update site_flags set maintenance_since = $1', [now]);
+      await deps.db.query('update site_flags set maintenance_since = $1, maintenance_kind = $2', [now, 'unplanned']);
       try {
         expect(await mine()).toEqual([]);
       } finally {
-        await deps.db.query('update site_flags set maintenance_since = null');
+        await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
       }
       expect(await mine()).toEqual([]);
       expect((await pausedAt())?.getTime()).toBe(held!.getTime());
@@ -999,14 +1001,11 @@ describe('a recovery-code login', () => {
 
   it("the held account's offers are not listed or taken", async () => {
     const t = await ownerWithCode();
-    const { rows } = await deps.db.query<{ id: string }>(
-      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-       values ($1, 'sell', 'zelle', 'USD', 'market', 0, 1000, 100000, null, '', 'live', $2, $2) returning id`,
-      [t.id, now],
-    );
+    // Migration 490's shape (J-16): the offer, its currency, one band and one method.
+    const offerId = await insertOffer(deps.db, { accountId: t.id, side: 'sell', methodId: 'ZELLE', currency: 'USD', min: 1000, max: 100000, at: now });
     expect((await backupLogin(new Browser(app), t.name, t.code)).statusCode).toBe(200);
     const buyer = await trader();
-    expect((await buyer.browser.get(`/v1/offers/${rows[0]!.id}`)).statusCode).toBe(404);
+    expect((await buyer.browser.get(`/v1/offers/${offerId}`)).statusCode).toBe(404);
   });
 
   it('an authenticator code alone is no backup login any more (TOTP-only login is not allowed)', async () => {
@@ -1061,7 +1060,7 @@ describe('a new device with nothing logged in to approve it', () => {
     const b = new Browser(app);
     const start = await b.post('/v1/register/pgp/start', { displayName: `G${name}`, loginName: name, publicKey: key.publicKey });
     const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey));
-    expect((await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: TERMS })).statusCode).toBe(201);
+    expect((await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG })).statusCode).toBe(201);
     const id = (await accountIdByLoginName(deps, name))!;
     await onboarding(id, null);
     await b.post('/v1/logout');

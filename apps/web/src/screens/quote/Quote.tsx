@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { posterRole, type Price } from '@x2f/trade';
+import { GIFT_CARD_TERMS_VERSION, formatXmr, giftCardRole, giftCardTermsComplete, posterRole, type Price } from '@x2f/trade';
 import { useSession } from '../../session/useSession.js';
 import { addressEnd } from '../../ui/addressEnd.js';
 import { BlockAction } from '../settings/BlockAction.js';
@@ -8,14 +8,17 @@ import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { Icon } from '../../ui/icons.js';
 import { Notice } from '../../ui/Notice.js';
-import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
+import { fetchMarket, fetchMethod, fetchOffer, fetchWallets, type PickWallet } from './api.js';
+import { GiftCardTerms } from '../giftcard/GiftCardRules.js';
 import type { ConfirmedTrade } from './confirmed.js';
 import { STAGE_NAMES, amountText, currencySign, dealMaxFiat, formatMinor, maxText, quote, quoteExponent, quoteRange, rangeText, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
 import { claimTake, rememberTake } from './pendingTake.js';
+import { QuoteBands } from './QuoteBands.js';
 import { TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
 import { useQuoteKept } from './quoteKept.js';
 import { useTake } from './useTake.js';
 import { WalletPicker, walletName } from './WalletPicker.js';
+import { WhatApplies } from './WhatApplies.js';
 import './quote.css';
 
 // The quote screen both sides share (plan Task 18). BuyQuote (a buyer taking a sell ad) follows the
@@ -40,10 +43,17 @@ export interface QuoteCopy {
   /** The big figure: label and the XMR it shows. */
   headline: string;
   headlineXmr: (q: Extract<Quote, { kind: 'ok' }>) => bigint;
+  /**
+   * True when the figure is an amount the person will send (SellQuote: what the seller locks), so
+   * it is shown exact (formatXmrExact, the exact-send rule); else the boards' 6 places (formatXmr,
+   * truncated, never overstated). Design review 8 Nov item 4.
+   */
+  headlineExact: boolean;
+  /** The wallet group's line before login, where there are no wallets to pick yet. COPY-UNSIGNED */
+  signedOutPickLine: string;
   /** The line under the figure for a picked wallet. */
   walletLine: (name: string, end: string) => ReactNode;
   noWalletLine: string;
-  signedOutWalletLine: string;
   networkFee: string;
   total: (method: string) => string;
   footnote: (poster: string) => string;
@@ -136,17 +146,25 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const [picked, setPicked] = useState<string | null>(params.get('wallet'));
 
   const { market, refresh: refreshMarket } = useMarket(currency);
+  // T-039: the courtesy sheet shows over the trade room the first time it opens (TradeRoom.tsx, design
+  // final call 10 Nov 2026), so the take goes straight to the room.
   const { signedIn, state, take } = useTake(offerId, refreshMarket);
   const session = useSession();
   const myName = session.status === 'signed-in' ? ((session.me as { displayName?: string }).displayName ?? null) : null;
   // Task 37: once the person blocks the poster, this offer is gone for them (the take would 404).
   const { blockedPoster, closedError } = kept;
   const offer = useLoad((signal) => fetchOffer(copy.adSide, methodId, currency, offerId, signal), [copy.adSide, methodId, currency, offerId]);
-  const method = useLoad((signal) => fetchMethodName(copy.adSide, methodId, currency, signal), [copy.adSide, methodId, currency]);
+  const method = useLoad((signal) => fetchMethod(copy.adSide, methodId, currency, signal), [copy.adSide, methodId, currency]);
   const wallets = useLoad<PickWallet[]>(signedIn === true ? (signal) => fetchWallets(signal) : null, [signedIn]);
 
   const o: QuoteOffer | null = offer.kind === 'ready' ? offer.value : null;
-  const methodName = method.kind === 'ready' ? method.value : methodId;
+  const methodName = method.kind === 'ready' ? method.value.name : methodId;
+  // J-17 (F13): a gift card's taker ticks their side's terms first. The taker of a sell ad is the
+  // buyer, who sends the card; of a buy ad, the seller, who checks it.
+  const giftCard = method.kind === 'ready' && method.value.giftCard;
+  const giftRole = giftCardRole(copy.adSide === 'sell' ? 'buyer' : 'seller');
+  const [giftTicked, setGiftTicked] = useState<ReadonlySet<string>>(() => new Set());
+  const giftTermsOk = !giftCard || giftCardTermsComplete(giftRole, giftTicked);
   const marketNow = market.kind === 'ready' ? market.value : null;
   const q: Quote | null = o && market.kind === 'ready' ? quote({ offer: o, market: marketNow, text, unit }) : null;
   const usable = wallets.kind === 'ready' ? wallets.value.filter((w) => w.usable) : [];
@@ -256,7 +274,8 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   };
 
   const noWallet = signedIn === true && wallets.kind === 'ready' && usable.length === 0;
-  const canTrade = ok !== null && !state.busy && !blockedPoster && (signedIn === false || (signedIn === true && pickedWallet !== null));
+  const canTrade =
+    ok !== null && !state.busy && !blockedPoster && giftTermsOk && (signedIn === false || (signedIn === true && pickedWallet !== null));
   /**
    * What the trade room is handed (confirmed.ts): built from this screen's own figures, the ones the
    * person sees and taps Trade on. The taker of a sell ad is the buyer; of a buy ad, the seller.
@@ -266,7 +285,7 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
       ? {
           role: copy.adSide === 'sell' ? 'buyer' : 'seller',
           ownAddress: pickedWallet.address,
-          deal: { poster: posterRole(o.side), takeAmountAtomic: ok.amountAtomic, currency: o.currency, centsPerXmr: ok.rate.centsPerXmr, maxFiatCents: dealMaxFiat(o, ok.rate) },
+          deal: { poster: posterRole(o.side), takeAmountAtomic: ok.amountAtomic, currency: o.currency, centsPerXmr: ok.rate.centsPerXmr, maxFiatCents: dealMaxFiat(o, ok.rate, ok.range) },
         }
       : null;
   const refusal = state.error === null ? null : takeRefusal(state.error, o);
@@ -274,8 +293,14 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
   const cantDo = state.error === null ? null : takeCantDo(state.error);
   const cantDoOpen = cantDo !== null && closedError !== state.error;
 
+  const headlineAtomic = ok ? copy.headlineXmr(ok) : 0n;
+  // The board's 6 places ("1.250000"); exact only for a figure the person sends (headlineExact).
+  // data-long (more than 6 places) takes the smaller size so 12 places fit a phone card.
+  const headlineFigure = copy.headlineExact ? xmrText(headlineAtomic) : formatXmr(headlineAtomic);
+
+  // Signed out, the wallet group above already says it (signedOutPickLine), so no line here.
   let walletLine: ReactNode = copy.noWalletLine;
-  if (signedIn === false) walletLine = copy.signedOutWalletLine;
+  if (signedIn === false) walletLine = null;
   // The ending is cut from the full address the take will confirm, never the API's addressEnd (Task 19 re-review, gap 2).
   else if (pickedWallet) walletLine = copy.walletLine(walletName(pickedWallet), `…${addressEnd(pickedWallet.address)}`);
 
@@ -358,15 +383,28 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             addHref={addWalletHref(false)}
           />
         ) : null}
+        {signedIn === false ? (
+          // Design review 8 Nov item 4: the wallet group is on the board before login too. There
+          // is nothing to pick yet (the wallet comes with the account), so it says so; no radios.
+          <div role="group" aria-labelledby="quote-wallets-label" className="x2f-quote__wallets" data-part="wallets-signed-out">
+            <span id="quote-wallets-label" className="x2f-quote__label">
+              {copy.walletLegend}
+            </span>
+            <div className="x2f-quote__wallet x2f-quote__wallet--none">
+              <Icon name="wallet" size={20} stroke={1.75} />
+              <span className="x2f-quote__muted-sm">{copy.signedOutPickLine}</span>
+            </div>
+          </div>
+        ) : null}
         {signedIn === true && wallets.kind === 'failed' ? <p className="x2f-quote__note">Your wallets could not be loaded right now. Try again in a moment.</p> : null}
 
         <section aria-label="What you get" className="x2f-quote__card">
           <div className="x2f-quote__figure">
             <span className="x2f-section-title">{copy.headline}</span>
-            <span className="x2f-quote__xmr">
-              {xmrText(ok ? copy.headlineXmr(ok) : 0n)} <span className="x2f-quote__xmr-unit">XMR</span>
+            <span className="x2f-quote__xmr" data-long={(headlineFigure.split('.')[1] ?? '').length > 6 ? '' : undefined}>
+              {headlineFigure} <span className="x2f-quote__xmr-unit">XMR</span>
             </span>
-            <span className="x2f-quote__muted-sm">{walletLine}</span>
+            {walletLine === null ? null : <span className="x2f-quote__muted-sm">{walletLine}</span>}
           </div>
           <div className="x2f-quote__rows">
             <div className="x2f-quote__row">
@@ -398,9 +436,13 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             ) : null}
           </div>
         </section>
+        <QuoteBands offer={o} quote={q} market={marketNow} />
         <Notice tone="info">
           {copy.footnote(poster)}
         </Notice>
+        {/* j31a section 1: the quote's reader is always the taker (a sell ad's taker buys). */}
+        <WhatApplies role={copy.adSide === 'sell' ? 'buyer-taker' : 'seller-taker'} />
+        {giftCard ? <GiftCardTerms role={giftRole} ticked={giftTicked} onChange={setGiftTicked} /> : null}
         {signedIn === true && myName !== null && myName !== poster ? (
           <BlockAction displayName={poster} onBlocked={() => keep({ blockedPoster: true })} />
         ) : null}
@@ -431,7 +473,14 @@ export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId
             onClick={() => {
               if (!ok) return;
               touched();
-              take({ quote: { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents }, walletId: pickedWallet?.id ?? null, confirmed, range: quoteRange(o), resumeHref });
+              const sent = { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents, methodId: o.methodId, currency: o.currency };
+              take({
+                quote: giftCard ? { ...sent, giftCardTerms: GIFT_CARD_TERMS_VERSION } : sent,
+                walletId: pickedWallet?.id ?? null,
+                confirmed,
+                range: ok.range,
+                resumeHref,
+              });
             }}
           >
             Trade

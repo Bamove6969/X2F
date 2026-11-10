@@ -1,0 +1,21 @@
+# How long payments take: Latin America
+
+Checked 9 Nov 2026. Group 4 of 8. Methods: PIX, SPEI, MERCADO_PAGO, NEQUI, PAGO_MOVIL, CAPITUAL, AIRTM, ASTROPAY (8).
+
+**How to read this.** "Typical" is the provider's or scheme's own wording; nobody here publishes a real median. "Earlier file" means `research/payment-methods/latam-africa-me.md` (21 Oct). "Secondary" means a blog or third-party page.
+
+| id | name | typical time to see money | usual worst case | weekends / holidays matter? | can the sender pull it back? (how long) | sources | confidence | note |
+|---|---|---|---|---|---|---|---|---|
+| PIX | Pix | Seconds, 24/7 | **The night-time limit**: from 8 pm to 6 am, person-to-person Pix is capped at R$1,000 by default. Raising a limit takes 24–48 hours. A large trade at night may be impossible until morning. | Not for speed. The night limit applies every day. | **Yes.** Through the MED fraud process the payer can claim, and the receiving bank can block and return funds, for **up to 80 days**. | [BCB Pix](https://www.bcb.gov.br/estabilidadefinanceira/pix); [BCB MED guide](https://www.bcb.gov.br/content/estabilidadefinanceira/pix/Guia_MED.pdf); [Tecnoblog on the night limit](https://tecnoblog.net/noticias/banco-central-muda-faixa-horario-periodo-noturno-transfererencias-pix/) (secondary) | High | Fast, but high reversal risk. |
+| SPEI | SPEI | Seconds, 24/7 | A bank's own fraud checks or limits | No | Credits are final. Reversal only through bank fraud or court processes (inferred). | [Banxico](https://www.banxico.org.mx); [Banxico CEP receipts](https://www.banxico.org.mx/cep/) | High | The seller can check a payment with a CEP receipt. |
+| MERCADO_PAGO | Mercado Pago | Instant between Mercado Pago balances | Account suspensions | No | A card-funded "payment" can be charged back; a balance transfer has low risk. In Brazil, Pix-based transfers fall under MED. | [Mercado Pago chargebacks (MX)](https://www.mercadopago.com.mx/developers/es/docs/checkout-pro-preferences/chargebacks/introduction); [iProfesional on suspensions](https://www.iprofesional.com/economia/421009-atencion-mercado-pago-suspende-tu-cuenta-si-haces-alguno-de-estos-movimientos) | Medium | Several countries. |
+| NEQUI | Nequi | Instant, Nequi to Nequi; to other banks via Bre-B | Mass account freezes reported | No | Not documented | [nequi.com.co](https://www.nequi.com.co); [Noticias RCN on Bre-B](https://www.noticiasrcn.com/economia/nequi-anuncio-cambio-en-transfiya-por-llegada-de-bre-b-943861) (secondary) | Medium | Colombia. |
+| PAGO_MOVIL | Pago Móvil | Instant between banks (Venezuela) | Bank outages and changing limits (BCV rules) | Not usually | No documented reversal | [Finanzas Digital on BCV limits](https://finanzasdigital.com/bcv-limites-comisiones-bancarias-septiembre-2026/) (secondary); [BCV](https://www.bcv.org.ve) | **Low** | Timing comes from general knowledge plus a secondary source. US sanctions questions open. |
+| CAPITUAL | Capitual | **Unknown** | Unknown | Unknown | Unknown | [capitual.com](https://capitual.com) | **Low** | The site now presents a business digital-asset service. Treat like the Custom method until someone checks. |
+| AIRTM | Airtm | "Instantly", Airtm to Airtm | No documented delay | No | Not documented for internal sends | [Airtm: make payments](https://www.airtm.com/en/solutions/make-payments/); [Airtm help: sending funds](https://help.airtm.com/en/support/solutions/articles/47001185353-how-to-sends-funds-in-airtm-internal-) | Medium | USDC-based dollar wallet. |
+| ASTROPAY | AstroPay | Instant, AstroPay to AstroPay | Limits by verification level and country | No | "Cannot be reversed once completed" | [AstroPay: send money to another user](https://intercom.help/astropay-hc/en/articles/15084818-send-money-to-another-astropay-user); [AstroPay: transfers between accounts](https://intercom.help/astropay-hc/en/articles/12142990-transfers-between-astropay-accounts) | High | |
+
+## What matters for the time limit
+
+- Everything except Capitual is instant.
+- Pix's night-time R$1,000 cap is the one timing trap: a buyer who takes a large Pix trade at 11 pm may not be able to send until 6 am. An offer could warn about this, or the timer could allow for it.

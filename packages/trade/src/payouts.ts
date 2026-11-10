@@ -13,7 +13,7 @@
  * sellerFundsAtomic (dust, above the offer maximum, or after "I've paid") goes
  * back to the seller. Every refund or cancel pays everything to the seller.
  * A moderator's ruling pays by the `dispute-buyer` / `dispute-seller` sets
- * (Plan 4 Task 15, Revision 2026-10-29c: the poster pays the 1% fee).
+ * (Plan 4 Task 15; owner g63, 7 Nov: the poster pays the 1% only when the trade completes).
  */
 import type { Payout } from '@x2f/escrow';
 import type { AttestedTerms } from './attestation.js';
@@ -24,12 +24,13 @@ export type SettleKind = 'release' | 'mutual-cancel' | 'buyer-cancel' | 'auto-re
 export const SETTLE_KINDS: readonly SettleKind[] = ['release', 'mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'];
 
 /**
- * A moderator-built set for a published ruling (Plan 4 Tasks 13-15, Revision 2026-10-29c "Fees on
- * settled disputes": a settled dispute pays the 1%, the poster pays):
- * - 'dispute-buyer': the release (buyer first, then the exact fee, any surplus to the seller);
- * - 'dispute-seller': poster seller, the seller gets the balance less the fee and the fee wallet
- *   exactly the fee; poster buyer (no fee in the escrow), the whole balance to the seller (the poster
- *   still owes the fee, Plan 4 Task 12's fees_owed).
+ * A moderator-built set for a published ruling (Plan 4 Tasks 13-15; owner g63, 7 Nov, replacing
+ * Revision 2026-10-29c's "a settled dispute pays the 1%"):
+ * - 'dispute-buyer': the ruling moves the trade forward, so it completes and the poster pays the
+ *   1%: the release (buyer first, then the exact fee, any surplus to the seller);
+ * - 'dispute-seller': a full reversal (all funds back to the original parties), so no fee: the
+ *   whole balance to the seller, whoever posted (the site pays the moderator itself).
+ * Which outcomes charge the fee, including appeals and liens, is `rulingFee` in @x2f/staff.
  * Kept apart from SettleKind: no trader route settles these, only the moderator builds them.
  */
 export type RulingKind = 'dispute-buyer' | 'dispute-seller';
@@ -81,16 +82,10 @@ export function payoutsFor(f: PayoutFacts): Payout[] {
     case 'buyer-cancel':
     case 'auto-refund':
     case 'lapse-refund':
-      // Every refund: the whole balance, surplus included, to the seller's signed refund address.
+    case 'dispute-seller':
+      // Every refund, and a ruling's full reversal (owner g63: no fee): the whole balance, surplus
+      // included, to the seller's signed refund address.
       return out([{ address: f.sellerRefund, amountAtomic: balance }]);
-    case 'dispute-seller': {
-      if (f.poster === 'buyer') return out([{ address: f.sellerRefund, amountAtomic: balance }]);
-      if (balance <= f.feeAtomic) throw new RangeError('underfunded');
-      return out([
-        { address: f.sellerRefund, amountAtomic: balance - f.feeAtomic },
-        { address: f.feeWallet, amountAtomic: f.feeAtomic },
-      ]);
-    }
     default:
       throw new RangeError('unknown settle kind');
   }

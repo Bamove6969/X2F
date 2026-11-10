@@ -31,7 +31,46 @@ function ownClasses(css: string): Set<string> {
   return out;
 }
 
+/**
+ * The stylesheet's structural faults: an unbalanced brace, or a style rule with a rule inside it.
+ * The sources use no CSS nesting (only at-rules such as @media hold rules), so a nested rule means a
+ * rule lost its body: a merge once kept `.x2f-timer__label {` with no declarations and no `}`, and
+ * every later rule in ui.css silently became `.x2f-timer__label …` and stopped applying.
+ */
+function structuralFaults(css: string): string[] {
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' ')).replace(/'[^'\n]*'|"[^"\n]*"/g, (q) => q.replace(/[{}]/g, ' '));
+  const faults: string[] = [];
+  const open: { atRule: boolean; line: number; head: string }[] = [];
+  let start = 0;
+  let line = 1;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '\n') line++;
+    else if (ch === '{') {
+      const head = text.slice(start, i).trim().replace(/\s+/g, ' ');
+      const parent = open.at(-1);
+      if (parent && !parent.atRule) faults.push(`line ${line}: "${head}" is nested inside "${parent.head}" (line ${parent.line})`);
+      open.push({ atRule: head.startsWith('@'), line, head });
+      start = i + 1;
+    } else if (ch === '}') {
+      if (open.pop() === undefined) faults.push(`line ${line}: a } with no rule open`);
+      start = i + 1;
+    } else if (ch === ';') start = i + 1;
+  }
+  for (const o of open) faults.push(`line ${o.line}: "${o.head}" is never closed`);
+  return faults;
+}
+
 describe('stylesheets', () => {
+  it('every stylesheet has balanced braces and no rule nested inside a style rule', () => {
+    const faults = Object.fromEntries(
+      cssFiles(SRC)
+        .map((f) => [relative(SRC, f), structuralFaults(readFileSync(f, 'utf8')).slice(0, 3)] as const)
+        .filter(([, list]) => list.length > 0),
+    );
+    expect(faults).toEqual({});
+  });
+
   it('no two stylesheets define the same top-level class', () => {
     const where = new Map<string, string[]>();
     for (const f of cssFiles(SRC)) {

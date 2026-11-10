@@ -19,6 +19,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import * as openpgp from 'openpgp';
 import type { Deps } from '../app.js';
+import { SIGNED_BODY_LIMIT } from '../termsSignature.js';
 import { addAlert } from '../alerts.js';
 import { assertKeyNotBanned, hasBinding, keyFingerprints } from '../bans.js';
 import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, loginTagMatch, openNames, sealNames } from '../accounts.js';
@@ -784,7 +785,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   ensureDeviceCookie(req, reply);
   req.server.budgets.register.take();
   const b = body(req);
-  const terms = assertTermsAccepted(deps, b.acceptedTerms);
+  const terms = assertTermsAccepted(deps, b.acceptedTerms, b.termsSignature);
   const challengeId = str(b, 'challengeId');
   const code = str(b, 'code');
   const deviceLabel = str(b, 'deviceLabel');
@@ -799,7 +800,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
-      accountId = await createAccount(client, deps.config, { ...names, kind: 'trader', termsVersion: terms, now });
+      accountId = await createAccount(client, deps.config, { ...names, kind: 'trader', termsVersion: terms.version, termsSignature: terms.signature, now });
       await insertPgpKey(client, deps.config, { accountId, fingerprint: pending.fingerprint, armored, now, ...provedOf(pending) });
       await client.query('commit');
     } catch (e) {
@@ -1025,7 +1026,8 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
   }));
 
   app.post('/v1/register/pgp/start', { bodyLimit: PGP_BODY_LIMIT }, registerStart);
-  app.post('/v1/register/pgp/finish', registerFinish);
+  // The Terms signature rides on the finish (owner, 8 Nov 2026): the default limit plus its room.
+  app.post('/v1/register/pgp/finish', { bodyLimit: SIGNED_BODY_LIMIT }, registerFinish);
 
   await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...TRADER_LOGIN_KINDS], requireLoginName: true }), { prefix: '/v1/login/pgp' });
 

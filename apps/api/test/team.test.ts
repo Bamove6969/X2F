@@ -28,6 +28,9 @@ import { Browser, ORIGIN } from './helpers/totp.js';
 import { publishRuling } from './helpers/disputes.js';
 import { driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
+import { SIG } from './helpers/signature.js';
+import { openTermsSignature } from '../src/termsSignature.js';
+import { flexBody } from './helpers/offers.js';
 
 // Plan 2 Task 18: team members (spec 6.7, R44). Real Postgres, one database for the file; each
 // test makes its own team accounts.
@@ -149,13 +152,14 @@ async function invite(owner: Who, displayName: string, roles: Role[]) {
 
 const OFFER = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: null, terms: 'Zelle only.',
+  // At most $5,000 (the launch cap, owner p11-6).
+  minFiatCents: '1000', maxFiatCents: '500000', minTrades: null, terms: 'Zelle only.',
 };
 
 function takeBody(walletId: string, amountAtomic = XMR / 10n): Record<string, unknown> {
   return {
     amountAtomic: amountAtomic.toString(), walletId, centsPerXmr: '33000',
-    fiatCents: fiatCents(amountAtomic, { currency: 'USD', centsPerXmr: 33_000n }).toString(),
+    fiatCents: fiatCents(amountAtomic, { currency: 'USD', centsPerXmr: 33_000n }).toString(), methodId: 'ZELLE', currency: 'USD',
   };
 }
 
@@ -230,7 +234,14 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect(s1.statusCode, s1.body).toBe(200);
     const c1 = s1.json() as { challengeId: string; encryptedMessage: string };
     const code1 = codeOf(await decrypt(c1.encryptedMessage, k1.privateKey, undefined, deps.clock()));
-    const f1 = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: code1 });
+    // Owner 9 Nov 2026 (p11-14): everyone who gets a login signs. The signature comes with the
+    // finish and is checked before the code is used, so the same code still works after.
+    for (const [termsSignature, error] of [[undefined, 'signature-required'], [{ kind: 'typed', name: '' }, 'signature-invalid']] as const) {
+      const unsigned = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: code1, termsSignature });
+      expect(unsigned.statusCode, unsigned.body).toBe(400);
+      expect((unsigned.json() as { error: string }).error).toBe(error);
+    }
+    const f1 = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: code1, termsSignature: SIG });
     expect(f1.statusCode, f1.body).toBe(201);
     const { setupId, needs } = f1.json() as { setupId: string; needs: string[] };
     expect(needs).toEqual(['security-key', 'passkey', 'pgp']);
@@ -268,12 +279,15 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect(me.member).toEqual({ name: `Joiner${n}x`, abilities: rolesToAbilities(['trades']), preset: null, roles: ['trades'] });
     // The member's own login account carries the Terms they signed, and they are inside.
     expect(me.termsCurrent).toBe(true);
-    const signed = await deps.db.query<{ terms_version: string | null; terms_accepted_at: Date | null }>(
-      'select a.terms_version, a.terms_accepted_at from team_members tm join accounts a on a.id = tm.member_account_id where tm.id = $1',
+    const signed = await deps.db.query<{ id: string; terms_version: string | null; terms_accepted_at: Date | null; terms_signature: Buffer | null }>(
+      'select a.id, a.terms_version, a.terms_accepted_at, a.terms_signature from team_members tm join accounts a on a.id = tm.member_account_id where tm.id = $1',
       [created.id],
     );
     expect(signed.rows[0]!.terms_version).toBe(deps.config.termsVersion);
     expect(signed.rows[0]!.terms_accepted_at).not.toBeNull();
+    // Sealed to the member's own login account, never the team account's.
+    expect(openTermsSignature(deps.config, signed.rows[0]!.terms_signature!, signed.rows[0]!.id)).toEqual(SIG);
+    expect(() => openTermsSignature(deps.config, signed.rows[0]!.terms_signature!, owner.id)).toThrow();
     expect((await b.get('/v1/news')).statusCode).toBe(200);
     const alerts = (await owner.browser.get('/v1/account/alerts')).json() as { kind: string }[];
     expect(alerts.map((a) => a.kind)).toContain('team-member-joined');
@@ -289,7 +303,7 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     const s1 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: banned.publicKey, acceptedTerms: deps.config.termsVersion });
     expect(s1.statusCode, s1.body).toBe(200);
     const c1 = s1.json() as { challengeId: string; encryptedMessage: string };
-    const f1 = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: codeOf(await decrypt(c1.encryptedMessage, banned.privateKey, undefined, deps.clock())) });
+    const f1 = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: codeOf(await decrypt(c1.encryptedMessage, banned.privateKey, undefined, deps.clock())), termsSignature: SIG });
     expect(err(f1)).toEqual({ status: 409, error: 'key-unavailable' });
     // The transaction rolled back: no member account, the key is nowhere, the invite is still open.
     expect((await deps.db.query('select 1 from pgp_keys where fingerprint = $1', [banned.fingerprint.toLowerCase()])).rowCount).toBe(0);
@@ -300,7 +314,7 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     const k1 = await genKey();
     const s2 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: k1.publicKey, acceptedTerms: deps.config.termsVersion });
     const c2 = s2.json() as { challengeId: string; encryptedMessage: string };
-    const f2 = await b.post('/v1/team/join/finish', { challengeId: c2.challengeId, code: codeOf(await decrypt(c2.encryptedMessage, k1.privateKey, undefined, deps.clock())) });
+    const f2 = await b.post('/v1/team/join/finish', { challengeId: c2.challengeId, code: codeOf(await decrypt(c2.encryptedMessage, k1.privateKey, undefined, deps.clock())), termsSignature: SIG });
     expect(f2.statusCode, f2.body).toBe(201);
     const { setupId } = f2.json() as { setupId: string };
     const s3 = await b.post('/v1/team/join/second/pgp/start', { setupId, publicKey: banned.publicKey });
@@ -329,7 +343,7 @@ describe('roles', () => {
     const owner = await team();
     const seller = await team();
     const m = await member(owner.id, ['offers']);
-    const posted = await m.browser.post('/v1/offers', OFFER);
+    const posted = await m.browser.post('/v1/offers', flexBody(OFFER));
     expect(posted.statusCode, posted.body).toBe(201);
     const id = (posted.json() as { id: string }).id;
     const { rows } = await deps.db.query<{ account_id: string }>('select account_id from offers where id = $1', [id]);
@@ -337,7 +351,7 @@ describe('roles', () => {
     expect((await m.browser.patch(`/v1/offers/${id}`, { status: 'paused' })).statusCode).toBe(200);
     const bulk = await m.browser.post('/v1/account/offers/status', { ids: [id], status: 'live' });
     expect(bulk.statusCode, bulk.body).toBe(200);
-    const sellerOffer = (await seller.browser.post('/v1/offers', OFFER)).json() as { id: string };
+    const sellerOffer = (await seller.browser.post('/v1/offers', flexBody(OFFER))).json() as { id: string };
     expect(err(await m.browser.post(`/v1/offers/${sellerOffer.id}/take`, takeBody(owner.wallet)))).toEqual({ status: 403, error: 'forbidden' });
   });
 
@@ -345,7 +359,7 @@ describe('roles', () => {
     const owner = await team();
     const seller = await team();
     const m = await member(owner.id, ['trades']);
-    expect(err(await m.browser.post('/v1/offers', OFFER))).toEqual({ status: 403, error: 'forbidden' });
+    expect(err(await m.browser.post('/v1/offers', flexBody(OFFER)))).toEqual({ status: 403, error: 'forbidden' });
     // The account's wallet list, address ends only (review M7; adding or removing stays the owner's).
     const wallets = await m.browser.get('/v1/wallets');
     expect(wallets.statusCode).toBe(200);
@@ -356,7 +370,7 @@ describe('roles', () => {
     expect(JSON.stringify(listed)).not.toContain(((await owner.browser.get('/v1/wallets')).json() as { address: string }[])[0]!.address);
     // Review I2 (lead 2026-10-30): a take makes the taking device the escrow party, and only the
     // owner's device can be one until Plan 3 Task 42; the refused take leaves nothing behind.
-    const offer = (await seller.browser.post('/v1/offers', OFFER)).json() as { id: string };
+    const offer = (await seller.browser.post('/v1/offers', flexBody(OFFER))).json() as { id: string };
     expect(err(await m.browser.post(`/v1/offers/${offer.id}/take`, takeBody(owner.wallet)))).toEqual({ status: 403, error: 'member-cannot-sign' });
     const none = await deps.db.query('select 1 from trades where buyer_account_id = $1', [owner.id]);
     expect(none.rowCount).toBe(0);
@@ -371,13 +385,13 @@ describe('roles', () => {
   it('a role change applies at the next request', async () => {
     const owner = await team();
     const m = await member(owner.id, ['trades']);
-    expect(err(await m.browser.post('/v1/offers', OFFER))).toEqual({ status: 403, error: 'forbidden' });
+    expect(err(await m.browser.post('/v1/offers', flexBody(OFFER)))).toEqual({ status: 403, error: 'forbidden' });
     const action = { kind: 'team-roles' as const, memberId: m.id, roles: 'offers,trades' };
     const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionId(owner.browser), accountId: owner.id, action, method: 'passkey' });
     const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { roles: ['trades', 'offers'], confirmToken });
     expect(res.statusCode, res.body).toBe(200);
     expect((res.json() as { roles: string[] }).roles).toEqual(['offers', 'trades']);
-    expect((await m.browser.post('/v1/offers', OFFER)).statusCode).toBe(201);
+    expect((await m.browser.post('/v1/offers', flexBody(OFFER))).statusCode).toBe(201);
   });
 });
 
@@ -421,7 +435,7 @@ describe('the audit log', () => {
   it('each effectful member action writes exactly one row, a read writes none, the owner writes none', async () => {
     const owner = await team();
     const m = await member(owner.id, ['offers', 'trades']);
-    const posted = (await m.browser.post('/v1/offers', OFFER)).json() as { id: string };
+    const posted = (await m.browser.post('/v1/offers', flexBody(OFFER))).json() as { id: string };
     expect((await auditRows(owner.id)).map((r) => r.action)).toEqual(['offer-posted']);
     await m.browser.get('/v1/account/offers');
     await m.browser.get('/v1/account/me');
@@ -433,10 +447,14 @@ describe('the audit log', () => {
     await owner.browser.patch(`/v1/offers/${posted.id}`, { status: 'paused' });
     expect((await auditRows(owner.id)).map((r) => r.action)).toEqual(['offer-posted', 'offer-paused', 'offer-relisted']);
     expect((await auditRows(owner.id)).every((r) => r.member_id === m.id)).toBe(true);
-    // Review 2026-11-09 M2 (the owner's "name and amount"): every offer row carries what the offer was.
+    // Review 2026-11-09 M2 (the owner's "name and amount"): every offer row carries what the offer was,
+    // in J-16's shape (migration 490): its side and unit, each currency with its bands (ranges in the
+    // unit's minor units, margins, trade rule, method restriction) and each method with its
+    // adjustment and the currencies it is offered in. Never its payment instructions.
     const terms = {
-      offerId: posted.id, side: 'sell', currency: 'USD', methodId: 'ZELLE', priceMode: 'market', marginBps: 0, fixedCentsPerXmr: null,
-      amountUnit: 'fiat', minAtomic: null, maxAtomic: null, minFiatCents: '1000', maxFiatCents: '1000000',
+      offerId: posted.id, side: 'sell', amountUnit: 'fiat', priceMode: 'market',
+      currencies: [{ currency: 'USD', bands: [{ min: '1000', max: '500000', marginBps: 0, minTrades: null, methodIds: null }] }],
+      methods: [{ methodId: 'ZELLE', adjustBps: 0, currencies: ['USD'] }],
     };
     const offerRows = await deps.db.query<{ detail: unknown }>('select detail from team_audit where account_id = $1 order by id', [owner.id]);
     expect(offerRows.rows.map((r) => r.detail)).toEqual([terms, terms, terms]);
@@ -587,7 +605,7 @@ describe('live streams and pushes with members on the team (review I1)', () => {
       expect(fifth.body).toEqual({ error: 'busy' });
 
       // A buyer takes the owner's offer: the "accepted" reaches the member's tabs, and the owner still gets the push.
-      const offer = (await owner.browser.post('/v1/offers', OFFER)).json() as { id: string };
+      const offer = (await owner.browser.post('/v1/offers', flexBody(OFFER))).json() as { id: string };
       const taken = await buyer.browser.post(`/v1/offers/${offer.id}/take`, takeBody(buyer.wallet));
       expect(taken.statusCode, taken.body).toBe(200);
       const code = (taken.json() as { code: string }).code;
@@ -660,7 +678,7 @@ describe('role changes and removal reach a member in flight', () => {
   it('a removal that commits after the gate refuses the action and rolls it back (review M1)', async () => {
     const owner = await team();
     const m = await member(owner.id, ['offers']);
-    const res = await racing(m.id, () => m.browser.post('/v1/offers', OFFER), 'update team_members set removed_at = now() where id = $1');
+    const res = await racing(m.id, () => m.browser.post('/v1/offers', flexBody(OFFER)), 'update team_members set removed_at = now() where id = $1');
     expect(err(res)).toEqual({ status: 401, error: 'not-authenticated' });
     expect((await deps.db.query('select 1 from offers where account_id = $1', [owner.id])).rowCount).toBe(0);
     expect(await auditRows(owner.id)).toEqual([]);
@@ -669,7 +687,7 @@ describe('role changes and removal reach a member in flight', () => {
   it('a role drop that commits after the gate refuses the action and rolls it back (review M1)', async () => {
     const owner = await team();
     const m = await member(owner.id, ['offers', 'trades']);
-    const res = await racing(m.id, () => m.browser.post('/v1/offers', OFFER), `update team_members set abilities = '{${ROLE_ABILITIES.trades.join(',')}}' where id = $1`);
+    const res = await racing(m.id, () => m.browser.post('/v1/offers', flexBody(OFFER)), `update team_members set abilities = '{${ROLE_ABILITIES.trades.join(',')}}' where id = $1`);
     expect(err(res)).toEqual({ status: 403, error: 'forbidden' });
     expect((await deps.db.query('select 1 from offers where account_id = $1', [owner.id])).rowCount).toBe(0);
   });
@@ -760,12 +778,12 @@ describe('the audit log covers every member action (review M3)', () => {
     const other = await team();
     const m = await member(owner.id, ['trades']);
     // The owner posts a buy offer and another trader takes it: the owner (poster, buyer) must set the payout wallet.
-    const buyOffer = (await owner.browser.post('/v1/offers', { ...OFFER, side: 'buy' })).json() as { id: string };
+    const buyOffer = (await owner.browser.post('/v1/offers', flexBody({ ...OFFER, side: 'buy' }))).json() as { id: string };
     const taken = await other.browser.post(`/v1/offers/${buyOffer.id}/take`, takeBody(other.wallet));
     expect(taken.statusCode, taken.body).toBe(200);
     const takenCode = (taken.json() as { code: string }).code;
     expect(err(await m.browser.post(`/v1/trades/${takenCode}/wallet`, { walletId: owner.wallet }))).toEqual({ status: 403, error: 'member-cannot-sign' });
-    const offer = (await other.browser.post('/v1/offers', OFFER)).json() as { id: string };
+    const offer = (await other.browser.post('/v1/offers', flexBody(OFFER))).json() as { id: string };
     expect(err(await m.browser.post(`/v1/offers/${offer.id}/take`, takeBody(owner.wallet)))).toEqual({ status: 403, error: 'member-cannot-sign' });
     expect(await auditRows(owner.id)).toEqual([]);
 
@@ -777,6 +795,8 @@ describe('the audit log covers every member action (review M3)', () => {
     expect((await owner.browser.put('/v1/account/session/length', { hours: 6 })).statusCode).toBe(200);
     const dp = await driveTo(deps, d.trade, 'paid');
     setNow(dp.confirmBy!);
+    // The confirm window (2 hours) outlasts the member's session: log in again at its end.
+    expect((await m.browser.post('/t/login', { accountId: m.loginId })).statusCode).toBe(200);
     // Owner D-066 (p7-7): only trade parties open disputes; the member is refused and the lead opens it.
     expect(err(await m.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'a private note' }))).toEqual({ status: 403, error: 'owner-only' });
     const opened = await owner.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'a private note' });
@@ -1354,7 +1374,9 @@ describe('review 2026-11-09 M1: the boxes and the 24-hour hold (hold v3 staging,
     const a = await member(owner.id, ['trades']);
     const b = await member(owner.id, { abilities: ['trades-see-active'] });
     const list = ((await owner.browser.get('/v1/team')).json() as { members: { id: string; roles: string[]; custom: boolean }[] }).members;
-    expect(list.map((x) => [x.id, x.roles, x.custom])).toEqual([[a.id, ['trades'], false], [b.id, ['trades'], true]]);
+    // Both were made at the same frozen clock, so the list's order (created_at, then id) is the ids': compare sorted.
+    const byId = (rows: [string, string[], boolean][]) => [...rows].sort((x, y) => x[0].localeCompare(y[0]));
+    expect(byId(list.map((x) => [x.id, x.roles, x.custom]))).toEqual(byId([[a.id, ['trades'], false], [b.id, ['trades'], true]]));
   });
 
   it('a strong lead grants a hold box through { abilities }', async () => {
@@ -1457,7 +1479,7 @@ describe('the owner\'s hard rules no box can grant (J-10)', () => {
     const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities, confirmToken });
     expect(res.statusCode, res.body).toBe(200);
     expect((res.json() as { abilities: string[] }).abilities).toEqual(['offers-see', 'offers-post']);
-    expect((await m.browser.post('/v1/offers', OFFER)).statusCode).toBe(201);
+    expect((await m.browser.post('/v1/offers', flexBody(OFFER))).statusCode).toBe(201);
     expect(err(await m.browser.get('/v1/wallets'))).toEqual({ status: 403, error: 'forbidden' });
   });
 

@@ -95,6 +95,8 @@ import { memberOf } from '../../session/member.js';
 import { displayNameOf, useSession } from '../../session/useSession.js';
 import { setConfirmUser } from './confirmSkip.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
+import { CourtesySheet } from '../quote/CourtesySheet.js';
+import { courtesyDue, markCourtesyShown } from '../quote/courtesy.js';
 import { tradeFromView } from '../dispute/api.js';
 import { DisputeEntry } from '../dispute/DisputeEntry.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
@@ -326,6 +328,14 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
   const stored = useMemo(() => (fromState ? null : readConfirmed(code)), [fromState, code]);
   const confirmed = fromState ?? stored ?? undefined;
   const escrow = useTradeEscrow(code, confirmed);
+  // "Trading with more than one person?" (j31a section 2, T-039; design final call 10 Nov 2026) over the
+  // room the first time the taker's new trade opens: arriving from the take (the history state), as the
+  // taker (posters never see it, T-038), unless ticked off on this device or shown for this trade already
+  // (a reload, Back then Forward). A room opened any other way (a new tab, a push) shows none.
+  const [courtesy, setCourtesy] = useState(() => fromState !== undefined && view.role !== view.poster && courtesyDue(code));
+  useEffect(() => {
+    if (courtesy) markCourtesyShown(code);
+  }, [courtesy, code]);
   // Once the escrow has stored the deal, the tab's copy (it holds the payout address) is not needed.
   const hasDeal = escrow.deal !== null;
   useEffect(() => {
@@ -350,7 +360,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
   const Screen = broken ? integrityScreen : screenFor(view, clock().getTime());
   const Chat = useTradeChat();
   // The dispute room lays out its own chat (follow-up); a broken trade shows only its refusal.
-  const chat = Chat !== null && view.state !== 'disputed' && !broken ? <Chat code={view.code} name={publicName(view.counterparty)} /> : null;
+  const chat = Chat !== null && view.state !== 'disputed' && !broken ? <Chat code={view.code} name={publicName(view.counterparty)} methodId={view.methodId} /> : null;
   const chatPane = chatPaneFor(layout, Chat !== null, view, broken);
   return (
     <main data-screen="trade" data-trade-state={view.state} data-role={view.role}>
@@ -379,6 +389,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
         sideLabel={`Chat with ${publicName(view.counterparty)}`}
       />
       <ChatHash hash={hash} layout={layout} chat={chat} chatPane={chatPane} name={publicName(view.counterparty)} screen={Screen} />
+      <CourtesySheet open={courtesy} onDone={() => setCourtesy(false)} />
     </main>
   );
 }
@@ -394,14 +405,27 @@ export function useChatPane(view: Pick<TradeView, 'state'>): boolean {
 }
 
 const COMPOSER = ":is(input, textarea, [contenteditable='true'])";
+/** The payee's payment-detail boxes (ChatPanel PayBoxes, J-08): inputs in the chat pane above its composer. */
+const PAY_BOXES = '[data-pay-boxes]';
 /** The room's chat pane (two panes, three, tabletop). */
 const PANE_CHAT = "[data-pane='side']";
 /** A screen's own chat aside in the wide layout (BuyerPay's WideRoom, the Desktop board). */
 const ASIDE_CHAT = "[data-pane='main'] .x2f-room__chat-panel";
 
+/**
+ * The chat's own composer inside `where`: the first input that is not one of the payee's
+ * payment-detail boxes, which sit in the same pane above it (J-08).
+ */
+function composerIn(where: string): HTMLElement | null {
+  for (const el of document.querySelectorAll<HTMLElement>(`${where} ${COMPOSER}`)) {
+    if (el.closest(PAY_BOXES) === null) return el;
+  }
+  return null;
+}
+
 /** Moves the focus to the composer of the room's chat pane. */
 export function focusChatPane(): void {
-  document.querySelector<HTMLElement>(`${PANE_CHAT} ${COMPOSER}`)?.focus();
+  composerIn(PANE_CHAT)?.focus();
 }
 
 /**
@@ -411,7 +435,7 @@ export function focusChatPane(): void {
  * focus from something the user moved it to in the meantime. Returns the cleanup.
  */
 export function focusComposerWhenReady(where: string): () => void {
-  const find = () => document.querySelector<HTMLElement>(`${where} ${COMPOSER}`);
+  const find = () => composerIn(where);
   const now = find();
   if (now) {
     now.focus();

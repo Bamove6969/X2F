@@ -96,28 +96,23 @@ describe('cosignPolicy: the shapes each side may settle', () => {
     expect(cosignPolicy(b, out(to, 'mod', 'buyer'))).toBe(true);
   });
 
-  it('the seller co-signs a mod-built seller win: poster seller, its refund less the exact fee; poster buyer, the whole balance', () => {
-    const s = ctx('seller', { state: 'disputed' });
-    const fee = escrowPlan({ amountAtomic: AMOUNT, poster: 'seller' }).feeAtomic;
-    expect(expected('dispute-seller', s)).toEqual([
+  // Owner g63 (7 Nov): a full reversal pays no fee, whoever posted.
+  it.each(['seller', 'buyer'] as const)('the seller co-signs a mod-built seller win: the whole balance back, no fee (poster %s)', (poster) => {
+    const s = ctx('seller', { state: 'disputed', poster });
+    expect(expected('dispute-seller', s)).toEqual([{ address: SELLER, amountAtomic: s.balance }]);
+    expect(cosignPolicy(s, out(expected('dispute-seller', s), 'mod', 'seller'))).toBe(true);
+    // A set that takes the 1% out of the reversal is not the ruling's.
+    const fee = escrowPlan({ amountAtomic: AMOUNT, poster }).feeAtomic;
+    const withFee = [
       { address: SELLER, amountAtomic: s.balance - fee },
       { address: FEE, amountAtomic: fee },
-    ]);
-    expect(cosignPolicy(s, out(expected('dispute-seller', s), 'mod', 'seller'))).toBe(true);
-    // Poster seller: the full refund without the fee is no longer the ruling's set.
-    expect(cosignPolicy(s, out(expected('mutual-cancel', s), 'mod', 'seller'))).toBe(false);
-    const sb = ctx('seller', { state: 'disputed', poster: 'buyer' });
-    expect(expected('dispute-seller', sb)).toEqual([{ address: SELLER, amountAtomic: sb.balance }]);
-    expect(cosignPolicy(sb, out(expected('dispute-seller', sb), 'mod', 'seller'))).toBe(true);
+    ];
+    expect(cosignPolicy(s, out(withFee, 'mod', 'seller'))).toBe(false);
   });
 
-  it('refuses a ruling set with the fee one atomic unit off, either way, for either side', () => {
+  it("refuses the buyer's ruling set with the fee one atomic unit off, either way (the seller's carries no fee, owner g63)", () => {
     const b = ctx('buyer', { state: 'disputed' });
-    const s = ctx('seller', { state: 'disputed' });
-    for (const [c, kind, cosigner] of [
-      [b, 'dispute-buyer', 'buyer'],
-      [s, 'dispute-seller', 'seller'],
-    ] as const) {
+    for (const [c, kind, cosigner] of [[b, 'dispute-buyer', 'buyer']] as const) {
       const to = expected(kind, c);
       for (const d of [1n, -1n]) {
         const off = to.map((p) => (p.address === FEE ? { ...p, amountAtomic: p.amountAtomic + d } : p));

@@ -108,6 +108,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       sellerWalletApp: row.seller_wallet_app,
       counterpartyProblem: await counterpartyProblem(deps.db, t.code, other),
       cancelWaiting: await cancelWaiting(deps.db, t.code),
+      paymentInstructions: row.method_instructions,
     });
   };
 

@@ -14,11 +14,10 @@
  * pay (`auto-refund`, mod co-signs, only while the trade settles it and the buyer never marked paid:
  * owner 8 Nov); co-signs a buyer-built mutual cancel; never touches a buyer-cancel.
  * Mod-built (Plan 4 rulings, only while disputed): co-signed only when it is exactly the ruling's
- * set for this side at its own address (Plan 4 Task 15, Revision 2026-10-29c "Fees on settled
- * disputes", the poster pays the 1%): `payoutsFor('dispute-buyer')` for the buyer (its payout
- * first, then the exact fee) and `payoutsFor('dispute-seller')` for the seller (poster seller: its
- * refund less the exact fee, then the fee; poster buyer: the whole balance), so no split can move
- * this side's share to the counterparty or change the fee. Whether the ruling allows it at all is
+ * set for this side at its own address (Plan 4 Task 15; owner g63, 7 Nov: the poster pays the 1%
+ * only when the trade completes): `payoutsFor('dispute-buyer')` for the buyer (its payout first,
+ * then the exact fee) and `payoutsFor('dispute-seller')` for the seller (a full reversal: the whole
+ * balance, no fee), so no split can move this side's share to the counterparty or add a fee. Whether the ruling allows it at all is
  * screens/dispute/rules.ts `rulingAllowsCosign`, in front of this.
  *
  * The trade's size is bounded by this device, never set by the API alone: `deal` is what this

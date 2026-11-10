@@ -4,9 +4,11 @@
  * list marks each one seen.
  */
 import { useEffect, useState } from 'react';
-import type { AlertEntry } from '@x2f/auth-client';
+import { Link } from 'react-router';
+import type { AlertEntry, JabberStatus } from '@x2f/auth-client';
 import { authApi } from '../auth/authApi.js';
-import { utcDateTime } from '../../ui/dates.js';
+import { formatDateTime } from '../../ui/dates.js';
+import { JABBER_COPY as J } from './jabberCopy.js';
 
 /**
  * Plain words for every alert kind the server records (`AlertKind` in apps/api/src/alerts.ts).
@@ -62,7 +64,7 @@ export function alertDetail(kind: string, detail: unknown): string | null {
   switch (kind) {
     case 'hold-changes-submitted': {
       const n = count(d.count, 'change', 'changes');
-      const at = typeof d.takesEffectAt === 'string' && Number.isFinite(Date.parse(d.takesEffectAt)) ? utcDateTime(new Date(d.takesEffectAt)) : null;
+      const at = typeof d.takesEffectAt === 'string' && Number.isFinite(Date.parse(d.takesEffectAt)) ? formatDateTime(d.takesEffectAt) : null;
       if (n === null) return null;
       return at === null ? `${n} waiting.` : `${n} waiting. They take effect on ${at} unless someone cancels them.`;
     }
@@ -115,6 +117,8 @@ export function Alerts() {
   }, []);
 
   return (
+    <>
+    <JabberAlerts />
     <section className="x2f-card" data-part="alerts" aria-labelledby="alerts-h">
       <h2 className="x2f-card__title" id="alerts-h">
         Alerts
@@ -139,12 +143,83 @@ export function Alerts() {
                 </>
               ) : null}
             </span>
-            <time className="x2f-list__time" dateTime={a.createdAt}>
-              {utcDateTime(new Date(a.createdAt))}
+            <time className="x2f-list__time x2f-when" dateTime={a.createdAt}>
+              {formatDateTime(a.createdAt)}
             </time>
           </li>
         ))}
       </ul>
+    </section>
+    </>
+  );
+}
+
+/**
+ * Owner rule p5-7, the Alerts board's "Secure Jabber (XMPP)" section: account-change alerts with
+ * no details in them. The switch shows only once an address is proven; the address row opens the
+ * set-up (JabberSetup) and shows the address masked, or "Not set up".
+ */
+export function JabberAlerts() {
+  const [s, setS] = useState<JabberStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void authApi.getJabber().then(
+      (r) => live && setS(r),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (s === null || !s.available) return null;
+  // `broken` (review M4): no notice can reach the address, so there is no switch to show.
+  const setUp = s.state === 'on' || s.state === 'paused';
+  const on = s.state === 'on';
+  const toggle = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setS(await authApi.setJabberEnabled({ on: !on }));
+    } catch {
+      setError(J.failed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="x2f-card" data-part="jabber-alerts" aria-labelledby="al-xmpp">
+      <h2 className="x2f-card__title" id="al-xmpp">
+        {J.sectionTitle}
+      </h2>
+      <p className="x2f-list__label" id="al-xmpp-l">
+        {J.rowTitle}
+      </p>
+      <p className="x2f-note">{J.rowNote}</p>
+      {setUp ? (
+        <button type="button" role="switch" aria-checked={on} aria-labelledby="al-xmpp-l" aria-disabled={busy} onClick={() => void toggle()} data-part="jabber-switch">
+          {on ? 'On' : 'Off'}
+        </button>
+      ) : null}
+      {error !== null ? (
+        <p className="x2f-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <Link className="x2f-list__row" to="/settings/jabber" aria-label={s.state === 'broken' ? J.brokenRowLabel : J.rowLabel(s.address)} data-part="jabber-address-row">
+        <span className="x2f-list__label">{J.addressLabel}</span>
+        <span>{s.state === 'broken' ? J.needsSetUpAgain : (s.address ?? J.notSetUp)}</span>
+      </Link>
+      {setUp && s.lastSentAt !== null ? (
+        <p className="x2f-note" data-part="jabber-last">
+          {J.lastMessage} <time dateTime={s.lastSentAt}>{formatDateTime(s.lastSentAt)}</time>
+        </p>
+      ) : null}
     </section>
   );
 }

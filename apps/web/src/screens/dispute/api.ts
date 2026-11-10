@@ -27,6 +27,8 @@ export interface DisputeTrade {
   currency: string;
   paidAt: string | null;
   confirmBy: string | null;
+  /** The trade's confirm window in minutes (owner 2026-11-07 F9: per payment type; p9-4: either side's wait before a dispute), for the wording. */
+  confirmWindowMin: number;
   settleBy: string | null;
   closedAt: string | null;
   dispute: { by: 'buyer' | 'seller' | 'system'; at: string } | null;
@@ -77,6 +79,12 @@ export interface DisputeView {
    * atomic units, sent only to the side that owes it (Task 12's fees_owed; NEEDS_TASK_12_FEES_OWED).
    */
   feeOwedAtomic?: string | null;
+  /**
+   * Owner g63 (7 Nov), in the poster's view only: the 1% after the ruling. `poster-pays` (the trade
+   * completes), `none` (a full reversal), `waits` (an appeal is pending), null before a ruling.
+   * Not shown yet: the explanation's words are design's (TODO, owner g63).
+   */
+  fee?: 'poster-pays' | 'none' | 'waits' | null;
   status: 'open' | 'ruled' | 'appealed' | 'final' | 'closed';
   moderator: { name: string; joinedAt: string } | null;
   ruling: RulingView | null;
@@ -138,6 +146,7 @@ export function tradeFromView(v: TradeView): DisputeTrade {
     currency: v.lockedRate.currency,
     paidAt: v.paidAt,
     confirmBy: v.confirmBy,
+    confirmWindowMin: v.confirmWindowMin,
     settleBy: v.settleBy,
     closedAt: v.closedAt,
     dispute: v.dispute,
@@ -206,6 +215,7 @@ export function parseDispute(v: unknown): DisputeView {
       if (typeof v !== 'string' || !ATOMIC.test(v)) throw new ShapeError('feeOwedAtomic');
       return v;
     }),
+    fee: later(d.fee, (v) => oneOf(v, ['poster-pays', 'none', 'waits'] as const, 'fee')),
     status: oneOf(d.status, ['open', 'ruled', 'appealed', 'final', 'closed'] as const, 'status'),
     moderator,
     ruling,

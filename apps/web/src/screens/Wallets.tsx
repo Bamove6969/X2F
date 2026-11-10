@@ -7,6 +7,7 @@ import { CantDoThat } from '../ui/CantDoThat.js';
 import { CANT_DO_TITLE, RECOVERY_SESSION_WALLETS, isCantDoCode, holdChangesCantDoText, walletsCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
 import { Icon } from '../ui/icons.js';
 import { Sheet } from '../ui/Sheet.js';
+import { formatDateTime } from '../ui/dates.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from './auth/ConfirmSheet.js';
 import { refusalText } from './auth/refusals.js';
 import { StagedNote, changesCapOf, reportChangesCap } from './settings/HoldChanges.js';
@@ -27,7 +28,6 @@ import {
 } from './wallets-model.js';
 import './Wallets.css';
 import { OwnerOnly } from './settings/OwnerOnly.js';
-import { utcDateTime } from '../ui/dates.js';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
@@ -36,9 +36,8 @@ import { utcDateTime } from '../ui/dates.js';
 
 const LABEL_MAX = 40;
 
-function when(iso: string): string {
-  return utcDateTime(new Date(iso));
-}
+/** "6 Nov 2026, 15:00 UTC" (ui/dates.ts, the one date format). */
+const when = (iso: string): string => formatDateTime(iso);
 
 /** 403 `recovery-session`: a backup login cannot change where coins are paid (Plan 2; in the refusal text map). */
 export { RECOVERY_SESSION_WALLETS };
@@ -76,19 +75,25 @@ function addError(e: unknown): string {
 // window event the store should dispatch on add/remove (we also re-read on focus/visibility). At
 // merge, confirm the store's object-store name and that its keys are the trade codes, and that it
 // fires `x2f:escrow-changed`; drop this note once wired.
+// 10 Nov 2026 (J-23 follow-up): the object-store name is confirmed as `trades` (escrow/store.ts
+// TRADES, keys are the trade codes; tested in escrow-store.test.ts). The event is still open.
 // ---------------------------------------------------------------------------------------------
 const ESCROW_DB = 'x2f-escrow';
-const SECRETS_STORE = 'x2f-escrow-secrets';
+const TRADES_STORE = 'trades';
 
-function readOpenEscrowCodes(): Promise<string[]> {
+/**
+ * Exported for tests (`idb` defaults to the browser's). Lead 10 Nov: the short-lived connection also
+ * closes itself on `versionchange`, so this read never stalls another tab's upgrade or delete.
+ */
+export function readOpenEscrowCodes(idb: IDBFactory | undefined = typeof indexedDB === 'undefined' ? undefined : indexedDB): Promise<string[]> {
   return new Promise((resolve) => {
-    if (typeof indexedDB === 'undefined') {
+    if (idb === undefined) {
       resolve([]);
       return;
     }
     let req: IDBOpenDBRequest;
     try {
-      req = indexedDB.open(ESCROW_DB);
+      req = idb.open(ESCROW_DB);
     } catch {
       resolve([]);
       return;
@@ -106,14 +111,16 @@ function readOpenEscrowCodes(): Promise<string[]> {
     req.onerror = () => resolve([]);
     req.onsuccess = () => {
       const db = req.result;
+      db.onversionchange = () => db.close();
       try {
-        const names = [...db.objectStoreNames].filter((n) => n !== SECRETS_STORE);
-        if (names.length === 0) {
+        // The trade records' store by name (escrow/store.ts TRADES). The first store that is not
+        // the secrets one is `keys` (names sort), whose one key is the wrap key's id, not a trade.
+        if (!db.objectStoreNames.contains(TRADES_STORE)) {
           db.close();
           resolve([]);
           return;
         }
-        const store = names[0] as string;
+        const store = TRADES_STORE;
         const tx = db.transaction(store, 'readonly');
         const keys = tx.objectStore(store).getAllKeys();
         keys.onsuccess = () => {

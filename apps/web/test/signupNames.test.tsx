@@ -56,7 +56,7 @@ function type(input: HTMLInputElement, value: string) {
 
 function setup(state: Partial<SetupState> = {}) {
   const api: SetupApi = {
-    state: { ...INITIAL, terms: 'v1', ...state },
+    state: { ...INITIAL, terms: { version: 'v1', signature: { kind: 'typed', name: 'AK' } }, ...state },
     update: vi.fn(),
     returnTo: '/sell',
     go: vi.fn(),

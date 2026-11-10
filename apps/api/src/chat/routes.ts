@@ -43,6 +43,7 @@ import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { purgedTagSql } from './retention.js';
+import { MARKET_PRICED } from '../offers/routes.js';
 import { assertNotBlocked, blockedEitherWaySql } from '../traders/blocks.js';
 import { traderSummaries, type TraderSummary } from '../traders/summary.js';
 
@@ -60,6 +61,12 @@ export interface ChatView {
   tradeCode: string | null;
   /** A dispute is open on the linked trade: only then may the moderator post (spec 6.6). */
   disputeOpen: boolean;
+  /**
+   * When the linked trade's escrow was secured, or null (no trade, or not yet). Owner Q12 (J-08):
+   * the seller's payment details reach the buyer only once the escrow is secured, so the trader
+   * app shows a packaged-details message only from then on.
+   */
+  tradeSecuredAt: string | null;
   /** The moderation service's attestation is ready. */
   attested: boolean;
   /**
@@ -88,8 +95,12 @@ export const ENVELOPE_PAGE = 100;
 /** Chats listed by GET /v1/chats. */
 const CHAT_LIST_LIMIT = 200;
 
-/** An offer anyone may see (Task 4's LISTED): live, and its poster neither disabled nor on hold. */
-const LISTED = `o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
+/**
+ * An offer anyone may see (Task 4's LISTED): market-priced (an offer stored as fixed before the
+ * owner's market-only rule is not found, offers/routes.ts MARKET_PRICED), live, and its poster
+ * neither disabled nor on hold (a trading hold or a recovery-code hold).
+ */
+const LISTED = `${MARKET_PRICED} and o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
   and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
   and not ${recoveryHoldHidesSql('o.account_id')}`;
 
@@ -313,10 +324,11 @@ export function chatRoutes(app: FastifyInstance): void {
     const other = role === 'buyer' ? row.seller_account_id : row.buyer_account_id;
     // Presence through the viewer-aware summary: hidden from a trader the other side blocked (review M5).
     const names = await traderSummaries(deps.db, [other], deps.clock(), req.auth.accountId);
-    const facts = await deps.db.query<{ disputed: boolean; attested: boolean; mine: string | null }>(
+    const facts = await deps.db.query<{ disputed: boolean; attested: boolean; mine: string | null; secured_at: Date | null }>(
       `select exists (select 1 from trades t where t.code = $2 and t.state = 'disputed') as disputed,
               exists (select 1 from chat_attestations a where a.chat = $1) as attested,
-              (select sign_public from chat_identities i where i.chat = $1 and i.role = $3) as mine`,
+              (select sign_public from chat_identities i where i.chat = $1 and i.role = $3) as mine,
+              (select t.secured_at from trades t where t.code = $2) as secured_at`,
       [row.code, row.trade_code, role],
     );
     const view: ChatView = {
@@ -326,6 +338,7 @@ export function chatRoutes(app: FastifyInstance): void {
       counterparty: names.get(other) ?? null,
       tradeCode: row.trade_code,
       disputeOpen: facts.rows[0]!.disputed,
+      tradeSecuredAt: facts.rows[0]!.secured_at?.toISOString() ?? null,
       attested: facts.rows[0]!.attested,
       mySignPublic: facts.rows[0]!.mine,
       createdAt: row.created_at.toISOString(),

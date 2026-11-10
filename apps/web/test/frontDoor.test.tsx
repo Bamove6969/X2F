@@ -9,11 +9,12 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act } from 'react';
-import { MemoryRouter, useLocation } from 'react-router';
+import { useState } from 'react';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App.js';
 import { api } from '../src/api/client.js';
-import { RECOVERY_HOME, doorVerdict, isFrontDoor, isInside } from '../src/session/frontDoor.js';
+import { BehindTheDoor, RECOVERY_HOME, doorVerdict, isFrontDoor, isInside } from '../src/session/frontDoor.js';
 import { refreshSession, type Session } from '../src/session/useSession.js';
 import { render } from './render.js';
 
@@ -32,18 +33,24 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 
 let me: { status: number; body: unknown };
 let calls: string[];
+/** When set, `/v1/account/me` waits for it: a session re-check that is still `loading`. */
+let meGate: Promise<void> | null;
 
 beforeEach(() => {
   refreshSession();
   window.localStorage.clear();
   me = { status: 401, body: { error: 'not-authenticated' } };
   calls = [];
+  meGate = null;
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string) => {
       const url = String(input);
       calls.push(url.split('?')[0]!);
-      if (url === '/v1/account/me') return json(me.status, me.body);
+      if (url === '/v1/account/me') {
+        if (meGate !== null) await meGate;
+        return json(me.status, me.body);
+      }
       if (url === '/v1/site') return json(200, { maintenance: null });
       if (url === '/v1/terms') return json(200, { version: '2026-10-17', text: 'Terms' });
       return json(404, { error: 'not-found' });
@@ -224,5 +231,100 @@ describe('a session that ends while inside', () => {
     });
     await settle();
     expect(where).toBe(landing('/wallets'));
+  });
+});
+
+// Gate change 5b3b38c5 (review M2): a re-check (`refreshSession()`) reads `loading`; the screen already
+// let in on this path stays mounted through it, and the new answer then decides as usual.
+describe('a session re-check while inside', () => {
+  let go: (to: string) => void;
+  function Counter() {
+    const [n, setN] = useState(0);
+    return (
+      <main data-screen="counter">
+        <button data-part="inc" onClick={() => setN(n + 1)} />
+        <output data-part="n">{n}</output>
+      </main>
+    );
+  }
+  function Nav() {
+    go = useNavigate();
+    return null;
+  }
+  const door = async (path: string): Promise<HTMLElement> => {
+    const { host } = render(
+      <MemoryRouter initialEntries={[path]}>
+        <Where />
+        <Nav />
+        <Routes>
+          <Route path="/" element={<main data-screen="landing" />} />
+          <Route element={<BehindTheDoor />}>
+            <Route path="/counter" element={<Counter />} />
+            <Route path="/other" element={<main data-screen="other" />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    return host;
+  };
+  const click = (host: HTMLElement) =>
+    act(() => {
+      host.querySelector('[data-part="inc"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+  /** Starts a re-check that stays `loading` until `release()` is called, with the answer to give then. */
+  const recheck = async (answer: { status: number; body: unknown }) => {
+    let release!: () => void;
+    meGate = new Promise<void>((r) => (release = r));
+    me = answer;
+    await act(async () => {
+      refreshSession();
+    });
+    await settle();
+    return async () => {
+      release();
+      await settle();
+    };
+  };
+
+  it('keeps the screen mounted with its own state while the session is re-read, and after it answers in', async () => {
+    me = { status: 200, body: FULL };
+    const host = await door('/counter');
+    click(host);
+    const screen = host.querySelector('[data-screen="counter"]');
+    expect(screen).not.toBeNull();
+    expect(host.querySelector('[data-part="n"]')!.textContent).toBe('1');
+    const release = await recheck({ status: 200, body: FULL });
+    expect(host.querySelector('[data-screen="counter"]')).toBe(screen);
+    expect(host.querySelector('[data-part="n"]')!.textContent).toBe('1');
+    await release();
+    expect(host.querySelector('[data-screen="counter"]')).toBe(screen);
+    expect(host.querySelector('[data-part="n"]')!.textContent).toBe('1');
+    expect(where).toBe('/counter');
+  });
+
+  it('a re-check that answers signed-out goes to the Landing board with returnTo and leaves nothing of the screen', async () => {
+    me = { status: 200, body: FULL };
+    const host = await door('/counter?x=1');
+    const release = await recheck({ status: 401, body: { error: 'not-authenticated' } });
+    expect(host.querySelector('[data-screen="counter"]')).not.toBeNull();
+    await release();
+    expect(where).toBe(landing('/counter?x=1'));
+    expect(host.querySelector('[data-screen="landing"]')).not.toBeNull();
+    expect(host.querySelector('[data-screen="counter"]')).toBeNull();
+    expect(host.querySelector('[data-part="n"]')).toBeNull();
+  });
+
+  it('a different path during a re-check renders nothing until the answer arrives', async () => {
+    me = { status: 200, body: FULL };
+    const host = await door('/counter');
+    const release = await recheck({ status: 200, body: FULL });
+    await act(async () => go('/other'));
+    await settle();
+    expect(where).toBe('/other');
+    expect(host.querySelector('[data-screen]')).toBeNull();
+    await release();
+    expect(host.querySelector('[data-screen="other"]')).not.toBeNull();
+    expect(host.querySelector('[data-screen="counter"]')).toBeNull();
   });
 });

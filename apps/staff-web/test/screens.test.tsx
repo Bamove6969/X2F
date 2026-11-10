@@ -9,7 +9,8 @@ import { StaffApiError } from '../src/api.js';
 import { STAFF_REFUSALS, refusalOf } from '../src/refusals.js';
 import { canFinish, INVITE_GONE, keyCheckLine } from '../src/screens/Invite.js';
 import { LOCKED_TITLE } from '../src/screens/OwnerSetup.js';
-import { button, click, fakeApi, field, refused, render, settle, typeInto } from './helpers.js';
+import { TERMS_TEXT_VERSION } from '../src/ui/kit.js';
+import { button, click, fakeApi, field, refused, render, settle, tick, typeInto } from './helpers.js';
 
 const webauthn = vi.hoisted(() => ({ startAuthentication: vi.fn(), startRegistration: vi.fn() }));
 vi.mock('@simplewebauthn/browser', () => webauthn);
@@ -121,6 +122,16 @@ describe('Login', () => {
 
 describe('Invite', () => {
   const view = { role: 'mod', hours: { days: ['Mon', 'Tue'], start: '09:00', end: '17:00', tz: 'UTC' }, expiresAt: new Date().toISOString(), resume: null };
+  /** The Terms version the step checks its text against (inviteTerms.test.tsx has the step itself). */
+  const TERMS_ROUTE = { 'GET /staff/v1/terms': { body: { version: TERMS_TEXT_VERSION } } };
+  /** Owner 9 Nov 2026 (p11-14): the Terms come first; tick, sign with a typed name, Continue. */
+  async function signTerms(name = 'Dmitri K') {
+    await tick(document.querySelector('[data-part="terms-tick"]'));
+    await click(document.querySelector('[data-part="signature-type"]'));
+    typeInto(document.querySelector('[data-part="signature-name"]'), name);
+    await settle();
+    await click(document.querySelector('[data-part="terms-accept"]'));
+  }
 
   it('a return visit carries on at the keys, counting what was added on the earlier visit', async () => {
     const api = fakeApi({
@@ -140,6 +151,7 @@ describe('Invite', () => {
 
   it('username, then all three of a security key, a PGP key and a passkey (owner G3), then finish shows the key check code', async () => {
     const api = fakeApi({
+      ...TERMS_ROUTE,
       'GET /staff/v1/invites/accept/:token': { body: view },
       'POST /staff/v1/invites/accept/:token/account': { status: 201, body: { ok: true } },
       'POST /staff/v1/invites/accept/:token/key/start': { body: { options: { challenge: 'r' } } },
@@ -150,11 +162,15 @@ describe('Invite', () => {
     });
     await open('/invite/tok_1');
     expect(document.querySelector('[data-part="invite-role"]')?.textContent).toBe("You're invited as Moderator. You can log in Mon, Tue, 09:00 to 17:00 (UTC).");
+    await signTerms();
     typeInto(field('Username'), 'dmitri_k');
     typeInto(field('Login name'), 'dk-login');
     await click(button('Continue'));
     // Owner Q54: the public name goes as displayName (the API refuses a field named username).
-    expect(api.calls.find((c) => c.path.endsWith('/account'))?.body).toEqual({ displayName: 'dmitri_k', loginName: 'dk-login' });
+    // Owner 9 Nov 2026 (p11-14): the Terms version and the signature go with the names.
+    expect(api.calls.find((c) => c.path.endsWith('/account'))?.body).toEqual({
+      displayName: 'dmitri_k', loginName: 'dk-login', acceptedTerms: TERMS_TEXT_VERSION, termsSignature: { kind: 'typed', name: 'Dmitri K' },
+    });
     // Owner G3 (review 8 Nov I-4): a moderator holds all three methods, so the passkey row is shown
     // and finish waits for every one of them.
     expect(document.body.textContent).toContain('Moderators log in with three keys: a hardware security key, such as a YubiKey, a passkey on another device, and a PGP key.');
@@ -185,6 +201,7 @@ describe('Invite', () => {
   it('an invite link opened twice: the second visit shows "This invite has already been used or has expired."', async () => {
     let used = false;
     fakeApi({
+      ...TERMS_ROUTE,
       'GET /staff/v1/invites/accept/:token': () => (used ? refused(404, 'invite-invalid') : { body: { ...view, role: 'helper', hours: 'any' } }),
     });
     await open('/invite/tok_2');
@@ -358,7 +375,7 @@ describe('NewsEditor (owner; Plan 4 Task 28)', () => {
   const OWNER = { ...ME, displayName: 'lumen.k', role: 'owner', nav: NAV.owner };
   const ITEM = { id: 7, title: 'Maintenance tonight', body: 'Back by 02:00 UTC.', publishedAt: '2026-11-05T10:00:00Z', editedAt: null };
 
-  it('writes with a preview as the News page shows it, edits and deletes', async () => {
+  it('writes with a preview that is the trader view ("As traders will see it"), edits and deletes', async () => {
     let items = [ITEM];
     const api = fakeApi({
       'GET /staff/v1/me': { body: OWNER },
@@ -379,9 +396,25 @@ describe('NewsEditor (owner; Plan 4 Task 28)', () => {
     expect(publish().disabled).toBe(true);
     typeInto(field('Title'), 'Zelle delays');
     typeInto(field('Message'), 'Bank holiday.\nExpect delays.');
+    // Design final call (10 Nov 2026): the preview is the trader's own News post (apps/web NewsPost through
+    // the kit), open, marked New, under the heading "As traders will see it".
+    expect([...document.querySelectorAll('h2')].map((h) => h.textContent)).toContain('As traders will see it');
+    expect(document.body.textContent).not.toContain('Preview');
     const preview = document.querySelector('[data-part="news-preview"] [data-part="news-item"]')!;
-    expect(preview.querySelector('h2')?.textContent).toBe('Zelle delays');
-    expect([...preview.querySelectorAll('.x2f-sheet__body')].map((p) => p.textContent)).toEqual(['Bank holiday.', 'Expect delays.']);
+    expect(preview.classList.contains('x2f-post')).toBe(true);
+    expect(preview.hasAttribute('data-new')).toBe(true);
+    expect(preview.querySelector('[data-part="news-new"]')?.textContent).toBe('New');
+    expect(preview.querySelector('[data-part="news-title"]')?.textContent).toBe('Zelle delays');
+    const toggle = preview.querySelector<HTMLButtonElement>('.x2f-post__toggle')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const body = preview.querySelector<HTMLElement>('.x2f-post__body')!;
+    expect(body.hidden).toBe(false);
+    expect([...body.querySelectorAll('p')].map((p) => p.textContent)).toEqual(['Bank holiday.', 'Expect delays.']);
+    // The trader's toggle works on the preview too, and it opens again.
+    await click(toggle);
+    expect(preview.querySelector<HTMLElement>('.x2f-post__body')!.hidden).toBe(true);
+    await click(toggle);
+    expect(preview.querySelector<HTMLElement>('.x2f-post__body')!.hidden).toBe(false);
     await click(publish());
     expect(api.calls.find((c) => c.method === 'POST')?.body).toEqual({ title: 'Zelle delays', body: 'Bank holiday.\nExpect delays.' });
     expect(document.querySelectorAll('[data-part="news-row"]')).toHaveLength(2);

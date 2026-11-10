@@ -348,10 +348,27 @@ test.describe('board texts', () => {
     expect(desktop.map((e) => e.text)).toContain('You pay · 62 min left');
     for (const e of desktop) expect(e.why.length).toBeGreaterThan(10);
     // PostOffer: the board's ACH name (Task 21 review, lead 2026-10-27), the old Minimum completed
-    // trades select (owner 8 Nov) and the one-row range preview (owner #11, v142). The exact list, so
-    // a new exception can't pass silently (offer units review 2, M4).
+    // trades select (owner 8 Nov), the one-row range preview (owner #11, v142) and the ±0.1% stepper's
+    // − and + (owner F1, 7 Nov: above or below and a typed percentage; J-02), and the single-currency
+    // board's six texts the J-16 flex form replaces (Task 34 review: board recapture pending). The
+    // exact list, so a new exception can't pass silently (offer units review 2, M4).
     const post = KNOWN_EXCEPTIONS.PostOffer ?? [];
-    expect(post.map((e) => e.text)).toEqual(['Bank transfer (ACH)', 'Anyone', '5+', '10+', '50+', '$50 – $2,000']);
+    expect(post.map((e) => e.text)).toEqual([
+      'Bank transfer (ACH)',
+      'Anyone',
+      '5+',
+      '10+',
+      '50+',
+      '$50 – $2,000',
+      '−',
+      '+',
+      'Payment method',
+      'Currency',
+      'EUR',
+      'GBP',
+      "Market $329.90 / XMR right now. Your price follows the market, so it's always {{priceNow}} at today's rate.",
+      'Who can trade with you',
+    ]);
     for (const e of post) expect(e.why.length).toBeGreaterThan(10);
     expect(await boardTexts(page, 'PostOffer')).not.toContain('Bank transfer (ACH)');
     const texts = await boardTexts(page, 'Desktop');

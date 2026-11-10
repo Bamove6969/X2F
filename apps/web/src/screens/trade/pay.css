@@ -454,9 +454,8 @@
   line-height: 22px;
 }
 
-/* "Dispute opens in N min" in place of the link before confirmBy (review Minor 7), and the wide
+/* "Dispute opens in N min" in place of the link for the trade's wait after marking paid (review Minor 7; owner 2026-11-07 F9), and the wide
    seller room's "Chat isn't available here yet." while no chat panel is installed (round 2, Minor 3). */
-.x2f-room__dispute-wait,
 .x2f-room__hint {
   display: inline-flex;
   align-items: center;
@@ -479,6 +478,22 @@
   font-size: 13px;
   line-height: 18px;
   text-align: right;
+}
+
+/* T-079 (BuyerPay board, confirm=noproof): the caution icon beside the body, 15/22. */
+.x2f-paid__noproof {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.x2f-paid__noproof > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--x2f-caution);
 }
 
 .x2f-paid__actions {
@@ -722,4 +737,116 @@ main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
   border-radius: var(--x2f-radius-pill);
   padding: 3px 8px;
   line-height: 16px;
+}
+
+/* In the trade room's panels (BuyerPaidWaiting, Refunded) a button or chip keeps its own width.
+   Here, not in ui.css: other screens' panels (Devices' "Log out all" buttons) span the panel. */
+.x2f-pay .x2f-panel > .x2f-button,
+.x2f-pay .x2f-panel > a.x2f-button,
+.x2f-pay .x2f-panel > .x2f-chip {
+  align-self: flex-start;
+}
+
+/* BuyerPaidWaiting's "Trade progress" (PaidWaiting.tsx PaidProgress): four 4 px bars, done in
+   escrow, the current one filling in caution; labels 12/16 muted (13 on wide), the current in ink 600. */
+.x2f-paid-progress {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-paid-progress > li {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.x2f-paid-progress__track {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-paid-progress__fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: var(--x2f-radius-pill);
+}
+
+.x2f-paid-progress > li[data-status='done'] .x2f-paid-progress__fill {
+  width: 100%;
+  background: var(--x2f-escrow);
+}
+
+.x2f-paid-progress > li[data-status='current'] .x2f-paid-progress__fill {
+  width: var(--x2f-fill, 0%);
+  background: var(--x2f-caution);
+}
+
+.x2f-paid-progress__label {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-room[data-layout='wide'] .x2f-paid-progress__label {
+  font-size: 13px;
+}
+
+.x2f-paid-progress > li[data-status='current'] .x2f-paid-progress__label {
+  color: var(--x2f-ink);
+  font-weight: 600;
+}
+
+/* The Wide board's actions under the hero: Nudge left, the dispute right (48 px, padding 24). */
+.x2f-paid-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-paid-actions__row {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-4);
+}
+
+.x2f-paid-actions__row .x2f-button--secondary,
+.x2f-paid-actions__row .x2f-button--danger-outline {
+  padding: 0 24px;
+}
+
+.x2f-paid-actions__row [data-part='nudge'] {
+  padding: 0 20px;
+}
+
+/* "Your payment" opens to the raised rows 20 px above the card's bottom edge (BuyerPaidWaiting). */
+[data-part='paid-payment-body'] {
+  padding-bottom: 20px;
+}
+
+/* After the wait, while the seller's window runs: the board's soft "Open dispute ›" (danger 15/600,
+   44 px, chevron 16; design review P2-12). */
+.x2f-paid-soft-dispute {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 8px;
+  color: var(--x2f-danger);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.x2f-paid-actions__row .x2f-paid-soft-dispute {
+  display: inline-flex;
 }

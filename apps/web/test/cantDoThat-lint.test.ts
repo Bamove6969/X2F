@@ -129,8 +129,25 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // board's "If an appeal overturns the ruling, you get a lien. You can't trade until you pay the
     // XMR back." explains a consequence before any appeal (dispute/rules.ts overturnLien). 51 -> 52
     // (Plan 4 Task 15, 6 Nov 2026): owner Q38's hourglass says the time left ("... at most",
-    // DisputeRoom.tsx), not a rule.
-    expect(notARefusal).toBeLessThanOrEqual(52);
+    // DisputeRoom.tsx), not a rule. 52 -> 53 (batch 3 landing, 5b3b38c5): the front door's Landing
+    // board promise that X2F "can't move them alone" (Landing.tsx) reassures about escrow, not a rule.
+    // 53 -> 56 (results-port db357970, batch 4): design results' BuyerPaidWaiting "You can't cancel
+    // after marking as paid", said ahead of time, the Feedback anonymous hint "we can't follow up with
+    // you", and Refunded's "Until they pay it back, they can't trade." (design's wording 7 Nov), which
+    // explains a ruling about the other trader. 56 -> 58 (trade-copy e47e8e43, J-31, 9 Nov 2026: one
+    // pragma per shared line in quote/tradeTerms.ts, two lines): the nudge line's pace ("at most once every 15
+    // minutes", encouraged by the owner, p6-1) and the moderator's response time ("within 24 hours
+    // at most"), which explain, not refuse. 58 -> 59 (offer-rules 32744fdd, J-02): the percentage box's
+    // input check on PostOffer ("an input check on the percentage box"), a field rule, not a refusal.
+    // 59 -> 61 (pay-details 2b54fe67, batch 4): ChatPanel's payErrorText field hints ("has too many lines",
+    // "can't have line breaks", "can't have tabs or hidden characters"), input checks on the payment-details boxes.
+    // 61 -> 64 (flex-launch, J-16, 10 Nov 2026): PostOffer's band input checks in post/offerForm.ts (MIN_OVER_MAX
+    // "can't be more than the largest", the bands' gap line, a band's margin plus a method's change "can't pass 50%"):
+    // field rules the API's checkBands and rateFor share, not refusals.
+    // 64 -> 65 (owner item 64, 3 Nov 2026; proof pop-ups landed 10 Nov): screens/proof/ProofPrompts.tsx's
+    // "Our automated system was unable to detect the amount ..." is a check on the screenshot asking
+    // for an explanation; the proof can still be sent.
+    expect(notARefusal).toBeLessThanOrEqual(65);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

@@ -263,6 +263,11 @@ test.describe('/sell/:methodId (SellOffers board)', () => {
     await expect(page.locator('main h2').first()).toHaveText('Buyers paying in EUR');
     await page.getByRole('link', { name: /^SEPA 3 buyers/ }).click();
     await expect(page).toHaveURL(/\/sell\/SEPA\?currency=EUR$/);
+    // The click leaves the mouse where the SEPA link was; on the list, the card's "+3" badges button
+    // can render under it, and a mouse hover opens the badge tooltip, which names the poster again
+    // (a second [data-username]). Park the mouse off the cards so the card is read as it rests.
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
     await expect(page.locator('article')).toHaveCount(1);
     await expect(page.locator('article [data-username]')).toHaveText(['euro_buyer']);
     await expect(page.locator('article')).toContainText('€305.00');

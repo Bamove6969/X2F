@@ -10,6 +10,7 @@ import { ApiError } from '../src/errors.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
+import { SIG } from './helpers/signature.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
 
 // Owner, 2 Nov 2026: the ban list. When an account is banned its usernames (display and login
@@ -39,7 +40,7 @@ async function create(n: NewNames): Promise<string> {
   const c = await deps.db.connect();
   try {
     await c.query('begin');
-    const id = await createAccount(c, deps.config, { ...n, kind: 'trader', termsVersion: deps.config.termsVersion, now: deps.clock() });
+    const id = await createAccount(c, deps.config, { ...n, kind: 'trader', termsVersion: deps.config.termsVersion, termsSignature: SIG, now: deps.clock() });
     await c.query('commit');
     return id;
   } catch (e) {
@@ -186,7 +187,7 @@ describe('a banned PGP key can never be used again', () => {
     const start = await b.post('/v1/register/pgp/start', { displayName: display, loginName: login, publicKey: key.publicKey });
     const code = start.statusCode === 200 ? codeOf(await decrypt(start.json().encryptedMessage, key.privateKey)) : '';
     const finish = start.statusCode === 200
-      ? await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion })
+      ? await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion, termsSignature: SIG })
       : null;
     return { start, finish, display };
   }
@@ -337,7 +338,7 @@ describe('security review 8 Nov I1: a ban covers only what the banned account co
     const start = await b.post('/v1/register/pgp/start', { displayName: display, loginName: uniq('mal.login'), publicKey });
     expect(start.statusCode, start.body).toBe(200);
     const code = codeOf(await decrypt(start.json().encryptedMessage, privateKey));
-    const finish = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion });
+    const finish = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: deps.config.termsVersion, termsSignature: SIG });
     const { rows } = await deps.db.query<{ id: string }>('select id from accounts where display_key = $1', [display.toLowerCase()]);
     return { id: rows[0]?.id ?? null, finish };
   }

@@ -4,7 +4,7 @@
 // together, applied 24 h after the latest submission; owner G28 keeps which changes wait as built).
 // Refusals (too-many-changes) are worded in ui/cantDoCodes.ts.
 import type { HoldChangeSummary } from '@x2f/auth-client';
-import { utcDateTime } from '../../ui/dates.js';
+import { formatDateTime as utcDateTime } from '../../ui/dates.js';
 import { TEAM_COPY, rolesText } from './teamCopy.js';
 import type { TeamRole } from '@x2f/auth-client';
 

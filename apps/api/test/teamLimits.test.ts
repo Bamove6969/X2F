@@ -9,6 +9,7 @@ import { rolesToAbilities } from '../src/team/abilities.js';
 import { endMemberSessionsOutsideHours } from '../src/team/limits.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
+import { flexBody } from './helpers/offers.js';
 import { testDb } from './helpers/db.js';
 import { Browser } from './helpers/totp.js';
 import { driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
@@ -115,14 +116,14 @@ const OPEN: () => Hours = () => ({ days: [today()], start: '08:00', end: '13:00'
 /** A window on another day only. */
 const SHUT: () => Hours = () => ({ days: [otherDay()], start: '08:00', end: '14:00', tz: 'UTC' });
 
-const XMR_OFFER = (min: bigint, max: bigint) => ({
+const XMR_OFFER = (min: bigint, max: bigint) => flexBody({
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
   amountUnit: 'xmr', minAtomic: min.toString(), maxAtomic: max.toString(), minTrades: null, terms: 'Zelle only.',
 });
-const FIAT_OFFER = {
+const FIAT_OFFER = flexBody({
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: null, terms: 'Zelle only.',
-};
+  amountUnit: 'fiat', minFiatCents: '1000', maxFiatCents: '400000', minTrades: null, terms: 'Zelle only.',
+});
 
 async function auditCount(teamId: string): Promise<number> {
   const { rows } = await deps.db.query<{ n: number }>('select count(*)::int as n from team_audit where account_id = $1', [teamId]);

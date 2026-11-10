@@ -67,6 +67,11 @@ describe('payTimer (spec 2.2 step 6: the 90 minutes start when the escrow settle
     expect(payTimer({ ...v, extensions: 1, payBy: at(30) }, T0)).toMatchObject({ totalMin: 120, leftMin: 30 });
     expect(payTimer(v, T0 + 70 * 60_000)).toMatchObject({ leftMin: 0 });
   });
+
+  it("uses the trade's own time to pay, the payment method's (owner p9-6)", () => {
+    expect(payTimer(view({ payWindowMin: 180 }), T0)).toMatchObject({ started: false, totalMin: 180 });
+    expect(payTimer(view({ payWindowMin: 1440, extensions: 1 }), T0)).toMatchObject({ totalMin: 1470 });
+  });
 });
 
 describe('who may cancel (spec 2.3)', () => {

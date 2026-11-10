@@ -4,6 +4,7 @@ import {
 } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
+import { SIGNED_BODY_LIMIT, checkTermsSignature, sealTermsSignature } from '../termsSignature.js';
 import { lockNames, loginNameTaken, loginTags, setLoginName } from '../accounts.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
@@ -389,29 +390,42 @@ export function accountRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/account/terms',
     // Task 17 (lead decision 2026-10-30): accepting the Terms is allowed during the hold (not a
-    // security change; refusing it could block finishing open trades).
+    // security change; refusing it could block finishing open trades). A changed version asks for
+    // a new signature too (owner, 8 Nov 2026): `{ version, signature }`, the signature replacing
+    // the one before (checkTermsSignature's 400s), with nothing else recorded about the signing.
+    // Only a changed version writes: repeating the current one answers 204 and changes nothing, so
+    // a session can't rewrite what was signed or when.
     // Review 2026-11-08 F1: a team member accepts for themselves, on their own login account; the
     // team account's acceptance stays the account owner's (a member never accepts for the account).
-    { preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true, member: 'any' }) },
+    { bodyLimit: SIGNED_BODY_LIMIT, preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true, member: 'any' }) },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const version = d.config.termsVersion;
-      const body = req.body as { version?: unknown } | null | undefined;
+      const body = req.body as { version?: unknown; signature?: unknown } | null | undefined;
       const given = body !== null && typeof body === 'object' ? body.version : undefined;
       if (given !== version) throw new ApiError(400, 'terms-not-accepted', { version });
+      const signature = checkTermsSignature(body !== null && typeof body === 'object' ? body.signature : undefined);
       const now = d.clock();
       await withTx(d.db, async (db) => {
         // Review round 4: the accepting session must still be live where it writes.
         await requireLiveSessionInTx(db, req.auth, now);
         if (req.auth.memberId !== null) {
-          await db.query(
-            `update accounts set terms_version = $2, terms_accepted_at = $3
-              where kind = 'member' and id = (select member_account_id from team_members where id = $1)`,
-            [req.auth.memberId, version, now],
-          );
+          // The member signs too (owner 9 Nov 2026, p11-14), sealed to their own login account; only
+          // a changed version writes, as for a trader.
+          const { rows } = await db.query<{ member_account_id: string | null }>('select member_account_id from team_members where id = $1', [
+            req.auth.memberId,
+          ]);
+          const memberAccountId = rows[0]?.member_account_id ?? null;
+          if (memberAccountId !== null) {
+            await db.query(
+              `update accounts set terms_version = $2, terms_accepted_at = $3, terms_signature = $4
+                where id = $1 and kind = 'member' and terms_version is distinct from $2`,
+              [memberAccountId, version, now, sealTermsSignature(d.config, signature, memberAccountId)],
+            );
+          }
         } else {
-          await db.query('update accounts set terms_version = $2, terms_accepted_at = $3 where id = $1 and kind = $4', [
-            req.auth.accountId, version, now, 'trader',
+          await db.query('update accounts set terms_version = $2, terms_accepted_at = $3, terms_signature = $5 where id = $1 and kind = $4 and terms_version is distinct from $2', [
+            req.auth.accountId, version, now, 'trader', sealTermsSignature(d.config, signature, req.auth.accountId),
           ]);
         }
       });

@@ -314,7 +314,7 @@ test('a logged-in device asked "Is this you?" taps the number and lets the new d
   await base(page);
   const id = '22222222-2222-4222-8222-222222222222';
   await page.route('**/v1/account/approvals', json([
-    { id, deviceLabel: 'Chrome on Windows', choices: [31, 47, 86], createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: false, oneDevice: false },
+    { id, deviceLabel: 'Chrome on Windows', choices: [31, 47, 86], createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: false, oneDevice: false, keysOffered: false },
   ]));
   let decision: unknown = null;
   await page.route(`**/v1/account/approvals/${id}`, async (r) => {
@@ -399,7 +399,7 @@ test('waiting changes (g65) are listed with their date and a countdown; untick o
   await page.goto('/settings/changes');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Account changes');
   const waiting = page.locator('[data-part="changes-waiting"]');
-  await expect(waiting.locator('[data-part="waiting-when"]')).toHaveText('2 changes take effect on 2 Jan 2099, 15:00 UTC');
+  await expect(waiting.locator('[data-part="waiting-when"]')).toHaveText('2 changes waiting. The next takes effect on 2 Jan 2099, 15:00 UTC');
   await expect(waiting.locator('[data-part="change"]').first()).toContainText('1 new wallet added: …k3Fzab');
   await expect(waiting.locator('[data-part="change"]').first()).toContainText('From Chrome on Windows');
   await expect(waiting.locator('[data-part="waiting-countdown"] [role="timer"]')).toBeVisible();
@@ -503,6 +503,16 @@ for (const viewport of PHONE_VIEWPORTS) {
     await expect(page.getByRole('button', { name: 'Log out desk_ana on Safari on macOS' })).toBeVisible();
     await expectPhoneLayout(page);
     await expectAtLeast44(page, '[aria-label="Back to settings"], [role="switch"], [data-part="end-session"], [data-part="end-others"], [data-part="end-team"]');
+    // The two "Log out all" buttons span their panel (Devices board), whatever other screens' panels do.
+    for (const part of ['end-others', 'end-team']) {
+      const gap = await page.locator(`[data-part="${part}"]`).evaluate((b) => {
+        const p = b.parentElement!;
+        const cs = getComputedStyle(p);
+        const inner = p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        return Math.abs(inner - b.getBoundingClientRect().width);
+      });
+      expect(gap, part).toBeLessThan(1);
+    }
     // The back control is the first thing a keyboard reaches.
     await page.keyboard.press('Tab');
     await expect(page.locator(':focus')).toHaveAttribute('aria-label', 'Back to settings');
@@ -512,7 +522,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     await base(page);
     const id = '22222222-2222-4222-8222-222222222222';
     await page.route('**/v1/account/approvals', json([
-      { id, deviceLabel: 'Chrome on Windows', choices: [31, 47, 86], createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: true, oneDevice: false },
+      { id, deviceLabel: 'Chrome on Windows', choices: [31, 47, 86], createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: true, oneDevice: false, keysOffered: false },
     ]));
     await page.route('**/v1/account/security/devices', json({ oneDevice: false, maxDevices: 3 }));
     await page.route(`**/v1/account/approvals/${id}`, json({

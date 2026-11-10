@@ -18,9 +18,13 @@
   overflow-wrap: anywhere;
 }
 
-/* Like the boards, the frame is the screen's height: the middle scrolls, the buttons stay put. */
+/*
+ * Like the boards, the frame is the screen's height: the middle scrolls, the buttons stay put. The
+ * Terms box takes the room left; on a short phone, where the box at its minimum plus the signature
+ * pad do not fit, the middle scrolls too, so nothing is ever cut off (owner, 8 Nov 2026: the pad).
+ */
 .x2f-start--fit .x2f-start__main {
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .x2f-start__head {
@@ -533,6 +537,50 @@
   opacity: 0.6;
 }
 
+/* Password strength meter (owner S-014; levels and words to design). */
+.x2f-start__meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.x2f-start__meter-bars {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.x2f-start__meter-bar {
+  height: 4px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-start__meter[data-level='weak'] .x2f-start__meter-bar[data-on='true'] {
+  background: var(--x2f-danger);
+}
+
+.x2f-start__meter[data-level='medium'] .x2f-start__meter-bar[data-on='true'] {
+  background: var(--x2f-ink-muted);
+}
+
+.x2f-start__meter[data-level='checking'] .x2f-start__meter-bar[data-on='true'] {
+  background: var(--x2f-ink-muted);
+}
+
+.x2f-start__meter[data-level='strong'] .x2f-start__meter-bar[data-on='true'] {
+  background: var(--x2f-escrow);
+}
+
+.x2f-start__meter[data-level='weak'] .x2f-start__meter-text {
+  color: var(--x2f-danger);
+}
+
+.x2f-start__meter[data-level='strong'] .x2f-start__meter-text {
+  color: var(--x2f-escrow);
+}
+
 /* Terms (screen 0). */
 .x2f-terms__points {
   display: flex;
@@ -620,6 +668,84 @@
 
 .x2f-check input:disabled + span {
   color: var(--x2f-ink-muted);
+}
+
+/*
+ * The Terms signature pad (owner, 8 Nov 2026; no board yet). The pad is paper: white with dark ink
+ * and a grey "Sign here" line in both themes (the owner asked for a white box), so these three
+ * colours are the day theme's surface, ink and ink-muted written out, not theme tokens.
+ */
+.x2f-sign {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.x2f-sign__help {
+  margin: 0;
+  color: var(--x2f-ink-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.x2f-sign__pad {
+  position: relative;
+  width: 100%;
+  height: 132px;
+  box-sizing: border-box;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-md);
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.x2f-sign__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.x2f-sign__line {
+  position: absolute;
+  right: 16px;
+  bottom: 28px;
+  left: 16px;
+  border-bottom: 1px solid #566070;
+  pointer-events: none;
+}
+
+.x2f-sign__here {
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  color: #566070;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.x2f-sign__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.x2f-sign__actions .x2f-start__textbutton {
+  font-size: 14px;
+}
+
+.x2f-sign__actions .x2f-start__textbutton:disabled {
+  color: var(--x2f-ink-muted);
+  text-decoration: none;
+  cursor: default;
+}
+
+.x2f-sign__name {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* Welcome (SetupWelcome). */
@@ -720,4 +846,9 @@
 .x2f-welcome .x2f-start__lead {
   font-size: 17px;
   line-height: 26px;
+}
+
+/* SetupTerms board (S-043): the numbers in the key points are set in mono. */
+.x2f-terms__num {
+  font-family: var(--x2f-font-mono);
 }

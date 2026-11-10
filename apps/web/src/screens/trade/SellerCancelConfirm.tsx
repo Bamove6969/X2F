@@ -20,9 +20,9 @@ import { TradeHeader } from '../../ui/TradeHeader.js';
 import { payMethodOf } from './paySeams.js';
 import { publicName } from './payTypes.js';
 import { useConfirmations } from './release/seams.js';
+import { When } from '../../ui/When.js';
 import { registerTradeScreen, type MemberScreenProps } from './TradeRoom.js';
 import './pay.css';
-import { utcDateTime } from '../../ui/dates.js';
 
 /** The return of a buyer's cancel is complete and the seller may confirm it (pure, for the screen and tests). */
 export function confirmCancelReady(state: string, confirmations: number | null, target: number): boolean {
@@ -108,8 +108,13 @@ export function SellerCancelConfirm({ code, view, refresh }: MemberScreenProps) 
           <p className="x2f-room__grown" role="status" data-input-needed="">
             Your input is needed to cancel this trade.
             {closesAt !== null
-              ? ` If you don't confirm, it closes as cancelled by itself on ${utcDateTime(closesAt)}.`
-              : ''}
+              ? (
+                  <>
+                    {" If you don't confirm, it closes as cancelled by itself on "}
+                    <When at={closesAt} />.
+                  </>
+                )
+              : null}
           </p>
         ) : null}
         {error !== null ? (

@@ -3,6 +3,7 @@ import { checkPassword, needsStrongConfirm, normalizePassword, type AccountKind 
 import argon2 from 'argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
+import { SIGNATURE_BODY_ALLOWANCE } from '../termsSignature.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { addAlert } from '../alerts.js';
@@ -28,6 +29,12 @@ const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65_536, timeCost: 3,
 
 /** Password routes refuse bigger bodies with 413 before any hashing. */
 export const PASSWORD_BODY_LIMIT = 4 * 1024;
+/**
+ * Register carries the Terms signature too (owner, 8 Nov 2026), so its limit adds the signature's
+ * room; the signature and the password (at most 256 characters, `checkPassword`) are both checked
+ * before any hashing.
+ */
+export const REGISTER_PASSWORD_BODY_LIMIT = PASSWORD_BODY_LIMIT + SIGNATURE_BODY_ALLOWANCE;
 
 /**
  * What Argon2id hashes (FU-C, ASVS 2.4.5): HMAC-SHA-256 of the NFC password under the pepper
@@ -191,7 +198,11 @@ async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
   ensureDeviceCookie(req, reply);
   req.server.budgets.register.take();
   const body = req.body as Record<string, unknown> | null;
-  const terms = assertTermsAccepted(deps, body !== null && typeof body === 'object' ? body.acceptedTerms : undefined);
+  const terms = assertTermsAccepted(
+    deps,
+    body !== null && typeof body === 'object' ? body.acceptedTerms : undefined,
+    body !== null && typeof body === 'object' ? body.termsSignature : undefined,
+  );
   const { displayName: rawDisplay, loginName: rawLogin, password, deviceLabel } = strings(
     body, ['displayName', 'loginName', 'password', 'deviceLabel'] as const,
   );
@@ -207,7 +218,7 @@ async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
-      accountId = await createAccount(client, deps.config, { ...names, kind: 'trader', termsVersion: terms, now });
+      accountId = await createAccount(client, deps.config, { ...names, kind: 'trader', termsVersion: terms.version, termsSignature: terms.signature, now });
       await client.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [
         accountId, hash, pepperId, now,
       ]);
@@ -391,14 +402,15 @@ export async function applyPassword(
 
 /**
  * `POST /v1/register/password`, `POST /v1/login/password`, `POST /v1/confirm/password` and
- * `PUT /v1/account/password`. All refuse bodies over 4 KiB with 413 before hashing; the public
+ * `PUT /v1/account/password`. All refuse bodies over 4 KiB (register: 4 KiB plus the Terms
+ * signature's room, `REGISTER_PASSWORD_BODY_LIMIT`) with 413 before hashing; the public
  * routes set the device cookie; register draws on the register budget, login on the start budget.
- * Register takes `{ displayName, loginName, password, deviceLabel, acceptedTerms }` and answers
+ * Register takes `{ displayName, loginName, password, deviceLabel, acceptedTerms, termsSignature }` and answers
  * `{ displayName }` only: the login name is never sent back.
  */
 export function passwordRoutes(app: FastifyInstance): void {
   const opts = { bodyLimit: PASSWORD_BODY_LIMIT };
-  app.post('/v1/register/password', opts, registerHandler);
+  app.post('/v1/register/password', { bodyLimit: REGISTER_PASSWORD_BODY_LIMIT }, registerHandler);
   app.post('/v1/login/password', opts, loginHandler);
   // Review M5: on old Terms only "Stay logged in" (`staleTermsOnlyToExtend`).
   app.post('/v1/confirm/password', { ...opts, preHandler: [requireSession({ allowStaleTerms: true }), staleTermsOnlyToExtend] }, confirmHandler);

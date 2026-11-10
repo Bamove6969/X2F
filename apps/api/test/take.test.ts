@@ -1,14 +1,15 @@
 import type { FastifyInstance } from 'fastify';
-import { fiatCents, rateFor } from '@x2f/trade';
+import { GIFT_CARD_TERMS_VERSION, LAUNCH_TRADE_CAP_USD_CENTS, fiatCents, rateFor } from '@x2f/trade';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { insertTrade, loadTradeRow, rowToTrade } from '../src/trades/store.js';
+import { applyEvent, insertTrade, loadTradeRow, rowToTrade } from '../src/trades/store.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { FIAT, XMR, driveTo, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
 import { LIVE_SESSION_TRADING_ROUTES } from '../src/auth/hold.js';
+import { flexBody, insertOffer, renameOfferMethod } from './helpers/offers.js';
 
 // Plan 3 Task 5: taking an offer, and the poster's wallet route. Real Postgres (one database per
 // file); a fake market so each test can move the price or take the feed down.
@@ -88,11 +89,12 @@ async function person(stage: 'starter' | 'building' | 'graduated' = 'graduated')
 
 const OFFER = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: null, terms: 'Zelle only.',
+  // At most $5,000 (the launch cap, owner p11-6).
+  minFiatCents: '1000', maxFiatCents: '500000', minTrades: null, terms: 'Zelle only.',
 };
 
 async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<string> {
-  const res = await who.browser.post('/v1/offers', { ...OFFER, ...over });
+  const res = await who.browser.post('/v1/offers', flexBody({ ...OFFER, ...over }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }
@@ -101,7 +103,7 @@ async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<
 function body(who: Who, amountAtomic: bigint, centsPerXmr = market.usdCentsPerXmr!, over: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     amountAtomic: amountAtomic.toString(), walletId: who.wallet, centsPerXmr: centsPerXmr.toString(),
-    fiatCents: fiatCents(amountAtomic, { currency: 'USD', centsPerXmr }).toString(), ...over,
+    fiatCents: fiatCents(amountAtomic, { currency: 'USD', centsPerXmr }).toString(), methodId: 'ZELLE', currency: 'USD', ...over,
   };
 }
 
@@ -174,7 +176,7 @@ describe('POST /v1/offers/:id/take', () => {
     expect(t).toMatchObject({
       offerId: offer, poster: 'seller', sellerId: seller.id, buyerId: buyer.id, methodId: 'ZELLE', state: 'setup',
       amountAtomic: tenth, lockedRate: { currency: 'USD', centsPerXmr: 33_330n }, fiatCents: 3_333n,
-      minFiatCents: 1000n, maxFiatCents: 1_000_000n, confirmWindowMin: 90, takenAt: deps.clock(),
+      minFiatCents: 1000n, maxFiatCents: 500_000n, confirmWindowMin: 90, payWindowMin: 90, takenAt: deps.clock(),
     });
     // The buyer took: their payout address is set; the seller (poster) picks on the accepted sheet.
     expect({ buyer: row.buyer_payout, seller: row.seller_refund, app: row.seller_wallet_app }).toEqual({ buyer: buyer.address, seller: null, app: null });
@@ -182,17 +184,43 @@ describe('POST /v1/offers/:id/take', () => {
     expect((await seller.browser.get(`/v1/trades/${code}`)).json()).toMatchObject({ role: 'seller', state: 'setup', fiatCents: '3333' });
   });
 
-  it('answers with the rate and total that locked, so the device records the deal that locked', async () => {
+  it("fixes the payment type's own timing at take (owner 2026-11-07 F9): SWIFT 3 days, a type with no profile the Custom one", async () => {
+    for (const [methodId, confirm] of [['SWIFT', 4320], ['SPEI', 1440], ['FASTER_PAYMENTS', 180]] as const) {
+      const seller = await person();
+      const buyer = await person();
+      const offer = await postOffer(seller, { methodId });
+      const t = rowToTrade((await loadTradeRow(deps.db, await taken(buyer, offer, body(buyer, tenth, undefined, { methodId }))))!);
+      expect([t.methodId, t.confirmWindowMin], methodId).toEqual([methodId, confirm]);
+    }
+  });
+
+  it("fixes the payment method's time to pay and confirm window on the trade at take; they never change after (owner p9-4, p9-6)", async () => {
+    const seller = await person();
+    const buyer = await person();
+    const swift = await postOffer(seller, { methodId: 'SWIFT', terms: 'SWIFT only.' });
+    const code = await taken(buyer, swift, body(buyer, tenth, undefined, { methodId: 'SWIFT' }));
+    expect(rowToTrade((await loadTradeRow(deps.db, code))!)).toMatchObject({ methodId: 'SWIFT', payWindowMin: 180, confirmWindowMin: 4320 });
+    // A method with no profile of its own takes the Custom method's times.
+    const other = await person();
+    const chime = await postOffer(seller, { methodId: 'CHIME', terms: 'Chime only.' });
+    const code2 = await taken(other, chime, body(other, tenth, undefined, { methodId: 'CHIME' }));
+    expect(rowToTrade((await loadTradeRow(deps.db, code2))!)).toMatchObject({ payWindowMin: 180, confirmWindowMin: 1440 });
+    // Part of the deal: the database refuses a change for every role.
+    await expect(deps.db.query('update trades set pay_window_min = 90 where code = $1', [code])).rejects.toMatchObject({ code: '23000' });
+    expect((await deps.db.query<{ m: number }>('select pay_window_min as m from trades where code = $1', [code])).rows[0]!.m).toBe(180);
+  });
+
+  it('answers with the rate, total and growth ceiling that locked, so the device records the deal that locked', async () => {
     const seller = await person();
     const buyer = await person();
     const offer = await postOffer(seller);
     market.usdCentsPerXmr = 33_100n;
     const res = await take(buyer, offer, body(buyer, tenth, 33_000n));
     expect(res.statusCode, res.body).toBe(200);
-    const out = res.json() as { code: string; centsPerXmr: string; fiatCents: string };
-    expect(Object.keys(out).sort()).toEqual(['centsPerXmr', 'code', 'fiatCents']);
-    expect(out).toMatchObject({ centsPerXmr: '33100', fiatCents: '3310' });
-    expect(rowToTrade((await loadTradeRow(deps.db, out.code))!)).toMatchObject({ lockedRate: { centsPerXmr: 33_100n }, fiatCents: 3_310n });
+    const out = res.json() as { code: string; centsPerXmr: string; fiatCents: string; maxFiatCents: string };
+    expect(Object.keys(out).sort()).toEqual(['centsPerXmr', 'code', 'fiatCents', 'maxFiatCents']);
+    expect(out).toMatchObject({ centsPerXmr: '33100', fiatCents: '3310', maxFiatCents: '500000' });
+    expect(rowToTrade((await loadTradeRow(deps.db, out.code))!)).toMatchObject({ lockedRate: { centsPerXmr: 33_100n }, fiatCents: 3_310n, maxFiatCents: 500_000n });
   });
 
   it("locks the server's rate now, never the quoted one, while it moved within 0.5%, and refuses price-changed past it", async () => {
@@ -235,18 +263,36 @@ describe('POST /v1/offers/:id/take', () => {
     expect(rowToTrade((await loadTradeRow(deps.db, code2))!)).toMatchObject({ lockedRate: { centsPerXmr: 33_000n }, fiatCents: 33_000n });
   });
 
-  it('a fixed-price offer compares exactly, and can be taken while the feed is down; a market offer cannot', async () => {
+  it('while the feed is down no offer can be taken, at any margin: there is no fixed price to fall back on (owner Q1)', async () => {
     const seller = await person();
     const buyer = await person();
-    const fixed = await postOffer(seller, { pricing: { mode: 'fixed', centsPerXmr: '34000' } });
-    expect(refusal(await take(buyer, fixed, body(buyer, tenth, 33_999n)))).toEqual({ status: 409, error: 'price-changed' });
-    market.usdCentsPerXmr = null;
-    const code = await taken(buyer, fixed, body(buyer, tenth, 34_000n));
-    expect(rowToTrade((await loadTradeRow(deps.db, code))!).lockedRate.centsPerXmr).toBe(34_000n);
-
-    const other = await person();
+    // −50%, the lowest an offer can go (owner F1): $165.00 at the $330.00 market.
+    const below = await postOffer(seller, { pricing: { mode: 'market', marginBps: -5000 } });
     const floating = await postOffer(seller);
-    expect(refusal(await take(other, floating, body(other, tenth, 33_000n)))).toEqual({ status: 409, error: 'price-unavailable' });
+    market.usdCentsPerXmr = null;
+    for (const [offer, rate] of [[below, 16_500n], [floating, 33_000n]] as const) {
+      expect(refusal(await take(buyer, offer, body(buyer, tenth, rate)))).toEqual({ status: 409, error: 'price-unavailable' });
+    }
+    expect((await deps.db.query('select 1 from trades where offer_id = any($1)', [[below, floating]])).rowCount).toBe(0);
+    market.usdCentsPerXmr = 33_000n;
+    expect(refusal(await take(buyer, below, body(buyer, tenth, 16_400n)))).toEqual({ status: 409, error: 'price-changed' });
+    const code = await taken(buyer, below, body(buyer, tenth, 16_500n));
+    expect(rowToTrade((await loadTradeRow(deps.db, code))!).lockedRate.centsPerXmr).toBe(16_500n);
+  });
+
+  it('an offer stored as fixed before the market-only rule (owner Q1) is not found, with or without the feed; its row is kept', async () => {
+    const seller = await person();
+    const buyer = await person();
+    // Migration 345 refuses new fixed rows; lift it for this one insert, as a row from before the rule.
+    await deps.db.query('alter table offers drop constraint if exists offers_market_only');
+    const legacy = await insertOffer(deps.db, { accountId: seller.id, side: 'sell', methodId: 'ZELLE', currency: 'USD', min: 1000, max: 1000000, at: deps.clock() });
+    await deps.db.query(`update offers set price_mode = 'fixed', fixed_cents_per_xmr = 34000 where id = $1`, [legacy]);
+    await deps.db.query(`alter table offers add constraint offers_market_only check (price_mode = 'market' and fixed_cents_per_xmr is null) not valid`);
+    expect(refusal(await take(buyer, legacy, body(buyer, tenth, 34_000n)))).toEqual({ status: 404, error: 'not-found' });
+    market.usdCentsPerXmr = null;
+    expect(refusal(await take(buyer, legacy, body(buyer, tenth, 34_000n)))).toEqual({ status: 404, error: 'not-found' });
+    expect((await deps.db.query('select 1 from trades where offer_id = $1', [legacy])).rowCount).toBe(0);
+    expect((await deps.db.query(`select price_mode, status from offers where id = $1`, [legacy])).rows).toEqual([{ price_mode: 'fixed', status: 'live' }]);
   });
 
   it('refuses a total that is not the quoted amount at the quoted rate, and malformed bodies', async () => {
@@ -284,7 +330,8 @@ describe('POST /v1/offers/:id/take', () => {
     await taken(buyer, offer, body(buyer, (XMR * 3000n) / 33_000n + 1n));
 
     const picky = await postOffer(seller, { minTrades: 5 });
-    expect(refusal(await take(buyer, picky, body(buyer, tenth)))).toEqual({ status: 409, error: 'not-enough-trades' });
+    // The band's rule goes with the refusal (Task 34 review I2, kept by J-16).
+    expect(refusal(await take(buyer, picky, body(buyer, tenth)))).toEqual({ status: 409, error: 'not-enough-trades', minTrades: 5 });
   });
 
   it('a waiting wallet is wallet-not-ready; no usable wallet at all is no-wallet', async () => {
@@ -315,9 +362,10 @@ describe('POST /v1/offers/:id/take', () => {
     expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 409, error: 'trading-hold' });
 
     const other = await person();
-    await deps.db.query(`update offers set method_id = 'SBP' where id = $1`, [offer]);
-    expect(refusal(await take(other, offer, body(other, tenth)))).toEqual({ status: 409, error: 'method-unavailable' });
-    await deps.db.query(`update offers set method_id = 'ZELLE', status = 'paused' where id = $1`, [offer]);
+    await renameOfferMethod(deps.db, offer, 'SBP');
+    expect(refusal(await take(other, offer, body(other, tenth, undefined, { methodId: 'SBP' })))).toEqual({ status: 409, error: 'method-unavailable' });
+    await renameOfferMethod(deps.db, offer, 'ZELLE');
+    await deps.db.query(`update offers set status = 'paused' where id = $1`, [offer]);
     expect(refusal(await take(other, offer, body(other, tenth)))).toEqual({ status: 404, error: 'not-found' });
     // A poster on a hold has no listed offers.
     await deps.db.query(`update offers set status = 'live' where id = $1`, [offer]);
@@ -427,13 +475,14 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     await taken(buyer, offer, body(buyer, atCap));
   });
 
-  it('a Building taker is held to $1,000; Graduated on both sides has no platform cap', async () => {
+  it('a Building taker is held to $1,000; Graduated on both sides has no stage cap (only the launch cap)', async () => {
     const seller = await person();
     const building = await person('building');
-    const offer = await postOffer(seller, { maxFiatCents: '100000000' });
+    const offer = await postOffer(seller);
     expect(refusal(await take(building, offer, body(building, 4n * XMR)))).toEqual({ status: 409, error: 'starter-limit', stage: 'building', capUsdCents: '100000' });
     const graduated = await person('graduated');
-    await taken(graduated, offer, body(graduated, 100n * XMR));
+    // 15 XMR is $4,950: above every stage cap, within the launch cap.
+    await taken(graduated, offer, body(graduated, 15n * XMR));
   });
 
   it("the other side's cap refuses too, without naming their stage", async () => {
@@ -447,10 +496,11 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     const seller = await person();
     const buyer = await person('starter');
     // EUR at 0.9 USD: €210 is $233.34, above the Starter cap; €180 is $200.
-    const offer = await postOffer(seller, { currency: 'EUR', pricing: { mode: 'fixed', centsPerXmr: '29700' } });
+    // At the market, 0%: €297.00. €4,500 is the most a euro band may reach ($5,000, the launch cap).
+    const offer = await postOffer(seller, { currency: 'EUR', pricing: { mode: 'market', marginBps: 0 }, maxFiatCents: '450000' });
     const eur = (amount: bigint) => ({
       amountAtomic: amount.toString(), walletId: buyer.wallet, centsPerXmr: '29700',
-      fiatCents: fiatCents(amount, { currency: 'EUR', centsPerXmr: 29_700n }).toString(),
+      fiatCents: fiatCents(amount, { currency: 'EUR', centsPerXmr: 29_700n }).toString(), methodId: 'ZELLE', currency: 'EUR',
     });
     const over = (XMR * 21_000n) / 29_700n;
     expect(refusal(await take(buyer, offer, eur(over)))).toEqual({ status: 409, error: 'starter-limit', stage: 'starter', capUsdCents: '20000' });
@@ -563,16 +613,16 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 409, error: 'offer-busy' });
   });
 
-  it('the cap counts the XMR at the market price too, so a fixed price far below market moves no more XMR (review M5)', async () => {
+  it('the cap counts the XMR at the market price too, so an offer below the market moves no more XMR (review M5)', async () => {
     const seller = await person();
     const buyer = await person('starter');
-    // Fixed at $3.30 per XMR, 1% of the $330 market.
-    const offer = await postOffer(seller, { pricing: { mode: 'fixed', centsPerXmr: '330' }, minFiatCents: '100' });
-    const fixedBody = (amount: bigint) => body(buyer, amount, 330n);
-    // 50 XMR is $165.00 at the offer's price but $16,500 at market: refused at the Starter cap.
-    expect(refusal(await take(buyer, offer, fixedBody(50n * XMR)))).toEqual({ status: 409, error: 'starter-limit', stage: 'starter', capUsdCents: '20000' });
-    // 0.6 XMR is $1.98 at the offer's price and $198 at market: within the cap.
-    await taken(buyer, offer, fixedBody((XMR * 6n) / 10n));
+    // 50% below the $330 market, the lowest an offer can go (owner F1): $165.00 per XMR.
+    const offer = await postOffer(seller, { pricing: { mode: 'market', marginBps: -5000 }, minFiatCents: '100' });
+    const belowBody = (amount: bigint) => body(buyer, amount, 16_500n);
+    // 1 XMR is $165.00 at the offer's price but $330 at market: refused at the Starter cap.
+    expect(refusal(await take(buyer, offer, belowBody(XMR)))).toEqual({ status: 409, error: 'starter-limit', stage: 'starter', capUsdCents: '20000' });
+    // 0.6 XMR is $99.00 at the offer's price and $198 at market: within the cap.
+    await taken(buyer, offer, belowBody((XMR * 6n) / 10n));
   });
 
   it('a blocked pair cannot take each other\'s offers, either way: 404 as if the offer did not exist (review M3, Task 37)', async () => {
@@ -609,6 +659,203 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     );
     // The trade's chat is that one, for both sides.
     expect((await seller.browser.post(`/v1/trades/${trade}/chat`, {})).json()).toEqual({ chat: code, role: 'seller' });
+  });
+});
+
+describe('taking a gift-card offer (J-17, F13 tick-box terms)', () => {
+  const GIFT = { methodId: 'STEAM_GIFT_CARD', country: 'US', giftCardTerms: GIFT_CARD_TERMS_VERSION };
+
+  it('the taker ticks the gift-card terms of the version the API shows; the trade keeps it', async () => {
+    const poster = await person();
+    const taker = await person();
+    const offer = await postOffer(poster, GIFT);
+    // Unticked, an older page's version, or not a string: refused, and no trade.
+    for (const over of [{}, { giftCardTerms: 'gift-card-terms-unsigned-0' }, { giftCardTerms: true }]) {
+      const res = await take(taker, offer, body(taker, XMR, undefined, { methodId: GIFT.methodId, ...over }));
+      expect(res.statusCode, JSON.stringify(over)).toBe(400);
+    }
+    expect((await deps.db.query('select 1 from trades where offer_id = $1', [offer])).rowCount).toBe(0);
+    const code = await taken(taker, offer, body(taker, XMR, undefined, { methodId: GIFT.methodId, giftCardTerms: GIFT_CARD_TERMS_VERSION }));
+    const { rows } = await deps.db.query<{ gift_card_terms: string | null; confirm_window_min: number }>(
+      'select gift_card_terms, confirm_window_min from trades where code = $1',
+      [code],
+    );
+    // G50: 45 minutes to check the card.
+    expect(rows[0]).toEqual({ gift_card_terms: GIFT_CARD_TERMS_VERSION, confirm_window_min: 45 });
+    // What the taker agreed to never changes (355_gift_card_terms.sql).
+    await expect(deps.db.query('update trades set gift_card_terms = null where code = $1', [code])).rejects.toThrow(/never change/);
+  });
+
+  it('a two-method offer (J-16 x J-17): the chosen method decides; a gift-card take keeps the terms and the gift-card windows (G50; lead p11-130)', async () => {
+    const poster = await person();
+    const taker = await person();
+    const other = await person();
+    const bands = [{ min: '10', max: '5000', marginBps: 0, minTrades: null }];
+    const res = await poster.browser.post('/v1/offers', {
+      side: 'sell', terms: 'Zelle or a Steam card.', country: 'US', giftCardTerms: GIFT_CARD_TERMS_VERSION,
+      currencies: [{ currency: 'USD', bands }],
+      methods: [{ methodId: 'ZELLE', adjustBps: 0, instructions: '' }, { methodId: 'STEAM_GIFT_CARD', adjustBps: 0, instructions: '' }],
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    const offer = (res.json() as { id: string }).id;
+    // Zelle: no terms; the card: the terms, exactly.
+    expect((await take(taker, offer, body(taker, XMR, undefined, { methodId: 'ZELLE', giftCardTerms: GIFT_CARD_TERMS_VERSION }))).statusCode).toBe(400);
+    expect((await take(other, offer, body(other, XMR, undefined, { methodId: 'STEAM_GIFT_CARD' }))).statusCode).toBe(400);
+    expect((await deps.db.query('select 1 from trades where offer_id = $1', [offer])).rowCount).toBe(0);
+    const zelle = await taken(taker, offer, body(taker, XMR, undefined, { methodId: 'ZELLE' }));
+    const card = await taken(other, offer, body(other, XMR, undefined, { methodId: 'STEAM_GIFT_CARD', giftCardTerms: GIFT_CARD_TERMS_VERSION }));
+    const rows = async (code: string) =>
+      (await deps.db.query('select method_id, gift_card_terms, confirm_window_min, pay_window_min from trades where code = $1', [code])).rows[0];
+    expect(await rows(zelle)).toEqual({ method_id: 'ZELLE', gift_card_terms: null, confirm_window_min: 90, pay_window_min: 90 });
+    // The gift-card profile (one lookup, tradeProfile): 45 minutes to check the card (owner G50), 90 to send it (lead default, p11-130).
+    expect(await rows(card)).toEqual({ method_id: 'STEAM_GIFT_CARD', gift_card_terms: GIFT_CARD_TERMS_VERSION, confirm_window_min: 45, pay_window_min: 90 });
+  });
+
+  it('a take of any other offer carries no gift-card terms', async () => {
+    const poster = await person();
+    const taker = await person();
+    const offer = await postOffer(poster);
+    const res = await take(taker, offer, body(taker, XMR, undefined, { giftCardTerms: GIFT_CARD_TERMS_VERSION }));
+    expect(res.statusCode).toBe(400);
+    const code = await taken(taker, offer, body(taker, XMR));
+    expect((await deps.db.query('select gift_card_terms from trades where code = $1', [code])).rows[0]).toEqual({ gift_card_terms: null });
+  });
+});
+
+describe('the launch cap: $5,000 per trade (owner p11-6)', () => {
+  const CAP = { status: 409, error: 'launch-cap', capUsdCents: '500000' };
+  /** An offer from before the cap (J-16: bands are written once, so it is inserted as migration 490 moved it), live, margin 0. */
+  const beforeTheCap = (who: Who, currency: string, maxMinor: number) =>
+    insertOffer(deps.db, { accountId: who.id, side: 'sell', methodId: 'ZELLE', currency, min: 1000, max: maxMinor, at: deps.clock() });
+
+  it('is one constant: $5,000 in US cents', () => {
+    expect(LAUNCH_TRADE_CAP_USD_CENTS).toBe(500_000n);
+  });
+
+  it("posting: every band's top edge is at most $5,000, counted in US dollars by the app's own price", async () => {
+    const p = await person();
+    await postOffer(p, { maxFiatCents: '500000' });
+    expect(refusal(await p.browser.post('/v1/offers', flexBody({ ...OFFER, maxFiatCents: '500100' })))).toEqual(CAP);
+    // EUR at 0.9 USD: €4,500 is $5,000.00; €4,501 is over.
+    await postOffer(p, { currency: 'EUR', maxFiatCents: '450000' });
+    expect(refusal(await p.browser.post('/v1/offers', flexBody({ ...OFFER, currency: 'EUR', maxFiatCents: '450100' })))).toEqual(CAP);
+    // Nothing was written by a refusal.
+    const { rows } = await deps.db.query<{ max: string }>(
+      'select max(t.max_amount)::text as max from offer_tiers t join offers o on o.id = t.offer_id where o.account_id = $1', [p.id],
+    );
+    expect(rows[0]!.max).toBe('500000');
+  });
+
+  it('posting fails closed without a price to convert with; US dollars need none', async () => {
+    const p = await person();
+    market.usdCentsPerXmr = null;
+    expect(refusal(await p.browser.post('/v1/offers', flexBody({ ...OFFER, currency: 'EUR', maxFiatCents: '1000' })))).toEqual({ status: 409, error: 'price-unavailable' });
+    expect((await deps.db.query("select 1 from offer_currencies c join offers o on o.id = c.offer_id where o.account_id = $1 and c.currency = 'EUR'", [p.id])).rowCount).toBe(0);
+    await postOffer(p, { maxFiatCents: '500000' });
+    expect(refusal(await p.browser.post('/v1/offers', flexBody({ ...OFFER, maxFiatCents: '500100' })))).toEqual(CAP);
+  });
+
+  it("taking: the trade's USD value is at most $5,000 for Graduated traders too (an offer from before the cap)", async () => {
+    const seller = await person();
+    const buyer = await person();
+    // An offer posted before the cap existed can have a larger maximum; the take still refuses.
+    const offer = await beforeTheCap(seller, 'USD', 10_000_000);
+    // $5,000.00 exactly goes through; one atomic unit more is over.
+    const atCap = (XMR * 500_000n) / 33_000n;
+    expect(fiatCents(atCap, { currency: 'USD', centsPerXmr: 33_000n })).toBe(500_000n);
+    const over = (XMR * 500_001n) / 33_000n + 1n;
+    expect(refusal(await take(buyer, offer, body(buyer, over)))).toEqual(CAP);
+    expect((await deps.db.query('select 1 from trades where offer_id = $1', [offer])).rowCount).toBe(0);
+    await taken(buyer, offer, body(buyer, atCap));
+  });
+
+  it('taking counts the XMR at the market price too, and other currencies in US dollars', async () => {
+    const seller = await person();
+    const buyer = await person();
+    // −50%, the lowest an offer can go (owner F1): $165.00 per XMR at the $330 market. 15.2 XMR is
+    // $2,508 at the offer's price but $5,016 at market; 15 XMR is $4,950 at market.
+    const below = await postOffer(seller, { pricing: { mode: 'market', marginBps: -5000 } });
+    expect(refusal(await take(buyer, below, body(buyer, (XMR * 152n) / 10n, 16_500n)))).toEqual(CAP);
+    await taken(buyer, below, body(buyer, 15n * XMR, 16_500n));
+    // EUR at 0.9 USD, from an offer from before the cap: €4,600 is $5,111.12.
+    const other = await person();
+    const eur = await beforeTheCap(seller, 'EUR', 10_000_000);
+    const eurBody = (amount: bigint) => ({
+      amountAtomic: amount.toString(), walletId: other.wallet, centsPerXmr: '29700',
+      fiatCents: fiatCents(amount, { currency: 'EUR', centsPerXmr: 29_700n }).toString(), methodId: 'ZELLE', currency: 'EUR',
+    });
+    expect(refusal(await take(other, eur, eurBody((XMR * 460_000n) / 29_700n)))).toEqual(CAP);
+    await taken(other, eur, eurBody((XMR * 440_000n) / 29_700n));
+  });
+});
+
+describe('the growth ceiling: extra XMR never grows a trade past the launch cap (launch-rules review F1)', () => {
+  /** The trade's ceiling as the take answered it and as the row keeps it. */
+  async function ceilingOf(res: Awaited<ReturnType<typeof take>>): Promise<{ code: string; answered: string; stored: string }> {
+    expect(res.statusCode, res.body).toBe(200);
+    const out = res.json() as { code: string; maxFiatCents: string };
+    return { code: out.code, answered: out.maxFiatCents, stored: (await loadTradeRow(deps.db, out.code))!.max_fiat_cents };
+  }
+  const beforeTheCap = (who: Who, currency: string, maxMinor: number) =>
+    insertOffer(deps.db, { accountId: who.id, side: 'sell', methodId: 'ZELLE', currency, min: 1000, max: maxMinor, at: deps.clock() });
+
+  it("an offer within the cap keeps its band's maximum as the ceiling", async () => {
+    const seller = await person();
+    const buyer = await person();
+    const offer = await postOffer(seller, { maxFiatCents: '200000' });
+    expect(await ceilingOf(await take(buyer, offer, body(buyer, XMR)))).toMatchObject({ answered: '200000', stored: '200000' });
+    const atCap = await postOffer(seller, { side: 'buy', maxFiatCents: '500000' });
+    expect(await ceilingOf(await take(buyer, atCap, body(buyer, XMR)))).toMatchObject({ answered: '500000', stored: '500000' });
+  });
+
+  it('an over-funded trade on an offer from before the cap grows to $5,000 and no further', async () => {
+    const seller = await person();
+    const buyer = await person();
+    // A $100,000 band from before the cap: the trade's ceiling is $5,000 all the same.
+    const offer = await beforeTheCap(seller, 'USD', 10_000_000);
+    const { code, answered, stored } = await ceilingOf(await take(buyer, offer, body(buyer, XMR)));
+    expect({ answered, stored }).toEqual({ answered: '500000', stored: '500000' });
+    // The seller sends 30 XMR before "I've paid": $9,900 at the locked $330. The trade stays 1 XMR.
+    await applyEvent(deps, code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system');
+    const lots = 30n * XMR;
+    const kept = await applyEvent(deps, code, { type: 'chain', receivedAtomic: lots, unlockedAtomic: lots, confirmations: 10 }, 'system');
+    expect({ amount: kept.amountAtomic, fiat: kept.fiatCents, grown: kept.grown }).toEqual({ amount: XMR, fiat: 33_000n, grown: null });
+    // 15.15 XMR and its fee ($4,999.50) is within the ceiling: it grows to that.
+    const within = (XMR * 1515n) / 100n;
+    const funds = within + within / 100n;
+    const grown = await applyEvent(deps, code, { type: 'chain', receivedAtomic: funds, unlockedAtomic: funds, confirmations: 10 }, 'system');
+    expect(grown.amountAtomic).toBe(within);
+    expect(grown.fiatCents).toBe(499_950n);
+  });
+
+  it('a margin far below market: the ceiling counts the XMR at market, as the take does', async () => {
+    const seller = await person();
+    const buyer = await person();
+    // −50%: $165 per XMR at the $330 market. 15.15 XMR is $2,499.75 at the offer's price but $4,999.50
+    // at market: the ceiling is the largest total at $165 no amount over $5,000 at market reaches.
+    const below = await postOffer(seller, { pricing: { mode: 'market', marginBps: -5000 } });
+    const { code, answered } = await ceilingOf(await take(buyer, below, body(buyer, XMR, 16_500n)));
+    expect(answered).toBe('249999');
+    await applyEvent(deps, code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system');
+    // 15.16 XMR is $2,501.40 at the offer's price, within its $5,000 band, but $5,002.80 at market: no growth.
+    const over = (XMR * 1516n) / 100n;
+    const overFunds = over + over / 100n;
+    expect((await applyEvent(deps, code, { type: 'chain', receivedAtomic: overFunds, unlockedAtomic: overFunds, confirmations: 10 }, 'system')).amountAtomic).toBe(XMR);
+    // 15.15 XMR ($2,499.75 at the offer's price) is within the ceiling: it grows to that.
+    const within = (XMR * 1515n) / 100n;
+    const funds = within + within / 100n;
+    expect((await applyEvent(deps, code, { type: 'chain', receivedAtomic: funds, unlockedAtomic: funds, confirmations: 10 }, 'system')).amountAtomic).toBe(within);
+  });
+
+  it("a euro offer from before the cap: the ceiling is $5,000 in euros at the take's price", async () => {
+    const seller = await person();
+    const buyer = await person();
+    const eur = await beforeTheCap(seller, 'EUR', 10_000_000);
+    const res = await take(buyer, eur, {
+      amountAtomic: XMR.toString(), walletId: buyer.wallet, centsPerXmr: '29700', fiatCents: '29700', methodId: 'ZELLE', currency: 'EUR',
+    });
+    // €4,500.00 is $5,000.00 at 0.9.
+    expect((await ceilingOf(res)).answered).toBe('450000');
   });
 });
 
@@ -807,7 +1054,7 @@ describe('a session revoked while its trading request waits (review round 5 M2)'
     },
     'POST /v1/offers': async () => {
       const who = await person();
-      await revokedWhileWaiting([`select 1 from accounts where id = '${who.id}' for update`], who.id, () => who.browser.post('/v1/offers', OFFER));
+      await revokedWhileWaiting([`select 1 from accounts where id = '${who.id}' for update`], who.id, () => who.browser.post('/v1/offers', flexBody(OFFER)));
       // (person() seeds removed offers for its history trades.)
       expect((await deps.db.query("select 1 from offers where account_id = $1 and status <> 'removed'", [who.id])).rows).toHaveLength(0);
     },

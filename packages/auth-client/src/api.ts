@@ -14,9 +14,9 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type { AccountKind, ConfirmAction, MethodType } from '@x2f/accounts';
-import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginResult } from '@x2f/api';
+import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginResult, TermsSignature } from '@x2f/api';
 
-export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult };
+export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult, TermsSignature };
 
 /**
  * Hold model v3: a security change made from a login with just a username and password (202): nothing
@@ -392,6 +392,35 @@ export interface SessionInfo {
   serverNow: string;
 }
 
+/**
+ * Owner rule p5-7: secure Jabber account-change alerts (`GET /v1/account/jabber`). Addresses come
+ * back masked only (`mira…@xmpp.example.org`).
+ */
+export interface JabberStatus {
+  /** False until the deployment has a sending account (`jabber-unavailable` on every write). */
+  available: boolean;
+  /** `broken`: proven, but sealed under a key the server no longer holds; it needs setting up again. */
+  state: 'off' | 'on' | 'paused' | 'broken';
+  address: string | null;
+  pendingAddress: string | null;
+  lastSentAt: string | null;
+}
+
+/**
+ * J-23 chat-key courier (`apps/api` auth/chatKeys.ts): a box sealed by one of the person's devices
+ * to another device's X25519 key. The API stores and serves it exactly as posted and opens nothing.
+ */
+export interface ChatKeyEnvelope {
+  id: string;
+  /** The receiving device's X25519 public key, 64 lower-case hex. */
+  recipientPublic: string;
+  /** The sealed box, base64url, exactly as posted. */
+  sealed: string;
+  epoch: number;
+  createdAt: string;
+  expiresAt: string;
+}
+
 // ---------------------------------------------------------------------------------------------
 // The client
 
@@ -408,7 +437,15 @@ export interface AuthApi {
    */
   nameAvailable(b: { loginName: string }): Promise<{ available: boolean }>;
   /** Both names are picked at sign-up (spec 6.1): the public `displayName` and the private `loginName`; they must differ. */
-  registerPassword(b: { displayName: string; loginName: string; password: string; deviceLabel: string; acceptedTerms: string }): Promise<{
+  /** `acceptedTerms` and `termsSignature`: the Terms version accepted and the signature given with it (owner, 8 Nov 2026). */
+  registerPassword(b: {
+    displayName: string;
+    loginName: string;
+    password: string;
+    deviceLabel: string;
+    acceptedTerms: string;
+    termsSignature: TermsSignature;
+  }): Promise<{
     displayName: string;
   }>;
   /** Every failure is 401 `credentials-invalid` (`PASSWORD_LOGIN_MISMATCH`) with `misses`; check `shouldSendAway`. */
@@ -429,7 +466,7 @@ export interface AuthApi {
     holdUntil: string | null;
   }>;
   registerPgpStart(b: { displayName: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
-  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string }): Promise<{ displayName: string }>;
+  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string; termsSignature: TermsSignature }): Promise<{ displayName: string }>;
   /**
    * PGP login needs no name: `key` is the person's whole armored public key (an unknown key's decoy
    * goes to that key too). A fingerprint, or anything else, is 400 `key-unreadable`, the same for
@@ -444,6 +481,7 @@ export interface AuthApi {
     response: RegistrationResponseJSON;
     deviceLabel: string;
     acceptedTerms: string;
+    termsSignature: TermsSignature;
     label?: string;
   }): Promise<{ displayName: string }>;
   /** Without `loginName`: a discoverable passkey login (traders). */
@@ -499,11 +537,30 @@ export interface AuthApi {
 
   // Account overview (Task 11)
   me(): Promise<AccountOverview>;
-  acceptTerms(b: { version: string }): Promise<void>;
+  /** `POST /v1/account/terms`: a changed Terms version, accepted with a new signature (owner, 8 Nov 2026). */
+  acceptTerms(b: { version: string; signature: TermsSignature }): Promise<void>;
   listSessions(): Promise<SessionEntry[]>;
   endSession(id: string): Promise<void>;
   listAlerts(): Promise<AlertEntry[]>;
   markAlertSeen(id: string): Promise<void>;
+
+  // Owner rule p5-7: secure Jabber account-change alerts (boards JabberSetup, Alerts).
+  getJabber(): Promise<JabberStatus>;
+  /** Sends the test code; 429 `slow-down` `{ retryAfterSeconds }`, 400 `jabber-address-invalid`, 503 `jabber-unavailable`. */
+  sendJabberTest(b: { address: string }): Promise<{ pendingAddress: string; resendAfterSeconds: number }>;
+  /** 400 `code-invalid`, 409 `challenge-expired` (send a new code). */
+  verifyJabber(b: { code: string }): Promise<JabberStatus>;
+  setJabberEnabled(b: { on: boolean }): Promise<JabberStatus>;
+  turnOffJabber(): Promise<void>;
+
+  // J-23 chat-key courier (dormant groundwork): full trader sessions of the owner, strong strictly
+  // (403 `weak-session`), never during a hold (403 `recovery-hold`).
+  /** `GET /v1/account/chat-keys`: the account's current epoch and its open envelopes, oldest first. */
+  listChatKeys(): Promise<{ epoch: number; envelopes: ChatKeyEnvelope[] }>;
+  /** `POST /v1/account/chat-keys`: 400 `bad-request` with `{ epoch }` when `epoch` is not the account's current one; 429 `slow-down`. */
+  postChatKey(b: { recipientPublic: string; sealed: string; epoch: number }): Promise<{ id: string; expiresAt: string }>;
+  /** `DELETE /v1/account/chat-keys/:id`: collects (deletes) an envelope; 404 `not-found`; 429 `slow-down`. */
+  collectChatKey(id: string): Promise<void>;
 
   // New-device approval (Task 16): full trader sessions only.
   /** `GET /v1/account/approvals`: the logins waiting for this account's approval. */
@@ -570,7 +627,8 @@ export interface AuthApi {
   /** `acceptedTerms`: the Terms version the member read and accepted (review 2026-11-08 F1). */
   joinStart(b: { invite: string; loginName: string; publicKey: string; acceptedTerms: string }): Promise<PgpChallenge & { fingerprint: string }>;
   /** The PGP key proved: the member's login exists, no session yet; add the second factor before `setupUntil`. */
-  joinFinish(b: { challengeId: string; code: string }): Promise<{ setupId: string; needs: ('security-key' | 'passkey' | 'pgp')[]; setupUntil: string }>;
+  /** `termsSignature`: the signature given on the Terms step, with the version sent at `joinStart` (owner, 9 Nov 2026). */
+  joinFinish(b: { challengeId: string; code: string; termsSignature: TermsSignature }): Promise<{ setupId: string; needs: ('security-key' | 'passkey' | 'pgp')[]; setupUntil: string }>;
   joinSecondPgpStart(b: { setupId: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
   joinSecondPgpFinish(b: { setupId: string; challengeId: string; code: string; deviceLabel: string }): Promise<{ status: 'ok' }>;
   joinSecondWebAuthnStart(b: { setupId: string; kind: WebAuthnKind }): Promise<RegistrationChallenge>;
@@ -703,6 +761,14 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     endSession: (id) => done(call('DELETE', `/v1/account/sessions/${seg(id)}`)),
     listAlerts: () => get('/v1/account/alerts'),
     markAlertSeen: (id) => done(post(`/v1/account/alerts/${seg(id)}/seen`)),
+    getJabber: () => get('/v1/account/jabber'),
+    sendJabberTest: (b) => post('/v1/account/jabber/test', b),
+    verifyJabber: (b) => post('/v1/account/jabber/verify', b),
+    setJabberEnabled: (b) => call('PUT', '/v1/account/jabber/enabled', b),
+    turnOffJabber: () => done(call('DELETE', '/v1/account/jabber')),
+    listChatKeys: () => get('/v1/account/chat-keys'),
+    postChatKey: (b) => post('/v1/account/chat-keys', b),
+    collectChatKey: (id) => done(call('DELETE', `/v1/account/chat-keys/${seg(id)}`)),
     listApprovals: () => get('/v1/account/approvals'),
     getApproval: (id) => get(`/v1/account/approvals/${seg(id)}`),
     decideApproval: (id, b) => post(`/v1/account/approvals/${seg(id)}`, b),

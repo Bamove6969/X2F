@@ -78,6 +78,11 @@ export interface TradeView {
   /** Owner G7 (lead review 8 Nov I5): the buyer's cancel is recorded and waits for the other account's problem to end. Not shown on screen yet. */
   cancelWaiting?: boolean;
   methodId: string;
+  /**
+   * The chosen method's instructions from the offer, locked at take (J-16): null until the escrow is
+   * secured, '' when the offer gave none. Not shown by the web yet; missing from an older API.
+   */
+  paymentInstructions?: string | null;
   profile: unknown;
   amountAtomic: string;
   fiatCents: string;
@@ -103,8 +108,15 @@ export interface TradeView {
   fundStartedAt: string | null;
   securedAt: string | null;
   payBy: string | null;
+  /** The buyer's time to pay in minutes, the payment method's, fixed at take (owner p9-6); missing from an older API (90). */
+  payWindowMin?: number;
   paidAt: string | null;
   confirmBy: string | null;
+  /**
+   * The trade's confirm window in minutes, fixed at take by the payment type (owner 2026-11-07 F9:
+   * 90 for instant types up to 4 days). Either side may dispute in `paid` from `confirmBy` (owner p9-4).
+   */
+  confirmWindowMin: number;
   settleBy: string | null;
   /**
    * When a trader's side of the settlement was reported done (Task 9 I/O, lead decision b): the

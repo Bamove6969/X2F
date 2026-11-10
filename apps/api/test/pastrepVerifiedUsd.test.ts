@@ -236,6 +236,7 @@ describe('stand-ins', () => {
     const holders = [...sources(join(ROOT, 'apps/api/src')), ...sources(join(ROOT, 'apps/moderation/src'))]
       .filter((f) => readFileSync(f, 'utf8').includes('verified_usd_cents'))
       .map((f) => f.slice(ROOT.length));
-    expect(holders).toEqual(['apps/api/src/pastrep/store.ts']);
+    // apps/api/src/jabber/changePaths.ts only names the column (every column of past_reputation is classified there); it writes nothing.
+    expect(holders).toEqual(['apps/api/src/jabber/changePaths.ts', 'apps/api/src/pastrep/store.ts']);
   });
 });

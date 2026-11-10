@@ -9,6 +9,7 @@ import {
   channelFor,
   escrowCheckWords,
   isAttestedTerms,
+  MAX_PAY_WINDOW_MIN,
   verifyAttestation,
   WORDLIST,
   type Attestation,
@@ -23,6 +24,7 @@ const SELLER_REFUND = '8'.padEnd(95, 'S');
 const DEAL: ConfirmedDeal = { poster: 'seller', takeAmountAtomic: 250_000_000_000n, currency: 'USD', centsPerXmr: 16_250n, maxFiatCents: 100_000n };
 const TERMS: AttestedTerms = {
   deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000' },
+  payWindowMin: 90,
   buyerPayout: BUYER_PAYOUT,
   sellerRefund: SELLER_REFUND,
 };
@@ -73,7 +75,7 @@ type Built = Awaited<ReturnType<typeof buildTrade>>;
 function meOf(
   t: Built,
   role: 'buyer' | 'seller' = 'buyer',
-  over: Partial<{ trade: string; signPublic: string; boxPublic: string; context: 'trade' | 'chat'; deal: ConfirmedDeal; ownAddress: string }> = {},
+  over: Partial<{ trade: string; signPublic: string; boxPublic: string; context: 'trade' | 'chat'; deal: ConfirmedDeal; ownAddress: string; payWindowMin: number }> = {},
 ) {
   const id = role === 'buyer' ? t.buyer : t.seller;
   const ownAddress = role === 'buyer' ? BUYER_PAYOUT : SELLER_REFUND;
@@ -211,6 +213,20 @@ describe('verifyAttestation', () => {
     await expect(verifyAttestation(refund, resign(t, refund), t.modSign.public, meOf(t, 'buyer'))).resolves.toBeUndefined();
   });
 
+  it('throws wrong-terms when the attested time to pay differs from the one this app was shown; not checked when the app has none', async () => {
+    const t = await buildTrade();
+    // A 24-hour method (cash by mail) attested as the 90-minute default: the window the moderation
+    // service would enforce is not the one the buyer sees.
+    for (const role of ['buyer', 'seller'] as const) {
+      await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, meOf(t, role, { payWindowMin: 1440 }))).rejects.toMatchObject({ code: 'wrong-terms' });
+      await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, meOf(t, role, { payWindowMin: 90 }))).resolves.toBeUndefined();
+    }
+    const long: Attestation = { ...t.attestation, terms: { ...TERMS, payWindowMin: 1440 } };
+    await expect(verifyAttestation(long, resign(t, long), t.modSign.public, meOf(t, 'buyer', { payWindowMin: 1440 }))).resolves.toBeUndefined();
+    await expect(verifyAttestation(long, resign(t, long), t.modSign.public, meOf(t, 'buyer', { payWindowMin: 90 }))).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(long, resign(t, long), t.modSign.public, meOf(t, 'buyer'))).resolves.toBeUndefined();
+  });
+
   it('throws wrong-terms when the verifying app passes no confirmed deal or no own address (fail closed)', async () => {
     const t = await buildTrade();
     const { deal: _d, ...noDeal } = meOf(t);
@@ -238,6 +254,11 @@ describe('verifyAttestation', () => {
       { ...TERMS, deal: { ...TERMS.deal, poster: 'mod' } },
       { ...TERMS, deal: { ...TERMS.deal, extra: '1' } },
       { buyerPayout: BUYER_PAYOUT, sellerRefund: SELLER_REFUND },
+      // No time to pay: an attestation signed before payWindowMin joined the terms.
+      { deal: TERMS.deal, buyerPayout: BUYER_PAYOUT, sellerRefund: SELLER_REFUND },
+      { ...TERMS, payWindowMin: 0 },
+      { ...TERMS, payWindowMin: '90' },
+      { ...TERMS, deal: { ...TERMS.deal, payWindowMin: 90 } },
     ];
     for (const terms of bad) {
       const a = { ...t.attestation, terms } as unknown as Attestation;
@@ -260,6 +281,15 @@ describe('isAttestedTerms', () => {
     expect(isAttestedTerms({ ...TERMS, deal: { ...TERMS.deal, currency: '' } })).toBe(false);
     expect(isAttestedTerms({ ...TERMS, deal: { ...TERMS.deal, takeAmountAtomic: '-1' } })).toBe(false);
     expect(isAttestedTerms({ ...TERMS, deal: { ...TERMS.deal, takeAmountAtomic: '1'.repeat(32) } })).toBe(false);
+  });
+
+  it('requires the time to pay: whole minutes from 1 to MAX_PAY_WINDOW_MIN (24 hours)', () => {
+    for (const m of [1, 90, 180, MAX_PAY_WINDOW_MIN]) expect(isAttestedTerms({ ...TERMS, payWindowMin: m })).toBe(true);
+    const { payWindowMin: _p, ...missing } = TERMS;
+    expect(isAttestedTerms(missing)).toBe(false);
+    for (const m of [0, -90, MAX_PAY_WINDOW_MIN + 1, 90.5, Number.NaN, Number.POSITIVE_INFINITY, '90', null, 90n]) {
+      expect(isAttestedTerms({ ...TERMS, payWindowMin: m })).toBe(false);
+    }
   });
 });
 

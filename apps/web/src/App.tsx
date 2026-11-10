@@ -2,8 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
-import { useSite, type SiteBannerInfo } from './api/site.js';
+import { useSite, type PlannedMaintenanceInfo, type SiteBannerInfo } from './api/site.js';
 import { TradeChatPanel } from './chat/ChatPanel.js';
+import { chatPaymentDetailsSource } from './chat/payDetailsFeed.js';
 import { emitChatLive } from './chat/live.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { Button } from './ui/Button.js';
@@ -12,6 +13,7 @@ import { Maintenance } from './screens/Maintenance.js';
 import { MyOffers } from './screens/MyOffers.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
+import { AccountFrozenRoute, FROZEN_PATH } from './screens/account/AccountFrozen.js';
 import { PostOffer } from './screens/PostOffer.js';
 import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
@@ -32,6 +34,7 @@ import { IDLE_REMINDER_PATH } from './screens/auth/sessionCopy.js';
 import { IdleReminderScreen } from './screens/settings/IdleReminderSettings.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
+import { JabberSetup } from './screens/settings/JabberSetup.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
 import { AccountChangesScreen, ChangesBanner, ChangesCapPopup } from './screens/settings/HoldChanges.js';
 import { Security } from './screens/settings/Security.js';
@@ -44,18 +47,22 @@ import { BehindTheDoor, isInside } from './session/frontDoor.js';
 import { mayPostOffers, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
+import { PlannedMaintenanceBanner } from './ui/PlannedMaintenanceBanner.js';
 import { SiteBanner } from './ui/SiteBanner.js';
 import { DesktopRail, WideTop, wideFrameOf } from './ui/DesktopShell.js';
 import { useFoldAttribute, useFoldLayout } from './ui/fold.js';
 import './styles/fold.css';
 import { TradeRoom } from './screens/trade/TradeRoom.js';
-import { setTradeChat } from './screens/trade/paySeams.js';
+import { setPaymentDetailsSource, setTradeChat } from './screens/trade/paySeams.js';
 import { liveFanOut, setLiveSource } from './screens/trade/seams.js';
 import './screens/trade/screens.js';
 
 // Task 20's trade chat in Task 23's seam (BuyerPay's Chat sheet, the wide room's aside). A fixtures
 // build replaces it with the board's stand-in (fixtures/payChat.ts, installed after this module loads).
 setTradeChat(TradeChatPanel);
+// J-08 (S-090): the buyer's "Send exactly" card reads the seller's details from the newest package
+// in the trade's encrypted chat. A fixtures build replaces this too (fixtures/payChat.tsx).
+setPaymentDetailsSource(chatPaymentDetailsSource);
 
 /**
  * The app shell. Phones, foldables' panes and the flip cover screen get the phone frame (the bottom
@@ -63,7 +70,7 @@ setTradeChat(TradeChatPanel);
  * left rail, or the centred logo before login (Job 3, src/ui/DesktopShell.tsx; Task 40, src/ui/fold.ts). The frame keeps one tree in every layout, so folding or
  * unfolding never remounts the screen: its route, scroll position and typed text stay.
  */
-function Layout({ nav, banner, door = false }: { nav: boolean; banner: SiteBannerInfo | null; door?: boolean }) {
+function Layout({ nav, banner, door = false, planned }: { nav: boolean; banner: SiteBannerInfo | null; door?: boolean; planned: PlannedMaintenanceInfo | null }) {
   const layout = useFoldLayout();
   useFoldAttribute(layout);
   const wide = layout === 'wide';
@@ -83,6 +90,8 @@ function Layout({ nav, banner, door = false }: { nav: boolean; banner: SiteBanne
       {top}
       <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
         {/* Plan 4 Task 8: the owner's banner at the top of every trader screen. */}
+        {/* J-04 (owner G19): a planned maintenance announced ahead, in the big bright banner, on every layout, the front door's too (lead default, owner p11-120). */}
+        <PlannedMaintenanceBanner plan={planned} />
         <SiteBanner banner={banner} />
         {/* Hold model v3: waiting changes and a new recovery code, on every screen (HoldChange board). */}
         <ChangesBanner />
@@ -212,12 +221,12 @@ export function App() {
       <Routes>
         {/* Behind the front door (owner, 8 Nov 2026): a set-up trader's session, else the login (session/frontDoor.tsx). */}
         <Route element={<BehindTheDoor />}>
-          <Route element={<Layout nav banner={site.banner} />}>
+          <Route element={<Layout nav banner={site.banner} planned={site.plannedMaintenance} />}>
             <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
             <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
             <Route path="/profile/offers" element={<MyOffers />} />
           </Route>
-          <Route element={<Layout nav={false} banner={site.banner} />}>
+          <Route element={<Layout nav={false} banner={site.banner} planned={site.plannedMaintenance} />}>
             <Route path="/post" element={<PostOffer />} />
             {/* The offers and their quote share one component (two panes on a fold, Fold-Offers). */}
             <Route path="/sell/:methodId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
@@ -232,15 +241,18 @@ export function App() {
             <Route path="/settings/changes" element={<AccountChangesScreen />} />
             <Route path="/settings/devices" element={<DevicesRoute />} />
             <Route path="/settings/blocked" element={<Blocked />} />
+            <Route path="/settings/jabber" element={<JabberSetup />} />
             <Route path="/settings/team" element={<Team />} />
             <Route path={IDLE_REMINDER_PATH} element={<IdleReminderScreen />} />
             <Route path="/settings/account-type" element={<AccountType />} />
             <Route path="/news" element={<News />} />
             <Route path="/feedback" element={<Feedback />} />
+            {/* D-016: the frozen-account notice, until the API says an account is frozen (NEEDS_API_FROZEN_STATE). */}
+            <Route path={FROZEN_PATH} element={<AccountFrozenRoute />} />
           </Route>
         </Route>
         {/* The front door: open to anyone (FRONT_DOOR in session/frontDoor.tsx lists the same paths). */}
-        <Route element={<Layout nav={false} door banner={site.banner} />}>
+        <Route element={<Layout nav={false} door banner={site.banner} planned={site.plannedMaintenance} />}>
           {/* The Landing board (design review 2026-11-08 item 1): where every signed-out visitor lands. */}
           <Route path="/" element={<Landing />} />
           <Route path="/setup/*" element={<SetupFlow />} />

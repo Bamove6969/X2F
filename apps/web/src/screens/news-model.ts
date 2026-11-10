@@ -18,11 +18,32 @@ export interface NewsList {
 }
 
 /**
- * The owner has NOT decided on a "Don't show me this again" checkbox (spec 6.6: News may be our
- * only channel to users). While this is false the News page has no checkbox and, after login,
- * always opens when something is new. Turning it on is the owner's call, not a builder's.
+ * "Don't show me this again" (design session 2 Nov, News board variant with-dont-show-again): shown
+ * on the News page that opens after a login. Ticked, News no longer opens by itself after a login
+ * on THIS device (a per-device preference in localStorage, like the seen mark; nothing goes to the
+ * server). The posts stay readable at /news.
  */
-export const NEWS_DISMISS_ENABLED = false;
+export const NEWS_DISMISS_ENABLED = true;
+
+export const NEWS_HIDE_KEY = 'x2f.news.hideAfterLogin';
+
+/** Whether this device asked News not to open after a login. */
+export function readHideAfterLogin(): boolean {
+  try {
+    return window.localStorage.getItem(NEWS_HIDE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setHideAfterLogin(hide: boolean): void {
+  try {
+    if (hide) window.localStorage.setItem(NEWS_HIDE_KEY, '1');
+    else window.localStorage.removeItem(NEWS_HIDE_KEY);
+  } catch {
+    // Private mode: News keeps opening after a login.
+  }
+}
 
 export const NEWS_SEEN_KEY = 'x2f.news.lastSeenId';
 
@@ -134,10 +155,11 @@ export function useNewsUnseen(): number {
 }
 
 /**
- * After login: true when this device has not shown the newest message yet. With dismissal off
- * (NEWS_DISMISS_ENABLED) this is the whole rule.
+ * After login: true when this device has not shown the newest message yet, unless this device
+ * ticked "Don't show me this again" (readHideAfterLogin).
  */
 export async function hasUnseenNews(): Promise<boolean> {
+  if (readHideAfterLogin()) return false;
   try {
     const { items } = await fetchNews();
     rememberNews(items);

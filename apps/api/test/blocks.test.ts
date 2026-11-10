@@ -9,15 +9,20 @@ import { makeVendor } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
+import { flexBody } from './helpers/offers.js';
 
 // Plan 3 Task 37: the trader-to-trader block (spec 2.4). Real Postgres, one database for the file.
 
 const DAY = 86_400_000;
 
+/**
+ * USD at $330.00 per XMR; every other currency at 3,300,000 minor units (offers are market ± %, owner
+ * Q1). Every currency has a price: posting converts each band's top edge to US dollars and fails
+ * closed without a price (the launch cap, owner p11-6).
+ */
 function quote(currency: string): MarketQuote | null {
-  if (currency !== 'USD') return null;
   return {
-    price: { currency, centsPerXmr: 33_000n }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
+    price: { currency, centsPerXmr: currency === 'USD' ? 33_000n : 3_300_000n }, at: new Date('2026-10-17T11:59:00Z'), sources: 3, exponent: 2,
     usdCentsPerXmr: 33_000n, fx: null,
   };
 }
@@ -67,11 +72,11 @@ const ownCurrency = (): string => {
   return c;
 };
 
-async function post(who: Who, currency: string, centsPerXmr = '3300000'): Promise<string> {
-  const res = await who.browser.post('/v1/offers', {
-    side: 'sell', methodId: 'ZELLE', currency, pricing: { mode: 'fixed', centsPerXmr },
+async function post(who: Who, currency: string, marginBps = 0): Promise<string> {
+  const res = await who.browser.post('/v1/offers', flexBody({
+    side: 'sell', methodId: 'ZELLE', currency, pricing: { mode: 'market', marginBps },
     minFiatCents: '5000', maxFiatCents: '200000', minTrades: null, terms: 'Zelle only.',
-  });
+  }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }
@@ -166,25 +171,26 @@ describe('a block stops business both ways (Task 37)', () => {
     const c = await poster();
     const other = await trader();
     // a's offer is the cheapest (sell ads: lowest is best).
-    await post(a, cur, '3000000');
-    await post(c, cur, '3500000');
+    // 3,300,000 −10% = 2,970,000; +5% = 3,465,000.
+    await post(a, cur, -1000);
+    await post(c, cur, 500);
     const zelle = async (who: Browser) => {
       const res = await who.get(`/v1/methods?side=sell&currency=${cur}`);
       expect(res.statusCode, res.body).toBe(200);
       return (res.json() as { live: { id: string; offers: number; bestRate: string | null }[] }).live.find((m) => m.id === 'ZELLE');
     };
-    expect(await zelle(other.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
+    expect(await zelle(other.browser)).toMatchObject({ offers: 2, bestRate: '2970000' });
     await block(a, b);
     // The blocked person: only c's offer, at c's price, matching the list they would open.
-    expect(await zelle(b.browser)).toMatchObject({ offers: 1, bestRate: '3500000' });
+    expect(await zelle(b.browser)).toMatchObject({ offers: 1, bestRate: '3465000' });
     expect(await listed(b.browser, cur)).toHaveLength(1);
     // The blocker: their own offer counts, c's too (c is not blocked).
-    expect(await zelle(a.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
+    expect(await zelle(a.browser)).toMatchObject({ offers: 2, bestRate: '2970000' });
     // Everyone else: unchanged. Logged out: nothing at all (the front door, owner 8 Nov 2026).
-    expect(await zelle(other.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
+    expect(await zelle(other.browser)).toMatchObject({ offers: 2, bestRate: '2970000' });
     expect((await anon.get(`/v1/methods?side=sell&currency=${cur}`)).statusCode).toBe(401);
     await unblock(a, b);
-    expect(await zelle(b.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
+    expect(await zelle(b.browser)).toMatchObject({ offers: 2, bestRate: '2970000' });
   });
 
   it("GET /v1/offers/:id answers 404 not-found either way, the same as an offer that does not exist", async () => {

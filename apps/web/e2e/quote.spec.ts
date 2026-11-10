@@ -8,12 +8,17 @@ import { expectParity } from './parity.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 import { INSIDE } from './session.js';
 
-/** The take body as Task 5 reads it (Revision 2026-10-27): the amount, the wallet and the quoted rate and total. */
+/**
+ * The take body as Task 5 reads it (Revision 2026-10-27): the amount, the wallet and the quoted rate
+ * and total; J-16 adds the currency and the payment method the quote was in (the buyer picks both).
+ */
 interface TakeBody {
   amountAtomic: string;
   walletId: string;
   centsPerXmr: string;
   fiatCents: string;
+  methodId: string;
+  currency: string;
 }
 
 interface Stub {
@@ -38,11 +43,16 @@ interface Seen {
   walletPosts: unknown[];
 }
 
-const FIXED = { ...B.offer, id: 'offer-fixed', pricing: { mode: 'fixed', centsPerXmr: '34000' }, rate: '34000' };
+/** 50% above the market, the furthest an offer goes (owner F1); there are no fixed-price offers (owner Q1). */
+const ABOVE = { ...B.offer, id: 'offer-above', pricing: { mode: 'market', marginBps: 5000 }, rate: '49500' };
 const MIRA_BUYS = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, displayName: 'mira.k' } };
 
 async function stubApi(page: Page, s: Stub): Promise<Seen> {
   const seen: Seen = { takes: [], storedFiatCents: [], walletPosts: [] };
+  // These flows are about the take and the room it opens: the courtesy sheet over the room (T-039,
+  // quote/courtesy.ts; design 10 Nov: the first time the room opens) is ticked off, as after "Don't show
+  // this again". Its own tests are in test/tradeRoom.test.tsx.
+  await page.addInitScript(() => window.localStorage.setItem('x2f.courtesy-sheet.off', '1'));
   await page.route('**/v1/account/me', (r) =>
     s.signedIn ? r.fulfill({ json: { displayName: 'viewer_1', ...INSIDE, methods: ['pgp'] } }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
   );
@@ -80,12 +90,12 @@ async function stubApi(page: Page, s: Stub): Promise<Seen> {
     const rate = s.rate ?? B.marketCentsPerXmr;
     if (body.centsPerXmr !== rate) return r.fulfill({ status: 409, json: { error: 'price-changed' } });
     seen.storedFiatCents.push(fiatCents(BigInt(body.amountAtomic), { currency: B.currency, centsPerXmr: BigInt(rate) }));
-    return r.fulfill({ json: { code: B.code, centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents } });
+    return r.fulfill({ json: { code: B.code, centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents, maxFiatCents: B.offer.maxFiatCents } });
   });
   return seen;
 }
 
-const base: Stub = { signedIn: true, price: 'ok', offers: [B.offer, FIXED], wallets: [...B.wallets] };
+const base: Stub = { signedIn: true, price: 'ok', offers: [B.offer, ABOVE], wallets: [...B.wallets] };
 const BUY = `/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}`;
 const SELL = `/sell/${B.method.id}/${MIRA_BUYS.id}?currency=${B.currency}`;
 
@@ -147,16 +157,21 @@ test.describe('BuyQuote', () => {
     expect(((await page.locator('#root').innerText()).match(/X2F fee/g) ?? []).length).toBe(1);
   });
 
-  test('a market offer is disabled with "Price unavailable right now" on a 503; a fixed-price offer still quotes', async ({ page }) => {
+  test('on a 503 every offer, at any margin, is disabled with "Price unavailable right now" (no fixed price, owner Q1)', async ({ page }) => {
     await stubApi(page, { ...base, price: 'down' });
-    await page.goto(`${BUY}&amount=${B.amount}`);
-    await page.getByRole('radio', { name: /Cake Wallet/ }).check();
-    await expect(page.locator('#quote-amount-help')).toHaveText('Price unavailable right now');
-    await expect(trade(page)).toBeDisabled();
+    for (const url of [`${BUY}&amount=${B.amount}`, `/buy/${B.method.id}/${ABOVE.id}?currency=USD&amount=495`]) {
+      await page.goto(url);
+      await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+      await expect(page.locator('#quote-amount-help')).toHaveText('Price unavailable right now');
+      await expect(trade(page)).toBeDisabled();
+    }
+  });
 
-    await page.goto(`/buy/${B.method.id}/${FIXED.id}?currency=USD&amount=340`);
+  test('an offer 50% above the market quotes at its own rate (owner F1)', async ({ page }) => {
+    await stubApi(page, base);
+    await page.goto(`/buy/${B.method.id}/${ABOVE.id}?currency=USD&amount=495`);
     await page.getByRole('radio', { name: /Cake Wallet/ }).check();
-    await expect(card(page)).toContainText('$340.00 / XMR');
+    await expect(card(page)).toContainText('$495.00 / XMR');
     await expect(card(page)).toContainText('1.000000 XMR');
     await expect(trade(page)).toBeEnabled();
   });
@@ -192,7 +207,9 @@ test.describe('BuyQuote', () => {
     expect(seen.takes).toHaveLength(0);
     await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
-    expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-new-0', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
+    expect(seen.takes).toEqual([
+      { offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-new-0', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250', methodId: B.method.id, currency: B.currency },
+    ]);
   });
 
   test("logged out, the quote never opens: the Landing board keeps it as returnTo; Create account starts setup with it, and Welcome's Start trading comes back to the quote at the price now, never taken silently (owner, 8 Nov 2026)", async ({ page }) => {
@@ -250,8 +267,10 @@ test.describe('BuyQuote', () => {
     expect(seen.takes[0]!.centsPerXmr).toBe('33000');
     expect(seen.storedFiatCents).toHaveLength(0);
     await expect(card(page)).toContainText('$340.00 / XMR');
-    // $412.50 at $340.00 is 1.213235294117 XMR, shown in full: the figure is what is sent (M5).
-    await expect(card(page)).toContainText('1.213235294117 XMR');
+    // $412.50 at $340.00 is 1.213235294117 XMR. The buyer sends no XMR, so "You receive" shows the
+    // boards' 6 places (design review 8 Nov item 4); the take still carries the exact amount.
+    await expect(card(page)).toContainText('1.213235 XMR');
+    await expect(card(page)).not.toContainText('1.213235294117');
     await expect(card(page)).toContainText('$412.50 USD');
     await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
@@ -327,7 +346,69 @@ test.describe('SellQuote', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
-    expect(seen.takes[0]).toMatchObject({ offerId: MIRA_BUYS.id, amountAtomic: '4545454000000', walletId: 'w-cake' });
+    expect(seen.takes[0]).toMatchObject({ offerId: MIRA_BUYS.id, amountAtomic: '4545454000000', walletId: 'w-cake', methodId: B.method.id, currency: B.currency });
+  });
+});
+
+// "This offer's bands" (BuyQuote board, canvas v142; owner 2026-11-08 #4, #11): the offer's bands
+// carried over from the offers screen, the amount's band ringed, live, and the markup switch.
+const bands = (page: Page) => page.locator('section[data-part="offer-bands"]');
+const marked = (page: Page) => bands(page).locator('[data-part="band"][aria-current="true"]');
+const clip = (page: Page) => bands(page).locator('[data-part="band-clip"]');
+
+test.describe("the offer's bands on the quote", () => {
+  test('from the offers screen to the quote: the same range, the band ringed live as the amount changes', async ({ page }) => {
+    await stubApi(page, base);
+    await page.goto(`/buy/${B.method.id}?currency=${B.currency}`);
+    const offerCard = page.locator('article.x2f-offer').first();
+    // Batch 2's card has a row per unit; the poster's own (fiat here) is the band's range.
+    const range = (await offerCard.locator('[data-part="range-fiat"] .x2f-offer__figures').innerText()).trim();
+    await offerCard.getByRole('button', { name: `Trade with ${B.offer.poster.displayName}` }).click();
+    await expect(page).toHaveURL(new RegExp(`/buy/${B.method.id}/${B.offer.id}`));
+
+    // Right under "What you get".
+    await expect(bands(page)).toBeVisible();
+    await expect(page.getByRole('heading', { name: "This offer's bands" })).toBeVisible();
+    expect(await card(page).evaluate((el) => el.nextElementSibling?.getAttribute('data-part'))).toBe('offer-bands');
+    await expect(bands(page).locator('[data-part="band-range"]')).toHaveText([range]);
+    await expect(bands(page).locator('[data-part="band-rate"]')).toHaveText(['$330.00']);
+    await expect(marked(page)).toHaveCount(0);
+    // One band: the rate never changes with the amount, so no clip line.
+    await expect(clip(page)).toHaveCount(0);
+
+    const amount = page.locator('#quote-amount');
+    await amount.fill('412.50');
+    await expect(marked(page)).toHaveCount(1);
+    await expect(marked(page)).toContainText('Your amount');
+    await amount.fill('49.99');
+    await expect(marked(page)).toHaveCount(0);
+    await amount.fill('50');
+    await expect(marked(page)).toHaveCount(1);
+    await amount.fill('1500.01');
+    await expect(marked(page)).toHaveCount(0);
+    // Max fills the largest trade, which is inside the top band.
+    await page.getByRole('button', { name: 'Max' }).click();
+    await expect(amount).toHaveValue('1500.00');
+    await expect(marked(page)).toHaveCount(1);
+  });
+
+  test('With markup / Without: the XMR at the band price or at the market rate, with the freshness line', async ({ page }) => {
+    const MARKED_UP = { ...B.offer, pricing: { mode: 'market', marginBps: 250 }, rate: '33825' };
+    await stubApi(page, { ...base, offers: [MARKED_UP] });
+    await page.goto(`${BUY}&amount=${B.amount}`);
+    const xmr = bands(page).locator('[data-part="band-xmr"]');
+    const withMarkup = bands(page).getByRole('radio', { name: 'With markup' });
+    await expect(withMarkup).toHaveAttribute('aria-checked', 'true');
+    await expect(bands(page).locator('[data-part="band-markup"]')).toHaveText(['2.5% above market']);
+    await expect(bands(page).locator('[data-part="band-rate"]')).toHaveText(['$338.25']);
+    await expect(xmr).toHaveText(['≈ 0.147819 – 4.434589']);
+    await expect(bands(page).locator('[data-part="band-updated"]')).toHaveCount(0);
+    await bands(page).getByRole('radio', { name: 'Without' }).click();
+    await expect(withMarkup).toHaveAttribute('aria-checked', 'false');
+    await expect(bands(page).locator('[data-part="band-rate"]')).toHaveText(['$330.00']);
+    await expect(xmr).toHaveText(['≈ 0.151515 – 4.545454']);
+    await expect(bands(page).locator('[data-part="band-updated"]')).toContainText(/Market rate · updated \d\d:\d\d UTC/);
+    await expect(bands(page).locator('[data-part="band-range"]')).toHaveText(['$50 – $1,500']);
   });
 });
 
@@ -413,6 +494,26 @@ for (const viewport of PHONE_VIEWPORTS) {
       await expect(card(page)).toContainText('4.545454 XMR');
       await expectPhoneLayout(page);
     });
+
+    // Design review 8 Nov item 4: the figure overflowed the card at 12 places, and the wallet group
+    // was missing for a trader with no wallet yet. (It was written as a logged-out quote; since the
+    // front door, owner 8 Nov, a logged-out visitor never sees a quote: the test at line 208 above.)
+    test('BuyQuote with no wallet yet at $50: 6 places, the wallet group, phone layout', async ({ page }) => {
+      await stubApi(page, { ...base, wallets: [] });
+      await page.goto(`${BUY}&amount=50`);
+      await expect(card(page)).toContainText('0.151515 XMR');
+      await expect(page.getByRole('group', { name: 'Which wallet gets paid?' })).toBeVisible();
+      await expectPhoneLayout(page);
+    });
+
+    test('SellQuote with a 12-place exact amount: shown in full and it fits', async ({ page }) => {
+      await stubApi(page, { ...base, offers: [MIRA_BUYS] });
+      await page.goto(SELL);
+      await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+      await page.locator('#quote-amount').fill('1.151515151515');
+      await expect(card(page)).toContainText('1.151515151515 XMR');
+      await expectPhoneLayout(page);
+    });
   });
 }
 
@@ -428,11 +529,15 @@ test.describe('phone sizes: fit and a take by tapping', () => {
       await page.getByRole('radio', { name: /Cake Wallet/ }).check();
       await expect(card(page)).toContainText('1.250000 XMR');
       await expect(card(page)).toContainText('$412.50 USD');
+      // The bands card fits the phone too (expectFitsPhone checks every element), its band marked.
+      await expect(marked(page)).toHaveCount(1);
       await expect(page.locator('#quote-amount')).toBeInViewport();
       await expectFitsPhone(page);
       await trade(page).tap();
       await expect(page).toHaveURL(`/trade/${B.code}`);
-      expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
+      expect(seen.takes).toEqual([
+        { offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250', methodId: B.method.id, currency: B.currency },
+      ]);
     });
 
     test(`BuyQuote at ${vp.width}x${vp.height} with no wallet and "Price unavailable right now" still fits`, async ({ page }) => {

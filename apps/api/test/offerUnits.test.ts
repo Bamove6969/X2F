@@ -8,11 +8,12 @@ import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
+import { flexBody } from './helpers/offers.js';
 
 // Owner, 8 Nov 2026 ("Offer amounts in XMR or fiat"): an offer stores its trade size in the unit its
 // poster chose (`amountUnit`), the lists show both units at the offer's rate now, and the take
-// checks the size in the poster's unit at the rate it locks (the market plus the margin, or the
-// fixed price). Real Postgres (one database per file), a fake market so each test moves the price.
+// checks the size in the poster's unit at the rate it locks (the market plus the margin; there is
+// no fixed price, owner Q1). Real Postgres (one database per file), a fake market so each test moves the price.
 
 const DAY = 86_400_000;
 const market = { usdCentsPerXmr: 33_000n as bigint | null };
@@ -36,6 +37,12 @@ let app: FastifyInstance;
 let deps: Deps;
 let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
 let anon: Browser;
+/**
+ * Browsing is behind the front door (owner, 8 Nov 2026: requireInside; logged out gets 401): the
+ * lists and offers are read by a bystander, a Graduated trader with no ties to the posters (so no
+ * starter cap marks `opensAt` on the cards).
+ */
+let viewer: Browser;
 type Who = Awaited<ReturnType<typeof trader>> & { wallet: string };
 
 beforeAll(async () => {
@@ -45,6 +52,7 @@ beforeAll(async () => {
   await deps.db.query(
     `insert into owner_settings (key, value, updated_at) values ('building_min_trades', 1, now()), ('graduated_min_trades', 2, now())`,
   );
+  viewer = (await person()).browser;
 });
 afterAll(async () => {
   await app.close();
@@ -80,13 +88,13 @@ const FIAT_OFFER = { ...BASE, amountUnit: 'fiat', minFiatCents: '50000', maxFiat
 async function post(who: Who, b: Record<string, unknown>): Promise<string> {
   // Only vendors post offers (owner 2 Nov 2026, vendor.test.ts); the poster becomes one here.
   await makeVendor(deps, who.id);
-  const res = await who.browser.post('/v1/offers', b);
+  const res = await who.browser.post('/v1/offers', flexBody(b));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }
 
 type Card = Record<string, unknown> & { id: string };
-async function card(id: string, who: Browser = anon): Promise<Card> {
+async function card(id: string, who: Browser = viewer): Promise<Card> {
   const res = await who.get('/v1/offers?side=sell&method=ZELLE&currency=USD');
   expect(res.statusCode, res.body).toBe(200);
   return (res.json() as Card[]).find((c) => c.id === id)!;
@@ -96,7 +104,7 @@ async function card(id: string, who: Browser = anon): Promise<Card> {
 function takeBody(who: Who, amountAtomic: bigint, rate = (market.usdCentsPerXmr! * 10_250n + 5_000n) / 10_000n): Record<string, unknown> {
   return {
     amountAtomic: amountAtomic.toString(), walletId: who.wallet, centsPerXmr: rate.toString(),
-    fiatCents: fiatCents(amountAtomic, { currency: 'USD', centsPerXmr: rate }).toString(),
+    fiatCents: fiatCents(amountAtomic, { currency: 'USD', centsPerXmr: rate }).toString(), methodId: 'ZELLE', currency: 'USD',
   };
 }
 
@@ -110,10 +118,14 @@ describe('posting and listing in the poster\'s unit', () => {
     expect(await card(id)).toMatchObject({
       rate: '33825', amountUnit: 'xmr', minAtomic: '1000000000000', maxAtomic: '5000000000000', minFiatCents: '33825', maxFiatCents: '169125',
     });
-    const { rows } = await deps.db.query('select amount_unit, min_atomic, max_atomic, min_fiat_cents, max_fiat_cents from offers where id = $1', [id]);
-    expect(rows[0]).toEqual({ amount_unit: 'xmr', min_atomic: '1000000000000', max_atomic: '5000000000000', min_fiat_cents: null, max_fiat_cents: null });
+    // J-16: the unit is the offer's, the range its band's (offer_tiers, in atomic units).
+    const { rows } = await deps.db.query(
+      'select o.amount_unit, t.min_amount::text as min, t.max_amount::text as max from offers o join offer_tiers t on t.offer_id = o.id where o.id = $1',
+      [id],
+    );
+    expect(rows).toEqual([{ amount_unit: 'xmr', min: '1000000000000', max: '5000000000000' }]);
     // The single-offer route and My offers say the same.
-    expect((await anon.get(`/v1/offers/${id}`)).json()).toMatchObject({ amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: '33825' });
+    expect((await viewer.get(`/v1/offers/${id}`)).json()).toMatchObject({ amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: '33825' });
     const mine = ((await p.browser.get('/v1/account/offers')).json() as Card[]).find((o) => o.id === id);
     expect(mine).toMatchObject({ amountUnit: 'xmr', minAtomic: '1000000000000', maxAtomic: '5000000000000', minFiatCents: '33825', maxFiatCents: '169125' });
   });
@@ -129,14 +141,17 @@ describe('posting and listing in the poster\'s unit', () => {
     expect(await card(await post(await person(), old))).toMatchObject({ amountUnit: 'fiat', minFiatCents: '50000' });
   });
 
-  it('while the feed is down the converted pair is null for a market offer; a fixed price still converts', async () => {
+  it('while the feed is down the converted pair is null for every offer, at any margin (no fixed price, owner Q1); no list shows them (owner Q5)', async () => {
     const mkt = await post(await person(), XMR_OFFER);
-    const fixed = await post(await person(), { ...XMR_OFFER, pricing: { mode: 'fixed', centsPerXmr: '35000' } });
+    const below = await post(await person(), { ...XMR_OFFER, pricing: { mode: 'market', marginBps: -5000 } });
     const fiat = await post(await person(), FIAT_OFFER);
+    expect(await card(below)).toMatchObject({ rate: '16500', minFiatCents: '16500', maxFiatCents: '82500' });
     market.usdCentsPerXmr = null;
-    expect(await card(mkt)).toMatchObject({ rate: null, amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: null, maxFiatCents: null });
-    expect(await card(fixed)).toMatchObject({ rate: '35000', minFiatCents: '35000', maxFiatCents: '175000' });
-    expect(await card(fiat)).toMatchObject({ rate: null, minFiatCents: '50000', minAtomic: null, maxAtomic: null });
+    expect(await card(mkt)).toBeUndefined();
+    const one = async (id: string): Promise<Card> => (await viewer.get(`/v1/offers/${id}`)).json() as Card;
+    expect(await one(mkt)).toMatchObject({ rate: null, amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: null, maxFiatCents: null });
+    expect(await one(below)).toMatchObject({ rate: null, amountUnit: 'xmr', minAtomic: '1000000000000', minFiatCents: null, maxFiatCents: null });
+    expect(await one(fiat)).toMatchObject({ rate: null, minFiatCents: '50000', minAtomic: null, maxAtomic: null });
   });
 
   it('refuses a body whose amounts do not match its unit, or are not positive whole numbers in order', async () => {
@@ -156,7 +171,7 @@ describe('posting and listing in the poster\'s unit', () => {
       { ...XMR_OFFER, maxAtomic: '1'.repeat(21) },
       { ...xmrBase, minAtomic: '1' },
     ];
-    for (const b of bad) expect((await p.browser.post('/v1/offers', b)).statusCode, JSON.stringify(b)).toBe(400);
+    for (const b of bad) expect((await p.browser.post('/v1/offers', flexBody(b))).statusCode, JSON.stringify(b)).toBe(400);
   });
 });
 

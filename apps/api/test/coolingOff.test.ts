@@ -24,7 +24,10 @@ import { fixtureLeakedList } from './helpers/leaked.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
 import { FIAT, driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
+import type { JabberSender } from '../src/jabber/sender.js';
 import { Browser, codeAt } from './helpers/totp.js';
+import { SIG } from './helpers/signature.js';
+import { flexBody, insertOffer } from './helpers/offers.js';
 
 const ORIGIN = 'https://x2f.test';
 const TERMS = '2026-10-17';
@@ -51,12 +54,20 @@ const walletAction = (address: string): ConfirmAction => ({
   kind: 'add-wallet', addressHash: createHash('sha256').update(address).digest('hex'), addressEnd: addressEnd(address),
 });
 
+/** Owner rule p5-7: the Jabber set-up's test codes, by address (the class audit's rows read them). */
+const jabberCodes = new Map<string, string>();
+const jabberSender: JabberSender = {
+  async send(to, m) {
+    if (m.kind === 'test-code') jabberCodes.set(to, m.code);
+  },
+};
+
 beforeAll(async () => {
   const fixture = await fixtureLeakedList();
   cleanup = fixture.cleanup;
   leaked = fixture.list;
   let set: (d: Date) => void;
-  ({ app, deps, setNow: set, trader, logs } = await tradeApp({}, { leaked, addresses: fakeValidator }));
+  ({ app, deps, setNow: set, trader, logs } = await tradeApp({}, { leaked, addresses: fakeValidator, jabberSender }));
   setNow = (d) => {
     now = d;
     set(d);
@@ -124,7 +135,7 @@ const onboarding = (d: Deps, accountId: string, until: Date | null) =>
 /** A password trader signed up in `b` (its sign-up session stays open there, its set-up window over). */
 async function passwordTrader(a: FastifyInstance = app, d: Deps = deps, b = new Browser(a)) {
   const name = unique('cool');
-  const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
+  const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
   expect(res.statusCode).toBe(201);
   const rows = [{ id: (await accountIdByLoginName(d, name))! }];
   const id = rows[0]!.id;
@@ -159,7 +170,7 @@ async function passkeyTrader(b = new Browser(app)): Promise<{ b: Browser; id: st
   const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
   const name = unique('passkeyuser');
   const start = (await b.post('/v1/register/webauthn/start', { displayName: `D.${name}`, loginName: name, kind: 'passkey' })).json();
-  expect((await b.post('/v1/register/webauthn/finish', { challengeId: start.challengeId, response: auth.register(start.options, ORIGIN), deviceLabel: 'Phone', acceptedTerms: TERMS })).statusCode).toBe(201);
+  expect((await b.post('/v1/register/webauthn/finish', { challengeId: start.challengeId, response: auth.register(start.options, ORIGIN), deviceLabel: 'Phone', acceptedTerms: TERMS, termsSignature: SIG })).statusCode).toBe(201);
   const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
   await onboarding(deps, rows[0]!.id, null);
   return { b, id: rows[0]!.id, name, auth };
@@ -208,7 +219,7 @@ async function pgpTrader(): Promise<{ b: Browser; id: string; name: string; key:
   const b = new Browser(app);
   const start = await b.post('/v1/register/pgp/start', { displayName: `G${name}`, loginName: name, publicKey: key.publicKey });
   const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey));
-  expect((await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: TERMS })).statusCode).toBe(201);
+  expect((await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG })).statusCode).toBe(201);
   const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
   await onboarding(deps, rows[0]!.id, null);
   return { b, id: rows[0]!.id, name, key };
@@ -457,7 +468,7 @@ describe('one weak way (hold model v3: its changes are staged and wait; nothing 
   it('the sign-up session setting the account up stages nothing', async () => {
     const b = new Browser(app);
     const name = unique('cool');
-    await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
+    await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS, termsSignature: SIG });
     expect((await b.post('/v1/account/recovery-codes', {})).statusCode).toBe(200);
     const id = (await accountIdByLoginName(deps, name))!;
     expect(await holdOf(deps, id)).toBeNull();
@@ -555,7 +566,7 @@ describe("C2: a weak session's changes touch nothing before their date", () => {
       ids.push(changeIdOf(r));
     }
     // Accepting the Terms is not a security change: it applies (lead decision 2026-10-30).
-    expect((await b.post('/v1/account/terms', { version: TERMS })).statusCode).toBe(204);
+    expect((await b.post('/v1/account/terms', { version: TERMS, signature: SIG })).statusCode).toBe(204);
     expect((await methodsOf(b)).map((m) => m.type).sort()).toEqual(['passkey', 'password']);
     expect((await submit(b, ids)).json()).toMatchObject({ status: 'queued', count: 4 });
 
@@ -634,14 +645,10 @@ describe('during the hold', () => {
     const t = await heldTrader();
     const take = await t.thief.post('/v1/offers/00000000-0000-4000-8000-000000000000/take', {});
     expect(take.json()).toEqual({ error: 'recovery-hold', holdUntil: t.until });
-    expect(errorOf(await t.thief.post('/v1/offers', {}))).toBe('recovery-hold');
+    expect(errorOf(await t.thief.post('/v1/offers', flexBody({})))).toBe('recovery-hold');
     expect(errorOf(await t.thief.post('/v1/wallets', {}))).toBe('recovery-hold');
     expect(errorOf(await t.thief.delete('/v1/wallets/00000000-0000-4000-8000-000000000000'))).toBe('recovery-hold');
-    const { rows } = await deps.db.query<{ id: string }>(
-      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-       values ($1, 'sell', 'zelle', 'USD', 'market', 0, 1000, 100000, null, '', 'paused', $2, $2) returning id`,
-      [t.id, now],
-    );
+    const rows = [{ id: await insertOffer(deps.db, { accountId: t.id, side: 'sell', methodId: 'zelle', currency: 'USD', min: 1000, max: 100000, status: 'paused', at: now }) }];
     expect(errorOf(await t.thief.patch(`/v1/offers/${rows[0]!.id}`, { status: 'live' }))).toBe('recovery-hold');
     expect(errorOf(await t.thief.post('/v1/account/offers/status', { ids: [rows[0]!.id], status: 'live' }))).toBe('recovery-hold');
     expect((await t.thief.patch(`/v1/offers/${rows[0]!.id}`, { status: 'removed' })).statusCode).toBeLessThan(300);
@@ -992,9 +999,9 @@ describe('review round 2', () => {
       expect(await changesOf(t.id)).toEqual([{ kind: 'login-name', submitted: false }]);
       expect(await legacy(t.id)).toBe(true);
       // Nobody can take it meanwhile, as a display name or as a login name.
-      const asDisplay = await new Browser(app).post('/v1/register/password', { displayName: name, loginName: unique('other'), password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS });
+      const asDisplay = await new Browser(app).post('/v1/register/password', { displayName: name, loginName: unique('other'), password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG });
       expect(errorOf(asDisplay)).toBe('names-unavailable');
-      const asLogin = await new Browser(app).post('/v1/register/password', { displayName: `P${unique('d')}`, loginName: name, password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS });
+      const asLogin = await new Browser(app).post('/v1/register/password', { displayName: `P${unique('d')}`, loginName: name, password: GOOD, deviceLabel: 'L', acceptedTerms: TERMS, termsSignature: SIG });
       expect(errorOf(asLogin)).toBe('names-unavailable');
       expect((await submit(t.b, [changeIdOf(res)])).statusCode).toBe(200);
       setNow(new Date(now.getTime() + HOLD_MS));
@@ -1353,7 +1360,7 @@ describe('review round 2', () => {
         const agg = (from: string) => `select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text), '[]'::jsonb) as j from ${from}`;
         const tables = [
           'alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices', 'team_members', 'team_audit',
-          'recovery_code_reveals', 'held_trades', 'past_reputation',
+          'recovery_code_reveals', 'held_trades', 'past_reputation', 'jabber_contacts', 'chat_key_envelopes',
         ];
         const out: Record<string, unknown> = {};
         for (const t of tables) out[t] = (await deps.db.query<{ j: unknown }>(`${agg(`${t} t`)} where account_id = $1`, [accountId])).rows[0]!.j;
@@ -1374,6 +1381,16 @@ describe('review round 2', () => {
         const r = await o.b.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken });
         expect(r.statusCode, r.body).toBe(201);
         return (r.json() as { id: string }).id;
+      }
+
+      /** A trader with Jabber alerts on (owner rule p5-7). */
+      async function jabberOn() {
+        const o = await passkeyWithPassword();
+        const jid = `${unique('live')}@xmpp.example.org`;
+        expect((await o.b.post('/v1/account/jabber/test', { address: jid })).statusCode).toBe(202);
+        await new Promise((r) => setImmediate(r));
+        expect((await o.b.post('/v1/account/jabber/verify', { code: jabberCodes.get(jid)! })).statusCode).toBe(200);
+        return o;
       }
 
       type Prepared = { b: Browser; accountId: string; fire: () => Promise<LightMyRequestResponse> };
@@ -1508,7 +1525,7 @@ describe('review round 2', () => {
         'POST /v1/account/terms': async () => {
           const o = await passkeyWithPassword();
           await deps.db.query('update accounts set terms_accepted_at = null where id = $1', [o.id]);
-          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/terms', { version: TERMS }) };
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/terms', { version: TERMS, signature: SIG }) };
         },
         // Plan 2 Task 18 (team members), at its landing.
         'POST /v1/team/invites': async () => {
@@ -1581,6 +1598,37 @@ describe('review round 2', () => {
             message: await openpgp.createCleartextMessage({ text }), signingKeys: await openpgp.readPrivateKey({ armoredKey: key.privateKey }), date: deps.clock(),
           });
           return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/past-rep/finish', { challengeId, signed }) };
+        },
+        // Owner rule p5-7: the Jabber set-up (jabber/routes.ts `writeGate`).
+        'POST /v1/account/jabber/test': async () => {
+          const o = await passkeyWithPassword();
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/jabber/test', { address: `${unique('live')}@xmpp.example.org` }) };
+        },
+        'POST /v1/account/jabber/verify': async () => {
+          const o = await passkeyWithPassword();
+          const jid = `${unique('live')}@xmpp.example.org`;
+          expect((await o.b.post('/v1/account/jabber/test', { address: jid })).statusCode).toBe(202);
+          await new Promise((r) => setImmediate(r));
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/jabber/verify', { code: jabberCodes.get(jid)! }) };
+        },
+        'PUT /v1/account/jabber/enabled': async () => {
+          const o = await jabberOn();
+          return { b: o.b, accountId: o.id, fire: () => o.b.put('/v1/account/jabber/enabled', { on: false }) };
+        },
+        'DELETE /v1/account/jabber': async () => {
+          const o = await jabberOn();
+          return { b: o.b, accountId: o.id, fire: () => o.b.delete('/v1/account/jabber') };
+        },
+        // J-23 groundwork: the chat-key courier (auth/chatKeys.ts), strong sessions only (a passkey session is).
+        'POST /v1/account/chat-keys': async () => {
+          const o = await passkeyWithPassword();
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/chat-keys', { recipientPublic: 'ab'.repeat(32), sealed: Buffer.alloc(80, 1).toString('base64url'), epoch: 0 }) };
+        },
+        'DELETE /v1/account/chat-keys/:id': async () => {
+          const o = await passkeyWithPassword();
+          const r = await o.b.post('/v1/account/chat-keys', { recipientPublic: 'cd'.repeat(32), sealed: Buffer.alloc(80, 2).toString('base64url'), epoch: 0 });
+          expect(r.statusCode, r.body).toBe(201);
+          return { b: o.b, accountId: o.id, fire: () => del(o.b, `/v1/account/chat-keys/${(r.json() as { id: string }).id}`) };
         },
       };
 

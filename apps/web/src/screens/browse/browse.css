@@ -31,12 +31,15 @@
 .x2f-browse__logo {
   display: flex;
   align-items: center;
+  /* Logo D with the Site news bell beside it. */
+  gap: var(--x2f-space-1);
   height: 30px;
   color: var(--x2f-ink);
 }
 
-/* Wide: the rail carries the logo (Job 3), so the header does not repeat it. */
-[data-shell='desktop'] .x2f-browse__logo {
+/* Wide: the rail carries the logo (Job 3) and the Site news bell, so the header does not repeat them. */
+[data-shell='desktop'] .x2f-browse__logo,
+[data-shell='desktop'] .x2f-browse__brand {
   display: none;
 }
 

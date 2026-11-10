@@ -14,6 +14,13 @@
  *   off; sign-up still works and `createAccount` still answers a taken name with `names-unavailable`.
  * - no IP address is read or kept (the API keeps none), and the name is never logged or echoed.
  * Every request costs a token before the shape check, so a malformed name probes nothing for free.
+ * Both counts live in Postgres (`takeSharedBucket`, review F2), so they bound the whole site however
+ * many API processes run, and a restart does not refill them. The device count is taken first, so
+ * the site budget is spent only by requests that passed their device's limit (review F3).
+ * In front of both sits an in-memory load shed of the same sizes, per process (`budgets.nameCheck*Shed`,
+ * review S1, like every other public route's `budgets.*.take()`): a flood, with made-up cookies or
+ * none, is refused there before any query, so it cannot fill `login_throttle` with rows or queue the
+ * shared pool on the `name-check:site` row. The Postgres counts stay the real limit across processes.
  * A name found this way still has its per-name login throttle (R28), so guesses at its password stay
  * paced; what a finder gains is knowing where to aim them.
  */
@@ -21,20 +28,26 @@ import { checkLoginName } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { loginNameAvailable } from '../accounts.js';
 import { ApiError } from '../errors.js';
+import { NAME_CHECK_BUCKET, NAME_CHECK_DEVICE_BUCKET } from '../limits.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
+import { takeSharedBucket } from './throttle.js';
 
 const NAME_CHECK_BODY_LIMIT = 1024;
 
 async function nameCheck(req: FastifyRequest, reply: FastifyReply) {
+  const deps = req.server.deps;
   ensureDeviceCookie(req, reply);
   // The cookie was just minted when missing, so there is always a device to key on.
-  req.server.budgets.nameCheckDevice.take(deviceHash(req)!.toString('hex'));
-  req.server.budgets.nameCheck.take();
+  const device = deviceHash(req)!.toString('hex');
+  // Load shed first, in memory (review S1): an empty bucket refuses before any query.
+  req.server.budgets.nameCheckDeviceShed.take(device);
+  req.server.budgets.nameCheckShed.take();
+  await takeSharedBucket(deps, `name-check:dev:${device}`, NAME_CHECK_DEVICE_BUCKET, { status: 429, code: 'slow-down' });
+  await takeSharedBucket(deps, 'name-check:site', NAME_CHECK_BUCKET, { status: 503, code: 'busy' });
   const b = req.body as Record<string, unknown> | null;
   if (b === null || typeof b !== 'object' || Array.isArray(b) || typeof b.loginName !== 'string') throw new ApiError(400, 'bad-request');
   const r = checkLoginName(b.loginName);
   if (!r.ok) throw new ApiError(400, 'login-name-invalid');
-  const deps = req.server.deps;
   return { available: await loginNameAvailable(deps.db, deps.config, r.key) };
 }
 

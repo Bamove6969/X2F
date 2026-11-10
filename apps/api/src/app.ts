@@ -10,6 +10,7 @@ import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { holdRoutes } from './auth/holdRoutes.js';
 import { recoveryRoutes } from './auth/recovery.js';
 import { approvalRoutes } from './auth/approval.js';
+import { chatKeyRoutes } from './auth/chatKeys.js';
 import { TRADER_LOGIN_KINDS, TRADER_REALM, logoutRoute, runsWithSession, type SessionRealm } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
@@ -36,6 +37,8 @@ import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { teamRoutes } from './routes/team.js';
 import { accountTypeRoutes } from './routes/accountType.js';
+import { jabberRoutes } from './jabber/routes.js';
+import type { JabberSender } from './jabber/sender.js';
 import { noteRoutes } from './team/notes.js';
 import { tradeIdentityRoutes } from './trades/identity.js';
 import { chatRoutes } from './chat/routes.js';
@@ -85,6 +88,11 @@ export interface Deps {
   liveOffers?: LiveOfferStats;
   /** Task 26: shared-context check (Tasks 6, 20), SSE publish and Web Push (Task 19). */
   nudges: NudgeWiring;
+  /**
+   * Owner rule p5-7: X2F's Jabber sender (the XMPP account in `config.xmpp`, jabber/xmpp.ts; tests
+   * pass a fake). Without it the Jabber set-up answers 503 `jabber-unavailable`.
+   */
+  jabberSender?: JabberSender;
 }
 
 declare module 'fastify' {
@@ -297,6 +305,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   accountTypeRoutes(app);
   // Plan 2 Task 16: new-device approval (the new device's poll and the logged-in device's decision).
   approvalRoutes(app);
+  // J-23 groundwork: the chat-key courier between a person's own strong devices (ciphertext only).
+  chatKeyRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
   // Staff accounts log in only on the staff API (owner 2026-11-03): see `TRADER_LOGIN_KINDS`.
   webauthnRoutes(app);
@@ -346,6 +356,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   pastRepRoutes(app);
   // Plan 2, Task 18: team members (invites, the member's sign-up, roles, the owner's audit log).
   teamRoutes(app);
+  // Owner rule p5-7: secure Jabber account-change alerts (boards JabberSetup, Alerts).
+  jabberRoutes(app);
   // Job 1c (J-10, S-094): notes on traders.
   noteRoutes(app);
   // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.

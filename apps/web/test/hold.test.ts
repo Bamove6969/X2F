@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
-import { holdLoginSentence, holdSentence, utcTime, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
+import { holdLoginSentence, holdSentence, momentText, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
 import { TOO_MANY_APPROVALS, WEAK_SESSION_TEXT, holdText, teamCantDoText } from '../src/ui/cantDoCodes.js';
 import { ruleLines, ruleNote } from '../src/screens/wallets-model.js';
 import { walletWaitNote } from '../src/screens/auth/ConfirmSheet.js';
@@ -22,7 +22,7 @@ describe('the 24-hour hold', () => {
     expect(HOLD_COPY.staged).toBe('Saved as a draft. Nothing changes until you submit it.');
     expect(HOLD_COPY.waitBody).toContain('Every change, removals included, applies after 24 h');
     expect(HOLD_COPY.throwAway).toContain('approve them at once, cancel them or change them');
-    expect(HOLD_COPY.submitted(UNTIL)).toBe(`Submitted. Your changes take effect on ${utcTime(new Date(UNTIL))}.`);
+    expect(HOLD_COPY.submitted(UNTIL)).toBe(`Submitted. Your changes take effect on ${momentText(new Date(UNTIL))}.`);
   });
 });
 
@@ -37,7 +37,7 @@ describe('loginCantDo', () => {
   it('round 3 R3-M3: a login refused during the hold says this login cannot get in until it ends, and what the reader can do', () => {
     const t = loginCantDo(new AuthApiError(403, 'recovery-hold', { holdUntil: UNTIL }), 'login');
     expect(t).toEqual({ code: 'recovery-hold', text: holdLoginSentence(UNTIL) });
-    expect(t!.text).toContain(`This login can't get in until ${utcTime(new Date(UNTIL))}.`);
+    expect(t!.text).toContain(`This login can't get in until ${momentText(new Date(UNTIL))}.`);
     expect(t!.text).toContain('If not, wait and log in again when the hold ends.');
     expect(t!.text).toContain('If you had a passkey, a security key or a PGP key set up before the hold');
     // Nothing it cannot keep: this login finishes no trades, and the account's held changes are not the reader's to make here.

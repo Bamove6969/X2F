@@ -167,8 +167,9 @@ export const BOARD_BUY_OFFERS = {
 
 /**
  * The three offer cards of the BuyOffers board, as `GET /v1/offers?side=sell` sends them, in the
- * board's "Best price" order (lowest first). satoshi_ghost's offer is fixed-price ($330.00, "$0.10
- * above market" against $329.90). lowtide_rx has 12 trades, so the API would say stage 'building'
+ * board's "Best price" order (lowest first). The board draws satoshi_ghost's offer as a fixed price
+ * ($330.00, "$0.10 above market" against $329.90); there are no fixed-price offers (owner Q1, 6 Nov),
+ * so it is +0.03%, which comes to the same $330.00. lowtide_rx has 12 trades, so the API would say stage 'building'
  * and the card shows New (spec 2.3, owner 2026-10-24); the board predates starter limits and shows
  * no badge there.
  */
@@ -187,7 +188,7 @@ export function boardBuyOffers(now: Date = new Date()) {
         stage: 'graduated',
       },
       rate: '33000',
-      pricing: { mode: 'fixed', centsPerXmr: '33000' },
+      pricing: { mode: 'market', marginBps: 3 },
       minFiatCents: '5000',
       maxFiatCents: '150000',
       minTrades: 0,

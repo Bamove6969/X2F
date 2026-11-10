@@ -7,9 +7,9 @@ import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { countActionTimes } from '../src/traders/actionTimes.js';
 import { applyEvent } from '../src/trades/store.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
-import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, fakeAddress, happyPath, seedReviews, seedTrade } from './helpers/trades.js';
+import { flexBody } from './helpers/offers.js';
 
 // The offer card's trust row (design review 8 Nov, item 5; boards SellOffers/BuyOffers): trades, %
 // positive, earned badges, and "Releases in ~8 min" / "Pays in ~6 min". Every figure comes from real
@@ -38,7 +38,11 @@ let app: FastifyInstance;
 let deps: Deps;
 let setNow: (d: Date) => void;
 let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
-let anon: Browser;
+/**
+ * Browsing is behind the front door (owner, 8 Nov 2026: requireInside; logged out gets 401): the
+ * lists are read by a bystander trader, logged in again at each read (the clock here moves by days).
+ */
+let viewer: Awaited<ReturnType<typeof trader>>;
 type Who = Awaited<ReturnType<typeof trader>> & { wallet: string };
 
 let clock = new Date('2026-10-17T12:00:00Z').getTime();
@@ -50,7 +54,7 @@ const tick = (ms: number) => {
 beforeAll(async () => {
   ({ app, deps, trader, setNow } = await tradeApp({}, { prices }));
   setNow(new Date(clock));
-  anon = new Browser(app);
+  viewer = await trader();
   // As offerUnits.test.ts: Graduated at 2 completed trades, so the lists carry no starter caps.
   await deps.db.query(
     `insert into owner_settings (key, value, updated_at) values ('building_min_trades', 1, now()), ('graduated_min_trades', 2, now())`,
@@ -100,14 +104,15 @@ const OFFER = { methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', m
 async function post(who: Who, side: 'sell' | 'buy'): Promise<string> {
   // Only vendors post offers (owner 2 Nov 2026, vendor.test.ts); the poster becomes one here.
   await makeVendor(deps, who.id);
-  const res = await who.browser.post('/v1/offers', { ...OFFER, side });
+  const res = await who.browser.post('/v1/offers', flexBody({ ...OFFER, side }));
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
 }
 
 type Poster = { completedTrades: number; positivePct: number | null; typicalMinutes: number | null; badges: string[]; stage: string };
 async function posterOn(side: 'sell' | 'buy', id: string): Promise<Poster> {
-  const res = await anon.get(`/v1/offers?side=${side}&method=ZELLE&currency=USD`);
+  expect((await viewer.browser.post('/t/login', { accountId: viewer.id })).statusCode).toBe(200);
+  const res = await viewer.browser.get(`/v1/offers?side=${side}&method=ZELLE&currency=USD`);
   expect(res.statusCode, res.body).toBe(200);
   const c = (res.json() as { id: string; poster: Poster }[]).find((x) => x.id === id);
   expect(c, 'offer listed').toBeDefined();

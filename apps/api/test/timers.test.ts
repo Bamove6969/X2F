@@ -132,11 +132,11 @@ describe('startTimers', () => {
   it('siteMaintenanceSince reads site_flags.maintenance_since (what main.ts passes; the NEEDS_SITE_FLAGS landing)', async () => {
     expect(await siteMaintenanceSince(deps.db)).toBeNull();
     const since = new Date('2026-11-02T10:00:00Z');
-    await deps.db.query('update site_flags set maintenance_since = $1', [since]);
+    await deps.db.query("update site_flags set maintenance_since = $1, maintenance_kind = 'unplanned'", [since]);
     try {
       expect(await siteMaintenanceSince(deps.db)).toEqual(since);
     } finally {
-      await deps.db.query('update site_flags set maintenance_since = null');
+      await deps.db.query('update site_flags set maintenance_since = null, maintenance_kind = null');
     }
   });
 

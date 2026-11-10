@@ -184,8 +184,10 @@ export async function assertInsideBand(q: Queryable, band: TradeBand | null, on:
     }
   }
   if (on.offerId) {
+    // Flex offers (migration 490): the range is every band of every currency, in the offer's unit.
     const { rows } = await q.query<{ amount_unit: string; min_atomic: string | null; max_atomic: string | null }>(
-      'select amount_unit, min_atomic::text, max_atomic::text from offers where id = $1',
+      `select o.amount_unit, min(t.min_amount)::text as min_atomic, max(t.max_amount)::text as max_atomic
+         from offers o left join offer_tiers t on t.offer_id = o.id where o.id = $1 group by o.id`,
       [on.offerId],
     );
     const r = rows[0];

@@ -19,7 +19,7 @@ import {
   type AuthApi,
   type Staged,
 } from '../src/index.js';
-import { ROUTES, callSample, methodNames } from './helpers/routes.js';
+import { ROUTES, SIG, callSample, methodNames } from './helpers/routes.js';
 import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
 
@@ -33,16 +33,19 @@ const LABEL = 'Browser on Linux';
  * (Task 3: methods, method suggestions, price, the owner's price health; Task 4: offers; Task 5:
  * taking an offer and the poster's wallet; Task 6: the trade view
  * and the events route; Task 8: the identity and attestation routes; Task 19: live events, Web
- * Push and the final-alert receipts; Task 24: the release confirmations; Task 26: nudges, nudge settings
+ * Push (its final-alert receipt route is gone with the final alert: trade-rules, owner 8 Nov p6-1); Task 24: the release confirmations; Task 26: nudges, nudge settings
   * and blocks; Task 27: the dispute and the appeal; Task 36: My offers; Task 37: the Blocked list and unblock; Plan 5 Tasks 4 and 21: the two feedback
  * routes; Plan 5 Task 3 and C12b: reviews, Skip review, the pending reviews and the traded-total setting; Plan 5 Task 10: the four past-reputation routes;
- * Plan 4 Task 8: the site state, read by the web shell). Any other new route still needs a client method.
+ * Plan 4 Task 8: the site state, read by the web shell; J-16 flex offers: the currency list, read by
+ * Post an offer in apps/web/src/screens/post/api.ts). Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
+  'DELETE /v1/account/notes/:displayName|:id',
   'DELETE /v1/account/past-rep/:id',
   'DELETE /v1/account/push',
   'GET /v1/account/blocks',
+  'GET /v1/account/notes/:displayName|:id',
   'GET /v1/account/nudges',
   'GET /v1/account/offers',
   'GET /v1/account/past-rep',
@@ -52,6 +55,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/chats/:chat',
   'GET /v1/chats/:chat/attestation',
   'GET /v1/chats/:chat/envelopes',
+  'GET /v1/currencies',
   'GET /v1/events',
   'GET /v1/methods',
   'GET /v1/news',
@@ -60,6 +64,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/price',
   'GET /v1/reviews/pending',
   'GET /v1/site',
+  'GET /v1/team/permissions',
   'GET /v1/trades/:code',
   'GET /v1/trades/:code/attestation',
   'GET /v1/trades/:code/confirmations',
@@ -67,6 +72,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/trades/:code/review',
   'PATCH /v1/offers/:id',
   'POST /v1/account/blocks',
+  'POST /v1/account/notes',
   'POST /v1/account/offers/status',
   'POST /v1/account/past-rep/finish',
   'POST /v1/account/past-rep/start',
@@ -84,13 +90,13 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/trades/:code/chat',
   'POST /v1/trades/:code/dispute',
   'POST /v1/trades/:code/events',
-  'POST /v1/trades/:code/final-alert-seen',
   'POST /v1/trades/:code/identity',
   'POST /v1/trades/:code/review',
   'POST /v1/trades/:code/review/skip',
   'POST /v1/trades/:code/wallet',
   'PUT /v1/account/nudges',
   'PUT /v1/account/profile/traded-total',
+  // POST /v1/trades/:code/final-alert-seen is gone with the final alert (owner 8 Nov, p6-1; design-results).
 ] as const;
 
 let srv: Server;
@@ -123,7 +129,7 @@ async function registerPgp(j: Jar): Promise<{ username: string; key: Pair }> {
   const start = await j.api.registerPgpStart({ displayName: `D${username}`, loginName: username, publicKey: key.publicKey });
   expect(start.fingerprint).toBe(key.fingerprint);
   const done = await j.api.registerPgpFinish({
-    challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: terms(),
+    challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG,
   });
   expect(done).toEqual({ displayName: `D${username}` });
   return { username, key };
@@ -188,7 +194,7 @@ describe('onboarding', () => {
   it('passkey sign-up through the ceremony wrapper', async () => {
     const soft = createSoftAuthenticator({ backedUp: true, userVerified: true });
     const username = uniqueName('key');
-    await expect(registerWithWebAuthn(jar().api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), ceremonyOf(soft))).resolves.toEqual({
+    await expect(registerWithWebAuthn(jar().api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), SIG, ceremonyOf(soft))).resolves.toEqual({
       displayName: `D${username}`,
     });
     const fresh = jar();
@@ -198,16 +204,16 @@ describe('onboarding', () => {
   it('password sign-up: a leaked or weak password is refused with its reason, then a good one works', async () => {
     const own = jar();
     const username = uniqueName('pass');
-    const leaked = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'Password123!', deviceLabel: LABEL, acceptedTerms: terms() })));
+    const leaked = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'Password123!', deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG })));
     expect(leaked.status).toBe(400);
     expect(leaked.code).toBe('password-leaked');
-    const weak = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'short', deviceLabel: LABEL, acceptedTerms: terms() })));
+    const weak = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: 'short', deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG })));
     expect(weak.code).toBe('password-weak');
     expect(weak.missing).toEqual(expect.arrayContaining(['length']));
-    const stale = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: 'old' })));
+    const stale = apiError(await failure(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: 'old', termsSignature: SIG })));
     expect(stale.code).toBe('terms-not-accepted');
 
-    await expect(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms() })).resolves.toEqual({
+    await expect(own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG })).resolves.toEqual({
       displayName: `D${username}`,
     });
     await own.api.logout();
@@ -269,7 +275,7 @@ describe('a flood of bad passwords (Review Focus 2, P2-C1)', () => {
     // A password account (this browser becomes trusted) that adds a passkey and a PGP key during onboarding.
     const own = jar();
     const username = uniqueName('flood');
-    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms() });
+    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: terms(), termsSignature: SIG });
     const soft = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await addWebAuthnKey(own.api, 'passkey', {}, ceremonyOf(soft));
     const key = await genKey();

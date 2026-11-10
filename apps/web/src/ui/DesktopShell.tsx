@@ -3,12 +3,14 @@ import { Link, useLocation } from 'react-router';
 import { normalizeTradeCode } from '@x2f/core';
 import { Icon, type IconName } from './icons.js';
 import { Logo } from './Logo.js';
+import { NewsBell } from './NewsBell.js';
 import './ui.css';
 
 /*
  * The wide frame (Job 3; design review 8 Nov 2026 items 2 and 3). After login, the 240 px left rail
  * of the *-Wide boards (SellQuote-Wide, Settings-Wide, ...): logo D as the home link with the page
- * name under it, then Trade, Post offer, Wallets, Profile, Settings and Help. Before login (sign-in,
+ * name under it (the Site news bell beside the logo, placement pending design), then Trade, Post
+ * offer, Wallets, Profile, Settings and Help. Before login (sign-in,
  * setup, terms, a team invite: Login-Wide, SignupSecurity-Wide), the logo is centred at the top and
  * there is no navigation. Phones keep their own header and the bottom tab bar.
  */
@@ -97,6 +99,12 @@ export function DesktopRail({ postOffers = true }: { postOffers?: boolean }) {
         <Link to="/sell" aria-label="X2F home" className="x2f-rail__home">
           <Logo size={24} decorative />
         </Link>
+        {/*
+          Site news, the bell beside the logo (owner 29 Oct; W-002: News stays reachable after "Don't
+          show me this again"). Placement pending design (lead default): the rail head is the one
+          place present on every wide screen after login; the boards do not draw the bell on wide yet.
+        */}
+        <NewsBell />
         <PageName name={railPageName(pathname)} />
       </div>
       {links.map((l) => (

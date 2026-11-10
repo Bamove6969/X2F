@@ -13,7 +13,7 @@ import { Security } from '../src/screens/settings/Security.js';
 import { CHANGES_PATH, HOLD_COPY, MEMBER_HOLD_COPY, NEW_CODE_COPY, changeWords, codeGroups } from '../src/screens/settings/holdCopy.js';
 import { alertDetail, alertWords } from '../src/screens/settings/Alerts.js';
 import { refreshSession } from '../src/session/useSession.js';
-import { utcDateTime } from '../src/ui/dates.js';
+import { formatDateTime as utcDateTime } from '../src/ui/dates.js';
 import { holdChangesCantDoText } from '../src/ui/cantDoCodes.js';
 import { fire, render } from './render.js';
 

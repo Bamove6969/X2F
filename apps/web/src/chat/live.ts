@@ -13,19 +13,24 @@ export function emitChatLive(chat: string): void {
 
 const norm = (c: string): string => c.replace(/-/g, '').toUpperCase();
 
-/** Calls `onChange` on every live event for `chat` (any spelling of the code). */
+/** Calls `onChange` on every live event for `chat` (any spelling of the code) until the returned function is called. */
+export function onChatLive(chat: string, onChange: () => void): () => void {
+  const want = norm(chat);
+  const l = (c: string): void => {
+    if (norm(c) === want) onChange();
+  };
+  listeners.add(l);
+  return () => {
+    listeners.delete(l);
+  };
+}
+
+/** `onChatLive` as a hook. */
 export function useChatLive(chat: string | null, onChange: () => void): void {
   const cb = useRef(onChange);
   cb.current = onChange;
   useEffect(() => {
     if (chat === null) return;
-    const want = norm(chat);
-    const l = (c: string): void => {
-      if (norm(c) === want) cb.current();
-    };
-    listeners.add(l);
-    return () => {
-      listeners.delete(l);
-    };
+    return onChatLive(chat, () => cb.current());
   }, [chat]);
 }
