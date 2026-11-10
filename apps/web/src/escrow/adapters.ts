@@ -75,6 +75,9 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
 
 // ── Tasks 6 and 8: the routes the runtime calls ─────────────────────────────
 
+/** The longest one escrow API call may take (headers and body) before it fails and is retried. */
+export const ESCROW_API_TIMEOUT_MS = 15_000;
+
 /**
  * The escrow runtime's API calls over a same-origin fetch (the worker's own; no redirects, the
  * page's api() handles Terms and wallet redirects). The Task 8 routes' answers: identity 201
@@ -82,10 +85,18 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
  * key, is thrown with that code and is final), attestation 200 `{ attestation, sig }`, 202 while it
  * is not ready, or 409 `attestation-refused` or `trade-closed` (thrown, final).
  */
-export function httpEscrowApi(f: typeof fetch = (u, i) => fetch(u, i)) {
+export function httpEscrowApi(f: typeof fetch = (u, i) => fetch(u, i), timeoutMs = ESCROW_API_TIMEOUT_MS) {
   const path = (code: string, rest = ''): string => `/v1/trades/${encodeURIComponent(code)}${rest}`;
+  // Bounded (the escrow loop's tick waits on getTrade): an API that never answers is a failed call,
+  // read again on the next tick, never a tick that waits for good.
   const call = async (url: string, init: RequestInit = {}): Promise<Response> =>
-    f(url, { ...init, credentials: 'same-origin', redirect: 'error', headers: { accept: 'application/json', ...(init.body ? { 'content-type': 'application/json' } : {}) } });
+    f(url, {
+      ...init,
+      credentials: 'same-origin',
+      redirect: 'error',
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: { accept: 'application/json', ...(init.body ? { 'content-type': 'application/json' } : {}) },
+    });
   const fail = async (res: Response): Promise<never> => {
     const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
     throw Object.assign(new Error(`api ${res.status}`), { status: res.status, code: typeof body?.error === 'string' ? body.error : 'internal' });

@@ -10,7 +10,7 @@ import {
   type ReplayGuardJSON,
 } from '@x2f/protocol';
 import sodium from 'libsodium-wrappers';
-import { EscrowError, type EscrowEngine, type EscrowSession, type Incoming, type Outgoing, type Payout, type SavedSession } from './engine.js';
+import { DAEMON_TIMEOUT_MS, EscrowError, type EscrowEngine, type EscrowSession, type Incoming, type Outgoing, type Payout, type SavedSession } from './engine.js';
 import type { Transport } from './transport.js';
 import { MAX_NETWORK_FEE, sumPayouts } from './verify.js';
 
@@ -186,6 +186,13 @@ export interface PartyArgs {
   resendMaxMs?: number;
   /** Told about every ignored envelope or message, with a reason (no contents). */
   onIgnored?: (reason: string) => void;
+  /**
+   * The longest this party waits on one of the session's daemon lookups (sync, txStatus, txSeen,
+   * spentBy, submit, proveTx) before it counts as 'daemon-unavailable' and is tried again on a
+   * later tick. A backstop: the Monero engine gives up on its own after DAEMON_TIMEOUT_MS. Default
+   * DAEMON_TIMEOUT_MS + 5 s.
+   */
+  daemonTimeoutMs?: number;
 }
 
 const PREPARE = 'msig.prepare:0';
@@ -320,6 +327,35 @@ export function runParty(a: PartyArgs): PartyHandle {
   let failure: Error | null = null;
   let chain: Promise<void> = Promise.resolve();
   let timer: ReturnType<typeof setInterval> | undefined;
+
+  // Every daemon lookup on the settle path is bounded here too, whatever the engine does: one that
+  // never answers would otherwise hold `chain` (and so every later tick, message, funds() and
+  // stop()) for good. Only reads, and submit (re-broadcasting the same signed tx is harmless):
+  // never a call that makes or uses signing nonces (buildRelease, signRelease, export/import), which
+  // must not be abandoned and run again on the same state (R26).
+  const daemonMs = a.daemonTimeoutMs ?? DAEMON_TIMEOUT_MS + 5_000;
+  const bounded = async <T>(what: string, call: () => Promise<T>): Promise<T> => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const p = call();
+    p.catch(() => undefined);
+    try {
+      return await Promise.race([
+        p,
+        new Promise<never>((_, reject) => {
+          t = setTimeout(() => reject(new EscrowError('daemon-unavailable', `${what}: no answer in ${daemonMs} ms`)), daemonMs);
+        }),
+      ]);
+    } finally {
+      clearTimeout(t);
+    }
+  };
+  const daemon = {
+    sync: () => bounded('sync', () => session.sync()),
+    txStatus: (h: string) => bounded('tx lookup', () => session.txStatus(h)),
+    txSeen: (h: string) => bounded('tx lookup', () => session.txSeen(h)),
+    spentBy: (h: string) => bounded('spent by', () => session.spentBy(h)),
+    submit: (hex: string) => bounded('submit', () => session.submit(hex)),
+  };
 
   let readyResolve!: (addr: string) => void;
   let readyReject!: (e: unknown) => void;
@@ -531,7 +567,7 @@ export function runParty(a: PartyArgs): PartyHandle {
 
   /** The escrow holds exactly what the outcome pays, all of it unlocked. */
   const fundsReady = async (o: Outcome): Promise<boolean> => {
-    const { balance, unlocked } = await session.sync();
+    const { balance, unlocked } = await daemon.sync();
     return balance > 0n && balance === unlocked && sumPayouts(o.to) === balance;
   };
 
@@ -605,7 +641,7 @@ export function runParty(a: PartyArgs): PartyHandle {
         // and it waits here indefinitely. Task 9's watcher owns that: it reports `settled` (escrow
         // emptied by an in-block tx) or `late-funds`, which resolves the trade outside this loop.
         const txHash = String(done.payload.txHash);
-        if ((await session.sync()).balance === 0n && (await session.spentBy(txHash)) && (await session.txSeen(txHash))) {
+        if ((await daemon.sync()).balance === 0n && (await daemon.spentBy(txHash)) && (await daemon.txSeen(txHash))) {
           rel.phase = 'done';
           rel.txHash = txHash;
           await saveState();
@@ -621,7 +657,7 @@ export function runParty(a: PartyArgs): PartyHandle {
     if (rel.phase === 'export' && exp && tx) {
       try {
         await importPeer(exp);
-        await session.sync();
+        await daemon.sync();
         // Check before committing to this set, so a garbage set cannot lock the outcome.
         await session.checkRelease(String(tx.payload.txSet), o.to);
       } catch (e) {
@@ -652,14 +688,14 @@ export function runParty(a: PartyArgs): PartyHandle {
     }
     if (rel.phase === 'signed' && rel.signedHex && rel.txHash) {
       try {
-        await session.submit(rel.signedHex);
+        await daemon.submit(rel.signedHex);
       } catch {
         // Already broadcast (e.g. before a crash) or rejected: only the daemon knows.
-        const status = await session.txStatus(rel.txHash);
+        const status = await daemon.txStatus(rel.txHash);
         if (status === 'pool') return; // broadcast; done once it is in a block
         if (status === 'none') {
           // Refused for good once another tx has emptied the escrow: stop, never rebuild or resend.
-          if ((await session.sync()).balance === 0n) {
+          if ((await daemon.sync()).balance === 0n) {
             rel.phase = 'superseded';
             await saveState();
             settleWaiter?.reject(new PartyError('settled-elsewhere', 'another transaction emptied the escrow'));
@@ -746,7 +782,7 @@ export function runParty(a: PartyArgs): PartyHandle {
    * does not answer stays 'daemon-unavailable'.
    */
   const importSpendInfo = async (info: string): Promise<void> => {
-    await session.sync();
+    await daemon.sync();
     try {
       await session.importState([info]);
     } catch (e) {
@@ -1022,7 +1058,7 @@ export function runParty(a: PartyArgs): PartyHandle {
           if (stopped) return reject(new PartyError('stopped'));
           if (failure && (failure instanceof PartyError || !session)) return reject(failure);
           try {
-            const { balance, unlocked } = await session.sync();
+            const { balance, unlocked } = await daemon.sync();
             const incoming = await session.incoming();
             const extra: Omit<Funds, 'balance' | 'unlocked' | 'incoming'> = {};
             if (session.chainHeight) extra.chainHeight = await session.chainHeight();
@@ -1088,7 +1124,7 @@ export function runParty(a: PartyArgs): PartyHandle {
           if (failure && (failure instanceof PartyError || !session)) return reject(failure); // as funds(): no peer needed
           try {
             if (!session.proveTx || minimums.length === 0) return resolve(false);
-            const r = await session.proveTx(txHash, txKey, minimums.map((m) => m.address));
+            const r = await bounded('prove tx', () => session.proveTx!(txHash, txKey, minimums.map((m) => m.address)));
             // Review round 2 (R2-I1): the tx must spend one of THIS escrow's outputs (spendsEscrow), so
             // another trade's release, or an old tx, can never be counted for this escrow.
             if (r === null || !r.inBlock || r.spendsEscrow !== true || r.received.length !== minimums.length) return resolve(false);
