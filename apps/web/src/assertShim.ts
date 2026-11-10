@@ -15,8 +15,19 @@ function fail(message: unknown, fallback: string): never {
   throw new AssertionError(typeof message === 'string' ? message : fallback);
 }
 
+/** An array, or an object whose prototype is Object.prototype or null. */
+function plain(x: object): boolean {
+  if (Array.isArray(x)) return true;
+  const proto = Object.getPrototypeOf(x) as unknown;
+  return proto === Object.prototype || proto === null;
+}
+
 function deep(a: unknown, b: unknown): boolean {
-  // Node's legacy (loose) deepEqual: == for primitives, then own enumerable keys, recursively.
+  // Node's legacy (loose) deepEqual: == for primitives, then own enumerable keys, recursively. Any
+  // other object (Map, Set, Date, a typed array, a boxed primitive...) is never judged and fails
+  // closed: comparing only its keys would call two different ones equal (re-verify R2). monero-ts's
+  // one caller (GenUtils.reconcile) compares primitives, bigints and arrays.
+  for (const x of [a, b]) if (typeof x === 'object' && x !== null && !plain(x)) return false;
   // eslint-disable-next-line eqeqeq
   if (a == b) return true;
   if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
