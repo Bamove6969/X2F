@@ -417,7 +417,7 @@ describe('lead follow-up to interop 4b: the prekeys X2F used are remembered acro
     const onlyNew: Keyring = { current: old.current + 1, keys: new Map([[old.current + 1, fresh]]) };
     const first = await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } });
     expect(first.failed).toBe(0);
-    expect(await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } })).toEqual({ rewrapped: 0, failed: 0 });
+    expect(await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } })).toEqual({ rewrapped: 0, failed: 0, prekeysRewrapped: 0, prekeysNotCurrent: 0 });
     const after = omemoSender(() => [phone], onlyNew);
     await changes(t, 2);
     expect(await after.pass()).toEqual({ sent: 1, retried: 0, dropped: 0, deferred: 1 });
@@ -474,6 +474,38 @@ describe('lead follow-up to interop 4b: the prekeys X2F used are remembered acro
     // A real republish (new ids) still clears it.
     phone.replenish();
     expect([4, 5, 6]).toContain(preKeyIdOf(await send(full())));
+    await deps.db.query('delete from jabber_omemo_prekeys');
+  });
+
+  it('review R2: the rewrap also moves the records of addresses only queued notices hold, and counts prekey records apart (moved, and left under an old key)', async () => {
+    await deps.db.query('delete from jabber_omemo_prekeys');
+    const old = deps.config.jabberKeys!;
+    const fresh = new Uint8Array(randomBytes(32));
+    const both: Keyring = { current: old.current + 1, keys: new Map([[old.current + 1, fresh], ...old.keys]) };
+    const onlyNew: Keyring = { current: old.current + 1, keys: new Map([[old.current + 1, fresh]]) };
+    // An address that is only in a queued notice (the old address after a change), and one that is nowhere.
+    const t = await trader();
+    const queuedJid = address();
+    await deps.db.query('insert into jabber_outbox (account_id, jid_sealed, txid, kind, next_at) values ($1, $2, 1, $3, $4)', [
+      t.id, sealJid(old, t.id, queuedJid), 'account-change', new Date(now.getTime() + 86_400_000),
+    ]);
+    const phone = new OmemoDevice(41, 3);
+    const bundles = () => [parseBundle(phone.deviceId, phone.bundleXml())!];
+    const before = directEncryptor(old);
+    const used = [await before.encrypt({ to: queuedJid, plaintext: ACCOUNT_CHANGE_TEXT, bundles: bundles() }), await before.encrypt({ to: queuedJid, plaintext: ACCOUNT_CHANGE_TEXT, bundles: bundles() })].map(preKeyIdOf);
+    await before.encrypt({ to: 'nobody@xmpp.example.org', plaintext: ACCOUNT_CHANGE_TEXT, bundles: bundles() });
+    const r = await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } });
+    expect(r.failed).toBe(0);
+    expect(r.prekeysRewrapped).toBe(1);
+    expect(r.prekeysNotCurrent).toBe(1);
+    const again = await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } });
+    expect(again).toEqual({ rewrapped: 0, failed: 0, prekeysRewrapped: 0, prekeysNotCurrent: 1 });
+    // With the old key gone, the queued address's record is still found: one id left, then none.
+    const after = directEncryptor(onlyNew);
+    const third = preKeyIdOf(await after.encrypt({ to: queuedJid, plaintext: ACCOUNT_CHANGE_TEXT, bundles: bundles() }));
+    expect([...used, third].sort()).toEqual([1, 2, 3]);
+    await expect(after.encrypt({ to: queuedJid, plaintext: ACCOUNT_CHANGE_TEXT, bundles: bundles() })).rejects.toThrow();
+    await deps.db.query('delete from jabber_outbox where account_id = $1', [t.id]);
     await deps.db.query('delete from jabber_omemo_prekeys');
   });
 
@@ -606,13 +638,13 @@ describe('review M4: a key removed from X2F_JABBER_KEYS', () => {
     expect(openJid(onlyNew, t.id, rows[0]!.pending_sealed)).toMatch(/@xmpp\.example\.org$/);
     const queued = await deps.db.query<{ jid_sealed: Buffer }>('select jid_sealed from jabber_outbox where account_id = $1', [t.id]);
     expect(openJid(onlyNew, t.id, queued.rows[0]!.jid_sealed)).toBe(t.jid);
-    expect(await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } })).toEqual({ rewrapped: 0, failed: 0 });
+    expect(await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } })).toEqual({ rewrapped: 0, failed: 0, prekeysRewrapped: 0, prekeysNotCurrent: 0 });
 
     // A blob under a key neither ring holds is counted, left as it is, and never opens.
     const stray = ringOf([[90, new Uint8Array(randomBytes(32))]], 90);
     await deps.db.query('update jabber_contacts set jid_sealed = $2 where account_id = $1', [t.id, sealJid(stray, t.id, t.jid)]);
     await deps.db.query('delete from jabber_outbox');
-    expect(await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } })).toEqual({ rewrapped: 0, failed: 1 });
+    expect(await rewrapJabberSecrets({ db: deps.db, config: { jabberKeys: both } })).toEqual({ rewrapped: 0, failed: 1, prekeysRewrapped: 0, prekeysNotCurrent: 0 });
     await deps.db.query('delete from jabber_contacts where account_id = $1', [t.id]);
     await deps.db.query('delete from jabber_outbox');
   });

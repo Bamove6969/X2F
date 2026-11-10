@@ -2,7 +2,7 @@
  * Review M4: `npm run rewrap-jabber -w @x2f/api` reseals every blob under X2F_JABBER_KEYS that is
  * not yet under the current key: each proven and pending address (`jabber_contacts`), each queued
  * notice's copy (`jabber_outbox`), X2F's OMEMO identity key and bundle (`jabber_omemo_identity`), and
- * the prekey record of every address it opens (`jabber_omemo_prekeys`: re-tagged and resealed under
+ * the prekey record of every address it opens in either table (`jabber_omemo_prekeys`: re-tagged and resealed under
  * the current key; a record no address matches stays as it is and ages out after 30 days). Run it
  * after putting a new key first, and again, before removing an old key: only once a re-run reports
  * `{"rewrapped":0,"failed":0}` is no blob left under the old one.
@@ -20,12 +20,30 @@ import { addressContext } from './address.js';
 import { BUNDLE_CONTEXT, IDENTITY_CONTEXT } from './omemo.js';
 import { preKeyContext, recipientTags } from './prekeys.js';
 
-export async function rewrapJabberSecrets(deps: { db: pg.Pool; config: Pick<Config, 'jabberKeys'> }): Promise<{ rewrapped: number; failed: number }> {
+/**
+ * `rewrapped` and `failed` count the sealed addresses, notices and identity rows. The prekey record
+ * is counted apart (review R2): `prekeysRewrapped` records moved to the current key, and
+ * `prekeysNotCurrent` records still under another key after the run (no address opened here
+ * matches them, or their blob does not open). Those are lost when their key is removed: the device
+ * they are for may then be sent a prekey it already used. Remove an old key only once a re-run
+ * reports `rewrapped` and `failed` 0 and `prekeysNotCurrent` 0, or once the addresses they belong
+ * to are known to be gone.
+ */
+export interface RewrapJabberResult {
+  rewrapped: number;
+  failed: number;
+  prekeysRewrapped: number;
+  prekeysNotCurrent: number;
+}
+
+export async function rewrapJabberSecrets(deps: { db: pg.Pool; config: Pick<Config, 'jabberKeys'> }): Promise<RewrapJabberResult> {
   const ring = deps.config.jabberKeys;
   if (ring === null) throw new Error('config: X2F_JABBER_KEYS is missing');
   const box = keyringBox(ring);
   let rewrapped = 0;
   let failed = 0;
+  let prekeysRewrapped = 0;
+  let prekeysNotCurrent = 0;
   /** The blob resealed under the current key; null when it already is, or does not open (counted). */
   const reseal = (blob: Buffer, context: string): Buffer | null => {
     if (box.isCurrent(blob)) return null;
@@ -63,6 +81,11 @@ export async function rewrapJabberSecrets(deps: { db: pg.Pool; config: Pick<Conf
     }
     const queued = await c.query<{ id: string; account_id: string; jid_sealed: Buffer }>('select id, account_id, jid_sealed from jabber_outbox');
     for (const row of queued.rows) {
+      try {
+        jids.add(new TextDecoder().decode(box.open(row.jid_sealed, addressContext(row.account_id))));
+      } catch {
+        // counted by reseal below
+      }
       const sealed = reseal(row.jid_sealed, addressContext(row.account_id));
       if (sealed === null) continue;
       const r = await c.query('update jabber_outbox set jid_sealed = $3 where id = $1 and jid_sealed = $2', [row.id, row.jid_sealed, sealed]);
@@ -80,15 +103,16 @@ export async function rewrapJabberSecrets(deps: { db: pg.Pool; config: Pick<Conf
         try {
           sealed = box.seal(box.open(r.device_sealed, preKeyContext(r.recipient_tag)), preKeyContext(current!));
         } catch {
-          failed++;
-          continue;
+          continue; // counted in prekeysNotCurrent below
         }
         const u = await c.query('update jabber_omemo_prekeys set recipient_tag = $3, device_sealed = $4 where id = $1 and device_sealed = $2', [
           r.id, r.device_sealed, current, sealed,
         ]);
-        rewrapped += u.rowCount ?? 0;
+        prekeysRewrapped += u.rowCount ?? 0;
       }
     }
+    const left = await c.query<{ device_sealed: Buffer }>('select device_sealed from jabber_omemo_prekeys');
+    prekeysNotCurrent = left.rows.filter((r) => !box.isCurrent(r.device_sealed)).length;
     const identity = await c.query<{ identity_public: Buffer; identity_sealed: Buffer; bundle_sealed: Buffer | null }>(
       'select identity_public, identity_sealed, bundle_sealed from jabber_omemo_identity',
     );
@@ -112,5 +136,5 @@ export async function rewrapJabberSecrets(deps: { db: pg.Pool; config: Pick<Conf
   } finally {
     c.release();
   }
-  return { rewrapped, failed };
+  return { rewrapped, failed, prekeysRewrapped, prekeysNotCurrent };
 }
