@@ -1,7 +1,8 @@
 // Plan 4 Task 8: the site controls. The emergency stop (a tapped staff action) refuses new offers
 // and takes while existing trades go on; the 140-character banner; maintenance, during which the
 // trader API answers 503 `maintenance` except GET /v1/site, while the staff API still answers; and
-// GET /v1/site, which needs no session.
+// GET /v1/site, which answers anyone but shows the banner and the trading pause only to a signed-in,
+// set-up trader (the front door, owner 8 Nov 2026; test/frontDoor.test.ts).
 import { fiatCents } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -11,7 +12,8 @@ import { buildStaffApi } from '../src/staff/app.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { MODERATION_STUB, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedStaff, seedTap } from './helpers/staffApp.js';
 import { tradeApp } from './helpers/tradeApp.js';
-import { XMR, driveTo, fakeAddress, markSellerNudged, seedTrade } from './helpers/trades.js';
+import { XMR, driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
+import { makeVendor } from './helpers/accounts.js';
 
 const T0 = new Date('2026-11-02T12:00:00Z');
 const MIN = 60_000;
@@ -50,7 +52,10 @@ afterAll(async () => {
   await app.close();
 });
 
-const site = async () => (await app.inject({ method: 'GET', url: '/v1/site' })).json() as Record<string, unknown>;
+/** GET /v1/site as a signed-in trader sees it (a fresh one each time, so no session outlives a clock jump). */
+const site = async () => (await (await trader()).browser.get('/v1/site')).json() as Record<string, unknown>;
+/** GET /v1/site as the front door sees it (no session). */
+const outside = async () => (await app.inject({ method: 'GET', url: '/v1/site' })).json() as Record<string, unknown>;
 const relogin = async (...who: { id: string; browser: { post(u: string, b: unknown): Promise<{ statusCode: number }> } }[]) => {
   for (const w of who) expect((await w.browser.post('/t/login', { accountId: w.id })).statusCode).toBe(200);
 };
@@ -67,15 +72,16 @@ async function person() {
 
 const OFFER = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '100000', minTrades: 0, terms: 'Zelle only.',
+  minFiatCents: '1000', maxFiatCents: '100000', minTrades: null, terms: 'Zelle only.',
 };
 
 describe('GET /v1/site', () => {
-  it('needs no session and says nothing is on', async () => {
+  it('answers without a session with the maintenance flag only, and says nothing is on', async () => {
     const res = await app.inject({ method: 'GET', url: '/v1/site' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['cache-control']).toBe('no-store');
-    expect(res.json()).toEqual({ banner: null, tradingPaused: false, maintenance: null });
+    expect(res.json()).toEqual({ maintenance: null });
+    expect(await site()).toEqual({ banner: null, tradingPaused: false, maintenance: null });
   });
 });
 
@@ -83,6 +89,8 @@ describe('emergency stop', () => {
   it('needs a tap for emergency-stop; while stopped, take and post refuse trading-paused and existing trades go on; resume needs its own tap', async () => {
     setNow(T0);
     const seller = await person();
+    // Only a vendor posts offers (account types, owner 2 Nov).
+    await makeVendor(deps, seller.id);
     const buyer = await person();
     const posted = await seller.browser.post('/v1/offers', OFFER);
     expect(posted.statusCode, posted.body).toBe(201);
@@ -94,7 +102,6 @@ describe('emergency stop', () => {
     const paid = await driveTo(deps, s.trade, 'paid');
     const r = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
     const secured = await driveTo(deps, r.trade, 'secured');
-    await markSellerNudged(deps, secured.code);
     const d = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
     await driveTo(deps, d.trade, 'paid');
 
@@ -158,6 +165,7 @@ describe('banner', () => {
     const ok = await owner.send('PUT', '/staff/v1/site/banner', { text, kind: 'warning' });
     expect(ok.statusCode, ok.body).toBe(200);
     expect((await site()).banner).toEqual({ text, kind: 'warning' });
+    expect(await outside()).toEqual({ maintenance: null });
     const entries = await logEntries(deps, 'site.banner-set');
     expect(entries.at(-1)!.detail).toBe('{"kind":"warning"}');
 
@@ -174,10 +182,25 @@ describe('banner', () => {
   });
 });
 
+describe('the 60-day close switch (security review 8 Nov M1)', () => {
+  it('POST /staff/v1/site/auto-close/resume turns the close back on and logs it; when it is on, it changes and logs nothing', async () => {
+    await deps.db.query('update site_flags set auto_close_off_at = $1', [T0]);
+    const res = await owner.post('/staff/v1/site/auto-close/resume', {});
+    expect([res.statusCode, res.json()]).toEqual([200, { autoClose: 'on' }]);
+    expect((await deps.db.query('select auto_close_off_at from site_flags')).rows).toEqual([{ auto_close_off_at: null }]);
+    expect((await logEntries(deps, 'site.auto-close-resumed')).length).toBe(1);
+    expect((await owner.post('/staff/v1/site/auto-close/resume', {})).statusCode).toBe(200);
+    expect((await logEntries(deps, 'site.auto-close-resumed')).length).toBe(1);
+    expect(errorOf(await owner.post('/staff/v1/site/auto-close/resume', { on: true }))).toBe('bad-request');
+  });
+});
+
 describe('maintenance', () => {
   it('turns the trader API to 503 maintenance except GET /v1/site; the staff API still answers; off again restores it', async () => {
     setNow(T0);
     const t = await trader();
+    // Owner G19: no default kind (an emergency is internal): turning it on without one is 400.
+    expect((await owner.send('PUT', '/staff/v1/site/maintenance', { on: true })).statusCode).toBe(400);
     const on = await owner.send('PUT', '/staff/v1/site/maintenance', { on: true, message: 'Upgrading the database. Back by 14:00 UTC.', kind: 'planned' });
     expect(on.statusCode, on.body).toBe(200);
     expect(on.json()).toMatchObject({ maintenance: { since: T0.toISOString(), message: 'Upgrading the database. Back by 14:00 UTC.', kind: 'planned' } });
@@ -189,6 +212,7 @@ describe('maintenance', () => {
       const signedIn = await t.browser.get('/v1/account/me');
       expect(signedIn.statusCode).toBe(503);
       expect(await site()).toEqual({ banner: null, tradingPaused: false, maintenance: { message: 'Upgrading the database. Back by 14:00 UTC.', kind: 'planned' } });
+      expect(await outside()).toEqual({ maintenance: { kind: 'planned' } });
       expect((await app.inject({ method: 'GET', url: '/healthz' })).statusCode).toBe(200);
       // The staff API is a separate server: still answering.
       expect((await owner.get('/staff/v1/site')).statusCode).toBe(200);
@@ -206,7 +230,8 @@ describe('maintenance', () => {
       expect(off.statusCode, off.body).toBe(200);
       expect(off.json()).toMatchObject({ maintenance: null });
     }
-    expect((await app.inject({ method: 'GET', url: '/v1/offers?side=sell&method=ZELLE&currency=USD' })).statusCode).toBe(200);
+    expect((await t.browser.get('/v1/offers?side=sell&method=ZELLE&currency=USD')).statusCode).toBe(200);
+    expect((await app.inject({ method: 'GET', url: '/v1/offers?side=sell&method=ZELLE&currency=USD' })).statusCode).toBe(401);
     expect((await site()).maintenance).toBeNull();
     expect((await logEntries(deps, 'site.maintenance-off')).length).toBe(1);
     const { rows } = await deps.db.query('select maintenance_since, maintenance_message, maintenance_kind from site_flags');

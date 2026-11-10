@@ -46,7 +46,7 @@ describe('team calls', () => {
     await api.teamAudit();
     await api.teamAudit({ member: 'id1', from: '2026-10-01T00:00:00.000Z' });
     await api.readInvite({ invite: 'code' });
-    await api.joinStart({ invite: 'code', loginName: 'aurora1', publicKey: 'KEY' });
+    await api.joinStart({ invite: 'code', loginName: 'aurora1', publicKey: 'KEY', acceptedTerms: '2026-10-17' });
     await api.joinFinish({ challengeId: 'c', code: '123' });
     await api.joinSecondPgpStart({ setupId: 's', publicKey: 'KEY2' });
     await api.joinSecondPgpFinish({ setupId: 's', challengeId: 'c2', code: '456', deviceLabel: 'Phone' });

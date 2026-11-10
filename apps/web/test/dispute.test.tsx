@@ -97,11 +97,20 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
       text: "You can open a dispute if the seller hasn't confirmed within 2 h of your payment.",
     });
     expect(disputeEntry(trade(), new Date(T0 + 120 * MIN))).toEqual({ kind: 'open' });
-    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0))).toEqual({ kind: 'open' });
   });
 
-  it('opens for either side while securing or secured, and not in funding or after release', () => {
-    for (const state of ['securing', 'secured']) expect(disputeEntry(trade({ state }), new Date(T0)).kind).toBe('open');
+  it("makes the seller wait for the same confirmBy in paid (owner p9-4)", () => {
+    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0 + 119 * MIN))).toEqual({
+      kind: 'wait',
+      until: new Date(T0 + 120 * MIN),
+      text: "You can open a dispute if the payment hasn't arrived within 2 h of the buyer marking it paid.",
+    });
+    expect(disputeEntry(trade({ role: 'seller' }), new Date(T0 + 120 * MIN))).toEqual({ kind: 'open' });
+  });
+
+  it("opens for the seller while securing or secured, never the buyer before I've paid (proto review P1), and not in funding or after release", () => {
+    for (const state of ['securing', 'secured']) expect(disputeEntry(trade({ state, role: 'seller' }), new Date(T0)).kind).toBe('open');
+    for (const state of ['securing', 'secured']) expect(disputeEntry(trade({ state, role: 'buyer' }), new Date(T0)).kind).toBe('none');
     for (const state of ['setup', 'funding', 'released', 'cancelled', 'lapsed']) expect(disputeEntry(trade({ state }), new Date(T0)).kind).toBe('none');
     expect(disputeEntry(trade({ state: 'disputed' }), new Date(T0)).kind).toBe('opened');
   });
@@ -125,6 +134,17 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
     const s = trade({ state: 'settling', settleBy: iso(15) });
     expect(disputeEntry(s, new Date(T0 + 15 * MIN)).kind).toBe('none');
     expect(disputeEntry(s, new Date(T0 + 15 * MIN + 1)).kind).toBe('open');
+  });
+
+  it("the seller's cancel settling (auto-refund): the buyer at once (owner 8 Nov, p9-2), the seller only after the window", () => {
+    const b = trade({ state: 'settling', settling: 'auto-refund', settleBy: iso(15), role: 'buyer' });
+    expect(disputeEntry(b, new Date(T0)).kind).toBe('open');
+    const s = trade({ state: 'settling', settling: 'auto-refund', settleBy: iso(15), role: 'seller' });
+    expect(disputeEntry(s, new Date(T0)).kind).toBe('none');
+    expect(disputeEntry(s, new Date(T0 + 15 * MIN + 1)).kind).toBe('open');
+    for (const settling of ['release', 'buyer-cancel', 'mutual-cancel'] as const) {
+      expect(disputeEntry(trade({ state: 'settling', settling, settleBy: iso(15), role: 'buyer' }), new Date(T0)).kind).toBe('none');
+    }
   });
 });
 
@@ -454,6 +474,14 @@ describe('Plan 4 Task 15: the dispute screens on the trader view', () => {
     expect(() => parseDispute(view({ queuePosition: '3' }))).toThrow();
     expect(() => parseDispute(view({ feeOwedAtomic: '-1' }))).toThrow();
     expect(() => parseDispute(view({ feeOwedAtomic: 125 }))).toThrow();
+  });
+
+  it('Plan 4 Task 11: reads the incident ID and the proof request; absent ones read as null', () => {
+    const d = parseDispute(view({ incidentId: 'K7QM4T2XB', proofRequest: { username: 'sarah.v', at: iso(300) } }));
+    expect(d).toMatchObject({ incidentId: 'K7QM4T2XB', proofRequest: { username: 'sarah.v', at: iso(300) } });
+    expect(parseDispute(dispute())).toMatchObject({ incidentId: null, proofRequest: null });
+    expect(() => parseDispute(view({ incidentId: 'k7qm' }))).toThrow();
+    expect(() => parseDispute(view({ proofRequest: { username: 'sarah.v' } }))).toThrow();
   });
 
   it('before a moderator replies: the hourglass is the one deadline, with the place in the queue under it (design 7 Nov)', () => {

@@ -408,8 +408,8 @@ export function createWatcher(o: WatcherOptions): Watcher {
       claim: (txHash) => claimSweep(o.db, row.trade, txHash),
       log: o.log,
     });
-    // The wallet sync and the proof above can take long (finding 1): the trade's state, pause and
-    // alerts that decide the reports and the desk are read again when the list is no longer fresh.
+    // The wallet sync and the proof above can take long (finding 1): the trade's state and pause
+    // that decide the reports and the desk are read again when the list is no longer fresh.
     const fresh = await freshItem(row.trade, unlisted);
     if (fresh === null) {
       o.log({ reason: 'watch-list-stale' });
@@ -509,7 +509,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
           closedHere = false;
         }
         if (!closedHere) continue;
-        item = { state: 'cancelled', settleKind: null, paused: false, finalAlertSeenAt: null, finalAlertAt: null };
+        item = { state: 'cancelled', chat: null, settleKind: null, paused: false };
         unlisted = item;
       }
       const apiState = item.state as TradeState;

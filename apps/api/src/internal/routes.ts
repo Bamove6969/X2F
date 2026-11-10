@@ -19,7 +19,9 @@ import {
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
+import { addOwnerAlert } from '../alerts.js';
 import { ApiError } from '../errors.js';
+import { appendLog } from '../log/append.js';
 import { applyEvent, loadTrade, type TradePublisher } from '../trades/store.js';
 
 /**
@@ -218,8 +220,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
    * unlockedAtomic, confirmations }` (bigints as decimal strings), `settled { txHash }` (the kind
    * from `settleKindFor`; 409 `settle-kind-unknown` when the trade alone does not name it) and
    * `late-funds` and `spend-unshown` (a trade settling 6 h with no sweep shown to the moderator,
-   * Task 9 I/O fallback), `alert-unseen`, `alert-late` and `refund-unverified` (a requested refund the moderator
-   * will not sign alone, Task 10), all applied as `escalate`, and `release-claimed` (the moderation
+   * Task 9 I/O fallback) and `refund-unverified` (a seller's cancel refund the moderator will not
+   * sign alone, Task 10), all applied as `escalate`, and `release-claimed` (the moderation
    * service received a trade party's sealed post-release info: the signing window no longer
    * reverts the settling trade, lead decision b 2026-10-29), each for an attested trade only. Applied through the
    * trade store as `system`. The state machine's refusal is 409 with its rule code, so a repeated
@@ -252,11 +254,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         break;
       case 'late-funds':
       case 'spend-unshown':
-      // Task 10: a requested refund the moderator will not sign alone: no seen-receipt for the
-      // buyer's final alert 15 min after it, or its own records (signals, shadow trade) disagree.
-      // `alert-late`: the receipt came more than 2 min after the alert (lead decision I2 (b)).
-      case 'alert-unseen':
-      case 'alert-late':
+      // Task 10: a seller's cancel refund the moderator will not sign alone: its own records
+      // (signals, shadow trade) disagree. The final-alert reports are gone (owner 8 Nov, p6-1).
       case 'refund-unverified':
         if (!keysAre(body, ['kind', 'trade'])) break;
         event = { type: 'escalate' };
@@ -284,8 +283,36 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       if (kind !== claimedKind) throw new Refused(409, 'settle-kind-changed');
       event = { ...event, kind: claimedKind };
       const claimed = claimedKind;
-      within = async (_c, prev) => {
+      within = async (c, prev, next, at) => {
         if (settleKindFor(prev) !== claimed) throw new Refused(409, 'settle-kind-changed');
+        // Review I1 (8 Nov): the seller's cancel refund landed on a trade disputed meanwhile (the
+        // machine keeps it `disputed` and records the tx). The escrow is empty now, so a dispute
+        // still `open` (no ruling proposed) becomes after-refund in this same transaction: its ruling
+        // offers the after-refund outcomes (the seller sends the XMR, or no action), never an escrow
+        // payout that can't run.
+        // Re-verify 43fbbb2f, R-I1: a dispute past `open` already has an escrow ruling proposed or
+        // published (a seller's device can hold the refund back until then). Flipping it would let
+        // `resolveFinal` close a `release-to-buyer` case with nothing owed, so it is left as it is
+        // (it waits for an execution that cannot come, and never closes) and raised for staff to
+        // re-rule with `seller-sends-xmr`: logged on the case and the owner alerted.
+        // NEEDS_PLAN_4_RULING_PAYOUT (R-M2): a ruling's own payout must report its own kind
+        // (`RulingKind`), never `auto-refund`, before ruling execution lands; see machine.ts `settled`.
+        if (prev.state === 'disputed' && next.state === 'disputed' && prev.txHash === null && next.txHash !== null) {
+          const { rows } = await c.query<{ seq: number; status: string }>(
+            `select seq, status from disputes
+              where code = $1 and closed_at is null and seq = (select max(seq) from disputes where code = $1)
+              for update`,
+            [code],
+          );
+          const d = rows[0];
+          if (d === undefined) return;
+          if (d.status === 'open') {
+            await c.query('update disputes set after_refund = true where code = $1 and seq = $2', [code, d.seq]);
+          } else {
+            await appendLog(c, { at, actor: { kind: 'system' }, tradeCode: code, action: 'dispute.refund-after-ruling', detail: { seq: d.seq, status: d.status } });
+            await addOwnerAlert(c, 'dispute-refund-after-ruling', { trade: code, seq: d.seq }, at);
+          }
+        }
       };
     }
     try {
@@ -302,22 +329,20 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
 
   // Every attested trade that is open, or closed within WATCH_LIST_CLOSED_DAYS, with its state:
   // the moderation watcher's view of the API trade (Task 9). No addresses or terms. Also
-  // Task 10: `finalAlertSeenAt` (`final_alert_seen_at` only while `final_alert_delivered` is true, else null).
-  // Also
   // `settleKind` (settleKindFor: the kind a `settled` report would be applied as; the watcher checks
   // a sweep it saw only through an import against it, review I1) and `paused` (maintenance: the
-  // watcher's 6 h fallback does not run, review M3). Also `finalAlertAt` (Task 10 review I1): the
-  // API's own, shifted by every maintenance pause it applied; the moderator's auto-refund waits
-  // for the later of it and its shadow's. Owner rule g62 (trade timers stop during maintenance):
+  // watcher's 6 h fallback does not run, review M3). Owner rule g62 (trade timers stop during maintenance):
   // an open trade also counts as paused as soon as `site_flags.maintenance_since` is set, before the
   // timer loop's next pass writes its `paused_at`, so the moderator decides nothing in that gap.
+  // Also `chat` (chat shred review I1): the code of the chat linked to the trade, or null (none, or
+  // purged); moderation records the link while the trade is live and holds a shred by it.
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; state: TradeState; settling: SettleKind | null; paused_at: Date | null; final_alert_at: Date | null; seen: Date | null; site_paused: boolean }>(
-      `select t.code, t.state, t.settling, t.paused_at, t.final_alert_at,
-              case when t.final_alert_delivered is true then t.final_alert_seen_at end as seen,
+    const { rows } = await o.db.query<{ code: string; chat: string | null; state: TradeState; settling: SettleKind | null; paused_at: Date | null; site_paused: boolean }>(
+      `select t.code, c.code as chat, t.state, t.settling, t.paused_at,
               (t.closed_at is null and exists (select 1 from site_flags where maintenance_since is not null)) as site_paused
          from trades t
          join trade_attestations a on a.code = t.code
+         left join chats c on c.trade_code = t.code
         where t.closed_at is null or t.closed_at > $1
         order by t.taken_at, t.code`,
       [new Date(now() - WATCH_LIST_CLOSED_DAYS * 86_400_000)],
@@ -325,11 +350,10 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.send({
       trades: rows.map((r) => ({
         trade: r.code,
+        chat: r.chat,
         state: r.state,
         settleKind: settleKindFor({ state: r.state, settling: r.settling }),
         paused: r.paused_at !== null || r.site_paused,
-        finalAlertSeenAt: r.seen ? r.seen.toISOString() : null,
-        finalAlertAt: r.final_alert_at ? r.final_alert_at.toISOString() : null,
       })),
     });
   }));
@@ -411,6 +435,40 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     }));
     return reply.send({ work });
   }));
+
+  // ── Chat shred (design-chat-membership-keys 5, task 1) ─────────────────────
+  // The chats purgeChats deleted whose keys the moderation service has not yet reported destroyed,
+  // with the linked trade's code (null before a take). Moderation checks its own view of that trade
+  // before it shreds; this list is only the trigger. Never-served orders first, then the least
+  // recently served (review M4): orders moderation holds move to the back instead of keeping the
+  // ones behind them waiting.
+  app.get('/internal/v1/chat-shred', guard('/internal/v1/chat-shred', async (_req, reply) => {
+    const { rows } = await o.db.query<{ chat: string; trade_code: string | null; purged_at: Date }>(
+      `with picked as (
+         select chat, trade_code, purged_at, served_at from chat_shred_orders
+          order by served_at nulls first, purged_at, chat
+          limit $1
+       ), served as (
+         update chat_shred_orders s set served_at = $2 from picked p where s.chat = p.chat
+       )
+       select chat, trade_code, purged_at from picked order by served_at nulls first, purged_at, chat`,
+      [o.workLimit ?? WORK_LIMIT, new Date(now())],
+    );
+    return reply.send({ orders: rows.map((r) => ({ chat: r.chat, trade: r.trade_code, purgedAt: r.purged_at.toISOString() })) });
+  }));
+
+  /**
+   * `{ kind: 'chat-shredded', chat }`: the moderation service destroyed its copy of the chat's keys.
+   * The order is removed; a repeat (or a chat with no order) is still 201, so the report is idempotent.
+   */
+  const chatShredded = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    if (!keysAre(body, ['kind', 'chat'])) throw new Refused(400, 'bad-body');
+    const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    await o.db.query('delete from chat_shred_orders where chat = $1', [code]);
+    log({ reason: 'internal-chat-shredded' });
+    return reply.code(201).send({ ok: true });
+  };
 
   /** `{ kind: 'chat-refused', chat, reason }`: the moderation service will never attest this chat. */
   const refuseChat = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
@@ -504,6 +562,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (isPlainObject(body) && body.kind === 'refused') return refuse(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-refused') return refuseChat(body, reply);
     if (isPlainObject(body) && body.kind === 'chat-attestation') return attestChat(body, reply);
+    if (isPlainObject(body) && body.kind === 'chat-shredded') return chatShredded(body, reply);
     if (isPlainObject(body) && typeof body.kind === 'string' && body.kind !== 'attestation') return watcherReport(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;

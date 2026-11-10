@@ -13,6 +13,12 @@
  *   https, http2, net, with or without `node:`), calls createServer, or imports @x2f/api or
  *   @x2f/relay (both load fastify); or its package.json depends on any of them.
  *
+ * Plan 4 Task 11 (the moderation internal API) makes two exceptions, and no other: the one file
+ * `apps/moderation/src/internal/server.ts` may import `node:http` and call createServer, because it
+ * listens on a Unix socket (`MOD_INTERNAL_SOCKET`, mode 0600) and nothing else: it may not name a
+ * TCP `port` or `host`, nor call `listen` with a number; and the moderation tests (`apps/moderation/
+ * test/`) may import `node:http` to talk to that socket (they still may not create a server).
+ *
  * `npm run separation-check` runs it over the repo; `npm run check` runs that.
  */
 import { readdir, readFile } from 'node:fs/promises';
@@ -33,6 +39,11 @@ const FORBIDDEN_IN_API_AND_WEB: Array<[string, RegExp]> = [
   ['@x2f/moderation', /@x2f\/moderation\b/],
   ['generateIdentity', /\bgenerateIdentity\b/],
 ];
+
+/** Plan 4 Task 11: the moderation process's one listener, on a Unix socket only. */
+const MOD_INTERNAL_SERVER = 'apps/moderation/src/internal/server.ts';
+/** A TCP listen in that file: `listen(<number>`, or a `port` / `host` option. */
+const TCP_LISTEN = /\blisten\s*\(\s*\d|\bport\s*:|\bhost\s*:/;
 
 /** The one apps/web file allowed to name generateIdentity: the trader's escrow worker. */
 const IDENTITY_MAKER = 'apps/web/src/escrow/worker.ts';
@@ -80,6 +91,9 @@ export async function scanSeparation(root: string): Promise<Violation[]> {
   }
   for await (const f of files(join(root, 'apps/moderation'))) {
     const text = await readFile(f, 'utf8');
+    const rel = relative(root, f).split('\\').join('/');
+    const server = rel === MOD_INTERNAL_SERVER;
+    const test = rel.startsWith('apps/moderation/test/');
     if (f.endsWith('package.json')) {
       let pkg: Record<string, unknown> = {};
       try {
@@ -99,7 +113,14 @@ export async function scanSeparation(root: string): Promise<Violation[]> {
     }
     for (const m of text.matchAll(SPECIFIER)) {
       const spec = m[2] ?? '';
+      // The Unix-socket server may load node:http; a test may load it as a client.
+      if ((server || test) && /^(?:node:)?http$/.test(spec)) continue;
       if (SERVER_MODULE.test(spec)) out.push({ file: relative(root, f), rule: `apps/moderation must not import ${spec}`, line: lineOf(text, m.index ?? 0) });
+    }
+    if (server) {
+      const tcp = TCP_LISTEN.exec(text);
+      if (tcp) out.push({ file: relative(root, f), rule: 'apps/moderation may listen on a Unix socket only', line: lineOf(text, tcp.index) });
+      continue;
     }
     const cs = /\bcreateServer\s*\(/.exec(text);
     if (cs) out.push({ file: relative(root, f), rule: 'apps/moderation must not create a server', line: lineOf(text, cs.index) });

@@ -29,7 +29,13 @@ test.describe('/buy (BuyMain board)', () => {
     await expect(live.getByRole('button', { name: 'Payment method: Zelle' })).toHaveAttribute('aria-haspopup', 'dialog');
     await expect(live.locator('a')).toHaveCount(1);
     await expect(live.getByRole('link', { name: 'Zelle 29 sellers taking USD · from $330.00' })).toHaveAttribute('href', '/buy/ZELLE?currency=USD');
-    const names = await page.locator('section', { has: page.getByRole('heading', { name: 'All payment methods' }) }).locator('a [data-part="name"]').allTextContents();
+    // Folded into one row until opened (design review 8 Nov, item 7).
+    const all = page.locator('section', { has: page.getByRole('heading', { name: 'All payment methods' }) });
+    await expect(all.locator('a [data-part="name"]')).toHaveCount(0);
+    await all.getByRole('button', { name: /more payment methods/ }).click();
+    await expect(all.locator('a [data-part="name"]').first()).toBeVisible();
+    const names = await all.locator('a [data-part="name"]').allTextContents();
+    expect(names.length).toBeGreaterThan(50);
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'en')));
     await expect(page.getByRole('searchbox', { name: 'Search payment methods' })).toHaveAttribute('placeholder', `Search ${CATALOG.length} payment methods`);
     await expect(page.getByRole('radio', { name: 'Most sellers' })).toHaveAttribute('aria-checked', 'true');
@@ -120,7 +126,7 @@ test.describe('/buy/:methodId (BuyOffers board)', () => {
     await stub(page);
     await page.goto('/buy/ZELLE');
     const satoshi = page.locator('article', { has: page.locator('[data-username]', { hasText: 'satoshi_ghost' }) });
-    await expect(satoshi).toContainText('$0.10 above market');
+    await expect(satoshi.locator('[data-part="markup"]')).toHaveText('+$0.10Vendor markup');
   });
 
   test('starter limits on the buy side: greyed "Opens at …" cards, New from the API stage', async ({ page }) => {
@@ -158,21 +164,15 @@ test.describe('/buy/:methodId (BuyOffers board)', () => {
     expect(await page.locator('body').innerText()).not.toContain('555-0100');
   });
 
-  test('logged out, the buy lists render and no browse request fails', async ({ page }) => {
+  test('logged out, the buy lists never open: the front door (the Landing board) takes the visitor, keeping the path (owner, 8 Nov 2026)', async ({ page }) => {
     const seen = await stub(page, { signedIn: false });
-    const failed: string[] = [];
-    // GET /v1/site is the app shell's (Plan 4 Task 8: banner, maintenance), not a browse request.
-    page.on('response', (r) => {
-      const path = new URL(r.url()).pathname;
-      if (path.startsWith('/v1/') && path !== '/v1/account/me' && path !== '/v1/site' && r.status() >= 400) failed.push(`${r.status()} ${path}`);
-    });
     await page.goto('/buy');
-    await expect(page.locator('main a').first()).toBeVisible();
+    await expect(page).toHaveURL(/\/\?returnTo=%2Fbuy$/);
     await page.goto('/buy/ZELLE');
-    await expect(page.locator('article')).toHaveCount(3);
-    expect(failed).toEqual([]);
+    await expect(page).toHaveURL(/\/\?returnTo=%2Fbuy%2FZELLE$/);
+    await expect(page.locator('article')).toHaveCount(0);
     const paths = new Set(seen.requests.map((r) => new URL(r.url()).pathname));
-    for (const p of ['/v1/methods', '/v1/offers', '/v1/price']) expect(paths.has(p), p).toBe(true);
+    for (const p of ['/v1/methods', '/v1/offers', '/v1/price']) expect(paths.has(p), p).toBe(false);
   });
 });
 

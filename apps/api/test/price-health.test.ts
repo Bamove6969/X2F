@@ -522,13 +522,15 @@ describe('with the database', () => {
     }
   });
 
-  it('GET /v1/price answers the local price and its USD value, with no cookie', async () => {
-    const eur = await app.inject({ method: 'GET', url: '/v1/price?currency=EUR' });
+  it('GET /v1/price answers a signed-in trader the local price and its USD value (behind the front door, owner 8 Nov 2026)', async () => {
+    expect((await app.inject({ method: 'GET', url: '/v1/price?currency=EUR' })).statusCode).toBe(401);
+    const headers = { cookie: await cookieFor(traderId) };
+    const eur = await app.inject({ method: 'GET', url: '/v1/price?currency=EUR', headers });
     expect(eur.statusCode).toBe(200);
     expect(eur.json()).toEqual({ currency: 'EUR', centsPerXmr: '29705', exponent: 2, at: T0.toISOString(), usdCentsPerXmr: '33005' });
-    const usd = await app.inject({ method: 'GET', url: '/v1/price?currency=USD' });
+    const usd = await app.inject({ method: 'GET', url: '/v1/price?currency=USD', headers });
     expect(usd.json()).toEqual({ currency: 'USD', centsPerXmr: '33005', exponent: 2, at: T0.toISOString(), usdCentsPerXmr: '33005' });
-    const gbp = await app.inject({ method: 'GET', url: '/v1/price?currency=GBP' });
+    const gbp = await app.inject({ method: 'GET', url: '/v1/price?currency=GBP', headers });
     expect(gbp.statusCode).toBe(503);
     expect(gbp.json()).toEqual({ error: 'price-unavailable' });
   });

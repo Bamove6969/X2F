@@ -6,7 +6,8 @@ import { PRICE_FEED_DEFAULTS, createPriceFeed, median, type PriceQuote, type Pri
 import { createFxRates } from '../src/price/fx.js';
 import { createMarketPrices } from '../src/price/market.js';
 import { PRICE_SOURCE_NAMES, parsePriceSources, priceSources, readCapped } from '../src/price/sources.js';
-import { testApp } from './helpers/app.js';
+import type { Browser } from './helpers/totp.js';
+import { tradeApp } from './helpers/tradeApp.js';
 import { VAPID_ENV } from './helpers/vapid.js';
 
 const T0 = new Date('2026-10-24T06:00:00Z');
@@ -140,7 +141,7 @@ describe('createPriceFeed', () => {
     expect(feed.quote('USD')).toMatchObject({ price: { centsPerXmr: 33010n }, sources: 2 });
   });
 
-  it('returns null when the sources disagree (no two within 5% of the median)', async () => {
+  it('returns null when the sources disagree (no two within 3% of the median)', async () => {
     const c = clockAt(T0);
     const feed = createPriceFeed([stub('a', () => usd(30000n)), stub('b', () => usd(36000n))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
     await feed.poll();
@@ -174,24 +175,38 @@ describe('createPriceFeed', () => {
     expect(feed.current('XXX')).toBeNull();
   });
 
-  it('with only two sources in play the spread is 2%, not 5% (re-review)', async () => {
-    expect(PRICE_FEED_DEFAULTS).toMatchObject({ maxSpreadBps: 500, pairSpreadBps: 200 });
+  it('with only two sources in play the spread is 2%, not 3% (re-review)', async () => {
+    expect(PRICE_FEED_DEFAULTS).toMatchObject({ maxSpreadBps: 300, pairSpreadBps: 200 });
     const c = clockAt(T0);
     // 3% apart: each is 1.5% from the mean, so within 2% of the median: a price.
     const close = createPriceFeed([stub('a', () => usd(33000n)), stub('b', () => usd(33990n))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
     await close.poll();
     expect(close.current('USD')).toEqual({ currency: 'USD', centsPerXmr: 33495n });
-    // 6% apart: 3% from the mean each. Under the 5% spread that would count; with two it does not.
+    // 6% apart: 3% from the mean each. Under the 3% spread that would count; with two it does not.
     const two = createPriceFeed([stub('a', () => usd(33000n)), stub('b', () => usd(34980n))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
     await two.poll();
     expect(two.current('USD')).toBeNull();
-    // The same gap with a third source in play keeps the 5% spread.
+    // The same gap with a third source in play keeps the 3% spread (2.9% each side of the median).
     const three = createPriceFeed(
       [stub('a', () => usd(33000n)), stub('b', () => usd(34980n)), stub('c', () => usd(34000n))],
       { ...PRICE_FEED_DEFAULTS, clock: c.clock },
     );
     await three.poll();
     expect(three.quote('USD')).toMatchObject({ price: { centsPerXmr: 34000n }, sources: 3 });
+  });
+
+  it('the spread with three or more sources is 3% of the median (owner Q7): inside 3% counts, past it does not', async () => {
+    const c = clockAt(T0);
+    const feed = (far: bigint) =>
+      createPriceFeed([stub('a', () => usd(34000n)), stub('b', () => usd(34010n)), stub('c', () => usd(far))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
+    // Median 34010: 35030 is 1020 above it, just inside 3% (1020 × 10000 ≤ 34010 × 300).
+    const atEdge = feed(35030n);
+    await atEdge.poll();
+    expect(atEdge.quote('USD')).toMatchObject({ price: { centsPerXmr: 34010n }, sources: 3 });
+    // 3.5% above the median: under the old 5% it counted, now it does not (the other two still give a price).
+    const past = feed(35200n);
+    await past.poll();
+    expect(past.quote('USD')).toMatchObject({ price: { centsPerXmr: 34010n }, sources: 2 });
   });
 
   it('an undated quote unchanged for over 30 min while another source moves is stale (frozen pair, re-review)', async () => {
@@ -551,6 +566,8 @@ describe('config PRICE_SOURCES', () => {
 describe('GET /v1/price', () => {
   let app: FastifyInstance;
   let setNow: (d: Date) => void;
+  // Behind the front door (owner, 8 Nov 2026): a signed-in, set-up trader reads the price.
+  let viewer: Browser;
   let answer: () => PriceQuote[] | Error = () => usd(33000n);
 
   beforeAll(async () => {
@@ -558,7 +575,9 @@ describe('GET /v1/price', () => {
     const xmr = createPriceFeed([stub('a', () => answer()), stub('b', () => answer())], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
     const prices = createMarketPrices({ xmr, fx: createFxRates([], { clock: c.clock }), clock: c.clock });
     await prices.poll();
-    ({ app, setNow } = await testApp({ prices, clock: c.clock }));
+    let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
+    ({ app, setNow, trader } = await tradeApp({}, { prices, clock: c.clock }));
+    viewer = (await trader()).browser;
     const set = setNow;
     setNow = (d) => {
       c.set(d);
@@ -568,8 +587,14 @@ describe('GET /v1/price', () => {
   afterAll(async () => app.close());
   afterEach(() => setNow(T0));
 
-  it('answers the median with its time and the currency exponent, with no cookie (P3-M9)', async () => {
+  it('is 401 with no data without a session (the front door, owner 8 Nov 2026; it was open under P3-M9)', async () => {
     const res = await app.inject({ method: 'GET', url: '/v1/price?currency=USD' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'not-authenticated' });
+  });
+
+  it('answers the median with its time and the currency exponent, and sets no cookie', async () => {
+    const res = await viewer.get('/v1/price?currency=USD');
     expect(res.statusCode).toBe(200);
     expect(res.headers['set-cookie']).toBeUndefined();
     expect(res.json()).toEqual({ currency: 'USD', centsPerXmr: '33000', exponent: 2, at: T0.toISOString(), usdCentsPerXmr: '33000' });
@@ -577,26 +602,27 @@ describe('GET /v1/price', () => {
 
   it('is 503 price-unavailable once the median is 5 min + 1 ms old (Review Focus 5)', async () => {
     setNow(new Date(T0.getTime() + 5 * MIN + 1));
-    const res = await app.inject({ method: 'GET', url: '/v1/price?currency=USD' });
+    const res = await viewer.get('/v1/price?currency=USD');
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ error: 'price-unavailable' });
   });
 
   it('is 503 for a supported currency with no price', async () => {
-    const res = await app.inject({ method: 'GET', url: '/v1/price?currency=EUR' });
+    const res = await viewer.get('/v1/price?currency=EUR');
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ error: 'price-unavailable' });
   });
 
   it.each([[''], ['?currency=usd'], ['?currency=XXX'], ['?currency=USD&currency=EUR'], ['?currency=US']])('refuses %s with 400', async (qs) => {
-    const res = await app.inject({ method: 'GET', url: `/v1/price${qs}` });
+    const res = await viewer.get(`/v1/price${qs}`);
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'bad-request' });
   });
 
   it('logs no price, amount or currency', async () => {
-    const { app: a, logs } = await testApp();
+    const { app: a, logs, trader } = await tradeApp();
     try {
+      await (await trader()).browser.get('/v1/price?currency=USD');
       await a.inject({ method: 'GET', url: '/v1/price?currency=USD' });
       expect(logs.filter((l) => l.includes('33000') || l.includes('USD'))).toEqual([]);
     } finally {

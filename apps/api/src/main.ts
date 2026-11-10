@@ -24,7 +24,7 @@ import { moneroAddressValidator } from './wallets/address.js';
 import { productionNudgeWiring } from './nudge/wiring.js';
 import { daemonConfirmations, monerodUrlFromEnv } from './trades/chain.js';
 import { ownerAlertSink } from './push/ownerAlert.js';
-import { staffListenFromEnv, startStaffApi } from './staff/main.js';
+import { moderationFromEnv, staffListenFromEnv, startStaffApi } from './staff/main.js';
 import { assertOneSiteFlagsRow } from './site/flags.js';
 
 function port(raw: string | undefined): number {
@@ -125,7 +125,11 @@ if (internal) {
 
 // Plan 4 Task 4: the staff API on its own origin and port (X2F_STAFF_ORIGIN, X2F_STAFF_PORT); unset: none.
 const staffListen = staffListenFromEnv(process.env);
-const staff = staffListen ? await startStaffApi(deps, staffListen) : null;
+// Plan 4 Task 11: the moderation process's internal API (MOD_INTERNAL_SOCKET, MOD_INTERNAL_SECRET),
+// and the trader API's events (a moderator joining, a proof request, a moderator's message).
+const staff = staffListen
+  ? await startStaffApi(deps, staffListen, { moderation: moderationFromEnv(process.env, clock), traderEvents: app.events })
+  : null;
 
 // Plan 3 Task 9: the timer loop (deadline ticks, lapse escalation, and maintenance pause/resume
 // from `site_flags.maintenance_since`).

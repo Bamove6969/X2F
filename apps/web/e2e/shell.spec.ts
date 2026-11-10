@@ -1,4 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
+import { signedIn, signedOut } from './session.js';
+import { expectPhoneLayout } from './phone.js';
+
+// The shell's screens are behind the front door (owner, 8 Nov 2026): a signed-in, set-up trader
+// unless a test says otherwise (a later page.route wins).
+test.beforeEach(async ({ page }) => {
+  await signedIn(page);
+});
 
 declare global {
   interface Window {
@@ -55,6 +63,43 @@ test('at 1024 px and wider the desktop shell replaces the bottom nav', async ({ 
   await expect(page.locator('[data-shell="phone"]')).toHaveCount(0);
 });
 
+// Job 3 (design review 8 Nov 2026, items 2 and 3): wide is the 240 px rail with logo D, never a
+// stretched phone layout.
+test('at 1440x900 the page sits beside a 240 px rail with logo D and is at most 720 px wide', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/sell');
+  const rail = page.locator('[data-shell="desktop"] > nav.x2f-rail[aria-label="Main"]');
+  await expect(rail).toBeVisible();
+  const box = (await rail.boundingBox())!;
+  expect([box.x, box.width]).toEqual([0, 240]);
+  await expect(rail.getByRole('link', { name: 'X2F home' }).locator('svg.x2f-logo')).toBeVisible();
+  await expect(rail.locator('a.x2f-rail__link')).toHaveText(['Trade', 'Post offer', 'Wallets', 'Profile', 'Settings', 'Help']);
+  await expect(rail.locator('a[aria-current="page"]')).toHaveText('Trade');
+  // The browse header does not repeat the logo beside the rail.
+  await expect(page.locator('.x2f-browse__logo')).toBeHidden();
+  const screen = (await page.locator('.x2f-browse').boundingBox())!;
+  expect(screen.x).toBe(240 + 48);
+  expect(screen.width).toBeLessThanOrEqual(720);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1440);
+});
+
+test('at 1280x800 before login the logo is centred and there is no rail', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/login');
+  await expect(page.locator('[data-shell="desktop"][data-wide-frame="centred"]')).toBeAttached();
+  await expect(page.locator('nav.x2f-rail')).toHaveCount(0);
+  const logo = (await page.locator('header.x2f-wide-top svg[role="img"][aria-label="X2F"]').boundingBox())!;
+  expect(Math.abs(logo.x + logo.width / 2 - 640)).toBeLessThanOrEqual(1);
+  expect(logo.height).toBe(32);
+});
+
+test('on a phone the browse header shows logo D where the letters X2F were, and no rail', async ({ page }) => {
+  await page.goto('/sell');
+  await expect(page.locator('.x2f-browse__logo svg[role="img"][aria-label="X2F"]')).toBeVisible();
+  await expect(page.locator('nav.x2f-rail')).toHaveCount(0);
+  await expect(page.locator('.x2f-bottom-nav')).toBeVisible();
+});
+
 test('a terms-required answer sends the page to /terms with returnTo', async ({ page }) => {
   await page.route('**/v1/account/me', (r) => r.fulfill({ status: 403, json: { error: 'terms-required', version: '2026-10-17' } }));
   await page.goto('/sell?currency=EUR');
@@ -62,7 +107,40 @@ test('a terms-required answer sends the page to /terms with returnTo', async ({ 
 });
 
 test('a no-wallet answer sends the page to /wallets?add=1 with returnTo', async ({ page }) => {
-  await page.route('**/v1/account/me', (r) => r.fulfill({ status: 409, json: { error: 'no-wallet' } }));
+  await page.route('**/v1/methods?*', (r) => r.fulfill({ status: 409, json: { error: 'no-wallet' } }));
   await page.goto('/buy');
   await expect(page).toHaveURL(/\/wallets\?add=1&returnTo=%2Fbuy$/);
+});
+
+test('logged out, the first page is the front door: the Landing board, with no links to the screens behind it, on a phone and wide', async ({ page }) => {
+  await signedOut(page);
+  const market: string[] = [];
+  page.on('request', (r) => {
+    const path = new URL(r.url()).pathname;
+    if (['/v1/methods', '/v1/offers', '/v1/price', '/v1/news'].includes(path)) market.push(path);
+  });
+  await page.goto('/');
+  // Design review 2026-11-08 item 1: "/" is the Landing board (logo D, the slogan, the ways in).
+  await expect(page).toHaveURL('/');
+  await expect(page.locator('[data-screen="landing"]')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveAccessibleName('X2F');
+  await expect(page.getByText('You’ll need Fiat to believe it.')).toBeVisible();
+  await expect(page.locator('nav:not([aria-label="Get in"])')).toHaveCount(0);
+  await expect(page.locator('[data-part="landing-create"]')).toHaveAttribute('href', '/setup');
+  await expect(page.locator('[data-part="landing-login"]')).toHaveAttribute('href', '/login');
+  await expectPhoneLayout(page);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator('[data-shell="desktop"]')).toBeAttached();
+  await expect(page.locator('[data-screen="landing"]')).toHaveAttribute('data-wide', 'true');
+  await expect(page.locator('nav:not([aria-label="Get in"])')).toHaveCount(0);
+  // Wide: the two ways in side by side, and nothing scrolls sideways.
+  const [create, login] = [await page.locator('[data-part="landing-create"]').boundingBox(), await page.locator('[data-part="landing-login"]').boundingBox()];
+  expect(Math.abs(create!.y - login!.y)).toBeLessThan(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  // Log in carries where the visitor was going.
+  await page.goto('/sell/ZELLE');
+  await expect(page).toHaveURL('/?returnTo=%2Fsell%2FZELLE');
+  await page.locator('[data-part="landing-login"]').click();
+  await expect(page).toHaveURL('/login?returnTo=%2Fsell%2FZELLE');
+  expect(market).toEqual([]);
 });

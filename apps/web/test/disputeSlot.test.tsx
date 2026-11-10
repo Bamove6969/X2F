@@ -197,6 +197,23 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     }
   });
 
+  it('the buyer\'s own cancel, done: board Refunded variant=buyer-cancelled (a neutral CANCELLED chip, "You cancelled this trade"), never "Refunded"', () => {
+    const counterparty = { ...sellerView().counterparty, displayName: 'satoshi_ghost' };
+    const { host } = render(
+      <MemoryRouter>
+        <RefundedSlot {...props(refunded({ settling: 'buyer-cancel', cancelConfirmedAt: at(-9 * DAY), counterparty }))} />
+      </MemoryRouter>,
+    );
+    const chip = host.querySelector('.x2f-chip')!;
+    expect(chip.getAttribute('data-tone')).toBe('neutral');
+    expect(chip.textContent).toBe('Cancelled');
+    expect(host.querySelector('h1')?.textContent).toBe('You cancelled this trade');
+    // "the seller", never the name (owner 2026-10-29; lead 8 Nov).
+    expect(host.querySelector('.dispute-lead')?.textContent).toBe('All 1.250000 XMR (about $412.50) went back to the seller. X2F took nothing from you.');
+    expect(host.querySelector('[aria-label="Trade status"]')?.textContent).not.toContain('satoshi_ghost');
+    expect(host.textContent).not.toContain('Refunded');
+  });
+
   it("review I1: a cancel's refund that landed after I've paid keeps the dispute and is not called a cancel", () => {
     for (const settling of ['buyer-cancel', 'mutual-cancel'] as const) {
       const { host } = render(

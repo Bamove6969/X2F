@@ -12,6 +12,21 @@ import { PURGE_ROLE } from '../trades/purge.js';
 export type ChatPurgeRule = (facts: ChatRetentionFacts, now: Date) => boolean;
 
 const BATCH = 500;
+const DAY_MS = 86_400_000;
+
+/**
+ * How long a purged chat's member marks are kept (123): a device that comes back within this time
+ * is told 410 `chat-purged` and erases its copy. After it, the chat answers 404 like any unknown
+ * code; the device's keys then open nothing anyway, because the ciphertext is gone.
+ */
+export const CHAT_PURGED_MARK_DAYS = 365;
+
+/**
+ * SQL for a member's purged mark: sha256 of `x2f/chat-purged/v1|<chat>|<account id>` (123). The
+ * table holds only these tags, so it names neither the chat nor who was in it.
+ */
+export const purgedTagSql = (chat: string, accountId: string): string =>
+  `sha256(convert_to('x2f/chat-purged/v1|' || ${chat} || '|' || ${accountId}::text, 'UTF8'))`;
 
 interface FactRow {
   code: string;
@@ -49,9 +64,12 @@ const FACTS = `select c.code, c.trade_code, c.created_at, c.last_message_at, t.c
 
 /**
  * Deletes every chat the rule says is due (its identities, attestation and envelopes go with it,
- * by cascade). The delete runs as `x2f_purge`. Returns the number of chats deleted.
+ * by cascade), leaving a shred order for the moderation service and a purged mark per member (123).
+ * The delete runs as `x2f_purge`. First drops the marks older than CHAT_PURGED_MARK_DAYS. Returns
+ * the number of chats deleted.
  */
 export async function purgeChats(db: pg.Pool, now: Date, due: ChatPurgeRule = chatPurgeDue): Promise<number> {
+  await db.query('delete from chat_purged_marks where purged_at < $1', [new Date(now.getTime() - CHAT_PURGED_MARK_DAYS * DAY_MS)]);
   let removed = 0;
   let after = '';
   for (;;) {
@@ -100,14 +118,29 @@ async function deleteChats(db: pg.Pool, codes: string[], now: Date, due: ChatPur
       await client.query(`set local role ${PURGE_ROLE}`);
       // Checked again under the purge role: a chat whose trade went into dispute since it was read stays,
       // and so does one with any dispute not yet closed (122 grants the role just these two columns).
-      const { rowCount } = await client.query(
-        `delete from chats c where c.code = any($1)
-           and not exists (select 1 from trades t where t.code = c.trade_code and t.state = 'disputed')
-           and not exists (select 1 from disputes d where d.code = c.trade_code and d.status <> 'closed')`,
-        [still],
+      // The shred order for moderation and each member's purged mark are written by the same
+      // statement as the delete (123): no chat is ever gone without them.
+      const { rows } = await client.query<{ n: number }>(
+        `with gone as (
+           delete from chats c where c.code = any($1)
+             and not exists (select 1 from trades t where t.code = c.trade_code and t.state = 'disputed')
+             and not exists (select 1 from disputes d where d.code = c.trade_code and d.status <> 'closed')
+           returning c.code, c.trade_code, c.buyer_account_id, c.seller_account_id
+         ), orders as (
+           insert into chat_shred_orders (chat, trade_code, purged_at)
+           select code, trade_code, $2 from gone
+           on conflict (chat) do nothing
+         ), marks as (
+           insert into chat_purged_marks (tag, purged_at)
+           select ${purgedTagSql('g.code', 'm.account_id')}, $2
+             from gone g cross join lateral (values (g.buyer_account_id), (g.seller_account_id)) m (account_id)
+           on conflict (tag) do nothing
+         )
+         select count(*)::int as n from gone`,
+        [still, now],
       );
       await client.query('commit');
-      return rowCount ?? 0;
+      return rows[0]?.n ?? 0;
     } catch (e) {
       await client.query('rollback');
       throw e;

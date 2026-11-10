@@ -6,6 +6,7 @@ import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { hasPendingReview } from '../src/reviews/gate.js';
 import { loadTradeRow } from '../src/trades/store.js';
+import { makeVendor } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
@@ -70,10 +71,12 @@ async function released(who: Who, role: 'buyer' | 'seller' = 'buyer'): Promise<s
 
 const OFFER = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: 0, terms: 'Zelle only.',
+  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: null, terms: 'Zelle only.',
 };
 
 async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<string> {
+  // Owner 2 Nov 2026: only vendor accounts post offers.
+  await makeVendor(deps, who.id);
   const res = await who.browser.post('/v1/offers', { ...OFFER, ...over });
   expect(res.statusCode, res.body).toBe(201);
   return (res.json() as { id: string }).id;
@@ -87,9 +90,10 @@ const take = (who: Who, offer: string) => who.browser.post(`/v1/offers/${offer}/
 const refusal = (res: { statusCode: number; json(): unknown }) => ({ status: res.statusCode, ...(res.json() as object) });
 const rate = (who: Who, code: string, body: unknown = { neutral: true }) => who.browser.post(`/v1/trades/${code}/review`, body);
 const skip = (who: Who, code: string) => who.browser.post(`/v1/trades/${code}/review/skip`, {});
+/** Whether `offer` is listed to `viewer`, or to a bystander (a trader with no ties) by default. */
 const listed = async (offer: string, viewer?: Who) => {
   const url = '/v1/offers?side=sell&method=ZELLE&currency=USD';
-  const res = viewer ? await viewer.browser.get(url) : await app.inject({ method: 'GET', url });
+  const res = await (viewer ?? (await trader())).browser.get(url);
   expect(res.statusCode).toBe(200);
   return (res.json() as { id: string }[]).some((c) => c.id === offer);
 };

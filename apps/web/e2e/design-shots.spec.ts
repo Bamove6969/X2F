@@ -20,6 +20,7 @@ import sodium from 'libsodium-wrappers';
 import type { TradeView } from '../src/api/trade.js';
 import { BOARD_BUY_LIVE_USD, BOARD_BUY_OFFERS, BOARD_SELL_LIVE_USD, BOARD_SELL_OFFERS, boardBuyOffers, boardSellOffers } from '../src/fixtures/boards.js';
 import { PAY_NOW, PAY_SECURED, PAY_SECURING } from '../src/fixtures/payBoard.js';
+import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { stubBrowseApi } from './browse-stub.js';
 import { startFixtures } from './fixtures-serve.js';
@@ -149,7 +150,6 @@ async function securityApi(page: Page, o: { me?: Record<string, unknown>; sessio
     { id: 's2', deviceLabel: 'Chrome on Android', level: 'full', createdAt: '2026-10-22T00:00:00.000Z', lastSeenAt: '2026-10-30T00:00:00.000Z', current: false, member: null },
   ]));
   await page.route('**/v1/account/alerts', json([]));
-  await page.route('**/v1/account/security/logout-timer', json({ idleHours: 12, adjustable: true }));
   await page.route('**/v1/account/security/devices', json(o.devices ?? { oneDevice: false, maxDevices: 3 }));
 }
 
@@ -234,14 +234,14 @@ test('12 a held backup session: the hold banner on Security', async ({ page }) =
 });
 
 test('13 a change from a one-proof login is held: "takes effect at"', async ({ page }) => {
+  // The logout timer that used to be this shot's held change is retired (session length, owner
+  // 2 Nov 2026): One device at a time on Devices is the held change now.
   await securityApi(page);
-  await page.route('**/v1/account/security/logout-timer', async (r) =>
-    r.request().method() === 'PUT' ? json({ status: 'held', holdUntil: HOLD_UNTIL }, 202)(r) : json({ idleHours: 12, adjustable: true })(r),
-  );
-  await page.goto('/settings/security');
-  await page.selectOption('[data-part="logout-timer-select"]', '2');
-  await expect(page.locator('[data-part="logout-timer-status"]')).toContainText('This change takes effect at');
-  await shot(page, '13-security-held-change', { scrollTo: page.locator('[data-part="logout-timer-status"]') });
+  await page.route('**/v1/account/security/one-device', json({ status: 'held', holdUntil: HOLD_UNTIL }, 202));
+  await page.goto('/settings/devices');
+  await page.locator('[data-part="one-device-toggle"]').click();
+  await expect(page.locator('[data-part="held-note"]')).toContainText('This change takes effect at');
+  await shot(page, '13-devices-held-change', { scrollTo: page.locator('[data-part="held-note"]') });
 });
 
 // ---- 14-28 Team members (Plan 2 Task 18) ----------------------------------------------------------
@@ -329,7 +329,8 @@ test('20 an invite from a one-proof login is refused (CantDoThat weak-session)',
 
 async function joinApi(page: Page, invite?: { status: number; body: unknown }): Promise<void> {
   await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
-  await page.route('**/v1/team/invite', json(invite?.body ?? { team: 'Calcium', displayName: 'Aurora', roles: ['trades'], expiresAt: LATER }, invite?.status ?? 200));
+  await page.route('**/v1/team/invite', json(invite?.body ?? { displayName: 'Aurora', roles: ['trades'], expiresAt: LATER }, invite?.status ?? 200));
+  await page.route('**/v1/terms', json({ version: TERMS_TEXT_VERSION }));
   await page.route('**/v1/team/join/start', json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: LATER }));
   await page.route('**/v1/team/join/finish', json({ setupId: 's1', needs: ['security-key', 'passkey', 'pgp'], setupUntil: LATER }, 201));
 }
@@ -337,6 +338,13 @@ async function joinApi(page: Page, invite?: { status: number; body: unknown }): 
 test('21-23 a member joins: the invite, the PGP step, the second way', async ({ page }) => {
   await joinApi(page);
   await page.goto(`/team/join#${CODE}`);
+  // The member signs the Terms first (review 2026-11-08 F1).
+  await page.locator('[data-part="terms-text"]').evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+    el.dispatchEvent(new Event('scroll'));
+  });
+  await page.check('[data-part="terms-tick"]');
+  await page.click('[data-part="terms-accept"]');
   await expect(page.locator('[data-part="invite-who"]')).toBeVisible();
   await shot(page, '21-team-join-invite');
   await page.getByLabel('Your private login name').fill('aurora_login');
@@ -389,7 +397,7 @@ test("27 a Trades member's device when an offer is taken: a notice, not the acce
   await shot(page, '27-team-member-offer-taken-notice');
 });
 
-test("28-29 a member's trade room: waiting for the owner's device; Propose cancel", async ({ page }) => {
+test("28-29 a member's trade room: waiting for the owner's device; a standing proposal and Withdraw (no Propose cancel)", async ({ page }) => {
   const trade = sellerView().code;
   const later = new Date(Date.now() + 25 * 60_000).toISOString();
   let view = { ...sellerView(), payBy: later, nextDeadline: later, serverNow: new Date().toISOString() };
@@ -404,7 +412,9 @@ test("28-29 a member's trade room: waiting for the owner's device; Propose cance
   const room = page.locator('[data-screen="trade"][data-member]');
   await expect(room.locator('[data-part="member-waiting"]')).toBeVisible();
   await shot(page, '28-team-member-trade-waiting');
-  await room.getByRole('button', { name: 'Propose cancel' }).click();
+  await expect(room.getByRole('button', { name: 'Propose cancel' })).toHaveCount(0);
+  view = { ...view, cancelProposedBy: 'seller' };
+  await page.reload();
   await expect(room.getByRole('button', { name: 'Withdraw' })).toBeVisible();
   await shot(page, '29-team-member-trade-cancel-proposed');
 });
@@ -665,7 +675,7 @@ test("38-39 Task 39: the two-step I've paid, marked as paid", async ({ page }) =
   await page.locator('[data-primary]').first().click();
   const sheet = page.getByRole('dialog');
   await expect(sheet).toContainText('Mark this trade as paid?');
-  await sheet.getByRole('checkbox').check();
+  await sheet.getByRole('checkbox', { name: /I sent exactly/ }).check();
   await shot(page, '38-trade-paid-confirm-sheet');
   await page.getByRole('button', { name: 'Yes, mark as paid' }).click();
   await roomState(page, 'paid');
@@ -673,10 +683,12 @@ test("38-39 Task 39: the two-step I've paid, marked as paid", async ({ page }) =
   await shot(page, '39-trade-marked-paid');
 });
 
-test("40-41 the seller's waiting room: Propose cancel, then the buyer's accept card", async ({ page }) => {
+test("40-41 the seller's waiting room (no Propose cancel), a standing proposal, then the buyer's accept card", async ({ page }) => {
   const s = await openRoom(page, SELLER_SECURED);
   await expect(page.getByText('Waiting for mira.k to pay')).toBeVisible();
-  await page.getByRole('button', { name: 'Propose cancel' }).click();
+  await expect(page.getByRole('button', { name: 'Propose cancel' })).toHaveCount(0);
+  s.view = { ...SELLER_SECURED, cancelProposedBy: 'seller' };
+  await page.reload();
   await expect(page.getByText('You proposed cancelling. Waiting for mira.k.')).toBeVisible();
   await shot(page, '40-trade-seller-proposed-cancel');
   s.view = { ...PAY_SECURED, cancelProposedBy: 'seller' };
@@ -695,16 +707,21 @@ const PAID_SELLER = {
   fee: { atomic: '12500000000' },
 } as TradeView;
 
-test('42-43 SellerConfirm: the release warning, then the box ticked', async ({ page }) => {
+test('42-43 SellerConfirm: the box ticked, then the release warning on "Payment received" (the hold)', async ({ page }) => {
   await openRoom(page, PAID_SELLER, { warned: false });
   const warn = page.getByRole('alertdialog');
-  await expect(warn).toContainText('Before you release');
-  await shot(page, '42-trade-release-warning');
-  await page.getByRole('button', { name: "It's in my account" }).click();
   await expect(warn).toHaveCount(0);
   await page.getByRole('checkbox').check();
   await expect(page.locator('[data-screen="seller-confirm"]')).toBeVisible();
   await shot(page, '43-trade-seller-confirm');
+  const hold = page.locator('[data-screen="seller-confirm"] button[data-primary]');
+  const b = (await hold.boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(1700);
+  await page.mouse.up();
+  await expect(warn).toContainText('Before you release');
+  await shot(page, '42-trade-release-warning');
 });
 
 const CANCELLED = {
@@ -914,7 +931,7 @@ test('60 News', async ({ page }) => {
     item(2, '2026-10-28T09:00:00.000Z', 'Planned upgrade', 'Tomorrow at 09:00 UTC. Trades in escrow are safe.'),
     item(1, '2026-10-20T09:00:00.000Z', 'Welcome', 'Hello from X2F.'),
   ], serverNow: '2026-10-29T12:00:00.000Z' }));
-  await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
+  await page.route('**/v1/account/me', json(TRADER_ME));
   await page.goto('/news');
   await expect(page.getByRole('heading', { level: 1, name: 'News' })).toBeVisible();
   await shot(page, '60-news');
@@ -928,8 +945,9 @@ test('61-63 CantDoThat on PostOffer, the feedback form, the thank-you', async ({
   await page.route('**/v1/offers', (r) => (r.request().method() === 'POST' ? json({ error: 'trading-hold' }, 409)(r) : r.fallback()));
   await page.route('**/v1/feedback/form', json({}, 202));
   await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+  await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+  await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
   await page.getByRole('button', { name: 'Post offer' }).click();
   const popup = page.getByRole('dialog', { name: "This offer can't be posted" });
   await expect(popup).toBeVisible();
@@ -1047,8 +1065,9 @@ test("71 the seller quote (mira.k's buy ad), a wallet picked", async ({ page }) 
 test('72 PostOffer', async ({ page }) => {
   await postApi(page);
   await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('radiogroup', { name: 'Smallest trade unit' }).locator('[data-unit="fiat"]').click();
+  await page.getByLabel('Smallest trade', { exact: true }).fill('$50');
+  await page.getByLabel('Largest trade', { exact: true }).fill('$2,000');
   await expect(page.getByText("Your price follows the market")).toBeVisible();
   await shot(page, '72-postoffer');
   await shot(page, '72b-postoffer-preview', { scrollTo: page.getByText('How others will see it') });

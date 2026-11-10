@@ -292,6 +292,9 @@ test('an expired session routes to /login and returns to the same screen after l
   await page.route('**/v1/login/webauthn/finish', json({ status: 'ok' }));
 
   await page.goto(`${LOCAL}/settings/security`);
+  // The Landing board first (design review 2026-11-08 item 1); its Log in keeps where they were going.
+  await expect(page).toHaveURL(/\/\?returnTo=%2Fsettings%2Fsecurity$/);
+  await page.click('[data-part="landing-login"]');
   await expect(page).toHaveURL(/\/login\?returnTo=%2Fsettings%2Fsecurity$/);
 
   await virtualAuthenticator(page);
@@ -392,7 +395,9 @@ test('a TOTP backup login says when changes can be made, then carries on', async
   await expect(page.locator('[data-part="hold-note"]')).toContainText('Your account is on a 24-hour hold');
   await expect(page).toHaveURL(/\/login\/backup/);
   await page.click('[data-part="hold-continue"]');
-  await expect(page).toHaveURL(/\/buy$/);
+  // A recovery session never reaches the marketplace (front door, 8 Nov 2026): it lands on Security,
+  // where a new login method can be added.
+  await expect(page).toHaveURL(/\/settings\/security$/);
 });
 
 test('the TOTP backup daily cap says when to try again', async ({ page }) => {
@@ -493,3 +498,28 @@ for (const viewport of PHONE_VIEWPORTS) {
     }
   });
 }
+
+// Session length (owner, 2 Nov 2026; SessionLength board): after every login the person picks how
+// long the session lasts, nothing pre-selected, then goes on to where the login was going.
+test('after login a session with no length asks for one, then lands on the default screen', async ({ page }) => {
+  const session = { lengthHours: null, choices: [2, 4, 8, 12], expiresAt: '2099-01-01T02:00:00.000Z', canExtend: true, serverNow: '2099-01-01T00:00:00.000Z' };
+  await page.route('**/v1/account/me', json(overview({ session })));
+  await page.route('**/v1/login/password', json({ status: 'ok' }));
+  let saved: unknown = null;
+  await page.route('**/v1/account/session/length', (r) => {
+    saved = JSON.parse(r.request().postData() ?? '{}');
+    return json({ ...session, lengthHours: 8, expiresAt: '2099-01-01T08:00:00.000Z' })(r);
+  });
+  await page.goto('/login');
+  await page.click('[data-method="password"]');
+  await page.fill('#login-name', 'nightowl');
+  await page.fill('#login-password', 'Correct-Horse-9!');
+  await page.click('[data-part="password-login"]');
+  await expect(page).toHaveURL(/\/session-length\?returnTo=/);
+  await expect(page.locator('[data-part="session-length-select"]')).toHaveValue('');
+  await expect(page.locator('[data-part="session-length-continue"]')).toBeDisabled();
+  await page.selectOption('[data-part="session-length-select"]', '8');
+  await page.click('[data-part="session-length-continue"]');
+  await expect(page).toHaveURL(/\/sell$/);
+  expect(saved).toEqual({ hours: 8 });
+});

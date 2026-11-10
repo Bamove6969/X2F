@@ -113,7 +113,7 @@ describe('who may review which trade', () => {
 
   it('a disputed trade is not-reviewable while the dispute is open, reviewable from its close', async () => {
     const { seller, buyer, t } = await tradeIn('secured');
-    expect((await buyer.browser.post(`/v1/trades/${t.code}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
+    expect((await seller.browser.post(`/v1/trades/${t.code}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
     expect(refusal(await review(buyer, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
     // The ruling is carried out (the trade ends) but the dispute is not closed yet: still not.
     await jump(new Date(START.getTime() + DAY), buyer, seller);

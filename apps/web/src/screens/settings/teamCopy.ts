@@ -25,12 +25,13 @@ const AUDIT_WORDS: Record<string, string> = {
   'offer-removed': 'removed an offer',
   'trade-taken': 'started a trade',
   'trade-wallet-set': "set a trade's payout wallet",
+  // Old log rows only: the final alert is retired (owner 8 Nov, p6-1).
   'final-alert-seen': 'saw the final alert',
   'dispute-opened': 'opened a dispute',
   'appeal-filed': 'filed an appeal',
   'mark-paid': 'marked the payment sent',
   extend: 'gave more time to pay',
-  'request-refund': 'asked for a refund',
+  'request-refund': 'cancelled after the time to pay',
   'buyer-cancel': 'cancelled as the buyer',
   'propose-cancel': 'proposed cancelling',
   'accept-cancel': 'agreed to cancel',
@@ -91,7 +92,10 @@ export const JOIN_COPY = {
   title: 'Join a team',
   loading: 'Checking your invite…',
   gone: 'This invite link has been used, has run out or is not complete. Ask for a new one.',
-  invited: (team: string, name: string, roles: readonly TeamRole[]) => `${team} invited you as ${name}, for ${rolesText(roles)}.`,
+  // Never the team's name before joining (review 2026-11-08 F3). COPY-UNSIGNED.
+  invited: (name: string, roles: readonly TeamRole[]) => `You are invited to a team as ${name}, for ${rolesText(roles)}.`,
+  // The member's Terms step before joining (review 2026-11-08 F1). COPY-UNSIGNED.
+  termsIntro: 'Before you join, read the Terms of Service to the end and accept them. The key points first:',
   twoFactors: 'You log in with two factors: first a PGP key, then a security key, a passkey or a second PGP key.',
   loginNameLabel: 'Your private login name',
   loginNameHint: 'Only you use it to log in. Nobody else sees it.',

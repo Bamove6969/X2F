@@ -278,7 +278,12 @@ describe('what this device signs comes from what the user confirmed, never the A
     const rec = (await buyer.store.load(CODE))!;
     await buyer.store.save({ ...rec, failed: 'deal-mismatch' });
     const again = await t.mk('buyer', { idb: buyer.idb });
+    // The dropped failure is on disk before the next step: it was only in memory until a later save,
+    // so the check after "ready" below raced that save (failed under load on 8b0830a2, 7 Nov 2026).
+    const verifying = again.status((s) => s.phase === 'verifying');
     await again.runtime.resumeAll();
+    await verifying;
+    expect((await again.store.load(CODE))?.failed ?? null).toBeNull();
     expect(await again.status((s) => s.phase === 'ready' || s.phase === 'signing')).toMatchObject({ error: null });
     expect((await again.store.load(CODE))?.failed ?? null).toBeNull();
   });
@@ -930,8 +935,8 @@ describe('settling', () => {
     // No cancel proposed and not settling a mutual cancel: the tap has nothing to sign.
     await expect(t.buyer.runtime.act(CODE, { type: 'propose-cancel-sign' })).rejects.toThrow();
     expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'release', auto: true });
-    // The seller's release tap outside secured/paid (here: refund_requested) is refused too.
-    t.state.view = tradeView({ state: 'refund_requested' });
+    // The seller's release tap outside secured/paid (here: the seller's own cancel settling) is refused too.
+    t.state.view = tradeView({ state: 'settling', settling: 'auto-refund' });
     await expect(t.seller.runtime.act(CODE, { type: 'release' })).rejects.toThrow();
   });
 

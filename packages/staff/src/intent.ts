@@ -48,6 +48,8 @@ export type KeyTapIntent =
   | { kind: 'create-invite'; inviteId: string; role: Invitable; tokenHash: string; expiresAt: string }
   | { kind: 'switch-on'; accountId: string; role: Invitable }
   | { kind: 'set-role'; accountId: string; role: Invitable }
+  // Owner G4 (7 Nov): permanently removing a staff member is tapped.
+  | { kind: 'remove-staff'; accountId: string }
   | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string }
   | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number }
   // Lead re-review 6 Nov item 1: a staff member or the owner changes their own login methods on the
@@ -74,6 +76,7 @@ export const KEY_TAP_KINDS = [
   'create-invite',
   'switch-on',
   'set-role',
+  'remove-staff',
   'add-owner-key',
   'settings',
   'add-pgp-key',

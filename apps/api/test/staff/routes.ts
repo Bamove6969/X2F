@@ -6,6 +6,7 @@ import type { StaffRoutePerm } from '../../src/staff/guard.js';
 
 const EVERY_ROLE = ['owner', 'senior', 'mod', 'helper'] as const satisfies readonly StaffRole[];
 const OWNER = ['owner'] as const satisfies readonly StaffRole[];
+const MODERATORS = ['owner', 'senior', 'mod'] as const satisfies readonly StaffRole[];
 
 export interface StaffRouteRow {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -75,6 +76,14 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'GET', url: '/staff/v1/owner/keys', perm: 'self', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/owner/keys/start', perm: 'self', allowed: OWNER, body: {} },
   { method: 'POST', url: '/staff/v1/owner/keys/finish', perm: 'self', allowed: OWNER, body: {} },
+  // Plan 4 Task 6: owner first-run setup (public; 404 setup-locked once locked, and here: an owner exists).
+  { method: 'POST', url: '/staff/v1/setup/code', perm: 'public-setup', allowed: 'public', body: { code: 'AAAA-AAAA-AAAA' } },
+  { method: 'POST', url: '/staff/v1/setup/account', perm: 'public-setup', allowed: 'public', body: { displayName: 'matrix.owner', loginName: 'matrix-login' } },
+  { method: 'POST', url: '/staff/v1/setup/key/start', perm: 'public-setup', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/key/finish', perm: 'public-setup', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/pgp/start', perm: 'public-setup', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/pgp/finish', perm: 'public-setup', allowed: 'public', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/finish', perm: 'public-setup', allowed: 'public', body: {} },
   // Plan 4 Task 8: the owner's settings and the site controls (a sample tap id is never valid).
   { method: 'GET', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/settings', perm: 'settings.write', allowed: OWNER, body: { firstResponseH: 5 } },
@@ -84,7 +93,9 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'PUT', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER, body: { text: 'Matrix is down for an hour.', kind: 'info' } },
   { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control', allowed: OWNER },
   { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', allowed: OWNER, body: { on: false } },
-  // Plan 4 Task 28: News, written by the owner.
+  { method: 'POST', url: '/staff/v1/site/auto-close/resume', perm: 'site.control', allowed: OWNER, body: {} },
+  // Plan 4 Task 28: News, written by the owner (the list: Task 16's NewsEditor).
+  { method: 'GET', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/news', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'A message.' } },
   { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER, body: { title: 'Matrix', body: 'Edited.' } },
   { method: 'DELETE', url: '/staff/v1/news/:id', perm: 'site.control', allowed: OWNER },
@@ -96,4 +107,13 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Owner Q60: senior moderators by role, moderators and helpers by grant.
   { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
   { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read', allowed: ['owner', 'senior'], grantable: true },
+  // Plan 4 Task 11: the moderator's queue and case (a sample uuid is neither a trade code nor an
+  // incident ID: 404 past the guard).
+  { method: 'GET', url: '/staff/v1/disputes', perm: 'disputes.handle', allowed: MODERATORS },
+  { method: 'POST', url: '/staff/v1/disputes/next', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
+  { method: 'POST', url: '/staff/v1/disputes/:code/take', perm: 'disputes.handle', allowed: MODERATORS, body: {} },
+  { method: 'GET', url: '/staff/v1/disputes/:code', perm: 'disputes.handle', allowed: MODERATORS },
+  { method: 'POST', url: '/staff/v1/disputes/:code/messages', perm: 'disputes.handle', allowed: MODERATORS, body: { text: 'Hello' } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/proof-request', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'buyer' } },
+  { method: 'POST', url: '/staff/v1/disputes/:code/freeze', perm: 'disputes.handle', allowed: MODERATORS, body: { side: 'seller', on: true, reason: 'no-reply' } },
 ];

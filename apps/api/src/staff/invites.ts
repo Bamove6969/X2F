@@ -11,6 +11,7 @@ import { ApiError } from '../errors.js';
 import { appendLog } from '../log/append.js';
 import type { StaffDeps } from './app.js';
 import { requireStaff } from './guard.js';
+import { THREE_METHOD_ROLES, holdsAllThree } from './login.js';
 import { consumeKeyTap } from './keyTap.js';
 import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type InvitableRole } from './members.js';
 
@@ -161,9 +162,24 @@ export function staffInviteRoutes(app: FastifyInstance): void {
   // The invitee
 
   app.get('/staff/v1/invites/accept/:token', pub, async (req) => {
-    const i = await openInvite(req.server.deps.db, tokenOf(req), req.server.deps.clock());
+    const db = req.server.deps.db;
+    const i = await openInvite(db, tokenOf(req), req.server.deps.clock());
     req.server.budgets.start.take();
-    return { role: i.role, hours: i.hours, expiresAt: i.expires_at.toISOString() };
+    // A return visit (the account was made earlier on this link): what is in so far, so the page
+    // carries on at the keys with the right counts (attested security keys, passkeys, PGP keys).
+    let resume: { keys: number; passkeys: number; pgp: number; keyCheckCode: string | null } | null = null;
+    if (i.account_id !== null) {
+      const { rows } = await db.query<{ passkeys: number; pgp: number; first: Buffer | null }>(
+        `select (select count(*)::int from webauthn_credentials w where w.account_id = $1 and w.kind = 'passkey') as passkeys,
+                (select count(*)::int from pgp_keys p where p.account_id = $1) as pgp,
+                (select w.public_key from webauthn_credentials w where w.account_id = $1 and w.kind = 'security-key' and w.attested
+                  order by w.created_at, w.id limit 1) as first`,
+        [i.account_id],
+      );
+      const r = rows[0]!;
+      resume = { keys: await attestedKeyCount(db, i.account_id), passkeys: r.passkeys, pgp: r.pgp, keyCheckCode: r.first ? keyCheckCode(new Uint8Array(r.first)) : null };
+    }
+    return { role: i.role, hours: i.hours, expiresAt: i.expires_at.toISOString(), resume };
   });
 
   app.post('/staff/v1/invites/accept/:token/account', pub, async (req, reply) => {
@@ -238,7 +254,7 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     const now = deps.clock();
     await withTx(deps.db, async (c) => {
       await lockInvite(c, req, accountId);
-      await insertPgpKey(c, deps.config, { accountId, fingerprint: proved.fingerprint, armored: proved.armored, now });
+      await insertPgpKey(c, deps.config, { accountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved });
     });
     return reply.code(201).send({ ok: true });
   });
@@ -261,6 +277,8 @@ export function staffInviteRoutes(app: FastifyInstance): void {
       const { webauthn, pgp } = rows[0]!;
       if ((i.role === 'mod' || i.role === 'senior') && keys === 0) throw new ApiError(409, 'security-key-required');
       if (!((pgp >= 1 && webauthn >= 1) || pgp >= 2)) throw new ApiError(409, 'two-factors-required');
+      // Owner G3 (7 Nov): a moderator holds all three: a security key, a PGP key and a passkey.
+      if (THREE_METHOD_ROLES.includes(i.role) && !(await holdsAllThree(c, accountId))) throw new ApiError(409, 'all-three-methods-required');
       await c.query('update staff_invites set used_at = $2 where id = $1', [i.id, now]);
       await c.query('update accounts set disabled_at = null where id = $1', [accountId]);
       await c.query(

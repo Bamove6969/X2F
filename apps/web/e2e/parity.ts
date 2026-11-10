@@ -57,16 +57,34 @@ const TRADER_CARD = 'Trader card from the shared kit (design gap list Job 2), no
  * XMR"). Those are gap list Job 4 (trade screens to the boards), not the cancel sheet; the sheet's
  * own copy is checked in full.
  */
+const NO_DISPUTE_BEFORE_PAID =
+  'Design proto review P1 (8 Nov): the buyer gets no dispute before "I\'ve paid" (the machine refuses it, too-early); the board, drawn before that, still shows Open dispute on the unpaid pay step.';
 const PAY_STEP_V2 = 'The secured pay step under the sheet in its v2 layout (design gap list Job 4, trade screens to the boards); not part of the cancel sheet (owner G56), whose copy is checked in full.';
 
+const AD_CARD_V142 =
+  'Owner #11 (8 Nov), boards v142 on wip/design-brief: the ad card shows the markup bottom-left ("+0.4%" over "Vendor markup") and the range as two rows, XMR and fiat, each with its unit; the time moved to the price row. design/x2f-app still has the earlier card.';
+
 export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: string }[]>> = {
-  BuyerPay: ['SG', 'Vendor', 'Online · replies in about 4 min', 'Online', '4', '1,284', 'trades', '99.4%', 'positive', '275.4', 'XMR traded', 'Trusted', 'Fast', '+3'].map(
-    (text) => ({ text, why: TRADER_CARD }),
+  BuyOffers: ['$0.10 above market', '$50 – $1,500Releases in ~8 min', '0.5% above market', '$100 – $3,000Releases in ~20 min', '0.9% above market', '$20 – $400Releases in ~30 min'].map(
+    (text) => ({ text, why: AD_CARD_V142 }),
   ),
-  SellerRefund: ['MK', 'Last seen 1 h ago', '1', '212', 'trades', '99%', 'positive', '41.7', 'XMR traded', 'Trusted', 'PGP verified', '+3'].map(
-    (text) => ({ text, why: TRADER_CARD }),
-  ),
+  BuyerPay: [
+    ...['SG', 'Vendor', 'Online · replies in about 4 min', 'Online', '4', '1,284', 'trades', '99.4%', 'positive', '275.4', 'XMR traded', 'Trusted', 'Fast', '+3'].map(
+      (text) => ({ text, why: TRADER_CARD }),
+    ),
+    { text: 'Open dispute', why: NO_DISPUTE_BEFORE_PAID },
+  ],
+  SellerRefund: [
+    ...['MK', 'Last seen 1 h ago', '1', '212', 'trades', '99%', 'positive', '41.7', 'XMR traded', 'Trusted', 'PGP verified', '+3'].map((text) => ({ text, why: TRADER_CARD })),
+    // Owner 8 Nov (p6-1): nudges are optional, so the board's locked state (Cancel waits for 90 min
+    // AND one nudge) is retired; the board predates the reversal and awaits a redraw.
+    ...['No word from mira.k? After 90 min and at least one nudge, you can cancel and get your 1.250000 XMR back.', '90'].map((text) => ({
+      text,
+      why: "The board's nudge lock, retired by the owner 8 Nov (p6-1: nudges are optional, Cancel is available as soon as the time to pay passes); board redraw owed.",
+    })),
+  ],
   CancelRequest: [
+    { text: 'Open dispute', why: NO_DISPUTE_BEFORE_PAID },
     ...['61', 'min', 'of 90 min · ends 1 Nov 2026, 15:21 UTC', '90', '1 Nov 2026, 15:21 UTC', '$412.50', 'for 1.250000 XMR', '1.250000', 'XMR'].map(
       (text) => ({ text, why: PAY_STEP_V2 }),
     ),
@@ -85,6 +103,18 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'P3-M12: the seller pays the funding fee in their own wallet (spec 11.1), so the row reads "Network fee · set in your wallet".',
     },
     { text: '0.000062 XMR', why: 'The value of the replaced network-fee row (P3-M12): X2F does not set the funding fee.' },
+  ],
+  Main: [
+    {
+      text: 'X2F',
+      why: 'The browse header shows logo D (an SVG mark), not the X2F wordmark: owner G-015 / design 9 Nov ("the pre-login mark is logo D"), built by the wide shell (Job 3). The Main board still carries the text wordmark until design redraws it.',
+    },
+  ],
+  BuyMain: [
+    {
+      text: 'X2F',
+      why: 'As Main: the header mark is logo D, not the X2F wordmark (owner G-015 / design 9 Nov); the BuyMain board still carries the text until design redraws it.',
+    },
   ],
   Desktop: [
     {
@@ -107,6 +137,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: "Private details are blurred automatically for you to check next. It's best-effort, so please double-check before sending. Location and device info are removed.",
       why: 'The proof slot hint on the BuyerPay phone board reads "Private details are blurred for you to check next. Location and device info are removed."; the phone board wins.',
     },
+    { text: 'Open dispute', why: NO_DISPUTE_BEFORE_PAID },
   ],
   SetupTerms: [
     {
@@ -183,11 +214,20 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: '$20 – $200Deposit required',
       why: 'Buyer deposits were removed (plan Revision 2026-10-18, spec 2.5); the card shows its range and, when the API knows it, the typical time ("Pays in ~N min").',
     },
+    ...['0.4% above market', '$50 – $2,000Pays in ~6 min', '0.3% above market', '$100 – $5,000Pays in ~15 min'].map((text) => ({ text, why: AD_CARD_V142 })),
   ],
   PostOffer: [
     {
       text: 'Bank transfer (ACH)',
       why: 'The board names ACH differently from the catalog ("ACH bank transfer (US)", data/payment-methods.json); the board fix is a design to-do (lead, 2026-10-27).',
+    },
+    ...['Anyone', '5+', '10+', '50+'].map((text) => ({
+      text,
+      why: 'Owner, 8 Nov ("This will be 5, 10, 25, 50"): Minimum completed trades is a segmented choice, No minimum / 5 / 10 / 25 / 50; the board still draws the old select (design to-do).',
+    })),
+    {
+      text: '$50 – $2,000',
+      why: 'Owner #11 (8 Nov), boards v142: the preview shows the range in both units, each row with its unit ("$50 – $2,000 USD"); design/x2f-app still has the one-row preview.',
     },
   ],
   // Task 27's dispute boards: parts other tasks build (Plan 5's evidence and unblurred proof, Task 20's chat).

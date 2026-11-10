@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { insertTrade, loadTradeRow, rowToTrade } from '../src/trades/store.js';
-import { seedAccount } from './helpers/accounts.js';
+import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { FIAT, XMR, driveTo, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
@@ -71,6 +71,8 @@ async function addWallet(accountId: string, usable = true): Promise<{ id: string
 async function person(stage: 'starter' | 'building' | 'graduated' = 'graduated'): Promise<Who> {
   const t = await trader();
   const w = await addWallet(t.id);
+  // Owner 2 Nov 2026: only vendors post; every person here may post.
+  await makeVendor(deps, t.id);
   if (stage !== 'starter') {
     const now = deps.clock();
     await deps.db.query('update accounts set created_at = $2 where id = $1', [t.id, new Date(now.getTime() - (stage === 'graduated' ? 40 : 10) * DAY)]);
@@ -86,7 +88,7 @@ async function person(stage: 'starter' | 'building' | 'graduated' = 'graduated')
 
 const OFFER = {
   side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
-  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: 0, terms: 'Zelle only.',
+  minFiatCents: '1000', maxFiatCents: '1000000', minTrades: null, terms: 'Zelle only.',
 };
 
 async function postOffer(who: Who, over: Record<string, unknown> = {}): Promise<string> {
@@ -172,7 +174,7 @@ describe('POST /v1/offers/:id/take', () => {
     expect(t).toMatchObject({
       offerId: offer, poster: 'seller', sellerId: seller.id, buyerId: buyer.id, methodId: 'ZELLE', state: 'setup',
       amountAtomic: tenth, lockedRate: { currency: 'USD', centsPerXmr: 33_330n }, fiatCents: 3_333n,
-      minFiatCents: 1000n, maxFiatCents: 1_000_000n, confirmWindowMin: 120, takenAt: deps.clock(),
+      minFiatCents: 1000n, maxFiatCents: 1_000_000n, confirmWindowMin: 90, takenAt: deps.clock(),
     });
     // The buyer took: their payout address is set; the seller (poster) picks on the accepted sheet.
     expect({ buyer: row.buyer_payout, seller: row.seller_refund, app: row.seller_wallet_app }).toEqual({ buyer: buyer.address, seller: null, app: null });

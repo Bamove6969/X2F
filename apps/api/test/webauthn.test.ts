@@ -611,7 +611,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     expect(ok('trader', 'password', false)).toBe(false);
   });
 
-  it('lists a staff passkey at login only after a PGP first factor from the same device (on a staff mount: staff log in only on the staff API, owner 2026-11-03)', async () => {
+  it('lists a staff passkey at login only after a PGP or security-key first factor from the same device (owner G3; on a staff mount: staff log in only on the staff API, owner 2026-11-03)', async () => {
     const name = uniqueName('crewlogin');
     const staffId = await seedAccount(deps, { loginName: name, kind: 'staff' });
     const key = createSoftAuthenticator({ backedUp: false, userVerified: true });
@@ -659,8 +659,9 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     // Another device, or a first factor that was not PGP: security keys only.
     const other = (await new Browser().post('/t/two/start', { loginName: name, pendingId: afterPgp })).json();
     expect(ids(other)).not.toContain(pk.credentialId);
+    // Owner G3 (7 Nov): a staff key first step is followed by a PGP key or a passkey, so the passkey is listed then too.
     const afterKey = (await insertPending('security-key', device.rows[0]!.device_hash)).rows[0]!.id;
-    expect(ids((await b.post('/t/two/start', { loginName: name, pendingId: afterKey })).json())).not.toContain(pk.credentialId);
+    expect(ids((await b.post('/t/two/start', { loginName: name, pendingId: afterKey })).json())).toContain(pk.credentialId);
     // Reading the pending row does not use it up.
     const { rows } = await deps.db.query('select used_at from challenges where id = $1', [afterPgp]);
     expect(rows[0].used_at).toBeNull();

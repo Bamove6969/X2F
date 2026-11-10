@@ -11,6 +11,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../src/app.js';
 import { fileAttestationPolicy } from '../../src/auth/attestation.js';
 import { newBudgets } from '../../src/limits.js';
+import { resetTapStarts } from '../../src/staff/keyTap.js';
 import { insertPgpKey } from '../../src/auth/pgp.js';
 import { verifyWebAuthnRegistration, webauthnRegistrationOptions } from '../../src/auth/webauthn.js';
 import { genKey, type Pair } from './pgpKeys.js';
@@ -103,4 +104,6 @@ export function newInvite(now: Date, o: { role: Exclude<StaffRole, 'owner'>; ttl
 export function resetBudgets(t: AttestedStaffApps): void {
   (t.app as { budgets: unknown }).budgets = newBudgets(t.deps.clock);
   (t.trader as { budgets: unknown }).budgets = newBudgets(t.deps.clock);
+  // The tap-start window (20 per 10 minutes per account) is in memory too.
+  resetTapStarts();
 }

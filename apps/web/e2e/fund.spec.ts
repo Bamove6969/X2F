@@ -14,6 +14,7 @@ import { BOARD_TRADE as B } from '../src/fixtures/boards.js';
 import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
 import { PORT } from './playwright.config.js';
+import { INSIDE } from './session.js';
 
 const FIXTURES_PORT = PORT + 1;
 const FIXTURES = `http://127.0.0.1:${FIXTURES_PORT}`;
@@ -81,8 +82,6 @@ function sellerView(over: View = {}): View {
     payBy: null,
     paidAt: null,
     confirmBy: null,
-    finalAlertAt: null,
-    finalAlertSeenAt: null,
     settleBy: null,
     releaseClaimedAt: null,
     pausedAt: null,
@@ -126,7 +125,7 @@ async function stub(page: Page, view: () => View, escrow: FixtureEscrow = VERIFI
   await page.addInitScript((e) => {
     window.__x2fFixtureEscrow = e;
   }, escrow);
-  await page.route('**/v1/account/me', (r) => r.fulfill({ json: { kind: 'trader' } }));
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: INSIDE }));
   await page.route(`**/v1/trades/${B.code}`, (r) => r.fulfill({ json: view() }));
 }
 
@@ -423,6 +422,12 @@ test.describe('the buyer before funding', () => {
     await expect(page.getByText(`Buying from ${B.seller}`)).toBeVisible();
     await expect(page.locator('[data-qr], [data-wallet-link], [data-escrow-address]')).toHaveCount(0);
     expect(await page.content()).not.toContain('monero:');
+    // Design proto review P1: Chat and an at-once Cancel trade, which asks once.
+    await expect(page.getByRole('button', { name: 'Chat' })).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel trade' }).click();
+    await expect(page.getByRole('dialog', { name: 'Cancelling is final' })).toBeVisible();
+    await page.getByRole('button', { name: 'Keep trading' }).click();
+    await expect(page.getByRole('dialog', { name: 'Cancelling is final' })).toHaveCount(0);
   });
 });
 

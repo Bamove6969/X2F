@@ -114,7 +114,7 @@ describe('the room starts Task 12’s escrow with what the user confirmed', () =
 
 describe('a view whose code is another trade’s (Task 24 round-3 review, Important 1)', () => {
   const OTHER = 'Z3H8-6RNB-2DWC-5JTE';
-  const STATES = ['setup', 'funding', 'securing', 'secured', 'paid', 'settling', 'released', 'refund_requested', 'disputed'] as const;
+  const STATES = ['setup', 'funding', 'securing', 'secured', 'paid', 'settling', 'released', 'disputed'] as const;
 
   it('fails closed in every state and role: no slot, no escrow start, a refusal', async () => {
     const shown: string[] = [];

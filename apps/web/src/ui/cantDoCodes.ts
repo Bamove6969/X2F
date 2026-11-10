@@ -53,6 +53,10 @@ export const CANT_DO_CODES = [
   'forbidden',
   'too-many-members',
   'member-cannot-sign',
+  // Owner 2 Nov 2026: only vendor accounts post offers or have team members; switching to vendor
+  // needs a passkey, security key or PGP key on the account.
+  'not-vendor',
+  'vendor-needs-key',
   // Plan 5 Task 3: rate (or skip rating) your last trade first (the rate-first gate, spec 5.1).
   'review-pending',
   // Guessed for refusals whose API tasks are not on the main line yet (Plan 4's lien and trade
@@ -83,6 +87,9 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'two-factors-required': 'a staff sign-up step: a second login method must be added (staff app only)',
   'owner-protected': "the owner's own account in staff management (staff app only)",
   'owner-needs-two-keys': 'the owner keeps at least two security keys (staff app only)',
+  'all-three-methods-required': 'a moderator keeps a security key, a PGP key and a passkey (staff app only)',
+  'both-owner-keys-required': "a change to the owner's keys is tapped with both owner keys (staff app only)",
+  'passkey-is-security-key': 'a staff passkey must be another device than the security key (staff app only)',
   'bad-request': 'a malformed request (a fault)',
   'not-found': 'nothing there',
   'unsupported-media-type': 'a fault',
@@ -107,6 +114,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'key-not-yet-valid': 'the pasted key itself is not valid yet',
   'key-no-signing': 'an input check on a pasted key (past reputation: it cannot sign)',
   'key-in-use': 'an input check on a pasted key',
+  'key-unavailable': 'an input check on a pasted key (owner 2 Nov 2026: a key on the ban list, never named as such)',
   'challenge-expired': 'an expired step (start again)',
   'code-invalid': 'a wrong code',
   'credentials-invalid': 'a wrong login',
@@ -177,6 +185,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'wrong-channel': 'a device check (a fault)',
   'wrong-sender': 'a device check (a fault)',
   'chat-unavailable': 'the trade has no chat (cannot happen since Task 5\'s offer key; a fault)',
+  'chat-purged': 'the chat was erased on its retention schedule (its own state, not a rule about the user; the device erases its copy)',
   'mod-not-allowed': "a device check: a moderator line outside a dispute is not shown (the chat's own rule)",
   'bad-message': 'a device check on a received line (a fault)',
   'bad-text': 'an input check on the typed message',
@@ -220,6 +229,7 @@ export const CANT_DO_TITLE = {
   devices: "That device can't be logged out from here",
   chat: "This chat can't open",
   team: "This can't be done on the team",
+  accountType: "You can't switch to a vendor account",
   // Design build review 7 Nov: a title that says why (CantDoThat titles). COPY-UNSIGNED
   teamOwnerOnly: 'Only the owner can do this',
   // COPY-UNSIGNED: 'forbidden' is a role issue, not an owner-only one (lead's review, 7 Nov).
@@ -274,6 +284,8 @@ export function postCantDoText(code: CantDoCode): string {
     case 'forbidden':
     case 'owner-only':
       return teamCantDoText(code);
+    case 'not-vendor':
+      return NOT_VENDOR_POST_TEXT;
     default:
       return "Your account can't post this offer right now.";
   }
@@ -320,6 +332,8 @@ export const CANNOT_BLOCK = 'That trader cannot be blocked.';
  */
 export function myOffersCantDoText(code: CantDoCode, n: number): string {
   switch (code) {
+    case 'not-vendor':
+      return 'Only vendor accounts can turn offers on. Switch to a vendor account in Settings, Account type.';
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.";
     case 'too-many-offers':
@@ -334,6 +348,8 @@ export function myOffersCantDoText(code: CantDoCode, n: number): string {
 /** The short line under each offer a CantDoThat refusal kept off (the popup gives the reason in full). COPY-UNSIGNED */
 export function myOffersCantDoRow(code: CantDoCode): string {
   switch (code) {
+    case 'not-vendor':
+      return 'Stayed off: only vendor accounts can turn offers on.';
     case 'trading-hold':
       return 'Stayed off: your account has a trading hold.';
     case 'too-many-offers':
@@ -461,6 +477,8 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
       return 'Only the account owner can do this. Team members work on offers or trades, as their roles allow.';
     case 'forbidden':
       return "Your team role doesn't include this. The account owner can change your roles.";
+    case 'not-vendor':
+      return 'Team members are only for vendor accounts. Switch to a vendor account in Settings, Account type, then invite.';
     case 'too-many-members':
       return `A team can have at most ${o.max ?? 3} members. Remove one before inviting someone new.`;
     case 'member-cannot-sign':
@@ -470,5 +488,33 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
       return "This device logged in with only one way of proving it's you, so it can't invite team members or change their roles. Do this from a device where you logged in with a passkey, a security key, or your password and authenticator code.";
     default:
       return "This can't be done on the team right now.";
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Owner 2 Nov 2026: Trader and Vendor accounts (board BecomeVendor). COPY-UNSIGNED.
+
+/** Only vendors post offers. */
+export const NOT_VENDOR_CODE = 'not-vendor' satisfies CantDoCode;
+/** Switching to vendor needs a passkey, security key or PGP key on the account. */
+export const VENDOR_NEEDS_KEY_CODE = 'vendor-needs-key' satisfies CantDoCode;
+
+/** 403 `not-vendor` on Post offer, and what Post offer shows a trader instead of the form. */
+export const NOT_VENDOR_POST_TEXT = 'Only vendor accounts can post offers. Traders take offers that vendors post. Switch to a vendor account in Settings, Account type.';
+
+/** 403 `vendor-needs-key` on the switch. */
+export const VENDOR_NEEDS_KEY_TEXT = "You can't switch to a vendor account yet. The account holder needs a passkey, security key or PGP key. A username and password alone isn't enough.";
+
+/** What a refused switch to vendor says (CantDoThat on Settings, Account type). */
+export function accountTypeCantDoText(code: CantDoCode): string {
+  switch (code) {
+    case 'vendor-needs-key':
+      return VENDOR_NEEDS_KEY_TEXT;
+    case 'method-not-allowed':
+      return 'Switching to a vendor account needs your passkey, security key or PGP key to confirm. A password is not enough for this.';
+    case 'owner-only':
+      return teamCantDoText(code);
+    default:
+      return "Your account can't switch to a vendor account right now.";
   }
 }

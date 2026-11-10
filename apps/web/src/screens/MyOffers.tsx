@@ -56,10 +56,14 @@ import {
   turnOnPopup,
 } from './myoffers/model.js';
 import './screens.css';
+import { accountTypeOf } from '../session/member.js';
+import { useSession } from '../session/useSession.js';
+import { ACCOUNT_TYPE_COPY, ACCOUNT_TYPE_PATH } from './settings/accountTypeCopy.js';
 
 type Load = { kind: 'loading' } | { kind: 'signed-out' } | { kind: 'failed' } | { kind: 'ready'; offers: MyOffer[] };
 
 export function MyOffers() {
+  const trader = accountTypeOf(useSession()) === 'trader';
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   // Each offer a Turn on kept off, by the refusal code (its row line is refusalLine(code)).
@@ -351,6 +355,13 @@ export function MyOffers() {
           <Button variant="secondary" disabled={busy || held} onClick={() => void run(idsFor(offers, selected), 'paused', true)} data-part="turn-off">
             Turn off
           </Button>
+        </ActionBar>
+      ) : ready && trader ? (
+        <ActionBar>
+          {/* Owner 2 Nov 2026: only vendors post; a trader's way is Settings > Account type. */}
+          <Link className="x2f-button x2f-button--primary" to={ACCOUNT_TYPE_PATH} data-primary="" data-part="account-type">
+            {ACCOUNT_TYPE_COPY.switchButton}
+          </Link>
         </ActionBar>
       ) : ready ? (
         <ActionBar>

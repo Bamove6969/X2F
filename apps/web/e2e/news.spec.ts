@@ -4,6 +4,7 @@
 // so there is no expectParity here: the phone layout rule and the one-primary rule still apply.
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
+import { signedIn } from './session.js';
 
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
@@ -26,11 +27,26 @@ async function stubNews(page: Page, items: unknown[]): Promise<{ writes: string[
 const titles = (page: Page) => page.locator('[data-part="news-item"] h2').allTextContents();
 const newTitles = (page: Page) => page.locator('[data-part="news-item"][data-new] h2').allTextContents();
 
-test('logged out: newest first with dates, all new, then seen on the next visit', async ({ page }) => {
-  const s = await stubNews(page, ITEMS);
+test('logged out, News never opens: the front door (the Landing board) takes the visitor, and nothing is read (owner, 8 Nov 2026)', async ({ page }) => {
+  const reads: string[] = [];
+  page.on('request', (r) => {
+    if (new URL(r.url()).pathname === '/v1/news') reads.push(r.url());
+  });
+  await stubNews(page, ITEMS);
   await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
   await page.goto('/news');
+  await expect(page).toHaveURL('/?returnTo=%2Fnews');
+  await expect(page.locator('[data-part="news-item"]')).toHaveCount(0);
+  expect(reads).toEqual([]);
+});
+
+test('newest first with dates, all new, then seen on the next visit', async ({ page }) => {
+  const s = await stubNews(page, ITEMS);
+  await page.route('**/v1/account/me', json({ displayName: 'nightowl', kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: true, suggestions: [], termsCurrent: true }));
+  await page.goto('/news');
   await expect(page.getByRole('heading', { level: 1, name: 'News' })).toBeVisible();
+  // The heading shows before the list loads (failed once under load): wait for the items.
+  await expect(page.locator('[data-part="news-item"]')).toHaveCount(3);
   expect(await titles(page)).toEqual(['Upgrade done', 'Planned upgrade', 'Welcome']);
   expect(await newTitles(page)).toEqual(['Upgrade done', 'Planned upgrade', 'Welcome']);
   expect(await page.locator('[data-part="news-date"] time').evaluateAll((ts) => ts.map((t) => t.getAttribute('datetime')))).toEqual(
@@ -74,6 +90,7 @@ test('after login, unseen news opens first and Continue goes on', async ({ page 
 for (const viewport of PHONE_VIEWPORTS) {
   test(`phone layout at ${viewport}`, async ({ page }) => {
     await stubNews(page, [item(4, '2026-10-30T09:00:00.000Z', 'A longer title that has to wrap on a small phone screen', 'x '.repeat(300)), ...ITEMS]);
+    await signedIn(page);
     await page.goto('/news');
     await setPhone(page, viewport);
     await expect(page.locator('[data-part="news-item"]')).toHaveCount(4);

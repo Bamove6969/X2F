@@ -1,0 +1,145 @@
+/* The Landing board (phone 390 x 844) and Landing-Wide (1280 x 800), design branch docs/design-boards/. */
+.x2f-landing {
+  min-height: 100dvh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 0 24px 24px;
+  background: var(--x2f-ground);
+  color: var(--x2f-ink);
+}
+.x2f-landing__main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 36px;
+  padding-top: 24px;
+}
+.x2f-landing__logo {
+  margin: 0;
+}
+.x2f-landing__logo svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.x2f-landing__slogan {
+  margin: 0;
+  font-family: var(--x2f-font-display);
+  font-size: 32px;
+  line-height: 36px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+/* Phone: broken after "Fiat" so the two lines balance. */
+.x2f-landing__slogan span {
+  display: block;
+}
+.x2f-landing__promises {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 300px;
+}
+.x2f-landing__promises li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--x2f-ink-muted);
+}
+.x2f-landing__promises svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--x2f-ink);
+}
+.x2f-landing__ways {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+.x2f-landing__pair {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.x2f-landing__way {
+  min-height: 56px;
+  font-size: 18px;
+  line-height: 24px;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.x2f-landing__recover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+}
+.x2f-landing__foot {
+  padding-top: 20px;
+}
+.x2f-landing__foot p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  text-align: center;
+  color: var(--x2f-ink-muted);
+}
+
+/* Landing-Wide: the logo at 180, the slogan on one line at 40/44, the promises in one row of three,
+   the two buttons side by side at 240 px. */
+.x2f-landing[data-wide='true'] {
+  padding: 48px 48px 40px;
+  align-items: center;
+}
+.x2f-landing[data-wide='true'] .x2f-landing__main {
+  gap: 44px;
+  padding-top: 0;
+}
+.x2f-landing[data-wide='true'] .x2f-landing__slogan {
+  font-size: 40px;
+  line-height: 44px;
+}
+.x2f-landing[data-wide='true'] .x2f-landing__slogan span {
+  display: inline;
+}
+.x2f-landing[data-wide='true'] .x2f-landing__promises {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px 40px;
+  max-width: none;
+  width: auto;
+}
+.x2f-landing[data-wide='true'] .x2f-landing__promises li {
+  width: 300px;
+  max-width: 100%;
+}
+.x2f-landing[data-wide='true'] .x2f-landing__ways {
+  align-items: center;
+  margin-top: 12px;
+  width: auto;
+}
+.x2f-landing[data-wide='true'] .x2f-landing__pair {
+  flex-direction: row;
+  gap: 16px;
+}
+.x2f-landing[data-wide='true'] .x2f-landing__way {
+  width: 240px;
+}

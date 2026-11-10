@@ -272,6 +272,7 @@ describe('challengeText', () => {
       'add-key': 'add this PGP key to your account',
       'team-join': 'join a team as a member',
       'staff-join': 'join the X2F staff',
+      'owner-setup': 'set up the owner account',
     });
   });
 });

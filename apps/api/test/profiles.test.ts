@@ -8,6 +8,7 @@ import {
 import type { LiveOfferQuery, LiveOfferStat } from '../src/methods/routes.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
+import { tradeApp } from './helpers/tradeApp.js';
 import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
 
 const raw = JSON.parse(readFileSync(new URL('../../../data/payment-methods.json', import.meta.url), 'utf8')) as {
@@ -36,13 +37,24 @@ describe('method profiles', () => {
     const zelle = getProfile('ZELLE') as MethodProfile;
     expect(zelle.whatItIs).toBe('Zelle: a US bank-to-bank instant transfer built into most US banking apps.');
     expect(zelle.landsIn).toBe("your bank account, checked in your bank's app");
-    expect(zelle.confirmWindowMin).toBe(120);
+    expect(zelle.confirmWindowMin).toBe(90);
     expect(zelle.arrival).toBe('instant');
-    for (const id of ['ACH_TRANSFER', 'SEPA']) expect(getProfile(id)!.confirmWindowMin).toBe(1440);
+    // Owner F9 (7 Nov) and the F1 table it approved: instant 90 min, same or next day 24 h, slow 48 h to 4 days.
+    const want: Record<string, number> = {
+      ZELLE: 90,
+      CASH_APP: 90,
+      REVOLUT: 90,
+      TRANSFERWISE: 1440,
+      SEPA: 1440,
+      CUSTOM: 1440,
+      ACH_TRANSFER: 2880,
+      PAY_BY_MAIL: 5760,
+    };
     for (const p of PROFILES) {
-      if (p.arrival === 'instant') expect(p.confirmWindowMin, p.id).toBe(120);
-      expect(p.confirmWindowMin, p.id).toBeGreaterThanOrEqual(120);
-      expect(p.confirmWindowMin, p.id).toBeLessThanOrEqual(1440);
+      expect(p.confirmWindowMin, p.id).toBe(want[p.id]);
+      if (p.arrival === 'instant') expect(p.confirmWindowMin, p.id).toBe(90);
+      expect(p.confirmWindowMin, p.id).toBeGreaterThanOrEqual(90);
+      expect(p.confirmWindowMin, p.id).toBeLessThanOrEqual(5760);
     }
   });
 
@@ -82,19 +94,31 @@ describe('GET /v1/methods', () => {
   let app: FastifyInstance;
   const calls: LiveOfferQuery[] = [];
   let stats: LiveOfferStat[] = [];
+  // Behind the front door (owner, 8 Nov 2026; it needed no session under P3-M9): a signed-in trader.
+  let viewer: { id: string; browser: Browser };
 
   beforeAll(async () => {
     const liveOffers: NonNullable<Deps['liveOffers']> = async (q) => {
       calls.push(q);
       return stats;
     };
-    ({ app } = await testApp({ liveOffers }));
+    let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
+    ({ app, trader } = await tradeApp({}, { liveOffers }));
+    viewer = await trader();
   });
   afterAll(async () => app.close());
 
-  const get = (qs: string) => app.inject({ method: 'GET', url: `/v1/methods${qs}` });
+  const get = (qs: string) => viewer.browser.get(`/v1/methods${qs}`);
 
-  it('lists a method with one live Zelle USD offer in live; SBP, Mir and YooMoney in neither list (no cookie, P3-M9)', async () => {
+  it('is 401 with no data and asks no counts without a session (the front door)', async () => {
+    const before = calls.length;
+    const res = await app.inject({ method: 'GET', url: '/v1/methods?side=buy&currency=USD' });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'not-authenticated' });
+    expect(calls.length).toBe(before);
+  });
+
+  it('lists a method with one live Zelle USD offer in live; SBP, Mir and YooMoney in neither list', async () => {
     stats = [
       { methodId: 'ZELLE', offers: 1, bestCentsPerXmr: 33000n },
       // Even if offers somehow exist for them, unavailable methods never show.
@@ -108,8 +132,8 @@ describe('GET /v1/methods', () => {
     for (const list of [body.live, body.all]) {
       for (const id of ['SBP', 'MIR', 'YOOMONEY']) expect(list.map((r) => r.id)).not.toContain(id);
     }
-    // No cookie: no viewer, so no block filter (Task 37 added viewerId to the query).
-    expect(calls.at(-1)).toEqual({ side: 'buy', currency: 'USD', viewerId: null });
+    // The viewer's blocks filter the counts (Task 37 added viewerId to the query).
+    expect(calls.at(-1)).toEqual({ side: 'buy', currency: 'USD', viewerId: viewer.id });
     const zelle = body.all.find((r) => r.id === 'ZELLE');
     expect(zelle).toEqual({ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 1, bestRate: '33000' });
     const venmo = body.all.find((r) => r.id === 'VENMO');
@@ -166,9 +190,9 @@ describe('GET /v1/methods', () => {
 
 describe('GET /v1/methods without a live-offer source', () => {
   it('lists nothing live until offers exist (Task 4 supplies the source)', async () => {
-    const { app } = await testApp();
+    const { app, trader } = await tradeApp();
     try {
-      const res = await app.inject({ method: 'GET', url: '/v1/methods?side=sell&currency=USD' });
+      const res = await (await trader()).browser.get('/v1/methods?side=sell&currency=USD');
       expect(res.statusCode).toBe(200);
       expect(res.json().live).toEqual([]);
       expect(res.json().all.length).toBeGreaterThan(50);

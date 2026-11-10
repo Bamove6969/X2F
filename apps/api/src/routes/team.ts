@@ -12,14 +12,19 @@
  * - The three writes re-check the session is live (401) and, owner 2026-10-30, are refused during a
  *   24-hour hold (403 `recovery-hold` `{ holdUntil }`, before the confirm token is spent). Owner
  *   1 Nov 2026 (landing review I1): an invite or a role change needs a strong session, at any time
- *   (403 `weak-session`, before the confirm token is spent); a removal does not.
+ *   (403 `weak-session`, before the confirm token is spent); a removal does not. Owner 2 Nov 2026:
+ *   team members are for vendor accounts only, so an invite or a role change by a trader account
+ *   is 403 `not-vendor` (first, before the confirm token is spent; again under the lock).
  * - `GET /v1/team/audit?from&to&member` → the audit log, newest first.
  *
  * The member's side (no session; every answer gives the browser a device cookie, and every step
  * after the first is bound to the device that took it):
- * - `POST /v1/team/invite { invite }` → `{ team, displayName, roles, expiresAt }` (404 for a
- *   wrong, used or expired code).
- * - `POST /v1/team/join/start { invite, loginName, publicKey }` → a PGP challenge to the key.
+ * - `POST /v1/team/invite { invite }` → `{ displayName, roles, expiresAt }` (404 for a wrong, used
+ *   or expired code). It never names the team account: the vendor is named only inside the door
+ *   (review 2026-11-08 F3).
+ * - `POST /v1/team/join/start { invite, loginName, publicKey, acceptedTerms }` → a PGP challenge to
+ *   the key; 400 `terms-not-accepted` `{ version }` unless `acceptedTerms` is the current version
+ *   (the member signs the Terms themselves, review 2026-11-08 F1).
  * - `POST /v1/team/join/finish { challengeId, code }` → `{ setupId, needs, setupUntil }`: the
  *   member's login exists with that key and the invite is used up; no session yet.
  * - `POST /v1/team/join/second/webauthn/start { setupId, kind }` and
@@ -31,7 +36,7 @@
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
-import { openNames, sealNames } from '../accounts.js';
+import { assertTermsAccepted, openNames, sealNames } from '../accounts.js';
 import { ApiError } from '../errors.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { requireConfirm } from '../auth/confirm.js';
@@ -42,6 +47,7 @@ import { requireSession, startSession } from '../auth/sessions.js';
 import { waits, type LoginStrength } from '../auth/strength.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, WEBAUTHN_TTL_MS } from '../auth/webauthn.js';
 import { listAudit } from '../team/audit.js';
+import { requireVendor } from './accountType.js';
 import {
   type Caller,
   checkMemberLoginName,
@@ -169,7 +175,7 @@ export function teamRoutes(app: FastifyInstance): void {
 
   app.post(
     '/v1/team/invites',
-    { preHandler: [owner, checkInvite, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-invite', name: input(req).name!.name, roles: input(req).roles.join(',') }))] },
+    { preHandler: [owner, checkInvite, requireVendor, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-invite', name: input(req).name!.name, roles: input(req).roles.join(',') }))] },
     async (req, reply) => {
       const deps = req.server.deps;
       const { name, roles } = input(req);
@@ -180,7 +186,7 @@ export function teamRoutes(app: FastifyInstance): void {
 
   app.patch(
     '/v1/team/members/:id',
-    { preHandler: [owner, checkRoles, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
+    { preHandler: [owner, checkRoles, requireVendor, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
     async (req) => setRoles({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), input(req).roles),
   );
 
@@ -225,11 +231,14 @@ export function teamRoutes(app: FastifyInstance): void {
     const deps = req.server.deps;
     const b = body(req);
     const invite = await openInvite(deps.db, { code: b.invite }, deps.clock());
+    // Review 2026-11-08 F1: a member signs the agreement like every trader (the front door), before
+    // anything is made; the version rides in the challenge to the account `join/finish` creates.
+    const terms = assertTermsAccepted(deps, b.acceptedTerms);
     const loginName = await checkMemberLoginName(deps.db, b.loginName);
     // FU-D: the login name waits in the challenge only sealed, never in clear.
     const names = sealNames(deps.config, memberNames(loginName.key));
     return issueTeamJoinChallenge(deps, req, {
-      accountId: null, publicKey: str(b, 'publicKey'), payload: { step: 'first', inviteId: invite.id, names },
+      accountId: null, publicKey: str(b, 'publicKey'), payload: { step: 'first', inviteId: invite.id, names, terms },
     });
   });
 
@@ -239,16 +248,18 @@ export function teamRoutes(app: FastifyInstance): void {
     const deps = req.server.deps;
     const b = body(req);
     const proved = await checkTeamJoinCode(deps, req, str(b, 'challengeId'), str(b, 'code'), null);
-    const p = proved.payload as { step?: unknown; inviteId?: unknown; names?: unknown };
+    const p = proved.payload as { step?: unknown; inviteId?: unknown; names?: unknown; terms?: unknown };
     if (p.step !== 'first' || typeof p.inviteId !== 'string') throw new ApiError(400, 'challenge-expired');
+    // The Terms signed at `join/start` must still be the current ones.
+    const terms = assertTermsAccepted(deps, p.terms);
     const names = openNames(deps.config, p.names);
     const inviteId = p.inviteId;
     const now = deps.clock();
     const device = deviceHash(req)!;
     const setup = await inTransaction(deps.db, async (c) => {
       const m = await startMember(c, deps.config, {
-        inviteId, names, now,
-        addKey: (memberAccountId) => insertPgpKey(c, deps.config, { accountId: memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now }),
+        inviteId, names, now, terms,
+        addKey: (memberAccountId) => insertPgpKey(c, deps.config, { accountId: memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved }),
       });
       const { rows } = await c.query<{ id: string }>(
         `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
@@ -335,7 +346,7 @@ export function teamRoutes(app: FastifyInstance): void {
     await inTransaction(deps.db, async (c) => {
       await useSetup(c, setup.id, now);
       // A second, different key: the same fingerprint is `key-in-use` (two PGP factors need disjoint keys).
-      await insertPgpKey(c, deps.config, { accountId: setup.memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now });
+      await insertPgpKey(c, deps.config, { accountId: setup.memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now, proved: proved.proved });
       await finishMember(c, setup.memberAccountId, now);
     });
     // Landing review M1: two PGP keys were just proven, so the member's first session is strong.

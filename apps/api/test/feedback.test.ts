@@ -1,7 +1,5 @@
 // Plan 5 Task 4: platform feedback, the one-tap "How's X2F doing?" prompt (P5-A19, spec 5.2).
 // Unlinkable by design: the table has no account column and keeps only the day.
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
@@ -99,7 +97,7 @@ describe('POST /v1/feedback', () => {
 
   it(`takes ${FEEDBACK_DAILY} a day per account; the next is still 202 but stores nothing; a new UTC day starts over`, async () => {
     setNow(new Date('2026-12-01T15:30:00Z'));
-    const { b } = await login('chatty1');
+    const { b, id } = await login('chatty1');
     const { b: other } = await login('chatty2');
     for (let i = 0; i < FEEDBACK_DAILY; i++) expect((await b.post('/v1/feedback', { mood: 'ok', note: `n${i}` })).statusCode).toBe(202);
     const over = await b.post('/v1/feedback', { mood: 'great', note: 'one more' });
@@ -109,6 +107,9 @@ describe('POST /v1/feedback', () => {
     expect((await other.post('/v1/feedback', { mood: 'great', note: 'other' })).statusCode).toBe(202);
     expect(await rows()).toHaveLength(FEEDBACK_DAILY + 1);
     setNow(new Date('2026-12-02T00:00:01Z'));
+    // That session has ended (session length, owner 2 Nov 2026: 2 hours until one is chosen), so log in
+    // again: the daily count is per account, not per session.
+    expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
     expect((await b.post('/v1/feedback', { mood: 'great', note: 'next day' })).statusCode).toBe(202);
     expect((await rows()).map((r) => r.note)).toContain('next day');
   });
@@ -235,20 +236,5 @@ describe('listFeedback, feedbackMoodCounts and purgeFeedback', () => {
 
   it('purgeFeedback runs in the one retention scheduler', () => {
     expect(RETENTION_JOBS).toContain(purgeFeedback);
-  });
-});
-
-// TRIPWIRE (local tree only, never red today): the staff API serves listFeedback and
-// feedbackMoodCounts (staff/feedback.ts, Plan 4 Task 4); the staff web page is still owed. It fails
-// once its piece lands in this checkout: then do what it says and delete it.
-describe('Task 4 waits for the Plan 4 staff web app', () => {
-  const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-  const has = (p: string): boolean => existsSync(ROOT + p);
-
-  it('NEEDS_P4_STAFF_WEB_FEEDBACK_PAGE: the staff-web Feedback page (no board yet, NEEDS_DESIGN)', () => {
-    // When apps/staff-web lands (Plan 4 Task 16): build src/screens/Feedback.tsx listing both
-    // feedback kinds, with 30-day Great / OK / Needs work counts, from StaffLog's table styles,
-    // `// COPY-UNSIGNED` (no board: Claude Design owns the look).
-    expect(has('apps/staff-web/package.json'), 'apps/staff-web landed: build the Feedback page (see this test)').toBe(false);
   });
 });

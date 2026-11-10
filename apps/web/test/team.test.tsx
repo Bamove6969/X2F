@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemberInvite, inviteFromHash } from '../src/screens/auth/MemberInvite.js';
 import { Team, inviteLink } from '../src/screens/settings/Team.js';
 import { rolesText } from '../src/screens/settings/teamCopy.js';
+import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 import { fire, render } from './render.js';
 
 interface Call {
@@ -43,7 +44,9 @@ beforeEach(() => {
     if (input === '/v1/team' && method === 'GET') return teamStatus === 200 ? json(200, { members, max: 3 }) : json(teamStatus, { error: 'owner-only' });
     if (input === '/v1/team/audit') return teamStatus === 200 ? json(200, audit) : json(teamStatus, { error: 'owner-only' });
     if (input === '/v1/team/invites') return json(inviteReply.status, inviteReply.body);
-    if (input === '/v1/team/invite') return body?.invite === CODE ? json(200, { team: 'Calcium', displayName: 'Aurora', roles: ['trades'], expiresAt: '2026-10-31T10:00:00.000Z' }) : json(404, { error: 'not-found' });
+    if (input === '/v1/team/invite') return body?.invite === CODE ? json(200, { displayName: 'Aurora', roles: ['trades'], expiresAt: '2026-10-31T10:00:00.000Z' }) : json(404, { error: 'not-found' });
+    if (input === '/v1/terms') return json(200, { version: TERMS_TEXT_VERSION });
+    if (input === '/v1/team/join/start') return json(200, { challengeId: 'c1', encryptedMessage: 'MSG', fingerprint: 'F' });
     return json(500, { error: 'internal' });
   });
 });
@@ -187,13 +190,48 @@ describe('Team (settings)', () => {
 });
 
 describe('MemberInvite (join)', () => {
-  it('reads the invite from the fragment, clears it from the address bar, and shows who invited', async () => {
+  it('reads the invite from the fragment, clears it from the address bar, has the Terms signed first, then shows the invite without naming the vendor', async () => {
     window.history.replaceState(null, '', `/team/join#${CODE}`);
     const { host } = render(<MemoryRouter><MemberInvite /></MemoryRouter>);
     await settle();
     expect(calls.find((c) => c.url === '/v1/team/invite')?.body).toEqual({ invite: CODE });
     expect(window.location.hash).toBe('');
-    expect(byPart(host, 'invite-who')?.textContent).toBe('Calcium invited you as Aurora, for Trades.');
+    // Review 2026-11-08 F1: the Terms come first; no name or key field until they are accepted.
+    expect(host.querySelector('[data-screen="team-join-terms"]')).not.toBeNull();
+    expect(byPart(host, 'join-first')).toBeNull();
+    const accept = byPart(host, 'terms-accept') as HTMLButtonElement;
+    expect(accept.disabled).toBe(true);
+    await act(async () => {
+      (byPart(host, 'terms-tick') as HTMLInputElement).click();
+    });
+    await act(async () => {
+      accept.click();
+    });
+    await settle();
+    // Review 2026-11-08 F3: the invite never names the team account before joining.
+    expect(byPart(host, 'invite-who')?.textContent).toBe('You are invited to a team as Aurora, for Trades.');
+    expect(host.textContent).not.toContain('Calcium');
+    // The accepted version goes with the first step.
+    type(host.querySelector('#join-login') as HTMLInputElement, 'aurora.login');
+    const key = host.querySelector('#join-key') as HTMLTextAreaElement;
+    const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    set.call(key, 'KEY');
+    fire(key, new Event('input', { bubbles: true }));
+    await act(async () => {
+      (byPart(host, 'send-message') as HTMLButtonElement).click();
+    });
+    await settle();
+    expect(calls.find((c) => c.url === '/v1/team/join/start')?.body).toEqual({ invite: CODE, loginName: 'aurora.login', publicKey: 'KEY', acceptedTerms: TERMS_TEXT_VERSION });
+  });
+
+  it('a used or expired invite says so without naming the vendor (front door, design board InviteInvalid)', async () => {
+    window.history.replaceState(null, '', `/team/join#${CODE.replace(/.$/, (c) => (c === 'A' ? 'B' : 'A'))}`);
+    const { host } = render(<MemoryRouter><MemberInvite /></MemoryRouter>);
+    await settle();
+    expect(calls.some((c) => c.url === '/v1/team/invite')).toBe(true);
+    expect(byPart(host, 'invite-gone')).not.toBeNull();
+    expect(byPart(host, 'invite-who')).toBeNull();
+    expect(host.textContent).not.toContain('Calcium');
   });
 
   it('a link without a usable code says so and calls nothing', async () => {

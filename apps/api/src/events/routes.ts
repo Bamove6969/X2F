@@ -82,11 +82,16 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
     await o.afterAttach?.();
     const { db, clock } = req.server.deps;
     let live = false;
+    // Review S-m2: the stream lives to the earlier of the end requireTrader read and the end now
+    // stored, so a session shortened before attach (its closeSession found nothing) stops on time.
+    let endsAt = req.auth.expiresAt;
     try {
-      const { rows } = await db.query('select 1 from sessions where id = $1 and revoked_at is null and expires_at > $2', [
-        req.auth.sessionId, clock(),
-      ]);
+      const { rows } = await db.query<{ expires_at: Date }>(
+        'select expires_at from sessions where id = $1 and revoked_at is null and expires_at > $2',
+        [req.auth.sessionId, clock()],
+      );
       live = rows.length > 0;
+      if (rows[0] && rows[0].expires_at.getTime() < endsAt.getTime()) endsAt = rows[0].expires_at;
     } catch (e) {
       end();
       throw e;
@@ -117,7 +122,7 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
     heartbeat = setInterval(() => {
       if (!ended && !raw.destroyed) raw.write(':\n\n');
     }, heartbeatMs);
-    lifetime = setTimeout(end, Math.max(0, Math.min(maxStreamMs, req.auth.expiresAt.getTime() - clock().getTime())));
+    lifetime = setTimeout(end, Math.max(0, Math.min(maxStreamMs, endsAt.getTime() - clock().getTime())));
     // The response's 'close' fires when the client goes away (the request's own 'close' fires as
     // soon as its empty body has been read, so it is not used).
     raw.on('close', end);

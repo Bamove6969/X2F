@@ -20,7 +20,8 @@ export async function accountIdByLoginName(deps: Pick<Deps, 'db' | 'config'>, lo
  * its tag (FU-D) under the current key or under `loginKeyId` (null: an account from before
  * migration 009, which logs in by its display name until it sets one: `legacy_login_name`, its tag
  * is its display name's); `displayName` defaults to `D` + the login name (or a random one). A
- * trader gets the current Terms version unless `termsVersion` says otherwise; staff and owner
+ * trader, and a team member's login account (who signs the Terms themselves, review 2026-11-08
+ * F1), get the current Terms version unless `termsVersion` says otherwise; staff and owner
  * accounts carry none.
  */
 export async function seedAccount(
@@ -30,7 +31,7 @@ export async function seedAccount(
   },
 ): Promise<string> {
   const kind = a.kind ?? 'trader';
-  const terms = a.termsVersion !== undefined ? a.termsVersion : kind === 'trader' ? deps.config.termsVersion : null;
+  const terms = a.termsVersion !== undefined ? a.termsVersion : kind === 'trader' || kind === 'member' ? deps.config.termsVersion : null;
   const display = a.displayName ?? (a.loginName !== null ? `D${a.loginName}` : `D${randomBytes(6).toString('hex')}`);
   const keyId = a.loginKeyId ?? deps.config.loginNameKeys.current;
   const now = deps.clock();
@@ -51,4 +52,12 @@ export async function confirmTokenMethod(deps: Pick<Deps, 'db'>, token: string):
     createHash('sha256').update(token).digest(),
   ]);
   return rows[0]?.method;
+}
+
+/**
+ * Makes an account a vendor directly (tests only; owner 2 Nov 2026: only vendors post offers and
+ * have team members). The real switch, `PUT /v1/account/type`, is tested in vendor.test.ts.
+ */
+export async function makeVendor(deps: Pick<Deps, 'db' | 'clock'>, accountId: string): Promise<void> {
+  await deps.db.query("update accounts set account_type = 'vendor', vendor_since = $2 where id = $1", [accountId, deps.clock()]);
 }

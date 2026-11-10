@@ -1,0 +1,272 @@
+/*
+ * The staff app's own styles (Plan 4 Task 16): the shell from board StaffOverview (a 240 px nav
+ * rail, the page beside it), the staff table from StaffLog, the OwnerSetup board's numbered step
+ * cards, and the user chip. Every other look is the kit's (ui.css) and apps/web's screens.css.
+ * Tokens only; no inline styles (the staff CSP has no 'unsafe-inline' for styles). Every class is
+ * `x2f-staff*`, so nothing here can collide with apps/web's stylesheets.
+ */
+
+.x2f-staff {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.x2f-staff__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-6);
+  padding: var(--x2f-space-6) var(--x2f-space-4);
+  border-right: 1px solid var(--x2f-line);
+}
+
+.x2f-staff__brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--x2f-space-2);
+  margin: 0 var(--x2f-space-3);
+}
+
+.x2f-staff__brand-tag {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--x2f-moderator);
+}
+
+.x2f-staff__nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+}
+
+.x2f-staff__nav a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--x2f-space-3);
+  border-radius: var(--x2f-radius-sm);
+  color: var(--x2f-ink-muted);
+}
+
+/* The current item: ink text on surface-raised with a 2px ink inset line (design conventions, 2 Nov). */
+.x2f-staff__nav a[aria-current='page'] {
+  color: var(--x2f-ink);
+  font-weight: 600;
+  background: var(--x2f-surface-raised);
+  box-shadow: inset 2px 0 0 var(--x2f-ink);
+}
+
+.x2f-staff__foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  margin-top: auto;
+}
+
+.x2f-staff__countdown {
+  margin: 0;
+  font-size: 13px;
+  color: var(--x2f-caution);
+}
+
+.x2f-staff-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  margin: 0;
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-chip__name {
+  color: var(--x2f-ink);
+  font-weight: 600;
+}
+
+.x2f-staff__main {
+  min-width: 0;
+  padding: var(--x2f-space-6) var(--x2f-space-8);
+}
+
+.x2f-staff-page__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  margin-bottom: var(--x2f-space-6);
+}
+
+.x2f-staff-page__title {
+  margin: 0;
+  font-family: var(--x2f-title-family);
+  font-size: var(--x2f-title-size);
+  line-height: var(--x2f-title-line);
+  font-weight: var(--x2f-title-weight);
+}
+
+.x2f-staff-page__lead {
+  margin: 0;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-loading {
+  min-height: 100dvh;
+}
+
+/* The board StaffLog's table. */
+.x2f-staff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.x2f-staff-table th {
+  padding: var(--x2f-space-3);
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--x2f-ink-muted);
+  border-bottom: 1px solid var(--x2f-line);
+}
+
+.x2f-staff-table td {
+  padding: var(--x2f-space-3);
+  vertical-align: top;
+  border-bottom: 1px solid var(--x2f-line);
+}
+
+.x2f-staff-table td[data-mono] {
+  font-family: var(--x2f-font-mono);
+}
+
+.x2f-staff-table__empty {
+  color: var(--x2f-ink-muted);
+}
+
+/* Counts above a table (Feedback's 30-day Great / OK / Needs work). */
+.x2f-staff-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-6);
+  margin: 0 0 var(--x2f-space-6);
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-staff-counts__n {
+  display: block;
+  font-family: var(--x2f-amount-family);
+  font-size: var(--x2f-amount-size);
+  line-height: var(--x2f-amount-line);
+}
+
+/* The screens outside the shell (Login, Invite, OwnerSetup): one centred column, 560 px as the
+   OwnerSetup board. */
+.x2f-staff-solo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-6);
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--x2f-space-8) var(--x2f-space-4);
+}
+
+.x2f-staff-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--x2f-moderator);
+}
+
+.x2f-staff-solo__title {
+  margin: 0;
+  font-family: var(--x2f-display-family);
+  font-size: var(--x2f-title-size);
+  line-height: var(--x2f-title-line);
+  font-weight: 700;
+}
+
+.x2f-staff-step {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-3);
+  padding: var(--x2f-space-5);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-staff-step[data-done='true'] .x2f-staff-step__title {
+  color: var(--x2f-ink);
+}
+
+.x2f-staff-step__title {
+  margin: 0;
+  font-family: var(--x2f-heading-family);
+  font-size: var(--x2f-heading-size);
+  line-height: var(--x2f-heading-line);
+  font-weight: var(--x2f-heading-weight);
+}
+
+.x2f-staff-step__text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-ok {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  margin: 0;
+  font-size: 14px;
+  color: var(--x2f-escrow);
+}
+
+.x2f-staff-key-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-3);
+  padding-top: var(--x2f-space-3);
+  border-top: 1px solid var(--x2f-line);
+}
+
+.x2f-staff-key-row__name {
+  margin: 0;
+  font-weight: 600;
+}
+
+.x2f-staff-key-row__note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-staff-code {
+  font-family: var(--x2f-font-mono);
+  font-size: 18px;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 720px) {
+  .x2f-staff {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .x2f-staff__rail {
+    border-right: 0;
+    border-bottom: 1px solid var(--x2f-line);
+  }
+
+  .x2f-staff__main {
+    padding: var(--x2f-space-6) var(--x2f-space-4);
+  }
+}

@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { BadgePill } from '../../ui/BadgePill.js';
 import { Button } from '../../ui/Button.js';
 import { Icon, type IconName } from '../../ui/icons.js';
 import { PickButton } from '../../ui/PickButton.js';
 import { formatMinor, type Offer, type OpensAt } from './api.js';
+import { cardRows, type RangeRows } from './offerAmounts.js';
 import type { BrowseCopy } from './SellCopy.js';
 import './browse.css';
 
@@ -23,9 +24,13 @@ const NEW_BADGE: BadgeInfo = { label: 'New', icon: 'sprout', tone: 'caution', me
 
 /** Earned badges by API id (spec 5.4). Ids the app does not know are left off. */
 const BADGES: Record<string, BadgeInfo> = {
-  trusted: { label: 'Trusted', icon: 'shield-check', tone: 'escrow', meaning: '100+ trades, 98%+ positive' },
+  trusted: { label: 'Trusted', icon: 'shield-check', tone: 'escrow', meaning: '200+ trades and 98%+ positive' },
   fast: { label: 'Fast', icon: 'bolt', tone: 'escrow', meaning: 'usually pays or releases within 10 min' },
   veteran: { label: 'Veteran', icon: 'star', tone: 'escrow', meaning: 'trading on X2F for 1+ year' },
+  // The ids the API earns them under (@x2f/reputation badges.ts); COPY-UNSIGNED: the 3- and 5-year labels (P5-A12).
+  'veteran-1': { label: 'Veteran', icon: 'star', tone: 'escrow', meaning: 'trading on X2F for 1+ year' },
+  'veteran-3': { label: 'Veteran · 3 years', icon: 'star', tone: 'escrow', meaning: 'trading on X2F for 3+ years' },
+  'veteran-5': { label: 'Veteran · 5 years', icon: 'star', tone: 'escrow', meaning: 'trading on X2F for 5+ years' },
   pgp: { label: 'PGP verified', icon: 'pgp-key', tone: 'escrow', meaning: 'signs in with a verified PGP key' },
   'security-key': { label: 'Security key verified', icon: 'security-key', tone: 'escrow', meaning: 'protects the account with a hardware key' },
   'clean-record': { label: 'Clean record', icon: 'shield', tone: 'escrow', meaning: '100 trades with no lost disputes' },
@@ -48,21 +53,50 @@ function badgesOf(offer: Offer): BadgeInfo[] {
 
 const STAGE_NAME: Record<OpensAt, string> = { building: 'Building', graduated: 'Graduated' };
 
-function seen(lastSeenAt: string | null, now: Date): string {
+/** A figure in the meta line: mono ink (kit 2.7, `mono_digits`). */
+const Num = ({ children }: { children: ReactNode }) => (
+  <span className="x2f-offer__num" data-part="num">
+    {children}
+  </span>
+);
+
+function seen(lastSeenAt: string | null, now: Date): ReactNode {
   if (lastSeenAt === null) return 'Offline';
   const min = Math.max(0, Math.floor((now.getTime() - Date.parse(lastSeenAt)) / 60_000));
   if (!Number.isFinite(min)) return 'Offline';
   if (min < 1) return 'Seen just now';
-  if (min < 60) return `Seen ${min} min ago`;
-  if (min < 48 * 60) return `Seen ${Math.floor(min / 60)} h ago`;
-  return `Seen ${Math.floor(min / (24 * 60))} d ago`;
+  if (min < 60) return <>Seen <Num>{min}</Num> min ago</>;
+  if (min < 48 * 60) return <>Seen <Num>{Math.floor(min / 60)}</Num> h ago</>;
+  return <>Seen <Num>{Math.floor(min / (24 * 60))}</Num> d ago</>;
 }
 
-function posterLine(offer: Offer, now: Date): string {
+/**
+ * The trust row's meta line (boards SellOffers/BuyOffers, kit 2.7): "Online · 212 trades · 99%
+ * positive", Online in the escrow tone and every number in mono. The figures are the API's own
+ * (completed trades, % positive from reviews); no % positive until a rated review exists.
+ */
+function posterLine(offer: Offer, now: Date): ReactNode {
   const p = offer.poster;
-  const parts = [p.online ? 'Online' : seen(p.lastSeenAt, now), `${p.completedTrades} ${p.completedTrades === 1 ? 'trade' : 'trades'}`];
-  if (p.positivePct !== null) parts.push(`${p.positivePct}% positive`);
-  return parts.join(' · ');
+  const parts: ReactNode[] = [
+    p.online ? (
+      <span key="seen" className="x2f-offer__online" data-part="online">
+        Online
+      </span>
+    ) : (
+      <span key="seen">{seen(p.lastSeenAt, now)}</span>
+    ),
+    <span key="trades">
+      <Num>{p.completedTrades.toLocaleString('en-US')}</Num> {p.completedTrades === 1 ? 'trade' : 'trades'}
+    </span>,
+  ];
+  if (p.positivePct !== null) {
+    parts.push(
+      <span key="pct">
+        <Num>{p.positivePct}%</Num> positive
+      </span>,
+    );
+  }
+  return parts.flatMap((part, i) => (i === 0 ? [part] : [' · ', part]));
 }
 
 /**
@@ -78,20 +112,35 @@ function importedLine(l: { site: string; overUsd: number }): string {
   return `$${l.overUsd.toLocaleString('en-US')}+ on ${l.site}, verified`;
 }
 
-function marginLine(offer: Offer, currency: string, copy: BrowseCopy, market: bigint | null): { text: string; favourable: boolean } | null {
+/**
+ * The markup at the card's bottom left (owner #11, 8 Nov; boards v142): the figure in mono over its
+ * label, "+0.4%" over "Vendor markup", "0%" over "At market" when there is none. A fixed price's
+ * markup is its difference from the market price now ("+$0.10"); with no market price it reads only
+ * "Fixed price". Null while a market offer has no price. COPY-UNSIGNED: "Vendor markup", and the marks
+ * "+0.4%" / "−0.4%", "+$0.10" / "−$0.90" and "0%" over "At market" / "Fixed price" (the labels existed; the marks are new).
+ */
+export interface Markup {
+  mark: string | null;
+  label: string;
+  favourable: boolean;
+}
+
+export const VENDOR_MARKUP = 'Vendor markup';
+const MINUS = '\u2212';
+
+export function markupOf(offer: Pick<Offer, 'rate' | 'pricing'>, currency: string, copy: Pick<BrowseCopy, 'favourable'>, market: bigint | null): Markup | null {
   if (offer.rate === null) return null;
   if (offer.pricing.mode === 'fixed') {
-    // A fixed price reads its difference from the market price now, when there is one.
-    if (market === null) return { text: 'Fixed price', favourable: false };
+    if (market === null) return { mark: null, label: 'Fixed price', favourable: false };
     const diff = offer.pricing.centsPerXmr - market;
-    if (diff === 0n) return { text: 'At market', favourable: false };
+    if (diff === 0n) return { mark: '0%', label: 'At market', favourable: false };
     const abs = diff < 0n ? -diff : diff;
-    return { text: `${formatMinor(abs, currency)} ${diff > 0n ? 'above' : 'below'} market`, favourable: copy.favourable(diff > 0n ? 1 : -1) };
+    return { mark: `${diff > 0n ? '+' : MINUS}${formatMinor(abs, currency)}`, label: VENDOR_MARKUP, favourable: copy.favourable(diff > 0n ? 1 : -1) };
   }
   const bps = offer.pricing.marginBps;
-  if (bps === 0) return { text: 'At market', favourable: false };
+  if (bps === 0) return { mark: '0%', label: 'At market', favourable: false };
   const pct = (Math.abs(bps) / 100).toFixed(2).replace(/\.?0+$/, '');
-  return { text: `${pct}% ${bps > 0 ? 'above' : 'below'} market`, favourable: copy.favourable(bps) };
+  return { mark: `${bps > 0 ? '+' : MINUS}${pct}%`, label: VENDOR_MARKUP, favourable: copy.favourable(bps) };
 }
 
 function Badges({ offer }: { offer: Offer }) {
@@ -153,6 +202,11 @@ export interface OfferCardProps {
   now: Date;
   /** The market price now (minor units per XMR), for a fixed price's difference; null when unknown. */
   market?: bigint | null;
+  /**
+   * "Display amounts including vendor markup" (owner, 8 Nov): the range's other unit at the offer's
+   * own rate instead of the market price. Off by default.
+   */
+  withMarkup?: boolean;
   onTrade?: (offer: Offer) => void;
   onMessage?: (offer: Offer) => void;
   onNudge?: (offer: Offer) => void;
@@ -164,11 +218,32 @@ export interface OfferCardProps {
   pick?: { pressed: boolean; onPick: (offer: Offer) => void };
 }
 
-export function OfferCard({ offer, currency, copy, primary, now, market = null, onTrade, onMessage, onNudge, pick }: OfferCardProps) {
+/**
+ * The range in XMR and in fiat, one row each, right-aligned (owner, 8 Nov; boards v142): the figures in
+ * mono, then the unit, "XMR" in Monero ink and the currency code muted. A row with no rate now is left out.
+ */
+export function RangeRowsView({ rows, currency, className = 'x2f-offer__range' }: { rows: RangeRows; currency: string; className?: string }) {
+  return (
+    <>
+      {rows.xmr !== null ? (
+        <span className={className} data-part="range-xmr">
+          <span className="x2f-offer__figures">{rows.xmr}</span> <span className="x2f-offer__unit" data-unit="xmr">XMR</span>
+        </span>
+      ) : null}
+      {rows.fiat !== null ? (
+        <span className={className} data-part="range-fiat">
+          <span className="x2f-offer__figures">{rows.fiat}</span> <span className="x2f-offer__unit">{currency}</span>
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+export function OfferCard({ offer, currency, copy, primary, now, market = null, withMarkup = false, onTrade, onMessage, onNudge, pick }: OfferCardProps) {
   const name = offer.poster.displayName;
   const closed = offer.opensAt !== undefined;
-  const margin = marginLine(offer, currency, copy, market);
-  const range = `${formatMinor(offer.minFiatCents, currency, { whole: true })} – ${formatMinor(offer.maxFiatCents, currency, { whole: true })}`;
+  const markup = markupOf(offer, currency, copy, market);
+  const rows = cardRows(offer, currency, market, withMarkup);
   const time = offer.poster.typicalMinutes === null ? null : copy.typicalTime(offer.poster.typicalMinutes);
 
   if (pick && (closed || offer.poster.online)) {
@@ -185,7 +260,9 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
         </span>
         <span className="x2f-offer__pick-line">
           <span className="x2f-offer__sub">{posterLine(offer, now)}</span>
-          <span className="x2f-offer__limits">{range}</span>
+          <span className="x2f-offer__limits">
+            <RangeRowsView rows={rows} currency={currency} />
+          </span>
         </span>
         {closed ? <span className="x2f-offer__opens">Opens at {STAGE_NAME[offer.opensAt!]}</span> : null}
       </PickButton>
@@ -238,16 +315,25 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
           <span className="x2f-offer__rate" data-part="rate">
             {offer.rate === null ? 'Price unavailable right now' : formatMinor(offer.rate, currency)}
           </span>
-          {margin ? (
-            <span className="x2f-offer__margin" data-tone={margin.favourable ? 'escrow' : undefined}>
-              {margin.text}
-            </span>
-          ) : null}
+          {time === null ? null : <span className="x2f-offer__time">{time}</span>}
         </div>
-        <span className="x2f-offer__limits">
-          <span className="x2f-offer__range">{range}</span>
-          {time === null ? null : <span>{time}</span>}
-        </span>
+        <div className="x2f-offer__amounts">
+          {markup ? (
+            <span className="x2f-offer__markup" data-part="markup">
+              {markup.mark !== null ? (
+                <span className="x2f-offer__margin" data-tone={markup.favourable ? 'escrow' : undefined}>
+                  {markup.mark}
+                </span>
+              ) : null}
+              <span className="x2f-offer__markup-label">{markup.label}</span>
+            </span>
+          ) : (
+            <span />
+          )}
+          <span className="x2f-offer__limits">
+            <RangeRowsView rows={rows} currency={currency} />
+          </span>
+        </div>
       </div>
       {action}
     </article>

@@ -35,7 +35,7 @@ export async function seedOffer(deps: Pick<Deps, 'db' | 'clock'>, posterId: stri
   const { rows } = await deps.db.query<{ id: string }>(
     `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents,
                          min_trades, terms, status, created_at, updated_at)
-     values ($1, $2, 'zelle', 'USD', 'market', 0, 1000, 100000, 0, '', 'removed', $3, $3) returning id`,
+     values ($1, $2, 'zelle', 'USD', 'market', 0, 1000, 100000, null, '', 'removed', $3, $3) returning id`,
     [posterId, poster === 'seller' ? 'sell' : 'buy', deps.clock()],
   );
   return rows[0]!.id;
@@ -77,15 +77,6 @@ export async function seedTrade(
   };
   await insertTrade(deps.db, trade, sides, a.usdCents ?? null);
   return { code: trade.code, trade, sides };
-}
-
-/**
- * Owner G2 / g66: the seller's refund needs at least one nudge since the escrow was secured. Tests
- * that are not about the nudge record one directly (the nudge route's own write is covered in
- * nudge.test.ts), at the trade's secured_at.
- */
-export async function markSellerNudged(deps: Pick<Deps, 'db'>, code: string): Promise<void> {
-  await deps.db.query('update trades set seller_nudged_at = secured_at where code = $1 and secured_at is not null', [code]);
 }
 
 /** The events (and who sends them) that move a fresh trade along the happy path, one state at a time. */

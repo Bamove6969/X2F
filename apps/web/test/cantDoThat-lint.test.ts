@@ -129,8 +129,9 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // board's "If an appeal overturns the ruling, you get a lien. You can't trade until you pay the
     // XMR back." explains a consequence before any appeal (dispute/rules.ts overturnLien). 51 -> 52
     // (Plan 4 Task 15, 6 Nov 2026): owner Q38's hourglass says the time left ("... at most",
-    // DisputeRoom.tsx), not a rule.
-    expect(notARefusal).toBeLessThanOrEqual(52);
+    // DisputeRoom.tsx), not a rule. 52 -> 53 (batch 3 landing, 5b3b38c5): the front door's Landing
+    // board promise that X2F "can't move them alone" (Landing.tsx) reassures about escrow, not a rule.
+    expect(notARefusal).toBeLessThanOrEqual(53);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

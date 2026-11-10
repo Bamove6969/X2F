@@ -8,6 +8,7 @@ import {
   TYPICAL_MIN_SAMPLES,
   TYPICAL_WINDOW,
   actionMinutes,
+  bothRolesTypical,
   cancelRatePct,
   classify,
   isCompletedTrade,
@@ -111,6 +112,19 @@ describe('median and typicalMinutes (P5-A8)', () => {
     const old = Array.from({ length: 30 }, () => 100);
     const recent = Array.from({ length: 20 }, () => 4);
     expect(typicalMinutes([...old, ...recent])).toBe(4);
+  });
+});
+
+describe('bothRolesTypical: Fast and the role-less time over both lists (review 2, I2)', () => {
+  const n = (k: number, v: number) => Array.from({ length: k }, () => v);
+  it('20 payments at 240 min and 20 releases at 1 min is not fast: the median sees all 40', () => {
+    expect(bothRolesTypical(n(20, 240), n(20, 1))).toEqual({ minutes: 120, samples: 40 });
+    expect(bothRolesTypical(n(20, 1), n(20, 240))).toEqual({ minutes: 120, samples: 40 });
+  });
+  it('takes the last 20 of each list, and the sample count is what the median saw', () => {
+    expect(bothRolesTypical([...n(5, 500), ...n(20, 2)], n(3, 4))).toEqual({ minutes: 2, samples: 23 });
+    expect(bothRolesTypical([], n(2, 4))).toEqual({ minutes: null, samples: 2 });
+    expect(bothRolesTypical([1], [3, 5])).toEqual({ minutes: 3, samples: 3 });
   });
 });
 

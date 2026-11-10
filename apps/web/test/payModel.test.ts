@@ -41,7 +41,7 @@ describe('escrowChip (spec 2.2 step 6, P3-I4)', () => {
   });
 
   it('teal "Escrow secured" once secured, and from then on', () => {
-    for (const state of ['secured', 'paid', 'refund_requested', 'settling'] as const) {
+    for (const state of ['secured', 'paid', 'settling'] as const) {
       expect(escrowChip(view({ state, confirmations: 14, releasable: true, releasableEtaMin: 0 }))).toEqual({
         tone: 'escrow',
         icon: 'shield-check',
@@ -84,7 +84,7 @@ describe('who may cancel (spec 2.3)', () => {
       expect(sellerCancelMode(view({ role: 'seller', state, cancelProposedBy: 'seller' }))).toBe('proposed');
       expect(sellerCancelMode(view({ role: 'seller', state, cancelProposedBy: 'buyer' }))).toBe('none');
     }
-    for (const state of ['setup', 'paid', 'refund_requested', 'settling', 'released', 'refunded', 'lapsed', 'cancelled', 'disputed'] as const) {
+    for (const state of ['setup', 'paid', 'settling', 'released', 'refunded', 'lapsed', 'cancelled', 'disputed'] as const) {
       expect(sellerCancelMode(view({ role: 'seller', state }))).toBe('none');
     }
   });
@@ -150,12 +150,11 @@ describe("payBlock: I've paid only on the device's own total (review I1)", () =>
     for (const state of ['funding', 'securing'] as const) {
       expect(payBlock(v('41250', '1250000000000', state), e())).toBe('not-secured');
     }
-    expect(payBlock(v('41250', '1250000000000', 'refund_requested'), e())).toBeNull();
     // A stopped escrow still says so first: its notice has the Try again.
     expect(payBlock(v('41250', '1250000000000', 'securing'), e({ error: 'escrow-failed', phase: 'error' }))).toBe('escrow-stopped');
   });
   it('paySecured: from secured on while the buyer pays or has paid (review 2026-11-07, 1)', () => {
-    for (const state of ['secured', 'refund_requested', 'paid'] as const) expect(paySecured({ state })).toBe(true);
+    for (const state of ['secured', 'paid'] as const) expect(paySecured({ state })).toBe(true);
     for (const state of ['setup', 'funding', 'securing'] as const) expect(paySecured({ state })).toBe(false);
   });
   it('finishBlock: amount-unknown is what Finish is for; every other refusal blocks it', () => {

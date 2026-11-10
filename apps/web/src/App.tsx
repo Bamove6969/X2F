@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { useSite, type SiteBannerInfo } from './api/site.js';
@@ -19,22 +19,32 @@ import { MethodList } from './screens/browse/MethodList.js';
 import { OffersRoute } from './screens/browse/OffersRoute.js';
 import { SELL_COPY } from './screens/browse/SellCopy.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
+import { Landing } from './screens/auth/Landing.js';
 import { Login } from './screens/auth/Login.js';
 import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js';
 import { MemberInvite } from './screens/auth/MemberInvite.js';
+import { SESSION_LENGTH_PATH, SessionLengthScreen } from './screens/auth/SessionLength.js';
+import { SessionPrompt } from './screens/auth/SessionPrompt.js';
+import { publishSessionWatch } from './session/sessionWatch.js';
+import { IdleReminder } from './session/IdleReminder.js';
+import { publishIdleReminder } from './session/idleReminderWatch.js';
+import { IDLE_REMINDER_PATH } from './screens/auth/sessionCopy.js';
+import { IdleReminderScreen } from './screens/settings/IdleReminderSettings.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
 import { Security } from './screens/settings/Security.js';
 import { Team } from './screens/settings/Team.js';
+import { AccountType } from './screens/settings/AccountType.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
+import { BehindTheDoor, isInside } from './session/frontDoor.js';
 import { mayPostOffers, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { SiteBanner } from './ui/SiteBanner.js';
-import { DesktopHeader } from './ui/DesktopShell.js';
+import { DesktopRail, WideTop, wideFrameOf } from './ui/DesktopShell.js';
 import { useFoldAttribute, useFoldLayout } from './ui/fold.js';
 import './styles/fold.css';
 import { TradeRoom } from './screens/trade/TradeRoom.js';
@@ -49,17 +59,27 @@ setTradeChat(TradeChatPanel);
 /**
  * The app shell. Phones, foldables' panes and the flip cover screen get the phone frame (the bottom
  * nav on the screens whose boards have it); the wide layout (1000 px and wider, no hinge) gets the
- * desktop header (Task 40, src/ui/fold.ts). The frame keeps one tree in every layout, so folding or
+ * left rail, or the centred logo before login (Job 3, src/ui/DesktopShell.tsx; Task 40, src/ui/fold.ts). The frame keeps one tree in every layout, so folding or
  * unfolding never remounts the screen: its route, scroll position and typed text stay.
  */
-function Layout({ nav, banner }: { nav: boolean; banner: SiteBannerInfo | null }) {
+function Layout({ nav, banner, door = false }: { nav: boolean; banner: SiteBannerInfo | null; door?: boolean }) {
   const layout = useFoldLayout();
   useFoldAttribute(layout);
   const wide = layout === 'wide';
   const session = useSession();
+  const { pathname } = useLocation();
+  // Job 3: the 240 px left rail after login, the centred logo before it. The first slot changes,
+  // the body stays the second child, so moving between them never remounts the screen.
+  // On the front door, someone not (yet) inside gets no links to the screens behind it: never the
+  // rail; the centred logo (it links nowhere) only where the wide frame is the pre-login one.
+  const outside = door && !isInside(session);
+  const frame = outside ? 'centred' : wideFrameOf(pathname);
+  let top: ReactNode = null;
+  if (wide && frame === 'rail') top = <DesktopRail postOffers={mayPostOffers(session)} />;
+  else if (wide && wideFrameOf(pathname) === 'centred') top = <WideTop />;
   return (
-    <div data-shell={wide ? 'desktop' : 'phone'} className={wide ? 'x2f-desktop' : undefined}>
-      {wide ? <DesktopHeader /> : null}
+    <div data-shell={wide ? 'desktop' : 'phone'} data-wide-frame={wide ? frame : undefined} className={wide ? 'x2f-desktop' : undefined}>
+      {top}
       <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
         {/* Plan 4 Task 8: the owner's banner at the top of every trader screen. */}
         <SiteBanner banner={banner} />
@@ -93,8 +113,6 @@ function RouterBridge() {
  * "<name> accepted your offer" sheet over whatever screen is showing, then goes to the trade, and
  * each `trade` event goes on to the trade room (Task 22, seams.ts liveFanOut) and each `chat`
  * event to the open chat panels (Task 20, chat/live.ts).
- * Nothing here is a seen-receipt: a `refund_requested` event reaching a tab (hidden, minimised, on
- * another device) is not the buyer seeing the final alert. Task 25's `FinalAlert` posts that.
  */
 function LiveAccepted({ member }: { member: boolean }) {
   const navigate = useNavigate();
@@ -155,45 +173,80 @@ function isTrader(session: ReturnType<typeof useSession>): boolean {
   return m.kind === 'trader' && m.level === 'full' && m.termsCurrent !== false;
 }
 
+/**
+ * Session length (owner, 2 Nov 2026): on page load the signed-in session's length and end are
+ * handed to "Stay logged in?" (`SessionPrompt`). After a login, the length question does it.
+ */
+function useWatchSession(session: ReturnType<typeof useSession>): void {
+  useEffect(() => {
+    if (session.status === 'signed-out') publishIdleReminder(null);
+    if (session.status !== 'signed-in') return;
+    const me = session.me;
+    if (me.session != null) publishSessionWatch({ info: me.session, methods: me.methods });
+    // Owner Q75: the person's own idle reminder (off unless they turned it on).
+    publishIdleReminder(me.idleReminderMinutes ?? null);
+  }, [session]);
+}
+
 export function App() {
   const session = useSession();
+  useWatchSession(session);
   // Plan 4 Task 8: the banner, and maintenance, which replaces the whole app with the owner's message.
   const { site, refresh } = useSite();
+  // GET /v1/site answers the banner only inside the door: read it again when someone logs in or out.
+  const inside = isInside(session);
+  useEffect(() => {
+    refresh();
+  }, [inside, refresh]);
   if (site.maintenance !== null) return <Maintenance maintenance={site.maintenance} onRetry={refresh} />;
   return (
     <>
       <RouterBridge />
+      <SessionPrompt />
+      <IdleReminder />
       {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
       <Routes>
-        <Route element={<Layout nav banner={site.banner} />}>
-          <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
-          <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
-          <Route path="/profile/offers" element={<MyOffers />} />
+        {/* Behind the front door (owner, 8 Nov 2026): a set-up trader's session, else the login (session/frontDoor.tsx). */}
+        <Route element={<BehindTheDoor />}>
+          <Route element={<Layout nav banner={site.banner} />}>
+            <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
+            <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
+            <Route path="/profile/offers" element={<MyOffers />} />
+          </Route>
+          <Route element={<Layout nav={false} banner={site.banner} />}>
+            <Route path="/post" element={<PostOffer />} />
+            {/* The offers and their quote share one component (two panes on a fold, Fold-Offers). */}
+            <Route path="/sell/:methodId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
+            <Route path="/buy/:methodId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
+            <Route path="/sell/:methodId/:offerId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
+            <Route path="/buy/:methodId/:offerId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
+            <Route path="/trade/:code" element={<TradeRoom />} />
+            {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
+            <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
+            <Route path="/wallets" element={<Wallets />} />
+            <Route path="/settings/security" element={<Security />} />
+            <Route path="/settings/devices" element={<DevicesRoute />} />
+            <Route path="/settings/blocked" element={<Blocked />} />
+            <Route path="/settings/team" element={<Team />} />
+            <Route path={IDLE_REMINDER_PATH} element={<IdleReminderScreen />} />
+            <Route path="/settings/account-type" element={<AccountType />} />
+            <Route path="/news" element={<News />} />
+            <Route path="/feedback" element={<Feedback />} />
+          </Route>
         </Route>
-        <Route element={<Layout nav={false} banner={site.banner} />}>
-          <Route path="/post" element={<PostOffer />} />
-          {/* The offers and their quote share one component (two panes on a fold, Fold-Offers). */}
-          <Route path="/sell/:methodId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
-          <Route path="/buy/:methodId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
-          <Route path="/sell/:methodId/:offerId" element={<OffersRoute side="sell" copy={SELL_COPY} />} />
-          <Route path="/buy/:methodId/:offerId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
-          <Route path="/trade/:code" element={<TradeRoom />} />
-          {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
-          <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
-          <Route path="/wallets" element={<Wallets />} />
+        {/* The front door: open to anyone (FRONT_DOOR in session/frontDoor.tsx lists the same paths). */}
+        <Route element={<Layout nav={false} door banner={site.banner} />}>
+          {/* The Landing board (design review 2026-11-08 item 1): where every signed-out visitor lands. */}
+          <Route path="/" element={<Landing />} />
           <Route path="/setup/*" element={<SetupFlow />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/login" element={<Login />} />
+          <Route path={SESSION_LENGTH_PATH} element={<SessionLengthScreen />} />
           <Route path="/login/backup" element={<BackupLogin />} />
-          <Route path="/settings/security" element={<Security />} />
-          <Route path="/settings/devices" element={<DevicesRoute />} />
-          <Route path="/settings/blocked" element={<Blocked />} />
-          <Route path="/settings/team" element={<Team />} />
           <Route path="/team/join" element={<MemberInvite />} />
-          <Route path="/news" element={<News />} />
-          <Route path="/feedback" element={<Feedback />} />
         </Route>
-        <Route path="*" element={<Navigate to="/sell" replace />} />
+        {/* Anything else: the front door, which sends a set-up trader on to /sell. */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );

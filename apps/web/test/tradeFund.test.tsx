@@ -58,8 +58,6 @@ const base: TradeView = {
   payBy: null,
   paidAt: null,
   confirmBy: null,
-  finalAlertAt: null,
-  finalAlertSeenAt: null,
   settleBy: null,
   releaseClaimedAt: null,
   pausedAt: null,
@@ -219,6 +217,18 @@ describe('escrow check and the security check', () => {
     current = { ...base, role: 'buyer', funding: null, counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' } };
     host = await room();
     expect(host.textContent).toContain("Escrow check: four words. They match on satoshi_ghost's screen.");
+  });
+
+  it('the four words render as a numbered list, never run together (design proto review P2: "1. amber2. lotus3. ceda4r. violet")', async () => {
+    const host = await room();
+    const list = host.querySelector('[data-escrow-check] ol')!;
+    expect([...list.children].map((li) => li.tagName)).toEqual(['LI', 'LI', 'LI', 'LI']);
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/screens/trade/trade.css'), 'utf8');
+    const rule = /\.x2f-escrow-check__words\s*\{([^}]*)\}/.exec(css)![1]!;
+    // A flex row put each outside marker over the word before it; a grid with the numbers inside each item can't.
+    expect(rule).not.toMatch(/display:\s*flex/);
+    expect(rule).toMatch(/display:\s*grid/);
+    expect(rule).toMatch(/list-style-position:\s*inside/);
   });
 
   for (const error of ['participants-mismatch', 'deal-mismatch'] as const) {
@@ -759,6 +769,79 @@ describe('the buyer before funding', () => {
     expect(host.textContent).toContain('Waiting for satoshi_ghost to fund');
     expect(host.textContent).toContain('$412.50 USD');
     noFundingTraces(host);
+  });
+});
+
+describe('the buyer while waiting for funding (design proto review P1, 8 Nov)', () => {
+  const buyerView = (over: Partial<TradeView> = {}): TradeView => ({
+    ...base,
+    role: 'buyer',
+    funding: null,
+    counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' },
+    ...over,
+  });
+  const button = (host: HTMLElement, label: string) => [...host.querySelectorAll('button')].find((b) => b.textContent === label);
+
+  it('offers Chat and Cancel trade at once, and says what happens if the time runs out', async () => {
+    current = buyerView();
+    const host = await room();
+    expect(button(host, 'Chat')).toBeDefined();
+    expect(button(host, 'Cancel trade')).toBeDefined();
+    expect(host.textContent).toContain('If satoshi_ghost doesn\'t fund it in time, the trade is cancelled. You can cancel at any time before then.');
+  });
+
+  it('Cancel trade asks once ("Cancelling is final", nothing funded yet), then posts buyer-cancel with no escrow step', async () => {
+    current = buyerView();
+    const buyerCancel = vi.fn(async () => undefined);
+    setTradeEscrowHook(() => verified({ buyerCancel }));
+    const host = await room();
+    await act(async () => button(host, 'Cancel trade')!.click());
+    const sheet = document.querySelector<HTMLElement>('[data-sheet="cancel-final"]')!;
+    expect(sheet.textContent).toContain("satoshi_ghost hasn't funded the escrow yet, so nothing needs to go back. This trade closes. Don't send any money.");
+    const confirm = [...sheet.querySelectorAll('button')].find((b) => b.textContent === 'Cancel trade')!;
+    await act(async () => confirm.click());
+    await flush();
+    expect(posted).toEqual([{ path: `/v1/trades/${CODE}/events`, body: { type: 'buyer-cancel' } }]);
+    expect(buyerCancel).not.toHaveBeenCalled();
+  });
+
+  it('with coins already in the escrow, the cancel also starts the refund on this device', async () => {
+    current = buyerView({ receivedAtomic: '600000000000' });
+    const buyerCancel = vi.fn(async () => undefined);
+    setTradeEscrowHook(() => verified({ buyerCancel }));
+    const host = await room();
+    await act(async () => button(host, 'Cancel trade')!.click());
+    const sheet = document.querySelector<HTMLElement>('[data-sheet="cancel-final"]')!;
+    expect(sheet.textContent).toContain('The 1.250000 XMR goes back to satoshi_ghost');
+    await act(async () => [...sheet.querySelectorAll('button')].find((b) => b.textContent === 'Cancel trade')!.click());
+    await flush();
+    expect(posted).toEqual([{ path: `/v1/trades/${CODE}/events`, body: { type: 'buyer-cancel' } }]);
+    expect(buyerCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('once the time to fund is over, the screen says the trade is being cancelled (the server cancels it)', async () => {
+    current = buyerView({ serverNow: '2026-10-25T11:40:05.000Z' });
+    const host = await room();
+    expect(host.querySelector('[data-fund-over]')?.textContent).toBe("The time to fund ran out. The seller didn't fund the escrow in time, so X2F is cancelling this trade. Don't send any money.");
+    expect(button(host, 'Cancel trade')).toBeUndefined();
+  });
+
+  it('after the server cancelled it (lapsed): a neutral Cancelled chip and why, with Chat gone', async () => {
+    current = buyerView({ state: 'lapsed', closedAt: '2026-10-25T11:40:30.000Z', serverNow: '2026-10-25T11:41:00.000Z' });
+    const host = await room();
+    expect(host.querySelector('.x2f-chip')?.getAttribute('data-tone')).toBe('neutral');
+    expect(host.querySelector('.x2f-chip')?.textContent).toBe('Cancelled');
+    expect(host.textContent).toContain('The time to fund ran out');
+    expect(host.textContent).toContain("The seller didn't fund the escrow in time, so X2F cancelled this trade. You don't need to do anything.");
+    expect(button(host, 'Cancel trade')).toBeUndefined();
+  });
+
+  it('a trade cancelled before funding: "This trade is cancelled", neutral chip', async () => {
+    current = buyerView({ state: 'cancelled', closedAt: '2026-10-25T11:20:00.000Z' });
+    const host = await room();
+    expect(host.querySelector('.x2f-chip')?.textContent).toBe('Cancelled');
+    expect(host.textContent).toContain('This trade is cancelled');
+    expect(host.textContent).toContain('Nothing was funded, so nothing needs to go back.');
   });
 });
 

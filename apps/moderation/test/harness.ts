@@ -73,10 +73,7 @@ export function fakeNetwork(ctx: Ctx) {
   const net = {
     work: [] as WorkItem[],
     states: new Map<string, string>(),
-    seen: new Map<string, Date>(),
     paused: new Set<string>(),
-    /** The API's own (pause-shifted) final alert per trade (Task 10 review I1). */
-    alerts: new Map<string, Date>(),
     /** settleKindFor at the API, per trade (default null). */
     settleKinds: new Map<string, string>(),
     reports: [] as Report[],
@@ -103,8 +100,6 @@ export function fakeNetwork(ctx: Ctx) {
             state,
             settleKind: net.settleKinds.get(trade) ?? null,
             paused: net.paused.has(trade),
-            finalAlertSeenAt: net.seen.get(trade)?.toISOString() ?? null,
-            finalAlertAt: net.alerts.get(trade)?.toISOString() ?? null,
           })),
         });
       }

@@ -22,7 +22,7 @@ import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { hasCertificateChain, isUnknownAuthenticator } from './attestation.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
-import { issueConfirmToken, requireConfirm } from './confirm.js';
+import { confirmerOf, issueConfirmToken, requireConfirm, staleTermsOnlyToExtend } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { assertMethodAllowed } from './methods.js';
@@ -296,6 +296,15 @@ async function verifyRegistration(
   const kind = a.kind ?? (attested ? 'security-key' : 'passkey');
   if (kind === 'passkey' && !info.userVerified) throw failed();
   assertCredentialAllowed(a.accountKind, { kind, attested });
+  // Owner G3 (review P-m1): a moderator's passkey must be another device than their security key,
+  // or the key-plus-passkey pair is one key and its PIN. A staff passkey is registered without
+  // attestation, so the AAGUID is the client's word: one on the staff security-key allowlist (a
+  // YubiKey registered a second time as a resident passkey, the common case) is refused. A client
+  // that zeroes or forges the AAGUID is not caught; the same credential twice is refused by
+  // `insertCredential` (credential IDs are unique).
+  if (a.accountKind === 'staff' && kind === 'passkey' && info.aaguid !== ZERO_AAGUID && deps.attestation.isAllowed(info.aaguid, 'packed', 'staff')) {
+    throw new ApiError(409, 'passkey-is-security-key');
+  }
   return {
     credentialId: info.credential.id,
     publicKey: info.credential.publicKey,
@@ -567,20 +576,21 @@ export function decoyCredentialIds(
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * True when `pendingId` names this account's open pending login (purpose `second-factor`) started
- * from this device whose first factor was PGP. Read without consuming it: `completeLogin` consumes
- * it when the second factor finishes.
+ * The first factor's method of this account's open pending login (purpose `second-factor`) that
+ * `pendingId` names, started from this device on this site, when it was PGP or a security key; null
+ * otherwise. Read without consuming it: `completeLogin` consumes it when the second factor finishes.
  */
-async function pendingAfterPgp(deps: Deps, req: FastifyRequest, accountId: string, pendingId: string | undefined): Promise<boolean> {
+async function pendingFirstMethod(deps: Deps, req: FastifyRequest, accountId: string, pendingId: string | undefined): Promise<'pgp' | 'security-key' | null> {
   const device = deviceHash(req);
-  if (pendingId === undefined || !UUID.test(pendingId) || device === null) return false;
-  const { rows } = await deps.db.query(
-    `select 1 from challenges
+  if (pendingId === undefined || !UUID.test(pendingId) || device === null) return null;
+  const { rows } = await deps.db.query<{ m: string }>(
+    `select payload->'first'->>'method' as m from challenges
       where id = $1 and account_id = $2 and device_hash = $3 and purpose = 'second-factor' and method = 'pair'
-        and used_at is null and expires_at > $4 and payload->'first'->>'method' = 'pgp' and payload->>'app' = $5`,
+        and used_at is null and expires_at > $4 and payload->'first'->>'method' in ('pgp', 'security-key') and payload->>'app' = $5`,
     [pendingId, accountId, device, deps.clock(), realmOf(req).app],
   );
-  return rows.length > 0;
+  const m = rows[0]?.m;
+  return m === 'pgp' || m === 'security-key' ? m : null;
 }
 
 /**
@@ -610,6 +620,10 @@ export type LoginRealm = 'trader' | 'staff';
 
 interface LoginRouteOptions {
   kinds: AccountKind[];
+  /** Owner G3: one factor is enough on a known device for this account (the staff app decides). */
+  oneFactorOnKnownDevice?: (accountId: string, device: Buffer) => Promise<boolean>;
+  /** Owner G3: two PGP keys are no pair for this staff account (the staff app decides: moderators). */
+  pgpPairRefused?: (accountId: string) => Promise<boolean>;
   /** The site these routes serve; 'trader' when absent. The staff app passes 'staff'. */
   realm?: LoginRealm;
   afterAuthenticate?: (accountId: string) => Promise<void>;
@@ -645,6 +659,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     const pendingId = optStr(body, 'pendingId');
     let found: { id: string; kind: AccountKind; login_tag_key_id: number | null } | null;
     let afterPgp: boolean;
+    // Owner G3: a staff member's security key then a passkey is a pair too.
+    let afterKey = false;
     let tag: string;
     // FU-D: a row under an older login-name key moves to the current key once a login by name succeeds.
     let retag: { from: number; tag: string } | undefined;
@@ -673,10 +689,12 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       }
       // The pending-step lookup runs whenever a pendingId is given, whatever the account, so the
       // query count does not reveal a staff login name (second review).
-      afterPgp = pendingId !== undefined && (await pendingAfterPgp(deps, req, found?.id ?? NIL_UUID, pendingId));
+      const firstMethod = pendingId !== undefined ? await pendingFirstMethod(deps, req, found?.id ?? NIL_UUID, pendingId) : null;
+      afterPgp = firstMethod === 'pgp';
+      afterKey = firstMethod === 'security-key';
     }
     // A team member logs in by the staff rule (Plan 2 Task 18): PGP + a passkey is a pair for them too.
-    const withPasskeys = afterPgp && (found?.kind === 'staff' || found?.kind === 'member');
+    const withPasskeys = (afterPgp && (found?.kind === 'staff' || found?.kind === 'member')) || (afterKey && found?.kind === 'staff');
     let creds = (await credentialsOf(deps.db, found?.id ?? NIL_UUID)).filter(
       (c) =>
         found !== null &&
@@ -749,6 +767,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       ...(boundPending !== undefined ? { pendingId: boundPending } : {}),
       deviceLabel,
       ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}),
+      ...(opts.oneFactorOnKnownDevice ? { oneFactorOnKnownDevice: opts.oneFactorOnKnownDevice } : {}),
+      ...(opts.pgpPairRefused ? { pgpPairRefused: opts.pgpPairRefused } : {}),
     });
     const retag = ch.payload.retag as { from?: unknown; tag?: unknown } | undefined;
     if (ch.payload.mode === 'login-name' && typeof retag?.from === 'number' && typeof retag.tag === 'string') {
@@ -772,6 +792,7 @@ export async function securityKeyLoginRoutes(app: FastifyInstance, opts: LoginRo
 /** `buildApi`'s mount at `/v1/login/webauthn`: the login-name-based routes plus discoverable passkey login (`start {}`). */
 export async function webauthnLoginRoutes(app: FastifyInstance, opts: LoginRouteOptions): Promise<void> {
   loginRoutes(app, { kinds: opts.kinds, ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}), discoverable: true });
+  // (The trader site never passes oneFactorOnKnownDevice: traders have their own login rules.)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -798,7 +819,7 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   const body = record(req.body);
   const names = await assertNewNames(deps.db, body.displayName, body.loginName);
   const kind = credentialKind(body.kind);
-  await assertDisplayNameFree(deps.db, names);
+  await assertDisplayNameFree(deps.db, names, deps.config);
   // The account does not exist yet: its WebAuthn user handle is chosen now and kept with the challenge.
   const userID = randomBytes(32);
   const options = await buildRegistrationOptions(deps, { kind, accountKind: 'trader', userID, userName: names.displayName, exclude: [] });
@@ -850,7 +871,9 @@ async function confirmStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const body = record(req.body);
   const action = parseConfirmAction(body.action);
-  const creds = (await credentialsOf(deps.db, req.auth.accountId)).filter((c) => allowed(req.auth.kind, c));
+  // A team member proves it's them with their own credentials, and only for MEMBER_CONFIRM_ACTIONS (Q73).
+  const confirmer = await confirmerOf(deps.db, req.auth, action);
+  const creds = (await credentialsOf(deps.db, confirmer.accountId)).filter((c) => allowed(confirmer.kind ?? req.auth.kind, c));
   if (creds.length === 0) throw new ApiError(403, 'method-not-allowed');
   const options = await buildAssertionOptions(deps, creds);
   const challengeId = await storeChallenge(deps, req, {
@@ -865,11 +888,12 @@ async function confirmFinish(req: FastifyRequest) {
   const body = record(req.body);
   const ch = await consumeChallenge(deps.db, str(body, 'challengeId'), deps.clock());
   if (!ch || ch.method !== 'webauthn' || !sameSession(ch, req, 'confirm')) throw expired();
-  const row = await verifyAssertion(deps, { accountId: req.auth.accountId, response: body.response, expectedChallenge: ch.webauthn_challenge! });
-  assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });
-  assertListed(ch, row);
   const action: ConfirmAction = parseConfirmAction(ch.payload.action);
   if ((await actionHash(action)) !== ch.payload.actionHash) throw expired();
+  const confirmer = await confirmerOf(deps.db, req.auth, action);
+  const row = await verifyAssertion(deps, { accountId: confirmer.accountId, response: body.response, expectedChallenge: ch.webauthn_challenge! });
+  assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });
+  assertListed(ch, row);
   // The method is the kind of the stored credential that just verified, never anything the client sent.
   const confirmToken = await issueConfirmToken(deps, {
     sessionId: req.auth.sessionId, accountId: req.auth.accountId, action, method: row.kind,
@@ -965,8 +989,10 @@ export async function applyCredential(db: Queryable, accountId: string, c: Store
 export function webauthnRoutes(app: FastifyInstance): void {
   app.post('/v1/register/webauthn/start', registerStart);
   app.post('/v1/register/webauthn/finish', registerFinish);
-  app.post('/v1/confirm/webauthn/start', { preHandler: requireSession() }, confirmStart);
-  app.post('/v1/confirm/webauthn/finish', { preHandler: requireSession() }, confirmFinish);
+  // Members reach these only for MEMBER_CONFIRM_ACTIONS ("Stay logged in", owner Q73): `confirmerOf`.
+  // Review M5: on old Terms only "Stay logged in" (`staleTermsOnlyToExtend`).
+  app.post('/v1/confirm/webauthn/start', { preHandler: [requireSession({ member: 'any', allowStaleTerms: true }), staleTermsOnlyToExtend] }, confirmStart);
+  app.post('/v1/confirm/webauthn/finish', { preHandler: requireSession({ member: 'any', allowStaleTerms: true }) }, confirmFinish);
   app.post(
     '/v1/account/webauthn/start',
     {

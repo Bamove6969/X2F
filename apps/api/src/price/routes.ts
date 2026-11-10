@@ -1,17 +1,18 @@
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../app.js';
+import { requireInside } from '../auth/frontDoor.js';
 import { ApiError } from '../errors.js';
 import { currencyExponent } from './currencies.js';
 
 /**
- * `GET /v1/price?currency=EUR` (no session, P3-M9) → `{ currency, centsPerXmr, exponent, at,
+ * `GET /v1/price?currency=EUR` (behind the front door, `requireInside`; open before 8 Nov 2026, P3-M9) → `{ currency, centsPerXmr, exponent, at,
  * usdCentsPerXmr }`: the market price in the currency's minor units (the XMR/USD median times
  * the USD→X rate in use, spec 11.6) with its ISO 4217 exponent (Revision 2026-10-20), the time of
  * the median's oldest quote, and the same XMR's US-dollar value in cents. 503 `price-unavailable`
  * when that currency's market prices are paused (Review Focus 5). An unknown currency is 400.
  */
 export function priceRoutes(app: FastifyInstance): void {
-  app.get('/v1/price', async (req) => {
+  app.get('/v1/price', { preHandler: requireInside }, async (req) => {
     const currency = (req.query as Record<string, unknown> | null)?.currency;
     if (typeof currency !== 'string' || currencyExponent(currency) === null) throw new ApiError(400, 'bad-request');
     const q = req.server.deps.prices.quote(currency);

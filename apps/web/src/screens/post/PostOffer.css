@@ -120,6 +120,78 @@
   height: 44px;
 }
 
+/* The range boxes stack one per row: the switch needs the width (boards v142). */
+.post-ranges {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-3);
+}
+
+.post-other-unit {
+  font-family: var(--x2f-font-mono);
+}
+
+/* A range box with its XMR / currency switch inside its right edge (owner, 8 Nov). */
+.post-amount {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.post-amount input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 92px;
+}
+
+.post-unit {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+}
+
+.post-unit button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  font-family: var(--x2f-font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--x2f-ink-muted);
+  cursor: pointer;
+}
+
+/* Owner, 8 Nov: the chosen unit is bold and Monero orange (the text-safe ink of the token), the
+   other smaller and muted. The one ruled exception to "selection is ink" (selection-ink.test.ts). */
+.post-unit button[aria-checked='true'] {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--x2f-monero-ink);
+}
+
+.post-preview-range {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+/* Minimum completed trades (owner, 8 Nov): one segmented row, No minimum wider than the numbers. */
+.post-mintrades {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr));
+  gap: var(--x2f-space-2);
+}
+
+.post-mintrades .x2f-chip-button {
+  font-size: 15px;
+}
+
 .post-field {
   display: flex;
   flex-direction: column;
@@ -145,8 +217,7 @@
 
 .post-field select,
 .post-field input,
-.post-field textarea,
-.post-inline select {
+.post-field textarea {
   border-radius: var(--x2f-radius-sm);
   border: 1px solid var(--x2f-line);
   background: var(--x2f-surface-raised);
@@ -185,20 +256,7 @@
   line-height: 18px;
 }
 
-.post-inline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 48px;
-  font-size: 15px;
-}
 
-.post-inline select {
-  height: 44px;
-  padding: 0 10px;
-  font-size: 15px;
-}
 
 /* The margin stepper: a 12 px surface-raised well inside the Your price card. */
 .post-margin {

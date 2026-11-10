@@ -16,8 +16,9 @@
  *   "Cancelling is final" sheet (CancelFinalSheet.tsx), whose Cancel trade posts `buyer-cancel`,
  *   then `escrow.buyerCancel()`, which sends `trade.cancel`. After "I've paid" there is no cancel
  *   at all (owner, Revision 2026-10-29b; Task 39): the link is gone and the API refuses it.
- * - The seller never cancels alone: Propose cancel / Withdraw (mutual cancel); the buyer gets an
- *   accept/decline card, and Accept is `accept-cancel` then `escrow.proposeCancelSign()`.
+ * - The seller's waiting room offers no cancel (design proto review P2, 8 Nov: no Propose cancel);
+ *   a proposal that already stands can be withdrawn, and the buyer gets an accept/decline card for
+ *   it, where Accept is `accept-cancel` then `escrow.proposeCancelSign()`.
  */
 import { useEffect, useId, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
@@ -28,19 +29,19 @@ import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
 import { MethodExplainer } from '../../ui/MethodExplainer.js';
-import { Sheet } from '../../ui/Sheet.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { CancelFinalSheet } from './CancelFinalSheet.js';
 import { CancelProposalCard, SellerCancelControls } from './CancelSheet.js';
-import { setFinalAlertPaidSheet } from './FinalAlert.js';
 import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
-import { buyerCancelMode, escrowChip, finishBlock, payBlock, paySecured, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { buyerCancelMode, escrowChip, finishBlock, payBlock, paySecured, payTimeOver, payTimer, showProposal, type EscrowChip } from './payModel.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
-import { focusChatPane, registerTradeScreen, useChatPane, type MemberScreenProps, type TradeSlot } from './TradeRoom.js';
+import { DisputeLocked } from './DisputeLocked.js';
+import { registerTradeScreen, type MemberScreenProps, type TradeSlot } from './TradeRoom.js';
+import { ChatButton, ChatSlot } from './TradeChatButton.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
 import './pay.css';
 
@@ -224,7 +225,9 @@ const RING_C = 2 * Math.PI * RING_R;
 /** "Time to pay": 90 min not started while securing (with when it starts), then the countdown. */
 function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () => Date }) {
   const tip = useTip();
+  useTick(15_000);
   const t = payTimer(view, serverClock().getTime());
+  const over = payTimeOver(view, serverClock().getTime());
   const ring = t.started ? (
     <svg width="56" height="56" viewBox="0 0 56 56" role="img" aria-label={`${t.leftMin} of ${t.totalMin} minutes left`} className="x2f-pay-timer__ring">
       <circle cx="28" cy="28" r={RING_R} fill="none" className="x2f-pay-timer__ring-track" strokeWidth="6" />
@@ -248,10 +251,11 @@ function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () 
     <section aria-label="Payment timer" className="x2f-card x2f-pay-timer" data-fold-glance="timer">
       <button type="button" className="x2f-pay-timer__text" aria-describedby="tip-pay" {...tip.trigger}>
         <span className="x2f-pay-timer__label">
-          Time to pay
+          {/* COPY-UNSIGNED: "is over" (owner 8 Nov p6-1: the time to pay is not a hard end). */}
+          {over ? 'Time to pay is over' : 'Time to pay'}
           <InfoIcon />
         </span>
-        {t.started ? (
+        {over ? null : t.started ? (
           <span className="x2f-pay-timer__value">
             <Countdown deadline={t.payBy} serverClock={serverClock} format="minutes" />
           </span>
@@ -383,46 +387,6 @@ function ProofSlot({ wide }: { wide: boolean }) {
   );
 }
 
-/** The chat for the trade (Task 20's ChatPanel through the seam), or nothing until it is installed. */
-function ChatSlot({ view }: { view: TradeView }) {
-  const Chat = useTradeChat();
-  return Chat ? <Chat code={view.code} name={publicName(view.counterparty)} /> : null;
-}
-
-function ChatButton({ view, primary }: { view: TradeView; primary?: boolean }) {
-  const [open, setOpen] = useState(false);
-  // With the room's chat pane showing (Task 40), the chat is already beside the screen: the sheet
-  // closes on unfold (one draft, one composer), and the primary Chat moves the focus there.
-  const paned = useChatPane(view);
-  useEffect(() => {
-    if (!paned || !open) return;
-    setOpen(false);
-    // The sheet already closed (`open && !paned`) and handed the focus back to the header Chat,
-    // hidden now under [data-chat-link]: give it to the pane's composer, which holds the same
-    // draft, once the pane is laid out (round-2 review m4).
-    requestAnimationFrame(() => focusChatPane());
-  }, [paned, open]);
-  const onChat = () => (paned ? focusChatPane() : setOpen(true));
-  return (
-    <>
-      {primary ? (
-        <Button variant="primary" onClick={onChat}>
-          Chat
-        </Button>
-      ) : (
-        <button type="button" className="x2f-room__chat" onClick={onChat} data-chat-link="">
-          Chat
-        </button>
-      )}
-      <Sheet open={open && !paned} title={`Chat with ${publicName(view.counterparty)}`} onClose={() => setOpen(false)}>
-        <div className="x2f-sheet__body">
-          <ChatSlot view={view} />
-        </div>
-      </Sheet>
-    </>
-  );
-}
-
 /** The wide room (Desktop board): the trade on the left, the counterparty and the chat on the right. */
 function WideRoom({ view, method, title, chip, children }: { view: TradeView; method: MethodInfo; title: ReactNode; chip: EscrowChip | null; children: ReactNode }) {
   return (
@@ -444,6 +408,30 @@ function WideRoom({ view, method, title, chip, children }: { view: TradeView; me
         </div>
       </aside>
     </div>
+  );
+}
+
+/** Re-renders every `ms` so a time written into the text stays true (the Countdown does this for its own). */
+function useTick(ms: number): void {
+  const [, setN] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setN((n) => n + 1), ms);
+    return () => clearInterval(id);
+  }, [ms]);
+}
+
+/**
+ * After the time to pay (owner 8 Nov, p6-1): not a hard end. "I've paid" and the details stay
+ * until the seller cancels, and the buyer is told the seller may now cancel at any moment (design
+ * proto review P1). It appears by itself when payBy passes on screen. COPY-UNSIGNED (no board yet).
+ */
+function PayOverNote({ view, serverClock }: { view: TradeView; serverClock: () => Date }) {
+  useTick(15_000);
+  if (!payTimeOver(view, serverClock().getTime())) return null;
+  return (
+    <p className="x2f-room__error" role="status" data-pay-over="">
+      The time to pay is over. <Name view={view} /> may now cancel this trade at any moment. If you've sent the money, tap I've paid now.
+    </p>
   );
 }
 
@@ -550,12 +538,12 @@ export function BuyerPay(p: TradeScreenProps) {
         Cancel trade
       </Button>
     );
-  // The buyer's dispute in paid opens at confirmBy (machine.ts: too-early before it; review Minor 7).
+  // The buyer's dispute: none before "I've paid" (machine.ts: too-early in securing and secured;
+  // design proto review P1), then from confirmBy, the method's wait from the tap (owner F9: 90 min
+  // for instant types), shown locked with its UTC time until then (board BuyerPaidWaiting).
   const disputeWait = paid && view.confirmBy !== null && serverClock().getTime() < Date.parse(view.confirmBy);
-  const dispute = disputeWait ? (
-    <span className="x2f-room__dispute-wait">
-      Dispute opens in <Countdown deadline={view.confirmBy!} serverClock={serverClock} format="minutes" />
-    </span>
+  const dispute = !paid ? null : disputeWait ? (
+    <DisputeLocked until={view.confirmBy!} serverClock={serverClock} />
   ) : (
     <Link to={`/trade/${encodeURIComponent(view.code)}/dispute`} className="x2f-button x2f-button--danger">
       Open dispute
@@ -569,6 +557,7 @@ export function BuyerPay(p: TradeScreenProps) {
           you now pay
         </GrownNote>
       ) : null}
+      {!paid ? <PayOverNote view={view} serverClock={serverClock} /> : null}
       {showProposal(view) ? (
         <CancelProposalCard view={view} busy={action.busy} onAccept={() => void action.run({ type: 'accept-cancel' }, () => escrow.proposeCancelSign())} />
       ) : null}
@@ -782,7 +771,12 @@ export function BuyerCancelling(p: TradeScreenProps) {
 
 // ---- The seller's room while the buyer pays ----
 
-/** The seller in `secured` (before payBy; SellerRefund takes over after it, Task 25): wait, chat, or propose a mutual cancel. */
+/**
+ * The seller in `secured` (before payBy; SellerRefund takes over after it, Task 25): wait and chat.
+ * No Propose cancel (design proto review P2, 8 Nov): a proposal the buyer's "I've paid" silently
+ * withdrew left the seller not knowing what happened; the seller's cancel comes after the time to
+ * pay (SellerRefund). Withdraw stays for a proposal that already stands.
+ */
 export function SellerWaiting(p: TradeScreenProps) {
   const { view, escrow, serverClock, wide } = p;
   const method = payMethodOf(view);
@@ -791,12 +785,7 @@ export function SellerWaiting(p: TradeScreenProps) {
   const total = deviceTotal(view, escrow);
   const chatInstalled = useTradeChat() !== null;
   const cancel = (
-    <SellerCancelControls
-      view={view}
-      busy={action.busy}
-      onPropose={() => void action.run({ type: 'propose-cancel' })}
-      onWithdraw={() => void action.run({ type: 'withdraw-cancel' })}
-    />
+    <SellerCancelControls view={view} busy={action.busy} onWithdraw={() => void action.run({ type: 'withdraw-cancel' })} />
   );
   const waiting = (
     <section aria-label="Waiting for payment" className="x2f-card x2f-wait">
@@ -880,15 +869,14 @@ export function SellerWaiting(p: TradeScreenProps) {
 
 /**
  * SellerWaiting on a team member's device (Plan 2 Task 18 review round 2, n3): no escrow there, so
- * no device total, escrow status or chat; the waiting card, the owner's-device notice, and Propose
- * cancel / Withdraw (a mutual cancel only records a choice; if the buyer accepts, the account
- * owner's device co-signs the refund). Kit parts only (NEEDS_DESIGN_TEAM).
+ * no device total, escrow status or chat; the waiting card, the owner's-device notice, and Withdraw
+ * for a standing proposal (no Propose cancel, design proto review P2). Kit parts only (NEEDS_DESIGN_TEAM).
  */
 export function SellerWaitingMember({ code, view, refresh, serverClock }: MemberScreenProps) {
   const method = payMethodOf(view);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const run = async (type: 'propose-cancel' | 'withdraw-cancel') => {
+  const run = async (type: 'withdraw-cancel') => {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -935,7 +923,7 @@ export function SellerWaitingMember({ code, view, refresh, serverClock }: Member
       </div>
       <footer className="x2f-pay__footer">
         <div className="x2f-pay__footer-row">
-          <SellerCancelControls view={view} busy={busy} onPropose={() => void run('propose-cancel')} onWithdraw={() => void run('withdraw-cancel')} />
+          <SellerCancelControls view={view} busy={busy} onWithdraw={() => void run('withdraw-cancel')} />
         </div>
       </footer>
     </div>
@@ -943,5 +931,3 @@ export function SellerWaitingMember({ code, view, refresh, serverClock }: Member
 }
 
 for (const slot of TASK23_SLOTS) registerTradeScreen(slot);
-// Task 25's FinalAlert: its I've paid is this same paid step (refund-tripwires NEEDS_TASK_23).
-setFinalAlertPaidSheet(PaidFlowSheet);

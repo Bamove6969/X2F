@@ -32,6 +32,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiCallError } from '../api/client.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
+import { utcDateTime } from '../ui/dates.js';
 import { CANT_DO_TITLE, chatCantDoText, isCantDoCode, type CantDoCode } from '../ui/cantDoCodes.js';
 import { ModeratorTag } from '../screens/dispute/ModeratorTag.js';
 import { BlockAction } from '../screens/settings/BlockAction.js';
@@ -45,6 +46,9 @@ export const CHAT_NOTICE = 'Chats are encrypted. If a dispute is opened, a moder
 export const OTHER_DEVICE = 'This conversation is open on another device';
 /** A chat that answers 404: purged, or (silently) a block between the two outside an open trade. */
 export const CHAT_CLOSED = 'This chat has been closed.';
+/** Review I2: a line this device took earlier whose envelope the server no longer serves as it was. */
+// COPY-UNSIGNED (chat shred review I2: the gap line). not-a-refusal: a note in place of a chat line, not a rule the user ran into
+export const MISSING_LINE = 'A message you saw earlier is no longer on the server.';
 /** How often an open panel syncs with no live event: quickly while the chat is being secured. */
 export const CHAT_POLL_MS = { waiting: 3_000, ready: 15_000 } as const;
 
@@ -203,7 +207,7 @@ export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
             );
           }
           items.push(
-            <li key={l.id} className="x2f-chat__line" data-from={l.from} data-mine={l.mine ? '' : undefined}>
+            <li key={l.id} className="x2f-chat__line" data-from={l.from} data-mine={l.mine ? '' : undefined} data-missing={l.missing ? '' : undefined}>
               <span className="x2f-chat__who">
                 {l.from === 'mod' ? (
                   dispute !== undefined && snap?.disputeOpen === true && dispute.moderator ? (
@@ -214,7 +218,23 @@ export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
                 ) : l.mine ? 'You' : <span data-username="">{name}</span>}
                 <span className="x2f-chat__hidden">: </span>
               </span>
-              <span className="x2f-chat__text">{l.text}</span>
+              {/* A line this device showed before that the server no longer serves (review I2): a gap, not a silence. */}
+              <span className="x2f-chat__text">
+                {l.missing ? (
+                  <>
+                    {MISSING_LINE}
+                    {l.at !== null && !Number.isNaN(new Date(l.at).getTime()) ? (
+                      <>
+                        {/* COPY-UNSIGNED (chat shred review I2): the gap line's "Sent <time>." suffix. */}
+                        {' Sent '}
+                        <time dateTime={l.at}>{utcDateTime(new Date(l.at))}</time>.
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  l.text
+                )}
+              </span>
             </li>,
           );
           return items;
