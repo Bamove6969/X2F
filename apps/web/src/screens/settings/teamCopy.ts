@@ -146,7 +146,7 @@ export const TEAM_COPY = {
   hoursStart: 'From',
   hoursEnd: 'Until',
   hoursZone: 'Time zone',
-  hoursHint: 'Outside these hours the member cannot log in, and a logged-in member is logged out.', // not-a-refusal: explains the setting
+  hoursHint: 'The member logs in and works only inside these hours. When they end, the member is logged out.',
   saveLimits: 'Save limits',
   limitsSaved: (name: string) => `Limits saved for ${name}.`,
   badBand: 'Enter the smallest and largest trade in XMR, the largest above zero and not below the smallest.',

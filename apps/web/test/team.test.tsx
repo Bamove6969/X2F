@@ -44,6 +44,7 @@ beforeEach(() => {
     if (input === '/v1/team' && method === 'GET') return teamStatus === 200 ? json(200, { members, max: 3 }) : json(teamStatus, { error: 'owner-only' });
     if (input === '/v1/team/audit') return teamStatus === 200 ? json(200, audit) : json(teamStatus, { error: 'owner-only' });
     if (input === '/v1/team/invites') return json(inviteReply.status, inviteReply.body);
+    if (input === '/v1/team/members/m1/limits' && method === 'PUT') return json(200, { ...(members[0] as object), band: body?.band, hours: body?.hours });
     if (input === '/v1/team/invite') return body?.invite === CODE ? json(200, { displayName: 'Aurora', roles: ['trades'], expiresAt: '2026-10-31T10:00:00.000Z' }) : json(404, { error: 'not-found' });
     if (input === '/v1/terms') return json(200, { version: TERMS_TEXT_VERSION });
     if (input === '/v1/team/join/start') return json(200, { challengeId: 'c1', encryptedMessage: 'MSG', fingerprint: 'F' });
@@ -104,6 +105,35 @@ describe('Team (settings)', () => {
     await settle();
     expect(host.querySelector('[data-member="Dana"]')?.textContent).toContain('Custom · Active');
     expect(host.querySelector('[data-member="Dana"]')?.textContent).not.toContain('Trades');
+  });
+
+  it('J-20: each row shows its limits; Limits sends the band in atomic units and the hours, and a bad band sends nothing', async () => {
+    members = [
+      { ...(members[0] as object), band: { minAtomic: '500000000000', maxAtomic: '2000000000000' }, hours: { days: ['Mon', 'Fri'], start: '08:00', end: '18:00', tz: 'UTC' } },
+      members[1],
+    ];
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    expect(host.querySelector('[data-member="Aurora"] [data-part="member-limits"]')?.textContent).toBe('Trades of 0.5 to 2 XMR · Mon, Fri 08:00 to 18:00 (UTC)');
+    expect(host.querySelector('[data-member="Basil"] [data-part="member-limits"]')?.textContent).toBe('Any trade size · Any time');
+    fire(host.querySelector('[data-member="Aurora"] [data-part="edit-limits"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    type(byPart(host, 'band-min') as HTMLInputElement, '0.1');
+    type(byPart(host, 'band-max') as HTMLInputElement, '0.05');
+    await settle();
+    fire(byPart(host, 'save-limits')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(calls.some((c) => c.url.endsWith('/limits'))).toBe(false);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('largest above zero');
+    type(byPart(host, 'band-max') as HTMLInputElement, '2.5');
+    fire(host.querySelector('[data-day="Tue"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    fire(byPart(host, 'save-limits')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(calls.find((c) => c.url === '/v1/team/members/m1/limits')).toMatchObject({
+      method: 'PUT',
+      body: { band: { minAtomic: '100000000000', maxAtomic: '2500000000000' }, hours: { days: ['Mon', 'Tue', 'Fri'], start: '08:00', end: '18:00', tz: 'UTC' } },
+    });
   });
 
   it('Make an invite link sends the name and roles and shows the link once', async () => {

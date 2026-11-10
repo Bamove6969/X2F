@@ -20,6 +20,12 @@ describe('describeAction', () => {
     // Job 1c (J-10): the granular team boxes.
     [{ kind: 'team-invite-abilities', name: 'Ann01', abilities: 'offers-see' }, 'invite Ann01 as a team member (1 ability)'],
     [{ kind: 'team-abilities', memberId: 'm1', abilities: 'offers-see,offers-pause,notes-view' }, "change a team member's abilities (3 abilities)"],
+    // J-20: the exact band and hours (WYSIWYS).
+    [{ kind: 'team-limits', memberId: 'm1', band: 'none', hours: 'any' }, "set a team member's trade size to no limit and working hours to any time"],
+    [
+      { kind: 'team-limits', memberId: 'm1', band: '100000000000-2500000000000', hours: 'Mon,Tue 08:00-18:00 Europe/Berlin' },
+      "set a team member's trade size to 0.1 to 2.5 XMR and working hours to Mon, Tue 08:00 to 18:00 (Europe/Berlin)",
+    ],
   ])('%j', (a, expected) => {
     expect(describeAction(a)).toBe(expected);
   });
