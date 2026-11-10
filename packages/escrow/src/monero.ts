@@ -107,20 +107,26 @@ function describe(tx: MoneroTxWallet): DescribedTx {
 
 /**
  * Where monerod's `/get_transactions` answer puts `txHash`: 'block' only for that exact hash, out
- * of the pool and at a block height; 'pool' for that hash in the pool; 'none' when the daemon does
- * not have it. An answer that is not an OK reply is EscrowError('daemon-unavailable') (retried),
- * never 'none'.
+ * of the pool and at a block height; 'pool' for that hash in the pool; 'none' only when the daemon
+ * names the hash in `missed_tx` (it does not have it). Every other answer, an OK one that names the
+ * hash nowhere or in an entry of another shape included, is EscrowError('daemon-unavailable')
+ * (retried), never 'none' (security review L1, 10 Nov).
  */
 export function txStatusOf(body: unknown, txHash: string): TxStatus {
-  const r = body as { status?: unknown; txs?: unknown } | null;
+  const r = body as { status?: unknown; txs?: unknown; missed_tx?: unknown } | null;
   if (typeof r !== 'object' || r === null || r.status !== 'OK') throw new EscrowError('daemon-unavailable', 'tx lookup: no OK answer');
   if (r.txs !== undefined && !Array.isArray(r.txs)) throw new EscrowError('daemon-unavailable', 'tx lookup: malformed answer');
+  if (r.missed_tx !== undefined && !Array.isArray(r.missed_tx)) throw new EscrowError('daemon-unavailable', 'tx lookup: malformed answer');
   const tx = ((r.txs ?? []) as unknown[]).find((t): t is { tx_hash: string; in_pool?: unknown; block_height?: unknown } =>
     typeof t === 'object' && t !== null && (t as { tx_hash?: unknown }).tx_hash === txHash,
   );
-  if (!tx) return 'none';
-  if (tx.in_pool === true) return 'pool';
-  return tx.in_pool === false && typeof tx.block_height === 'number' && Number.isSafeInteger(tx.block_height) && tx.block_height > 0 ? 'block' : 'none';
+  if (tx) {
+    if (tx.in_pool === true) return 'pool';
+    if (tx.in_pool === false && typeof tx.block_height === 'number' && Number.isSafeInteger(tx.block_height) && tx.block_height > 0) return 'block';
+    throw new EscrowError('daemon-unavailable', 'tx lookup: the tx is neither in the pool nor in a block');
+  }
+  if (((r.missed_tx ?? []) as unknown[]).includes(txHash)) return 'none';
+  throw new EscrowError('daemon-unavailable', 'tx lookup: the answer does not name the tx');
 }
 
 export class MoneroMultisigSession implements EscrowSession {
