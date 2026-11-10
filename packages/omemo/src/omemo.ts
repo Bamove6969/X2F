@@ -96,6 +96,17 @@ export class PreKeyLedger {
     };
   }
 
+  /** Marks `ids` as used for `recipient`'s device `b` (ids the API recorded in earlier passes). */
+  seed(recipient: string, b: RecipientBundle, ids: Iterable<number>): void {
+    const used = this.usedBy(recipient, b);
+    for (const id of ids) used.add(id);
+  }
+
+  /** The ids used for `recipient`'s device `b` (by device id and identity key), in no order. */
+  usedIds(recipient: string, b: RecipientBundle): number[] {
+    return [...(this.used.get(`${recipient}\n${b.deviceId}\n${b.identityKey.toString('hex')}`) ?? [])];
+  }
+
   /** Picker and releaser for notices to `recipient`, as `encryptMessage` options. */
   forRecipient(recipient: string): Required<Pick<EncryptOptions, 'pickPreKey' | 'releasePreKey'>> {
     return { pickPreKey: this.picker(recipient), releasePreKey: (b, p) => this.usedBy(recipient, b).delete(p.id) };

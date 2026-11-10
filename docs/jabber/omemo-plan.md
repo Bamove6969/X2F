@@ -72,8 +72,14 @@ and Dino use libsignal, Gajim uses omemo-dr, Monal its own port of the same). So
    with several devices waits whole when one of them is used up (the prekeys picked for the others
    are given back to the ledger, as is the one picked for a device then skipped for a bad key).
    Within one pass this is reachable only for a device publishing fewer prekeys than
-   `OUTBOX_BATCH` (25). Across passes the ledger starts empty: a client that stayed offline between
-   two passes still shows the prekeys the earlier pass used (open point in the interop report).
+   `OUTBOX_BATCH` (25). Across passes (and for sends outside a pass, such as the test code) the ids
+   X2F used are kept in `jabber_omemo_prekeys` (migration 335, `apps/api/src/jabber/prekeys.ts`):
+   ids only, found by an HMAC of the address and device id under a subkey of `X2F_JABBER_KEYS`,
+   checked against an HMAC adding the identity key. Each send seeds the ledger from it and writes
+   it back, in one transaction under a per-recipient advisory lock; an id the fetched bundle no
+   longer lists is dropped, and the record is reset when the identity key changes. Records not
+   touched for 30 days are purged (`purgeJabberPreKeys`). A record under a key removed from the
+   ring is not found (the device is then treated as having no used prekeys).
    Master secret =
    `0xFF×32 ‖ DH(IK_A, SPK_B) ‖ DH(EK_A, IK_B) ‖ DH(EK_A, SPK_B) ‖ DH(EK_A, OPK_B)`;
    `HKDF-SHA-256(salt = 32 zero bytes, ikm = master, info = "WhisperText", 64)` → root key (32),

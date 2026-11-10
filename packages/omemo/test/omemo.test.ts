@@ -206,6 +206,18 @@ describe('encryptMessage', () => {
       expect(phone.decrypt(late)).toBe('notice 100');
     });
 
+    it('seed: prekey ids recorded outside this pass (the API keeps them across passes) are never picked; usedIds lists what the ledger holds for a device', () => {
+      const me = sender();
+      const phone = new OmemoDevice(58, 3);
+      const ledger = new PreKeyLedger();
+      ledger.seed('mira@xmpp.example.org', recipientBundle(phone), [1, 3]);
+      const xml = encryptMessage(me, 'n0', [recipientBundle(phone)], ledger.forRecipient('mira@xmpp.example.org'));
+      expect(preKeyIdOf(xml)).toBe(2);
+      expect(ledger.usedIds('mira@xmpp.example.org', recipientBundle(phone)).sort()).toEqual([1, 2, 3]);
+      expect(ledger.usedIds('noor@xmpp.example.org', recipientBundle(phone))).toEqual([]);
+      expect(() => encryptMessage(me, 'n1', [recipientBundle(phone)], ledger.forRecipient('mira@xmpp.example.org'))).toThrow(PreKeysExhausted);
+    });
+
     it('a notice to several devices, one of them used up, is deferred whole (one message per notice), and the other devices keep the prekeys it had picked', () => {
       const me = sender();
       const phone = new OmemoDevice(54, 1);

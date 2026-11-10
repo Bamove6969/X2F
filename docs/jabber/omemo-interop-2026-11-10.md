@@ -316,9 +316,9 @@ libsignal family remains to be run before the flag is set, as the review says.
    problem returns). Recommendation: keep the fallback, and let owner question 5 (coalescing unsent
    notices per account and kind) remove the burst that gets there; note it in the plan.
    **Decided (lead, 2026-11-10): the second option.** The fallback is gone; a used-up device's notice
-   waits for the next pass (see step 4b, "Changed after this run"). Still open: the ledger is per
-   pass, so a client that stays offline across two passes shows the next pass the prekeys the
-   earlier one used, and the next pass may pick one of them again.
+   waits for the next pass (see step 4b, "Changed after this run"). Follow-up (lead, same day): the
+   used ids are also kept across passes in the database (migration 335), so a client that stays
+   offline across two passes is never sent two messages on one prekey.
 2. **Offline store (owner question 7, now with a number).** 136 notices produced 136 unread
    key-transport messages (about 600 bytes each) in X2F's offline store, plus whatever strangers send.
    Recommendation unchanged: cap or expire that account's offline store on p11-42.

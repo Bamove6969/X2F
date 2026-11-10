@@ -19,10 +19,11 @@ import { randomInt } from 'node:crypto';
 import type pg from 'pg';
 import {
   PreKeysExhausted, bundleXml, deviceListXml, encryptMessage, generateBundleSecrets, identityFromSeed, newIdentitySeed, parseBundleSecrets, serializeBundleSecrets, xeddsaVerify,
-  type BundleSecrets, type PreKeyLedger, type SeedIdentity,
+  PreKeyLedger, type BundleSecrets, type SeedIdentity,
 } from '@x2f/omemo';
 import { keyringBox } from '../auth/keystore.js';
 import type { Keyring } from '../config.js';
+import { dbPreKeyStore, type PreKeyStore } from './prekeys.js';
 import { NoticeDeferred } from './sender.js';
 
 export { xeddsaVerify };
@@ -228,16 +229,23 @@ export async function loadOmemoBundle(db: pg.Pool, ring: Keyring, identity: Omem
   return parseBundleSecrets(box.open(row.bundle_sealed, context), identity.privateKey);
 }
 
-/** The encryptor for a loaded identity and bundle (tests build one in memory). */
-export function omemoEncryptorFrom(identity: OmemoIdentity, bundle: BundleSecrets, log?: OmemoLog): OmemoEncryptor {
+/**
+ * The encryptor for a loaded identity and bundle (tests build one in memory). With `store` (the
+ * production encryptor's database record, prekeys.ts) every send, in a pass or not, picks only
+ * prekeys X2F has not used on that device before; a send outside a pass gets a ledger of its own.
+ */
+export function omemoEncryptorFrom(identity: OmemoIdentity, bundle: BundleSecrets, log?: OmemoLog, store?: PreKeyStore): OmemoEncryptor {
   return {
     announce: async () => ({ deviceId: identity.deviceId, deviceList: deviceListXml([identity.deviceId]), bundle: bundleXml(identity.publicKey, bundle) }),
     encrypt: async ({ to, plaintext, bundles, preKeys }) => {
-      try {
-        return encryptMessage(identity, plaintext, bundles, {
-          ...(preKeys ? preKeys.forRecipient(to) : {}),
+      const ledger = preKeys ?? (store ? new PreKeyLedger() : undefined);
+      const run = () =>
+        encryptMessage(identity, plaintext, bundles, {
+          ...(ledger ? ledger.forRecipient(to) : {}),
           onSkip: (deviceId) => log?.({ jabber: 'omemo', skippedDevice: deviceId }),
         });
+      try {
+        return store && ledger ? await store.withRecord(to, bundles, ledger, run) : run();
       } catch (e) {
         if (e instanceof PreKeysExhausted) throw new NoticeDeferred();
         throw e;
@@ -251,6 +259,7 @@ export function omemoEncryptorFrom(identity: OmemoIdentity, bundle: BundleSecret
  * rotated key ring is picked up and the private keys are not kept in memory between sends.
  */
 export function omemoEncryptor(db: pg.Pool, ring: Keyring, clock: () => Date, log?: OmemoLog): OmemoEncryptor {
+  const store = dbPreKeyStore(db, ring, clock);
   const load = async () => {
     const identity = await loadOmemoIdentity(db, ring, clock());
     try {
@@ -277,7 +286,7 @@ export function omemoEncryptor(db: pg.Pool, ring: Keyring, clock: () => Date, lo
     encrypt: async (input) => {
       const { identity, bundle } = await load();
       try {
-        return await omemoEncryptorFrom(identity, bundle, log).encrypt(input);
+        return await omemoEncryptorFrom(identity, bundle, log, store).encrypt(input);
       } finally {
         done(identity, bundle);
       }
