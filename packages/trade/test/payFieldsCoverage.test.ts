@@ -10,7 +10,14 @@ const words = (key: string): string[] => key.split(/(?=[A-Z])/).map((w) => w.toL
 
 // Owner order 10 Nov 2026 and the research brief rule 4: nothing that lets someone take money, and
 // no personal tax data (lead decisions, 10 Nov 2026), ever as a box.
-const BAD_LABEL = /password|passcode|passphrase|\bpin\b|\bcvv\b|\bcvc\b|\bcvv2\b|security code|expir|valid thru|\btax\b|codice fiscale|\brnokpp\b|\bnric\b|\bssn\b|social security|online banking|log ?in/i;
+const BAD_LABEL = /password|passcode|passphrase|\bpin\b|\bcvv\b|\bcvc\b|\bcvv2\b|security code|expir|valid thru|\btax\b|codice fiscale|\brnokpp\b|\bnric\b|\bssn\b|social security|online banking|log ?in|c[eé]dula|\brif\b|mykad|passport|citizen id|national id|\brut\b|\bdni\b/i;
+/** CPF is only ever a Pix key (lead, 10 Nov): never a box of its own elsewhere. */
+const CPF = /\bcpf\b/i;
+/** The lead's exceptions (10 Nov): a box that is the method's own payee identifier. */
+const ID_EXEMPT = new Set(['PAGO_MOVIL.idNumber']);
+/** Receiving to a card number is allowed only where it is the method's route (lead, 10 Nov). */
+const CARD_METHODS = new Set(['MIR', 'UKRAINE_CARD', 'PAYSEND', 'POSTEPAY']);
+const CARD = /card ?number/i;
 const BAD_WORDS = new Set(['password', 'passcode', 'pin', 'cvv', 'cvc', 'expiry', 'expiration', 'exp', 'tax', 'nric', 'ssn', 'login']);
 
 describe('the payee fields table covers the catalogue (owner order, 10 Nov 2026)', () => {
@@ -43,10 +50,22 @@ describe('the payee fields table covers the catalogue (owner order, 10 Nov 2026)
   it('no box asks for a password, PIN, CVV, expiry date or tax ID', () => {
     for (const [id, row] of Object.entries(PAY_FIELDS)) {
       for (const f of row.fields) {
-        expect(BAD_LABEL.test(f.label), `${id}.${f.key} label "${f.label}"`).toBe(false);
+        if (!ID_EXEMPT.has(`${id}.${f.key}`)) expect(BAD_LABEL.test(f.label), `${id}.${f.key} label "${f.label}"`).toBe(false);
+        if (id !== 'PIX') expect(CPF.test(f.label), `${id}.${f.key} label "${f.label}"`).toBe(false);
         expect(words(f.key).filter((w) => BAD_WORDS.has(w)), `${id}.${f.key}`).toEqual([]);
       }
     }
+  });
+
+  it('review F4: a card-number box appears only in MIR, UKRAINE_CARD, PAYSEND and POSTEPAY', () => {
+    const where = new Set<string>();
+    for (const [id, row] of Object.entries(PAY_FIELDS)) for (const f of row.fields) if (CARD.test(f.key) || CARD.test(f.label)) where.add(id);
+    expect([...where].sort()).toEqual([...CARD_METHODS].sort());
+  });
+
+  it('review F4: the personal-ID check catches the terms the deviations removed', () => {
+    for (const l of ['Cédula', 'cedula number', 'RIF', 'MyKad', 'Passport number', 'Citizen ID', 'National ID', 'RUT', 'DNI']) expect(BAD_LABEL.test(l), l).toBe(true);
+    for (const l of ['Bank account number', 'UPI ID', 'Routing number', 'Country']) expect(BAD_LABEL.test(l), l).toBe(false);
   });
 
   it('every one-of group has at least two boxes', () => {

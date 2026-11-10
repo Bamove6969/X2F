@@ -39,6 +39,8 @@ export interface PayFieldSpec {
   label: string;
   kind: PayFieldKind;
   need: PayFieldNeed;
+  /** The most characters this box takes, when not its kind's PAY_FIELD_MAX_CHARS (review F2: a QRIS string). */
+  maxLength?: number;
 }
 
 export interface PayFieldsSpec {
@@ -53,17 +55,22 @@ export interface PayFieldsSpec {
   source: string;
 }
 
-/** The version inside the sealed `pay` payload. */
-export const PAY_DETAILS_V = 1;
+/**
+ * The version inside the sealed `pay` payload. 2 since the 10 Nov table (review F3): the keys of
+ * almost every method changed, and the text check stopped depending on labels. J-08 never ran live,
+ * so a version 1 package has no reader and is refused like any bad shape.
+ */
+export const PAY_DETAILS_V = 2;
 
 /** The most characters one box takes: a one-line box, and the mailing address. */
 export const PAY_FIELD_MAX_CHARS = { line: 120, postal: 400 } as const;
 /** The most lines a mailing address takes. */
 export const PAY_POSTAL_MAX_LINES = 8;
 
-const yes = (key: string, label: string, kind: PayFieldKind = 'text'): PayFieldSpec => ({ key, label, kind, need: 'yes' });
-const no = (key: string, label: string, kind: PayFieldKind = 'text'): PayFieldSpec => ({ key, label, kind, need: 'no' });
-const one = (group: string, key: string, label: string, kind: PayFieldKind = 'text'): PayFieldSpec => ({ key, label, kind, need: { oneOf: group } });
+const spec = (key: string, label: string, kind: PayFieldKind, need: PayFieldNeed, maxLength?: number): PayFieldSpec => (maxLength === undefined ? { key, label, kind, need } : { key, label, kind, need, maxLength });
+const yes = (key: string, label: string, kind: PayFieldKind = 'text', maxLength?: number): PayFieldSpec => spec(key, label, kind, 'yes', maxLength);
+const no = (key: string, label: string, kind: PayFieldKind = 'text', maxLength?: number): PayFieldSpec => spec(key, label, kind, 'no', maxLength);
+const one = (group: string, key: string, label: string, kind: PayFieldKind = 'text', maxLength?: number): PayFieldSpec => spec(key, label, kind, { oneOf: group }, maxLength);
 
 /** The table, by catalog id (data/payment-methods.json), in the catalogue's order and groups. */
 export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze({
@@ -129,7 +136,7 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
     source: 'research 2026-11-10 (medium): https://home-internal.paxum.com/faq/how-paxum-works',
   },
   PAYTM: {
-    fields: [one('reach', 'upiId', 'UPI ID'), one('reach', 'phone', 'Mobile number (UPI-linked)', 'phone'), one('reach', 'bankAccount', 'Bank account number and IFSC', 'account'), no('name', 'Name on the account')],
+    fields: [one('reach', 'upiId', 'UPI ID', 'account'), one('reach', 'phone', 'Mobile number (UPI-linked)', 'phone'), one('reach', 'bankAccount', 'Bank account number and IFSC', 'account'), no('name', 'Name on the account')],
     source: 'research 2026-11-10 (high): https://paytm.com/support/money-transfers/how-to-send-money-on-paytm-4-quick-methods-explained',
   },
   NEQUI: {
@@ -157,11 +164,11 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
     source: 'research 2026-11-10 (high): https://support.satispay.com/en/articles/sending-money-to-a-new-contact',
   },
   TIKKIE: {
-    fields: [yes('paymentLink', 'Tikkie payment link'), no('name', 'Name on the account')],
+    fields: [yes('paymentLink', 'Tikkie payment link', 'account'), no('name', 'Name on the account')],
     source: 'research 2026-11-10 (medium): https://www.tikkie.me/faq',
   },
   STRIKE: {
-    fields: [one('reach', 'username', 'Strike username', 'account'), one('reach', 'lightningAddress', 'Lightning address')],
+    fields: [one('reach', 'username', 'Strike username', 'account'), one('reach', 'lightningAddress', 'Lightning address', 'account')],
     source: 'research 2026-11-10 (high): https://strike.me/faq/how-do-i-send-cash-wr',
   },
   CASH_APP: {
@@ -370,11 +377,11 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
     source: 'research 2026-11-10 (high): https://contactcentre.nibss-plc.com.ng/support/solutions/articles/47001265115-what-are-the-services-under-nip-that-customers-can-utilize-',
   },
   PAGO_MOVIL: {
-    fields: [yes('phone', 'Mobile number affiliated to Pago Móvil', 'phone'), yes('bank', 'Bank (name or 4-digit code)'), no('name', 'Full name')],
-    source: 'research 2026-11-10 (medium): https://finanzasdigital.com/como-hacer-un-pago-movil-pasos-y-comisiones/; personal-ID rule: cedula/RIF box left out although Pago Movil requires it (lead/owner question)',
+    fields: [yes('phone', 'Mobile number affiliated to Pago Móvil', 'phone'), yes('idNumber', 'Cédula or RIF', 'account'), yes('bank', 'Bank (name or 4-digit code)'), no('name', 'Full name')],
+    source: 'research 2026-11-10 (medium): https://finanzasdigital.com/como-hacer-un-pago-movil-pasos-y-comisiones/; lead (review, 10 Nov): cedula or RIF required, the method\'s own payee identifier (an exception to the personal-ID rule, like the card-number one)',
   },
   QRIS: {
-    fields: [yes('qris', 'QR code text'), no('name', 'Name shown on the QRIS'), no('provider', 'Bank or e-wallet')],
+    fields: [yes('qris', 'QR code text', 'account', 512), no('name', 'Name shown on the QRIS'), no('provider', 'Bank or e-wallet')],
     source: 'research 2026-11-10 (medium): https://www.bi.go.id/id/fungsi-utama/sistem-pembayaran/ritel/kanal-layanan/qris/qris-tuntas/default.aspx; lead: interim text box for the string inside the QR; an image box is a later feature',
   },
   RAAST: {
@@ -542,7 +549,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typ
  * Checks the boxes as typed: every table key, each value a string; trimmed; required boxes filled,
  * each one-of group with at least one; one-line boxes without a line break, an account box
  * (email, phone, iban, account) with only ACCOUNT_CHARS, a mailing address with at most
- * PAY_POSTAL_MAX_LINES; within PAY_FIELD_MAX_CHARS. Returns the filled boxes in table order
+ * PAY_POSTAL_MAX_LINES; within the box's maxLength, else PAY_FIELD_MAX_CHARS. Returns the filled boxes in table order
  * (empty optional ones dropped). Throws PayDetailsError.
  */
 export function checkPayDetails(methodId: string, values: Record<string, unknown>): PayDetailField[] {
@@ -562,11 +569,11 @@ export function checkPayDetails(methodId: string, values: Record<string, unknown
     }
     if (f.kind === 'postal') {
       if (value.includes('\r') || value.split('\n').length > PAY_POSTAL_MAX_LINES) throw new PayDetailsError('bad-value', f.key);
-      if (value.length > PAY_FIELD_MAX_CHARS.postal) throw new PayDetailsError('too-long', f.key);
+      if (value.length > (f.maxLength ?? PAY_FIELD_MAX_CHARS.postal)) throw new PayDetailsError('too-long', f.key);
     } else {
       if (/[\r\n]/.test(value)) throw new PayDetailsError('bad-value', f.key);
       if (f.kind !== 'text' && !ACCOUNT_CHARS.test(value)) throw new PayDetailsError('bad-chars', f.key);
-      if (value.length > PAY_FIELD_MAX_CHARS.line) throw new PayDetailsError('too-long', f.key);
+      if (value.length > (f.maxLength ?? PAY_FIELD_MAX_CHARS.line)) throw new PayDetailsError('too-long', f.key);
     }
     out.push({ key: f.key, value });
   }
@@ -615,4 +622,25 @@ export function renderPayDetailsText(pay: PayDetailsPayload): string {
     return `${label}: ${f.value}`;
   });
   return [PAY_DETAILS_TITLE, ...lines].join('\n');
+}
+
+/**
+ * Whether `text` is a rendering of `pay`'s values (review F3): the title, then one "<label>: <value>"
+ * line per filled box, in order, with each value exactly as sealed. The labels themselves are not
+ * checked: they are the table's COPY-UNSIGNED wording, which the owner re-words (J-26), and a package
+ * sealed under older labels must still open. A label is any non-empty run without a line break (it
+ * may hold ": "). Read from the end: a value may span lines (a mailing address), a label never does,
+ * so each label is the rest of its line, and the split is unambiguous.
+ */
+export function payTextMatches(pay: PayDetailsPayload, text: string): boolean {
+  let rest = text;
+  for (let i = pay.fields.length - 1; i >= 0; i--) {
+    const tail = `: ${pay.fields[i]!.value}`;
+    if (!rest.endsWith(tail)) return false;
+    rest = rest.slice(0, rest.length - tail.length);
+    const nl = rest.lastIndexOf('\n');
+    if (nl < 0 || nl === rest.length - 1) return false;
+    rest = rest.slice(0, nl);
+  }
+  return rest === PAY_DETAILS_TITLE;
 }

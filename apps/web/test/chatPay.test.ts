@@ -109,10 +109,17 @@ describe('openChatMessage with a package', () => {
     expect(await codeOf(read(plainOnly, 'buyer'))).toBe('ok');
   });
 
+  it('review F3: a package sealed under other labels (the owner re-words them, J-26) still opens; its values are what is checked', async () => {
+    const relabelled = await raw({ text: 'Payment details\nYour full name: Jane Doe\nEmail address: jane@example.ca', pay: INTERAC });
+    const got = await read(relabelled, 'buyer');
+    expect(got.message.pay).toEqual(INTERAC);
+    expect(got.message.text).toBe('Payment details\nYour full name: Jane Doe\nEmail address: jane@example.ca');
+  });
+
   it('a malformed package is not a chat message, and the guard does not move for it', async () => {
     const state = newChatState(channel);
     const bad: unknown[] = [
-      { text: renderPayDetailsText(INTERAC), pay: { ...INTERAC, v: 2 } },
+      { text: renderPayDetailsText(INTERAC), pay: { ...INTERAC, v: 1 } }, // review F3: a version 1 package (J-08 never ran live)
       { text: renderPayDetailsText(INTERAC), pay: { ...INTERAC, extra: 1 } },
       { text: renderPayDetailsText(INTERAC), pay: { ...INTERAC, fields: [{ key: 'email', value: 'jane@example.ca' }] } },
       { text: renderPayDetailsText(INTERAC), pay: 'INTERAC' },
