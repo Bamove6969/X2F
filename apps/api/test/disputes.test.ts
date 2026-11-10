@@ -34,12 +34,12 @@ const errorOf = (res: { json(): unknown }) => (res.json() as { error?: string })
 const dispute = (code: string) => `/v1/trades/${code}/dispute`;
 const appeal = (code: string) => `/v1/trades/${code}/appeal`;
 
-/** A trade in `state` (seller is the poster), with the clock back at START. */
-async function tradeIn(state: Parameters<typeof driveTo>[2]) {
+/** A trade in `state` (the seller is the poster unless `poster` says otherwise), with the clock back at START. */
+async function tradeIn(state: Parameters<typeof driveTo>[2], poster: 'seller' | 'buyer' = 'seller') {
   setNow(START);
   const seller = await trader();
   const buyer = await trader();
-  const { trade, sides } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+  const { trade, sides } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster });
   const t = await driveTo(deps, trade, state);
   return { seller, buyer, t, sides };
 }
@@ -83,8 +83,8 @@ async function rule(code: string, o: { outcome: RulingOutcome; round?: 1 | 2; ru
 }
 
 describe("owner g63: the 1% fee on a ruling, in the poster's dispute view only", () => {
-  async function disputed() {
-    const x = await tradeIn('paid');
+  async function disputed(poster: 'seller' | 'buyer' = 'seller') {
+    const x = await tradeIn('paid', poster);
     // The seller's confirm window (owner p9-4: 120 minutes) has ended.
     setNow(at(120 * MIN));
     await relogin(x.buyer, x.seller);
@@ -105,6 +105,23 @@ describe("owner g63: the 1% fee on a ruling, in the poster's dispute view only",
     // The appeal upholds completion: the poster pays.
     await publishRuling(deps, t.code, { outcome: 'release-to-buyer' });
     expect(await view(seller, t.code)).toMatchObject({ fee: 'poster-pays' });
+  });
+
+  it("on a buyer's ad the poster is the buyer: only the buyer sees the fee; the seller (taker), an outsider and staff never do", async () => {
+    const { seller, buyer, t } = await disputed('buyer');
+    expect(await view(buyer, t.code)).toMatchObject({ fee: null });
+    expect(await view(seller, t.code)).not.toHaveProperty('fee');
+    await publishRuling(deps, t.code, { outcome: 'release-to-buyer' });
+    expect(await view(buyer, t.code)).toMatchObject({ fee: 'poster-pays' });
+    expect(await view(seller, t.code)).not.toHaveProperty('fee');
+    const other = await trader();
+    const outsider = await other.browser.get(dispute(t.code));
+    expect(outsider.statusCode).toBe(404);
+    expect(outsider.body).not.toContain('poster-pays');
+    const staff = await trader('staff');
+    const asStaff = await staff.browser.get(dispute(t.code));
+    expect(asStaff.statusCode).toBe(403);
+    expect(asStaff.body).not.toContain('poster-pays');
   });
 
   it('a full reversal: no fee; an appeal that overturns it puts a lien, and the poster pays', async () => {
