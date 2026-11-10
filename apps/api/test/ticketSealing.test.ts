@@ -43,6 +43,12 @@ beforeEach(() => {
   (app as unknown as { budgets: { compromised: { tokens: number } } }).budgets.compromised.tokens = COMPROMISED_BUCKET.capacity;
 });
 
+/** Swaps the ticket ring in both apps (the staff app holds its own copy of the config). */
+function setRing(ring: Keyring): void {
+  deps.config.ticketKeys = ring;
+  (staffApp as unknown as { deps: Deps }).deps.config.ticketKeys = ring;
+}
+
 /** A marker no other test writes, so a hit anywhere is this test's text. */
 const marker = (what: string) => `${what}-${randomBytes(6).toString('hex')}`;
 
@@ -196,7 +202,7 @@ describe('J6 sealing: keys', () => {
     const next = testRing(old.current + 1);
     const both: Keyring = { current: next.current, keys: new Map([...next.keys, ...old.keys]) };
     try {
-      deps.config.ticketKeys = both;
+      setRing(both);
       const first = await rewrapTicketSecrets({ db: deps.db, config: deps.config });
       expect(first.failed).toBe(0);
       expect(first.rewrapped).toBeGreaterThanOrEqual(4);
@@ -204,7 +210,7 @@ describe('J6 sealing: keys', () => {
       const { rows } = await deps.db.query<{ body_sealed: Buffer }>('select body_sealed from ticket_messages where ticket_id = any($1::uuid[])', [[t.id, id]]);
       for (const r of rows) expect(r.body_sealed.readUInt16BE(1)).toBe(next.current);
       // The old key leaves the ring: everything still opens with the new key alone.
-      deps.config.ticketKeys = next;
+      setRing(next);
       expect((await helper.b.get(`/staff/v1/tickets/${t.id}`)).json().messages.map((m: { body: string }) => m.body)).toEqual(texts);
       const senior = await staff('senior');
       expect((await senior.b.get(`/staff/v1/compromised/${id}`)).json().comment).toBe(`They have my code ${secret}`);
@@ -212,7 +218,7 @@ describe('J6 sealing: keys', () => {
       expect(JSON.stringify(first)).not.toContain(secret);
     } finally {
       // Back to a ring that opens every other test's rows (the old key, plus the new one for these).
-      deps.config.ticketKeys = { current: old.current, keys: new Map([...old.keys, ...next.keys]) };
+      setRing({ current: old.current, keys: new Map([...old.keys, ...next.keys]) });
     }
   });
 
@@ -221,7 +227,7 @@ describe('J6 sealing: keys', () => {
     const kept = deps.config.ticketKeys;
     const other = testRing(kept.current + 50);
     try {
-      deps.config.ticketKeys = other;
+      setRing(other);
       const staffRead = await helper.b.get(`/staff/v1/tickets/${t.id}`);
       expect(staffRead.statusCode).toBe(500);
       const own = await a.b.get(`/v1/tickets/${t.id}`);
@@ -233,7 +239,7 @@ describe('J6 sealing: keys', () => {
       expect(result.failed).toBeGreaterThanOrEqual(3);
       // Nothing was rewritten: the old key opens them again once it is back.
     } finally {
-      deps.config.ticketKeys = kept;
+      setRing(kept);
     }
     expect((await helper.b.get(`/staff/v1/tickets/${t.id}`)).json().messages.map((m: { body: string }) => m.body)).toEqual(texts);
   });

@@ -6,7 +6,8 @@
 // - `GET /staff/v1/tickets?status=open|answered|closed` → `{ tickets }`: open and answered oldest
 //   first (the queue by age), closed newest first; 100 at most.
 // - `GET /staff/v1/tickets/:id` → `{ ticket, displayName, messages }` (staff messages name the staff
-//   member, for the staff side only). Logged `ticket.viewed`, ids only (review J6).
+//   member, for the staff side only). Logged `ticket.viewed`, ids only (review J6), before the sealed
+//   text is opened (tickets/seal.ts). The list routes return ids and metadata only, never text.
 // - `POST /staff/v1/tickets/:id/messages { body }` → 201; the ticket becomes `answered`. Logged
 //   `ticket.replied` with the ticket id only, never the text. Closed → 409 `ticket-closed`.
 // - `POST /staff/v1/tickets/:id/close` → `{ ticket }`, logged `ticket.closed`.
@@ -33,7 +34,8 @@ import { requireStaff } from '../staff/guard.js';
 import { consumeKeyTap } from '../staff/keyTap.js';
 import { actorOf, tapIdOf } from '../staff/members.js';
 import { activeLock, unlockAccount } from './lock.js';
-import { bodyOf, ticketIdOf, ticketMessages, ticketView, type TicketRow } from './traderRoutes.js';
+import { insertMessage, readThread } from './seal.js';
+import { bodyOf, ticketIdOf, ticketView, type TicketRow } from './traderRoutes.js';
 
 function rec(v: unknown): Record<string, unknown> {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) throw new ApiError(400, 'bad-request');
@@ -79,12 +81,13 @@ export function staffTicketRoutes(app: FastifyInstance): void {
       [t.id],
     );
     const names = new Map(staff.map((s) => [s.id, s.display_name]));
-    const messages = (await ticketMessages(req.server.deps.db, t.id)).map(({ staffId, ...m }) => ({
+    // J-14 review J6: staff reads are audited, ids only, and the row is written before the sealed
+    // text is opened (tickets/seal.ts), so no text is ever opened for staff without one.
+    await withTx(req.server.deps.db, (c) => appendLog(c, { at: req.server.deps.clock(), actor: actorOf(req), tradeCode: null, action: 'ticket.viewed', detail: { ticketId: t.id } }));
+    const messages = (await readThread(req.server.deps.db, req.server.deps.config, t.id)).map(({ staffId, ...m }) => ({
       ...m,
       staffName: staffId !== null ? (names.get(staffId) ?? null) : null,
     }));
-    // J-14 review J6: staff reads are audited, ids only.
-    await withTx(req.server.deps.db, (c) => appendLog(c, { at: req.server.deps.clock(), actor: actorOf(req), tradeCode: null, action: 'ticket.viewed', detail: { ticketId: t.id } }));
     return { ticket: ticketView(t), displayName: t.display_name, messages };
   });
 
@@ -97,7 +100,7 @@ export function staffTicketRoutes(app: FastifyInstance): void {
     await withTx(req.server.deps.db, async (c) => {
       const t = await ticketOf(c, id, 'support', true);
       if (t.status === 'closed') throw new ApiError(409, 'ticket-closed');
-      await c.query("insert into ticket_messages (ticket_id, author, staff_id, body, at) values ($1, 'staff', $2, $3, $4)", [id, req.staff.accountId, text, now]);
+      await insertMessage(c, req.server.deps.config, { ticketId: id, author: 'staff', staffId: req.staff.accountId, body: text, at: now });
       await c.query("update tickets set status = 'answered', updated_at = $2 where id = $1", [id, now]);
       await appendLog(c, { at: now, actor: actorOf(req), tradeCode: null, action: 'ticket.replied', detail: { ticketId: id } });
     });
@@ -140,7 +143,6 @@ export function staffTicketRoutes(app: FastifyInstance): void {
   app.get('/staff/v1/compromised/:id', fopts, async (req) => {
     const { db } = req.server.deps;
     const t = await ticketOf(db, ticketIdOf(req), 'compromised');
-    const comment = (await ticketMessages(db, t.id)).find((m) => m.author === 'trader')?.body ?? null;
     let account = null;
     if (t.account_id !== null) {
       const { rows } = await db.query<{ display_name: string; kind: string; created_at: Date }>('select display_name, kind, created_at from accounts where id = $1', [t.account_id]);
@@ -163,8 +165,10 @@ export function staffTicketRoutes(app: FastifyInstance): void {
           }
         : null;
     }
-    // J-14 review J6: staff reads are audited, ids only.
+    // J-14 review J6: staff reads are audited, ids only; the row is written before the sealed comment
+    // (the sender's typed credentials, if any) is opened.
     await withTx(db, (c) => appendLog(c, { at: req.server.deps.clock(), actor: actorOf(req), tradeCode: null, action: 'compromised.viewed', detail: { ticketId: t.id } }));
+    const comment = (await readThread(db, req.server.deps.config, t.id)).find((m) => m.author === 'trader')?.body ?? null;
     return { ticket: ticketView(t), methodsLeft: t.methods_left, comment, account };
   });
 

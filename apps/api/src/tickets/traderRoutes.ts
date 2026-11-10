@@ -12,9 +12,10 @@
 //     parallel burst cannot pass either rule.
 //   - `category` one of TICKET_CATEGORIES; `tradeCode` (optional) must be one of the account's own
 //     trades, else 400 `bad-request` `{ field }`.
-// - `GET /v1/tickets` → `{ tickets }`, the account's own, newest first.
+// - `GET /v1/tickets` → `{ tickets }`, the account's own, newest first (metadata only, never text).
 // - `GET /v1/tickets/:id` → `{ ticket, messages }`; another account's ticket is 404. A staff message
-//   never names the staff member; a member's message names the member.
+//   never names the staff member; a member's message names the member. The text is sealed at rest
+//   (tickets/seal.ts, review J6) and opened here per request for the account that owns it.
 // - `POST /v1/tickets/:id/messages { body }` → 201; the ticket goes back to `open`. Closed → 409
 //   `ticket-closed`.
 // - `POST /v1/tickets/:id/close` → `{ ticket }` (the trader resolves it themselves).
@@ -47,6 +48,7 @@ import { HIDDEN } from '../feedback/form.js';
 import type { RetentionJob } from '../retention.js';
 import type { TradePublisher } from '../trades/store.js';
 import { afterLock, placeLock, type PlacedLock, LOCKABLE_KINDS } from './lock.js';
+import { insertMessage, readThread } from './seal.js';
 
 export { TICKETS_DAILY, TICKET_CATEGORIES };
 
@@ -96,14 +98,6 @@ export interface TicketView {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
-}
-
-export interface TicketMessageView {
-  author: 'trader' | 'staff';
-  /** The team member who wrote a trader message (null: the account owner); never set for staff. */
-  memberName: string | null;
-  body: string;
-  at: string;
 }
 
 export interface TicketRow {
@@ -156,16 +150,6 @@ export function ticketIdOf(req: FastifyRequest): string {
   return id.toLowerCase();
 }
 
-export async function ticketMessages(q: Queryable, ticketId: string): Promise<Array<TicketMessageView & { staffId: string | null }>> {
-  const { rows } = await q.query<{ author: 'trader' | 'staff'; member_name: string | null; staff_id: string | null; body: string; at: Date }>(
-    `select m.author, tm.display_name as member_name, m.staff_id, m.body, m.at
-       from ticket_messages m left join team_members tm on tm.id = m.member_id
-      where m.ticket_id = $1 order by m.seq`,
-    [ticketId],
-  );
-  return rows.map((r) => ({ author: r.author, memberName: r.member_name, staffId: r.staff_id, body: r.body, at: r.at.toISOString() }));
-}
-
 /** The account's own support ticket, locked for update when `forUpdate`; else 404. */
 async function ownTicket(q: Queryable, accountId: string, id: string, forUpdate = false): Promise<TicketRow> {
   const { rows } = await q.query<TicketRow>(
@@ -212,7 +196,7 @@ async function openTicket(c: pg.PoolClient, req: FastifyRequest): Promise<Ticket
     [accountId, b.category, tradeCode, now],
   );
   const t = rows[0]!;
-  await c.query("insert into ticket_messages (ticket_id, author, member_id, body, at) values ($1, 'trader', $2, $3, $4)", [t.id, req.auth.memberId, text, now]);
+  await insertMessage(c, req.server.deps.config, { ticketId: t.id, author: 'trader', memberId: req.auth.memberId, body: text, at: now });
   return t;
 }
 
@@ -256,7 +240,8 @@ export function ticketRoutes(app: FastifyInstance, o: { publish?: TradePublisher
 
   app.get('/v1/tickets/:id', { preHandler: reader }, async (req) => {
     const t = await ownTicket(req.server.deps.db, req.auth.accountId, ticketIdOf(req));
-    const messages = (await ticketMessages(req.server.deps.db, t.id)).map(({ staffId: _staff, ...m }) => ({
+    // J6: the owner's own read opens the thread for this response only.
+    const messages = (await readThread(req.server.deps.db, req.server.deps.config, t.id)).map(({ staffId: _staff, ...m }) => ({
       ...m,
       // The trader never sees which staff member answered.
       memberName: m.author === 'staff' ? null : m.memberName,
@@ -273,7 +258,7 @@ export function ticketRoutes(app: FastifyInstance, o: { publish?: TradePublisher
     await withTx(req.server.deps.db, async (c) => {
       const t = await ownTicket(c, req.auth.accountId, id, true);
       if (t.status === 'closed') throw new ApiError(409, 'ticket-closed');
-      await c.query("insert into ticket_messages (ticket_id, author, member_id, body, at) values ($1, 'trader', $2, $3, $4)", [id, req.auth.memberId, text, now]);
+      await insertMessage(c, req.server.deps.config, { ticketId: id, author: 'trader', memberId: req.auth.memberId, body: text, at: now });
       await c.query("update tickets set status = 'open', updated_at = $2 where id = $1", [id, now]);
     });
     return reply.code(201).send({});
@@ -317,7 +302,8 @@ export function ticketRoutes(app: FastifyInstance, o: { publish?: TradePublisher
       );
       const t = rows[0]!;
       if (f.comment !== '') {
-        await c.query("insert into ticket_messages (ticket_id, author, body, at) values ($1, 'trader', $2, $3)", [t.id, f.comment, now]);
+        // J6: sealed like every message (the sender may have typed credentials here).
+        await insertMessage(c, deps.config, { ticketId: t.id, author: 'trader', body: f.comment, at: now });
       }
       const lock: PlacedLock | null = accountId !== null ? await placeLock(c, accountId, t.id, now) : null;
       return { number: Number(t.number), lock };

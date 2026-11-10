@@ -8,6 +8,7 @@ import { fileAttestationPolicy } from './auth/attestation.js';
 import { openLeakedList } from './auth/leaked.js';
 import { loadPgpSigner } from './auth/pgp.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
+import { assertTicketsSealed } from './tickets/seal.js';
 import { createPool } from './db/pool.js';
 import { PRICE_FEED_DEFAULTS, createPriceFeed } from './price/feed.js';
 import { createFxRates, fxSources } from './price/fx.js';
@@ -55,6 +56,8 @@ await attestation.init();
 const db = createPool(config.databaseUrl);
 // FU-D: no start while a login name is still stored in plaintext (migration 012 without its tool).
 await assertLoginNamesTagged(db);
+// J-14 review J6: no start while a ticket message is still stored in plaintext (migration 451 without its tool).
+await assertTicketsSealed(db);
 // Review M1: exactly one site_flags row, so a missing row never means maintenance to one reader and none to another.
 await assertOneSiteFlagsRow(db);
 // Plan 3 Task 3 (spec 11.6): XMR/USD = median of the PRICE_SOURCES, polled every minute; USD→X
