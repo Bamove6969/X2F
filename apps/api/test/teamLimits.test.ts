@@ -6,7 +6,7 @@ import { issueConfirmToken } from '../src/auth/confirm.js';
 import { HOLD_MS } from '../src/auth/hold.js';
 import { settleDueChanges } from '../src/auth/holdChanges.js';
 import { rolesToAbilities } from '../src/team/abilities.js';
-import { endMemberSessionsOutsideHours } from '../src/team/limits.js';
+import { MEMBER_SEES_OWN_LIMITS, endMemberSessionsOutsideHours } from '../src/team/limits.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { flexBody } from './helpers/offers.js';
@@ -196,6 +196,20 @@ describe('the limits route (lead only, confirm bound to the exact limits)', () =
     expect(await row()).toEqual({ band_max_atomic: null, hours: 'any' });
     await settleDueChanges(deps.config, app.events).run(deps.db, due);
     expect(await row()).toEqual({ band_max_atomic: XMR.toString(), hours: OPEN() });
+  });
+});
+
+describe("F8 (owner question p11-136, lead default: yes): a member sees their own limits", () => {
+  it("/v1/account/me's member carries their band and hours; the lead's has no member; the switch is on", async () => {
+    expect(MEMBER_SEES_OWN_LIMITS).toBe(true);
+    const owner = await team();
+    const m = await member(owner.id, rolesToAbilities(['trades']));
+    type Me = { member: { limits?: { band: Band; hours: Hours } } | null };
+    expect(((await m.browser.get('/v1/account/me')).json() as Me).member!.limits).toEqual({ band: null, hours: 'any' });
+    const band = { minAtomic: (XMR / 10n).toString(), maxAtomic: (2n * XMR).toString() };
+    expect((await setLimits(owner, m.id, band, OPEN())).statusCode).toBe(200);
+    expect(((await m.browser.get('/v1/account/me')).json() as Me).member!.limits).toEqual({ band, hours: OPEN() });
+    expect(((await owner.browser.get('/v1/account/me')).json() as Me).member).toBeNull();
   });
 });
 
