@@ -1005,3 +1005,51 @@ J-34 rulings: docs/design-rulings-J34-2026-11-09.md (28d45d74). Canvas v167.
 - Ban-Notice-Wide.
 - ProofBlur sent.
 - BuyerPay dispute variant.
+
+## 10 Nov 2026: lead's 9–10 Nov room jobs drawn — READY, COPY-UNSIGNED, build-ready
+**Specs** (in docs/build-specs/): spec-fix3, spec-setup3, spec-offers3, spec-md3, and review-multi-device.md. Canvas v168.
+
+**(1)–(3) Fixes**
+- DisputeRoom: moderator is "they" everywhere.
+- spec-j31a: the no-proof line is back to the owner's words; its courtesy §2 is superseded by spec-fix3 §4.
+- Incident ID is the dispute's own 9-character code (#K7QM4T2X9 sample). Updated on DisputeRoom, AccountFrozen(+W), ModQueue, ModCase, StaffLog, StaffOverview, SellerRefund, TradeTechIssue(+W). The "first 8 characters of the trade code" captions are gone.
+
+**(4) Courtesy sheet** moved from BuyQuote/SellQuote(+W) to over the trade room: BuyerPay, and TradeFund (taker) [courtesy on]. The quote Request buttons are plain links again.
+
+**(5) Setup screens**
+- SetupBackup: [view required|optional] per S-017.
+- SetupUsername: old public-name text removed.
+- SetupWelcome: "Recovery codes".
+- PostOffer note: main still has the old single-method screen. The flex strings are on wip/lead-flex-launch-4 and are compared in spec-offers3 §2d. Main's missing pieces were drawn on FlexOffer-Post(+W): gift-card country, the warning, the terms ticks, "Market rate · updated", [methodsLoad failed].
+
+**(6) Locked payment instructions:** "How to pay satoshi_ghost" card on Desktop and Fold-Trade [payInstructions locked]. Mapping onto BuyerPay is in spec-offers3.
+
+**(7) Password meter:** design ruling, because nothing is checked before the tap.
+- Label: "Strength: Meets the rules".
+- Note: "We'll check it hasn't appeared in a known leak when you set it."
+- SetupPassword [meter checking]. SignupSecurity needs the same state (follow-up).
+
+**(8) Multi-device:** drawable. LoginApprove(+W) and Devices(+W) [approval tiles|code], default tiles until owner p12-5.
+- New device: "Your code 418 206".
+- The approver sees the first four digits and types the last two [handover strong|weak-login|weak-this], with the chats line.
+- **Two security calls for the lead:**
+  - The approving device must check the typed digits against its own computed code, not only the server's (note §6.1 checks only the server).
+  - Showing all six digits on the approver would let the person copy them without looking at the new device.
+- Conflicts: Devices' G34 "password + authenticator" vs the hold-v3 port refusing it; note §3.4 vs approval.ts:554. Details in review-multi-device.md.
+
+**(9) Per-method currency:** FlexOffer-Post(+W) [methodCurrency per-method]: "In: USD · EUR · Change". A gift card is locked to its country: "US card · USD only".
+
+**(10) Other fixes**
+- Alerts(+W): one "Jabber alerts" row; the Tor steps and OMEMO fingerprint moved into JabberSetup(+W) "How it's sent".
+- Jabber messages name only the event kind.
+- Team(+W) intro: members may use any login method.
+- StaffLogin: [stage sign] Terms + signature before the welcome. Terms §10 is a lawyer placeholder.
+
+**(11) Price wording** on every offer board:
+- "0.4% above market" / "0.5% below market" / "At market", up to 2 decimals.
+- A method's own charge reads "0.3% more" / "0.2% less".
+- XMR-set bands: XMR range plus "≈ $33 – $330".
+
+**Pre-existing height mismatches** (not new): Fold-Offers 1012/1219; SetupUsername 844/664.
+
+**Wording room for the owner:** batches 10, 11 and 12 (301 questions) are in https://claude.ai/artifact/HEBazie5zYdi7LDM4ty5NQ, with design's view on each. When he submits, design copies his answers into the original batch pages' `answers` collections.

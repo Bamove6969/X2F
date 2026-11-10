@@ -88,6 +88,81 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{methodsFoot}}</p>
     </sc-if>
 
+    <sc-if value="{{isSign}}" hint-placeholder-val="{{false}}">
+      <p id="sl-tos-key" style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Read the terms to the end and tick to agree. Then sign your name and continue. You do this once, before your first case.</p>
+    <div tabindex="0" role="region" aria-label="Full Terms of Service" onScroll="{{onScroll}}" style="flex-shrink: 0; height: 320px; box-sizing: border-box; overflow-y: auto; padding: 16px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 21px; color: var(--ink); display: flex; flex-direction: column; gap: 10px;">
+      <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Draft for X2F&#39;s lawyer, who writes the final text. Same sections, same order.</p>
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">1. What X2F is</h2>
+      <p style="margin: 0;">X2F is a place where people buy and sell Monero (XMR) with each other. X2F is not a party to any trade. Coins in a trade sit in a 2-of-3 escrow, and X2F never holds them.</p>
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">2. Your account</h2>
+      <p style="margin: 0;">Every account has a username, and you keep your own login keys safe. X2F can&#39;t reset a password, because we don&#39;t know who you are. On an account with a username and password, important changes wait <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours before they apply. An account not signed into for <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">60</span> days is closed for security; an open trade or dispute pauses that clock. [Lawyer: eligibility, one person per account.]</p>
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">3. Trades and escrow</h2>
+      <p style="margin: 0;">Funding an escrow is a commitment, and a release can&#39;t be undone. &quot;Pay now&quot; only shows once the escrow is secured. Each trade shows its own time limits, which depend on the payment type, and only the rules that apply to you in that trade. Site maintenance pauses trade timers.</p>
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">4. Fees</h2>
+      <p style="margin: 0;">The person who posted the ad pays <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span> when a trade completes. The person who takes an ad pays no X2F fee. A full reversal by a moderator has no fee. Network fees are separate. Extra XMR sent to an escrow before the buyer taps &quot;I&#39;ve paid&quot;, within the offer&#39;s limits, grows the trade to the funded amount, and both sides see the new total; otherwise the extra goes back to the seller. A refund returns everything to the seller.</p>
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">5. Disputes, moderators and our role</h2>
+      <p style="margin: 0;">X2F&#39;s role is to run the escrow and, when a trade goes wrong, to decide it fairly. Moderators can read a trade chat only if a dispute is opened. A moderator steps in within <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours at most. Coins move as soon as a ruling is made. Either side can appeal within <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">48</span> hours of a ruling. If a ruling is later reversed, a lien stays on the losing side until they pay back. Feedback and trade totals follow the final outcome. By signing, you say you understand these terms, the rules and our role.</p>
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">6. Privacy and data</h2>
+      <p style="margin: 0;">We don&#39;t log IP addresses. Completed trades, chat included, are erased for good on day <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> after they end. Disputed trades are kept for up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> days after the dispute closes, with private details removed by our privacy tool, and used to train our moderators while X2F grows. Your signature below is kept with your account; we don&#39;t record your IP address or device with it. No other copy is kept.</p>
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">7. Police and government requests</h2>
+      <p style="margin: 0;">If police or a government sends us a lawful request for data backed by a warrant, we will provide what little information we hold. That is exactly why we don&#39;t log IP addresses or ask for your name, phone number or email address: we can&#39;t hand over what we never collect. [Lawyer to word this.]</p>
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">8. Prohibited use</h2>
+      <p style="margin: 0;">Scams can lead to a lifetime ban. Trades in sanctioned currencies aren&#39;t allowed. [Lawyer: the full rules list.]</p>
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">9. Liability, changes and law</h2>
+      <p style="margin: 0;">When these terms change, you see the changes the next time you log in. [Lawyer: liability and governing law.]</p>
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">10. Working for X2F as staff</h2>
+      <p style="margin: 0;">[Lawyer: what staff agree to, such as keeping trade data private and following the moderator rules.]</p>
+      <p style="margin: 0; font-size: 13px; color: var(--ink-muted);">End of Terms. Version [DATE].</p>
+    </div>
+      <sc-if value="{{notRead}}" hint-placeholder-val="{{true}}">
+    <span style="flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>Scroll to the end to continue</span>
+      </sc-if>
+      <label for="sl-agree" style="{{agreeStyle}}">
+        <input id="sl-agree" type="checkbox" required checked="{{agreed}}" disabled="{{notRead}}" onChange="{{toggle}}" style="width: 22px; height: 22px; margin: 0; flex-shrink: 0; accent-color: var(--ink);">
+        <span>I have read and agree to the <a href="#" style="padding: 12px 0;">Terms of Service</a> and <a href="#" style="padding: 12px 0;">Privacy Policy</a>, and I understand X2F&#39;s role.</span>
+      </label>
+      <section aria-labelledby="sl-sig-title" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 8px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 4px 0 8px;">
+          <span style="display: flex; flex-direction: column; gap: 2px;">
+            <h2 id="sl-sig-title" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{sigTitle}}</h2>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Required</span>
+          </span>
+          <sc-if value="{{showClear}}" hint-placeholder-val="{{false}}">
+            <button type="button" onClick="{{clear}}" style="height: 44px; padding: 0 12px; border: 0; border-radius: 12px; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Clear</button>
+          </sc-if>
+        </div>
+        <sc-if value="{{isDraw}}" hint-placeholder-val="{{true}}">
+          <div role="img" aria-label="{{padLabel}}" onPointerDown="{{penDown}}" onPointerMove="{{penMove}}" onPointerUp="{{penUp}}" onPointerLeave="{{penUp}}" style="position: relative; width: 592px; height: 180px; margin: 0 auto; box-sizing: border-box; border-radius: 12px; background: var(--pad); border: 1px solid var(--line); overflow: hidden; touch-action: none; cursor: crosshair;">
+            <sc-if value="{{padEmpty}}" hint-placeholder-val="{{true}}">
+              <span style="position: absolute; left: 24px; right: 24px; top: 34px; font-size: 15px; line-height: 22px; text-align: center; color: color-mix(in srgb, var(--pad-ink) 70%, transparent); pointer-events: none;">Sign your name here with your finger or mouse. A scribble or an X is fine.</span>
+            </sc-if>
+            <span aria-hidden="true" style="position: absolute; left: 20px; bottom: 34px; font-size: 22px; line-height: 22px; font-weight: 600; color: color-mix(in srgb, var(--pad-ink) 45%, transparent); pointer-events: none;">×</span>
+            <span aria-hidden="true" style="position: absolute; left: 44px; right: 20px; bottom: 40px; height: 1px; background: color-mix(in srgb, var(--pad-ink) 22%, transparent); pointer-events: none;"></span>
+            <svg width="592" height="180" viewBox="0 0 592 180" aria-hidden="true" style="position: absolute; left: -1px; top: -1px; pointer-events: none;"><path d="{{inkPath}}" fill="none" stroke="var(--pad-ink)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </sc-if>
+        <sc-if value="{{isType}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; flex-direction: column; gap: 8px; padding: 0 8px;">
+            <label for="sl-sig-name" style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Your name or initials, as you&#39;d sign them</label>
+            <input id="sl-sig-name" type="text" autocomplete="off" value="{{typedName}}" onInput="{{onName}}" style="height: 56px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 18px;">
+          </div>
+        </sc-if>
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 0 8px;">
+          <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">We keep your signature with your account. We don&#39;t record your IP address or device.</p>
+          <button type="button" onClick="{{swap}}" style="align-self: flex-start; height: 44px; padding: 0; border: 0; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 15px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer;">{{swapLabel}}</button>
+        </div>
+      </section>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px;">
+        <sc-if value="{{ready}}" hint-placeholder-val="{{false}}">
+          <button type="button" onClick="{{toWelcome}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Continue</button>
+        </sc-if>
+        <sc-if value="{{notReady}}" hint-placeholder-val="{{true}}">
+          <button type="button" disabled style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 16px; font-weight: 600; cursor: not-allowed;">Continue</button>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{hint}}</span>
+        </sc-if>
+      </div>
+    </sc-if>
+
     <sc-if value="{{isWelcome}}" hint-placeholder-val="{{false}}">
       <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px;">
         <li style="display: flex; gap: 14px; padding: 20px; border-radius: 16px; background: var(--surface);">
@@ -120,29 +195,30 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
 
     <section aria-label="Design notes" style="display: flex; flex-direction: column; gap: 12px; margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--line);">
       <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
-      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><li>Staff site only (staff.x2f…), before login: logo D centred alone, no rail. The trader Login refuses staff and sends them here.</li><li>Tweaks: stage (known-device, new-device, welcome) and account (key: has a security key; no-key: uses a username and password instead, p11-19).</li><li>Welcome shows once, after the first successful login, then goes to Overview. Pay rate, limit, hours and the appeal window come from Settings and the person's row in Staff (examples here).</li></ul>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><li>Staff site only (staff.x2f…), before login: logo D centred alone, no rail. The trader Login refuses staff and sends them here.</li><li>Tweaks: stage (known-device, new-device, sign, welcome), signed (empty, drawn, typed: the sign stage only) and account (key: has a security key; no-key: uses a username and password instead, p11-19).</li><li>Welcome shows once, after the first successful login, then goes to Overview. Pay rate, limit, hours and the appeal window come from Settings and the person's row in Staff (examples here).</li></ul>
       <aside aria-label="Decided by the owner: Staff log in with two methods on a new device, one on a known device" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q51) · 7 Nov (G3)</span><span style="font-weight: 600;">Two methods on a new device, one on a known device</span><span>Security key, PGP key and passkey. The new-device state asks for a second method after the first.</span></aside>
       <aside aria-label="Decided by the owner: Staff may use a username and password instead of a security key" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 9 Nov (p11-19)</span><span style="font-weight: 600;">Staff may use a username and password instead of a security key</span><span>Only if they also hold a PGP key and a passkey. The owner said "a moderator"; read as all staff, as in Q51. The no-key tweak swaps the security key for the password in the list.</span></aside>
       <aside aria-label="Decided by the owner: First login explains the job" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 28 Oct, 13:07 (D-046, D-045)</span><span style="font-weight: 600;">First login explains the job</span><span>Their position, how pay works (paid at clock-out; closing the app is not a clock-out), and that an unhappy trader can appeal.</span></aside>
+      <aside aria-label="Decided by the owner: staff sign the Terms at first login" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 8 Nov (p11-14) · lead, 10 Nov</span><span style="font-weight: 600;">Everyone who gets a login signs, staff too. A staff member&#39;s first login signs the Terms before the welcome.</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>Stage sign, between a successful first login and welcome. Same pattern as SetupTerms: scroll box (320 high), &quot;Scroll to the end to continue&quot;, one tick, then a drawn signature on the white pad (592 × 180) or a typed name, then &quot;Continue&quot;, which stays off until all three are done.</li><li>No trader site-rules list here. Section 10 in the box is a placeholder for the lawyer&#39;s staff terms.</li><li>Later logins skip it; a new Terms version would show it again (as for traders). COPY-UNSIGNED.</li></ul></aside>
       <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">COPY-UNSIGNED, 9 Nov: every string on this board.</p>
     </section>
    </div>
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"stage":{"editor":"enum","options":["known-device","new-device","welcome"],"default":"known-device"},"account":{"editor":"enum","options":["key","no-key"],"default":"key"},"$preview":{"width":1280,"height":1585}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"stage":{"editor":"enum","options":["known-device","new-device","sign","welcome"],"default":"known-device"},"signed":{"editor":"enum","options":["empty","drawn","typed"],"default":"empty"},"account":{"editor":"enum","options":["key","no-key"],"default":"key"},"$preview":{"width":1280,"height":1849}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = {}; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff6600;--monero-ink:#ff6600;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;--pad:#ffffff;--pad-ink:#12161c;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;--pad:#ffffff;--pad-ink:#12161c;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const stage = this.state.stage || this.props.stage || 'known-device';
     const noKey = this.props.account === 'no-key';
-    const welcome = stage === 'welcome', isNew = stage === 'new-device';
+    const welcome = stage === 'welcome', isNew = stage === 'new-device', isSign = stage === 'sign';
     const ICON = {
       key: 'M9 2.5h6a1.5 1.5 0 011.5 1.5v6H7.5V4A1.5 1.5 0 019 2.5zM6 10h12v7a5 5 0 01-5 5h-2a5 5 0 01-5-5z',
       pgp: 'M8 11a4 4 0 100 8 4 4 0 000-8zM11 13l9-9M17 7l2 2M14 10l2 2',
@@ -161,13 +237,48 @@ class Component extends DCLogic {
         dot: 'display: block; flex-shrink: 0; width: 20px; height: 20px; box-sizing: border-box; border-radius: 999px; ' + (on ? 'border: 6px solid var(--ink);' : 'border: 2px solid var(--line);'),
         pick: () => this.setState({ pick: id }) };
     });
+    // stage sign (p11-14, lead 10 Nov): a staff member's first login signs the Terms before the welcome. SetupTerms' pattern, no site-rules list.
+    const SAMPLE = 'M52 128 C 58 96, 74 70, 82 84 S 72 138, 90 130 S 112 82, 124 92 S 118 136, 136 128 C 150 120, 156 98, 168 104 S 170 132, 186 126 S 214 92, 230 100 S 236 126, 252 120 L 300 108 M 98 146 C 150 140, 220 138, 296 132';
+    const st = this.state;
+    const signed = ['empty', 'drawn', 'typed'].indexOf(this.props.signed) >= 0 ? this.props.signed : 'empty';
+    const read = !!st.read, agreed = !!st.agreed;
+    const mode = st.mode || (signed === 'typed' ? 'type' : 'draw');
+    const path = st.path != null ? st.path : (signed === 'drawn' ? SAMPLE : '');
+    const name = st.name != null ? st.name : (signed === 'typed' ? 'Dmitri K.' : '');
+    const isDraw = mode === 'draw';
+    const hasSig = isDraw ? path !== '' : name.trim() !== '';
+    const ready = read && agreed && hasSig;
+    const need = [];
+    if (!agreed) need.push('tick the terms');
+    if (!hasSig) need.push(isDraw ? 'sign in the white box' : 'type your name');
+    const needText = need.join(' and ');
+    const pt = (e) => { const r = e.currentTarget.getBoundingClientRect(); return Math.round(e.clientX - r.left) + ' ' + Math.round(e.clientY - r.top); };
+    const sig = {
+      notRead: !read, agreed, ready, notReady: !ready,
+      hint: !read ? 'Scroll to the end of the terms, then tick and sign.' : needText.charAt(0).toUpperCase() + needText.slice(1) + ' to continue.',
+      agreeStyle: 'flex-shrink: 0; display: flex; align-items: flex-start; gap: 12px; min-height: 44px; box-sizing: border-box; padding: 14px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px; border: 2px solid ' + (agreed ? 'var(--ink); ' : 'transparent; ') + (read ? 'color: var(--ink); cursor: pointer;' : 'color: var(--ink-muted); cursor: not-allowed;'),
+      toggle: () => { if (read) this.setState({ agreed: !agreed }); },
+      onScroll: (e) => { const el = e.currentTarget; if (!read && el.scrollTop + el.clientHeight >= el.scrollHeight - 4) this.setState({ read: true }); },
+      isDraw, isType: !isDraw, padEmpty: path === '', inkPath: path || 'M0 0', showClear: isDraw && path !== '',
+      sigTitle: isDraw ? 'Your signature' : 'Your typed name',
+      padLabel: path === '' ? 'Signature pad, empty. Draw with your finger or mouse, or use Type your name instead.' : 'Signature pad, signed.',
+      swapLabel: isDraw ? 'Type your name instead' : 'Draw instead',
+      typedName: name,
+      onName: (e) => this.setState({ name: e.target.value }),
+      swap: () => this.setState({ mode: isDraw ? 'type' : 'draw' }),
+      clear: () => this.setState({ path: '' }),
+      penDown: (e) => this.setState({ pen: true, path: (path ? path + ' ' : '') + 'M' + pt(e) }),
+      penMove: (e) => { if (st.pen) this.setState({ path: path + ' L' + pt(e) }); },
+      penUp: () => { if (st.pen) this.setState({ pen: false }); },
+      toWelcome: () => this.setState({ stage: 'welcome' })
+    };
     const note = 'display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; ';
     return {
       rootStyle,
-      colStyle: 'width: ' + (welcome ? 640 : 480) + 'px; display: flex; flex-direction: column; gap: 16px;',
-      h1: welcome ? 'Welcome to the team, dmitri_k' : 'Staff log in',
-      sub: welcome ? "You're logged in. Before your first case, here's how the job works." : 'This is the X2F staff site. Traders log in on the main X2F site.',
-      isLogin: !welcome, isWelcome: welcome, isNew,
+      colStyle: 'width: ' + (welcome || isSign ? 640 : 480) + 'px; display: flex; flex-direction: column; gap: 16px;',
+      h1: welcome ? 'Welcome to the team, dmitri_k' : isSign ? 'Terms of Service' : 'Staff log in',
+      sub: welcome ? "You're logged in. Before your first case, here's how the job works." : isSign ? 'Everyone who gets an X2F login signs the terms, staff too.' : 'This is the X2F staff site. Traders log in on the main X2F site.',
+      isLogin: !welcome && !isSign, isWelcome: welcome, isNew, isSign,
       deviceNoteStyle: note + (isNew ? 'background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent); color: var(--caution);' : 'background: var(--surface-raised); color: var(--ink-muted);'),
       deviceTitle: isNew ? 'New device' : 'This device is known',
       deviceBody: isNew ? 'Use two of your login methods. After that, this device is known and asks for one.' : 'One of your login methods is enough here.',
@@ -177,7 +288,8 @@ class Component extends DCLogic {
       showKey: pick === 'key', showPgp: pick === 'pgp', showPasskey: pick === 'passkey', showPw: pick === 'pw',
       btn: 'Log in',
       methodsFoot: noKey ? 'You set up a username and password, a PGP key and a passkey when you joined, instead of a security key.' : 'You set up a security key, a PGP key and a passkey when you joined.',
-      logIn: () => this.setState({ stage: 'welcome' })
+      logIn: () => this.setState({ stage: 'sign' }),
+      ...sig
     };
   }
 }

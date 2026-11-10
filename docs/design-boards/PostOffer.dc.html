@@ -123,7 +123,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <p style="margin: 0; font-size: 13px; line-height: 18px;"><strong>Currency chips.</strong> The six chips are those six, each with a flag (JPY added). "More ▾" opens every other currency A to Z, each with a flag; the More list isn't drawn here. A currency with no market rate shows there greyed, can't be picked, and carries "No rate right now", as on OfferAd (design call, 6 Nov). <strong>Flags:</strong> real flag images from a vetted flag set at build time (placeholder here).</p>
     <aside aria-label="Decided by the owner: which Post an offer model ships" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 6 Nov (Q4, Q23)</span>
-      <span style="font-weight: 600;">FlexOffer-Post ships: up to 3 price bands per currency, each with its own ± %, and up to 5 payment types per offer. This board (one price and one size range per currency) is superseded. Do not build it.</span>
+      <span style="font-weight: 600;">FlexOffer-Post ships: up to 3 price bands per currency, each with its own ± %, and up to 5 payment types per offer. This board (one price and one size range per currency) is superseded. Do not build it. Refreshed 10 Nov: what main's post screen has that this board lacked (the gift card's Country select and "Choose the card's country", the bold gift-card warning, the gift-card terms tick boxes, "The payment methods didn't load." with Retry, "Market rate · updated 14:05 UTC") is drawn on FlexOffer-Post and FlexOffer-Post-Wide, with per-method currencies and the one price wording ("0.4% above market"). This board is not updated for any of it.</span>
     </aside>
     <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Prices and ranges are examples. Helper copy on this board is COPY-UNSIGNED.</p>
     <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;">Craft pass, 7 Nov: the form reads as a guided builder. Each card opens with a step head (40 px icon tile, "Step N of 4", heading). Preview label gets an eye icon. COPY-UNSIGNED: "Step N of 4", "What you trade", "Trade size and terms".</p>
@@ -134,7 +134,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"unit":{"editor":"enum","options":["xmr","fiat"],"default":"xmr"},"$preview":{"width":390,"height":3474}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"unit":{"editor":"enum","options":["xmr","fiat"],"default":"xmr"},"$preview":{"width":390,"height":3618}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -146,7 +146,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#ff6600;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; min-height: 3474px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; min-height: 3618px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const { side, margin } = this.state;
     const market = 329.90;
     const price = market * (1 + margin / 100);

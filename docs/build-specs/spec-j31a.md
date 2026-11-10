@@ -141,7 +141,9 @@ Changed vs. 8 Nov:
   - After "I've paid", only a dispute, after the payment method's transfer time (Zelle: 90 min, shown where you pick the method).
   - Post proof even if the amount isn't detected; X2F logs it to improve.
 
-## 2. Courtesy sheet after Request (T-039, owner p9-3)
+## 2. Courtesy sheet after Request (T-039, owner p9-3) — SUPERSEDED 10 Nov
+**Moved (lead msg 4, 10 Nov): the sheet now shows over the trade room the first time it opens (BuyerPay for a taker buying, TradeFund for a taker selling), tweak `courtesy: off|on`. The `opening` tweak is removed from BuyQuote / SellQuote / SellQuote-Wide and their Request buttons are plain links again (BuyQuote → BuyerPay, SellQuote(+W) → TradeFund). Build from $S/audit/spec-fix3.md §4; the copy below is unchanged. The text below is kept for history only.**
+
 Boards: BuyQuote, SellQuote (phone bottom sheet) and SellQuote-Wide (centred dialog). New tweak `opening`: `none` (default) | `courtesy`.
 - Trigger: the taker taps the primary "Request to buy XMR" / "Request to sell XMR". The trade request is sent, then this sheet shows before the trade room. On the board the primary is now a `<button>`, not a link.
 - It shows on every trade a taker opens, until they tick "Don't show this again". That is a per-account setting. No owner decision yet on where to turn it back on, so it has no Settings entry. Posters never see it. There is no penalty for opening several trades (p9-3, T-038).
@@ -168,14 +170,14 @@ Boards: CancelRequest (bottom sheet) and CancelRequest-Wide (480 px centred aler
 ## 4. BuyerPay
 - T-079, no-proof confirm (`confirm: noproof`, escrow secured). The buyer taps I've paid with no screenshot attached.
   - Title, unchanged: "Mark paid without proof?"
-  - Body, old: "You haven't added a payment screenshot. If this trade ever goes to a dispute, proof is usually what decides which side wins. It's your choice."
-  - Body, new: "You haven't added a payment screenshot. If this trade ever goes to a dispute, proof can be what wins it for you. It's your choice."
+  - Body, unchanged (the owner's words, as on the BuyerPay board): "You haven't added a payment screenshot. If this trade ever goes to a dispute, proof is usually what decides which side wins. It's your choice."
+  - (Corrected 10 Nov, fix3: an earlier redraft here, "proof can be what wins it for you", was stale and is withdrawn. The board never changed.)
   - Buttons, unchanged: "Add proof" (→ ProofBlur) and "Mark paid without proof" (→ the p7-2 sheet, or straight to BuyerPaidWaiting if p7-2 is silenced).
   - It always shows while proof is missing: there is no "don't show again" (lead's default).
 - T-044, own-name line: already right, not redrawn. The info callout (raised, muted info icon) in both the securing and live payment cards reads: "We recommend paying from an account in your own name: it lowers the chance of the payment being frozen. We protect your identity either way." The same line is in the buyer-taker and poster-buying lists (section 1).
 
 ## 5. Not changed (audited)
-- FlexOffer-Quote (+Wide): there is no rules list on these boards. The only fee line is the taker's own "You pay no X2F fee when you take an offer." (no poster fee shown). Its "Request to buy XMR" goes to BuyQuote, where the courtesy sheet fires.
+- FlexOffer-Quote (+Wide): there is no rules list on these boards. The only fee line is the taker's own "You pay no X2F fee when you take an offer." (no poster fee shown). Its "Request to buy XMR" goes to BuyQuote; the courtesy sheet then fires over the trade room (BuyerPay), see spec-fix3.md §4.
 
 ## Heights (default variant; canvas.json not touched)
 | Board | Old | New |

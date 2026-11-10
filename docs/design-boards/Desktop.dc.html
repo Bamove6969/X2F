@@ -81,10 +81,12 @@ h1,h2,h3{text-wrap:balance}
             <span style="display: inline-flex; align-items: baseline; gap: 8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 32px; line-height: 36px; font-weight: 500; letter-spacing: -0.01em;">$412.50</span><span style="font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">USD</span></span>
           </div>
           <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
+            <sc-if value="{{instrOff}}" hint-placeholder-val="{{true}}">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Zelle to</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">(•••) •••-4821</dd></div>
             <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Memo</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">K7M2-9QXA-4FTR-8WPN</dd></div>
             <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+            </sc-if>
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Rate</dt><dd style="margin: 0; font-size: 15px; white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">$330.00</span> / XMR</dd></div>
           </dl>
           <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
@@ -92,6 +94,21 @@ h1,h2,h3{text-wrap:balance}
             <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Pay from an account in your own name. Payments from someone else's account may be rejected or frozen. Use at your own risk.</p>
           </div>
         </section>
+        <sc-if value="{{instrLocked}}" hint-placeholder-val="{{false}}">
+        <section aria-labelledby="dk-how" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+          <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2"/></svg></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><h2 id="dk-how" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">How to pay satoshi_ghost</h2><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Zelle · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">USD</span></span></span></div>
+          <figure style="margin: 0; display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+            <figcaption style="display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>satoshi_ghost's instructions</figcaption>
+            <blockquote style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink);">Zelle to the phone number in the trade room. Put the trade code in the memo.</blockquote>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Set by satoshi_ghost when the offer was posted. It can't change during this trade.</span>
+          </figure>
+          <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 6px 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Zelle to</dt><dd style="margin: 0; display: flex; align-items: center; gap: 4px;"><span id="dk-contact" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">(•••) •••-4821</span><button type="button" onClick="{{howCopyContact}}" aria-describedby="dk-contact" style="display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; height: 44px; padding: 0 10px; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/></svg>{{howContactLabel}}</button></dd></div>
+            <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 6px 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Memo</dt><dd style="margin: 0; display: flex; align-items: center; gap: 4px;"><span id="dk-memo" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">K7M2-9QXA-4FTR-8WPN</span><button type="button" onClick="{{howCopyMemo}}" aria-describedby="dk-memo" style="display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; height: 44px; padding: 0 10px; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/></svg>{{howMemoLabel}}</button></dd></div>
+          </dl>
+        </section>
+        </sc-if>
 
         <label for="proof-d" style="position: relative; display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 16px; border-radius: 16px; border: 1.5px dashed var(--line); cursor: pointer;">
           <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);">
@@ -156,6 +173,11 @@ h1,h2,h3{text-wrap:balance}
     <aside aria-label="Anticipated by design: back arrow to My trades" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--escrow) 45%, transparent); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow);">Anticipated · design, 8 Nov · follows owner comment #4 (never go back to remember)</span><span style="font-weight: 600;">Back arrow to My trades</span><ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;"><li>The trade header's "Back to trades" arrow pointed nowhere; it now opens MyTrades-Wide, as every phone trade's back arrow opens MyTrades.</li></ul></aside>
     <p style="margin: 0; font-size: 13px; line-height: 18px;">Header: logo D (owner, 8 Nov, page 8); in the wide rail the page name sits under the logo so it never cuts off (comment #2).</p>
     <aside aria-label="Decided by the owner: dispute opened before I&#39;ve paid" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 8 Nov (p11-16)</span><span>A dispute opened before I&#39;ve paid greys out I&#39;ve paid and opens a centred &quot;Don&#39;t send any payment&quot; pop-up, as on BuyerPay. Preview: dispute opened.</span></aside>
+    <aside aria-label="Design answer: locked payment instructions" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design answer · 10 Nov (lead msg 6)</span>
+      <span style="font-weight: 600;">Once the escrow is secured, the payer sees the seller's payment instructions in the trade room, locked as they were when the offer was posted. Never before the escrow is secured (owner Q12).</span>
+    </aside>
+    <p style="margin: 0; max-width: 980px; font-size: 13px; line-height: 18px;"><strong>How to pay card</strong> (tweak <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">payInstructions</span> = locked; the form that ships for every flex-offer trade). Sits right under "Send exactly", which keeps the amount, Rate and the own-name note; the Zelle to and Memo rows move into the new card. Card: --surface, 16 px radius, 20 px padding, 16 px gaps. Head: 40 px method tile + "How to pay satoshi_ghost" (18/24 600) over "Zelle · USD" (13/18 ink-muted). Instructions box (--surface-raised, 12 px radius, 14 px padding, 1 px ink-muted 30% border): lock icon + "SATOSHI_GHOST'S INSTRUCTIONS" (13/16 600 caps ink-muted), the seller's text as typed (15/22 ink), then "Set by satoshi_ghost when the offer was posted. It can't change during this trade." (13/18 ink-muted). Then the details list: "Zelle to" and "Memo" (the trade code), each with a 44 px "Copy" button that reads "Copied" after a tap (one at a time). With no instructions on the offer the box shows the fallback "Payment method chosen: Zelle. Please post pertinent details in chat window." COPY-UNSIGNED.</p>
   </section>
   <sc-if value="{{disputeOpen}}" hint-placeholder-val="{{false}}">
     <div style="position: absolute; inset: 0; z-index: 10; background: var(--scrim); display: flex; flex-direction: column; align-items: center;">
@@ -174,7 +196,7 @@ h1,h2,h3{text-wrap:balance}
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"dispute":{"editor":"enum","options":["none","opened"],"default":"none"},"$preview":{"width":1280,"height":1692}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"dispute":{"editor":"enum","options":["none","opened"],"default":"none"},"payInstructions":{"editor":"enum","options":["off","locked"],"default":"off"},"$preview":{"width":1280,"height":1922}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -198,10 +220,16 @@ class Component extends DCLogic {
       labelStyle: 'font-size: 13px; line-height: 16px; ' + (i === current ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
     }));
     // dispute tweak (owner, 8 Nov, p11-16): the other trader opened a dispute before I've paid. I've paid greys out and a warning pop-up opens.
-    const APP_H = 1011;
+    const INSTR_H = 263; // measured: the How to pay card + its 24 px gap
+    // payInstructions tweak (lead msg 6, 10 Nov): once the escrow is secured, the seller's locked payment instructions from the offer, with copy buttons.
+    const instrLocked = this.props.payInstructions === 'locked';
+    const howVals = { instrLocked, instrOff: !instrLocked,
+      howContactLabel: this.state.cpC ? 'Copied' : 'Copy', howMemoLabel: this.state.cpM ? 'Copied' : 'Copy',
+      howCopyContact: () => this.setState({ cpC: true, cpM: false }), howCopyMemo: () => this.setState({ cpM: true, cpC: false }) };
+    const APP_H = 1011 + (instrLocked ? INSTR_H : 0);
     const disputed = this.props.dispute === 'opened';
     const disputeOpen = disputed && !(this.state.dkey === 'opened' && this.state.dclosed);
-    return { rootStyle, steps, payLive: !disputed, paused: disputed, disputeOpen, closeDispute: () => this.setState({ dclosed: true, dkey: 'opened' }), appH: APP_H + 'px' };
+    return { rootStyle, steps, payLive: !disputed, paused: disputed, disputeOpen, closeDispute: () => this.setState({ dclosed: true, dkey: 'opened' }), appH: APP_H + 'px', ...howVals };
   }
 }
 </script>

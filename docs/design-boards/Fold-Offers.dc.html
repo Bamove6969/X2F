@@ -62,7 +62,7 @@ h1,h2,h3{text-wrap:balance}
               <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 0;">
                 <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 24px; font-weight: 500; letter-spacing: -0.01em;">{{o.price}}</span>
                 <span style="font-size: 13px; line-height: 18px; white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.amt.xmr}}</span> <span style="font-weight: 600; color: var(--monero-ink);">XMR</span></span>
-                <span style="font-size: 13px; line-height: 18px; white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.amt.fiat}}</span> <span style="font-weight: 600; color: var(--ink-muted);">USD</span></span>
+                <span style="font-size: 13px; line-height: 18px; white-space: nowrap;"><span style="{{o.amt.fiatStyle}}">{{o.amt.fiat}}</span> <span style="font-weight: 600; color: var(--ink-muted);">USD</span></span>
               </span>
             </span>
           </button>
@@ -200,10 +200,13 @@ class Component extends DCLogic {
       const [price, pct, unit, lo, hi] = a;
       const rate = withMarkup ? price : MKT;
       const xmr = unit === 'xmr' ? lo.toFixed(6) + ' – ' + hi.toFixed(6) : '≈ ' + (lo / rate).toFixed(6) + ' – ' + (hi / rate).toFixed(6);
-      const fiat = unit === 'xmr' ? '≈ ' + amtUsd(lo * rate, true) + ' – ' + amtUsd(hi * rate, true) : amtUsd(lo, lo % 1 !== 0) + ' – ' + amtUsd(hi, hi % 1 !== 0);
+      // Lead msg 11 (9 Nov): an XMR-set band shows its XMR range, then "≈ $33 – $330" in whole units, muted.
+      const fiat = unit === 'xmr' ? '≈ ' + amtUsd(Math.round(lo * rate), false) + ' – ' + amtUsd(Math.round(hi * rate), false) : amtUsd(lo, lo % 1 !== 0) + ' – ' + amtUsd(hi, hi % 1 !== 0);
+      const pctR = Math.round(Math.abs(pct) * 100) / 100; // price wording (lead msg 11): up to 2 decimals, trailing zeros trimmed
       return { price: amtUsd(price, true), xmr, fiat,
-        mark: pct === 0 ? '0%' : (pct > 0 ? '+' : '−') + Math.abs(pct).toFixed(Math.abs(pct) < 0.1 ? 2 : 1) + '%',
-        markLabel: pct === 0 ? 'At market' : 'Vendor markup',
+        fiatStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; text-align: right;" + (unit === 'xmr' ? ' color: var(--ink-muted);' : ''),
+        mark: pctR === 0 ? '' : String(pctR) + '%',
+        markLabel: pctR === 0 ? 'At market' : (pct > 0 ? 'above market' : 'below market'),
         markStyle: "font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500; color: " + (pct === 0 ? 'var(--ink-muted);' : 'var(--escrow);') };
     };
     const wm = {

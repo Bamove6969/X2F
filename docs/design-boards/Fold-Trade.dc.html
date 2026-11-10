@@ -101,7 +101,7 @@ h1,h2,h3{text-wrap:balance}
           <h2 id="ft-send" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Send exactly</h2>
           <span style="display: inline-flex; align-items: baseline; gap: 8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500;">$412.50</span><span style="font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">USD</span></span>
         </div>
-        <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
+        <sc-if value="{{instrOff}}" hint-placeholder-val="{{true}}"><dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Zelle to</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">(•••) •••-4821</dd></div>
           <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 6px 0 14px; font-size: 14px; line-height: 20px;">
@@ -113,12 +113,27 @@ h1,h2,h3{text-wrap:balance}
               </button>
             </dd>
           </div>
-        </dl>
+        </dl></sc-if>
         <div role="note" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
           <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
           <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">We recommend paying from an account in your own name: it lowers the chance of the payment being frozen. We protect your identity either way.</p>
         </div>
       </section>
+      <sc-if value="{{instrLocked}}" hint-placeholder-val="{{false}}">
+      <section aria-labelledby="ft-how" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <div style="display: flex; align-items: center; gap: 12px;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2"/></svg></span><span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;"><h2 id="ft-how" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">How to pay satoshi_ghost</h2><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Zelle · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">USD</span></span></span></div>
+        <figure style="margin: 0; display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+          <figcaption style="display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>satoshi_ghost's instructions</figcaption>
+          <blockquote style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink);">Zelle to the phone number in the trade room. Put the trade code in the memo.</blockquote>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Set by satoshi_ghost when the offer was posted. It can't change during this trade.</span>
+        </figure>
+        <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 6px 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Zelle to</dt><dd style="margin: 0; display: flex; align-items: center; gap: 4px;"><span id="ft-contact" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">(•••) •••-4821</span><button type="button" onClick="{{howCopyContact}}" aria-describedby="ft-contact" style="display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; height: 44px; padding: 0 10px; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/></svg>{{howContactLabel}}</button></dd></div>
+          <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 6px 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Memo</dt><dd style="margin: 0; display: flex; align-items: center; gap: 4px;"><span id="ft-memo" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">K7M2-9QXA-4FTR-8WPN</span><button type="button" onClick="{{howCopyMemo}}" aria-describedby="ft-memo" style="display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; height: 44px; padding: 0 10px; border: 0; border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/></svg>{{howMemoLabel}}</button></dd></div>
+        </dl>
+      </section>
+      </sc-if>
       <label for="ft-proof" style="position: relative; display: flex; align-items: center; gap: 14px; min-height: 64px; box-sizing: border-box; padding: 16px; border-radius: 16px; border: 1.5px dashed var(--line); cursor: pointer;">
         <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/></svg></span>
         <span style="display: flex; flex-direction: column; gap: 2px;">
@@ -217,7 +232,7 @@ h1,h2,h3{text-wrap:balance}
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"dispute":{"editor":"enum","options":["none","opened"],"default":"none"},"$preview":{"width":840,"height":1031}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"dispute":{"editor":"enum","options":["none","opened"],"default":"none"},"payInstructions":{"editor":"enum","options":["off","locked"],"default":"off"},"$preview":{"width":840,"height":1031}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -242,7 +257,13 @@ class Component extends DCLogic {
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     // Measured (night, fonts loaded): 1031; dispute opened adds the 26 px paused caption under I've paid.
-    const H = 1031 + (this.props.dispute === 'opened' && !this.state.cancelled ? 26 : 0);
+    const INSTR_H = 258; // measured: the How to pay card + its 16 px gap
+    // payInstructions tweak (lead msg 6, 10 Nov): once the escrow is secured, the seller's locked payment instructions from the offer, with copy buttons.
+    const instrLocked = this.props.payInstructions === 'locked';
+    const howVals = { instrLocked, instrOff: !instrLocked,
+      howContactLabel: this.state.cpC ? 'Copied' : 'Copy', howMemoLabel: this.state.cpM ? 'Copied' : 'Copy',
+      howCopyContact: () => this.setState({ cpC: true, cpM: false }), howCopyMemo: () => this.setState({ cpM: true, cpC: false }) };
+    const H = 1031 + (this.props.dispute === 'opened' && !this.state.cancelled ? 26 : 0) + (instrLocked ? INSTR_H : 0);
     const rootStyle = THEMES[theme] + "position: relative; width: 840px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: grid; grid-template-columns: 412px 16px 412px;";
     const s = this.state;
     // Stepper (v2 §13): buyer labels, step 1 (You pay) current at 62 of 90 min used = 31%.
@@ -284,6 +305,7 @@ class Component extends DCLogic {
       cancelled: s.cancelled,
       live: !s.cancelled,
       messages,
+      ...howVals,
       copyLabel: s.copied ? 'Copied' : 'Copy',
       copy: () => this.setState({ copied: true }),
       confirmOpen: s.sheet === 'paid',
