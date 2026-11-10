@@ -357,6 +357,61 @@ describe('receiveProof: only the picture reaches the decoder (review of 9 Nov 20
   });
 });
 
+describe('receiveProof: the WebP cutter (re-verify of f8c9fa78, F-R3)', () => {
+  const ALPHA = 0x10;
+  /** The chunk FourCCs of a RIFF/WEBP file, in order. */
+  const fourccs = (b: Uint8Array): string[] => {
+    const out: string[] = [];
+    for (let at = 12; at + 8 <= b.length; ) {
+      out.push(String.fromCharCode(...b.subarray(at, at + 4)));
+      const size = new DataView(b.buffer, b.byteOffset).getUint32(at + 4, true);
+      at += 8 + size + (size & 1);
+    }
+    return out;
+  };
+  const decl = { mime: 'image/webp', width: 20, height: 10 } as const;
+
+  it('writes the VP8X reserved bytes as 0, whatever they came as', async () => {
+    const x = vp8x(20, 10, ALPHA);
+    x.set([0xaa, 0xbb, 0xcc], 9); // the 3 reserved bytes after the flags byte
+    const bytes = riff(x, webpChunk('ALPH', latin1('a1')), vp8(20, 10));
+    expect(bytes.subarray(21, 24)).toEqual(Uint8Array.of(0xaa, 0xbb, 0xcc));
+    const { d, decode } = deps();
+    await receiveProof(bytes, decl, d);
+    const given = decode.mock.calls[0]![0];
+    expect(given[20]).toBe(ALPHA);
+    expect(given.subarray(21, 24)).toEqual(new Uint8Array(3));
+    expect(bytes.subarray(21, 24)).toEqual(Uint8Array.of(0xaa, 0xbb, 0xcc)); // the caller's buffer is untouched
+  });
+
+  it('keeps one ALPH before a VP8 chunk; a second ALPH before it is dropped', async () => {
+    const one = deps();
+    await receiveProof(riff(vp8x(20, 10, ALPHA), webpChunk('ALPH', latin1('first')), vp8(20, 10)), decl, one.d);
+    expect(fourccs(one.decode.mock.calls[0]![0])).toEqual(['VP8X', 'ALPH', 'VP8 ']);
+
+    const two = deps();
+    await receiveProof(riff(vp8x(20, 10, ALPHA), webpChunk('ALPH', latin1('first')), webpChunk('ALPH', latin1('second')), vp8(20, 10)), decl, two.d);
+    const given = two.decode.mock.calls[0]![0];
+    expect(fourccs(given)).toEqual(['VP8X', 'ALPH', 'VP8 ']);
+    expect(has(given, 'first')).toBe(true);
+    expect(has(given, 'second')).toBe(false);
+  });
+
+  it('refuses an ALPH beside a VP8L chunk, or after the image chunk, before any decode', async () => {
+    for (const bytes of [
+      riff(vp8x(20, 10, ALPHA), webpChunk('ALPH', latin1('a1')), vp8l(20, 10)),
+      riff(vp8x(20, 10, ALPHA), vp8l(20, 10), webpChunk('ALPH', latin1('a1'))),
+      riff(vp8x(20, 10, ALPHA), vp8(20, 10), webpChunk('ALPH', latin1('a1'))),
+      riff(vp8x(20, 10, ALPHA), webpChunk('ALPH', latin1('a1')), vp8(20, 10), webpChunk('ALPH', latin1('a2'))),
+    ]) {
+      expect(readImageHeader(bytes)).toEqual({ mime: 'image/webp', width: 20, height: 10 }); // the header walk accepts it
+      const { d, decode } = deps();
+      expect(await code(receiveProof(bytes, decl, d))).toBe('undecodable');
+      expect(decode).not.toHaveBeenCalled();
+    }
+  });
+});
+
 describe('receiveProof: transparency and colour-transform chunks are refused, not stripped (re-verify of f8c9fa78, Q2)', () => {
   // Lead's ruling on owner question Q2: stripping PNG tRNS would turn transparent pixels opaque, and
   // stripping JPEG APP14 changes how the decoder reads the components, so either would change which

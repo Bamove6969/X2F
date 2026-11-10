@@ -338,11 +338,16 @@ const VP8X_ALPHA = 0x10;
 
 /**
  * A WebP with only its picture: VP8X (flags down to alpha, since the chunks the other flags announce
- * are gone), ALPH and the one VP8 or VP8L chunk, under a RIFF size that fits. EXIF, XMP and ICCP go.
- * Runs after `webpHeader` accepted the file, and still checks every length.
+ * are gone, and its reserved bytes 0 as the spec requires), at most one ALPH and the one VP8 or VP8L
+ * chunk, under a RIFF size that fits. EXIF, XMP and ICCP go. An ALPH is kept only before a lossy
+ * `VP8 ` chunk, the one place it means anything: a later ALPH before it is dropped (libwebp reads the
+ * first), and an ALPH after the image chunk or beside a VP8L chunk is refused (re-verify of f8c9fa78,
+ * F-R3). Runs after `webpHeader` accepted the file, and still checks every length.
  */
 function webpPictureOnly(b: Uint8Array): Uint8Array {
   const parts: Uint8Array[] = [];
+  let sawAlph = false;
+  let sawImage = false;
   let at = 12;
   while (at < b.length) {
     if (at + 8 > b.length) throw bad();
@@ -352,14 +357,23 @@ function webpPictureOnly(b: Uint8Array): Uint8Array {
     const next = at + 8 + size + (size & 1);
     if (next > b.length) throw bad();
     if (fourcc === 'VP8X') {
+      if (size !== 10) throw bad();
       const x = b.slice(at, next);
       x[8] = x[8]! & VP8X_ALPHA;
+      x.fill(0, 9, 12); // reserved
       parts.push(x);
-    } else if (fourcc === 'VP8 ' || fourcc === 'VP8L' || fourcc === 'ALPH') {
+    } else if (fourcc === 'ALPH') {
+      if (sawImage) throw bad();
+      if (!sawAlph) parts.push(b.subarray(at, next));
+      sawAlph = true;
+    } else if (fourcc === 'VP8 ' || fourcc === 'VP8L') {
+      if (sawImage || (fourcc === 'VP8L' && sawAlph)) throw bad();
+      sawImage = true;
       parts.push(b.subarray(at, next));
     }
     at = next;
   }
+  if (!sawImage) throw bad();
   const out = new Uint8Array(12 + parts.reduce((n, part) => n + part.length, 0));
   out.set(b.subarray(0, 12));
   new DataView(out.buffer).setUint32(4, out.length - 8, true);
