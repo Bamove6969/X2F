@@ -80,7 +80,7 @@ and Dino use libsignal, Gajim uses omemo-dr, Monal its own port of the same). So
    it back, in one transaction under a per-recipient advisory lock; an id the fetched bundle no
    longer lists is dropped (unless the answer is partial: fewer ids than last seen and none new,
    when the record is kept), and the record is reset when the identity key changes. Records not
-   touched for 30 days are purged (`purgeJabberPreKeys`). `rewrap-jabber` re-tags and reseals the
+   touched for 180 days are purged (`purgeJabberPreKeys`). `rewrap-jabber` re-tags and reseals the
    records of every address it opens under the current key, so removing an old key afterwards
    loses none; a record no address matches stays and ages out.
    Master secret =

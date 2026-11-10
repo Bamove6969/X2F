@@ -15,6 +15,6 @@ import { purgeRemovedWalletAddresses } from './wallets/routes.js';
  * Plan 2's purgeExpired (Task 4), purgeRemovedWalletAddresses (Task 12) and purgeTeamLeftovers (Task 18), and Plan 3's
  * purgeTradeAddresses (Task 6), purgeNudges (Task 26) and purgeChats (Task 20), and Plan 5's purgeFeedbackForm (Task 21)
  * and purgeFeedback (Task 4). Plan 4 adds its own. Owner rule p5-7 adds purgeJabberPending (review L4)
- * and purgeJabberPreKeys (the OMEMO prekey record, 30 days).
+ * and purgeJabberPreKeys (the OMEMO prekey record, 180 days).
  */
 export const RETENTION_JOBS: readonly RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeFeedbackForm, purgeFeedback, purgeJabberPending, purgeJabberPreKeys];

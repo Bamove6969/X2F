@@ -8,7 +8,7 @@ import { purgeFeedback } from '../src/feedback/mood.js';
 import { purgeNudges } from '../src/nudge/routes.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { purgeJabberPending } from '../src/jabber/retention.js';
-import { purgeJabberPreKeys } from '../src/jabber/prekeys.js';
+import { PREKEY_RECORD_RETENTION_MS, purgeJabberPreKeys } from '../src/jabber/prekeys.js';
 import { applyEvent } from '../src/trades/store.js';
 import { purgeTeamLeftovers } from '../src/team/members.js';
 import { TRADE_ADDRESS_RETENTION_MS, purgeTradeAddresses, purgeTradeAddressesJob } from '../src/trades/purge.js';
@@ -152,5 +152,9 @@ describe('retention scheduler jobs (X-12)', () => {
   it('runs purgeExpired, purgeRemovedWalletAddresses, purgeTradeAddresses and purgeNudges', () => {
     expect(RETENTION_JOBS).toEqual([purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeFeedbackForm, purgeFeedback, purgeJabberPending, purgeJabberPreKeys]);
     expect(purgeTradeAddressesJob.name).toBe('purgeTradeAddresses');
+  });
+
+  it('review R5: the OMEMO prekey record is kept 180 days after its last write (a device offline that long may still read)', () => {
+    expect(PREKEY_RECORD_RETENTION_MS).toBe(180 * 86_400_000);
   });
 });

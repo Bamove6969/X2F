@@ -8,7 +8,7 @@
 -- for the addresses it opens. An id is dropped once the device's fetched bundle no longer lists it
 -- (the client used it and republished) unless the answer is partial (fewer prekeys than
 -- `listed_ids`, none new), and the whole record when the identity key changes.
--- `purgeJabberPreKeys` drops records untouched for 30 days. 335: next after 333 and 334 (the lead's
+-- `purgeJabberPreKeys` drops records untouched for 180 days (review R5). 335: next after 333 and 334 (the lead's
 -- numbering); re-check the number at landing.
 create table jabber_omemo_prekeys (
   id bigint generated always as identity primary key,

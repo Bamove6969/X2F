@@ -28,8 +28,14 @@ import { keyringBox, type SecretBox } from '../auth/keystore.js';
 import type { Keyring } from '../config.js';
 import type { RetentionJob } from '../retention.js';
 
-/** A record not written for this long is dropped (`purgeJabberPreKeys`). */
-export const PREKEY_RECORD_RETENTION_MS = 30 * 86_400_000;
+/**
+ * A record not written for this long is dropped (`purgeJabberPreKeys`). Review R5: a device offline
+ * longer than this with its bundle unchanged could be sent a prekey it will consume when it reads an
+ * older message, so the window is long (180 days, not 30). Every send to a device rewrites its
+ * record, so only a recipient X2F has not written to for that long loses it. Chosen over keeping a
+ * record while the device is in the user's last device list, which X2F does not store.
+ */
+export const PREKEY_RECORD_RETENTION_MS = 180 * 86_400_000;
 
 /** Runs one encryption against the record of `to`'s devices (see the file header). */
 export interface PreKeyStore {

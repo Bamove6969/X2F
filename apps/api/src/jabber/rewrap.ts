@@ -3,7 +3,7 @@
  * not yet under the current key: each proven and pending address (`jabber_contacts`), each queued
  * notice's copy (`jabber_outbox`), X2F's OMEMO identity key and bundle (`jabber_omemo_identity`), and
  * the prekey record of every address it opens in either table (`jabber_omemo_prekeys`: re-tagged and resealed under
- * the current key; a record no address matches stays as it is and ages out after 30 days). Run it
+ * the current key; a record no address matches stays as it is and ages out after 180 days). Run it
  * after putting a new key first, and again, before removing an old key: only once a re-run reports
  * `{"rewrapped":0,"failed":0}` is no blob left under the old one.
  *
