@@ -98,3 +98,83 @@ Notes, not findings:
 ## Must-fix
 
 None. L1-L4 are recommended as a small follow-up and do not block this P0 fix.
+
+## Re-verify: wip/lead-regtest-reload at 59d4d297 (stacked on 928878cc), 10 Nov
+
+**Verdict: APPROVE. Nothing must be fixed.** L1-L4 are closed. The regtest reload fix and the assert shim are sound. Below are two Low hardening items (R1, R2) and two Info notes (R3, R4).
+
+### Tests (serialised runner, regtest-reload worktree, targeted files only)
+
+| Project | Files | Result |
+|---|---|---|
+| @x2f/escrow | tx-lookup, in-process-http, resume-in-process-http (regtest) | 3 files, 15 tests passed |
+| @x2f/web | moneroGlue, assert-shim | 2 files, 7 tests passed |
+| @x2f/moderation | releaseSettles | 1 file, 4 tests passed |
+
+- No tests were skipped.
+- The typecheck is clean for escrow, web and moderation.
+- Semgrep (`--config auto`) on inProcessHttp.ts, monero.ts, party.ts, vite-monero-glue.ts, vite.config.ts and assertShim.ts found nothing.
+- Logs are in /tmp/claude-0/-home-user-X2F/992ece86-f5cc-5ebc-82cc-7f9bc9dec1c0/scratchpad/logs/rr-{escrow-125938,web-130954,mod-*}.log.
+- I did not re-run @x2f/node-proxy, because your list leaves it out. The L4 change touches only that test's own assertions.
+
+### L1-L4
+
+- **L1, closed** (monero.ts:115-130).
+  - `none` now comes only when `missed_tx` is an array that contains the hash.
+  - Each of these is now daemon-unavailable: an OK reply that names the hash nowhere, empty `txs`, a `missed_tx` that is not an array, and an entry for the hash that is neither in the pool nor at a block height above 0.
+  - The node proxy streams monerod's reply body unchanged (server.ts:270-278), so real monerod still reaches `none` for a tx it does not have.
+  - Side effect: a malformed entry for the hash now gives retries instead of the `superseded` check. That affects liveness only.
+- **L2, closed** (party.ts:88-99 and 998-1000).
+  - `isShownTx` requires 64 lower-case hex, a safe-integer height >= 0 and `/^(0|[1-9][0-9]*)$/`. Otherwise the party fails with `bad-state` before anything is read. Height `null` is refused; `shown` never stores one, because only `height !== null` is recorded.
+  - The new releaseSettles case restarts the mod on the real sealed store. It checks that `spentAtomic` comes back as an equal bigint while the wallet no longer shows the sweep, and that 12 malformed variants are each refused with bad-state. Those include `0x10`, `''`, `' 10'`, `010`, `-1`, a number, upper-case and 63-char hashes, and heights 1.5, -1, '101' and null.
+- **L3, closed** (monero.ts:407-410). The fetch sets `redirect: 'error'`, `credentials: 'omit'` and `cache: 'no-store'`. tx-lookup now proves that a 307 to `/elsewhere` is daemon-unavailable and is never followed.
+- **L4, closed** (wallet.test.ts:107-110). Exactly one OPTIONS `/get_transactions` 204 is allowed, and every other non-200 is still refused.
+
+No test was weakened. The tx-lookup assertions that used to expect `none` for ambiguous answers now expect daemon-unavailable, which is stricter. Every other test change adds cases.
+
+### The Uint8Array swap (vite-monero-glue.ts, MoneroWalletFull.getDataWasm)
+
+The bytes saved are unchanged:
+- Each buffer is a fresh `new ArrayBuffer(loc.length)`, filled byte by byte through a DataView over the whole buffer (MoneroWalletFull.js:1576-1579 and 1591-1594).
+- `Buffer.from(arrayBuffer)` and `new Uint8Array(arrayBuffer)` are both views with byteOffset 0 and full length over that same memory. It is not a slice of the wasm heap and not a larger pool buffer.
+- `setInt8` of a 0-255 heap byte stores the same bit pattern.
+- The consumer, `save()` → `toBase64`, takes a Uint8Array.
+- The other consumers also accept a Uint8Array: `getCloseData` (postMessage), and `writeWalletData` (fs, Node only, while escrow wallets have no path).
+
+The rewrite only runs in the Vite build, and it fails the build unless the pattern appears exactly twice. Node keeps Buffer.
+
+### globalThis.HttpClient / LibraryUtils / GenUtils
+
+- Wallets run in the dedicated escrow worker (apps/web/src/escrow/worker.ts). Page scripts cannot reach that worker's `globalThis`. Only code already running in the worker realm can, and that code already holds the keys.
+- In the page realm the rewritten glue is not used by any in-process wallet.
+- In the browser, monero-ts itself sets `globalThis.LibraryUtils` (LibraryUtils.js:289). `GenUtils` is read but never used in the two request functions.
+- In Node (the moderator), monero-ts's CJS glue already read `globalThis` (`this === globalThis`), so nothing new can override it there.
+
+### inProcessHttp.ts
+
+| Check | Result |
+|---|---|
+| redirect, credentials, cache, timeouts | `redirect: 'error'`, `credentials: 'omit'`, `cache: 'no-store'`. A `DAEMON_TIMEOUT_MS` abort is combined with the wallet's cancel token through `AbortSignal.any`. Tests cover each. |
+| Digest auth and SOCKS | Refused before any request when a username, password or `proxyUri` is set. The glue passes `''` when none is set, which is falsy. The test asserts nothing was sent. |
+| `rejectUnauthorized` | The glue's flag is ignored, so fetch always verifies TLS. That is stricter. |
+| Leaks to other hosts | The URI comes from the wallet's daemon connection, which is always set from the configured `daemonUri` (`walletConfig` and `sync()`'s `setDaemonConnection`). No redirect can move it, and the requests carry only daemon RPC bodies, never wallet keys. |
+| Outside regtest | Installed only inside `MoneroMultisigEngine.resume` when `network === 'regtest'` (monero.ts:470-473). Stagenet, mainnet and every new wallet run in monero-ts's prebuilt worker, which has its own realm and HttpClient and never reaches this copy of the glue. |
+
+### The assert shim (apps/web/src/assertShim.ts)
+
+It does throw on false:
+- `assert(falsy)` throws an AssertionError, or the Error passed as the message.
+- `equal` throws unless `a == b`, and `deepEqual` throws unless the deep comparison holds.
+- monero-ts 0.11.16 uses exactly `(0, _assert.default)(...)` (85 calls), `.equal` (20) and `.deepEqual` (1, in `GenUtils.reconcile`). All three are implemented.
+- Any assert method the shim lacks would throw a TypeError, so the shim can never become a silent pass.
+
+### New findings (none blocking)
+
+| # | Severity | Where | Finding | Suggestion |
+|---|---|---|---|---|
+| R1 | Low | packages/escrow/src/inProcessHttp.ts:43 | `request()` does not pin `r.uri` to the configured node's origin. It relies on wallet2 only ever asking its own daemon connection, which holds today. | Have `useFetchForInProcessWallets(daemonUri)` record the allowed origin(s), and refuse any other origin before `fetch`. |
+| R2 | Low/Info | apps/web/src/assertShim.ts:18-28 | The shim's `deepEqual` compares only `Object.keys`, so two different Map, Set or Date values (and boxed primitives) compare equal. Node's legacy deepEqual compares their contents. The only caller, `GenUtils.reconcile`, compares primitive, bigint or array values, so nothing is affected today. | Throw (fail closed) for any non-plain, non-array object, or compare Map/Set/Date contents. |
+| R3 | Info | inProcessHttp.ts:73-76 | The global is per realm and never removed. In a Node process it applies to every in-process wasm wallet there. That is intended, since the process runs one network. | None. |
+| R4 | Info | inProcessHttp.ts:46 | The glue's own `timeout` argument is ignored in favour of a fixed 15 s. A large `getblocks.bin` on a slow link fails and is retried. Liveness only, regtest only. | None. |
+
+**Must-fix: none.**
