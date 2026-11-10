@@ -11,8 +11,10 @@
 import { inflateSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CleanError,
   ProofReceiveError,
   assertClean,
+  cleanImage,
   RECEIVE_MAX_BYTES,
   RECEIVE_MAX_RENDER_BYTES,
   RECEIVE_MAX_SIDE,
@@ -114,6 +116,45 @@ function fixCrcs(b: Uint8Array): Uint8Array {
     at += 12 + len;
   }
   return out;
+}
+
+/**
+ * What the WebP cutter must hand the decoder (re-verify of f8c9fa78, F-R5): a RIFF/WEBP whose RIFF
+ * size is the file's length less 8 and whose chunks fill it exactly; only VP8X, ALPH, `VP8 ` and
+ * VP8L; VP8X first if present, of size 10, with no flag but alpha and its reserved bytes 0; exactly
+ * one image chunk; at most one ALPH, and only before a `VP8 ` chunk. Returns the chunk FourCCs.
+ */
+function expectPictureOnlyWebp(b: Uint8Array, what = 'webp'): string[] {
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  expect(String.fromCharCode(...b.subarray(0, 4)), what).toBe('RIFF');
+  expect(String.fromCharCode(...b.subarray(8, 12)), what).toBe('WEBP');
+  expect(v.getUint32(4, true), `${what}: RIFF size`).toBe(b.length - 8);
+  const seen: string[] = [];
+  let at = 12;
+  while (at < b.length) {
+    expect(at + 8, `${what}: chunk header at ${at}`).toBeLessThanOrEqual(b.length);
+    const fourcc = String.fromCharCode(...b.subarray(at, at + 4));
+    const size = v.getUint32(at + 4, true);
+    expect(['VP8X', 'ALPH', 'VP8 ', 'VP8L'], `${what}: chunk ${JSON.stringify(fourcc)}`).toContain(fourcc);
+    if (fourcc === 'VP8X') {
+      expect(seen, `${what}: VP8X first`).toEqual([]);
+      expect(size, `${what}: VP8X size`).toBe(10);
+      expect(b[at + 8]! & ~0x10, `${what}: VP8X flags`).toBe(0);
+      expect([...b.subarray(at + 9, at + 12)], `${what}: VP8X reserved`).toEqual([0, 0, 0]);
+    }
+    seen.push(fourcc);
+    at += 8 + size + (size & 1);
+  }
+  expect(at, `${what}: the chunks fill the file`).toBe(b.length);
+  const images = seen.filter((c) => c === 'VP8 ' || c === 'VP8L');
+  expect(images, `${what}: one image chunk`).toHaveLength(1);
+  const alph = seen.indexOf('ALPH');
+  expect(seen.filter((c) => c === 'ALPH').length, `${what}: ALPH count`).toBeLessThanOrEqual(1);
+  if (alph !== -1) {
+    expect(images[0], `${what}: ALPH only with VP8`).toBe('VP8 ');
+    expect(alph, `${what}: ALPH before the image`).toBeLessThan(seen.indexOf('VP8 '));
+  }
+  return seen;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -345,6 +386,10 @@ describe('receiveProof: only the picture reaches the decoder (review of 9 Nov 20
     expect(has(given, 'VP8X')).toBe(true);
     expect(has(given, 'VP8L')).toBe(true);
     expect(given[20]).toBe(0x10);
+    // The RIFF size is recomputed for the shorter file (F-R5: checked here directly, not only through the header walk).
+    expect(new DataView(given.buffer, given.byteOffset).getUint32(4, true)).toBe(given.length - 8);
+    expect(given.length).toBeLessThan(extended.length);
+    expect(expectPictureOnlyWebp(given)).toEqual(['VP8X', 'VP8L']);
     expect(readImageHeader(given)).toEqual({ mime: 'image/webp', width: 20, height: 10 });
 
     // A simple-format WebP is one image chunk already: handed over as it is, in a copy.
@@ -471,6 +516,38 @@ describe('receiveProof: transparency and colour-transform chunks are refused, no
     await receiveProof(metadataJpeg(), { mime: 'image/jpeg', width: 8, height: 8 }, d);
     expect(decode).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('receiveProof: a JPEG the header walk accepts but the sender\'s cleaner refuses (re-verify of f8c9fa78, F-R5)', () => {
+  // The header walk knows every frame type and DAC; cleanImage, the sender's allowlist, takes only
+  // Huffman SOF0-SOF2 with 1 or 3 components. Such a JPEG is `undecodable` before any decode.
+  const [dqt, sof0, dht, dri, scan] = jpegCore();
+  const soi = Uint8Array.of(0xff, 0xd8);
+  const eoi = Uint8Array.of(0xff, 0xd9);
+  const withFrame = (marker: number): Uint8Array => {
+    const f = sof0!.slice();
+    f[1] = marker;
+    return concat(soi, dqt!, f, dht!, dri!, scan!, eoi);
+  };
+  // SOF0 with nf = 4 (CMYK): 8-bit, 8 x 8, four components of 1x1 sampling on table 0.
+  const cmyk = concat(Uint8Array.of(0xff, 0xc0, 0, 8 + 12), Uint8Array.of(8, 0, 8, 0, 8, 4, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0, 4, 0x11, 0));
+  const dac = Uint8Array.of(0xff, 0xcc, 0, 4, 0x00, 0x10);
+  const cases: [string, Uint8Array][] = [
+    ['SOF3 (lossless)', withFrame(0xc3)],
+    ['SOF9 (arithmetic)', withFrame(0xc9)],
+    ['DAC', concat(soi, dqt!, sof0!, dac, dht!, dri!, scan!, eoi)],
+    ['CMYK (nf = 4)', concat(soi, dqt!, cmyk, dht!, dri!, scan!, eoi)],
+  ];
+
+  for (const [name, bytes] of cases) {
+    it(`${name}: undecodable, never decoded`, async () => {
+      expect(readImageHeader(bytes)).toEqual({ mime: 'image/jpeg', width: 8, height: 8 }); // the walk accepts it
+      expect(() => cleanImage(bytes)).toThrow(CleanError);
+      const { d, decode } = deps();
+      expect(await code(receiveProof(bytes, { mime: 'image/jpeg', width: 8, height: 8 }, d))).toBe('undecodable');
+      expect(decode).not.toHaveBeenCalled();
+    });
+  }
 });
 
 describe('receiveProof: refusals before any decode', () => {
@@ -743,6 +820,47 @@ describe('receiveProof: fuzz', () => {
       expect(refused).toBeGreaterThan(1000);
     });
   }
+
+  it('WebP cutter: 4000 malformed-chunk mutations are refused with a ProofReceiveError or reach the decoder as the picture only (F-R5)', async () => {
+    const odd = webpChunk('EVIL', concat(SCRIPT, latin1('x'))); // an unknown chunk of odd size, padded
+    const exif = webpChunk('EXIF', concat(latin1('MM\0*\0\0\0\x08'), Uint8Array.of(0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0)));
+    const xmp = webpChunk('XMP ', latin1('<x:xmpmeta>GPS</x:xmpmeta>'));
+    const icc = webpChunk('ICCP', latin1('profile'));
+    const x = vp8x(24, 16, 0x3c);
+    x.set([0xaa, 0xbb, 0xcc], 9);
+    const webpSeeds: [string, Uint8Array][] = [
+      ['lossy+alpha', riff(x, icc, webpChunk('ALPH', latin1('alpha-one')), webpChunk('ALPH', latin1('alpha-two')), vp8(24, 16), exif, xmp, odd)],
+      ['lossless', riff(x, icc, vp8l(24, 16), exif, odd, xmp)],
+    ];
+    const r = rng(0xf8c9fa78);
+    let reached = 0;
+    let refused = 0;
+    for (const [name, src] of webpSeeds) {
+      // The seed itself is accepted, and cut down to the picture.
+      const seed = deps();
+      await receiveProof(src, { mime: 'image/webp', width: 24, height: 16 }, seed.d);
+      expectPictureOnlyWebp(seed.decode.mock.calls[0]![0], `${name} seed`);
+      for (let i = 0; i < 2000; i++) {
+        const b = mutate(src, r);
+        const { d, decode, close, opened } = deps();
+        try {
+          await receiveProof(b, declaredFor(b, 'image/webp', src), d);
+          reached++;
+        } catch (e) {
+          expect(e, `${name} #${i}`).toBeInstanceOf(ProofReceiveError);
+          refused++;
+        }
+        for (const [given] of decode.mock.calls) {
+          expect(given, `${name} #${i}: a fresh buffer`).not.toBe(b);
+          expectPictureOnlyWebp(given, `${name} #${i}`);
+        }
+        expect(close).toHaveBeenCalledTimes(opened.n);
+      }
+    }
+    expect(reached + refused).toBe(4000);
+    expect(reached).toBeGreaterThan(100); // the walk is really exercised, not only the refusals
+    expect(refused).toBeGreaterThan(1000);
+  });
 
   it('polyglot fuzz: random script-like bytes appended to every valid image are always refused', async () => {
     const r = rng(42);
