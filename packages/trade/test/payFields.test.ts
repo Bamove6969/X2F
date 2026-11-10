@@ -7,27 +7,10 @@ import {
   checkPayDetails,
   parsePayDetails,
   payFieldsFor,
+  payeeGivesNothing,
   renderPayDetailsText,
   type PayDetailsPayload,
 } from '../src/index.js';
-
-/** The research pack's Part 2 rows (research/research-pack-2026-11-09.md), by catalog id, plus ACH from the profiles file. */
-const RESEARCHED = [
-  'ZELLE',
-  'INTERAC_E_TRANSFER',
-  'SEPA',
-  'SEPA_INSTANT',
-  'TRANSFERWISE',
-  'REVOLUT',
-  'CASH_APP',
-  'PAYPAL',
-  'VENMO',
-  'FASTER_PAYMENTS',
-  'PIX',
-  'UPI',
-  'PAY_BY_MAIL',
-  'ACH_TRANSFER',
-];
 
 const codeOf = (fn: () => unknown): string => {
   try {
@@ -39,20 +22,18 @@ const codeOf = (fn: () => unknown): string => {
 };
 
 describe('the payee fields table', () => {
-  it('has a row for every researched method, each with unique keys, labels and a source', () => {
-    for (const id of RESEARCHED) {
-      const spec = PAY_FIELDS[id];
-      expect(spec, id).toBeDefined();
-      expect(spec!.source.length, id).toBeGreaterThan(0);
-      expect(spec!.fields.length, id).toBeGreaterThan(0);
-      const keys = spec!.fields.map((f) => f.key);
+  it('every row with boxes has unique keys, labels and a source, and asks for something (coverage: payFieldsCoverage.test.ts)', () => {
+    for (const [id, spec] of Object.entries(PAY_FIELDS)) {
+      expect(spec.source.length, id).toBeGreaterThan(0);
+      if (spec.payeeGivesNothing === true) continue;
+      const keys = spec.fields.map((f) => f.key);
       expect(new Set(keys).size, id).toBe(keys.length);
-      for (const f of spec!.fields) {
+      for (const f of spec.fields) {
         expect(/^[a-z][a-zA-Z0-9]*$/.test(f.key), `${id}.${f.key}`).toBe(true);
         expect(f.label.trim().length, `${id}.${f.key}`).toBeGreaterThan(0);
       }
-      // Something must be filled for every method: a required field or a one-of group.
-      expect(spec!.fields.some((f) => f.need !== 'no'), id).toBe(true);
+      // Something must be filled: a required field or a one-of group (Amazon: one optional email box, lead 10 Nov).
+      if (id !== 'AMAZON_GIFT_CARD') expect(spec.fields.some((f) => f.need !== 'no'), id).toBe(true);
     }
   });
 
@@ -67,10 +48,30 @@ describe('the payee fields table', () => {
     expect(f.find((x) => x.key === 'phone')?.kind).toBe('phone');
   });
 
-  it('a method not in the table gets the one free-text box (CUSTOM and the rest of the catalog)', () => {
-    for (const id of ['CUSTOM', 'SWISH', 'NOT_A_METHOD']) {
-      expect(payFieldsFor(id)).toEqual([{ key: 'details', label: 'Payment details', kind: 'text', need: 'yes' }]);
+  it('an id outside the table (one the catalogue no longer has) gets the one free-text box; CUSTOM has one multi-line box (lead, 10 Nov)', () => {
+    expect(payFieldsFor('NOT_A_METHOD')).toEqual([{ key: 'details', label: 'Payment details', kind: 'text', need: 'yes' }]);
+    expect(payFieldsFor('CUSTOM')).toEqual([{ key: 'details', label: 'Payment details', kind: 'postal', need: 'yes' }]);
+  });
+
+  it('a gift card, ATM or face-to-face cash method has no boxes: the payee gives nothing', () => {
+    for (const id of ['STEAM_GIFT_CARD', 'F2F', 'CASH_AT_ATM']) {
+      expect(payFieldsFor(id), id).toEqual([]);
+      expect(payeeGivesNothing(id), id).toBe(true);
     }
+    expect(payeeGivesNothing('NOT_A_METHOD')).toBe(false);
+    expect(payeeGivesNothing('AMAZON_GIFT_CARD')).toBe(false);
+    expect(payFieldsFor('AMAZON_GIFT_CARD')).toEqual([{ key: 'email', label: 'Email to deliver the eGift card to', kind: 'email', need: 'no' }]);
+    expect(codeOf(() => checkPayDetails('STEAM_GIFT_CARD', { details: 'x' }))).toBe('unknown-field:details');
+    expect(() => parsePayDetails({ v: PAY_DETAILS_V, method: 'STEAM_GIFT_CARD', fields: [] })).toThrow(PayDetailsError);
+  });
+
+  it('lead decisions (10 Nov): SPEI is CLABE only, IMPS carries IFSC with the account, PayNow and Postepay take no personal ID', () => {
+    expect(payFieldsFor('SPEI').map((f) => [f.key, f.need])).toEqual([['name', 'yes'], ['clabe', 'yes'], ['bankName', 'no']]);
+    expect(payFieldsFor('IMPS').some((f) => f.key === 'ifsc')).toBe(false);
+    expect(payFieldsFor('IMPS').find((f) => f.key === 'accountIfsc')?.need).toEqual({ oneOf: 'reach' });
+    expect(payFieldsFor('PAYNOW').some((f) => f.key === 'nric')).toBe(false);
+    expect(payFieldsFor('POSTEPAY').some((f) => f.key === 'taxCode')).toBe(false);
+    expect(payFieldsFor('UKRAINE_CARD').map((f) => f.key)).toEqual(['cardNumber', 'iban', 'phone', 'name']);
   });
 
   it('cash by mail takes a multi-line mailing address', () => {
@@ -135,9 +136,11 @@ describe('checkPayDetails', () => {
     expect(codeOf(() => checkPayDetails('PAY_BY_MAIL', { name: 'Jane', address: Array.from({ length: 9 }, (_, i) => `line ${i}`).join('\n') }))).toBe('bad-value:address');
   });
 
-  it('the free-text box is required for a method outside the table', () => {
+  it('the free-text box is required for CUSTOM and a method outside the table; CUSTOM\'s may span lines', () => {
     expect(codeOf(() => checkPayDetails('CUSTOM', {}))).toBe('missing:details');
-    expect(checkPayDetails('CUSTOM', { details: 'Meet at the station, cash in hand' })).toEqual([{ key: 'details', value: 'Meet at the station, cash in hand' }]);
+    expect(codeOf(() => checkPayDetails('NOT_A_METHOD', {}))).toBe('missing:details');
+    expect(checkPayDetails('CUSTOM', { details: 'Meet at the station,\ncash in hand' })).toEqual([{ key: 'details', value: 'Meet at the station,\ncash in hand' }]);
+    expect(codeOf(() => checkPayDetails('NOT_A_METHOD', { details: 'a\nb' }))).toBe('bad-value:details');
   });
 });
 
@@ -170,7 +173,7 @@ describe('the packaged message', () => {
   });
 
   it('a method outside the table packages its one box', () => {
-    const custom: PayDetailsPayload = { v: PAY_DETAILS_V, method: 'SWISH', fields: [{ key: 'details', value: '070-123 45 67' }] };
+    const custom: PayDetailsPayload = { v: PAY_DETAILS_V, method: 'NOT_A_METHOD', fields: [{ key: 'details', value: '070-123 45 67' }] };
     expect(parsePayDetails(custom)).toEqual(custom);
     expect(renderPayDetailsText(custom)).toBe('Payment details\nPayment details: 070-123 45 67');
   });
