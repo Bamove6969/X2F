@@ -357,6 +357,67 @@ describe('receiveProof: only the picture reaches the decoder (review of 9 Nov 20
   });
 });
 
+describe('receiveProof: transparency and colour-transform chunks are refused, not stripped (re-verify of f8c9fa78, Q2)', () => {
+  // Lead's ruling on owner question Q2: stripping PNG tRNS would turn transparent pixels opaque, and
+  // stripping JPEG APP14 changes how the decoder reads the components, so either would change which
+  // pixels this device shows. A received file carrying one is refused as `unsupported` (the sender's
+  // app redraws every proof and never writes either). gAMA, cHRM, sRGB and iCCP only shift the colours
+  // and are still stripped.
+  const jpegSegment = (marker: number, body: Uint8Array): Uint8Array =>
+    concat(Uint8Array.of(0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff), body);
+  /** Adobe APP14: "Adobe", version 100, flags0, flags1, transform 1 (YCbCr). */
+  const ADOBE = jpegSegment(0xee, concat(latin1('Adobe'), Uint8Array.of(0, 100, 0, 0, 0, 0, 1)));
+  const withSegment = (seg: Uint8Array, at: 'start' | 'middle'): Uint8Array => {
+    const [dqt, sof0, dht, dri, scan] = jpegCore();
+    const soi = Uint8Array.of(0xff, 0xd8);
+    const eoi = Uint8Array.of(0xff, 0xd9);
+    return at === 'start' ? concat(soi, seg, dqt!, sof0!, dht!, dri!, scan!, eoi) : concat(soi, dqt!, sof0!, seg, dht!, dri!, scan!, eoi);
+  };
+  const palette = (): Uint8Array =>
+    concat(PNG_SIGNATURE, ihdr(PNG_W, PNG_H, 8, 3), pngChunk('PLTE', Uint8Array.of(255, 0, 0, 0, 0, 255)), pngChunk('tRNS', Uint8Array.of(0)), pngChunk('IDAT', zlibStored(new Uint8Array(PNG_H * (1 + PNG_W)))), IEND);
+
+  it('a PNG with tRNS (truecolour or palette) is unsupported, never decoded', async () => {
+    for (const bytes of [png(PNG_W, PNG_H, pngRaw(), pngChunk('tRNS', Uint8Array.of(0, 0, 0, 0, 0, 0))), palette()]) {
+      expect(readImageHeader(bytes)).toEqual({ mime: 'image/png', width: PNG_W, height: PNG_H }); // a sound file
+      const { d, decode } = deps();
+      expect(await code(receiveProof(bytes, PNG_DECL, d))).toBe('unsupported');
+      expect(decode).not.toHaveBeenCalled();
+    }
+  });
+
+  it('a JPEG with APP14 (Adobe-tagged or not, wherever it sits) is unsupported, never decoded', async () => {
+    for (const bytes of [withSegment(ADOBE, 'start'), withSegment(ADOBE, 'middle'), withSegment(jpegSegment(0xee, latin1('NotAdobe')), 'start')]) {
+      expect(readImageHeader(bytes)).toEqual({ mime: 'image/jpeg', width: 8, height: 8 });
+      const { d, decode } = deps();
+      expect(await code(receiveProof(bytes, { mime: 'image/jpeg', width: 8, height: 8 }, d))).toBe('unsupported');
+      expect(decode).not.toHaveBeenCalled();
+    }
+  });
+
+  it('gAMA, cHRM, sRGB and iCCP are still stripped: the PNG is decoded without them', async () => {
+    const bytes = png(
+      PNG_W,
+      PNG_H,
+      pngRaw(),
+      pngChunk('gAMA', Uint8Array.of(0, 0, 0xb1, 0x8f)),
+      pngChunk('cHRM', new Uint8Array(32).fill(1)),
+      pngChunk('sRGB', Uint8Array.of(0)),
+      pngChunk('iCCP', concat(latin1('P3\0\0'), zlibStored(latin1('icc')))),
+    );
+    const { d, decode } = deps();
+    await receiveProof(bytes, PNG_DECL, d);
+    const given = decode.mock.calls[0]![0];
+    for (const t of ['gAMA', 'cHRM', 'sRGB', 'iCCP']) expect(has(given, t), t).toBe(false);
+    expect(() => assertClean(given)).not.toThrow();
+  });
+
+  it('the other JPEG APP segments (JFIF, Exif, Photoshop) and COM are still stripped, not refused', async () => {
+    const { d, decode } = deps();
+    await receiveProof(metadataJpeg(), { mime: 'image/jpeg', width: 8, height: 8 }, d);
+    expect(decode).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('receiveProof: refusals before any decode', () => {
   it('refuses a declared type other than PNG, JPEG or WebP', async () => {
     for (const mime of ['image/gif', 'image/svg+xml', 'text/html', 'application/pdf', 'image/heic', 'IMAGE/PNG', '']) {

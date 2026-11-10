@@ -5,7 +5,10 @@
 //   1. refuses a declared type other than PNG, JPEG or WebP, and bytes whose magic is not that type;
 //   2. reads the width and height from the header with bounds-checked walkers (like Task 7's
 //      cleaners) and refuses a malformed, truncated, animated or over-cap file BEFORE any decode;
-//   3. strips every metadata chunk or segment (Exif with its orientation tag, XMP, ICC, text) and
+//   3. refuses a PNG with tRNS or a JPEG with an APP14 segment (`unsupported`), since stripping
+//      either would change which pixels show and not only their tint (lead's ruling on the re-verify
+//      of f8c9fa78, owner question Q2: fail closed; the sender's app never produces either), then
+//      strips every other metadata chunk or segment (Exif with its orientation tag, XMP, ICC, text) and
 //      decodes only the picture left (the browser's createImageBitmap, passed in as `deps.decode`):
 //      browsers apply an Exif orientation when they decode, and nothing the sender never attested
 //      may turn, mirror or recolour what this device shows;
@@ -44,8 +47,8 @@ export const RECEIVE_MAX_BYTES = PROOF_MAX_CIPHERTEXT;
 export const RECEIVE_MAX_RENDER_BYTES = 28 * 1024 * 1024;
 
 /**
- * - `unsupported`: the declared type is not PNG, JPEG or WebP, the bytes are another type, or the
- *   image is animated.
+ * - `unsupported`: the declared type is not PNG, JPEG or WebP, the bytes are another type, the
+ *   image is animated, or it is a PNG with tRNS or a JPEG with APP14 (see step 3 above).
  * - `too-large`: over RECEIVE_MAX_BYTES, or a side over RECEIVE_MAX_SIDE.
  * - `undecodable`: the header is malformed or truncated, does not match the declared size, or the
  *   decoder failed.
@@ -111,7 +114,12 @@ function crc32(bytes: Uint8Array): number {
 const PNG_DEPTHS: Record<number, readonly number[]> = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
 const PNG_CRITICAL = new Set(['IHDR', 'PLTE', 'IDAT', 'IEND']);
 
-function pngHeader(b: Uint8Array): ImageHeader {
+/**
+ * `received`: the walk is of the bytes as they came from the sender, so a chunk or segment whose
+ * removal would change which pixels show (PNG tRNS, JPEG APP14) is refused as `unsupported` rather
+ * than stripped. Off for the device's own copies (the stripped picture, the fresh PNG).
+ */
+function pngHeader(b: Uint8Array, received: boolean): ImageHeader {
   let at = 8;
   let width = 0;
   let height = 0;
@@ -142,6 +150,9 @@ function pngHeader(b: Uint8Array): ImageHeader {
     }
     // APNG: an animation control chunk means more than one picture.
     if (type === 'acTL' || type === 'fcTL' || type === 'fdAT') throw err('unsupported');
+    // Transparency: dropping it would turn transparent pixels opaque. gAMA, cHRM, sRGB and iCCP only
+    // shift the colours, so they are stripped like any other ancillary chunk.
+    if (received && type === 'tRNS') throw err('unsupported');
     const critical = (typeBytes[0]! & 0x20) === 0;
     if (critical && !PNG_CRITICAL.has(type)) throw bad();
     if (type === 'PLTE') {
@@ -173,8 +184,10 @@ const DAC = 0xcc;
 const DRI = 0xdd;
 /** Every frame type: baseline, extended, progressive, lossless, Huffman or arithmetic. */
 const SOF = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+/** APP14: Adobe's colour transform flag, which decides how the decoder reads the components. */
+const APP14 = 0xee;
 
-function jpegHeader(b: Uint8Array): ImageHeader {
+function jpegHeader(b: Uint8Array, received: boolean): ImageHeader {
   let at = 2;
   let width = 0;
   let height = 0;
@@ -194,6 +207,8 @@ function jpegHeader(b: Uint8Array): ImageHeader {
     const body = b.subarray(at + 4, at + 2 + len);
     const end = at + 2 + len;
     const isApp = (marker >= 0xe0 && marker <= 0xef) || marker === 0xfe;
+    // Any APP14, Adobe-tagged or not: decoders differ on which ones they honour, so none is stripped.
+    if (received && marker === APP14) throw err('unsupported');
     if (SOF.has(marker)) {
       if (width !== 0) throw bad(); // one frame only
       if (body.length < 6) throw bad();
@@ -304,9 +319,13 @@ export function sniffImage(b: Uint8Array): ReceiveMime | null {
  * or with bytes after its end.
  */
 export function readImageHeader(bytes: Uint8Array): ImageHeader {
+  return header(bytes, false);
+}
+
+function header(bytes: Uint8Array, received: boolean): ImageHeader {
   const mime = sniffImage(bytes);
-  if (mime === 'image/png') return pngHeader(bytes);
-  if (mime === 'image/jpeg') return jpegHeader(bytes);
+  if (mime === 'image/png') return pngHeader(bytes, received);
+  if (mime === 'image/jpeg') return jpegHeader(bytes, received);
   if (mime === 'image/webp') return webpHeader(bytes);
   throw err('unsupported');
 }
@@ -419,7 +438,7 @@ export async function receiveProof(bytes: Uint8Array, declared: ReceiveDeclared,
   if (!RECEIVE_MIMES.includes(mime)) throw err('unsupported');
   if (bytes.length > RECEIVE_MAX_BYTES) throw err('too-large');
   if (sniffImage(bytes) !== mime) throw err('unsupported');
-  const head = readImageHeader(bytes);
+  const head = header(bytes, true);
   if (head.width > RECEIVE_MAX_SIDE || head.height > RECEIVE_MAX_SIDE) throw err('too-large');
   if (declared.width !== head.width || declared.height !== head.height) throw bad();
 
