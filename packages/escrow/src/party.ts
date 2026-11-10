@@ -85,6 +85,19 @@ export interface PartyState {
   shown?: ShownTx[];
 }
 
+/**
+ * A saved ShownTx exactly as this code writes it (security review L2): 64 lower-case hex, a whole
+ * non-negative block height, and a strict decimal amount (no sign, no leading zero, no `0x`, no
+ * whitespace, never empty: BigInt() would take all of those).
+ */
+function isShownTx(x: unknown): x is ShownTx {
+  if (typeof x !== 'object' || x === null) return false;
+  const t = x as Record<string, unknown>;
+  return typeof t.txHash === 'string' && /^[0-9a-f]{64}$/.test(t.txHash)
+    && typeof t.height === 'number' && Number.isSafeInteger(t.height) && t.height >= 0
+    && typeof t.spentAtomic === 'string' && /^(0|[1-9][0-9]*)$/.test(t.spentAtomic);
+}
+
 /** An in-block tx the moderator's wallet once showed spending the escrow (PartyState.shown): JSON-safe. */
 export interface ShownTx {
   txHash: string;
@@ -982,6 +995,9 @@ export function runParty(a: PartyArgs): PartyHandle {
     const saved = await a.store.load();
     if (saved) {
       if (saved.v !== 1) throw new PartyError('bad-state', 'unknown saved state version');
+      if (saved.shown !== undefined && !(Array.isArray(saved.shown) && saved.shown.every(isShownTx))) {
+        throw new PartyError('bad-state', 'saved shown sweeps are malformed');
+      }
       state = saved;
       session = await a.engine.resume(saved.session, { daemonUri: a.daemonUri, password: a.password });
       guard = ReplayGuard.from(saved.guard);
