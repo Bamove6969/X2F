@@ -98,8 +98,10 @@ export function SignaturePad({ onChange, describedBy }: { onChange: (sig: TermsS
     setMode(m);
   };
 
-  // The signature follows the mode: the drawing on the pad, or the typed name.
-  useEffect(() => {
+  // The signature follows the mode: the drawing on the pad, or the typed name. A layout effect, so
+  // the parent holds the new signature as soon as the keystroke or stroke has rendered: a passive
+  // effect can run a task later, and an accept pressed in between sent the name one key short.
+  useLayoutEffect(() => {
     onChange(mode === 'draw' ? drawnSignature(strokes, box.current.width, box.current.height) : typedSignature(name));
   }, [mode, strokes, name, onChange]);
 
