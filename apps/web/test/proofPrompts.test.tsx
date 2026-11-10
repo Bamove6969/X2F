@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { POSTER_BLOCKED_WHEN_OUT_OF_RANGE, hiddenByUploader, uploadPrompts, uploaderPopup } from '../src/proof/uploaderChecks.js';
 import {
   PROOF_AMOUNT_HIDDEN,
+  PROOF_EXPLANATION_REQUIRED,
   PROOF_FAKE_DISCLAIMER,
   PROOF_MEMO_HIDDEN,
   PROOF_NO_AMOUNT,
@@ -135,7 +136,7 @@ describe('the pop-ups (kit Sheet; DESIGNER-REVIEW)', () => {
     expect(onRedo).toHaveBeenCalledTimes(2);
   });
 
-  it('item 64: the owner\'s sentence, a comment box below it, Send proof once something is written', () => {
+  it('item 64: the owner\'s sentence, an optional comment box below it, Send proof always (lead default pending owner p11-141)', () => {
     const onSend = vi.fn();
     const onChooseAnother = vi.fn();
     const onClose = vi.fn();
@@ -149,14 +150,21 @@ describe('the pop-ups (kit Sheet; DESIGNER-REVIEW)', () => {
     expect(box.labels?.[0]?.textContent).toBe('Your explanation');
     expect(box.maxLength).toBe(500);
     const send = [...dialog.querySelectorAll('button')].find((b) => b.textContent === 'Send proof')!;
-    expect(send.disabled).toBe(true);
-    // A blank comment is not an explanation.
+    // Owner Q43 ("the buyer can say yes and post it anyways"): the explanation is optional.
+    expect(PROOF_EXPLANATION_REQUIRED).toBe(false);
+    expect(send.disabled).toBe(false);
+    expect(box.required).toBe(false);
+    fire(send, new MouseEvent('click', { bubbles: true }));
+    expect(onSend).toHaveBeenLastCalledWith('');
+    // A blank comment is sent as no explanation.
     act(() => {
       const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
       set.call(box, '   ');
       box.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    expect(send.disabled).toBe(true);
+    expect(send.disabled).toBe(false);
+    fire(send, new MouseEvent('click', { bubbles: true }));
+    expect(onSend).toHaveBeenLastCalledWith('');
     act(() => {
       const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
       set.call(box, '  Paid in two parts, $400 and $12.50 ');
@@ -170,7 +178,7 @@ describe('the pop-ups (kit Sheet; DESIGNER-REVIEW)', () => {
     expect([...dialog.querySelectorAll('[data-primary]')].map((b) => b.textContent)).toEqual(['Send proof']);
     fire(document.querySelector('[data-part="backdrop"]')!, new MouseEvent('click', { bubbles: true }));
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend).toHaveBeenCalledTimes(3);
   });
 });
 

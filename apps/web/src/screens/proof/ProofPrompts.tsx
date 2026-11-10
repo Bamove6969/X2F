@@ -30,6 +30,12 @@ export const PROOF_FAKE_DISCLAIMER = "A screenshot can even be a copy of X2F's o
 /** The explanation's length limit (as the platform feedback note; technical call). */
 export const PROOF_EXPLANATION_MAX = 500;
 
+/**
+ * Lead default pending owner p11-141 (review 2026-11-10 finding 4; owner Q43, "the buyer can say yes
+ * and post it anyways"): the explanation is optional, so Send proof works with an empty box.
+ */
+export const PROOF_EXPLANATION_REQUIRED = false;
+
 function InfoTile() {
   return (
     <span className="x2f-icon-tile" data-part="cant-do-tile" aria-hidden="true">
@@ -58,9 +64,13 @@ export function ProofNotCurrent({ open = true, onRedo }: { open?: boolean; onRed
 
 /**
  * Item 64: no amount found. The comment box under the owner's sentence is "the feedback tool below";
- * **Send proof** sends with the trimmed explanation once one is written (OWNER-Q: required, as the
- * owner's "leave an explanation" reads, and who reads it: the seller with the proof, the moderator,
- * or X2F's detector feedback?). Closing it goes back to the editor; nothing is sent.
+ * **Send proof** sends with the trimmed explanation, `''` when none is written
+ * (`PROOF_EXPLANATION_REQUIRED`, lead default pending owner p11-141). Closing it goes back to the
+ * editor; nothing is sent.
+ *
+ * TODO(owner p11-141): the explanation goes nowhere yet: `onSend` hands it to the caller, and no
+ * caller sends it to the seller, a moderator or X2F's detection feedback. Q43's "X2F keeps these to
+ * improve detection" is not built (proofs are end-to-end sealed; it needs a privacy design first).
  */
 export function ProofNoAmount({
   open = true,
@@ -90,7 +100,7 @@ export function ProofNoAmount({
           </label>
           <textarea id={boxId} className="x2f-input" rows={4} maxLength={PROOF_EXPLANATION_MAX} value={text} onChange={(e) => setText(e.target.value)} />
         </div>
-        <Button variant="primary" disabled={clean === ''} onClick={() => onSend(clean)}>
+        <Button variant="primary" disabled={PROOF_EXPLANATION_REQUIRED && clean === ''} onClick={() => onSend(clean)}>
           Send proof
         </Button>
         <Button variant="secondary" onClick={onChooseAnother}>

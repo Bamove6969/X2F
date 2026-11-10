@@ -7,7 +7,8 @@
 // - `popup: 'not-current'` -> <ProofNotCurrent>; nothing is sent (Q42: "No, ask for a fresh
 //   screenshot"; `POSTER_BLOCKED_WHEN_OUT_OF_RANGE`, lead default pending owner p11-143).
 // - `date: 'not-found'` -> `posterDateLine(date)` beside the preview; posting still allowed (G16).
-// - `popup: 'no-amount'` -> <ProofNoAmount>; its Send proof sends with the explanation.
+// - `popup: 'no-amount'` -> <ProofNoAmount>; its Send proof sends, with an explanation or none
+//   (optional, lead default pending owner p11-141; the explanation goes nowhere yet).
 // - `hidden.amount` / `hidden.memo` -> <ProofHiddenByYou> beside the preview; posting still allowed.
 // The seller's card (Task 16) runs its own check on the blurred image and trusts none of this.
 import { type Box, type OcrWord, type ProofCheck, type ProofExpected, amountBoxes, checkProof, codeBoxes } from '@x2f/proof';
