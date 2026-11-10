@@ -19,7 +19,7 @@
  *   `recipientPublic` is 64 lower-case hex; `sealed` is base64url of 48 to 1024 bytes; `epoch` must
  *   be the account's current `chat_key_epoch` (400 `bad-request` with the current one otherwise).
  *   An open envelope to the same recipient is superseded; at most `MAX_OPEN_CHAT_KEY_ENVELOPES` are
- *   open per account (the oldest expire); each is open for `CHAT_KEY_ENVELOPE_TTL_MS`. Expired and
+ *   open per account (the oldest go; both are deleted, review F4); each is open for `CHAT_KEY_ENVELOPE_TTL_MS`. Expired and
  *   collected rows of the account are deleted on the way.
  * - `GET /v1/account/chat-keys` → `{ epoch, envelopes: [{ id, recipientPublic, sealed, epoch,
  *   createdAt, expiresAt }] }`: the account's open envelopes (uncollected, unexpired), oldest first.
@@ -166,13 +166,15 @@ export function chatKeyRoutes(app: FastifyInstance): void {
       if (body.epoch !== epoch) throw new ApiError(400, 'bad-request', { epoch });
       // Housekeeping for this account: what was collected or ran out is gone.
       await db.query('delete from chat_key_envelopes where account_id = $1 and (collected_at is not null or expires_at <= $2)', [accountId, now]);
-      // A newer box to the same device replaces the open one.
+      // A newer box to the same device replaces the open one, and beyond the cap the oldest go.
+      // Review F4: deleted, not expired at `now`: a row made at this same instant (two posts in one
+      // millisecond, or API clocks a little apart) would break `expires_at > created_at`.
       await db.query(
-        'update chat_key_envelopes set expires_at = $3 where account_id = $1 and recipient_public = $2 and collected_at is null and expires_at > $3',
-        [accountId, body.recipientPublic, now],
+        'delete from chat_key_envelopes where account_id = $1 and recipient_public = $2 and collected_at is null',
+        [accountId, body.recipientPublic],
       );
       await db.query(
-        `update chat_key_envelopes set expires_at = $2
+        `delete from chat_key_envelopes
           where id in (select id from chat_key_envelopes where account_id = $1 and collected_at is null and expires_at > $2
                         order by created_at desc, id desc offset $3)`,
         [accountId, now, MAX_OPEN_CHAT_KEY_ENVELOPES - 1],

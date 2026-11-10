@@ -33,16 +33,26 @@ let setNow: (d: Date) => void;
 let now = T0;
 let step = 0;
 let cleanup: () => Promise<void>;
+let logs: string[];
 
 beforeAll(async () => {
   const fixture = await fixtureLeakedList();
   cleanup = fixture.cleanup;
   let set: (d: Date) => void;
-  ({ app, deps, setNow: set } = await testApp({ leaked: fixture.list }));
+  ({ app, deps, setNow: set, logs } = await testApp({ leaked: fixture.list }));
   setNow = (d) => {
     now = d;
     set(d);
   };
+  // Review F4: a constraint error on this table, raised the way a route would raise it.
+  app.post('/t/envelope-check-fails', async (req) => {
+    const { accountId, marker } = req.body as { accountId: string; marker: string };
+    await deps.db.query(
+      `insert into chat_key_envelopes (account_id, recipient_public, sealed, epoch, created_at, expires_at) values ($1, $2, $3, 0, $4, $4)`,
+      [accountId, Buffer.from(marker, 'hex'), Buffer.from(marker.repeat(3), 'hex'), deps.clock()],
+    );
+    return { ok: true };
+  });
   app.post('/t/complete', async (req, reply) => {
     ensureDeviceCookie(req, reply);
     const { accountId, factor, pendingId } = req.body as { accountId: string; factor: LoginFactor; pendingId?: string };
@@ -243,6 +253,42 @@ describe('the courier: strong sessions of the account store and read sealed enve
     const open = ((await t.b.get('/v1/account/chat-keys')).json() as Listed).envelopes.map((e) => e.id);
     expect(open).toEqual(ids.slice(1));
     expect(open).toHaveLength(MAX_OPEN_CHAT_KEY_ENVELOPES);
+  });
+
+  it('review F4: a second box to the same device in the same millisecond replaces the first (no 500); the cap holds at one instant too', async () => {
+    const t = await strongTrader();
+    const device = await generateBoxKeyPair();
+    const a = await t.b.post('/v1/account/chat-keys', (await envelopeFor(device)).body);
+    const b = await t.b.post('/v1/account/chat-keys', (await envelopeFor(device)).body);
+    expect(a.statusCode, a.body).toBe(201);
+    expect(b.statusCode, b.body).toBe(201);
+    const second = (b.json() as { id: string }).id;
+    expect(((await t.b.get('/v1/account/chat-keys')).json() as Listed).envelopes.map((e) => e.id)).toEqual([second]);
+    // Eleven more, still at the same instant: always the newest kept, never more than the cap.
+    let last = second;
+    for (let i = 0; i < MAX_OPEN_CHAT_KEY_ENVELOPES + 1; i++) {
+      const r = await t.b.post('/v1/account/chat-keys', (await envelopeFor(await generateBoxKeyPair())).body);
+      expect(r.statusCode, r.body).toBe(201);
+      last = (r.json() as { id: string }).id;
+    }
+    const open = ((await t.b.get('/v1/account/chat-keys')).json() as Listed).envelopes.map((e) => e.id);
+    expect(open).toHaveLength(MAX_OPEN_CHAT_KEY_ENVELOPES);
+    expect(open).toContain(last);
+    expect((await deps.db.query<{ n: number }>('select count(*)::int as n from chat_key_envelopes where account_id = $1', [t.accountId])).rows[0]!.n).toBe(MAX_OPEN_CHAT_KEY_ENVELOPES);
+  });
+
+  it("review F4: a constraint error on this table is a 500 whose log holds none of the row's bytes", async () => {
+    const t = await strongTrader();
+    const marker = 'c0ffee'.repeat(5) + 'ab';
+    const before = logs.length;
+    const res = await app.inject({ method: 'POST', url: '/t/envelope-check-fails', headers: { origin: ORIGIN }, payload: { accountId: t.accountId, marker } });
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({ error: 'internal' });
+    const written = logs.slice(before).join('\n');
+    expect(written).toContain('request failed');
+    expect(written).not.toContain('c0ffee');
+    expect(written).not.toContain(t.accountId);
+    expect(written).not.toMatch(/Failing row|detail/i);
   });
 
   it("the epoch must be the account's current one (0 until a rotation exists); the refusal names it", async () => {
