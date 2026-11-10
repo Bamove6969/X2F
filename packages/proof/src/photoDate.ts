@@ -187,6 +187,7 @@ const XMP_FIELDS = ['exif:DateTimeOriginal', 'xmp:CreateDate', 'photoshop:DateCr
 /** An XMP date (ISO 8601 with a time) for one field, attribute or element form. */
 function xmpTime(xml: string, field: string): PhotoTime | null {
   const f = field.replace(':', '\\:');
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- `field` is one of the constant XMP_FIELDS names (letters and one escaped colon), never input
   const m = new RegExp(`${f}\\s*=\\s*["']([^"'<>]{1,64})["']|<${f}>\\s*([^<]{1,64})\\s*</${f}>`).exec(xml);
   const v = m ? (m[1] ?? m[2]!).trim() : null;
   const d = v === null ? null : /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/.exec(v);

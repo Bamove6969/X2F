@@ -553,6 +553,7 @@ function nameStart(line: string): number | 'next' {
 const NUMBER_KINDS = Object.keys(NUMBER_LABELS) as NumberLabelKind[];
 /** Words between a label and its number. */
 const NUMBER_TAIL = '\\.?(?:\\s*(?:number|num|no|nr|n[º°]|ending(?:\\s+in)?|ends\\s+in)\\.?)?\\s*[:：#]?\\s*';
+// nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- built from the constant NUMBER_LABELS lists, each label escaped by alternation()
 const NUMBER_LABEL = new RegExp(
   `(?<![\\p{L}\\p{N}/])(?:${NUMBER_KINDS.map((k) => `(?<${k}>${alternation([...NUMBER_LABELS[k]])})`).join('|')})(?![\\p{L}\\p{N}])${NUMBER_TAIL}`,
   'giu',
