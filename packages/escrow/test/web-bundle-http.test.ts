@@ -86,7 +86,10 @@ describe('a seller-built release settles with monero-ts\'s in-process HTTP broke
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
       expect(seller).toBeNull(); // before the fix: 'stuck' (the builder never saw its tx in a block)
       expect(t.stores.seller.current()!.release!.phase).toBe('done');
-      expect(t.stores.seller.current()!.sent['spend.info:0']).toMatchObject({ txHash: hash });
+      // settle() resolves once 'done' is saved; the spend.info is exported and saved on the same
+      // pass right after (never before done: the export replaces the nonces a release signs with),
+      // so it is waited for here, not read at once (batch 7: 1 run in 3 read it too early).
+      await expect.poll(() => t.stores.seller.current()!.sent['spend.info:0'], { timeout: 30_000, interval: 100 }).toMatchObject({ txHash: hash });
       await expect.poll(async () => [...((await t.parties.mod.funds()).spendProofs ?? [])].map((p) => [p.from, p.txHash]).sort(), { timeout: 60_000, interval: 1000 })
         .toEqual([['buyer', hash], ['seller', hash]]);
       expect(kit.ignoredBy.seller).not.toContain('daemon-unavailable');
