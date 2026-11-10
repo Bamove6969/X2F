@@ -8,6 +8,8 @@ import { DEMO_DIR, DEMO_PASSWORD } from './config.js';
 import { assertDemo } from './guard.js';
 import { throwawayAddress } from './secrets.js';
 import { stepOf, TOTP_FILE, totpCode } from './totp.js';
+import pg from 'pg';
+import { GIFT_CARD_TERMS_VERSION } from '../../packages/trade/src/giftCards.js';
 import { TERMS_TEXT_VERSION } from '../../apps/web/src/screens/setup/termsText.js';
 
 const ORIGIN = process.env.DEMO_ORIGIN ?? '';
@@ -53,43 +55,55 @@ export class DemoClient {
 interface Person {
   displayName: string;
   loginName: string;
+  /** Only a vendor posts offers (owner, 2 Nov 2026; apps/api routes/accountType.ts). */
+  vendor: boolean;
   offers: Array<Record<string, unknown>>;
 }
 
-const market = (marginBps: number) => ({ mode: 'market', marginBps });
-const offer = (side: 'sell' | 'buy', methodId: string, currency: string, min: number, max: number, pricing: unknown, terms: string, extra: Record<string, unknown> = {}) => ({
-  side, methodId, currency, pricing, minFiatCents: String(min * 100), maxFiatCents: String(max * 100), minTrades: 0, terms, ...extra,
+/**
+ * One offer in the API's shape (J-16 flex offers): one currency with one band, one method with its
+ * instructions. `marginBps` is the band's margin; the method's own price change is 0.
+ */
+const offer = (side: 'sell' | 'buy', methodId: string, currency: string, min: number, max: number, marginBps: number, terms: string, instructions: string, extra: Record<string, unknown> = {}) => ({
+  side,
+  currencies: [{ currency, bands: [{ min: String(min), max: String(max), marginBps, minTrades: null }] }],
+  methods: [{ methodId, adjustBps: 0, instructions }],
+  terms,
+  ...extra,
 });
+/** The method's instructions on the offer; the real payment details go in the trade chat (J-08). */
+const HOW_TO_PAY = 'Demo trader: my payment details come in the trade chat once the escrow is secured.';
+const giftCard = (country: string) => ({ country, giftCardTerms: GIFT_CARD_TERMS_VERSION });
 
 // The design's cast (design/x2f-app), each with offers in USD and CAD.
 const CAST: Person[] = [
-  { displayName: 'satoshi_ghost', loginName: 'satoshi-login', offers: [
-    offer('sell', 'ZELLE', 'USD', 20, 150, market(200), 'Zelle only from a bank in your own name. Fast replies 9am-11pm ET.'),
-    offer('sell', 'CASH_APP', 'USD', 20, 120, market(250), 'Cash App with the trade code as the note.'),
+  { displayName: 'satoshi_ghost', loginName: 'satoshi-login', vendor: true, offers: [
+    offer('sell', 'ZELLE', 'USD', 20, 150, 200, 'Zelle only from a bank in your own name. Fast replies 9am-11pm ET.', HOW_TO_PAY),
+    offer('sell', 'CASH_APP', 'USD', 20, 120, 250, 'Cash App with the trade code as the note.', HOW_TO_PAY),
   ] },
-  { displayName: 'mira.k', loginName: 'mira-login', offers: [
-    offer('sell', 'INTERAC_E_TRANSFER', 'CAD', 25, 200, market(150), 'Interac e-Transfer, autodeposit please. Usually online evenings.'),
-    offer('buy', 'INTERAC_E_TRANSFER', 'CAD', 25, 200, market(-100), 'I pay by e-Transfer within 10 minutes of the escrow being secured.'),
+  { displayName: 'mira.k', loginName: 'mira-login', vendor: true, offers: [
+    offer('sell', 'INTERAC_E_TRANSFER', 'CAD', 25, 200, 150, 'Interac e-Transfer, autodeposit please. Usually online evenings.', HOW_TO_PAY),
+    offer('buy', 'INTERAC_E_TRANSFER', 'CAD', 25, 200, -100, 'I pay by e-Transfer within 10 minutes of the escrow being secured.', HOW_TO_PAY),
   ] },
-  { displayName: 'nightowl_44', loginName: 'nightowl-login', offers: [
-    offer('buy', 'ZELLE', 'USD', 20, 150, market(-50), 'Night shift trader. I pay by Zelle right after escrow is secured.'),
-    offer('sell', 'VENMO', 'USD', 20, 100, market(300), 'Venmo friends and family only.'),
+  { displayName: 'nightowl_44', loginName: 'nightowl-login', vendor: true, offers: [
+    offer('buy', 'ZELLE', 'USD', 20, 150, -50, 'Night shift trader. I pay by Zelle right after escrow is secured.', HOW_TO_PAY),
+    offer('sell', 'VENMO', 'USD', 20, 100, 300, 'Venmo friends and family only.', HOW_TO_PAY),
   ] },
-  { displayName: 'kettle.moss', loginName: 'kettle-login', offers: [
-    offer('sell', 'AMAZON_GIFT_CARD', 'USD', 25, 100, market(600), 'US Amazon gift cards only. Send the claim code in chat.', { country: 'US' }),
-    offer('sell', 'AMAZON_GIFT_CARD', 'CAD', 25, 100, market(650), 'Amazon.ca gift cards only.', { country: 'CA' }),
+  { displayName: 'kettle.moss', loginName: 'kettle-login', vendor: true, offers: [
+    offer('sell', 'AMAZON_GIFT_CARD', 'USD', 25, 100, 600, 'US Amazon gift cards only. Send the claim code in chat.', HOW_TO_PAY, giftCard('US')),
+    offer('sell', 'AMAZON_GIFT_CARD', 'CAD', 25, 100, 650, 'Amazon.ca gift cards only.', HOW_TO_PAY, giftCard('CA')),
   ] },
-  { displayName: 'lowtide_rx', loginName: 'lowtide-login', offers: [
-    offer('sell', 'TRANSFERWISE', 'CAD', 30, 200, market(120), 'Wise transfer in CAD. Include the trade code as the reference.'),
-    offer('buy', 'PAYPAL', 'USD', 20, 100, market(-200), 'PayPal friends and family.'),
+  { displayName: 'lowtide_rx', loginName: 'lowtide-login', vendor: true, offers: [
+    offer('sell', 'TRANSFERWISE', 'CAD', 30, 200, 120, 'Wise transfer in CAD. Include the trade code as the reference.', HOW_TO_PAY),
+    offer('buy', 'PAYPAL', 'USD', 20, 100, -200, 'PayPal friends and family.', HOW_TO_PAY),
   ] },
 ];
 
 // The owner's own accounts, to trade with himself (one per browser profile or device).
 const OWNER: Person[] = [
-  { displayName: 'demo_ana', loginName: 'ana-demo', offers: [] },
-  { displayName: 'demo_ben', loginName: 'ben-demo', offers: [] },
-  { displayName: 'demo_cy', loginName: 'cy-demo', offers: [] },
+  { displayName: 'demo_ana', loginName: 'ana-demo', vendor: true, offers: [] },
+  { displayName: 'demo_ben', loginName: 'ben-demo', vendor: false, offers: [] },
+  { displayName: 'demo_cy', loginName: 'cy-demo', vendor: false, offers: [] },
 ];
 
 async function signUp(p: Person): Promise<DemoClient> {
@@ -97,6 +111,9 @@ async function signUp(p: Person): Promise<DemoClient> {
   await c.ok('GET', '/v1/site');
   await c.ok('POST', '/v1/register/password', {
     displayName: p.displayName, loginName: p.loginName, password: DEMO_PASSWORD, deviceLabel: 'Demo seed', acceptedTerms: TERMS_TEXT_VERSION,
+    // Every sign-up signs the Terms (migration 316): the seed types the display name, as someone
+    // who cannot draw would.
+    termsSignature: { kind: 'typed', name: p.displayName },
   });
   await c.ok('POST', '/v1/wallets', { app: 'cake', label: 'Demo wallet', address: await throwawayAddress() });
   // An authenticator (during sign-up's onboarding window, no confirm needed): password + code is a
@@ -109,9 +126,27 @@ async function signUp(p: Person): Promise<DemoClient> {
 
 const totp: Record<string, string> = {};
 
+/**
+ * DEMO ONLY: the real way to become a vendor needs a passkey, security key or PGP key and a strong
+ * confirm (PUT /v1/account/type), which a seed script has none of. So the demo marks its posting
+ * accounts as vendors straight in its own throwaway database, as the switch itself would
+ * (account_type, vendor_since), and the offers then go through the real API.
+ */
+async function makeVendor(displayName: string): Promise<void> {
+  const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await db.connect();
+  try {
+    const r = await db.query("update accounts set account_type = 'vendor', vendor_since = now() where display_name = $1 and account_type = 'trader'", [displayName]);
+    if (r.rowCount !== 1) throw new Error(`demo seed: could not make ${displayName} a vendor`);
+  } finally {
+    await db.end();
+  }
+}
+
 const failures: string[] = [];
 for (const p of [...CAST, ...OWNER]) {
   const c = await signUp(p);
+  if (p.vendor) await makeVendor(p.displayName);
   for (const o of p.offers) {
     const r = await c.call('POST', '/v1/offers', o);
     if (r.status >= 300) failures.push(`${p.displayName} ${String(o.methodId)} ${String(o.currency)}: ${r.status} ${JSON.stringify(r.body)}`);
