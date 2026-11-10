@@ -283,6 +283,8 @@ describe('version changes from another tab', () => {
     expect(next.outcome).toBe('opened');
     next.db!.close();
     expect(Array.isArray(await reading)).toBe(true);
+    // It reads the trade codes from the trades store (not the wrap key's id from `keys`).
+    expect(await readOpenEscrowCodes(idb)).toEqual([CODE_A]);
     // And it never creates the database where there is none.
     const empty = new IDBFactory();
     expect(await readOpenEscrowCodes(empty)).toEqual([]);
