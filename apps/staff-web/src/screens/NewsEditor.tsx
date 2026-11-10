@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { codeOf, newsAdd, newsDelete, newsEdit, newsList } from '../api.js';
 import { faultText, refusalOf, type StaffRefusal } from '../refusals.js';
-import { Button, CantDoThat, Notice, NewsMessage, Sheet, type NewsItem } from '../ui/kit.js';
+import { Button, CantDoThat, Notice, NewsMessage, NewsPost, Sheet, type NewsItem } from '../ui/kit.js';
 import { PageTitle } from '../ui/StaffShell.js';
 import '../ui/staff.css';
 
@@ -14,8 +14,9 @@ export const NEWS_BODY_MAX = 4000;
 
 /**
  * The owner writes, edits and deletes News for traders (Plan 4 Task 28; the staff API's
- * site.control routes, each change logged by the API). The preview is the News page's own card
- * (apps/web NewsMessage), so the owner sees the message as traders will.
+ * site.control routes, each change logged by the API). The preview is the trader view, "As traders
+ * will see it" (design final call 10 Nov 2026): the News page's own post (apps/web NewsPost through the
+ * kit), open and marked New, so the owner sees the message exactly as traders will.
  */
 export function NewsEditor() {
   const titleId = useId();
@@ -29,6 +30,8 @@ export function NewsEditor() {
   const [done, setDone] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<{ code: StaffRefusal; text: string } | null>(null);
   const [deleting, setDeleting] = useState<NewsItem | null>(null);
+  // The preview post opens like the trader's; it starts open so the message is read at once.
+  const [previewOpen, setPreviewOpen] = useState(true);
 
   const load = () =>
     newsList().then(
@@ -107,9 +110,10 @@ export function NewsEditor() {
           <textarea id={bodyId} className="x2f-textarea" rows={6} value={body} onChange={(e) => setBody(e.target.value)} />
           <p className="x2f-staff-hint" data-part="body-count">{`${body.length} / ${NEWS_BODY_MAX}`}</p>
         </div>
-        <h2 className="x2f-h2">Preview</h2>
+        {/* COPY-UNSIGNED: "As traders will see it" (design final call 10 Nov 2026). */}
+        <h2 className="x2f-h2">As traders will see it</h2>
         <div data-part="news-preview">
-          <NewsMessage item={preview} isNew />
+          <NewsPost item={preview} isNew open={previewOpen} onToggle={() => setPreviewOpen((o) => !o)} />
         </div>
         {fault !== null ? <Notice tone="danger">{fault}</Notice> : null}
         {done !== null ? <Notice tone="plain">{done}</Notice> : null}

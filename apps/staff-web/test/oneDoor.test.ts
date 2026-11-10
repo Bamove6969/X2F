@@ -39,6 +39,11 @@ function webImports(): Array<{ file: string; specifier: string }> {
   return found;
 }
 
+/** Every `from '<m>'` specifier in one staff source file. */
+function importsOf(file: string): string[] {
+  return [...readFileSync(join(SRC, file), 'utf8').matchAll(SPECIFIER)].map((m) => m[2]!);
+}
+
 describe('the one-door rule: apps/web is imported through ui/kit.ts alone', () => {
   it('the scan sees the kit\'s own doors', () => {
     expect(webImports().filter((i) => i.file === KIT).length).toBeGreaterThan(0);
@@ -50,5 +55,35 @@ describe('the one-door rule: apps/web is imported through ui/kit.ts alone', () =
       .filter((i) => !(i.file === ENTRY && i.specifier.endsWith('.css')))
       .map((i) => `${i.file}: ${i.specifier}`);
     expect(outside, 'import it through src/ui/kit.ts (a stylesheet: from main.tsx)').toEqual([]);
+  });
+});
+
+/**
+ * Design final call (10 Nov 2026): the staff News preview is the trader view, "As traders will see
+ * it": the News page's own post component (apps/web screens/NewsPost.tsx), reached through the kit,
+ * never a card of the staff app's own. The trader's News screen renders that same module, so the
+ * two can never drift apart.
+ */
+describe('the News preview is the trader view, through the one door', () => {
+  const WEB_SRC_DIR = fileURLToPath(new URL('../../web/src/', import.meta.url));
+
+  it("the kit's door for NewsPost is apps/web's screens/NewsPost.tsx", () => {
+    const kit = readFileSync(join(SRC, KIT), 'utf8');
+    expect(kit).toMatch(/export \{[^}]*\bNewsPost\b[^}]*\} from '\.\.\/\.\.\/\.\.\/web\/src\/screens\/NewsPost\.js'/);
+  });
+
+  it('NewsEditor takes NewsPost from the kit and nothing from apps/web', () => {
+    const editor = readFileSync(join(SRC, 'screens/NewsEditor.tsx'), 'utf8');
+    expect(editor).toMatch(/import \{[^}]*\bNewsPost\b[^}]*\} from '\.\.\/ui\/kit\.js'/);
+    expect(importsOf('screens/NewsEditor.tsx').filter((s) => WEB_SRC.test(s))).toEqual([]);
+    // The preview is that component, under the trader-view heading.
+    expect(editor).toContain('As traders will see it');
+    expect(editor).toMatch(/data-part="news-preview"[\s\S]*?<NewsPost\b/);
+  });
+
+  it("the trader's News screen renders the same module", () => {
+    const news = readFileSync(join(WEB_SRC_DIR, 'screens/News.tsx'), 'utf8');
+    expect(news).toMatch(/import \{[^}]*\bNewsPost\b[^}]*\} from '\.\/NewsPost\.js'/);
+    expect(news).toMatch(/<NewsPost\b/);
   });
 });
