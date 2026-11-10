@@ -1479,7 +1479,7 @@ describe('the owner\'s hard rules no box can grant (J-10)', () => {
     const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { abilities, confirmToken });
     expect(res.statusCode, res.body).toBe(200);
     expect((res.json() as { abilities: string[] }).abilities).toEqual(['offers-see', 'offers-post']);
-    expect((await m.browser.post('/v1/offers', OFFER)).statusCode).toBe(201);
+    expect((await m.browser.post('/v1/offers', flexBody(OFFER))).statusCode).toBe(201);
     expect(err(await m.browser.get('/v1/wallets'))).toEqual({ status: 403, error: 'forbidden' });
   });
 
