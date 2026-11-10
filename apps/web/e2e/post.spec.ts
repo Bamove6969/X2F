@@ -126,13 +126,13 @@ test('the board copy and the default market price', async ({ page }) => {
   for (const t of ['I want to', 'Your price', 'Minimum completed trades', 'How others will see it']) await expect(page.getByText(t, { exact: true })).toBeVisible();
   await expect(f(page).above).toBeChecked();
   await expect(f(page).margin).toHaveValue('0.5');
-  // Design final call (10 Nov 2026): "0.5% above market", the figure in mono then the words (ui/margin.ts).
-  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('0.5% above market');
+  // Design final call (10 Nov 2026): "0.5% above market", the figure in mono then the words (ui/margin.ts);
+  // J-16: the price at your margin follows on the band's readout.
+  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('0.5% above market · $331.55 / XMR');
   await expect(page.getByText('0.5%', { exact: true })).toBeVisible();
   await expect(page.getByText('above market', { exact: true })).toBeVisible();
-  // J-16: each currency's card carries its market line; the price at your margin is on the band.
+  // J-16: each currency's card carries its market line.
   await expect(page.getByText('Market $329.90 / XMR right now. Your prices follow the market.', { exact: true })).toBeVisible();
-  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('0.5% above market · $331.55 / XMR');
   const preview = page.getByRole('region', { name: 'Preview' });
   await expect(preview.getByText('Selling XMR via Zelle · USD · you', { exact: true })).toBeVisible();
   await expect(preview.getByText('$331.55 / XMR', { exact: true })).toBeVisible();
@@ -155,14 +155,14 @@ test('the margin is typed, above or below the market (owner F1)', async ({ page 
   await page.goto('/post?method=ZELLE');
   const preview = page.getByRole('region', { name: 'Preview' });
   await f(page).margin.fill('0.6');
-  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('0.6% above market');
+  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('0.6% above market · $331.88 / XMR');
   await expect(preview.getByText('$331.88 / XMR', { exact: true })).toBeVisible();
   await f(page).below.check();
   await f(page).margin.fill('0.1');
-  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('0.1% below market');
+  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('0.1% below market · $329.57 / XMR');
   await expect(page.getByText('below market', { exact: true })).toBeVisible();
   await f(page).margin.fill('12.25');
-  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('12.25% below market');
+  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('12.25% below market · $289.49 / XMR');
   await expect(preview.getByText('$289.49 / XMR', { exact: true })).toBeVisible();
 });
 
