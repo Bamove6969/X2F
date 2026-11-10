@@ -165,9 +165,11 @@
   border-color: var(--x2f-danger);
 }
 
-/* In error the border stays danger; focus thickens it to 2 px so it still shows. */
+/* In error the border stays danger; focus thickens it to 2 px so it still shows (an inner outline:
+   kit 1.5 keeps box-shadow for the nav-current lines only, kit-tokens.test). */
 .x2f-quote__box[data-bad]:has(input:focus-visible) {
-  box-shadow: inset 0 0 0 1px var(--x2f-danger);
+  outline: 1px solid var(--x2f-danger);
+  outline-offset: -2px;
 }
 
 .x2f-quote__box input {
