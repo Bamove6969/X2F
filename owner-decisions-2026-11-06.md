@@ -198,3 +198,5 @@ Owner's words: owner-answers-page11-2026-11-08.md (second half). Where a line sa
 - p11-41 **Authenticator app is a login method only, never a backup way in.** Recovery code is the only back way in. Matches the signup-rules build (wip/lead-signup-rules). SetupWelcome lists "Recovery codes", not "Authenticator app".
 - p11-42 **Terms line about names approved; bump the Terms version.** Built on wip/lead-terms-signature 2428e51e.
 - p11-43 **Open: owner asked for a fuller explanation**; question rewritten on page 11 with three choices (stall with Log out / keep trading on old Terms / open trades continue, nothing new until the owner accepts: lead's recommendation). Until he picks, front-door's current behaviour stands.
+
+- 10 Nov: wording questions go to design, not the owner; design escalates only what truly needs him. (owner, chat)

@@ -225,3 +225,7 @@ Landing order after audit batch 2: job1a + job1b together (BuyerPay overlap: onI
 ## 2026-11-10T07:08:06Z batch 6 landed
 - main 8cca6d77 (payfields-all + review F1-F7 + R1). Checks: vitest 6525, PW 506, Monero 87/4/10/34.
 - Wording Room v7 adds the "Payment boxes" batch (w13, 101 questions). Open: F6 IMPS MMID, F8 buyer card for nothing-to-send, p11-144, p11-145, M-PESA till/paybill.
+
+## 2026-11-10T09:22:37Z owner decision: wording goes to design
+- Owner (10 Nov, chat): all wording questions (Wording Room batches, Payment boxes, similar copy) go to design from now on; design settles them and escalates to the owner only when needed. Owner moves to hands-on review in the working demo.
+- Lead: stop sending wording questions to page 11; route to design via Jetpost. Demo bring-up on main 8cca6d77 delegated.
