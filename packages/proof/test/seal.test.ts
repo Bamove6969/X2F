@@ -298,7 +298,7 @@ describe('sealed key payloads (Plan 1 seal/open)', () => {
     const { ids, parts } = await participants();
     const proofId = newProofId();
     const enc = await encryptProof(image(), { code: CODE, proofId, kind: 'proof' });
-    const payload = { proofId, kind: 'proof', key: await b64(enc.key), sha256: enc.sha256, width: 1170, height: 2532, mime: 'image/jpeg', hidden: ['card', 'email'], takenAt: '2026-10-16T12:32:05Z' };
+    const payload = { proofId, kind: 'proof', key: await b64(enc.key), sha256: enc.sha256, width: 1170, height: 2532, mime: 'image/jpeg', hidden: ['card', 'email'], photoTakenAt: '2026-10-16T12:32:05Z' };
     const env = await seal({ trade: CHANNEL, from: 'buyer', seq: 1, type: 'proof.attached', payload, to: ['buyer', 'seller', 'mod'], me: ids.buyer, participants: parts });
     const opened = await open(env, { me: ids.seller, myRole: 'seller', participants: parts, trade: CHANNEL, guard: new ReplayGuard(CHANNEL) });
     const parsed = parseProofPayload(opened.type, opened.payload);
@@ -321,7 +321,7 @@ describe('parseProofPayload', () => {
     height: 600,
     mime: 'image/png',
     hidden: [],
-    takenAt: null,
+    photoTakenAt: null,
   });
   const unblurred = (): Record<string, unknown> => ({ proofId: newProofId(), key: KEY, sha256: SHA, width: 800, height: 600, mime: 'image/jpeg' });
   const bad = (type: string, p: unknown): string => payloadCode(() => parseProofPayload(type, p));
@@ -334,12 +334,11 @@ describe('parseProofPayload', () => {
     expect(bad('proof.attached', { ...attached(), width: PROOF_MAX_SIDE, height: 1 })).toBe('no error');
   });
 
-  it('takenAt is null or a UTC instant to the second (owner G16), nothing else', () => {
+  it('photoTakenAt is null or a UTC instant to the second (owner G16), nothing else', () => {
     for (const t of [null, '2026-10-16T12:32:05Z', '1990-01-01T00:00:00Z', '2026-02-28T23:59:59Z']) {
-      expect(bad('proof.attached', { ...attached(), takenAt: t }), String(t)).toBe('no error');
+      expect(bad('proof.attached', { ...attached(), photoTakenAt: t }), String(t)).toBe('no error');
     }
     for (const t of [
-      undefined,
       '',
       '2026-10-16T12:32:05.000Z',
       '2026-10-16T12:32:05+02:00',
@@ -351,10 +350,21 @@ describe('parseProofPayload', () => {
       1760617925000,
       { exif: 'DateTimeOriginal' },
     ]) {
-      expect(bad('proof.attached', { ...attached(), takenAt: t }), String(t)).toBe('bad-payload');
+      expect(bad('proof.attached', { ...attached(), photoTakenAt: t }), String(t)).toBe('bad-payload');
     }
     expect(isUtcSecond(toUtcSecond(new Date('2026-10-16T12:32:05.789Z')))).toBe(true);
     expect(toUtcSecond(new Date('2026-10-16T12:32:05.789Z'))).toBe('2026-10-16T12:32:05Z');
+  });
+
+  // Review 2026-11-10 finding 6: an envelope from a client built before the field reads as null
+  // (backward compatible); the field is `photoTakenAt`, not `takenAt` (the trade's own takenAt).
+  it('a missing photoTakenAt is null; the old name takenAt is an extra field', () => {
+    const { photoTakenAt: _, ...old } = attached();
+    const parsed = parseProofPayload('proof.attached', old);
+    expect(parsed.type === 'proof.attached' && parsed.payload.photoTakenAt).toBeNull();
+    expect(bad('proof.attached', { ...attached(), photoTakenAt: undefined })).toBe('no error');
+    expect(bad('proof.attached', { ...old, takenAt: '2026-10-16T12:32:05Z' })).toBe('bad-payload');
+    expect(bad('proof.attached', { ...attached(), takenAt: null })).toBe('bad-payload');
   });
 
   it('refuses an extra filename field, and any other extra or missing field', () => {
@@ -362,7 +372,8 @@ describe('parseProofPayload', () => {
     expect(bad('proof.unblurred', { ...unblurred(), filename: 'IMG_0001.PNG' })).toBe('bad-payload');
     expect(bad('proof.unblurred', { ...unblurred(), hidden: [] })).toBe('bad-payload');
     expect(bad('proof.unblurred', { ...unblurred(), kind: 'unblurred' })).toBe('bad-payload');
-    for (const k of Object.keys(attached())) {
+    // Every field but photoTakenAt, which an older client leaves out (see above).
+    for (const k of Object.keys(attached()).filter((key) => key !== 'photoTakenAt')) {
       const p = attached();
       delete p[k];
       expect(bad('proof.attached', p)).toBe('bad-payload');
@@ -442,7 +453,7 @@ describe('sealProofEnvelope (M2)', () => {
   it('proof.attached opens for buyer (allowSelf), seller and mod', async () => {
     const { ids, parts } = await participants();
     const enc = await encryptProof(image(), { code: CODE, proofId: newProofId(), kind: 'proof' });
-    const payload = { proofId: newProofId(), kind: 'proof' as const, key: await proofKeyToBase64(enc.key), sha256: enc.sha256, width: 1, height: 1, mime: 'image/jpeg' as const, hidden: [], takenAt: null };
+    const payload = { proofId: newProofId(), kind: 'proof' as const, key: await proofKeyToBase64(enc.key), sha256: enc.sha256, width: 1, height: 1, mime: 'image/jpeg' as const, hidden: [], photoTakenAt: null };
     const env = await sealProofEnvelope({ type: 'proof.attached', payload }, { trade: CHANNEL, from: 'buyer', seq: 0, me: ids.buyer, participants: parts });
     for (const role of ['buyer', 'seller', 'mod'] as const) {
       const o = await open(env, { me: ids[role], myRole: role, participants: parts, trade: CHANNEL, guard: guard(), allowSelf: true });

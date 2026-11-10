@@ -1,7 +1,7 @@
 // When the proof picture was made, from its own metadata (owner G16, 2026-11-07).
 //
 // The poster's browser reads this BEFORE the picture is cleaned or re-encoded (both drop every
-// metadata block). Only the time leaves the device, as a UTC instant (`proof.attached` `takenAt`);
+// metadata block). Only the time leaves the device, as a UTC instant (`proof.attached` `photoTakenAt`);
 // the Exif block itself is never sent. Read in this order: Exif DateTimeOriginal, Exif CreateDate
 // (DateTimeDigitized), each with its own offset tag when there is one; then XMP
 // exif:DateTimeOriginal, xmp:CreateDate, photoshop:DateCreated (phone screenshots often carry only

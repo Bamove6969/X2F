@@ -66,7 +66,7 @@ const HOUR = 60 * 60 * 1000;
  * grouping or case, with Crockford look-alikes (O for 0, I or L for 1), as Task 7 keeps it, also
  * with spaces around its dashes and wrapped onto the next line (review N1). A date is in range when
  * any reading of it is a day that overlaps `earliest..latest` in some time zone (UTC-12 to UTC+14).
- * `takenAt` is the photo's own time from the poster's device (`proof.attached`, owner G16), combined
+ * `takenAt` is the photo's own time from the poster's device (`proof.attached` `photoTakenAt`, owner G16), combined
  * with the screenshot's dates by `combineDates` (out of range when either is; lead default pending
  * owner p11-140); with an unreadable screenshot it alone decides.
  * The name is `visible` only after a sender label (review N3, see `senderNameShown`).
