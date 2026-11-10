@@ -1053,3 +1053,13 @@ J-34 rulings: docs/design-rulings-J34-2026-11-09.md (28d45d74). Canvas v167.
 **Pre-existing height mismatches** (not new): Fold-Offers 1012/1219; SetupUsername 844/664.
 
 **Wording room for the owner:** batches 10, 11 and 12 (301 questions) are in https://claude.ai/artifact/HEBazie5zYdi7LDM4ty5NQ, with design's view on each. When he submits, design copies his answers into the original batch pages' `answers` collections.
+
+## 10 Nov, 03:13 — owner build order and three wording calls
+
+- The owner has ordered a build with 12 helpers. Design is asking the lead for up to 12 jobs nobody has claimed. Each job runs on its own `wip/` branch, and the lead reviews and lands it.
+- The cancel sheet shows "Already paid? Don't cancel: tap I've paid instead." only when it opens from BuyerPay. On the funding route it shows "Don't send any money until the escrow is funded." (COPY-UNSIGNED)
+- The unfunded variant keeps "and this trade closes".
+- "vendor markup" is replaced by one price wording everywhere:
+  - browse toggle: "Show amounts with the seller's price"
+  - quote chips: "Seller's price / Market price"
+  - trade terms: "the seller's price (0.4% above market)" (COPY-UNSIGNED)
