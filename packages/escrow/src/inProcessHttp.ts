@@ -51,6 +51,8 @@ export const inProcessHttp = {
       ...(r.body === undefined ? {} : { body: r.body as BodyInit }),
       signal: AbortSignal.any(signals),
       redirect: 'error',
+      credentials: 'omit',
+      cache: 'no-store',
     });
     const headers: Record<string, string> = {};
     res.headers.forEach((v, k) => (headers[k] = v));

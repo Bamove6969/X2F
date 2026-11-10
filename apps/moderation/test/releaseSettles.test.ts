@@ -40,8 +40,7 @@ async function trade(chain: FakeChain, extra: { daemonTimeoutMs?: number } = {})
   const ctx = await makeCtx();
   ctxs.push(ctx);
   const modStore = escrowStore(ctx.db, ctx.keystoreKey, code);
-  for (const role of ROLES) {
-    parties[role] = runParty({
+  const argsFor = (role: Role) => ({
       role,
       trade: code,
       me: ids[role],
@@ -53,20 +52,29 @@ async function trade(chain: FakeChain, extra: { daemonTimeoutMs?: number } = {})
       store: role === 'mod'
         ? modStore
         : {
-            load: async () => (saved[role] ? structuredClone(saved[role]) : null),
-            save: async (x) => {
+            load: async () => (saved[role] ? structuredClone(saved[role]!) : null),
+            save: async (x: PartyState) => {
               saved[role] = structuredClone(x);
             },
           },
       resendMs: 20,
       resendMaxMs: 100,
-      onIgnored: (reason) => ignored[role].push(reason),
+      onIgnored: (reason: string) => ignored[role].push(reason),
       ...extra,
-    });
+  });
+  for (const role of ROLES) {
+    parties[role] = runParty(argsFor(role));
     running.push(parties[role]);
   }
   await Promise.all(ROLES.map((r) => parties[r].ready()));
-  return { parties, ignored, saved, modStore };
+  /** A new mod party on the same sealed store (the moderation service restarted). */
+  const restartMod = async (): Promise<PartyHandle> => {
+    await parties.mod.stop();
+    const mod = runParty(argsFor('mod'));
+    running.push(mod);
+    return mod;
+  };
+  return { parties, ignored, saved, modStore, restartMod, argsFor };
 }
 
 const minimums = sweepMinimums({ kind: 'release', terms: TERMS, feeWallet: FEE_WALLET, sweptAtomic: 1n })!;
@@ -167,5 +175,48 @@ describe('a seller-built release both traders signed and that is mined settles (
     chain.daemonHang.delete('seller');
     await expect.poll(async () => (await proof(parties.mod, []))?.txHash ?? null, { timeout: 5000, interval: 50 }).toBe(SWEEP_HASH);
     await expect(sellerDone).resolves.toBeNull();
+  });
+
+  it("the mod's shown sweep reloads from the sealed store with the same amount, and a malformed one is bad-state (review L2)", async () => {
+    const chain = fakeChain();
+    const { parties, modStore, restartMod, argsFor } = await trade(chain);
+    chain.fund(minimums.reduce((s, p) => s + p.amountAtomic, 0n));
+    chain.mine(10);
+    const sellerDone = parties.seller.settle(release);
+    expect(await parties.buyer.settle(release)).toBe(SWEEP_HASH);
+    chain.mine(1);
+    await expect.poll(async () => (await proof(parties.mod, []))?.txHash ?? null, { timeout: 5000, interval: 50 }).toBe(SWEEP_HASH);
+    await expect(sellerDone).resolves.toBeNull();
+    const before = (await parties.mod.funds()).outgoing!.find((o) => o.txHash === SWEEP_HASH)!;
+    expect(typeof before.spentAtomic).toBe('bigint');
+
+    // The moderation service restarts: the new party reads `shown` back from the sealed JSON.
+    chain.shows.mod = false; // its wallet no longer shows the sweep: only the saved record does
+    const mod = await restartMod();
+    const after = (await mod.funds()).outgoing!.find((o) => o.txHash === SWEEP_HASH)!;
+    expect(after).toEqual(before);
+    expect(after.spentAtomic).toBe(before.spentAtomic);
+    expect(typeof after.spentAtomic).toBe('bigint');
+
+    // A malformed record is never read as an amount or a tx: the party refuses its state.
+    const good = (await modStore.load())!;
+    const bad = [
+      { spentAtomic: '0x10' }, { spentAtomic: '' }, { spentAtomic: ' 10' }, { spentAtomic: '010' }, { spentAtomic: '-1' }, { spentAtomic: 10 },
+      { txHash: SWEEP_HASH.toUpperCase() }, { txHash: 'f'.repeat(63) },
+      { height: 1.5 }, { height: -1 }, { height: '101' }, { height: null },
+    ];
+    await mod.stop();
+    for (const change of bad) {
+      await modStore.save({ ...good, shown: [{ ...good.shown![0]!, ...change }] } as unknown as PartyState);
+      const again = runParty(argsFor('mod'));
+      running.push(again);
+      await expect(again.ready(), JSON.stringify(change)).rejects.toMatchObject({ code: 'bad-state' });
+      await again.stop();
+    }
+    // The good record still loads.
+    await modStore.save(good);
+    const ok = runParty(argsFor('mod'));
+    running.push(ok);
+    expect((await ok.funds()).outgoing!.find((o) => o.txHash === SWEEP_HASH)).toEqual(before);
   });
 });
