@@ -6,19 +6,25 @@
 // party's funds(). The cause on the demo (the builder's daemon lookup could never succeed in the
 // web bundle) is fixed in packages/escrow monero.ts and tested there on regtest
 // (web-bundle-http.test.ts); here: the whole path settles, and while the builder cannot confirm
-// its release nothing is counted on the buyer's word alone.
+// its release nothing is counted on the buyer's word alone. The mod's state is saved by the
+// moderation service's sealed store (JSON): on the demo of 10 Nov, after the fix above, the mod
+// party died saving `shown` (a bigint `spentAtomic`: "Do not know how to serialize a BigInt") as
+// the seller's spend.info arrived, so the seller's statement was never imported either.
 import { newTradeCode, ROLES, type Role } from '@x2f/core';
 import { runParty, type Outcome, type PartyHandle, type PartyState } from '@x2f/escrow';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
 import { newWatchState, sweepMinimums } from '@x2f/trade';
 import { afterEach, describe, expect, it } from 'vitest';
+import { escrowStore } from '../src/main.js';
 import { spendEvidence } from '../src/watcher.js';
 import { fakeChain, memoryRelay, SWEEP_HASH, type FakeChain } from './chain.js';
-import { FEE_WALLET, TERMS } from './harness.js';
+import { FEE_WALLET, makeCtx, TERMS, type Ctx } from './harness.js';
 
 const running: PartyHandle[] = [];
+const ctxs: Ctx[] = [];
 afterEach(async () => {
   for (const p of running.splice(0)) await p.stop();
+  for (const c of ctxs.splice(0)) await c.db.end();
 });
 
 async function trade(chain: FakeChain, extra: { daemonTimeoutMs?: number } = {}) {
@@ -29,6 +35,11 @@ async function trade(chain: FakeChain, extra: { daemonTimeoutMs?: number } = {})
   const ignored: Record<Role, string[]> = { buyer: [], seller: [], mod: [] };
   const saved: Partial<Record<Role, PartyState>> = {};
   const parties = {} as Record<Role, PartyHandle>;
+  // The mod's state is sealed in Postgres by the service's own store (JSON under the keystore key),
+  // as in production; the traders' stores are in memory.
+  const ctx = await makeCtx();
+  ctxs.push(ctx);
+  const modStore = escrowStore(ctx.db, ctx.keystoreKey, code);
   for (const role of ROLES) {
     parties[role] = runParty({
       role,
@@ -39,12 +50,14 @@ async function trade(chain: FakeChain, extra: { daemonTimeoutMs?: number } = {})
       engine: chain.engine(role),
       daemonUri: 'http://node.test',
       password: `pw-${role}`,
-      store: {
-        load: async () => (saved[role] ? structuredClone(saved[role]) : null),
-        save: async (x) => {
-          saved[role] = structuredClone(x);
-        },
-      },
+      store: role === 'mod'
+        ? modStore
+        : {
+            load: async () => (saved[role] ? structuredClone(saved[role]) : null),
+            save: async (x) => {
+              saved[role] = structuredClone(x);
+            },
+          },
       resendMs: 20,
       resendMaxMs: 100,
       onIgnored: (reason) => ignored[role].push(reason),
@@ -53,7 +66,7 @@ async function trade(chain: FakeChain, extra: { daemonTimeoutMs?: number } = {})
     running.push(parties[role]);
   }
   await Promise.all(ROLES.map((r) => parties[r].ready()));
-  return { parties, ignored, saved };
+  return { parties, ignored, saved, modStore };
 }
 
 const minimums = sweepMinimums({ kind: 'release', terms: TERMS, feeWallet: FEE_WALLET, sweptAtomic: 1n })!;
@@ -75,7 +88,7 @@ const proofsOf = async (mod: PartyHandle) => [...((await mod.funds()).spendProof
 describe('a seller-built release both traders signed and that is mined settles (P0, 8 Nov)', () => {
   it('both traders name the mined release with spend.info, the watcher proves it, and the seller leaves "signing"', async () => {
     const chain = fakeChain();
-    const { parties, saved } = await trade(chain);
+    const { parties, saved, modStore } = await trade(chain);
     chain.fund(minimums.reduce((s, p) => s + p.amountAtomic, 0n));
     chain.mine(10);
     const sellerDone = parties.seller.settle(release);
@@ -87,6 +100,10 @@ describe('a seller-built release both traders signed and that is mined settles (
     expect(await proofsOf(parties.mod)).toEqual([['buyer', SWEEP_HASH], ['seller', SWEEP_HASH]]);
     await expect(sellerDone).resolves.toBeNull();
     expect(saved.seller!.release!.phase).toBe('done');
+    // The mod's sealed state holds the shown sweep and both statements (it saved, and stayed alive).
+    const modSaved = await modStore.load();
+    expect(modSaved!.shown?.map((x) => x.txHash)).toEqual([SWEEP_HASH]);
+    expect(Object.keys(modSaved!.received['spend.info:0'] ?? {}).sort()).toEqual(['buyer', 'seller']);
   });
 
   it("while the builder cannot confirm its release in a block (the demo's broken daemon lookup), nothing is counted on the buyer's word; once it can, the release settles", async () => {

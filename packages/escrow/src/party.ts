@@ -79,8 +79,18 @@ export interface PartyState {
    * Moderator only (review M2): every in-block tx its wallet has ever shown as spending the escrow.
    * A later import replaces the wallet's composite key images and can make it forget a sweep it
    * showed; funds().outgoing is the union of these and the wallet's current view. Absent before.
+   * `spentAtomic` is a decimal string: the moderation service seals this state as JSON, which has
+   * no bigint (a bigint here made every save throw and killed the mod's party; demo, 10 Nov).
    */
-  shown?: Outgoing[];
+  shown?: ShownTx[];
+}
+
+/** An in-block tx the moderator's wallet once showed spending the escrow (PartyState.shown): JSON-safe. */
+export interface ShownTx {
+  txHash: string;
+  height: number | null;
+  /** Outgoing.spentAtomic, in decimal. */
+  spentAtomic: string;
 }
 
 export interface PartyStore {
@@ -804,11 +814,13 @@ export function runParty(a: PartyArgs): PartyHandle {
     const shown = state.shown ?? [];
     const fresh = now.filter((o) => o.height !== null && !shown.some((x) => x.txHash === o.txHash));
     if (fresh.length > 0) {
-      state.shown = [...shown, ...fresh];
+      state.shown = [...shown, ...fresh.map((o) => ({ txHash: o.txHash, height: o.height, spentAtomic: o.spentAtomic.toString() }))];
       await saveState();
     }
     const out = [...now];
-    for (const o of state.shown ?? []) if (!out.some((x) => x.txHash === o.txHash)) out.push(o);
+    for (const o of state.shown ?? []) {
+      if (!out.some((x) => x.txHash === o.txHash)) out.push({ txHash: o.txHash, height: o.height, spentAtomic: BigInt(o.spentAtomic) });
+    }
     return out;
   };
 
