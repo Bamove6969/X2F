@@ -404,6 +404,10 @@ export class MoneroMultisigSession implements EscrowSession {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ txs_hashes: [txHash], decode_as_json: false, prune: true }),
           signal: AbortSignal.timeout(DAEMON_TIMEOUT_MS),
+          // Only the configured daemon answers, fresh, and nothing of this origin is sent (review L3).
+          redirect: 'error',
+          credentials: 'omit',
+          cache: 'no-store',
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return (await res.json()) as unknown;

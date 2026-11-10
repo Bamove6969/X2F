@@ -78,4 +78,19 @@ describe('inProcessHttp', () => {
     await expect(inProcessHttp.request({ method: 'POST', uri: `${uri}/json_rpc`, proxyUri: 'socks5://127.0.0.1:9050', body: '{}' })).rejects.toThrow(/proxied/);
     expect(seen.length).toBe(n);
   });
+
+  it('never follows a redirect, sends no credentials and is never served from a cache (as txStatus, review L3)', async () => {
+    const inits: RequestInit[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = ((u: string, i: RequestInit) => {
+      inits.push(i);
+      return real(u, i);
+    }) as typeof fetch;
+    try {
+      await inProcessHttp.request({ method: 'POST', uri: `${uri}/json_rpc`, body: '{}' });
+    } finally {
+      globalThis.fetch = real;
+    }
+    expect(inits[0]).toMatchObject({ redirect: 'error', credentials: 'omit', cache: 'no-store' });
+  });
 });

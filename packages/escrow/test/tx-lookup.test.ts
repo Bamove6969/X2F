@@ -33,6 +33,7 @@ let server: Server;
 let uri: string;
 let hang = false;
 let httpStatus = 200;
+let redirect = false;
 let answer: (body: { txs_hashes?: string[] }) => unknown = () => ({ status: 'OK' });
 const seen: { path: string; body: unknown }[] = [];
 const held: ServerResponse[] = [];
@@ -45,6 +46,11 @@ beforeAll(async () => {
       const body = raw ? (JSON.parse(raw) as { txs_hashes?: string[] }) : {};
       seen.push({ path: req.url ?? '', body });
       if (hang) return void held.push(res);
+      if (redirect && req.url === '/get_transactions') {
+        res.statusCode = 307;
+        res.setHeader('location', '/elsewhere');
+        return void res.end();
+      }
       res.statusCode = httpStatus;
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify(answer(body)));
@@ -60,6 +66,7 @@ afterEach(() => {
   restore();
   hang = false;
   httpStatus = 200;
+  redirect = false;
   seen.length = 0;
   for (const r of held.splice(0)) r.destroy();
 });
@@ -129,5 +136,25 @@ describe('txStatusOf: monerod\'s /get_transactions answer, for exactly that hash
     unavailable({ status: 'OK', txs: [{ tx_hash: H, in_pool: false, block_height: '120' }] });
     unavailable({ status: 'OK', missed_tx: H });
     for (const bad of [null, 'x', {}, { status: 'Failed' }, { status: 'BUSY' }, { status: 'OK', txs: {} }]) unavailable(bad);
+  });
+});
+
+describe('the /get_transactions request (review L3)', () => {
+  it('never follows a redirect, sends no credentials and is never served from a cache', async () => {
+    const inits: RequestInit[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = ((u: string, i: RequestInit) => {
+      inits.push(i);
+      return real(u, i);
+    }) as typeof fetch;
+    try {
+      answer = (b) => ({ status: 'OK', txs: [{ tx_hash: b.txs_hashes![0], in_pool: false, block_height: 120 }] });
+      redirect = true;
+      await expect(session().txStatus(H)).rejects.toMatchObject({ code: 'daemon-unavailable' }); // before: block, from /elsewhere
+      expect(seen.map((x) => x.path)).toEqual(['/get_transactions']);
+      expect(inits[0]).toMatchObject({ redirect: 'error', credentials: 'omit', cache: 'no-store' });
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 });
