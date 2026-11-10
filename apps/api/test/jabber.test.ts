@@ -348,7 +348,7 @@ describe('lead follow-up to interop 4b: the prekeys X2F used are remembered acro
     for (const xml of s.delivered) expect(phone.decrypt(xml)).toBe(ACCOUNT_CHANGE_TEXT);
     let rows = await records();
     expect(rows).toHaveLength(1);
-    expect(Object.keys(rows[0]!).sort()).toEqual(['device_sealed', 'id', 'prekey_ids', 'recipient_tag', 'updated_at']);
+    expect(Object.keys(rows[0]!).sort()).toEqual(['device_sealed', 'id', 'listed_ids', 'prekey_ids', 'recipient_tag', 'updated_at']);
     expect([...rows[0]!.prekey_ids].sort()).toEqual([1, 2, 3]);
     // Nothing in it names the address, the device id or the device's key.
     const raw = Buffer.concat([rows[0]!.recipient_tag as Buffer, rows[0]!.device_sealed as Buffer]);
@@ -449,12 +449,40 @@ describe('lead follow-up to interop 4b: the prekeys X2F used are remembered acro
     await deps.db.query('delete from jabber_omemo_prekeys');
   });
 
+  /** The production encryptor with the database record, called directly (no outbox). */
+  const directEncryptor = (ring: Keyring = deps.config.jabberKeys!) => {
+    const id = identityFromSeed(newIdentitySeed());
+    return omemoEncryptorFrom({ deviceId: 777, ...id }, generateBundleSecrets(id, 20), undefined, dbPreKeyStore(deps.db, ring, deps.clock));
+  };
+
+  it('review R4: a partial bundle answer (fewer prekeys than last seen, none new) keeps the record, so a later full answer reuses no id', async () => {
+    await deps.db.query('delete from jabber_omemo_prekeys');
+    const phone = new OmemoDevice(40, 3);
+    const enc = directEncryptor();
+    const to = 'partial@xmpp.example.org';
+    const full = () => parseBundle(phone.deviceId, phone.bundleXml())!;
+    const send = (b: ReturnType<typeof full>) => enc.encrypt({ to, plaintext: ACCOUNT_CHANGE_TEXT, bundles: [b] });
+    const first = [await send(full()), await send(full())];
+    const [x, y] = first.map(preKeyIdOf) as [number, number];
+    // The server's answer drops one recorded id (a key that did not parse, a cut answer): the third id is used, and y stays recorded.
+    const partial = { ...full(), preKeys: full().preKeys.filter((p) => p.id !== y) };
+    const third = await send(partial);
+    expect([x, y]).not.toContain(preKeyIdOf(third));
+    // The full answer again: every id is used, so nothing is sent on y (or any other).
+    await expect(send(full())).rejects.toThrow();
+    for (const xml of [...first, third]) expect(phone.decrypt(xml)).toBe(ACCOUNT_CHANGE_TEXT);
+    // A real republish (new ids) still clears it.
+    phone.replenish();
+    expect([4, 5, 6]).toContain(preKeyIdOf(await send(full())));
+    await deps.db.query('delete from jabber_omemo_prekeys');
+  });
+
   it('purgeJabberPreKeys drops records not touched for 30 days and keeps the rest', async () => {
     await deps.db.query('delete from jabber_omemo_prekeys');
     const at = (ms: number) => new Date(now.getTime() - ms);
     for (const [tag, when] of [[1, at(PREKEY_RECORD_RETENTION_MS + 1)], [2, at(PREKEY_RECORD_RETENTION_MS - 60_000)]] as const) {
-      await deps.db.query('insert into jabber_omemo_prekeys (recipient_tag, device_sealed, prekey_ids, updated_at) values ($1, $2, $3, $4)', [
-        Buffer.alloc(32, tag), Buffer.alloc(40, tag), [1], when,
+      await deps.db.query('insert into jabber_omemo_prekeys (recipient_tag, device_sealed, prekey_ids, listed_ids, updated_at) values ($1, $2, $3, $4, $5)', [
+        Buffer.alloc(32, tag), Buffer.alloc(40, tag), [1], [1], when,
       ]);
     }
     expect(await purgeJabberPreKeys.run(deps.db, now)).toBe(1);

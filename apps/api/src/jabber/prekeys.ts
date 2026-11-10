@@ -8,7 +8,9 @@
  * about to encrypt to, encrypts, and writes back what the ledger then holds, in one transaction
  * under an advisory lock per recipient, whatever key the ring puts first (two API processes never pick from the same record at once).
  * Reconciled against the fetched bundle on every load: an id the bundle no longer lists is dropped
- * (the client used it and republished; it can never be picked again anyway), and a record whose
+ * (the client used it and republished; it can never be picked again anyway), unless the answer is
+ * partial (review R4: fewer prekeys than the record last saw and no new id, as a cut answer or one
+ * whose keys did not all parse would be), when the record is kept whole. A record whose
  * identity key differs (a reinstalled client under the same device id) is replaced. A record with
  * no id left is deleted.
  *
@@ -76,23 +78,30 @@ export function dbPreKeyStore(db: pg.Pool, ring: Keyring, clock: () => Date): Pr
       try {
         await c.query('begin');
         await c.query('select pg_advisory_xact_lock(hashtextextended($1, 335))', [lockKey(to)]);
-        const { rows } = await c.query<{ id: string; recipient_tag: Buffer; device_sealed: Buffer; prekey_ids: number[] }>(
-          'select id, recipient_tag, device_sealed, prekey_ids from jabber_omemo_prekeys where recipient_tag = any($1)',
+        const { rows } = await c.query<{ id: string; recipient_tag: Buffer; device_sealed: Buffer; prekey_ids: number[]; listed_ids: number[] }>(
+          'select id, recipient_tag, device_sealed, prekey_ids, listed_ids from jabber_omemo_prekeys where recipient_tag = any($1)',
           [tags],
         );
         // Each row's device, opened; a row that does not open (a removed key) is left alone.
         const opened = rows.flatMap((r) => {
           try {
             const d = Buffer.from(box.open(r.device_sealed, preKeyContext(r.recipient_tag)));
-            return d.length >= 4 ? [{ id: r.id, deviceId: d.readUInt32BE(0), device: d, ids: r.prekey_ids }] : [];
+            return d.length >= 4 ? [{ id: r.id, deviceId: d.readUInt32BE(0), device: d, ids: r.prekey_ids, listed: r.listed_ids }] : [];
           } catch {
             return [];
           }
         });
+        /** Per device, the record kept as it is because this fetch is partial (review R4). */
+        const kept = new Map<RecipientBundle, { ids: number[]; listed: number[] }>();
         for (const b of bundles) {
           const listed = new Set(b.preKeys.map((p) => p.id));
           const mine = deviceBytes(b);
-          for (const r of opened) if (r.device.equals(mine)) ledger.seed(to, b, r.ids.filter((id) => listed.has(id)));
+          for (const r of opened) {
+            if (!r.device.equals(mine)) continue;
+            // Fewer prekeys than last seen and none new: a cut or partly unparsable answer, not a republish.
+            if (listed.size < r.listed.length && [...listed].every((id) => r.listed.includes(id))) kept.set(b, r);
+            ledger.seed(to, b, r.ids.filter((id) => listed.has(id)));
+          }
         }
         let result: T;
         try {
@@ -102,13 +111,15 @@ export function dbPreKeyStore(db: pg.Pool, ring: Keyring, clock: () => Date): Pr
           const now = clock();
           for (const b of bundles) {
             const listed = new Set(b.preKeys.map((p) => p.id));
-            const ids = ledger.usedIds(to, b).filter((id) => listed.has(id)).sort((x, y) => x - y);
+            const record = kept.get(b);
+            const ids = [...new Set([...ledger.usedIds(to, b).filter((id) => listed.has(id)), ...(record?.ids ?? [])])].sort((x, y) => x - y);
+            const known = record ? record.listed : [...listed].sort((x, y) => x - y);
             // The device's earlier records, under any identity key (a changed key replaces them) and any ring key.
             const stale = opened.filter((r) => r.deviceId === b.deviceId).map((r) => r.id);
             if (stale.length > 0) await c.query('delete from jabber_omemo_prekeys where id = any($1)', [stale]);
             if (ids.length === 0) continue;
-            await c.query('insert into jabber_omemo_prekeys (recipient_tag, device_sealed, prekey_ids, updated_at) values ($1, $2, $3, $4)', [
-              current, box.seal(deviceBytes(b), preKeyContext(current)), ids, now,
+            await c.query('insert into jabber_omemo_prekeys (recipient_tag, device_sealed, prekey_ids, listed_ids, updated_at) values ($1, $2, $3, $4, $5)', [
+              current, box.seal(deviceBytes(b), preKeyContext(current)), ids, known, now,
             ]);
           }
           await c.query('commit');
