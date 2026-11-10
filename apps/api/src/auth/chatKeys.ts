@@ -151,6 +151,9 @@ async function strongCallerInTx(db: Queryable, req: FastifyRequest, now: Date): 
 export function chatKeyRoutes(app: FastifyInstance): void {
   // Full trader sessions of the account owner only: no recovery session, no team member (the default).
   const trader = requireSession({ kinds: ['trader'] });
+  // Review F6: per-account budgets on the two writes (429 slow-down), after the session check.
+  const postBudget = async (req: FastifyRequest) => req.server.budgets.chatKeyPost.take(req.auth.accountId);
+  const collectBudget = async (req: FastifyRequest) => req.server.budgets.chatKeyCollect.take(req.auth.accountId);
 
   app.get('/v1/account/chat-keys', { preHandler: trader }, async (req) => {
     const deps = req.server.deps;
@@ -169,7 +172,7 @@ export function chatKeyRoutes(app: FastifyInstance): void {
     });
   });
 
-  app.post('/v1/account/chat-keys', { preHandler: trader }, async (req, reply) => {
+  app.post('/v1/account/chat-keys', { preHandler: [trader, postBudget] }, async (req, reply) => {
     const deps = req.server.deps;
     const body = postBody(req.body);
     const now = deps.clock();
@@ -204,7 +207,7 @@ export function chatKeyRoutes(app: FastifyInstance): void {
     return reply.code(201).send(out);
   });
 
-  app.delete('/v1/account/chat-keys/:id', { preHandler: trader }, async (req, reply) => {
+  app.delete('/v1/account/chat-keys/:id', { preHandler: [trader, collectBudget] }, async (req, reply) => {
     const deps = req.server.deps;
     const id = (req.params as { id?: unknown }).id;
     if (typeof id !== 'string' || !UUID.test(id)) throw new ApiError(404, 'not-found');

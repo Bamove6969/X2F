@@ -1,7 +1,7 @@
 // J-23 (S-075) phase 1 groundwork (docs/security/multi-device-2026-11-09.md, sections 3.1, 4.2,
 // 6.1): the chat-key envelopes the API carries between a person's own devices. The API is a courier:
 // it stores and serves sealed bytes to the account's own strong sessions and never opens them.
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { AccountKind } from '@x2f/accounts';
@@ -10,6 +10,7 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { CHAT_KEY_ENVELOPE_TTL_MS, MAX_OPEN_CHAT_KEY_ENVELOPES, keysOffered, purgeChatKeyEnvelopes, strongForKeys } from '../src/auth/chatKeys.js';
+import { CHAT_KEY_COLLECT_BUCKET, CHAT_KEY_POST_BUCKET } from '../src/limits.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { ensureDeviceCookie } from '../src/auth/device.js';
 import { HOLD_BLOCKED_ROUTES, LIVE_SESSION_ROUTES, WEAK_LIMITED_ROUTES } from '../src/auth/hold.js';
@@ -303,6 +304,24 @@ describe('the courier: strong sessions of the account store and read sealed enve
     const ids = (await deps.db.query<{ id: string }>('select id from chat_key_envelopes where account_id = $1', [t.accountId])).rows.map((r) => r.id);
     expect(ids).toEqual([fresh.id]);
     expect(ids).not.toContain(old.id);
+  });
+
+  it('review F6: posting and collecting are rate limited per account (429 slow-down)', async () => {
+    const t = await strongTrader();
+    let refused: LightMyRequestResponse | null = null;
+    for (let i = 0; i < CHAT_KEY_POST_BUCKET.capacity + 1 && refused === null; i++) {
+      const r = await t.b.post('/v1/account/chat-keys', (await envelopeFor(await generateBoxKeyPair())).body);
+      if (r.statusCode !== 201) refused = r;
+    }
+    expect(refused?.statusCode).toBe(429);
+    expect(refused?.json()).toMatchObject({ error: 'slow-down' });
+    let gone: LightMyRequestResponse | null = null;
+    for (let i = 0; i < CHAT_KEY_COLLECT_BUCKET.capacity + 1 && gone === null; i++) {
+      const r = await t.b.delete(`/v1/account/chat-keys/${randomUUID()}`);
+      if (r.statusCode !== 404) gone = r;
+    }
+    expect(gone?.statusCode).toBe(429);
+    expect(gone?.json()).toMatchObject({ error: 'slow-down' });
   });
 
   it("the epoch must be the account's current one (0 until a rotation exists); the refusal names it", async () => {
