@@ -9,7 +9,7 @@ import { OmemoDevice } from '../src/device.js';
 import { identityFromSeed, newIdentitySeed, xeddsaSign, xeddsaVerify } from '../src/edwards.js';
 import { OMEMO_NS, parseEncryptedElement } from '../src/envelope.js';
 import { parsePreKeyMessage, wireKey } from '../src/message.js';
-import { PreKeyLedger, encryptMessage, registrationIdFor, type RecipientBundle, type SenderIdentity } from '../src/omemo.js';
+import { PreKeyLedger, PreKeysExhausted, encryptMessage, registrationIdFor, type RecipientBundle, type SenderIdentity } from '../src/omemo.js';
 import { x25519KeyPair } from '../src/x25519.js';
 
 const TEXT = 'An account change was made on your X2F account.';
@@ -152,7 +152,7 @@ describe('encryptMessage', () => {
       expect(used.every((id) => offline.preKeys.some((p) => p.id === id))).toBe(true);
     });
 
-    it('tracks each recipient and device apart, and once every prekey of a device is used the session is set up without a one-time prekey, which the device still reads', () => {
+    it('tracks each recipient and device apart, and once every prekey of a device is used the notice is deferred, never sent without a one-time prekey', () => {
       const me = sender();
       const phone = new OmemoDevice(52, 3);
       const sameIdElsewhere = new OmemoDevice(52, 3); // another user's device with the same id: its own identity, its own prekeys
@@ -169,10 +169,68 @@ describe('encryptMessage', () => {
       const other = encryptMessage(me, 'to noor', [recipientBundle(sameIdElsewhere)], { pickPreKey: noor });
       expect([1, 2, 3]).toContain(preKeyIdOf(other));
       expect(sameIdElsewhere.decrypt(other)).toBe('to noor');
-      // A fourth notice to Mira's exhausted device: no one-time prekey rather than a reused one (which the client could not read).
-      const fourth = encryptMessage(me, 'n3', [recipientBundle(phone)], { pickPreKey: mira });
-      expect(preKeyIdOf(fourth)).toBeUndefined();
-      expect(phone.decrypt(fourth)).toBe('n3');
+      // A fourth notice to Mira's exhausted device is neither sent on a reused prekey (which the client could not read) nor
+      // without one (python-omemo refuses that: interop run 2026-11-10, step 4b): it is deferred to the next pass.
+      expect(() => encryptMessage(me, 'n3', [recipientBundle(phone)], { pickPreKey: mira })).toThrow(PreKeysExhausted);
+    });
+
+    it('lead decision after interop 4b: 101 notices to a 100-prekey device in one pass are 100 sent, each on its own prekey, and 1 deferred; none goes without a prekey', () => {
+      const me = sender();
+      const phone = new OmemoDevice(53);
+      const offline = recipientBundle(phone);
+      expect(offline.preKeys).toHaveLength(100);
+      const pass = new PreKeyLedger().forRecipient('mira@xmpp.example.org');
+      const sent: string[] = [];
+      let deferred = 0;
+      for (let i = 0; i < 101; i++) {
+        try {
+          sent.push(encryptMessage(me, `notice ${i}`, [offline], pass));
+        } catch (e) {
+          expect(e).toBeInstanceOf(PreKeysExhausted);
+          expect((e as Error).message).toBe('omemo: prekeys used up in this pass');
+          deferred++;
+        }
+      }
+      expect(sent).toHaveLength(100);
+      expect(deferred).toBe(1);
+      const ids = sent.map(preKeyIdOf);
+      expect(ids.every((id) => id !== undefined)).toBe(true);
+      expect(new Set(ids).size).toBe(100);
+      sent.forEach((xml, i) => expect(phone.decrypt(xml), `notice ${i}`).toBe(`notice ${i}`));
+      // The client republishes after reading them: the same pass can use the fresh prekeys, and only those.
+      phone.replenish();
+      const refreshed = recipientBundle(phone);
+      expect(refreshed.preKeys.some((p) => ids.includes(p.id))).toBe(false);
+      const late = encryptMessage(me, 'notice 100', [refreshed], pass);
+      expect(refreshed.preKeys.map((p) => p.id)).toContain(preKeyIdOf(late));
+      expect(phone.decrypt(late)).toBe('notice 100');
+    });
+
+    it('a notice to several devices, one of them used up, is deferred whole (one message per notice), and the other devices keep the prekeys it had picked', () => {
+      const me = sender();
+      const phone = new OmemoDevice(54, 1);
+      const laptop = new OmemoDevice(55, 2);
+      const pass = new PreKeyLedger().forRecipient('mira@xmpp.example.org');
+      const first = encryptMessage(me, 'n0', [recipientBundle(laptop), recipientBundle(phone)], pass);
+      expect(phone.decrypt(first)).toBe('n0');
+      expect(laptop.decrypt(first)).toBe('n0');
+      // The laptop is picked first and has one prekey left; the phone has none: nothing is sent and the laptop's prekey stays free.
+      expect(() => encryptMessage(me, 'n1', [recipientBundle(laptop), recipientBundle(phone)], pass)).toThrow(PreKeysExhausted);
+      const alone = encryptMessage(me, 'n2', [recipientBundle(laptop)], pass);
+      expect(laptop.decrypt(alone)).toBe('n2');
+    });
+
+    it('a device skipped for a key the agreement refuses (review L2) gives its prekey back, so it never uses up and defers the notices to the good devices', () => {
+      const me = sender();
+      const good = new OmemoDevice(56, 20);
+      const zero: RecipientBundle = { ...recipientBundle(new OmemoDevice(57, 1)), preKeys: [{ id: 1, key: wireKey(Buffer.alloc(32)) }] };
+      const pass = new PreKeyLedger().forRecipient('mira@xmpp.example.org');
+      for (let i = 0; i < 3; i++) {
+        const skipped: number[] = [];
+        const xml = encryptMessage(me, `n${i}`, [zero, recipientBundle(good)], { ...pass, onSkip: (id) => skipped.push(id) });
+        expect(skipped).toEqual([57]);
+        expect(good.decrypt(xml)).toBe(`n${i}`);
+      }
     });
   });
 

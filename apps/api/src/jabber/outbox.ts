@@ -2,14 +2,16 @@
  * Sends the queued account-change notices (owner rule p5-7). The change itself only inserted a row
  * in `jabber_outbox` (migration 331's triggers), so a slow or broken Jabber server never delays or
  * fails it: this worker runs on its own timer, after commit. Each notice is the fixed sentence and
- * nothing else (`NOTICE_TEXT`: the account-change sentence, or the trade-attention one for a dispute). A failed send is retried a few times with a growing wait and then dropped. Logs
+ * nothing else (`NOTICE_TEXT`: the account-change sentence, or the trade-attention one for a dispute). A failed send is retried a few times with a growing wait and then dropped. A
+ * deferred one (a recipient device's prekeys used up in this pass) waits for the next pass without
+ * counting as a try. Logs
  * carry counts only: never an address, an account id or an error message (which could quote one).
  */
 import type pg from 'pg';
 import { PreKeyLedger } from '@x2f/omemo';
 import type { Config } from '../config.js';
 import { openJid } from './address.js';
-import type { JabberSender, NoticeKind } from './sender.js';
+import { NoticeDeferred, type JabberSender, type NoticeKind } from './sender.js';
 
 /** Tries per notice, and the wait before each retry. */
 export const OUTBOX_ATTEMPTS = 4;
@@ -30,6 +32,8 @@ export interface OutboxResult {
   sent: number;
   retried: number;
   dropped: number;
+  /** Put back for the next pass, untried: a recipient device had no prekey left in this one (interop step 4b). */
+  deferred: number;
 }
 
 /** Rejects after `ms` (never quoting anything). */
@@ -45,9 +49,17 @@ export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 /**
  * One pass: takes up to `OUTBOX_BATCH` due notices (removing them, so two API processes never send
  * the same one), sends each, puts a failed one back for later and records `last_sent_at` on success.
+ *
+ * A notice the encryptor defers (`NoticeDeferred`: one of the recipient's devices has had every
+ * published prekey used by earlier notices of this pass) goes back as it was, due at once, so the
+ * next pass sends it against the bundle fetched then (a client republishes fresh prekeys after
+ * reading). Never on a reused prekey and never without one (lead decision after the interop run of
+ * 2026-11-10, step 4b: python-omemo refuses that). The whole notice waits, not only that device:
+ * a row is one notice to the address, sent as one message keyed to every device at once, so the
+ * outbox cannot record which devices already have it.
  */
 export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
-  const out: OutboxResult = { sent: 0, retried: 0, dropped: 0 };
+  const out: OutboxResult = { sent: 0, retried: 0, dropped: 0, deferred: 0 };
   const ring = deps.config.jabberKeys;
   if (ring === null) return out;
   const now = deps.clock();
@@ -71,7 +83,16 @@ export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
       await withTimeout(deps.sender.send(jid, { kind: row.kind }, { preKeys }), SEND_TIMEOUT_MS);
       out.sent++;
       await deps.db.query('update jabber_contacts set last_sent_at = $2 where account_id = $1', [row.account_id, deps.clock()]);
-    } catch {
+    } catch (e) {
+      if (e instanceof NoticeDeferred) {
+        out.deferred++;
+        await deps.db.query(
+          `insert into jabber_outbox (account_id, jid_sealed, txid, kind, attempts, next_at) values ($1, $2, $3, $4, $5, null)
+           on conflict (account_id, txid, kind) do nothing`,
+          [row.account_id, row.jid_sealed, row.txid, row.kind, row.attempts],
+        );
+        continue;
+      }
       const attempts = row.attempts + 1;
       if (attempts >= OUTBOX_ATTEMPTS) {
         out.dropped++;
@@ -89,7 +110,7 @@ export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
 }
 
 /** The only log lines: counts. */
-export type OutboxLog = (e: { jabber: 'outbox'; sent: number; retried: number; dropped: number } | { jabber: 'outbox'; failed: true }) => void;
+export type OutboxLog = (e: { jabber: 'outbox'; sent: number; retried: number; dropped: number; deferred: number } | { jabber: 'outbox'; failed: true }) => void;
 
 /**
  * Runs `sendDueNotices` every `everyMs` (default 5 s; a pass in flight makes the next tick skip).
@@ -102,7 +123,7 @@ export function startOutbox(deps: OutboxDeps, log: OutboxLog, everyMs = 5_000): 
     if (inFlight || stopped) return;
     const p = sendDueNotices(deps).then(
       (r) => {
-        if (r.sent + r.retried + r.dropped > 0) log({ jabber: 'outbox', ...r });
+        if (r.sent + r.retried + r.dropped + r.deferred > 0) log({ jabber: 'outbox', ...r });
       },
       () => log({ jabber: 'outbox', failed: true }),
     );

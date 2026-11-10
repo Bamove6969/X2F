@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import { OmemoDevice, PreKeyLedger, generateBundleSecrets, identityFromSeed, newIdentitySeed, parseEncryptedElement, parsePreKeyMessage } from '@x2f/omemo';
 import { OMEMO_NS, omemoEncryptorFrom, parseBundle, xeddsaVerify, type OmemoEncrypt } from '../src/jabber/omemo.js';
+import { NoticeDeferred } from '../src/jabber/sender.js';
 import { xmlEscape, xmppSender, type XmppSenderOptions } from '../src/jabber/xmpp.js';
 import { certificate } from './helpers/der.js';
 import { VAPID_ENV } from './helpers/vapid.js';
@@ -486,6 +487,22 @@ describe('xmppSender: OMEMO is mandatory (owner ruling p11-31); never a plaintex
     const prekeys = elements.map((e) => parsePreKeyMessage(parseEncryptedElement(e).keys[0]!.data).preKeyId);
     expect(new Set(prekeys).size).toBe(3);
     for (const e of elements) expect(phone.decrypt(e)).toBe('An account change was made on your X2F account.');
+  });
+
+  it('lead decision after interop 4b: once a device has no prekey left in the pass, the send is deferred (its own error) and nothing is written; never a message without a prekey', async () => {
+    const phone = new OmemoDevice(11, 2);
+    const s = await setup({ devices: [{ id: 11, bundle: phone.bundleXml() }], opts: realOmemo() });
+    const pass = new PreKeyLedger();
+    for (let i = 0; i < 2; i++) await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' }, { preKeys: pass });
+    const e = await s.sender.send('mira@xmpp.example.org', { kind: 'account-change' }, { preKeys: pass }).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(NoticeDeferred);
+    expect((e as Error).message).toBe('jabber: notice deferred');
+    const elements = messagesIn(s.all()).map((m) => /<encrypted[\s\S]*?<\/encrypted>/.exec(m)![0]);
+    expect(elements).toHaveLength(2);
+    for (const el of elements) {
+      expect(parsePreKeyMessage(parseEncryptedElement(el).keys[0]!.data).preKeyId).toBeDefined();
+      expect(phone.decrypt(el)).toBe('An account change was made on your X2F account.');
+    }
   });
 
   it('review L2: a device whose bundle has a small-order key is skipped and logged by its id only; the notice still reaches the good device', async () => {

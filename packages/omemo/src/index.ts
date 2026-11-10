@@ -19,5 +19,8 @@ export {
   DEVICELIST_NODE, PREKEY_COUNT, bundleNode, bundleXml, deviceListXml, generateBundleSecrets, newDeviceId, parseBundleSecrets, serializeBundleSecrets,
   type BundleSecrets,
 } from './bundle.js';
-export { PreKeyLedger, encryptMessage, registrationIdFor, type EncryptOptions, type PickPreKey, type PreKey, type RecipientBundle, type SenderIdentity } from './omemo.js';
+export {
+  PreKeyLedger, PreKeysExhausted, encryptMessage, registrationIdFor, type EncryptOptions, type PickPreKey, type PreKey, type RecipientBundle, type ReleasePreKey,
+  type SenderIdentity,
+} from './omemo.js';
 export { OmemoDevice } from './device.js';

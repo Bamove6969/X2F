@@ -40,7 +40,7 @@ import {
   type OmemoAnnouncement, type OmemoBundle, type OmemoEncrypt,
 } from './omemo.js';
 import { SCRAM_MECHANISMS, scramClient } from './scram.js';
-import { messageText, SENDER_NAME, type JabberMessage, type JabberSender, type SendOptions } from './sender.js';
+import { messageText, NoticeDeferred, SENDER_NAME, type JabberMessage, type JabberSender, type SendOptions } from './sender.js';
 import { socksConnect } from './socks.js';
 
 /** A server that sends more than this before we have what we wait for is refused. */
@@ -279,7 +279,9 @@ export function xmppSender(cfg: XmppConfig, opts: XmppSenderOptions = {}): Jabbe
         let encrypted: string;
         try {
           encrypted = await encrypt({ to, plaintext: text, bundles, ...(o.preKeys ? { preKeys: o.preKeys } : {}) });
-        } catch {
+        } catch (e) {
+          // A device with no prekey left in this pass (interop step 4b): nothing is written, the outbox keeps the notice.
+          if (e instanceof NoticeDeferred) throw e;
           throw new XmppError('omemo'); // never the encryptor's own words
         }
         if (!isEncryptedElement(encrypted)) throw new XmppError('omemo');

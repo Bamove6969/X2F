@@ -28,6 +28,19 @@ export class OmemoDevice {
     this.bundle = generateBundleSecrets(xeddsaSigner(this.identity.privateKey), preKeyCount);
   }
 
+  /**
+   * What a client does after reading prekey messages (python-omemo did after every one in the
+   * interop run): drops the used prekeys and fills the bundle back to its size with fresh ones under
+   * new ids, which it then republishes.
+   */
+  replenish(): void {
+    const size = this.bundle.preKeys.length;
+    let next = Math.max(0, ...this.bundle.preKeys.map((p) => p.id), ...this.usedPreKeys) + 1;
+    const kept = this.bundle.preKeys.filter((p) => !this.usedPreKeys.has(p.id));
+    while (kept.length < size) kept.push({ id: next++, key: x25519KeyPair() });
+    this.bundle.preKeys.splice(0, this.bundle.preKeys.length, ...kept);
+  }
+
   bundleXml(): string {
     return bundleXml(this.identity.publicKey, this.bundle);
   }

@@ -8,8 +8,8 @@ import { startHold, withTx } from '../src/auth/hold.js';
 import { startDispute } from '../src/disputes/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { codeHash, maskJid, normalizeJid, openJid, sealJid } from '../src/jabber/address.js';
-import { OmemoDevice, PreKeyLedger, parseBundleSecrets } from '@x2f/omemo';
-import { loadOmemoBundle, loadOmemoIdentity, omemoEncryptor, parseBundle, xeddsaVerify } from '../src/jabber/omemo.js';
+import { OmemoDevice, PreKeyLedger, generateBundleSecrets, identityFromSeed, newIdentitySeed, parseBundleSecrets, parseEncryptedElement, parsePreKeyMessage } from '@x2f/omemo';
+import { loadOmemoBundle, loadOmemoIdentity, omemoEncryptor, omemoEncryptorFrom, parseBundle, xeddsaVerify } from '../src/jabber/omemo.js';
 import { rewrapJabberSecrets } from '../src/jabber/rewrap.js';
 import { PENDING_RETENTION_MS, purgeJabberPending } from '../src/jabber/retention.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
@@ -145,7 +145,7 @@ describe('set-up: address, test code, done', () => {
     const t = await withJabber();
     expect((await t.browser.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(200);
     expect(await notices(t.id)).toBe(1);
-    expect(await sendAll()).toEqual({ sent: 1, retried: 0, dropped: 0 });
+    expect(await sendAll()).toEqual({ sent: 1, retried: 0, dropped: 0, deferred: 0 });
     expect(sent).toEqual([{ to: t.jid, message: { kind: 'account-change' } }]);
     expect(await notices(t.id)).toBe(0);
     expect((await t.browser.get('/v1/account/jabber')).json()).toMatchObject({ lastSentAt: now.toISOString() });
@@ -247,15 +247,51 @@ describe('fire and forget', () => {
     const t = await withJabber();
     failing = true;
     expect((await t.browser.put('/v1/account/security/logout-timer', { idleHours: 8 })).statusCode).toBe(200);
-    expect(await sendAll()).toEqual({ sent: 0, retried: 1, dropped: 0 });
+    expect(await sendAll()).toEqual({ sent: 0, retried: 1, dropped: 0, deferred: 0 });
     // Not due again until its retry time.
-    expect(await sendAll()).toEqual({ sent: 0, retried: 0, dropped: 0 });
+    expect(await sendAll()).toEqual({ sent: 0, retried: 0, dropped: 0, deferred: 0 });
     for (let i = 2; i < OUTBOX_ATTEMPTS; i++) {
       advance(3_600_000);
-      expect(await sendAll()).toEqual({ sent: 0, retried: 1, dropped: 0 });
+      expect(await sendAll()).toEqual({ sent: 0, retried: 1, dropped: 0, deferred: 0 });
     }
     advance(3_600_000);
-    expect(await sendAll()).toEqual({ sent: 0, retried: 0, dropped: 1 });
+    expect(await sendAll()).toEqual({ sent: 0, retried: 0, dropped: 1, deferred: 0 });
+    expect(await notices(t.id)).toBe(0);
+  });
+
+  it("lead decision after interop 4b: a notice to a device whose prekeys the pass used up stays in the outbox, untried, and goes on the next pass against the refreshed bundle", async () => {
+    const t = await withJabber();
+    await sendAll(); // whatever earlier tests left due goes to the fake sender, not to this one
+    // The user's client: two prekeys published, offline during the first pass (its bundle does not change).
+    const phone = new OmemoDevice(11, 2);
+    const id = identityFromSeed(newIdentitySeed());
+    const omemo = omemoEncryptorFrom({ deviceId: 777, ...id }, generateBundleSecrets(id, 20));
+    const delivered: string[] = [];
+    // The real encryptor and the pass's ledger, as the XMPP sender uses them; the device list is the phone alone.
+    const sender: JabberSender = {
+      async send(to, message, o) {
+        const bundle = parseBundle(phone.deviceId, phone.bundleXml())!;
+        delivered.push(await omemo.encrypt({ to, plaintext: messageText(message), bundles: [bundle], ...(o?.preKeys ? { preKeys: o.preKeys } : {}) }));
+      },
+    };
+    for (const idleHours of [2, 4, 6]) expect((await t.browser.put('/v1/account/security/logout-timer', { idleHours })).statusCode).toBe(200);
+    expect(await notices(t.id)).toBe(3);
+    const pass = () => sendDueNotices({ db: deps.db, clock: deps.clock, config: deps.config, sender });
+    expect(await pass()).toEqual({ sent: 2, retried: 0, dropped: 0, deferred: 1 });
+    // Left for the next pass with its tries untouched; nothing was sent without a prekey.
+    const left = await deps.db.query<{ attempts: number; next_at: Date | null }>('select attempts, next_at from jabber_outbox where account_id = $1', [t.id]);
+    expect(left.rows).toHaveLength(1);
+    expect(left.rows[0]!.attempts).toBe(0);
+    expect(left.rows[0]!.next_at === null || left.rows[0]!.next_at <= now).toBe(true);
+    const preKeyIdOf = (xml: string) => parsePreKeyMessage(parseEncryptedElement(xml).keys[0]!.data).preKeyId;
+    expect(delivered.map(preKeyIdOf).sort()).toEqual([1, 2]);
+    // The client comes online, reads both and republishes fresh prekeys; the next pass sends the third on one of them.
+    for (const xml of delivered) expect(phone.decrypt(xml)).toBe(ACCOUNT_CHANGE_TEXT);
+    phone.replenish();
+    expect(await pass()).toEqual({ sent: 1, retried: 0, dropped: 0, deferred: 0 });
+    expect(delivered).toHaveLength(3);
+    expect([3, 4]).toContain(preKeyIdOf(delivered[2]!));
+    expect(phone.decrypt(delivered[2]!)).toBe(ACCOUNT_CHANGE_TEXT);
     expect(await notices(t.id)).toBe(0);
   });
 

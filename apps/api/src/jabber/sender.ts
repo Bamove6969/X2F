@@ -40,6 +40,19 @@ export interface SendOptions {
   preKeys?: PreKeyLedger;
 }
 
+/**
+ * A send that did not happen and should not count as a try: a recipient device has no one-time
+ * prekey left in this outbox pass (lead decision after the interop run of 2026-11-10, step 4b; the
+ * encryptor throws it). The outbox keeps the notice for its next pass, which fetches the bundle
+ * again. The message is fixed.
+ */
+export class NoticeDeferred extends Error {
+  constructor() {
+    super('jabber: notice deferred');
+    this.name = 'NoticeDeferred';
+  }
+}
+
 export function messageText(m: JabberMessage): string {
   if (m.kind === 'test-code') {
     if (!/^[0-9]{6}$/.test(m.code)) throw new Error('jabber: a test code is six digits');

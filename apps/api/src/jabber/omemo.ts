@@ -18,11 +18,12 @@
 import { randomInt } from 'node:crypto';
 import type pg from 'pg';
 import {
-  bundleXml, deviceListXml, encryptMessage, generateBundleSecrets, identityFromSeed, newIdentitySeed, parseBundleSecrets, serializeBundleSecrets, xeddsaVerify,
+  PreKeysExhausted, bundleXml, deviceListXml, encryptMessage, generateBundleSecrets, identityFromSeed, newIdentitySeed, parseBundleSecrets, serializeBundleSecrets, xeddsaVerify,
   type BundleSecrets, type PreKeyLedger, type SeedIdentity,
 } from '@x2f/omemo';
 import { keyringBox } from '../auth/keystore.js';
 import type { Keyring } from '../config.js';
+import { NoticeDeferred } from './sender.js';
 
 export { xeddsaVerify };
 
@@ -44,7 +45,8 @@ export interface OmemoBundle {
 
 /**
  * Encrypts `plaintext` to `bundles` and returns one `<encrypted xmlns='eu.siacs.conversations.axolotl'>`
- * element. `preKeys` is the outbox pass's ledger (review M2), when the send belongs to one.
+ * element. `preKeys` is the outbox pass's ledger (review M2), when the send belongs to one; when it
+ * has no prekey left for one of the devices, rejects with `NoticeDeferred` (interop step 4b).
  */
 export type OmemoEncrypt = (input: { to: string; plaintext: string; bundles: OmemoBundle[]; preKeys?: PreKeyLedger }) => Promise<string>;
 
@@ -230,11 +232,17 @@ export async function loadOmemoBundle(db: pg.Pool, ring: Keyring, identity: Omem
 export function omemoEncryptorFrom(identity: OmemoIdentity, bundle: BundleSecrets, log?: OmemoLog): OmemoEncryptor {
   return {
     announce: async () => ({ deviceId: identity.deviceId, deviceList: deviceListXml([identity.deviceId]), bundle: bundleXml(identity.publicKey, bundle) }),
-    encrypt: async ({ to, plaintext, bundles, preKeys }) =>
-      encryptMessage(identity, plaintext, bundles, {
-        ...(preKeys ? { pickPreKey: preKeys.picker(to) } : {}),
-        onSkip: (deviceId) => log?.({ jabber: 'omemo', skippedDevice: deviceId }),
-      }),
+    encrypt: async ({ to, plaintext, bundles, preKeys }) => {
+      try {
+        return encryptMessage(identity, plaintext, bundles, {
+          ...(preKeys ? preKeys.forRecipient(to) : {}),
+          onSkip: (deviceId) => log?.({ jabber: 'omemo', skippedDevice: deviceId }),
+        });
+      } catch (e) {
+        if (e instanceof PreKeysExhausted) throw new NoticeDeferred();
+        throw e;
+      }
+    },
   };
 }
 

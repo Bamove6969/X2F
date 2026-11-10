@@ -32,12 +32,19 @@ export interface SenderIdentity {
 export const registrationIdFor = (deviceId: number): number => 1 + (deviceId % 16380);
 
 export type PreKey = RecipientBundle['preKeys'][number];
-/** Picks the one-time prekey of a bundle to use; null when there is none left, so the session is set up without one. */
+/**
+ * Picks the one-time prekey of a bundle to use; null when every one is used up in this pass, and
+ * then the notice is not sent (`PreKeysExhausted`): never without a one-time prekey.
+ */
 export type PickPreKey = (bundle: RecipientBundle) => PreKey | null;
+/** Gives back a prekey picked for a message that was then not sent (so no client ever saw it used). */
+export type ReleasePreKey = (bundle: RecipientBundle, preKey: PreKey) => void;
 
 export interface EncryptOptions {
   /** Which prekey of a bundle to use (default: one at random; a `PreKeyLedger` for an outbox pass). */
   pickPreKey?: PickPreKey;
+  /** Told of each picked prekey that went unused after all (a skipped device, a deferred notice). */
+  releasePreKey?: ReleasePreKey;
   /** The base key per device (default: fresh); tests only. */
   baseKey?: () => KeyPair;
   /** Told the id of each device that was skipped (review L2); the id is the only thing worth logging. */
@@ -47,21 +54,40 @@ export interface EncryptOptions {
 const randomPreKey: PickPreKey = (b) => b.preKeys[randomInt(b.preKeys.length)]!;
 
 /**
+ * Thrown by `encryptMessage` when a recipient device has no prekey left in this pass: the notice is
+ * not sent now and waits for the next pass (lead decision after the interop run of 2026-11-10, step
+ * 4b). Its message is fixed.
+ */
+export class PreKeysExhausted extends Error {
+  constructor() {
+    super('omemo: prekeys used up in this pass');
+    this.name = 'PreKeysExhausted';
+  }
+}
+
+/**
  * The prekeys picked during one outbox pass (review M2). A client deletes a one-time prekey after
  * its first use and republishes without it; while it is offline the sender sees the same bundle for
  * every notice, so two notices picking the same prekey would leave the second unreadable. Within one
- * pass no prekey of a device (by recipient, device id and identity key) is picked twice; once all
- * are used, the session is set up without a one-time prekey, which X3DH allows and libsignal reads.
+ * pass no prekey of a device (by recipient, device id and identity key) is picked twice. Once all
+ * are used the picker answers null and the notice is deferred to the next pass, which fetches the
+ * bundle again (lead decision after interop step 4b: python-omemo, which Gajim and other clients
+ * use, refuses a PreKeySignalMessage without a one-time prekey, so there is no such fallback).
  */
 export class PreKeyLedger {
   private readonly used = new Map<string, Set<number>>();
 
+  private usedBy(recipient: string, b: RecipientBundle): Set<number> {
+    const device = `${recipient}\n${b.deviceId}\n${b.identityKey.toString('hex')}`;
+    let used = this.used.get(device);
+    if (used === undefined) this.used.set(device, (used = new Set()));
+    return used;
+  }
+
   /** The picker for notices to `recipient` (a bare JID) in this pass. */
   picker(recipient: string): PickPreKey {
     return (b) => {
-      const device = `${recipient}\n${b.deviceId}\n${b.identityKey.toString('hex')}`;
-      let used = this.used.get(device);
-      if (used === undefined) this.used.set(device, (used = new Set()));
+      const used = this.usedBy(recipient, b);
       const left = b.preKeys.filter((p) => !used.has(p.id));
       if (left.length === 0) return null;
       const pick = left[randomInt(left.length)]!;
@@ -69,14 +95,26 @@ export class PreKeyLedger {
       return pick;
     };
   }
+
+  /** Picker and releaser for notices to `recipient`, as `encryptMessage` options. */
+  forRecipient(recipient: string): Required<Pick<EncryptOptions, 'pickPreKey' | 'releasePreKey'>> {
+    return { pickPreKey: this.picker(recipient), releasePreKey: (b, p) => this.usedBy(recipient, b).delete(p.id) };
+  }
 }
 
 /**
  * Encrypts `text` to every device in `bundles` and returns the `<encrypted>` element. A device
  * whose bundle does not verify, has no prekeys, or has a key the agreement refuses (small-order or
  * not on the curve: OpenSSL returns an error for an all-zero shared secret) is skipped, so one
- * broken client never silences a user's other devices (review L2). Throws when no device is left or
- * `bundles` is empty, naming only the fixed reasons, never a key.
+ * broken client never silences a user's other devices (review L2); the prekey picked for it is given
+ * back, since nothing was sent to it. Throws when no device is left or `bundles` is empty, naming
+ * only the fixed reasons, never a key.
+ *
+ * Throws `PreKeysExhausted` when the picker has no prekey left for a device (one outbox pass sent it
+ * every one), giving back the prekeys already picked for the others: the whole notice is deferred.
+ * One notice is one message carrying a key per device, and the outbox keeps one row per notice, not
+ * per device, so it cannot send to some devices now and to the rest later (a per-device outbox
+ * would; until then a used-up device holds back the notice for the user's other devices too).
  */
 export function encryptMessage(identity: SenderIdentity, text: string, bundles: RecipientBundle[], o: EncryptOptions = {}): string {
   if (bundles.length === 0) throw new RangeError('omemo: no recipient device');
@@ -85,23 +123,35 @@ export function encryptMessage(identity: SenderIdentity, text: string, bundles: 
   const ourIdentity: KeyPair = { publicKey: identity.publicKey, privateKey: identity.privateKey };
   const keys: Array<{ rid: number; prekey: boolean; data: Buffer }> = [];
   const reasons = new Set<string>();
+  const pick = o.pickPreKey ?? randomPreKey;
+  const picked: Array<[RecipientBundle, PreKey]> = [];
+  const giveBack = (b: RecipientBundle, pre: PreKey) => o.releasePreKey?.(b, pre);
   for (const b of bundles) {
+    let pre: PreKey | null = null;
     try {
       const theirIdentity = rawKey(b.identityKey);
       if (!xeddsaVerify(theirIdentity, b.signedPreKey, b.signedPreKeySignature)) throw new RangeError('omemo: bundle signature does not verify');
       if (b.preKeys.length === 0) throw new RangeError('omemo: bundle without prekeys');
-      const pre = (o.pickPreKey ?? randomPreKey)(b);
+      pre = pick(b);
+      if (pre === null) {
+        for (const [pb, pp] of picked) giveBack(pb, pp);
+        throw new PreKeysExhausted();
+      }
       const session = initAlice({
         ourIdentity,
         ourBaseKey: (o.baseKey ?? x25519KeyPair)(),
         theirIdentity,
         theirSignedPreKey: rawKey(b.signedPreKey),
-        ...(pre === null ? {} : { theirOneTimePreKey: rawKey(pre.key), preKeyId: pre.id }),
+        theirOneTimePreKey: rawKey(pre.key),
+        preKeyId: pre.id,
         signedPreKeyId: b.signedPreKeyId,
         registrationId: registrationIdFor(identity.deviceId),
       });
       keys.push({ rid: b.deviceId, prekey: true, data: encrypt(session, secret) });
+      picked.push([b, pre]);
     } catch (e) {
+      if (e instanceof PreKeysExhausted) throw e;
+      if (pre !== null) giveBack(b, pre);
       // Our own checks have fixed texts; anything else (OpenSSL refusing a key) becomes one.
       reasons.add(e instanceof RangeError && e.message.startsWith('omemo: ') ? e.message.slice('omemo: '.length) : 'key rejected');
       o.onSkip?.(b.deviceId);
