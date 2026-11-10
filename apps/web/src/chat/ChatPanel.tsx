@@ -301,10 +301,13 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
 
       {phase === 'ready' && !gone && pay !== undefined && snap?.role === 'seller' ? (
         payeeGivesNothing(pay.methodId) ? (
-          // COPY-UNSIGNED (payee fields, 10 Nov 2026): a gift card, ATM or face-to-face cash method has no boxes.
-          <p className="x2f-chat__pay-hint" data-pay-nothing="">
-            Nothing to send: the buyer sends the card or cash details here in the chat.
-          </p>
+          // Review F1: like the boxes' Send, only once the escrow is secured (owner Q12).
+          snap.paySecured ? (
+            // COPY-UNSIGNED (payee fields, 10 Nov 2026): a gift card, ATM or face-to-face cash method has no boxes.
+            <p className="x2f-chat__pay-hint" data-pay-nothing="">
+              Nothing to send: the buyer sends the card or cash details here in the chat.
+            </p>
+          ) : null
         ) : (
           <PayBoxes chat={chat} name={name} methodId={pay.methodId} secured={snap.paySecured} onSent={sent} />
         )

@@ -343,7 +343,7 @@ describe('OfferChatPanel', () => {
 
 describe('ChatPanel: the payee\'s payment details boxes and the payer\'s card (J-08, S-090; owner p7-3)', () => {
   const INTERAC = { methodId: 'INTERAC_E_TRANSFER' };
-  const PAY = { v: 1 as const, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }] };
+  const PAY = { v: 2 as const, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }] };
   const TEXT = 'Payment details\nFull name: Jane Doe\nEmail: jane@example.ca';
   const boxes = (host: HTMLElement) => host.querySelector<HTMLFormElement>('form[data-pay-boxes]');
   const field = (host: HTMLElement, key: string) => host.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[data-pay-field="${key}"]`);
@@ -429,6 +429,20 @@ describe('ChatPanel: the payee\'s payment details boxes and the payer\'s card (J
     const buyer = render(<ChatPanel chat={CHAT} name="Sam" pay={{ methodId: 'F2F' }} />);
     await flush();
     expect(buyer.host.querySelector('[data-pay-nothing]')).toBeNull();
+  });
+
+  it('review F1: before the escrow is secured a gift card or cash seller sees neither the nothing-to-send line nor boxes', async () => {
+    current = snap({ role: 'seller', paySecured: false });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={{ methodId: 'STEAM_GIFT_CARD' }} />);
+    await flush();
+    expect(host.querySelector('[data-pay-nothing]')).toBeNull();
+    expect(boxes(host)).toBeNull();
+    expect(host.querySelector('[data-pay-field]')).toBeNull();
+    // Secured: the line comes.
+    current = snap({ role: 'seller', paySecured: true });
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(host.querySelector('[data-pay-nothing]')).not.toBeNull();
   });
 
   it('a mailing address is a multi-line box', async () => {
