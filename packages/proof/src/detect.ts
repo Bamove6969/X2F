@@ -1051,8 +1051,8 @@ export function detectSensitiveText(s: string, opts: DetectOptions = {}): Hidden
 }
 
 /**
- * The boxes of the trade code (the memo) in OCR words, in any grouping or case, cut by character
- * position like `amountBoxes`. The uploader's app compares them with the uploader's own blur (owner
+ * The boxes of the trade code (the memo) in OCR words, in any grouping or case, also wrapped onto
+ * the next line, cut by character position like `amountBoxes`. The uploader's app compares them with the uploader's own blur (owner
  * 2026-11-02 08:17: warn when their blur covers the amount or the memo; posting is still allowed).
  */
 export function codeBoxes(words: OcrWord[], tradeCode: string): Box[] {
@@ -1060,11 +1060,30 @@ export function codeBoxes(words: OcrWord[], tradeCode: string): Box[] {
   if (code === null) throw new RangeError('tradeCode is not a trade code');
   const codeRe = codePattern(code);
   const out: Box[] = [];
-  for (const l of linesOf(words)) {
-    const n = normalize(l.text);
+  const lines = linesOf(words);
+  const norms = lines.map((l) => normalize(l.text));
+  const kepts = norms.map((n) => {
     const kept: boolean[] = new Array<boolean>(n.text.length).fill(false);
     for (const m of n.text.matchAll(codeRe)) mark(kept, m.index, m.index + m[0].length);
-    const k = toOriginal(n, new Array<Span | null>(n.text.length).fill(null), kept).keep;
+    return kept;
+  });
+  // A code wrapped onto the next line (review 2026-11-10 finding 8, as `checkProof` reads it, review
+  // N1): the two lines joined with nothing and with a space; each part is boxed on its own line.
+  for (let i = 0; i + 1 < norms.length; i++) {
+    const a = norms[i]!.text;
+    const b = norms[i + 1]!.text;
+    for (const sep of ['', ' ']) {
+      for (const m of `${a}${sep}${b}`.matchAll(codeRe)) {
+        const end = m.index + m[0].length;
+        if (m.index >= a.length || end <= a.length + sep.length) continue;
+        mark(kepts[i]!, m.index, a.length);
+        mark(kepts[i + 1]!, 0, end - a.length - sep.length);
+      }
+    }
+  }
+  for (const [li, l] of lines.entries()) {
+    const n = norms[li]!;
+    const k = toOriginal(n, new Array<Span | null>(n.text.length).fill(null), kepts[li]!).keep;
     for (const { word, start, end } of l.words) {
       const charW = (word.x1 - word.x0) / (end - start);
       for (let c = start; c < end; ) {

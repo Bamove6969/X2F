@@ -22,6 +22,26 @@ describe('codeBoxes', () => {
     expect(box).toEqual({ x0: 50, y0: 0, x1: 240, y1: 16 });
   });
 
+  // Review 2026-11-10 finding 8: a memo wrapped onto the next line, as checkProof reads it (review N1).
+  it('boxes a code wrapped onto the next line, each part on its own line', () => {
+    expect(codeBoxes(ocr('Memo K7M2-9QXA-', '4FTR-8WPN'), CODE)).toEqual([
+      { x0: 50, y0: 0, x1: 150, y1: 16 },
+      { x0: 0, y0: 20, x1: 90, y1: 36 },
+    ]);
+    expect(codeBoxes(ocr('Memo K7M2-9QXA', '-4FTR-8WPN thanks'), CODE)).toEqual([
+      { x0: 50, y0: 0, x1: 140, y1: 16 },
+      { x0: 0, y0: 20, x1: 100, y1: 36 },
+    ]);
+    expect(codeBoxes(ocr('Memo K7M2 9QXA', '4FTR 8WPN'), CODE)).toEqual([
+      { x0: 50, y0: 0, x1: 90, y1: 16 },
+      { x0: 100, y0: 0, x1: 140, y1: 16 },
+      { x0: 0, y0: 20, x1: 40, y1: 36 },
+      { x0: 50, y0: 20, x1: 90, y1: 36 },
+    ]);
+    // Half a code on a line, and the rest nowhere, is not the code.
+    expect(codeBoxes(ocr('Memo K7M2-9QXA-', 'Amount $412.50'), CODE)).toEqual([]);
+  });
+
   it('nothing when the code is not there, and a bad code is a RangeError', () => {
     expect(codeBoxes(ocr('Note rent', 'Amount $412.50'), CODE)).toEqual([]);
     expect(() => codeBoxes(ocr('x'), 'not a code')).toThrow(RangeError);
