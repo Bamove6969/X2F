@@ -151,14 +151,16 @@ tapped text is left out, and long address- or key-like strings are replaced with
 `POST /__demo/notes` is same-origin only, JSON only, 4 KB at most, 30 writes a minute. `/__demo/*`
 never reaches the API (`tools/test/demo-notes.test.ts`).
 
-## Known issue: a release never finishes on the seller's side
+## Fixed: a release never finished on the seller's side
 
-After the seller holds **Payment received** and the buyer's device co-signs, the buyer sees
-"Released" and the XMR is sent, but the seller's screen stays on "Signing… keep this page open"
-and the trade stays `settling` (the moderator logs `sweep-unproven`). The seller's device can never
-see its release in a block in the browser bundle, so it never sends its post-release statement and
-the watcher (which needs both traders' statements) cannot settle. This is the app bug documented in
-`wip/lead-release-settle` 3efabc81 (P0 8 Nov, `docs/coordination.md` there; WIP, not on main).
+Until 10 Nov, after the seller held **Payment received** and the buyer's device co-signed, the
+buyer saw "Released" but the seller's screen stayed on "Signing… keep this page open" and the
+trade stayed `settling` (the moderator logged `sweep-unproven`). The seller's device could never
+look its release up on the daemon in the browser bundle. Fixed by `wip/lead-release-settle-2`
+(merged here; not on main until the lead's security review): see `docs/coordination.md`, "P0 8
+Nov". Likely still true on the demo (from the code, not tried): reloading a trader's page
+mid-trade reopens its regtest escrow wallet in-process, whose HTTP has the same cause and cannot
+send in the browser (regtest only); keep each trader's page open from take to settled.
 
 ## The guards
 
