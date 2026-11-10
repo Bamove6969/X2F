@@ -19,6 +19,7 @@ import {
   type TxStatus,
 } from './engine.js';
 import { fromBase64, toBase64 } from './base64.js';
+import { useFetchForInProcessWallets } from './inProcessHttp.js';
 import { checkPayouts, checkTxSet, sumPayouts, type DescribedTx } from './verify.js';
 
 export type EscrowNetwork = 'regtest' | 'stagenet' | 'mainnet';
@@ -453,8 +454,13 @@ export class MoneroMultisigEngine implements EscrowEngine {
       throw new EscrowError('bad-saved-session', 'not base64');
     }
     // monero-ts 0.11.16 drops the regtest flag when a worker reopens wallet data, so a
-    // resumed regtest wallet runs in-process. Other networks keep the worker.
-    if (this.opts.network === 'regtest') config.setProxyToWorker(false);
+    // resumed regtest wallet runs in-process. Other networks keep the worker. In-process, its
+    // daemon requests go through a plain fetch (inProcessHttp.ts): in the web app's bundle
+    // monero-ts's own in-process client cannot send, so a reloaded page never synced (10 Nov).
+    if (this.opts.network === 'regtest') {
+      config.setProxyToWorker(false);
+      await useFetchForInProcessWallets();
+    }
     let wallet: MoneroWalletFull;
     try {
       wallet = await MoneroWalletFull.openWallet(config);
