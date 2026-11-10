@@ -71,13 +71,8 @@ export interface TradeRow {
   extensions: number;
   paid_at: Date | null;
   confirm_by: Date | null;
-  /**
-   * Retired by the owner's 8 Nov reversal (no final alert; migration 120): kept in the table for
-   * old rows, never read or written by the machine.
-   */
-  final_alert_at: Date | null;
-  /** Retired with the final alert (Task 19's seen-receipt); kept for old rows only. */
-  final_alert_seen_at: Date | null;
+  // The retired final-alert columns (final_alert_at, final_alert_seen_at; owner's 8 Nov reversal,
+  // migration 120) stay in the table for old rows; nothing in src reads or writes them.
   cancel_proposed_by: 'buyer' | 'seller' | null;
   settling: Trade['settling'];
   settle_from: TradeState | null;

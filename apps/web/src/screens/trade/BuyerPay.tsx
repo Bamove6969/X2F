@@ -458,7 +458,16 @@ function GrownNote({ view, escrow, children }: { view: TradeView; escrow: Pick<T
 
 /** Focuses the composer of the chat beside the wide room, if one is installed. */
 function focusAsideChat(from: HTMLElement): void {
-  from.closest('.x2f-room')?.querySelector<HTMLElement>('.x2f-room__chat-panel :is(input, textarea, [contenteditable="true"])')?.focus();
+  // The first input that is not one of the payee's payment-detail boxes (`[data-pay-boxes]`, J-08):
+  // the same selection as TradeRoom's composerIn(). Those boxes are not in this panel today.
+  const room = from.closest('.x2f-room');
+  if (room === null) return;
+  for (const el of room.querySelectorAll<HTMLElement>('.x2f-room__chat-panel :is(input, textarea, [contenteditable="true"])')) {
+    if (el.closest('[data-pay-boxes]') === null) {
+      el.focus();
+      return;
+    }
+  }
 }
 
 
