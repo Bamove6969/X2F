@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
+import { moneroGlue } from './vite-monero-glue.js';
 
 const empty = fileURLToPath(new URL('./src/empty.ts', import.meta.url));
 const assertShim = fileURLToPath(new URL('./src/assertShim.ts', import.meta.url));
@@ -23,7 +24,9 @@ export default defineConfig(({ command, mode }) => {
   const env = { ...loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), 'VITE_'), ...process.env };
   const fixtures = fixturesOn(command, mode, env.VITE_FIXTURES);
   return {
-    plugins: [react()],
+    plugins: [react(), moneroGlue()],
+    // The escrow worker (where the wallets run) is bundled with its own plugin list.
+    worker: { plugins: () => [moneroGlue()] },
     resolve: {
       // monero-ts pulls in Node's net and tls; the browser build gets an empty module (research §3, P3-M8).
       // and Node's `assert`, which monero-ts calls for its own checks: a working stand-in (src/assertShim.ts).
