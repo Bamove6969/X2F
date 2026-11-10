@@ -393,7 +393,7 @@ function fundTimeOver(view: TradeView, nowMs: number): boolean {
 /**
  * The buyer before funding: setup progress, then "Waiting for <seller> to fund". No address, QR
  * code or wallet link. Design proto review P1 (8 Nov): Chat is there, the buyer can cancel at once
- * (the flow map: before the escrow is funded either side may cancel; "Cancelling is final" asks
+ * (the flow map: before the escrow is funded either side may cancel; "Cancelling is likely final" asks
  * once), the screen says what happens if the time runs out, and once it has, that X2F is
  * cancelling (the server's tick lapses the trade; BuyerFundEnded then says it is cancelled).
  */

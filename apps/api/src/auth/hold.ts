@@ -329,6 +329,10 @@ export async function startHold(
  * weak session filling the device limit, would outlive the owner's answer. Alert `sessions-ended`
  * `{ count, reason: 'owner-login' }` when any did. Returns null when no hold ended, else the ids of
  * the sessions it ended (the caller closes their streams after commit).
+ *
+ * Hold v2 path: it drops the pending change on a strong login, whereas hold v3 (holdChanges.ts)
+ * approves or cancels the waiting changes per owner G58. Still reachable: approval.ts calls it on
+ * every login that proved a method (`a.proven`), so it ends a running hold of either model.
  */
 export async function endHoldIfOwner(db: Queryable, s: SettleDeps, accountId: string, proven: ProvenMethod, now: Date): Promise<string[] | null> {
   const hold = await holdInTx(db, s, accountId, now);
