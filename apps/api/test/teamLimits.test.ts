@@ -332,6 +332,26 @@ describe('working hours (p7-11; review S-m4)', () => {
     expect(err(await m.browser.get('/v1/account/me'))).toEqual({ status: 401, error: 'not-authenticated' });
   });
 
+  it("F6: /v1/account/me reports a member's session end capped at their window's end, as staff; any time and the lead are not capped", async () => {
+    const owner = await team();
+    const m = await member(owner.id, rolesToAbilities(['trades']));
+    type Me = { session: { expiresAt: string } | null };
+    const end = async (b: Browser) => ((await b.get('/v1/account/me')).json() as Me).session!.expiresAt;
+    // Any time: the session's own end (the unchosen 2 hours from 12:00).
+    expect(await end(m.browser)).toBe(new Date(START.getTime() + 2 * HOUR).toISOString());
+    // The window ends at 13:00, before the session's 14:00: /me says 13:00.
+    expect((await setLimits(owner, m.id, null, OPEN())).statusCode).toBe(200);
+    expect(await end(m.browser)).toBe(new Date(START.getTime() + HOUR).toISOString());
+    const stored = await deps.db.query<{ expires_at: Date }>('select expires_at from sessions where member_id = $1 and revoked_at is null', [m.id]);
+    expect(stored.rows[0]!.expires_at.toISOString()).toBe(new Date(START.getTime() + 2 * HOUR).toISOString());
+    // Choosing a shorter length still answers with the capped end.
+    const one = await m.browser.put('/v1/account/session/length', { hours: 2 });
+    expect(one.statusCode, one.body).toBe(200);
+    expect((one.json() as { expiresAt: string }).expiresAt).toBe(new Date(START.getTime() + HOUR).toISOString());
+    // The lead's own session is never capped by a member's hours.
+    expect(await end(owner.browser)).not.toBe(new Date(START.getTime() + HOUR).toISOString());
+  });
+
   it('S-m4: a member cannot extend their session or choose a length past the window end; inside it they can', async () => {
     const owner = await team();
     const m = await member(owner.id, rolesToAbilities(['trades']));
