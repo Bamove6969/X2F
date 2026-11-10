@@ -107,8 +107,9 @@ async function book(q: Queryable, a: { code: string; kind: 'fee' | 'owed'; debtI
 
 /**
  * Books a settled trade's 1%, in the transaction that stores its settlement (trades/store.ts
- * `applyEvent`, beside `countTradeTotals`): a `released` trade (a refund or a ruling's full
- * reversal, `dispute-seller`, carries no fee: owner g63). `kind` is the payout set the
+ * `applyEvent`, beside `countTradeTotals`): a `released` trade only; a `refunded` one (a refund,
+ * or a ruling's full reversal, `dispute-seller`) books nothing whatever `kind` says (owner g63).
+ * `kind` is the payout set the
  * settlement used; it defaults to the row's `settling` (`release` for a release). Plan 4 Task 14's
  * ruling execution passes its `RulingKind` when the row does not name it. Idempotent per trade: a
  * second call, or a replayed event, books nothing. A trade still open, a cancel of any kind, or a
@@ -116,7 +117,9 @@ async function book(q: Queryable, a: { code: string; kind: 'fee' | 'owed'; debtI
  */
 export async function bookTradeRevenue(q: Queryable, code: string, kind?: FeeOutputKind): Promise<boolean> {
   const t = await loadFacts(q, code);
-  if (!t || t.closed_at === null || (t.state !== 'released' && t.state !== 'refunded')) return false;
+  // Only a completed trade pays the 1% (owner g63): a refunded trade, a ruling's full reversal
+  // included, books nothing whatever kind the caller names.
+  if (!t || t.closed_at === null || t.state !== 'released') return false;
   const fee = feeOutputAtomic(kind ?? t.settling, t.poster, BigInt(t.fee_atomic));
   const take = BigInt(t.grown_from_atomic ?? t.amount_atomic);
   return book(q, {

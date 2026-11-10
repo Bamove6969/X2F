@@ -139,6 +139,19 @@ describe('booking through the trade store', () => {
     expect(await booked(t.code)).toEqual([]);
   });
 
+  it('a refunded trade books nothing, whatever kind the caller names (owner g63: only a completed trade pays the 1%)', async () => {
+    setNow(new Date('2026-03-07T10:00:00Z'));
+    for (const poster of ['seller', 'buyer'] as const) {
+      const t = await trade({ poster });
+      expect((await applyEvent(deps, t.code, { type: 'settled', kind: 'auto-refund', txHash: tx() }, 'system')).state).toBe('refunded');
+      for (const kind of [undefined, 'release', 'dispute-buyer', 'dispute-seller', 'auto-refund'] as const) {
+        expect(await withClient((c) => bookTradeRevenue(c, t.code, kind)), `${poster} ${kind}`).toBe(false);
+      }
+      expect(await booked(t.code), poster).toEqual([]);
+    }
+    expect(await ledgerDay('2026-03-07')).toEqual([]);
+  });
+
   it('a settled dispute: a ruling that completes the trade (released to the buyer) books the 1% once; a full reversal books nothing (owner g63)', async () => {
     setNow(new Date('2026-03-04T10:00:00Z'));
     const fee = escrowPlan({ amountAtomic: XMR, poster: 'seller' }).feeAtomic;
