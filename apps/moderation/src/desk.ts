@@ -1,9 +1,8 @@
 import type { Outcome, PartyHandle, Payout, Transport } from '@x2f/escrow';
 import { ReplayGuard, type Envelope, type ReplayGuardJSON } from '@x2f/protocol';
-import { channelFor, payoutsFor, settleKindFor, type ChainFacts, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
+import { CLOSED_STATES, channelFor, payoutsFor, settleKindFor, type ChainFacts, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
 import type pg from 'pg';
-import { FINAL_ALERT_MS } from '@x2f/escrow';
-import { AUTO_REFUND_MARGIN_MS, autoRefundStep, PAID_CONFLICT_MS } from './autoRefund.js';
+import { apiShowsSellerCancel, autoRefundStep, PAID_CONFLICT_MS } from './autoRefund.js';
 import { apiAllows, buyerCancelStep } from './buyerCancel.js';
 import type { Link } from './link.js';
 import { applyShadow, fromJson, newShadow, toJson } from './shadow.js';
@@ -20,7 +19,8 @@ import { readSignal, sealAck, signalLoop, termsMatch, type ModSignal } from './s
  *   `signed_terms.seller_terms` and is the only refund address ever paid (`recordedRefundAddress`).
  * - The shadow trade is fed only by the watcher's own facts (setup-done, chain, settled) and by
  *   signals opened here (`apply` on this service's clock). A seller's extend or refund request that
- *   arrives before the shadow's own payBy is retried each pass.
+ *   arrives before the shadow's own payBy is retried each pass, so the moderator checks the time to
+ *   pay on its own facts (owner 8 Nov: the seller's cancel then starts the refund at once).
  * - Each watcher pass (`step`), after its reports were accepted: buyer cancel first (a valid
  *   `trade.cancel` from the buyer's identity that the shadow took, never after a `trade.paid`,
  *   buyerCancel.ts), else the auto-refund guard (autoRefund.ts), which also runs while a cancel
@@ -61,17 +61,14 @@ export interface DeskRecord {
   armed: { kind: 'auto-refund' | 'buyer-cancel'; at: Date; blocked?: string | null } | null;
   /** The escalation report the API accepted (then nothing more is decided here). */
   escalated: string | null;
-  /** When this service first saw the API show `refund_requested`; restarts while the API trade is paused (review M7). */
+  /** When this service first saw the API show the seller's cancel (`settling` / `auto-refund`); restarts while the API trade is paused (review M7). */
   apiRefundSince: Date | null;
 }
 
 export interface DeskStep {
   handle: PartyHandle;
-  /**
-   * The API's watch-list item: its state and settlement kind, its own pause-shifted final alert
-   * and the receipt for it, and maintenance (`paused`).
-   */
-  api: { state: string; finalAlertSeenAt: Date | null; finalAlertAt?: Date | null; settleKind?: string | null; paused?: boolean };
+  /** The API's watch-list item: its state and settlement kind, and maintenance (`paused`). */
+  api: { state: string; settleKind?: string | null; paused?: boolean };
   escrowAddress: string | null;
   /** The watcher reports this pass posted (all accepted). */
   reports: readonly WatchReport[];
@@ -102,21 +99,20 @@ const FINAL_BLOCKS: readonly string[] = ['auto-refund-buyer-paid', 'auto-refund-
 /**
  * The per-pass recheck of an armed auto-refund (security review 7 Nov, finding 1 c), like the armed
  * buyer cancel's (review round 2 N2): why it must not be handed to the party now, or null. A
- * `trade.paid` opened here, or the API showing the trade paid or disputed, blocks it for good; a
- * pause, another API state or an API mark-paid window still open (its pause-shifted `finalAlertAt` +
- * 15 min + margin, judged at `at`) blocks it while they hold. R3-M1 still applies: an outcome
- * already handed to the party in this process is not withdrawn, but a restart then stops it.
+ * `trade.paid` opened here, or the API showing the trade paid or disputed (a buyer who paid late
+ * may dispute the seller's cancel at once, owner 8 Nov p9-2), blocks it for good; a pause or any
+ * API state but the seller's cancel (`settling` / `auto-refund`) blocks it while they hold. `at`
+ * (when the API facts were read) is kept for the callers' freshness rule. R3-M1 still applies: an
+ * outcome already handed to the party in this process is not withdrawn, but a restart then stops it.
  */
-export function armedRefundBlock(r: Pick<DeskRecord, 'paidSeen' | 'armed' | 'shadow'>, api: DeskStep['api'], at: Date): string | null {
+export function armedRefundBlock(r: Pick<DeskRecord, 'paidSeen' | 'armed' | 'shadow'>, api: DeskStep['api'], _at: Date): string | null {
   if (r.paidSeen) return 'auto-refund-buyer-paid';
   const was = r.armed?.blocked ?? null;
   if (was !== null && FINAL_BLOCKS.includes(was)) return was;
   if (api.state === 'paid') return 'auto-refund-api-paid';
   if (api.state === 'disputed') return 'auto-refund-api-disputed';
   if (api.paused === true || (r.shadow !== null && r.shadow.pausedAt !== null)) return 'auto-refund-paused';
-  if (!(api.state === 'refund_requested' || (api.state === 'settling' && api.settleKind === 'auto-refund'))) return 'auto-refund-api-state';
-  const alert = api.finalAlertAt ?? null;
-  if (alert !== null && at.getTime() < alert.getTime() + FINAL_ALERT_MS + AUTO_REFUND_MARGIN_MS) return 'auto-refund-api-window-open';
+  if (!apiShowsSellerCancel(api)) return 'auto-refund-api-state';
   return null;
 }
 
@@ -180,17 +176,35 @@ const ROUTE: Record<'auto-refund' | 'buyer-cancel', { builder: 'seller' | 'buyer
   'buyer-cancel': { builder: 'buyer' },
 };
 
-const CLOSED: readonly string[] = ['released', 'refunded', 'cancelled'];
+const CLOSED: readonly string[] = CLOSED_STATES;
 
 const accepted = (r: { status: number; error: string | null }): boolean => r.status === 201 || r.status === 200 || (r.status === 409 && r.error === 'wrong-state');
 
 const outcomeKey = (o: Outcome): string => JSON.stringify([o.builder, o.cosigner, o.to.map((p) => [p.address, p.amountAtomic.toString()])]);
 
+/**
+ * A shadow saved before the owner's 8 Nov reversal (no final alert) may sit in the retired
+ * `refund_requested` state, or settle from it. It goes back to `secured`, as the API's migration
+ * 120 moves those trades (the seller cancels again and the refund then starts at once), and the
+ * retired `finalAlertAt` field is dropped. Nothing else changes.
+ */
+export function reviveShadow(t: Trade | null): Trade | null {
+  if (t === null) return null;
+  const old = t as Omit<Trade, 'state' | 'settleFrom'> & { state: string; settleFrom: string | null; finalAlertAt?: unknown };
+  if (old.state !== 'refund_requested' && old.settleFrom !== 'refund_requested' && !('finalAlertAt' in old)) return t;
+  const { finalAlertAt: _drop, ...rest } = old;
+  return {
+    ...rest,
+    state: old.state === 'refund_requested' ? 'secured' : t.state,
+    settleFrom: old.settleFrom === 'refund_requested' ? 'secured' : t.settleFrom,
+  };
+}
+
 async function loadRecord(db: pg.Pool, trade: string): Promise<{ record: DeskRecord; version: string } | null> {
   const { rows } = await db.query<{ record: unknown; version: string }>('select record, version from mod_trade_desk where trade = $1', [trade]);
   if (!rows[0]) return null;
   const r = fromJson(rows[0].record) as DeskRecord;
-  return { record: { ...r, paidSeenAt: r.paidSeenAt ?? null }, version: rows[0].version };
+  return { record: { ...r, paidSeenAt: r.paidSeenAt ?? null, shadow: reviveShadow(r.shadow) }, version: rows[0].version };
 }
 
 /** A save refused because another process wrote the desk record since this one read it (finding 2). */
@@ -278,19 +292,11 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
     record = r;
   };
 
+  // Nudges are optional (owner 8 Nov, p6-1): the machine's request-refund no longer reads
+  // `sellerNudgedAt`, so the shadow takes the seller's signal as it is (lead decision (a)'s
+  // synthetic nudge is gone). The shadow still checks payBy (the time to pay) itself.
   const feed = (t: Trade | null, e: TradeEvent, by: 'buyer' | 'seller' | 'system', now: Date): { trade: Trade | null; refused: string | null } => {
     if (t === null) return { trade: null, refused: 'no-shadow' };
-    if (e.type === 'request-refund' && by === 'seller') {
-      // Owner G2 / g66 (main, Job 1): the machine's request-refund also needs a seller nudge since
-      // secured, and `sellerNudgedAt` is written only by the API's nudge route, never by an event, so
-      // the shadow cannot see one. Lead decision (a), 8 Nov: the desk takes the seller's accepted
-      // refund-request signal as the nudge, at the time it accepts it. The real nudge rule is
-      // enforced by the API: this service signs alone only while the API shows `refund_requested`
-      // (autoRefundStep), which the API allows only after a real nudge. The shadow still checks payBy
-      // (the 90 min) itself. A signed nudge signal to the mod is a recorded follow-up (coordination.md).
-      const x = applyShadow({ ...t, sellerNudgedAt: now }, e, by, now);
-      return x.refused ? { trade: t, refused: x.refused } : x;
-    }
     return applyShadow(t, e, by, now);
   };
 
@@ -414,15 +420,15 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
   };
   /**
    * Re-verify R1 (8 Nov): an armed auto-refund blocked for good by the buyer's `trade.paid` (a lie, or
-   * a tap the API refused too late) while the API still shows `refund_requested` would leave the
-   * seller's coins with no route out (no API timer there, no dispute from it). Like the unarmed
-   * guard's paid conflict (review M7): once the API, fresh and unpaused, still shows
-   * `refund_requested` PAID_CONFLICT_MS after the signal, escalate `refund-unverified` (a person decides).
+   * a tap the API refused because the seller's cancel came first) while the API still shows the
+   * seller's cancel would leave the seller's coins with no route out (the cancel does not time out).
+   * Like the unarmed guard's paid conflict (review M7): once the API, fresh and unpaused, still shows
+   * the cancel PAID_CONFLICT_MS after the signal, escalate `refund-unverified` (a person decides).
    */
   const paidConflict = async (r: DeskRecord, s: DeskStep, now: Date): Promise<DeskRecord> => {
     if (r.escalated !== null) return r;
     const c = await current(s);
-    if (c === null || c.api.state !== 'refund_requested' || c.api.paused === true || (r.shadow !== null && r.shadow.pausedAt !== null)) return r;
+    if (c === null || !apiShowsSellerCancel(c.api) || c.api.paused === true || (r.shadow !== null && r.shadow.pausedAt !== null)) return r;
     const since = r.paidSeenAt ?? r.armed?.at ?? now;
     if (judgedAt(now, c.at).getTime() < since.getTime() + PAID_CONFLICT_MS) return r;
     const res = await o.link.report({ kind: 'refund-unverified', trade: code });
@@ -530,7 +536,7 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
     if (r.shadow && s.api.paused !== true && r.shadow.pausedAt !== null) r = { ...r, shadow: feed(r.shadow, { type: 'resume' }, 'system', now).trade };
     if (r.shadow) r = { ...r, shadow: feed(r.shadow, { type: 'tick' }, 'system', now).trade };
     // The refund-unverified hour does not count a maintenance pause: it restarts while paused (review M7).
-    r = { ...r, apiRefundSince: s.api.state === 'refund_requested' ? (s.api.paused === true ? now : (r.apiRefundSince ?? now)) : null };
+    r = { ...r, apiRefundSince: apiShowsSellerCancel(s.api) ? (s.api.paused === true ? now : (r.apiRefundSince ?? now)) : null };
 
     // 3. The refunds the moderator may sign alone. Never once the trade is over (review M4).
     const over =
@@ -543,8 +549,8 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
     } else if (r.armed !== null) {
       const kind = r.armed.kind;
       // Review round 3 R3-N1: an armed buyer cancel the buyer never builds must not switch off the
-      // auto-refund and its escalations (only the buyer can build it, so the seller would be stuck
-      // in `refund_requested` with no dispute route). While the API is not settling the buyer's
+      // auto-refund and its escalations (only the buyer can build it, so the seller's later cancel
+      // would be stuck with no route out). While the API is not settling the buyer's
       // cancel, the auto-refund guard runs as if nothing were armed: on `sign` the desk re-arms as
       // the seller-built auto-refund (the payouts are identical, payoutsFor: the whole balance to the
       // seller-signed address) and hands it to the party, which replaces the earlier outcome unless it

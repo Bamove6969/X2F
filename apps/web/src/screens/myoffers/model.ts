@@ -142,8 +142,8 @@ export function allHint(selected: number, total: number): string {
 /**
  * The board's footnote with its cap line from the batch 3 MyOffers board (owner, 2 Nov 2026: 3
  * buying and 3 selling offers per vendor; one offer covers all the currencies it lists).
- * COPY-UNSIGNED. The API still enforces the old caps (3 per market, 20 in all: routes.ts
- * OFFER_CAP_DEFAULTS), a lead API follow-up.
+ * COPY-UNSIGNED. The API enforces the same caps (owner 6 Nov 2026, Q31: 3 buying and 3 selling
+ * per account in all, a seventh refused, paused offers counted: routes.ts OFFER_CAP_DEFAULTS).
  */
 export const FOOTNOTE = 'Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal. You can have 3 buying and 3 selling offers. Each offer can cover several currencies.';
 

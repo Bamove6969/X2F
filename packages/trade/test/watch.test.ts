@@ -713,13 +713,19 @@ describe('settleKindFor', () => {
     expect(settleKindFor({ state: 'settling', settling: 'buyer-cancel' })).toBe('buyer-cancel');
     expect(settleKindFor({ state: 'settling', settling: 'release' })).toBe('release');
   });
-  test('a lapse refund and an auto-refund are named by their state', () => {
+  test("a lapse refund is named by its state; the seller's cancel by its settling kind (owner 8 Nov)", () => {
     expect(settleKindFor({ state: 'lapsed', settling: null })).toBe('lapse-refund');
-    expect(settleKindFor({ state: 'refund_requested', settling: null })).toBe('auto-refund');
+    expect(settleKindFor({ state: 'settling', settling: 'auto-refund' })).toBe('auto-refund');
   });
   test('funding or securing does not name a kind: a timed-out signing window can return any settlement there', () => {
     expect(settleKindFor({ state: 'funding', settling: null })).toBeNull();
     expect(settleKindFor({ state: 'securing', settling: null })).toBeNull();
+  });
+  test("a dispute opened on the seller's cancel still names auto-refund: the refund lands anyway (review I1, 8 Nov)", () => {
+    expect(settleKindFor({ state: 'disputed', settling: 'auto-refund' })).toBe('auto-refund');
+    for (const settling of ['release', 'buyer-cancel', 'mutual-cancel', 'lapse-refund'] as const) {
+      expect(settleKindFor({ state: 'disputed', settling })).toBeNull();
+    }
   });
   test('anything else cannot be named from the trade alone', () => {
     for (const state of ['secured', 'paid', 'disputed'] as const) {

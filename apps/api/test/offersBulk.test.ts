@@ -154,8 +154,8 @@ describe('POST /v1/account/offers/status', () => {
     expect(results.sort((x, y) => x.id.localeCompare(y.id))).toEqual([{ id: a, status: 'paused' }, { id: b, status: 'paused' }].sort((x, y) => x.id.localeCompare(y.id)));
     expect(await statuses(p.id)).toEqual({ [a]: 'paused', [b]: 'paused', [gone]: 'removed' });
     expect(await statuses(other.id)).toEqual({ [theirs]: 'live' });
-    // Paused offers leave the public list.
-    expect(((await anon.get('/v1/offers?side=sell&method=ZELLE&currency=USD')).json() as { id: string }[]).map((o) => o.id)).not.toContain(a);
+    // Paused offers leave the list everyone else sees.
+    expect(((await other.browser.get('/v1/offers?side=sell&method=ZELLE&currency=USD')).json() as { id: string }[]).map((o) => o.id)).not.toContain(a);
 
     // And "all" turns them back on.
     expect((await setStatus(p, 'all', 'live')).every((r) => r.status === 'live' && r.refused === undefined)).toBe(true);
@@ -212,12 +212,12 @@ describe('POST /v1/account/offers/status', () => {
   it('caps are checked per offer as relisting checks them; the others still switch (per-offer results)', async () => {
     const p = await poster();
     const a = await post(p, { currency: 'GBP' });
-    const b = await post(p, { currency: 'GBP' });
-    const c = await post(p, { currency: 'CHF' });
+    const b = await post(p, { currency: 'CHF' });
+    const c = await post(p, { currency: 'CHF', side: 'buy' });
     await setStatus(p, 'all', 'paused');
-    await deps.db.query(`insert into owner_settings (key, value, updated_at) values ('offers_max_per_market', 1, now())`);
+    await deps.db.query(`insert into owner_settings (key, value, updated_at) values ('offers_max_sell', 1, now())`);
     try {
-      // a and b each count the other (paused offers count, as for relisting): both refused; c goes on.
+      // a and b each count the other (both selling; paused offers count, as for relisting): both refused; c, buying, goes on.
       const on = await setStatus(p, [a, b, c], 'live');
       expect(on).toEqual([
         { id: a, status: 'paused', refused: 'too-many-offers' },
@@ -229,14 +229,17 @@ describe('POST /v1/account/offers/status', () => {
       await p.browser.patch(`/v1/offers/${b}`, { status: 'removed' });
       expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'live' }]);
     } finally {
-      await deps.db.query(`delete from owner_settings where key = 'offers_max_per_market'`);
+      await deps.db.query(`delete from owner_settings where key = 'offers_max_sell'`);
     }
-    await deps.db.query(`insert into owner_settings (key, value, updated_at) values ('offers_max_total', 1, now())`);
+    const d = await post(p, { currency: 'EUR', side: 'buy' });
+    await deps.db.query(`insert into owner_settings (key, value, updated_at) values ('offers_max_buy', 1, now())`);
     try {
       await setStatus(p, 'all', 'paused');
-      expect((await setStatus(p, 'all', 'live')).map((r) => r.refused)).toEqual(['too-many-offers', 'too-many-offers']);
+      // c and d are the buying ones and each counts the other: both refused; a, selling, goes on.
+      const refused = Object.fromEntries((await setStatus(p, 'all', 'live')).map((r) => [r.id, r.refused ?? null]));
+      expect(refused).toEqual({ [a]: null, [c]: 'too-many-offers', [d]: 'too-many-offers' });
     } finally {
-      await deps.db.query(`delete from owner_settings where key = 'offers_max_total'`);
+      await deps.db.query(`delete from owner_settings where key = 'offers_max_buy'`);
     }
   });
 

@@ -60,7 +60,10 @@ const RETURN_BASE = 'https://x.invalid';
 /**
  * A `returnTo` value that can only lead back into this app: a path starting with exactly one '/',
  * with no '\\' and no control characters (browsers drop tabs and newlines, so "/\\t/evil.com"
- * would become "//evil.com"), at most MAX_RETURN_TO characters. It is resolved as a URL and must
+ * would become "//evil.com"), and no path with one of those percent-encoded ('%2f', '%5c', '%00'-'%1f',
+ * '%7f', any case), so a later sink that decodes the value once cannot turn it into "//evil.com"
+ * (the query and fragment may keep them: they cannot change the origin, and a nested `returnTo`
+ * such as "/wallets?add=1&returnTo=%2Fsell" needs them); at most MAX_RETURN_TO characters. It is resolved as a URL and must
  * stay on this origin with a normalised path that does not start with '//' ("/..//evil.com"
  * normalises to "//evil.com"); the normalised path, query and fragment are returned. Anything
  * else, including another origin or a `javascript:` or `data:` URL, becomes DEFAULT_RETURN. Use it
@@ -70,6 +73,7 @@ export function safeReturnTo(raw: string | null | undefined): string {
   if (typeof raw !== 'string' || raw.length > MAX_RETURN_TO) return DEFAULT_RETURN;
   if (!raw.startsWith('/') || raw.startsWith('//')) return DEFAULT_RETURN;
   if (raw.includes('\\') || /[\u0000-\u001f\u007f]/.test(raw)) return DEFAULT_RETURN;
+  if (/%(2f|5c|[01][0-9a-f]|7f)/i.test(raw.split(/[?#]/, 1)[0]!)) return DEFAULT_RETURN;
   let url: URL;
   try {
     url = new URL(raw, RETURN_BASE);
@@ -112,6 +116,17 @@ const json = (body: unknown) => JSON.stringify(body, (_k, v: unknown) => (typeof
  */
 let maintenanceListener: (() => void) | null = null;
 
+let sessionGoneListener: (() => void) | null = null;
+
+/**
+ * The front door: called when a call other than `GET /v1/account/me` answers 401
+ * `not-authenticated` (the session ended or expired), so the shared session answer becomes
+ * signed-out and the screens behind the door send the page to the Landing board (session/frontDoor.tsx).
+ */
+export function setSessionGoneListener(fn: (() => void) | null): void {
+  sessionGoneListener = fn;
+}
+
 /** Plan 4 Task 8: called when any API call answers 503 `maintenance` (the site shell listens). */
 export function setMaintenanceListener(fn: (() => void) | null): void {
   maintenanceListener = fn;
@@ -142,6 +157,7 @@ export async function api<T = unknown>(path: string, init: ApiInit = {}): Promis
   if (err.status === 409 && err.code === 'no-wallet') redirect('/wallets', 'add=1');
   // Plan 4 Task 8: the site went into maintenance; the shell re-reads GET /v1/site and shows it.
   if (err.status === 503 && err.code === 'maintenance') maintenanceListener?.();
+  if (err.status === 401 && err.code === 'not-authenticated' && path !== '/v1/account/me') sessionGoneListener?.();
   throw err;
 }
 

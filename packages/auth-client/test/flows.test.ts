@@ -31,7 +31,7 @@ const LABEL = 'Browser on Linux';
  * (Task 3: methods, method suggestions, price, the owner's price health; Task 4: offers; Task 5:
  * taking an offer and the poster's wallet; Task 6: the trade view
  * and the events route; Task 8: the identity and attestation routes; Task 19: live events, Web
- * Push and the final-alert receipts; Task 24: the release confirmations; Task 26: nudges, nudge settings
+ * Push (its final-alert receipt route is gone with the final alert: trade-rules, owner 8 Nov p6-1); Task 24: the release confirmations; Task 26: nudges, nudge settings
   * and blocks; Task 27: the dispute and the appeal; Task 36: My offers; Task 37: the Blocked list and unblock; Plan 5 Tasks 4 and 21: the two feedback
  * routes; Plan 5 Task 3 and C12b: reviews, Skip review, the pending reviews and the traded-total setting; Plan 5 Task 10: the four past-reputation routes;
  * Plan 4 Task 8: the site state, read by the web shell; Plan 4 Task 31 / J-14: the six support-ticket routes). Any other new route still needs a client method.
@@ -88,7 +88,6 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/trades/:code/chat',
   'POST /v1/trades/:code/dispute',
   'POST /v1/trades/:code/events',
-  'POST /v1/trades/:code/final-alert-seen',
   'POST /v1/trades/:code/identity',
   'POST /v1/trades/:code/review',
   'POST /v1/trades/:code/review/skip',

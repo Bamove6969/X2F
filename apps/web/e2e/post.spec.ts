@@ -292,28 +292,12 @@ test('an account with no wallet lands on Add a wallet and returns to the filled 
   await expect(f(page).terms).toHaveValue('Cash only.');
 });
 
-test('logged out, Post offer goes to setup and comes back with the form intact', async ({ page }) => {
+test('logged out, Post offer never opens: the front door (the Landing board) takes the visitor, keeping the form address (owner, 8 Nov 2026)', async ({ page }) => {
   const posts = await stub(page, { signedIn: false });
   await page.goto('/post?method=ZELLE&currency=GBP');
-  await f(page).fixedMode.check();
-  await f(page).fixed.fill('270');
-  await fillBoard(page);
-  await f(page).post.click();
-  await expect(page).toHaveURL(/\/setup\?returnTo=/);
-  expect(posts.length).toBeLessThanOrEqual(1);
-  const back = new URL(page.url()).searchParams.get('returnTo')!;
-  expect(back.startsWith('/post')).toBe(true);
-  // Setup's own steps are setup.spec's: here the account exists with its first wallet and Welcome's
-  // Start trading follows returnTo back to /post in this tab (the draft waits in sessionStorage).
-  await page.route('**/v1/account/me', json({ ...ME, methods: ['pgp'] }));
-  await page.route('**/v1/wallets', json([{ id: 'w1', app: 'cake', label: 'Wallet 1', addressEnd: 'k3Fz', usable: true }]));
-  await page.goto(`/setup/welcome?returnTo=${encodeURIComponent(back)}`);
-  await page.click('[data-part="start-trading"]');
-  await expect(page).toHaveURL(back);
-  await expect(f(page).currency).toHaveValue('GBP');
-  await expect(f(page).fixedMode).toBeChecked();
-  await expect(f(page).fixed).toHaveValue('270');
-  await expect(f(page).min).toHaveValue('$50');
+  await expect(page).toHaveURL(`/?returnTo=${encodeURIComponent('/post?method=ZELLE&currency=GBP')}`);
+  await expect(f(page).post).toHaveCount(0);
+  expect(posts).toEqual([]);
 });
 
 test('another currency shows the local price and its US-dollar value (spec 11.6)', async ({ page }) => {

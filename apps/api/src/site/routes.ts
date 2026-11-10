@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Queryable } from '../db/pool.js';
+import { insideAccount } from '../auth/frontDoor.js';
 import { ApiError } from '../errors.js';
 
 /** Plan 4 Task 8: the site controls as stored in Plan 3's one-row `site_flags` (migration 206). */
@@ -10,7 +11,7 @@ export interface SiteState {
   maintenance: { since: string; message: string | null; kind: 'planned' | 'emergency' } | null;
 }
 
-/** What every visitor sees (`GET /v1/site`, no session). */
+/** What a signed-in, set-up trader sees (`GET /v1/site` with a session that passes `requireInside`). */
 export interface PublicSite {
   banner: { text: string; kind: 'info' | 'warning' } | null;
   tradingPaused: boolean;
@@ -52,6 +53,19 @@ export function publicSite(s: SiteState): PublicSite {
   };
 }
 
+/**
+ * What anyone outside the front door sees (owner, 8 Nov 2026): only whether the site is in
+ * maintenance and its kind (planned or emergency), for the front door's maintenance screen. No
+ * banner, no trading pause and no message: those are for signed-in traders.
+ */
+export interface OutsideSite {
+  maintenance: { kind: 'planned' | 'emergency' } | null;
+}
+
+export function outsideSite(s: SiteState): OutsideSite {
+  return { maintenance: s.maintenance ? { kind: s.maintenance.kind } : null };
+}
+
 /** The gate's one read (exported for tests that list a route's queries). */
 export const MAINTENANCE_GATE_SQL = 'select maintenance_since is not null as on from site_flags';
 
@@ -73,7 +87,15 @@ export async function maintenanceGate(req: FastifyRequest, _reply: FastifyReply)
   if (rows[0]?.on === true) throw new ApiError(503, 'maintenance');
 }
 
-/** `GET /v1/site` (no session): `{ banner, tradingPaused, maintenance }`. Never cached. */
+/**
+ * `GET /v1/site`: `{ banner, tradingPaused, maintenance }` for a session that passes `requireInside`,
+ * `{ maintenance: { kind } | null }` for anyone else (the front door). It answers during maintenance
+ * (`MAINTENANCE_OPEN`). Never cached. The session check never touches the session (the shell polls it).
+ */
 export function siteRoutes(app: FastifyInstance): void {
-  app.get('/v1/site', async () => publicSite(await readSiteState(app.deps.db)));
+  app.get('/v1/site', async (req, reply) => {
+    const inside = (await insideAccount(app, req, reply)) !== null;
+    const state = await readSiteState(app.deps.db);
+    return inside ? publicSite(state) : outsideSite(state);
+  });
 }

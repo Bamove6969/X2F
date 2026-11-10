@@ -1,6 +1,7 @@
 import { MAX_MARGIN_BPS, fiatCents, offerRate, rangeInBoth, type AmountUnit, type OfferRange, type Price, type Pricing, type Side } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
+import { requireInside } from '../auth/frontDoor.js';
 import { requireSession } from '../auth/sessions.js';
 import { holdRefusal, holdUntil, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import type { AuthContext } from '../auth/sessions.js';
@@ -154,9 +155,14 @@ export const BAD_TERMS_CHAR = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u
  */
 const LIST_LIMIT = 500;
 
-/** Per-account offer caps (review I1), owner settings with these defaults: live and paused offers count. */
-export const OFFER_CAP_DEFAULTS = Object.freeze({ perMarket: 3, total: 20 });
-export const OFFER_CAP_KEYS = Object.freeze({ perMarket: 'offers_max_per_market', total: 'offers_max_total' });
+/**
+ * Per-account offer caps (review I1; owner 6 Nov 2026, Q31): at most this many buying and this many
+ * selling offers per account in all, whatever their methods and currencies. Live and paused offers
+ * count (a paused one is not a way past the cap), removed ones do not. Owner settings override these
+ * defaults.
+ */
+export const OFFER_CAP_DEFAULTS = Object.freeze({ buy: 3, sell: 3 });
+export const OFFER_CAP_KEYS = Object.freeze({ buy: 'offers_max_buy', sell: 'offers_max_sell' });
 const OFFER_CAP_MAX = 1000;
 
 interface OfferRow {
@@ -354,15 +360,15 @@ function assertMethodAvailable(methodId: string): void {
   if (!isAvailable(methodId)) throw new ApiError(409, 'method-unavailable');
 }
 
-async function loadOfferCaps(db: Queryable): Promise<{ perMarket: number; total: number }> {
+async function loadOfferCaps(db: Queryable): Promise<Record<Side, number>> {
   const { rows } = await db.query<{ key: string; value: string }>('select key, value from owner_settings where key = any($1)', [
-    [OFFER_CAP_KEYS.perMarket, OFFER_CAP_KEYS.total],
+    [OFFER_CAP_KEYS.buy, OFFER_CAP_KEYS.sell],
   ]);
   const get = (k: string, d: number) => {
     const n = Number(rows.find((r) => r.key === k)?.value);
     return Number.isInteger(n) && n >= 1 && n <= OFFER_CAP_MAX ? n : d;
   };
-  return { perMarket: get(OFFER_CAP_KEYS.perMarket, OFFER_CAP_DEFAULTS.perMarket), total: get(OFFER_CAP_KEYS.total, OFFER_CAP_DEFAULTS.total) };
+  return { buy: get(OFFER_CAP_KEYS.buy, OFFER_CAP_DEFAULTS.buy), sell: get(OFFER_CAP_KEYS.sell, OFFER_CAP_DEFAULTS.sell) };
 }
 
 /**
@@ -381,7 +387,7 @@ async function assertMayPost(
   client: Queryable,
   auth: AuthContext,
   now: Date,
-  market: { side: Side; methodId: string; currency: string },
+  side: Side,
   except: string | null,
 ): Promise<void> {
   const accountId = auth.accountId;
@@ -391,13 +397,12 @@ async function assertMayPost(
   const refused = await accountRefusal(client, accountId, now);
   if (refused !== null) throw new ApiError(409, refused);
   const caps = await loadOfferCaps(client);
-  const { rows } = await client.query<{ same: number; total: number }>(
-    `select count(*) filter (where side = $2 and method_id = $3 and currency = $4)::int as same, count(*)::int as total
-       from offers where account_id = $1 and status <> 'removed' and ($5::uuid is null or id <> $5::uuid)`,
-    [accountId, market.side, market.methodId, market.currency, except],
+  const { rows } = await client.query<{ same: number }>(
+    `select count(*)::int as same
+       from offers where account_id = $1 and side = $2 and status <> 'removed' and ($3::uuid is null or id <> $3::uuid)`,
+    [accountId, side, except],
   );
-  const c = rows[0]!;
-  if (c.same >= caps.perMarket || c.total >= caps.total) throw new ApiError(409, 'too-many-offers');
+  if (rows[0]!.same >= caps[side]) throw new ApiError(409, 'too-many-offers');
 }
 
 /**
@@ -462,29 +467,18 @@ const requireTrader = requireSession({ kinds: ['trader'], member: 'offers' });
 const requireTraderStaleOk = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers' });
 
 /** 403 `terms-required` `{ version }`, as requireSession answers, for a trader on a stale Terms version. */
-async function assertTermsCurrent(deps: Deps, accountId: string): Promise<void> {
-  const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [accountId]);
+async function assertTermsCurrent(deps: Deps, auth: { accountId: string; memberId: string | null }): Promise<void> {
+  const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [auth.accountId]);
   if (rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
-}
-// Browsing: a signed-in trader's session, read only (no touch), when there is one; a team member
-// browses as the account it works for.
-const viewerCheck = requireSession({ kinds: ['trader'], touch: false, allowStaleTerms: true, member: 'any' });
-
-/**
- * The signed-in trader browsing, or null for anyone else (logged out, staff, an expired session, a
- * recovery session or one on its recovery hold: every 401 and 403). A null viewer is never treated
- * as blocked (Task 37: it is the accepted residue documented in coordination.md).
- */
-export async function viewer(app: FastifyInstance, req: FastifyRequest, reply: FastifyReply): Promise<string | null> {
-  try {
-    await viewerCheck.call(app, req, reply);
-  } catch (e) {
-    if (e instanceof ApiError && (e.status === 401 || e.status === 403)) return null;
-    throw e;
+  // A team member's own acceptance too (review 2026-11-08 F1, as requireSession checks it).
+  if (auth.memberId !== null) {
+    const m = await deps.db.query<{ terms_version: string | null }>(
+      'select a.terms_version from team_members tm join accounts a on a.id = tm.member_account_id where tm.id = $1',
+      [auth.memberId],
+    );
+    if (m.rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
   }
-  return req.auth?.accountId ?? null;
 }
-
 /**
  * `/v1/methods`' live-offer counts (Task 3's `LiveOfferStats`), from the offers anyone may see, counted by the database;
  * for a signed-in viewer, without the offers a block hides from them (Task 37 review I1), so the counts and best
@@ -546,7 +540,7 @@ export function offerRoutes(app: FastifyInstance): void {
     const now = deps.clock();
     const p = o.pricing;
     const id = await inTransaction(deps.db, async (client) => {
-      await assertMayPost(client, req.auth!, now, o, null);
+      await assertMayPost(client, req.auth!, now, o.side, null);
       const { rows } = await client.query<{ id: string }>(
       `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, fixed_cents_per_xmr,
                            amount_unit, min_atomic, max_atomic, min_fiat_cents, max_fiat_cents, min_trades, terms, country, status, created_at, updated_at)
@@ -575,7 +569,7 @@ export function offerRoutes(app: FastifyInstance): void {
     if (typeof status !== 'string' || !(STATUSES as readonly string[]).includes(status)) throw bad();
     // Pausing and removing work on stale Terms (R10 lead decisions 2026-10-29: shutting off never
     // waits for new Terms); relisting does not.
-    if (status === 'live') await assertTermsCurrent(deps, req.auth!.accountId);
+    if (status === 'live') await assertTermsCurrent(deps, req.auth!);
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
     const { rows } = await deps.db.query<{ account_id: string; status: OfferStatus; method_id: string }>(
       'select account_id, status, method_id from offers where id = $1',
@@ -602,7 +596,7 @@ export function offerRoutes(app: FastifyInstance): void {
         );
         const m = cur.rows[0];
         if (!m) throw new ApiError(404, 'not-found');
-        await assertMayPost(client, req.auth!, now, { side: m.side, methodId: m.method_id, currency: m.currency }, id);
+        await assertMayPost(client, req.auth!, now, m.side, id);
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
         await auditMember(client, req.auth, { action: 'offer-relisted', detail: { offerId: id } }, now);
       });
@@ -617,8 +611,9 @@ export function offerRoutes(app: FastifyInstance): void {
     return { id, status };
   });
 
-  // Browsing needs no session (P3-M9); a signed-in trader also gets `opensAt`.
-  app.get('/v1/offers', async (req, reply) => {
+  // Browsing is behind the front door (owner, 8 Nov 2026; it was open to anyone under P3-M9): a
+  // live session of a set-up trader account; a team member browses as the account they work for.
+  app.get('/v1/offers', { preHandler: requireInside }, async (req) => {
     const deps = req.server.deps;
     const side = single(req.query, 'side');
     const method = single(req.query, 'method');
@@ -634,7 +629,7 @@ export function offerRoutes(app: FastifyInstance): void {
     // online from the newest live session (as traderSummaries: by bucket, hidden from someone the
     // poster blocked), trades from the completed count; ties newest first.
     const now = deps.clock();
-    const viewerId = await viewer(app, req, reply);
+    const viewerId = req.auth!.accountId;
     const market = deps.prices.current(currency)?.centsPerXmr ?? null;
     const byRate = `r.rate ${side === 'buy' ? 'desc' : 'asc'} nulls last`;
     const order =
@@ -656,15 +651,15 @@ export function offerRoutes(app: FastifyInstance): void {
     const posters = await traderSummaries(deps.db, rows.map((r) => r.account_id), now, viewerId, undefined, new Map(rows.map((r) => [r.account_id, role])));
     const entries = rows.map((r) => ({ r, poster: posters.get(r.account_id)!, rate: rateOf(r, deps.prices) }));
     const cards = entries.map((e) => toCard(e.r, e.poster, e.rate));
-    if (viewerId !== null) await markOpensAt(deps, viewerId, entries.map((e) => e.r), cards);
+    await markOpensAt(deps, viewerId, entries.map((e) => e.r), cards);
     return cards;
   });
 
-  app.get('/v1/offers/:id', async (req, reply): Promise<OfferDetail> => {
+  app.get('/v1/offers/:id', { preHandler: requireInside }, async (req): Promise<OfferDetail> => {
     const deps = req.server.deps;
     const id = (req.params as { id: string }).id;
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
-    const viewerId = await viewer(app, req, reply);
+    const viewerId = req.auth!.accountId;
     const { rows } = await deps.db.query<OfferRow & { listed: boolean; blocked: boolean }>(
       `select ${OFFER_COLUMNS}, (${LISTED} and ${posterRated('$3::timestamptz')}) as listed, ${blockedEitherWaySql('o.account_id', '$2::uuid')} as blocked
          from offers o join accounts a on a.id = o.account_id where o.id = $1`,
@@ -672,13 +667,13 @@ export function offerRoutes(app: FastifyInstance): void {
     );
     const r = rows[0];
     if (!r || r.status === 'removed') throw new ApiError(404, 'not-found');
-    const mine = viewerId !== null && viewerId === r.account_id;
+    const mine = viewerId === r.account_id;
     // A block either way looks exactly like an offer that does not exist (Task 37).
     if (!mine && (r.blocked || !(r.listed && isAvailable(r.method_id)))) throw new ApiError(404, 'not-found');
     const now = deps.clock();
     const poster = (await traderSummaries(deps.db, [r.account_id], now, viewerId, undefined, new Map([[r.account_id, r.side === 'sell' ? 'seller' : 'buyer']]))).get(r.account_id)!;
     const card = toCard(r, poster, rateOf(r, deps.prices));
-    if (viewerId !== null && !mine) await markOpensAt(deps, viewerId, [r], [card]);
+    if (!mine) await markOpensAt(deps, viewerId, [r], [card]);
     return { ...card, side: r.side, methodId: r.method_id, currency: r.currency, terms: r.terms, status: r.status };
   });
 
@@ -760,7 +755,7 @@ export function offerRoutes(app: FastifyInstance): void {
     } else throw bad();
     const accountId = req.auth!.accountId;
     // Turning off works on stale Terms (R10 lead decision 2026-10-29); turning on does not.
-    if (status === 'live') await assertTermsCurrent(deps, accountId);
+    if (status === 'live') await assertTermsCurrent(deps, req.auth!);
     // Task 17: no offer goes on during the account's 24-hour hold (403 `recovery-hold` for the whole call).
     if (status === 'live') {
       const until = await holdUntil(deps, accountId, req.server.events);
@@ -796,10 +791,10 @@ export function offerRoutes(app: FastifyInstance): void {
           // PATCH's order (review N1): the method first, then the account's guards, then the caps.
           let refused: OfferSwitchRefusal | null = isAvailable(o.method_id) ? refusedAll : 'method-unavailable';
           if (refused === null) {
-            // As relisting counts: every other live or paused offer of mine (this one left out).
+            // As relisting counts: every other live or paused offer of mine on this side (this one left out).
             let same = 0;
-            for (const x of mine) if (x.id !== id && x.side === o.side && x.method_id === o.method_id && x.currency === o.currency) same++;
-            if (same >= caps!.perMarket || mine.length - 1 >= caps!.total) refused = 'too-many-offers';
+            for (const x of mine) if (x.id !== id && x.side === o.side) same++;
+            if (same >= caps![o.side]) refused = 'too-many-offers';
           }
           if (refused !== null) {
             out.push({ id, status: o.status, refused });

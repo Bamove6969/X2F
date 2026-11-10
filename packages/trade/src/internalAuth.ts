@@ -26,3 +26,20 @@ export const INTERNAL_SIG_HEADER = 'x2f-mod-sig';
 export function internalSignedBytes(r: InternalRequest): Uint8Array {
   return new TextEncoder().encode(`${DOMAIN}${r.method}\0${r.path}\0${r.at}\0${r.bodyHash}`);
 }
+
+/**
+ * Plan 4 Task 11: the moderation process's OWN internal API, the other direction (the API calls
+ * the moderation process on its Unix socket, `MOD_INTERNAL_SOCKET`). Each request carries
+ * `X-X2F-Internal` = hex HMAC-SHA-256 under MOD_INTERNAL_SECRET (32 bytes) of the string this
+ * function returns, and `X-X2F-Internal-Ts` = the caller's clock in milliseconds; the receiver
+ * refuses a time more than MOD_INTERNAL_MAX_SKEW_MS away from its own. Fields are NUL-separated:
+ * domain, method, path, the exact body text, the time.
+ */
+export const MOD_INTERNAL_MAC_HEADER = 'x-x2f-internal';
+export const MOD_INTERNAL_TS_HEADER = 'x-x2f-internal-ts';
+export const MOD_INTERNAL_MAX_SKEW_MS = 30_000;
+const MOD_INTERNAL_DOMAIN = 'x2f/mod-internal/v1\0';
+
+export function modInternalMacInput(r: { method: string; path: string; body: string; ts: string }): string {
+  return `${MOD_INTERNAL_DOMAIN}${r.method}\0${r.path}\0${r.body}\0${r.ts}`;
+}

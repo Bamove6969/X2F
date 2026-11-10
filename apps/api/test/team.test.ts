@@ -10,7 +10,7 @@ import { EventBus, type StreamSink } from '../src/events/bus.js';
 import { tradeEventPublisher } from '../src/events/tradePublisher.js';
 import { ACTION_ROLE, auditMember } from '../src/team/audit.js';
 import { memberAccessOf } from '../src/auth/sessions.js';
-import { purgeTeamLeftovers } from '../src/team/members.js';
+import { openInvite, purgeTeamLeftovers } from '../src/team/members.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '../src/team/perms.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
@@ -22,7 +22,7 @@ import { testDb } from './helpers/db.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { Browser, ORIGIN } from './helpers/totp.js';
 import { publishRuling } from './helpers/disputes.js';
-import { driveTo, fakeAddress, markSellerNudged, seedTrade } from './helpers/trades.js';
+import { driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
 // Plan 2 Task 18: team members (spec 6.7, R44). Real Postgres, one database for the file; each
@@ -199,11 +199,27 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     const b = new Browser(app);
     const view = await b.post('/v1/team/invite', { invite: created.invite });
     expect(view.statusCode, view.body).toBe(200);
-    expect(view.json()).toMatchObject({ team: owner.displayName, displayName: `Joiner${n}x`, roles: ['trades'] });
+    // Review 2026-11-08 F3: whoever holds the link, before joining, learns only what the invite
+    // asks of them; the vendor is named only once they are inside.
+    expect(Object.keys(view.json() as object).sort()).toEqual(['displayName', 'expiresAt', 'roles']);
+    expect(view.json()).toMatchObject({ displayName: `Joiner${n}x`, roles: ['trades'] });
+    expect(view.body).not.toContain(owner.displayName);
+    // Review 6a5949a6 F6: the vendor's name is not even loaded, so no later spread can send it.
+    const row = await openInvite(deps.db, { code: created.invite }, deps.clock());
+    expect(Object.keys(row).sort()).toEqual(['account_id', 'display_name', 'id', 'invite_expires_at', 'roles']);
+    expect(Object.values(row)).not.toContain(owner.displayName);
 
     const k1 = await genKey();
     const k2 = await genKey();
-    const s1 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `joinlogin${n}`, publicKey: k1.publicKey });
+    // Review 2026-11-08 F1: the member signs the Terms (the current version) before anything is made.
+    for (const acceptedTerms of [undefined, '2020-01-01']) {
+      const refused = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `joinlogin${n}`, publicKey: k1.publicKey, acceptedTerms });
+      expect(refused.statusCode, refused.body).toBe(400);
+      expect(refused.json()).toEqual({ error: 'terms-not-accepted', version: deps.config.termsVersion });
+    }
+    const s1 = await b.post('/v1/team/join/start', {
+      invite: created.invite, loginName: `joinlogin${n}`, publicKey: k1.publicKey, acceptedTerms: deps.config.termsVersion,
+    });
     expect(s1.statusCode, s1.body).toBe(200);
     const c1 = s1.json() as { challengeId: string; encryptedMessage: string };
     const code1 = codeOf(await decrypt(c1.encryptedMessage, k1.privateKey, undefined, deps.clock()));
@@ -213,8 +229,12 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect(needs).toEqual(['security-key', 'passkey', 'pgp']);
     // No session after one factor.
     expect((await b.get('/v1/account/me')).statusCode).toBe(401);
-    // The code is used up.
-    expect((await new Browser(app).post('/v1/team/invite', { invite: created.invite })).statusCode).toBe(404);
+    // The code is used up, and a used invite never names the vendor to whoever holds the link
+    // (front door, owner 8 Nov 2026; design board InviteInvalid).
+    const used = await new Browser(app).post('/v1/team/invite', { invite: created.invite });
+    expect(used.statusCode).toBe(404);
+    expect(used.body).toBe('{"error":"not-found"}');
+    expect(used.body).not.toContain(owner.displayName);
 
     // The same key again is not a second factor.
     const same = await b.post('/v1/team/join/second/pgp/start', { setupId, publicKey: k1.publicKey });
@@ -235,9 +255,18 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     // every member login, login.ts), not the single PGP key's `pgp-single`.
     const first = await deps.db.query<{ strength: string }>('select strength from sessions where id = $1', [await sessionId(b)]);
     expect(first.rows[0]!.strength).toBe('strong');
-    const me = (await b.get('/v1/account/me')).json() as { displayName: string; member: unknown };
+    const me = (await b.get('/v1/account/me')).json() as { displayName: string; member: unknown; termsCurrent: boolean };
     expect(me.displayName).toBe(owner.displayName);
     expect(me.member).toEqual({ name: `Joiner${n}x`, roles: ['trades'] });
+    // The member's own login account carries the Terms they signed, and they are inside.
+    expect(me.termsCurrent).toBe(true);
+    const signed = await deps.db.query<{ terms_version: string | null; terms_accepted_at: Date | null }>(
+      'select a.terms_version, a.terms_accepted_at from team_members tm join accounts a on a.id = tm.member_account_id where tm.id = $1',
+      [created.id],
+    );
+    expect(signed.rows[0]!.terms_version).toBe(deps.config.termsVersion);
+    expect(signed.rows[0]!.terms_accepted_at).not.toBeNull();
+    expect((await b.get('/v1/news')).statusCode).toBe(200);
     const alerts = (await owner.browser.get('/v1/account/alerts')).json() as { kind: string }[];
     expect(alerts.map((a) => a.kind)).toContain('team-member-joined');
     expect(((await owner.browser.get('/v1/team')).json() as { members: { status: string }[] }).members[0]!.status).toBe('active');
@@ -249,7 +278,7 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     const banned = await genKey();
     await recordBannedValues(deps.db, deps.config, { kind: 'pgp-fingerprint', values: [banned.fingerprint.toLowerCase()], accountId: null, now: deps.clock() });
     const b = new Browser(app);
-    const s1 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: banned.publicKey });
+    const s1 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: banned.publicKey, acceptedTerms: deps.config.termsVersion });
     expect(s1.statusCode, s1.body).toBe(200);
     const c1 = s1.json() as { challengeId: string; encryptedMessage: string };
     const f1 = await b.post('/v1/team/join/finish', { challengeId: c1.challengeId, code: codeOf(await decrypt(c1.encryptedMessage, banned.privateKey, undefined, deps.clock())) });
@@ -261,7 +290,7 @@ describe('the member sign-up (two factors, the staff rule)', () => {
 
     // The second PGP factor goes through insertPgpKey as well.
     const k1 = await genKey();
-    const s2 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: k1.publicKey });
+    const s2 = await b.post('/v1/team/join/start', { invite: created.invite, loginName: `banjoin${n}`, publicKey: k1.publicKey, acceptedTerms: deps.config.termsVersion });
     const c2 = s2.json() as { challengeId: string; encryptedMessage: string };
     const f2 = await b.post('/v1/team/join/finish', { challengeId: c2.challengeId, code: codeOf(await decrypt(c2.encryptedMessage, k1.privateKey, undefined, deps.clock())) });
     expect(f2.statusCode, f2.body).toBe(201);
@@ -689,7 +718,7 @@ describe('role changes and removal reach a member in flight', () => {
 });
 
 describe('the audit log covers every member action (review M3)', () => {
-  it('trade-taken and trade-wallet-set are refused before anything is written (I2), final-alert-seen, dispute and appeal write one row each', async () => {
+  it('trade-taken and trade-wallet-set are refused before anything is written (I2), dispute and appeal write one row each', async () => {
     const owner = await team();
     const other = await team();
     const m = await member(owner.id, ['trades']);
@@ -703,9 +732,13 @@ describe('the audit log covers every member action (review M3)', () => {
     expect(err(await m.browser.post(`/v1/offers/${offer.id}/take`, takeBody(owner.wallet)))).toEqual({ status: 403, error: 'member-cannot-sign' });
     expect(await auditRows(owner.id)).toEqual([]);
 
-    // A dispute on a secured trade (the owner is the buyer), then an appeal of its ruling.
+    // A dispute on a paid trade once the seller's confirm window is over (the owner is the buyer;
+    // never before "I've paid", design proto review P1), then an appeal of its ruling.
     const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
-    await driveTo(deps, d.trade, 'secured');
+    const dp = await driveTo(deps, d.trade, 'paid');
+    setNow(dp.confirmBy!);
+    // The confirm window (2 hours) outlasts the member's session: log in again at its end.
+    expect((await m.browser.post('/t/login', { accountId: m.loginId })).statusCode).toBe(200);
     const opened = await m.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'a private note' });
     expect(opened.statusCode, opened.body).toBe(200);
     // A moderator's round-1 ruling, through the dispute machine (Plan 4 Task 12 is not built yet).
@@ -713,30 +746,10 @@ describe('the audit log covers every member action (review M3)', () => {
     const appealed = await m.browser.post(`/v1/trades/${d.code}/appeal`, { why: 'The moderator missed my bank statement.' });
     expect(appealed.statusCode, appealed.body).toBe(200);
 
-    // The final alert on a trade where the owner is the buyer: a member's receipt is logged but does
-    // not count as the owner seeing it (review M9(b)).
-    const f = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
-    const fs = await driveTo(deps, f.trade, 'secured');
-    await markSellerNudged(deps, f.code);
-    const base = deps.clock();
-    try {
-      setNow(new Date(fs.payBy!.getTime() + 60_000));
-      expect((await other.browser.post(`/v1/trades/${f.code}/events`, { type: 'request-refund' })).statusCode).toBe(200);
-      const seen = await m.browser.post(`/v1/trades/${f.code}/final-alert-seen`, {});
-      expect(seen.statusCode, seen.body).toBe(204);
-      const { rows } = await deps.db.query<{ d: boolean | null; at: Date | null }>(
-        'select final_alert_delivered as d, final_alert_seen_at as at from trades where code = $1', [f.code],
-      );
-      expect(rows[0]).toEqual({ d: null, at: null });
-    } finally {
-      setNow(base);
-    }
-
     const rows = await auditRows(owner.id);
     expect(rows.map((r) => [r.action, r.trade_code])).toEqual([
       ['dispute-opened', d.code],
       ['appeal-filed', d.code],
-      ['final-alert-seen', f.code],
     ]);
     const { rows: detail } = await deps.db.query<{ detail: unknown }>('select detail from team_audit where account_id = $1 order by id', [owner.id]);
     expect(JSON.stringify(detail)).not.toContain('private note');
@@ -762,6 +775,7 @@ describe('the audit log covers every member action (review M3)', () => {
       'POST /v1/tickets': 'a support ticket shared by the team: its message records the member (ticket_messages.member_id); not an account action',
       'POST /v1/tickets/:id/messages': 'a message on the team ticket, recording the member who wrote it; not an account action',
       'POST /v1/tickets/:id/close': "closing the team's own support ticket: changes no account, offer, trade or wallet",
+      'POST /v1/account/terms': "the member's own agreement to the Terms, written to their own login account (review 2026-11-08 F1); it changes nothing of the team account",
     };
     const found: string[] = [];
     const audited = new Set<string>();
@@ -802,7 +816,7 @@ describe('the audit log covers every member action (review M3)', () => {
     for (const r of found) expect([...live], r).toContain(r);
     // The scan sees the routes it must (so a refactor that hides them fails here, not silently).
     for (const r of ['POST /v1/offers', 'PATCH /v1/offers/:id', 'POST /v1/account/offers/status', 'POST /v1/offers/:id/take', 'POST /v1/trades/:code/wallet',
-      'POST /v1/trades/:code/events', 'POST /v1/trades/:code/final-alert-seen', 'POST /v1/trades/:code/dispute', 'POST /v1/trades/:code/appeal', ...Object.keys(EXEMPT)]) {
+      'POST /v1/trades/:code/events', 'POST /v1/trades/:code/dispute', 'POST /v1/trades/:code/appeal', ...Object.keys(EXEMPT)]) {
       expect(found, r).toContain(r);
     }
   });

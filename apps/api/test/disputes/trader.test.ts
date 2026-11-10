@@ -56,9 +56,16 @@ async function tradeIn(state: Parameters<typeof driveTo>[2], from = START) {
   return { seller, buyer, t };
 }
 
-/** A secured trade the buyer disputed at `from`. */
+/**
+ * A trade the buyer disputed at `from`: marked paid at the seller's confirm window (120 min in
+ * seedTrade) before `from`, since the buyer can't dispute before "I've paid" nor before the
+ * window ends (design proto review P1, 8 Nov).
+ */
 async function disputed(from = START) {
-  const x = await tradeIn('secured', from);
+  const x = await tradeIn('paid', new Date(from.getTime() - 120 * MIN));
+  expect(x.t.confirmBy).toEqual(from);
+  setNow(from);
+  await relogin(x.seller, x.buyer);
   const res = await x.buyer.browser.post(dispute(x.t.code), { reason: 'paid', note: '' });
   expect(res.statusCode, res.body).toBe(200);
   return x;
@@ -350,6 +357,30 @@ describe('startDisputeTimers', () => {
     await tick();
     expect((await loadDispute(deps.db, c.t.code))!).toMatchObject({ status: 'published', appealEndsAt: at(base + 108 * H) });
     expect((await row(c.t.code)).paused_since).toBeNull();
+  });
+});
+
+describe('J-14 (D-059): a held trade takes no appeal', () => {
+  // "No trader event moves a held trade (the other party's neither)" (tickets/lock.ts): the appeal
+  // moves the dispute too, so it waits, like the trade, until staff lift the lock.
+  it('neither side appeals while either account is locked; once lifted, the appeal goes in', async () => {
+    await deps.db.query('update site_flags set maintenance_since = null');
+    const base = 1700 * H;
+    const c = await disputed(at(base));
+    await publishRuling(deps, c.t.code, { outcome: 'release-to-buyer' });
+    await deps.db.query('insert into account_locks (account_id, locked_at, set_disabled) values ($1, $2, false)', [c.seller.id, at(base + H)]);
+    setNow(at(base + 2 * H));
+    await relogin(c.buyer);
+    const res = await c.buyer.browser.post(appeal(c.t.code), { why: WHY });
+    expect({ status: res.statusCode, body: res.json() }).toEqual({ status: 409, body: { error: 'trade-held' } });
+    expect((await loadDispute(deps.db, c.t.code))!.status).toBe('published');
+    expect((await deps.db.query('select count(*)::int as n from dispute_appeals where code = $1', [c.t.code])).rows[0]).toEqual({ n: 0 });
+    await deps.db.query('update account_locks set unlocked_at = $2 where account_id = $1 and unlocked_at is null', [c.seller.id, at(base + 3 * H)]);
+    setNow(at(base + 3 * H));
+    await tick();
+    await relogin(c.buyer);
+    const ok = await c.buyer.browser.post(appeal(c.t.code), { why: WHY });
+    expect(ok.statusCode, ok.body).toBe(200);
   });
 });
 

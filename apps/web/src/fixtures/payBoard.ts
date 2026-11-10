@@ -61,8 +61,6 @@ export const PAY_SECURING: TradeView = {
   payBy: null,
   paidAt: null,
   confirmBy: null,
-  finalAlertAt: null,
-  finalAlertSeenAt: null,
   settleBy: null,
   releaseClaimedAt: null,
   pausedAt: null,

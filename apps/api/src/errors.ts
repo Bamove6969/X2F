@@ -96,6 +96,8 @@ export type ApiErrorCode =
   | 'wrong-channel'
   | 'wrong-sender'
   | 'chat-unavailable'
+  // Design 2026-11-08 section 5: a chat purged under the caller (its member mark); the device erases its copy.
+  | 'chat-purged'
   // Plan 3, Task 27: a second dispute on one trade.
   | 'dispute-exists'
   // Plan 3, Task 26: the nudge sender's own limits.
@@ -136,15 +138,15 @@ export type ApiErrorCode =
   | 'two-factors-required'
   | 'owner-protected'
   | 'owner-needs-two-keys'
-  // Plan 4, Task 6: owner first-run setup.
-  | 'setup-locked'
-  | 'owner-needs-pgp'
   // Owner G3 (7 Nov): a moderator holds a security key, a PGP key and a passkey.
   | 'all-three-methods-required'
   // Owner G4 (7 Nov): adding or removing an owner key needs taps by both owner keys.
   | 'both-owner-keys-required'
   // Owner G3 (review P-m1): a staff passkey that reports a security-key model is that key again.
   | 'passkey-is-security-key'
+  // Plan 4, Task 6: owner first-run setup.
+  | 'setup-locked'
+  | 'owner-needs-pgp'
   // Plan 5 Task 10 on the staff API: the past-rep claim is no longer live (revoked, removed, rejected).
   | 'not-live'
   // Plan 5, Task 10: past reputation claims.
@@ -155,7 +157,15 @@ export type ApiErrorCode =
   | 'wrong-key'
   | 'challenge-used'
   | 'site-claimed'
-  | 'fingerprint-claimed';
+  | 'fingerprint-claimed'
+  // Plan 4, Task 11: the moderator's case work. `forbidden-case`: not the assignee (nor a senior
+  // moderator or the owner), or involved in round 1 of an appealed case; `freeze-not-allowed`: the
+  // party has not ignored the dispute or the ruling; the moderation process's own answers.
+  | 'forbidden-case'
+  | 'freeze-not-allowed'
+  | 'no-chat'
+  | 'no-proof'
+  | 'moderation-unavailable';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

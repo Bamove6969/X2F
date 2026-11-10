@@ -62,6 +62,12 @@
   font-style: italic;
 }
 
+/* A line the server no longer serves (review I2): kept in place, its text replaced by a muted note. */
+.x2f-chat__line[data-missing] .x2f-chat__text {
+  color: var(--x2f-ink-muted);
+  font-style: italic;
+}
+
 .x2f-chat__line {
   display: flex;
   flex-direction: column;

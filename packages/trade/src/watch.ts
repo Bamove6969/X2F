@@ -368,11 +368,13 @@ export function watchStep(a: {
  * layer does not see. That includes `funding`/`securing`/`secured`/`paid`: a signing window that
  * timed out (`settleBy`) returns the trade to `settleFrom` and clears `settling`, so a sweep seen
  * there can be any kind that was being signed (a release, a mutual cancel, a buyer cancel), and
- * guessing from the state would mis-attribute it. Also null for a dispute ruling.
+ * guessing from the state would mis-attribute it. Also null for a dispute ruling, except a dispute
+ * opened on the seller's cancel (`disputed`, still `auto-refund`): the refund the moderator already
+ * handed out lands anyway, and is recorded as that kind (review I1, 8 Nov; see the machine's `settled`).
  */
 export function settleKindFor(t: { state: TradeState; settling: SettleKind | null }): SettleKind | null {
   if (t.state === 'settling') return t.settling;
+  if (t.state === 'disputed' && t.settling === 'auto-refund') return 'auto-refund';
   if (t.state === 'lapsed') return 'lapse-refund';
-  if (t.state === 'refund_requested') return 'auto-refund';
   return null;
 }

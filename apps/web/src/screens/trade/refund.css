@@ -1,5 +1,5 @@
 /*
- * SellerRefund and FinalAlert (Task 25). Measurements from the SellerRefund and BuyerPay boards
+ * SellerRefund and SellerCancelled (Task 25). Measurements from the SellerRefund and BuyerPay boards
  * (design/x2f-app/); colours are design tokens only. No inline styles (the CSP has no
  * 'unsafe-inline' for styles).
  *
@@ -177,26 +177,6 @@
   font-size: 28px;
   line-height: 32px;
   font-weight: 500;
-}
-
-/* FinalAlert's danger chip carries a whole sentence, so it wraps and keeps its case. */
-.x2f-final-alert__chip {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--x2f-space-2);
-  padding: 12px;
-  border: 1px solid var(--x2f-danger);
-  border-radius: var(--x2f-radius-md);
-  background: var(--x2f-surface-raised);
-  color: var(--x2f-danger);
-  font-size: 16px;
-  line-height: 22px;
-  font-weight: 600;
-}
-
-.x2f-final-alert__chip > svg {
-  flex-shrink: 0;
-  margin-top: 1px;
 }
 
 /* Usernames are shown exactly as set (Global Constraints). */

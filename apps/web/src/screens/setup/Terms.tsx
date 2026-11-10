@@ -5,8 +5,11 @@
  *
  * - `SetupTerms` (`/setup`): the first setup screen. Accepting keeps the version for the register
  *   call (`acceptedTerms`) and goes on to the names.
- * - `Terms` (`/terms`): a signed-in trader refused with `terms-required` (the Terms changed).
- *   Accepting posts `POST /v1/account/terms` and returns to `returnTo`.
+ * - `Terms` (`/terms`): a signed-in trader (or team member, on their own login account) refused
+ *   with `terms-required` (the Terms changed). Accepting posts `POST /v1/account/terms` and returns
+ *   to `returnTo`.
+ * - `TermsScreen` in MemberInvite (`/team/join`): a team member signs the Terms before joining
+ *   (review 2026-11-08 F1); the version goes with `POST /v1/team/join/start` (`acceptedTerms`).
  *
  * Board: SetupTerms (design/x2f-app/, mirrored from the canvas 2026-10-26): "Before you start", the
  * key points, then the full text in the box. "Terms of Service" and "Privacy Policy" in the tick
@@ -29,7 +32,8 @@ import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSIO
 /** How close to the bottom (in CSS pixels) counts as the end, for rounding on zoomed screens. */
 const END_SLACK = 4;
 
-function TermsScreen({
+/** The Terms screen itself; also the first step of a team member's join (MemberInvite, review 2026-11-08 F1). */
+export function TermsScreen({
   screen,
   title,
   intro,

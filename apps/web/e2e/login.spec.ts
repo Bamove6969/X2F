@@ -292,6 +292,9 @@ test('an expired session routes to /login and returns to the same screen after l
   await page.route('**/v1/login/webauthn/finish', json({ status: 'ok' }));
 
   await page.goto(`${LOCAL}/settings/security`);
+  // The Landing board first (design review 2026-11-08 item 1); its Log in keeps where they were going.
+  await expect(page).toHaveURL(/\/\?returnTo=%2Fsettings%2Fsecurity$/);
+  await page.click('[data-part="landing-login"]');
   await expect(page).toHaveURL(/\/login\?returnTo=%2Fsettings%2Fsecurity$/);
 
   await virtualAuthenticator(page);
@@ -392,7 +395,9 @@ test('a TOTP backup login says when changes can be made, then carries on', async
   await expect(page.locator('[data-part="hold-note"]')).toContainText('Your account is on a 24-hour hold');
   await expect(page).toHaveURL(/\/login\/backup/);
   await page.click('[data-part="hold-continue"]');
-  await expect(page).toHaveURL(/\/buy$/);
+  // A recovery session never reaches the marketplace (front door, 8 Nov 2026): it lands on Security,
+  // where a new login method can be added.
+  await expect(page).toHaveURL(/\/settings\/security$/);
 });
 
 test('the TOTP backup daily cap says when to try again', async ({ page }) => {

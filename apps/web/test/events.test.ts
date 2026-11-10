@@ -55,6 +55,9 @@ describe('parseLiveEvent', () => {
     { type: 'accepted', code: 'X2F-7KQ4-M9TD', by: 'Someone' },
     { type: 'chat', chat: 'c1' },
     { type: 'nudge', from: 'Someone', context: 'X2F-7KQ4-M9TD' },
+    // Plan 4 Task 11: written by the staff API only.
+    { type: 'moderator-joined', code: 'X2F-7KQ4-M9TD', username: 'sarah.v' },
+    { type: 'proof-requested', code: 'X2F-7KQ4-M9TD', username: 'sarah.v' },
   ])('accepts %o', (ev) => {
     expect(parseLiveEvent(JSON.stringify(ev))).toEqual(ev);
   });
@@ -63,6 +66,7 @@ describe('parseLiveEvent', () => {
     'not json',
     '{"type":"evil"}',
     '{"type":"accepted","code":"X"}',
+    '{"type":"moderator-joined","code":"X"}',
     '{"type":"trade","code":1,"state":"secured"}',
     '[]',
     'null',
@@ -142,9 +146,7 @@ describe('connectEvents', () => {
   });
 });
 
-describe('the live refund_requested event never posts the final-alert seen-receipt (review 2026-10-27, Important 2)', () => {
-  // The receipt belongs to Task 25's FinalAlert, which posts it once per finalAlertAt only while the
-  // alert is visible. A stream delivering the event to a hidden or unattended tab is not "seen".
+describe('a live trade event makes no request of its own (the final alert and its receipt are gone, owner 8 Nov)', () => {
   it('connectEvents hands the event on and makes no request of its own', async () => {
     const fetched: unknown[] = [];
     const originalFetch = globalThis.fetch;
@@ -154,9 +156,9 @@ describe('the live refund_requested event never posts the final-alert seen-recei
       const stop = connectEvents((e) => got.push(e), { EventSource: FakeSource as unknown as typeof EventSource, random: () => 0.5 });
       const s = FakeSource.all.at(-1)!;
       s.open();
-      s.message({ type: 'trade', code: 'X2F-7KQ4-M9TD', state: 'refund_requested' });
+      s.message({ type: 'trade', code: 'X2F-7KQ4-M9TD', state: 'settling' });
       await Promise.resolve();
-      expect(got).toEqual([{ type: 'trade', code: 'X2F-7KQ4-M9TD', state: 'refund_requested' }]);
+      expect(got).toEqual([{ type: 'trade', code: 'X2F-7KQ4-M9TD', state: 'settling' }]);
       expect(fetched).toEqual([]);
       stop();
     } finally {
@@ -164,12 +166,17 @@ describe('the live refund_requested event never posts the final-alert seen-recei
     }
   });
 
-  it('neither the events client nor App.tsx knows the receipt route', async () => {
-    const { readFileSync } = await import('node:fs');
-    for (const file of ['../src/api/events.ts', '../src/App.tsx']) {
-      const code = readFileSync(new URL(file, import.meta.url), 'utf8');
-      expect(code, file).not.toContain('final-alert-seen');
+  it('no web source knows the retired receipt route or the retired state', async () => {
+    const { readFileSync, readdirSync } = await import('node:fs');
+    const root = new URL('../src/', import.meta.url);
+    const files = (readdirSync(root, { recursive: true }) as string[]).filter((f) => /\.(ts|tsx)$/.test(f));
+    expect(files.length).toBeGreaterThan(50);
+    for (const file of files) {
+      const code = readFileSync(new URL(file, root), 'utf8');
+      // The team log keeps the old action's words for rows written before the reversal.
+      if (!file.endsWith('teamCopy.ts')) expect(code, file).not.toContain('final-alert-seen');
       expect(code, file).not.toContain('finalAlertSeen');
+      expect(code, file).not.toContain('refund_requested');
     }
   });
 });

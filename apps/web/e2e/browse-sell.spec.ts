@@ -263,6 +263,11 @@ test.describe('/sell/:methodId (SellOffers board)', () => {
     await expect(page.locator('main h2').first()).toHaveText('Buyers paying in EUR');
     await page.getByRole('link', { name: /^SEPA 3 buyers/ }).click();
     await expect(page).toHaveURL(/\/sell\/SEPA\?currency=EUR$/);
+    // The click leaves the mouse where the SEPA link was; on the list, the card's "+3" badges button
+    // can render under it, and a mouse hover opens the badge tooltip, which names the poster again
+    // (a second [data-username]). Park the mouse off the cards so the card is read as it rests.
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
     await expect(page.locator('article')).toHaveCount(1);
     await expect(page.locator('article [data-username]')).toHaveText(['euro_buyer']);
     await expect(page.locator('article')).toContainText('€305.00');
@@ -277,22 +282,17 @@ test.describe('/sell/:methodId (SellOffers board)', () => {
     }
   });
 
-  test('logged out, the lists render and no browse request fails', async ({ page }) => {
+  test('logged out, the lists never open: the front door (the Landing board) takes the visitor, keeping the path (owner, 8 Nov 2026)', async ({ page }) => {
     const seen = await stubApi(page, { signedIn: false });
-    const failed: string[] = [];
-    // GET /v1/site is the app shell's (Plan 4 Task 8: banner, maintenance), not a browse request.
-    page.on('response', (r) => {
-      const path = new URL(r.url()).pathname;
-      if (path.startsWith('/v1/') && path !== '/v1/account/me' && path !== '/v1/site' && r.status() >= 400) failed.push(`${r.status()} ${path}`);
-    });
     await page.goto('/sell');
-    await expect(page.locator('main a').first()).toBeVisible();
+    await expect(page).toHaveURL(/\/\?returnTo=%2Fsell$/);
+    await expect(page.locator('[data-screen="landing"]')).toBeVisible();
     await page.goto('/sell/ZELLE');
-    await expect(page.locator('article')).toHaveCount(3);
-    await expect(page.getByRole('button', { name: 'Trade with mira.k' })).toBeEnabled();
-    expect(failed).toEqual([]);
+    await expect(page).toHaveURL(/\/\?returnTo=%2Fsell%2FZELLE$/);
+    await expect(page.locator('article')).toHaveCount(0);
+    expect(await page.locator('body').innerText()).not.toContain('mira.k');
     const paths = new Set(seen.requests.map((r) => new URL(r.url()).pathname));
-    for (const p of ['/v1/methods', '/v1/offers', '/v1/price']) expect(paths.has(p), p).toBe(true);
+    for (const p of ['/v1/methods', '/v1/offers', '/v1/price']) expect(paths.has(p), p).toBe(false);
   });
 
   test('starter limits: an offer the viewer cannot take yet is greyed with "Opens at Building"', async ({ page }) => {

@@ -1,8 +1,14 @@
 /**
  * chatStore: the device's chat records, in IndexedDB `x2f-chat` (Task 20's device binding). One
  * record per chat: this device's chat identity (secret keys included), the verified attestation,
- * the ChatState (seq counter and ReplayGuard) and the messages it has opened, so a reload shows
- * them again without re-opening (the guard refuses a replay).
+ * the ChatState (seq counter and ReplayGuard), the read cursor and a receipt per line it accepted:
+ * the envelope id, sender, seq, signature and gap mark, NEVER the text (owner p11-10, "all data is
+ * being fed live from our servers"). Each open re-reads the envelopes from the server and decrypts
+ * them again in the worker; the receipts let a re-read show a line the guard already took, and
+ * only that same signed envelope (design 2026-11-08 section 5).
+ *
+ * A record is erased when the API answers 410 `chat-purged` for its chat (the engine), and the
+ * whole store is swept for purged chats once per worker start (`ChatEngine.sweep`).
  *
  * Every record is wrapped with one non-extractable AES-256-GCM CryptoKey kept in the same database,
  * with the chat code bound in as additional data. The same scheme as the escrow store
@@ -17,13 +23,19 @@ const CHATS = 'chats';
 const KEYS = 'keys';
 const KEY_ID = 'wrap';
 
-export interface StoredChatMessage {
+/** One line this device accepted (its guard moved for it). No text: that is read again from the server. */
+export interface StoredChatReceipt {
   /** The API's envelope id. */
   id: string;
   /** The verified sender: the envelope's signature AND the server's record agree. */
   from: Role;
   seq: number;
-  text: string;
+  /**
+   * The envelope's signature (hex): a re-read shows the line only for this same envelope, so a
+   * server cannot swap in another one the sender signed with the same seq. Null for a line kept by
+   * a v1 record (before receipts); then the sender and seq must match.
+   */
+  sig: string | null;
   /** The server's time for the envelope, when it gave one. */
   at: string | null;
   /** This sender's seq skipped one or more messages before this one (review M5). */
@@ -31,7 +43,7 @@ export interface StoredChatMessage {
 }
 
 export interface ChatRecord {
-  v: 1;
+  v: 2;
   chat: string;
   role: 'buyer' | 'seller';
   identity: { signPublic: string; boxPublic: string; signSecret: string; boxSecret: string };
@@ -40,13 +52,30 @@ export interface ChatRecord {
   state: ChatState | null;
   /** The last envelope id read past (`GET …/envelopes?after=`). */
   cursor: string;
-  messages: StoredChatMessage[];
+  receipts: StoredChatReceipt[];
+}
+
+/**
+ * A record as read: v2 as it is, a v1 record (which kept every line's text) as v2 with its lines'
+ * receipts and no text. Null for anything else.
+ */
+export function upgradeChatRecord(raw: unknown, chat: string): ChatRecord | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  if (r.chat !== chat) return null;
+  if (r.v === 2 && Array.isArray(r.receipts)) return r as unknown as ChatRecord;
+  if (r.v !== 1 || !Array.isArray(r.messages)) return null;
+  const { messages, ...rest } = r as Record<string, unknown> & { messages: Array<{ id: string; from: Role; seq: number; at: string | null; gapBefore: boolean }> };
+  return { ...rest, v: 2, receipts: messages.map((m) => ({ id: m.id, from: m.from, seq: m.seq, sig: null, at: m.at, gapBefore: m.gapBefore })) } as unknown as ChatRecord;
 }
 
 export interface ChatStore {
+  /** The chat's record; a v1 record is upgraded (its text dropped) and saved back before it is returned. */
   load(chat: string): Promise<ChatRecord | null>;
   save(rec: ChatRecord): Promise<void>;
   delete(chat: string): Promise<void>;
+  /** Every chat code with a record on this device. */
+  list(): Promise<string[]>;
 }
 
 export class ChatStoreError extends Error {
@@ -107,6 +136,13 @@ export async function openChatStore(o: { indexedDB?: IDBFactory; crypto?: Crypto
   if (!idb || !cr?.subtle) throw new ChatStoreError('unavailable');
   const db = await openDb(idb);
   const key = await wrapKey(db, cr.subtle);
+  const save = async (rec: ChatRecord): Promise<void> => {
+    const iv = cr.getRandomValues(new Uint8Array(12));
+    const ct = await cr.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad(rec.chat) }, key, new TextEncoder().encode(JSON.stringify(rec)));
+    const tx = db.transaction(CHATS, 'readwrite');
+    tx.objectStore(CHATS).put({ iv, ct }, rec.chat);
+    await done(tx);
+  };
   return {
     async load(chat) {
       const raw = (await req(db.transaction(CHATS).objectStore(CHATS).get(chat))) as { iv?: unknown; ct?: unknown } | undefined;
@@ -118,17 +154,17 @@ export async function openChatStore(o: { indexedDB?: IDBFactory; crypto?: Crypto
       } catch {
         throw new ChatStoreError('bad-record');
       }
-      const rec = JSON.parse(new TextDecoder().decode(plain)) as ChatRecord;
-      if (rec?.v !== 1 || rec.chat !== chat) throw new ChatStoreError('bad-record');
+      const json = JSON.parse(new TextDecoder().decode(plain)) as { v?: unknown } | null;
+      const rec = upgradeChatRecord(json, chat);
+      if (rec === null) throw new ChatStoreError('bad-record');
+      if (json?.v !== 2) await save(rec);
       return rec;
     },
-    async save(rec) {
-      const iv = cr.getRandomValues(new Uint8Array(12));
-      const ct = await cr.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad(rec.chat) }, key, new TextEncoder().encode(JSON.stringify(rec)));
-      const tx = db.transaction(CHATS, 'readwrite');
-      tx.objectStore(CHATS).put({ iv, ct }, rec.chat);
-      await done(tx);
+    async list() {
+      const keys = await req(db.transaction(CHATS).objectStore(CHATS).getAllKeys());
+      return keys.filter((k): k is string => typeof k === 'string');
     },
+    save,
     async delete(chat) {
       const tx = db.transaction(CHATS, 'readwrite');
       tx.objectStore(CHATS).delete(chat);
@@ -144,7 +180,15 @@ export function memoryChatStore(): ChatStore & { records: Map<string, string> } 
     records,
     async load(chat) {
       const v = records.get(chat);
-      return v === undefined ? null : (JSON.parse(v) as ChatRecord);
+      if (v === undefined) return null;
+      const raw = JSON.parse(v) as { v?: unknown };
+      const rec = upgradeChatRecord(raw, chat);
+      if (rec === null) throw new ChatStoreError('bad-record');
+      if (raw.v !== 2) records.set(chat, JSON.stringify(rec));
+      return rec;
+    },
+    async list() {
+      return [...records.keys()];
     },
     async save(rec) {
       records.set(rec.chat, JSON.stringify(rec));

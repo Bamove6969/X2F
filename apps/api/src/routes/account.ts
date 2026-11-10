@@ -198,7 +198,18 @@ const extendHoursValid: preHandlerAsyncHookHandler = async function (req) {
 async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOverview> {
   const { accountId, sessionId } = req.auth;
   // A member's own login methods (its own login account); the account owner's are not theirs to see.
-  const methodsOf = await personAccountId(deps.db, req.auth);
+  let methodsOf = accountId;
+  // A member's own Terms acceptance (review 2026-11-08 F1); null for the account owner.
+  let memberTerms: string | null = null;
+  if (req.auth.memberId !== null) {
+    const m = await deps.db.query<{ member_account_id: string; terms_version: string | null }>(
+      'select tm.member_account_id, a.terms_version from team_members tm join accounts a on a.id = tm.member_account_id where tm.id = $1',
+      [req.auth.memberId],
+    );
+    if (!m.rows[0]) throw new ApiError(401, 'not-authenticated');
+    methodsOf = m.rows[0].member_account_id;
+    memberTerms = m.rows[0].terms_version;
+  }
   const { rows } = await deps.db.query<{
     display_name: string;
     legacy_login_name: boolean;
@@ -233,7 +244,10 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     hasBackup: member !== null ? true : hasBackup(counts),
     suggestions: member !== null ? [] : suggestionsFor(counts),
     // Staff and owner accounts carry no Terms version (R10).
-    termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
+    // A team member is current only when both the account and their own login account are.
+    termsCurrent:
+      row.kind !== 'trader' ||
+      (row.terms_version === deps.config.termsVersion && (member === null || memberTerms === deps.config.termsVersion)),
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
     accountType: row.account_type,
     member,
@@ -347,7 +361,9 @@ export function accountRoutes(app: FastifyInstance): void {
     '/v1/account/terms',
     // Task 17 (lead decision 2026-10-30): accepting the Terms is allowed during the hold (not a
     // security change; refusing it could block finishing open trades).
-    { preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true }) },
+    // Review 2026-11-08 F1: a team member accepts for themselves, on their own login account; the
+    // team account's acceptance stays the account owner's (a member never accepts for the account).
+    { preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true, member: 'any' }) },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const version = d.config.termsVersion;
@@ -358,9 +374,17 @@ export function accountRoutes(app: FastifyInstance): void {
       await withTx(d.db, async (db) => {
         // Review round 4: the accepting session must still be live where it writes.
         await requireLiveSessionInTx(db, req.auth, now);
-        await db.query('update accounts set terms_version = $2, terms_accepted_at = $3 where id = $1 and kind = $4', [
-          req.auth.accountId, version, now, 'trader',
-        ]);
+        if (req.auth.memberId !== null) {
+          await db.query(
+            `update accounts set terms_version = $2, terms_accepted_at = $3
+              where kind = 'member' and id = (select member_account_id from team_members where id = $1)`,
+            [req.auth.memberId, version, now],
+          );
+        } else {
+          await db.query('update accounts set terms_version = $2, terms_accepted_at = $3 where id = $1 and kind = $4', [
+            req.auth.accountId, version, now, 'trader',
+          ]);
+        }
       });
       return reply.code(204).send();
     },

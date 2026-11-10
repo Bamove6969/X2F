@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { LISTEN_OPTIONS, type Deps } from '../app.js';
 import { LOOPBACK_HOSTS } from '../static/serve.js';
+import { NO_MODERATION, socketModerationClient } from '../disputes/moderationClient.js';
+import type { EventBus } from '../events/bus.js';
 import { buildStaffApi, type ModerationClient } from './app.js';
 import { ensureSetupCode, setupCodeLine } from './ownerSetup.js';
 import { startHoursSweeper } from './sweeper.js';
@@ -42,10 +44,27 @@ export function staffListenFromEnv(env: Record<string, string | undefined>): Sta
   return { origin, ...(rpId ? { rpId } : {}), ...(webRoot ? { webRoot } : {}), host: env.X2F_STAFF_HOST || '127.0.0.1', port };
 }
 
-/** Until Plan 4 Task 11 builds the moderation client, nothing on the staff API calls it. */
-const NO_MODERATION: ModerationClient = { name: 'moderation' };
+/**
+ * Plan 4 Task 11: the moderation process's internal API, from `MOD_INTERNAL_SOCKET` (an absolute
+ * Unix socket path) and `MOD_INTERNAL_SECRET` (base64 of 32 bytes). Both unset: no moderation
+ * process, and every chat or proof read answers `moderation-unavailable`. One without the other,
+ * or a malformed value, refuses to start; errors name the variable, never its value.
+ */
+export function moderationFromEnv(env: Record<string, string | undefined>, clock: () => Date): ModerationClient {
+  const socketPath = env.MOD_INTERNAL_SOCKET ?? '';
+  const secret = env.MOD_INTERNAL_SECRET ?? '';
+  if (socketPath === '' && secret === '') return NO_MODERATION;
+  if (socketPath === '' || !socketPath.startsWith('/')) throw new Error('config: MOD_INTERNAL_SOCKET is malformed (an absolute Unix socket path)');
+  const bytes = new Uint8Array(Buffer.from(secret, 'base64'));
+  if (bytes.length !== 32) throw new Error('config: MOD_INTERNAL_SECRET is malformed (base64 of 32 bytes)');
+  return socketModerationClient({ socketPath, secret: bytes, clock });
+}
 
 export interface StartOptions {
+  /** Plan 4 Task 11: the moderation process's internal API (`moderationFromEnv`); omitted, none. */
+  moderation?: ModerationClient;
+  /** Plan 4 Task 11: the trader API's event bus, for moderator-joined, proof-requested and chat. */
+  traderEvents?: Pick<EventBus, 'publish'>;
   /** Where the setup code line goes: stderr (default). Never the structured logger. */
   stderr?: (line: string) => void;
   /** The structured logger's destination (tests). */
@@ -61,7 +80,14 @@ export interface StartOptions {
 export async function startStaffApi(deps: Deps, s: StaffListen, o: StartOptions = {}): Promise<{ app: FastifyInstance; close(): Promise<void> }> {
   const code = await ensureSetupCode(deps);
   const app = await buildStaffApi(
-    { ...deps, staffOrigin: s.origin, ...(s.rpId ? { staffRpId: s.rpId } : {}), ...(s.webRoot ? { staffWebRoot: s.webRoot } : {}), moderation: NO_MODERATION },
+    {
+      ...deps,
+      staffOrigin: s.origin,
+      ...(s.rpId ? { staffRpId: s.rpId } : {}),
+      ...(s.webRoot ? { staffWebRoot: s.webRoot } : {}),
+      moderation: o.moderation ?? NO_MODERATION,
+      ...(o.traderEvents ? { traderEvents: o.traderEvents } : {}),
+    },
     o.logStream ? { logStream: o.logStream } : {},
   );
   if (code !== null) (o.stderr ?? ((line: string) => void process.stderr.write(line)))(setupCodeLine(code));

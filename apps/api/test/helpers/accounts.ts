@@ -20,7 +20,8 @@ export async function accountIdByLoginName(deps: Pick<Deps, 'db' | 'config'>, lo
  * its tag (FU-D) under the current key or under `loginKeyId` (null: an account from before
  * migration 009, which logs in by its display name until it sets one: `legacy_login_name`, its tag
  * is its display name's); `displayName` defaults to `D` + the login name (or a random one). A
- * trader gets the current Terms version unless `termsVersion` says otherwise; staff and owner
+ * trader, and a team member's login account (who signs the Terms themselves, review 2026-11-08
+ * F1), get the current Terms version unless `termsVersion` says otherwise; staff and owner
  * accounts carry none.
  */
 export async function seedAccount(
@@ -30,7 +31,7 @@ export async function seedAccount(
   },
 ): Promise<string> {
   const kind = a.kind ?? 'trader';
-  const terms = a.termsVersion !== undefined ? a.termsVersion : kind === 'trader' ? deps.config.termsVersion : null;
+  const terms = a.termsVersion !== undefined ? a.termsVersion : kind === 'trader' || kind === 'member' ? deps.config.termsVersion : null;
   const display = a.displayName ?? (a.loginName !== null ? `D${a.loginName}` : `D${randomBytes(6).toString('hex')}`);
   const keyId = a.loginKeyId ?? deps.config.loginNameKeys.current;
   const now = deps.clock();

@@ -7,6 +7,9 @@ import { STAFF_REALM } from '../auth/sessions.js';
 import { EventBus } from '../events/bus.js';
 import { newBudgets } from '../limits.js';
 import { addSecurityHeaders } from '../static/serve.js';
+import type { ModerationClient } from '../disputes/moderationClient.js';
+import { staffDisputeRoutes } from '../disputes/staffRoutes.js';
+import type { appendLog } from '../log/append.js';
 import { assertRoutePerm, requireStaff, type StaffRoutePerm } from './guard.js';
 import { staffInviteRoutes } from './invites.js';
 import { staffMemberRoutes } from './members.js';
@@ -25,13 +28,9 @@ import { serveStaffWeb } from './web.js';
 import { staffSettingsRoutes } from './settings.js';
 import { staffSiteRoutes } from './site.js';
 
-/**
- * The moderation process as the staff API sees it (Plan 4 Task 11 builds it; until then nothing
- * calls it, and tests pass a stub). The API never holds a moderator key (Global Constraints).
- */
-export interface ModerationClient {
-  readonly name: 'moderation';
-}
+// The moderation process as the staff API sees it (Plan 4 Task 11): the API never holds a
+// moderator key (Global Constraints) and reads a chat or a proof only through it.
+export type { ModerationClient } from '../disputes/moderationClient.js';
 
 export interface StaffDeps extends Deps {
   /** `X2F_STAFF_ORIGIN`: the staff app's own exact origin; the only `Origin` its unsafe requests may carry. */
@@ -39,6 +38,10 @@ export interface StaffDeps extends Deps {
   /** The WebAuthn relying party of staff keys; default the staff origin's host name. */
   staffRpId?: string;
   moderation: ModerationClient;
+  /** Plan 4 Task 11: the trader API's event bus (moderator-joined, proof-requested, chat); omitted, none are sent. */
+  traderEvents?: Pick<EventBus, 'publish'>;
+  /** The activity log's writer for the case routes (tests inject a failing one). */
+  appendLog?: typeof appendLog;
   /** `X2F_STAFF_WEB_ROOT`: the built staff app (apps/staff-web/dist), served on this origin (Task 16). */
   staffWebRoot?: string;
 }
@@ -157,6 +160,12 @@ export async function buildStaffApi(
   staffPastRepRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
   staffFeedbackRoutes(app);
+  // Plan 4 Task 11: the moderator's queue, case, logged chat access, messages, proof and freeze.
+  staffDisputeRoutes(app, {
+    moderation: deps.moderation,
+    ...(deps.traderEvents ? { traderEvents: deps.traderEvents } : {}),
+    ...(deps.appendLog ? { appendLog: deps.appendLog } : {}),
+  });
   // Plan 4 Task 30 / J-14: support tickets and compromised-account tickets (D-055, D-057, D-059).
   staffTicketRoutes(app);
   // Plan 4 Task 16: the staff web app's pages, last, so every API route above wins.

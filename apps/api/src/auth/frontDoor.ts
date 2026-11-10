@@ -1,0 +1,200 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { ApiError } from '../errors.js';
+import { requireSession } from './sessions.js';
+
+/**
+ * The front door (owner, 8 Nov 2026): "No one gets to make it past the front door and see behind
+ * the curtains without signing an agreement, creating an account and logging in. There are no free
+ * tours for outsiders."
+ *
+ * Every route that answers with marketplace or user data (offers and their counts, prices, profiles,
+ * reviews, news, the site banner) runs behind `requireInside`: a live full session of a trader
+ * account on the current Terms. A team member passes as the account they work for (their session
+ * is a row of that account). Without one: 401 `not-authenticated`, a recovery session 403
+ * `recovery-session`, stale Terms 403 `terms-required` (the web sends that to the Terms screen), and
+ * never any data.
+ *
+ * It does not touch the session (`touch: false`): reading lists and prices, some of them polled,
+ * must never keep an idle session alive in an open tab (review 2026-10-27, I1).
+ */
+export const requireInside = requireSession({ kinds: ['trader'], touch: false, member: 'any' });
+
+/**
+ * The account behind `requireInside`, or null for anyone else. For the one route that answers both
+ * sides of the door (`GET /v1/site`: a bare maintenance flag outside, the banner inside). Any 401 or
+ * 403 counts as outside; anything else is thrown.
+ */
+export async function insideAccount(app: FastifyInstance, req: FastifyRequest, reply: FastifyReply): Promise<string | null> {
+  try {
+    await requireInside.call(app, req, reply);
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 401 || e.status === 403)) return null;
+    throw e;
+  }
+  return req.auth?.accountId ?? null;
+}
+
+/** True when a route's preHandler (one hook or a list) includes `requireInside`. */
+export function runsInside(preHandler: unknown): boolean {
+  const hooks = Array.isArray(preHandler) ? preHandler : [preHandler];
+  return hooks.includes(requireInside);
+}
+
+/**
+ * Every GET route behind a session that is not `requireInside`, with the reason it may be: each
+ * answers only the caller's own account, trades, chats or settings, never other traders' data
+ * (review 2026-11-08 F2). `test/frontDoor.test.ts` fails when a session-guarded GET is neither.
+ */
+export const OWN_DATA_READS: Readonly<Record<string, string>> = {
+  'GET /v1/account/me': "who I am: my display name, login methods, session level and Terms state (read on stale Terms and recovery to route me)",
+  'GET /v1/account/alerts': 'my own security alerts',
+  'GET /v1/account/approvals': 'my own pending new-device login approvals',
+  'GET /v1/account/approvals/:id': 'one of my own pending new-device login approvals',
+  'GET /v1/account/blocks': 'the traders I blocked',
+  'GET /v1/account/methods': 'my own login methods',
+  'GET /v1/account/nudges': 'my own nudge setting',
+  'GET /v1/account/offers': 'my own offers (read on stale Terms too, to turn them off)',
+  'GET /v1/account/past-rep': 'my own imported past reputation',
+  'GET /v1/account/profile/traded-total': 'my own traded-total display setting',
+  'GET /v1/account/push': 'my own push subscription state and the VAPID public key',
+  'GET /v1/account/security/devices': 'my own trusted devices',
+  'GET /v1/account/sessions': 'my own sessions',
+  'GET /v1/chats': 'my own chats',
+  'GET /v1/chats/:chat': 'one of my own chats (participants only)',
+  'GET /v1/chats/:chat/attestation': 'one of my own chats (participants only)',
+  'GET /v1/chats/:chat/envelopes': 'one of my own chats (participants only)',
+  'GET /v1/events': 'my own live events (per account and per trade, no marketplace broadcast)',
+  'GET /v1/reviews/pending': 'reviews I still owe for my own trades',
+  'GET /v1/team': "my own team's members (account owner only)",
+  // J-14 (owner Q69: a team shares its tickets): the account's own support tickets, never another's (404).
+  'GET /v1/tickets': "my own account's support tickets",
+  'GET /v1/tickets/:id': "one of my own account's support tickets (another account's is 404)",
+  'GET /v1/team/audit': "my own team's audit log (account owner only)",
+  'GET /v1/trades/:code': 'one of my own trades (participants only)',
+  'GET /v1/trades/:code/attestation': 'one of my own trades (participants only)',
+  'GET /v1/trades/:code/confirmations': 'one of my own trades (participants only)',
+  'GET /v1/trades/:code/dispute': 'one of my own trades (participants only)',
+  'GET /v1/trades/:code/review': 'one of my own trades (participants only)',
+  'GET /v1/wallets': 'my own payout wallets',
+  'GET /v1/wallets/rule': 'my own wallet rule',
+};
+
+/**
+ * Every route other than GET (and HEAD) behind a session that is not `requireInside`, with the reason
+ * it may be: each writes only to the caller's own account, trades, chats or settings, and answers
+ * only with the result of that write (or the caller's own data), never other traders' data (review
+ * 6a5949a6 F2b). `test/frontDoor.test.ts` fails when a session-guarded write is neither here nor
+ * behind `requireInside`. The live-session and hold checks are classified separately (auth/hold.ts).
+ */
+export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
+  // Login methods and security settings (my own account).
+  'PUT /v1/account/password': 'sets or changes my own password; no data back',
+  'POST /v1/account/pgp/start': 'an add-key challenge for my own account, encrypted to the key I sent',
+  'POST /v1/account/pgp/finish': 'adds a PGP key to my own account',
+  'POST /v1/account/webauthn/start': 'registration options for my own account',
+  'POST /v1/account/webauthn/finish': 'adds a passkey or security key to my own account',
+  'POST /v1/account/totp/start': 'an authenticator enrolment secret for my own account',
+  'POST /v1/account/totp/finish': 'turns on the authenticator for my own account',
+  'POST /v1/account/recovery-codes': 'new recovery codes for my own account',
+  'DELETE /v1/account/methods/:type/:id': 'removes one of my own login methods',
+  'POST /v1/account/login-name': 'changes my own login name',
+  'PUT /v1/account/security/one-device': 'my own one-device setting',
+  // Session length (owner, 2 Nov 2026) and the idle reminder (owner Q75): the calling person's own
+  // session and their own preference (a member's on their own login account).
+  'PUT /v1/account/session/length': "my own session's length; answers my own session's length and end",
+  'POST /v1/account/session/extend': "extends my own session after a confirm with my own login method; answers my own session's length and end",
+  'PUT /v1/account/idle-reminder': 'my own idle reminder; answers it',
+  // Owner 2 Nov 2026: Trader and Vendor accounts.
+  'PUT /v1/account/type': 'switches my own account to a vendor account; answers its type',
+  'POST /v1/confirm/password': 'a confirm token bound to my own session',
+  'POST /v1/confirm/pgp/start': 'a confirm challenge bound to my own session, for my own key',
+  'POST /v1/confirm/pgp/finish': 'a confirm token bound to my own session',
+  'POST /v1/confirm/webauthn/start': 'confirm options bound to my own session, for my own keys',
+  'POST /v1/confirm/webauthn/finish': 'a confirm token bound to my own session',
+  // Sessions, approvals, alerts, push and the Terms (my own account).
+  'POST /v1/account/approvals/:id': 'my decision on one of my own new-device login approvals',
+  'DELETE /v1/account/sessions/:id': 'ends one of my own sessions',
+  'DELETE /v1/account/recovery-sessions/:id': 'cancels one of my own backup sessions',
+  'POST /v1/account/push': 'my own push subscription',
+  'DELETE /v1/account/push': 'drops my own push subscriptions',
+  'POST /v1/account/alerts/:id/seen': 'marks one of my own alerts seen',
+  'POST /v1/account/terms': 'my own acceptance of the current Terms (a member: their own login account)',
+  // Settings and social rows (my own account).
+  'PUT /v1/account/nudges': 'my own nudge setting',
+  'POST /v1/account/blocks': 'a block row of mine; no data back (404 for a name that is not a trader)',
+  'DELETE /v1/account/blocks/:displayName': 'removes a block row of mine; no data back',
+  'PUT /v1/account/profile/traded-total': 'my own traded-total display setting',
+  'POST /v1/account/past-rep/start': 'a past-rep challenge for my own claim',
+  'POST /v1/account/past-rep/finish': 'my own past-rep claim',
+  'DELETE /v1/account/past-rep/:id': 'removes my own past-rep claim',
+  'POST /v1/method-suggestions': 'a method suggestion row of mine; no data back',
+  'POST /v1/feedback': 'a platform-feedback row; no data back',
+  'POST /v1/feedback/form': 'a feedback row; no data back',
+  // J-14 support tickets (D-055, D-057): my own account's tickets; answers only that ticket.
+  'POST /v1/tickets': "opens a support ticket of my own account; answers that ticket (409 ticket-open names only my own open one)",
+  'POST /v1/tickets/:id/messages': "a message on my own account's ticket; no data back",
+  'POST /v1/tickets/:id/close': "closes my own account's ticket; answers that ticket",
+  // Wallets and offers (my own).
+  'POST /v1/wallets': 'adds my own payout wallets; answers them',
+  'DELETE /v1/wallets/:id': 'removes one of my own payout wallets',
+  'POST /v1/offers': 'posts my own offer; answers its id',
+  'PATCH /v1/offers/:id': 'pauses, removes or relists my own offer (403 wrong-party for anyone else\'s)',
+  'POST /v1/account/offers/status': 'turns my own offers on or off',
+  // Trades and chats (participants only).
+  'POST /v1/offers/:id/take': 'opens my own trade on a listed offer; answers its code and locked price',
+  'POST /v1/trades/:code/events': 'an event in one of my own trades (participants only); answers its view',
+  'POST /v1/trades/:code/wallet': "the poster's payout wallet for one of my own trades, from my own wallets",
+  'POST /v1/trades/:code/identity': 'my identity for one of my own trades (participants only)',
+  'POST /v1/trades/:code/chat': 'the chat of one of my own trades (participants only)',
+  'POST /v1/trades/:code/dispute': 'opens a dispute on one of my own trades (participants only)',
+  'POST /v1/trades/:code/appeal': 'appeals a ruling on one of my own trades (participants only)',
+  'POST /v1/trades/:code/review': 'my review of one of my own finished trades',
+  'POST /v1/trades/:code/review/skip': 'skips my review of one of my own finished trades',
+  'POST /v1/nudges': 'a nudge to the other party of one of my own trades; answers its state',
+  'POST /v1/chats': 'opens my own pre-trade chat on a listed offer; answers its code and my role',
+  'POST /v1/chats/:chat/identity': 'my chat identity key for one of my own chats',
+  'POST /v1/chats/:chat/envelopes': 'an encrypted line in one of my own chats',
+  // My own team (account owner only).
+  'POST /v1/team/invites': 'an invite to my own team; answers its id, code and deadline',
+  'PATCH /v1/team/members/:id': "changes a member's roles in my own team",
+  'DELETE /v1/team/members/:id': 'removes a member from my own team',
+};
+
+/**
+ * Every trader API route that runs without a session, with the reason it must. Each one serves the
+ * front door: logging in, creating an account, getting back in, the Terms text to read before
+ * agreeing, or a bare "up / maintenance" answer. Nothing here returns marketplace or user data.
+ * `test/frontDoor.test.ts` fails when a route is added without a session guard and is not listed.
+ */
+export const PUBLIC_ROUTES: Readonly<Record<string, string>> = {
+  'GET /healthz': 'liveness probe; answers { ok: true } only',
+  'GET /v1/site': 'outside the door: only whether the site is in maintenance (and its kind); the banner and trading pause need a session',
+  'POST /v1/logout': 'ends whatever session the cookie names; no data back',
+  'GET /v1/terms': 'the Terms and Privacy text and version, read before agreeing at sign-up',
+  'GET /v1/pgp/signing-key': "X2F's own public signing key, to check the signed sign-up and login challenges",
+  'POST /v1/register/password': 'create an account (password)',
+  'POST /v1/register/pgp/start': 'create an account (PGP)',
+  'POST /v1/register/pgp/finish': 'create an account (PGP)',
+  'POST /v1/register/webauthn/start': 'create an account (passkey or security key)',
+  'POST /v1/register/webauthn/finish': 'create an account (passkey or security key)',
+  'POST /v1/login/password': 'log in',
+  'POST /v1/login/pgp/start': 'log in',
+  'POST /v1/login/pgp/finish': 'log in',
+  'POST /v1/login/webauthn/start': 'log in',
+  'POST /v1/login/webauthn/finish': 'log in',
+  'POST /v1/login/second-factor': 'log in (second step)',
+  'POST /v1/login/backup': 'account recovery: recovery code or authenticator backup login',
+  'POST /v1/login/approval/:id/poll': 'log in on a new device: waits for the approval from a logged-in device (needs the secret approval id)',
+  'POST /v1/login/approval/:id/cancel': 'log in on a new device: gives up waiting',
+  'POST /v1/team/invite': "team member sign-up: opens an invite by its secret code (shows only what that invite says)",
+  'POST /v1/team/join/start': 'team member sign-up (needs the secret invite code)',
+  'POST /v1/team/join/finish': 'team member sign-up (needs the secret invite code)',
+  'POST /v1/team/join/second/webauthn/start': 'team member sign-up, second login method',
+  'POST /v1/team/join/second/webauthn/finish': 'team member sign-up, second login method',
+  'POST /v1/team/join/second/pgp/start': 'team member sign-up, second login method',
+  'POST /v1/team/join/second/pgp/finish': 'team member sign-up, second login method',
+  // J-14 (D-059): the person may have lost every way in, so the report needs no session. It answers
+  // 202 { number } alike for every name (a trader's, a member's, a staff name, none, one already
+  // locked): it never says whether a name exists, and returns no account data.
+  'POST /v1/tickets/compromised': '"My account has been compromised": locks the named account; the same 202 { number } for every name',
+};

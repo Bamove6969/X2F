@@ -21,7 +21,7 @@ export interface EscrowChip {
   bar: { confirmations: number; of: number; etaMin: number } | null;
 }
 
-const SECURED_ON: readonly TradeState[] = ['secured', 'paid', 'refund_requested', 'settling', 'released', 'disputed'];
+const SECURED_ON: readonly TradeState[] = ['secured', 'paid', 'settling', 'released', 'disputed'];
 
 /**
  * The escrow chip (spec 2.2 step 6, spec 7, P3-I4): amber "Securing escrow" with the
@@ -56,6 +56,17 @@ export function payTimer(v: Pick<TradeView, 'payBy' | 'extensions' | 'releasable
 }
 
 /**
+ * The time to pay is over and the buyer has not tapped "I've paid" (owner 8 Nov, p6-1): not a hard
+ * end. The trade stays open, "I've paid" and the details stay, and the seller may cancel at any
+ * moment. Never while maintenance has the clock paused (the machine moves `payBy` on resume).
+ */
+export function payTimeOver(v: Pick<TradeView, 'state' | 'payBy' | 'pausedAt'>, nowMs: number): boolean {
+  if (v.state !== 'secured' || v.payBy === null || v.pausedAt !== null) return false;
+  const by = Date.parse(v.payBy);
+  return Number.isFinite(by) && nowMs >= by;
+}
+
+/**
  * States in which a mutual cancel can be proposed or accepted (@x2f/trade CANCEL_STATES): never
  * `paid`, no cancel of any kind after "I've paid" (owner, Revision 2026-10-29b).
  */
@@ -64,7 +75,7 @@ const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 /**
  * The buyer's Cancel (spec 2.3): one tap before "I've paid", and none at all after it (owner,
  * Revision 2026-10-29b; the machine refuses `buyer-cancel` in `paid`). In other states Task 23's
- * screens offer none (refund_requested is Task 25's final alert). It stays a one-tap "Cancel trade"
+ * screens offer none. It stays a one-tap "Cancel trade"
  * (owner 2026-10-29: option B, with the seller's Confirm cancel once the XMR is back; Task 39).
  */
 export function buyerCancelMode(v: Pick<TradeView, 'state' | 'paidAt'>): 'one-tap' | 'none' {
@@ -98,7 +109,6 @@ function progress(v: Pick<TradeView, 'state' | 'settling'>): number {
       return 0;
     case 'securing':
     case 'secured':
-    case 'refund_requested':
       return 1;
     case 'paid':
       return 2;
@@ -148,7 +158,7 @@ type PayView = Pick<TradeView, 'fiatCents' | 'amountAtomic'>;
 /**
  * Owner Q12 (2026-11-06): the seller's payment details and "I've paid" only once the escrow is
  * secured, 10 of 10 confirmations with the coins unlocked, as the server says (the machine refuses
- * `mark-paid` with `too-early` before `secured`). `refund_requested` comes after `secured`; in
+ * `mark-paid` with `too-early` before `secured`). In
  * `paid` the details the buyer paid to stay on screen (review 2026-11-07, 1; the fold glance shows
  * them too), and the button there is "Marked as paid", never this gate.
  *
@@ -157,7 +167,7 @@ type PayView = Pick<TradeView, 'fiatCents' | 'amountAtomic'>;
  * `secured` while new coins confirm, so a seller can't hold the buyer off while `payBy` runs.
  */
 export function paySecured(v: Pick<TradeView, 'state'>): boolean {
-  return v.state === 'secured' || v.state === 'refund_requested' || v.state === 'paid';
+  return v.state === 'secured' || v.state === 'paid';
 }
 type PayEscrow = Pick<TradeEscrow, 'phase' | 'error' | 'refusal' | 'fiatCents' | 'amountAtomic'>;
 

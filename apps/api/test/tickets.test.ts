@@ -4,6 +4,7 @@ import { TICKETS_DAILY } from '@x2f/core';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
+import { PUBLIC_ROUTES } from '../src/auth/frontDoor.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { COMPROMISED_PER_NAME_DAILY, TICKET_KEEP_DAYS, purgeTickets } from '../src/tickets/traderRoutes.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
@@ -270,6 +271,33 @@ describe('"My account has been compromised" (D-059): full lockout', () => {
     const again = await report({ loginName: v.loginName, methodsLeft: [], comment: '' });
     expect(again.statusCode).toBe(202);
     expect((await deps.db.query('select count(*)::int as n from account_locks where account_id = $1', [v.id])).rows[0]).toEqual({ n: 1 });
+  });
+
+  // Batch 3's front door (requireInside: visitors read nothing but the landing) keeps this one ticket
+  // route open, as an explicit PUBLIC_ROUTES exemption: the person may have lost every way in.
+  it('is the one ticket route outside the front door: logged out (or on a made-up cookie) it answers the same 202 for a live name and an unknown one; the ticket reads stay closed', async () => {
+    expect(PUBLIC_ROUTES['POST /v1/tickets/compromised']).toBeDefined();
+    for (const route of ['POST /v1/tickets', 'GET /v1/tickets', 'GET /v1/tickets/:id', 'POST /v1/tickets/:id/messages', 'POST /v1/tickets/:id/close']) {
+      expect(PUBLIC_ROUTES[route], route).toBeUndefined();
+    }
+    const v = await trader();
+    const forged = new Browser(app);
+    forged.cookies['__Host-x2f_session'] = 'A'.repeat(43);
+    const answers = [
+      await new Browser(app).post('/v1/tickets/compromised', { loginName: v.loginName, methodsLeft: [], comment: '' }),
+      await new Browser(app).post('/v1/tickets/compromised', { loginName: 'nobody-by-this-name', methodsLeft: [], comment: '' }),
+      await forged.post('/v1/tickets/compromised', { loginName: 'nobody-else-either', methodsLeft: [], comment: '' }),
+    ];
+    for (const r of answers) {
+      expect(r.statusCode, r.body).toBe(202);
+      expect(Object.keys(r.json())).toEqual(['number']);
+    }
+    expect((await deps.db.query('select count(*)::int as n from account_locks where account_id = $1 and unlocked_at is null', [v.id])).rows[0]).toEqual({ n: 1 });
+    for (const url of ['/v1/tickets', '/v1/tickets/00000000-0000-4000-8000-000000000000']) {
+      const r = await app.inject({ method: 'GET', url });
+      expect(r.statusCode, url).toBe(401);
+      expect(r.json()).toEqual({ error: 'not-authenticated' });
+    }
   });
 
   it(`refuses a bad body, and more than ${COMPROMISED_PER_NAME_DAILY} reports a day for one typed name`, async () => {

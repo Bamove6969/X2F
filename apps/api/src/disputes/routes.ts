@@ -7,6 +7,7 @@ import { FINISH_OPEN_TRADES } from '../trades/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { auditMember } from '../team/audit.js';
+import { tradeHeldSql } from '../tickets/held.js';
 import { applyEvent, noPublish, rowToTrade, type TradePublisher, type TradeRow } from '../trades/store.js';
 import { tradeFor } from '../trades/routes.js';
 import { roleOf } from '../trades/view.js';
@@ -34,6 +35,8 @@ export type RulingOutcome = 'release-to-buyer' | 'refund-to-seller' | 'seller-se
 
 /** What `GET /v1/trades/:code/dispute` returns. Names are public display names; no address is ever whole. */
 export interface DisputeView {
+  /** G37 (owner 7 Nov): the dispute's incident ID, shown to both traders at the top of the trade and to the moderator. */
+  incidentId: string;
   /** 'system' when the timer loop escalated the trade (late funds, a lapse nobody refunded). */
   openedBy: Party | 'system';
   reason: DisputeReason;
@@ -75,6 +78,11 @@ export interface DisputeView {
     destination: { walletApp: string | null; addressEnd: string } | null;
   } | null;
   appeal: { by: Party; at: string } | null;
+  /**
+   * Plan 4 Task 11: the moderator's latest request for this trader's unblurred proof (only the side
+   * it names sees it), from server records only.
+   */
+  proofRequest: { username: string; at: string } | null;
   /** The appeal window's length in hours, from the owner's settings. */
   appealWindowH: number;
   serverNow: string;
@@ -138,6 +146,10 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
   const rec = await loadDisputeRecord(q, row.code);
   if (rec === null) return null;
   const d = rec.dispute;
+  const extra = (await q.query<{ incident_id: string; proof_request_side: Party | null; proof_requested_at: Date | null; proof_requested_by: string | null }>(
+    'select incident_id, proof_request_side, proof_requested_at, proof_requested_by from disputes where code = $1 and seq = $2',
+    [row.code, d.seq],
+  )).rows[0]!;
   const r = (await q.query<RulingRow>('select * from dispute_rulings where code = $1 and seq = $2 order by round desc limit 1', [row.code, d.seq])).rows[0];
   let queuePosition: number | null = null;
   if (d.status === 'open' && d.assignee === null) {
@@ -170,6 +182,7 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
     };
   }
   return {
+    incidentId: extra.incident_id,
     openedBy: d.openedBy,
     reason: rec.reason,
     openedAt: d.openedAt.toISOString(),
@@ -186,6 +199,10 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
       rec.moderatorName !== null && rec.moderatorJoinedAt !== null ? { name: rec.moderatorName, joinedAt: rec.moderatorJoinedAt.toISOString() } : null,
     ruling,
     appeal: d.appealBy !== null && d.appealedAt !== null ? { by: d.appealBy, at: d.appealedAt.toISOString() } : null,
+    proofRequest:
+      extra.proof_request_side === side && extra.proof_requested_at !== null && extra.proof_requested_by !== null
+        ? { username: extra.proof_requested_by, at: extra.proof_requested_at.toISOString() }
+        : null,
     // Lead review 7 Nov: the appeal window's length as the owner set it (settings), for the ruling page.
     appealWindowH: (await disputeSettings(q)).appealWindowH,
     serverNow: now.toISOString(),
@@ -218,8 +235,8 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
   });
 
   // Opens the dispute: the trade's `open-dispute` (the state machine decides when it is allowed:
-  // the buyer only after the seller's confirm window, a refunded trade only by the buyer within
-  // 48 hours, TIMERS.disputeAfterRefundHours) and the dispute row, in one transaction. A trade opens at most one dispute: once its
+  // the buyer only after the seller's confirm window (the seller's own rule differs: see the
+  // machine), a refunded trade only by the buyer within 48 hours, TIMERS.disputeAfterRefundHours) and the dispute row, in one transaction. A trade opens at most one dispute: once its
   // `dispute` is set (by a trader or the system) a new one is refused, whatever rows exist, so a
   // purge of old dispute rows can never re-open a decided case.
   app.post('/v1/trades/:code/dispute', { preHandler: trader }, async (req) => {
@@ -262,6 +279,10 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     const deps = req.server.deps;
     try {
       await withDispute({ db: deps.db, clock: deps.clock, events: req.server.events }, { code: row.code }, async (d, client, now) => {
+        // J-14 (D-059): no trader event moves a held trade, the other party's neither (as applyEvent
+        // refuses them): the appeal waits until staff lift the lock (its window is paused meanwhile).
+        const held = await client.query<{ held: boolean }>(`select ${tradeHeldSql('t')} as held from trades t where t.code = $1`, [d.code]);
+        if (held.rows[0]?.held === true) throw new ApiError(409, 'trade-held');
         const s = await disputeSettings(client);
         const by = { kind: 'trader' as const, side };
         // Refused here, before anything is written, when the machine would refuse it: only a

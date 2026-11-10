@@ -189,6 +189,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'wrong-channel': 'a device check (a fault)',
   'wrong-sender': 'a device check (a fault)',
   'chat-unavailable': 'the trade has no chat (cannot happen since Task 5\'s offer key; a fault)',
+  'chat-purged': 'the chat was erased on its retention schedule (its own state, not a rule about the user; the device erases its copy)',
   'mod-not-allowed': "a device check: a moderator line outside a dispute is not shown (the chat's own rule)",
   'bad-message': 'a device check on a received line (a fault)',
   'bad-text': 'an input check on the typed message',

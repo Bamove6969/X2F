@@ -271,7 +271,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   });
 
   app.get('/healthz', async () => ({ ok: true }));
-  // Plan 4, Task 8: the banner, the emergency stop and maintenance as every visitor sees them.
+  // Plan 4, Task 8: the banner, the emergency stop and maintenance. Only an inside session (requireInside)
+  // sees them in full; anyone else gets only whether maintenance is on, and its kind (front door, 8 Nov 2026).
   siteRoutes(app);
   logoutRoute(app);
   passwordRoutes(app);
@@ -291,7 +292,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: [...TRADER_LOGIN_KINDS] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
-  // Plan 3 Task 3: method lists, suggestions and the price (browsing needs no session); the owner's price health.
+  // Plan 3 Task 3: method lists, suggestions and the price; the owner's price health. Browsing (the methods,
+  // the offers and the price) is behind the front door: requireInside (owner, 8 Nov 2026).
   methodListRoutes(app);
   offerRoutes(app);
   priceRoutes(app);
@@ -312,7 +314,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   nudgeRoutes(app);
   // Plan 3, Task 24: the released screen's live confirmations from X2F's own node.
   confirmationsRoute(app, options.txConfirmations, tradePublish);
-  // Plan 4, Task 28: the News inbox (reading needs no session).
+  // Plan 4, Task 28: the News inbox, behind the front door (requireInside, owner 8 Nov 2026).
   newsRoutes(app);
   // Plan 3 Task 39 (owner 2026-10-29): records when a buyer's cancel refund is fully confirmed, so
   // the seller's Confirm cancel is available and the 48-hour auto-close starts (cancelReturn.ts).

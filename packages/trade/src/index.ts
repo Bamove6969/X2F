@@ -18,6 +18,10 @@ export {
   INTERNAL_AT_HEADER,
   INTERNAL_SIG_HEADER,
   internalSignedBytes,
+  MOD_INTERNAL_MAC_HEADER,
+  MOD_INTERNAL_MAX_SKEW_MS,
+  MOD_INTERNAL_TS_HEADER,
+  modInternalMacInput,
   type InternalRequest,
 } from './internalAuth.js';
 export {
@@ -42,6 +46,8 @@ export { moneroUri } from './moneroUri.js';
 export { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
 export {
   CLIENT_EVENTS,
+  CLOSED_STATES,
+  MAX_CONFIRM_WINDOW_MIN,
   SYSTEM_EVENTS,
   TradeRuleError,
   apply,

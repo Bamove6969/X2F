@@ -122,7 +122,11 @@ describe('closeInactiveAccounts (Q77)', () => {
     setNow(at(INACTIVE_MS + 1));
     // Every login finish runs assertNotDisabled before its session (the test login skips it).
     await expect(assertNotDisabled(deps.db, t.id)).rejects.toMatchObject({ status: 403, code: 'account-disabled' });
-    expect((await other.browser.get(`/v1/offers/${offerId}`)).statusCode).toBe(404);
+    // Browsing is behind the front door (owner, 8 Nov 2026: requireInside; it was open logged out),
+    // and 60 days on `other`'s session is long over (the close covers its idle account too, owner
+    // p4-5): a trader logged in now reads the offer.
+    const later = await trader();
+    expect((await later.browser.get(`/v1/offers/${offerId}`)).statusCode).toBe(404);
   });
 
   it('owner p4-5: closes a trader account too (every account), after 60 days; staff and member logins never', async () => {
