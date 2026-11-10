@@ -27,6 +27,12 @@ const XMP_KEYWORD = 'XML:com.adobe.xmp';
 /** At most this many PNG chunks or JPEG segments are walked, and this many IFD entries read. */
 const MAX_BLOCKS = 4096;
 const MAX_ENTRIES = 512;
+/** A PNG eXIf/iTXt chunk larger than this is skipped unread (a JPEG APP1 is at most 64 KB anyway). */
+const MAX_BLOCK_BYTES = 256 * 1024;
+/** At most this many bytes of a file are read in all: headers and metadata blocks, never image data. */
+const MAX_READ_BYTES = 1024 * 1024;
+/** How far after an XMP open tag its value may end (the value itself is at most 64 characters). */
+const XMP_VALUE_SPAN = 256;
 
 const TAG_EXIF_IFD = 0x8769;
 const TAG_ORIGINAL = 0x9003;
@@ -45,32 +51,60 @@ function ascii(b: Uint8Array): string {
   return s;
 }
 
-/** The metadata blocks of a PNG or JPEG: Exif TIFF blocks and XMP packets, in file order. */
-function blocks(b: Uint8Array): { tiff: Uint8Array[]; xmp: string[] } {
-  const out = { tiff: [] as Uint8Array[], xmp: [] as string[] };
-  if (startsWith(b, 0, PNG_SIGNATURE)) {
+/** A byte range the walk asks for: `[start, end)`, clamped to the file by the driver. */
+type Read = readonly [start: number, end: number];
+interface Meta {
+  tiff: Uint8Array[];
+  xmp: string[];
+}
+type Walk = Generator<Read, Meta, Uint8Array>;
+
+/**
+ * The metadata blocks of a PNG or JPEG of `size` bytes: Exif TIFF blocks and XMP packets, in file
+ * order. It asks for the bytes it needs (`yield [start, end]`) and reads only the block headers and
+ * the bodies of the blocks that can hold a date (PNG eXIf and iTXt, JPEG APP1), each at most
+ * `MAX_BLOCK_BYTES`, at most `MAX_READ_BYTES` in all: never the image data (review 2026-11-10).
+ */
+function* blocks(size: number): Walk {
+  const out: Meta = { tiff: [], xmp: [] };
+  let budget = MAX_READ_BYTES;
+  function* read(start: number, end: number): Generator<Read, Uint8Array | null, Uint8Array> {
+    const e = Math.min(end, size);
+    if (start < 0 || start >= e || e - start > budget) return null;
+    budget -= e - start;
+    return yield [start, e];
+  }
+  const sig = yield* read(0, 8);
+  if (sig === null) return out;
+  if (startsWith(sig, 0, PNG_SIGNATURE)) {
     let at = 8;
-    for (let n = 0; n < MAX_BLOCKS && at + 12 <= b.length; n++) {
-      const len = ((b[at]! << 24) | (b[at + 1]! << 16) | (b[at + 2]! << 8) | b[at + 3]!) >>> 0;
-      const type = ascii(b.subarray(at + 4, at + 8));
+    for (let n = 0; n < MAX_BLOCKS && at + 12 <= size; n++) {
+      const head = yield* read(at, at + 8);
+      if (head === null || head.length < 8) break;
+      const len = ((head[0]! << 24) | (head[1]! << 16) | (head[2]! << 8) | head[3]!) >>> 0;
+      const type = ascii(head.subarray(4, 8));
       const end = at + 12 + len;
-      if (end > b.length) break;
-      const data = b.subarray(at + 8, at + 8 + len);
-      if (type === 'eXIf') out.tiff.push(data);
-      if (type === 'iTXt') {
-        const xmp = itxtXmp(data);
-        if (xmp !== null) out.xmp.push(xmp);
+      if (end > size) break;
+      if ((type === 'eXIf' || type === 'iTXt') && len <= MAX_BLOCK_BYTES) {
+        const data = yield* read(at + 8, at + 8 + len);
+        if (data === null) break;
+        if (type === 'eXIf') out.tiff.push(data);
+        else {
+          const xmp = itxtXmp(data);
+          if (xmp !== null) out.xmp.push(xmp);
+        }
       }
       if (type === 'IEND') break;
       at = end;
     }
     return out;
   }
-  if (b[0] === 0xff && b[1] === 0xd8) {
+  if (sig[0] === 0xff && sig[1] === 0xd8) {
     let at = 2;
-    for (let n = 0; n < MAX_BLOCKS && at + 4 <= b.length; n++) {
-      if (b[at] !== 0xff) break;
-      const marker = b[at + 1]!;
+    for (let n = 0; n < MAX_BLOCKS && at + 4 <= size; n++) {
+      const head = yield* read(at, at + 4);
+      if (head === null || head.length < 4 || head[0] !== 0xff) break;
+      const marker = head[1]!;
       if (marker === 0xff) {
         at++;
         continue;
@@ -81,10 +115,11 @@ function blocks(b: Uint8Array): { tiff: Uint8Array[]; xmp: string[] } {
         continue;
       }
       if (marker === 0xda || marker === 0xd9) break;
-      const len = (b[at + 2]! << 8) | b[at + 3]!;
-      if (len < 2 || at + 2 + len > b.length) break;
-      const body = b.subarray(at + 4, at + 2 + len);
+      const len = (head[2]! << 8) | head[3]!;
+      if (len < 2 || at + 2 + len > size) break;
       if (marker === 0xe1) {
+        const body = yield* read(at + 4, at + 2 + len);
+        if (body === null) break;
         if (startsWith(body, 0, EXIF_HEADER)) out.tiff.push(body.subarray(EXIF_HEADER.length));
         else if (ascii(body.subarray(0, XMP_HEADER.length)) === XMP_HEADER) out.xmp.push(utf8(body.subarray(XMP_HEADER.length)));
       }
@@ -184,23 +219,39 @@ function exifTime(s: string | undefined, off: string | undefined): PhotoTime | n
 
 const XMP_FIELDS = ['exif:DateTimeOriginal', 'xmp:CreateDate', 'photoshop:DateCreated'];
 
-/** An XMP date (ISO 8601 with a time) for one field, attribute or element form. */
+/**
+ * The value of `<field>value</field>` in `xml`, trimmed, or null: found with `indexOf`, never a
+ * regex, so hostile text after an open tag costs one bounded scan (review 2026-11-10 finding 1: the
+ * old `<f>\s*([^<]{1,64})\s*</f>` backtracked catastrophically on a run of spaces). The value ends
+ * at the first `<` within `XMP_VALUE_SPAN` characters and must be closed by the field's own tag.
+ */
+function xmpElement(xml: string, field: string): { at: number; value: string } | null {
+  const open = `<${field}>`;
+  const close = `</${field}>`;
+  for (let at = xml.indexOf(open); at >= 0; at = xml.indexOf(open, at + open.length)) {
+    const start = at + open.length;
+    const lt = xml.indexOf('<', start);
+    if (lt < 0) return null;
+    if (lt - start > XMP_VALUE_SPAN || !xml.startsWith(close, lt)) continue;
+    const value = xml.slice(start, lt).trim();
+    if (value.length >= 1 && value.length <= 64) return { at, value };
+  }
+  return null;
+}
+
+/** An XMP date (ISO 8601 with a time) for one field, attribute or element form, whichever comes first. */
 function xmpTime(xml: string, field: string): PhotoTime | null {
   const f = field.replace(':', '\\:');
-  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- `field` is one of the constant XMP_FIELDS names (letters and one escaped colon), never input
-  const m = new RegExp(`${f}\\s*=\\s*["']([^"'<>]{1,64})["']|<${f}>\\s*([^<]{1,64})\\s*</${f}>`).exec(xml);
-  const v = m ? (m[1] ?? m[2]!).trim() : null;
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp -- `field` is one of the constant XMP_FIELDS names (letters and one escaped colon), never input; no two quantifiers can share a character (`\s*=\s*`, then a quoted class without quotes)
+  const attr = new RegExp(`${f}\\s*=\\s*["']([^"'<>]{1,64})["']`).exec(xml);
+  const el = xmpElement(xml, field);
+  const v = attr !== null && (el === null || attr.index < el.at) ? attr[1]!.trim() : el !== null ? el.value : null;
   const d = v === null ? null : /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/.exec(v);
   if (!d) return null;
   return time(Number(d[1]), Number(d[2]), Number(d[3]), Number(d[4]), Number(d[5]), Number(d[6] ?? 0), offset(d[7]));
 }
 
-/**
- * When the picture was made, from its own metadata (see the module comment for the order), or null
- * when it carries no usable date. Never throws on malformed input.
- */
-export function readPhotoTime(bytes: Uint8Array): PhotoTime | null {
-  const { tiff, xmp } = blocks(bytes);
+function timeOf({ tiff, xmp }: Meta): PhotoTime | null {
   for (const t of tiff) {
     const tags = exifTags(t);
     const found = exifTime(tags.get(TAG_ORIGINAL), tags.get(TAG_OFFSET_ORIGINAL)) ?? exifTime(tags.get(TAG_DIGITIZED), tags.get(TAG_OFFSET_DIGITIZED));
@@ -213,4 +264,27 @@ export function readPhotoTime(bytes: Uint8Array): PhotoTime | null {
     }
   }
   return null;
+}
+
+/**
+ * When the picture was made, from its own metadata (see the module comment for the order), or null
+ * when it carries no usable date. Never throws on malformed input.
+ */
+export function readPhotoTime(bytes: Uint8Array): PhotoTime | null {
+  const walk = blocks(bytes.length);
+  let step = walk.next();
+  while (!step.done) step = walk.next(bytes.subarray(step.value[0], step.value[1]));
+  return timeOf(step.value);
+}
+
+/**
+ * `readPhotoTime` for a file of `size` bytes read piece by piece (`read(start, end)` gives bytes
+ * `[start, end)`, e.g. a Blob slice): only the block headers and the metadata blocks are asked for,
+ * at most 1 MB in all, so a large picture is never loaded whole. A rejected read rejects.
+ */
+export async function readPhotoTimeFrom(size: number, read: (start: number, end: number) => Promise<Uint8Array>): Promise<PhotoTime | null> {
+  const walk = blocks(Number.isSafeInteger(size) && size > 0 ? size : 0);
+  let step = walk.next();
+  while (!step.done) step = walk.next(await read(step.value[0], step.value[1]));
+  return timeOf(step.value);
 }

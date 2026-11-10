@@ -4,7 +4,7 @@
 // never sent. Plan 5 Task 15 owes the call: `takenAt = await photoTakenAt(file)` on the file the
 // poster picked, then `proofDate(words, takenAt && new Date(takenAt), …)` and `posterDateLine` for
 // the warning, and `takenAt` in the sealed payload.
-import { type PhotoTime, readPhotoTime, toUtcSecond } from '@x2f/proof';
+import { type PhotoTime, readPhotoTimeFrom, toUtcSecond } from '@x2f/proof';
 
 /**
  * The photo's time as a UTC instant. A photo that carries its own offset is exact. One without (most
@@ -18,14 +18,16 @@ export function photoTimeToUtc(t: PhotoTime): string {
   return toUtcSecond(new Date(ms));
 }
 
-/** When the picked picture was made, from its own metadata, as UTC (`2026-10-16T12:32:05Z`), or null. */
+/**
+ * When the picked picture was made, from its own metadata, as UTC (`2026-10-16T12:32:05Z`), or null.
+ * Reads the file in slices: only its block headers and metadata blocks, never the image data
+ * (`readPhotoTimeFrom`, at most 1 MB; review 2026-11-10).
+ */
 export async function photoTakenAt(file: Blob): Promise<string | null> {
-  let bytes: Uint8Array;
   try {
-    bytes = new Uint8Array(await file.arrayBuffer());
+    const t = await readPhotoTimeFrom(file.size, async (start, end) => new Uint8Array(await file.slice(start, end).arrayBuffer()));
+    return t === null ? null : photoTimeToUtc(t);
   } catch {
     return null;
   }
-  const t = readPhotoTime(bytes);
-  return t === null ? null : photoTimeToUtc(t);
 }

@@ -64,8 +64,29 @@ describe('photoTakenAt (owner G16)', () => {
   it('null when the picture has no date, or cannot be read', async () => {
     expect(await photoTakenAt(new Blob([Uint8Array.of(0xff, 0xd8, 0xff, 0xd9)]))).toBeNull();
     expect(await photoTakenAt(new Blob([]))).toBeNull();
-    const broken = { arrayBuffer: () => Promise.reject(new Error('gone')) } as unknown as Blob;
+    const broken = { size: 100, arrayBuffer: () => Promise.reject(new Error('gone')), slice: () => ({ arrayBuffer: () => Promise.reject(new Error('gone')) }) } as unknown as Blob;
     expect(await photoTakenAt(broken)).toBeNull();
+  });
+
+  it('reads only the metadata, never the whole picture (review 2026-11-10)', async () => {
+    const real = jpeg(tiff('2026:10:16 14:32:05', '+02:00'));
+    const big = new Blob([await real.slice(0, real.size - 2).arrayBuffer(), new Uint8Array(4 * 1024 * 1024), Uint8Array.of(0xff, 0xd9)], { type: 'image/jpeg' });
+    let read = 0;
+    const spy = {
+      size: big.size,
+      type: big.type,
+      arrayBuffer: () => {
+        read += big.size;
+        return big.arrayBuffer();
+      },
+      slice: (s?: number, e?: number) => {
+        const part = big.slice(s, e);
+        read += part.size;
+        return part;
+      },
+    } as unknown as Blob;
+    expect(await photoTakenAt(spy)).toBe('2026-10-16T12:32:05Z');
+    expect(read).toBeLessThan(1024);
   });
 
   it('photoTimeToUtc crosses the date line both ways', () => {

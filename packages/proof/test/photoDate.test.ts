@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type PhotoTime, readPhotoTime } from '../src/index.js';
+import { type PhotoTime, readPhotoTime, readPhotoTimeFrom } from '../src/index.js';
 import { PNG_SIGNATURE, cleanJpeg, cleanPng, concat, jpegCore, metadataJpeg, metadataPng, pngChunk, zlibStored, pngRaw } from './fixtures.js';
 
 // Owner G16 (2026-11-07): the proof's date is read first from the photo's own Exif date, in the
@@ -164,3 +164,76 @@ describe('readPhotoTime: PNG and XMP', () => {
     expect(readPhotoTime(b)).toBeNull();
   });
 });
+
+// Review 2026-11-10 finding 1: the XMP element form must be linear on hostile text (the old
+// `<f>\\s*([^<]{1,64})\\s*</f>` backtracked catastrophically on an open tag and a run of spaces), and
+// only the metadata segments of the file are read, never the whole picture.
+describe('readPhotoTime: hostile XMP and how much is read', () => {
+  const time = (f: () => unknown): number => {
+    const t0 = performance.now();
+    f();
+    return performance.now() - t0;
+  };
+
+  it('an open XMP tag followed by 20,000 spaces finishes under 50 ms (JPEG APP1 and PNG iTXt)', () => {
+    const xml = `<x:xmpmeta>${XMP_OPEN.map((f) => `<${f}>${' '.repeat(20_000)}`).join('')}`;
+    const jpeg = jpegWith(xmpApp1(xml.slice(0, 60_000)));
+    const png = pngWith(pngChunk('iTXt', concat(latin1('XML:com.adobe.xmp\0\0\0\0\0'), new TextEncoder().encode(xml))));
+    readPhotoTime(jpegWith(xmpApp1('<x/>'))); // warm up
+    expect(time(() => expect(readPhotoTime(jpeg)).toBeNull())).toBeLessThan(50);
+    expect(time(() => expect(readPhotoTime(png)).toBeNull())).toBeLessThan(50);
+  });
+
+  it('the element form still reads a value padded with spaces, and trims it', () => {
+    const el = '<x:xmpmeta><xmp:CreateDate>  2026-10-16T14:32:05Z \n </xmp:CreateDate></x:xmpmeta>';
+    expect(readPhotoTime(jpegWith(xmpApp1(el)))).toEqual(at(2026, 10, 16, 14, 32, 5, 0));
+    // A value that is not closed by its own tag is not read.
+    expect(readPhotoTime(jpegWith(xmpApp1('<xmp:CreateDate>2026-10-16T14:32:05Z</xmp:Other>')))).toBeNull();
+  });
+
+  /** A reader over `b` that counts the bytes it hands out. */
+  const counting = (b: Uint8Array): { read: (s: number, e: number) => Promise<Uint8Array>; total: () => number } => {
+    let n = 0;
+    return {
+      read: (s, e) => {
+        const out = b.slice(s, e);
+        n += out.length;
+        return Promise.resolve(out);
+      },
+      total: () => n,
+    };
+  };
+
+  it('reads only the metadata segments: a 4 MB JPEG scan and a 4 MB PNG IDAT are never read', async () => {
+    const exif = exifApp1(tiff([[ORIGINAL, '2026:10:16 14:32:05']]));
+    const big = new Uint8Array(4 * 1024 * 1024);
+    const jpeg = concat(Uint8Array.of(0xff, 0xd8), exif, Uint8Array.of(0xff, 0xda, 0, 2), big, Uint8Array.of(0xff, 0xd9));
+    const j = counting(jpeg);
+    expect(await readPhotoTimeFrom(jpeg.length, j.read)).toEqual(at(2026, 10, 16, 14, 32, 5, null));
+    expect(j.total()).toBeLessThan(exif.length + 64);
+
+    const xml = '<x xmp:CreateDate="2026-10-16T14:32:05Z"/>';
+    const itxt = pngChunk('iTXt', concat(latin1('XML:com.adobe.xmp\0\0\0\0\0'), new TextEncoder().encode(xml)));
+    const png = concat(PNG_SIGNATURE, pngChunk('IHDR', new Uint8Array(13)), pngChunk('IDAT', big), itxt, pngChunk('IEND', new Uint8Array(0)));
+    const p = counting(png);
+    expect(await readPhotoTimeFrom(png.length, p.read)).toEqual(at(2026, 10, 16, 14, 32, 5, 0));
+    expect(p.total()).toBeLessThan(itxt.length + 200);
+  });
+
+  it('skips a metadata chunk too big to be a real one, unread', async () => {
+    const xml = `<x xmp:CreateDate="2026-10-16T14:32:05Z"/>${' '.repeat(2 * 1024 * 1024)}`;
+    const png = pngWith(pngChunk('iTXt', concat(latin1('XML:com.adobe.xmp\0\0\0\0\0'), new TextEncoder().encode(xml))));
+    const p = counting(png);
+    expect(await readPhotoTimeFrom(png.length, p.read)).toBeNull();
+    expect(p.total()).toBeLessThan(4096);
+    expect(readPhotoTime(png)).toBeNull();
+  });
+
+  it('readPhotoTimeFrom agrees with readPhotoTime; a failing read rejects (the caller catches it)', async () => {
+    const b = jpegWith(exifApp1(tiff([[ORIGINAL, '2026:10:16 14:32:05'], [OFFSET_ORIGINAL, '+02:00']])));
+    expect(await readPhotoTimeFrom(b.length, counting(b).read)).toEqual(readPhotoTime(b));
+    await expect(readPhotoTimeFrom(b.length, () => Promise.reject(new Error('gone')))).rejects.toThrow('gone');
+  });
+});
+
+const XMP_OPEN = ['exif:DateTimeOriginal', 'xmp:CreateDate', 'photoshop:DateCreated'];
