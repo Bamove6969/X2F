@@ -9,7 +9,8 @@ import { generateBoxKeyPair, openSealed, sealTo } from '@x2f/protocol';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { CHAT_KEY_ENVELOPE_TTL_MS, MAX_OPEN_CHAT_KEY_ENVELOPES, keysOffered, strongForKeys } from '../src/auth/chatKeys.js';
+import { CHAT_KEY_ENVELOPE_TTL_MS, MAX_OPEN_CHAT_KEY_ENVELOPES, keysOffered, purgeChatKeyEnvelopes, strongForKeys } from '../src/auth/chatKeys.js';
+import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { ensureDeviceCookie } from '../src/auth/device.js';
 import { HOLD_BLOCKED_ROUTES, LIVE_SESSION_ROUTES, WEAK_LIMITED_ROUTES } from '../src/auth/hold.js';
 import { OWN_DATA_READS, OWN_DATA_WRITES } from '../src/auth/frontDoor.js';
@@ -216,8 +217,8 @@ describe('the courier: strong sessions of the account store and read sealed enve
     expect(((await t.b.get('/v1/account/chat-keys')).json() as Listed).envelopes).toEqual([]);
     expect((await phone.delete(`/v1/account/chat-keys/${id}`)).statusCode).toBe(404);
     expect((await phone.delete('/v1/account/chat-keys/not-a-uuid')).statusCode).toBe(404);
-    const { rows } = await deps.db.query<{ collected_at: Date | null }>('select collected_at from chat_key_envelopes where id = $1', [id]);
-    expect(rows[0]!.collected_at).toEqual(now);
+    // Review F5: collecting deletes the row, sealed bytes and all.
+    expect((await deps.db.query('select 1 from chat_key_envelopes where id = $1', [id])).rows).toEqual([]);
   });
 
   it('expires unread after its time; a later post sweeps the expired and collected rows of the account', async () => {
@@ -289,6 +290,19 @@ describe('the courier: strong sessions of the account store and read sealed enve
     expect(written).not.toContain('c0ffee');
     expect(written).not.toContain(t.accountId);
     expect(written).not.toMatch(/Failing row|detail/i);
+  });
+
+  it('review F5: a retention job deletes expired envelopes, whoever they belong to; open ones stay', async () => {
+    expect(RETENTION_JOBS).toContain(purgeChatKeyEnvelopes);
+    const t = await strongTrader();
+    const old = (await t.b.post('/v1/account/chat-keys', (await envelopeFor(await generateBoxKeyPair())).body)).json() as { id: string };
+    setNow(new Date(now.getTime() + CHAT_KEY_ENVELOPE_TTL_MS - 1));
+    const fresh = (await t.b.post('/v1/account/chat-keys', (await envelopeFor(await generateBoxKeyPair())).body)).json() as { id: string };
+    setNow(new Date(now.getTime() + 1));
+    expect(await purgeChatKeyEnvelopes.run(deps.db, now)).toBeGreaterThanOrEqual(1);
+    const ids = (await deps.db.query<{ id: string }>('select id from chat_key_envelopes where account_id = $1', [t.accountId])).rows.map((r) => r.id);
+    expect(ids).toEqual([fresh.id]);
+    expect(ids).not.toContain(old.id);
   });
 
   it("the epoch must be the account's current one (0 until a rotation exists); the refusal names it", async () => {

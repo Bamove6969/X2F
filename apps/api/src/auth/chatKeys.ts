@@ -25,8 +25,8 @@
  *   createdAt, expiresAt }] }`: the account's open envelopes (uncollected, unexpired), oldest first.
  *   Which device each box is for is the recipient key; a box sealed to another device is ciphertext
  *   to this one.
- * - `DELETE /v1/account/chat-keys/:id` → 204: the receiving device marks the envelope collected,
- *   after which it is served to no one; 404 `not-found` for an unknown, collected or expired id,
+ * - `DELETE /v1/account/chat-keys/:id` → 204: the receiving device collects the envelope, which
+ *   deletes it (review F5); an expired one is deleted by `purgeChatKeyEnvelopes` (retention); 404 `not-found` for an unknown, collected or expired id,
  *   or another account's.
  * - Classified in hold.ts (`LIVE_SESSION_ROUTES`, `HOLD_BLOCKED_ROUTES`, `WEAK_LIMITED_ROUTES`) and
  *   in the front door's own-data lists (frontDoor.ts). Nothing here logs a key or a ciphertext.
@@ -36,6 +36,8 @@
  * records sealed under the key (4.2 rule 2), rotation on removal (4.3, owner question 6).
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type pg from 'pg';
+import type { RetentionJob } from '../retention.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { holdInTx, holdRefusal, requireLiveSessionInTx, settleOf, weakRefusal, withTx, type LiveSession } from './hold.js';
@@ -119,6 +121,18 @@ export async function eraseChatKeyEnvelopes(db: Queryable, accountId: string): P
   await db.query('delete from chat_key_envelopes where account_id = $1', [accountId]);
 }
 
+/**
+ * Review F5: the retention job (RETENTION_JOBS, every 10 minutes) that deletes every expired
+ * envelope, and any row a collection before F5 left marked collected. Returns the rows deleted.
+ */
+export const purgeChatKeyEnvelopes: RetentionJob = {
+  name: 'purgeChatKeyEnvelopes',
+  async run(db: pg.Pool, now: Date): Promise<number> {
+    const r = await db.query('delete from chat_key_envelopes where expires_at <= $1 or collected_at is not null', [now]);
+    return r.rowCount ?? 0;
+  },
+};
+
 /** The account's current chat-key epoch. */
 async function epochOf(db: Queryable, accountId: string): Promise<number> {
   const { rows } = await db.query<{ chat_key_epoch: number }>('select chat_key_epoch from accounts where id = $1', [accountId]);
@@ -198,8 +212,9 @@ export function chatKeyRoutes(app: FastifyInstance): void {
     const { accountId } = req.auth;
     await withTx(deps.db, async (db) => {
       await strongCallerInTx(db, req, now);
+      // Review F5: collecting deletes the row, sealed bytes and all.
       const { rowCount } = await db.query(
-        'update chat_key_envelopes set collected_at = $3 where id = $1 and account_id = $2 and collected_at is null and expires_at > $3',
+        'delete from chat_key_envelopes where id = $1 and account_id = $2 and collected_at is null and expires_at > $3',
         [id.toLowerCase(), accountId, now],
       );
       if (rowCount === 0) throw new ApiError(404, 'not-found');
