@@ -5,13 +5,17 @@
 //   1. refuses a declared type other than PNG, JPEG or WebP, and bytes whose magic is not that type;
 //   2. reads the width and height from the header with bounds-checked walkers (like Task 7's
 //      cleaners) and refuses a malformed, truncated, animated or over-cap file BEFORE any decode;
-//   3. decodes it (the browser's createImageBitmap, passed in as `deps.decode`);
+//   3. strips every metadata chunk or segment (Exif with its orientation tag, XMP, ICC, text) and
+//      decodes only the picture left (the browser's createImageBitmap, passed in as `deps.decode`):
+//      browsers apply an Exif orientation when they decode, and nothing the sender never attested
+//      may turn, mirror or recolour what this device shows;
 //   4. draws the decoded pixels onto a fresh canvas and exports new PNG bytes (`deps.render`);
 //   5. checks that output is a well-formed PNG of the same size, no larger than
 //      RECEIVE_MAX_RENDER_BYTES (it becomes a data: URL, which browsers cap), and drops every chunk
 //      but IHDR, PLTE, IDAT and IEND (`cleanImage`).
-// Only the bytes from step 5 are ever shown. The received bytes never reach an <img>, so anything
-// smuggled in them (trailing script bytes, a polyglot, metadata) is not in what the user sees.
+// Only the bytes from step 5 are ever shown. The received bytes never reach an <img> or the decoder
+// as they came, so anything smuggled in them (trailing script bytes, a polyglot, metadata) is not in
+// what the user sees.
 // Any failure is a ProofReceiveError; nothing here falls back to the received bytes.
 //
 // Pure logic, no I/O, no Node-only APIs: the browser parts come in as `ReceiveDeps`.
@@ -308,6 +312,65 @@ export function readImageHeader(bytes: Uint8Array): ImageHeader {
 }
 
 // ---------------------------------------------------------------------------------------------
+// What the decoder is handed: the picture, nothing else.
+
+/** The VP8X flag bits (WebP container spec): ICC profile, alpha, Exif, XMP, animation. */
+const VP8X_ALPHA = 0x10;
+
+/**
+ * A WebP with only its picture: VP8X (flags down to alpha, since the chunks the other flags announce
+ * are gone), ALPH and the one VP8 or VP8L chunk, under a RIFF size that fits. EXIF, XMP and ICCP go.
+ * Runs after `webpHeader` accepted the file, and still checks every length.
+ */
+function webpPictureOnly(b: Uint8Array): Uint8Array {
+  const parts: Uint8Array[] = [];
+  let at = 12;
+  while (at < b.length) {
+    if (at + 8 > b.length) throw bad();
+    const fourcc = String.fromCharCode(b[at]!, b[at + 1]!, b[at + 2]!, b[at + 3]!);
+    const size = u32le(b, at + 4);
+    if (size > b.length - at - 8) throw bad();
+    const next = at + 8 + size + (size & 1);
+    if (next > b.length) throw bad();
+    if (fourcc === 'VP8X') {
+      const x = b.slice(at, next);
+      x[8] = x[8]! & VP8X_ALPHA;
+      parts.push(x);
+    } else if (fourcc === 'VP8 ' || fourcc === 'VP8L' || fourcc === 'ALPH') {
+      parts.push(b.subarray(at, next));
+    }
+    at = next;
+  }
+  const out = new Uint8Array(12 + parts.reduce((n, part) => n + part.length, 0));
+  out.set(b.subarray(0, 12));
+  new DataView(out.buffer).setUint32(4, out.length - 8, true);
+  let p = 12;
+  for (const part of parts) {
+    out.set(part, p);
+    p += part.length;
+  }
+  return out;
+}
+
+/**
+ * The bytes handed to the decoder: the received picture with every metadata chunk or segment removed
+ * (review of 9 Nov 2026, F2). Browsers apply an Exif orientation tag when they decode (createImageBitmap's
+ * `imageOrientation: 'none'` is deprecated and read as `'from-image'`; nothing turns it off), and
+ * an ICC profile changes the colours, so a tag the sender never attested could turn, mirror or
+ * recolour what this device shows. With the metadata gone, the decoder sees only what the header
+ * walk checked. PNG and JPEG go through `cleanImage`, the sender's own allowlist, so a JPEG the
+ * sender could not have produced (lossless, arithmetic, CMYK) is `undecodable` here too.
+ */
+function pictureOnly(bytes: Uint8Array, mime: ReceiveMime): Uint8Array {
+  if (mime === 'image/webp') return webpPictureOnly(bytes);
+  try {
+    return cleanImage(bytes);
+  } catch {
+    throw bad();
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // The check itself.
 
 /** A decoded picture: what createImageBitmap returns. */
@@ -319,7 +382,10 @@ export interface ReceiveBitmap {
 
 /** The browser parts, passed in so the rule can be tested without a real canvas. */
 export interface ReceiveDeps {
-  /** Decode the bytes as `mime` (createImageBitmap on a Blob). Throws or rejects on failure. */
+  /**
+   * Decode the bytes as `mime` (createImageBitmap on a Blob). Throws or rejects on failure. The bytes
+   * carry no metadata (receiveProof strips it first), so there is no orientation tag to apply.
+   */
   decode(bytes: Uint8Array, mime: ReceiveMime): Promise<ReceiveBitmap>;
   /** Draw `bitmap` at width x height on a fresh canvas and export it as PNG bytes. */
   render(bitmap: ReceiveBitmap, width: number, height: number): Promise<Uint8Array>;
@@ -357,9 +423,14 @@ export async function receiveProof(bytes: Uint8Array, declared: ReceiveDeclared,
   if (head.width > RECEIVE_MAX_SIDE || head.height > RECEIVE_MAX_SIDE) throw err('too-large');
   if (declared.width !== head.width || declared.height !== head.height) throw bad();
 
+  // The decoder gets a fresh copy with the metadata gone, never the caller's buffer; the copy must
+  // still be the same picture.
+  const picture = pictureOnly(bytes, mime);
+  const pictureHead = readImageHeader(picture);
+  if (pictureHead.mime !== mime || pictureHead.width !== head.width || pictureHead.height !== head.height) throw bad();
   let bitmap: ReceiveBitmap;
   try {
-    bitmap = await deps.decode(bytes.slice(), mime);
+    bitmap = await deps.decode(picture, mime);
   } catch {
     throw bad();
   }

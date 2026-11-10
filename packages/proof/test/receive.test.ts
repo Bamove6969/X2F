@@ -12,6 +12,7 @@ import { inflateSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ProofReceiveError,
+  assertClean,
   RECEIVE_MAX_BYTES,
   RECEIVE_MAX_RENDER_BYTES,
   RECEIVE_MAX_SIDE,
@@ -22,7 +23,7 @@ import {
   readImageHeader,
   receiveProof,
 } from '../src/index.js';
-import { PNG_H, PNG_SIGNATURE, PNG_W, cleanJpeg, cleanPng, concat, metadataJpeg, metadataPng, pngChunk, pngRaw, webp, zlibStored } from './fixtures.js';
+import { PNG_H, PNG_SIGNATURE, PNG_W, cleanJpeg, cleanPng, concat, jpegCore, metadataJpeg, metadataPng, pngChunk, pngRaw, webp, zlibStored } from './fixtures.js';
 
 const latin1 = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt(0));
 const has = (bytes: Uint8Array, s: string): boolean => Buffer.from(bytes).includes(Buffer.from(s, 'latin1'));
@@ -284,6 +285,75 @@ describe('receiveProof: a valid image', () => {
     expect(RECEIVE_MAX_SIDE).toBe(2600);
     const out = await receiveProof(riff(vp8l(RECEIVE_MAX_SIDE, 1)), { mime: 'image/webp', width: RECEIVE_MAX_SIDE, height: 1 }, deps().d);
     expect(out.width).toBe(2600);
+  });
+});
+
+describe('receiveProof: only the picture reaches the decoder (review of 9 Nov 2026, F2)', () => {
+  // Browsers apply an Exif orientation tag when they decode: createImageBitmap's `imageOrientation:
+  // 'none'` is deprecated and read as `'from-image'`, and nothing else turns it off. So a tag that
+  // the sender never attested could turn or mirror the picture this device shows, and an ICC profile
+  // could recolour it. The decoder is therefore handed the picture with every metadata chunk or
+  // segment removed, and nothing more.
+  const jpegSegment = (marker: number, body: Uint8Array): Uint8Array =>
+    concat(Uint8Array.of(0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff), body);
+  /** A real Exif block (big-endian TIFF, one IFD entry): Orientation (0x0112) = 6, "rotate 90 degrees clockwise". */
+  const EXIF_ROTATED = jpegSegment(
+    0xe1,
+    concat(latin1('Exif\0\0MM\0*\0\0\0\x08'), Uint8Array.of(0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0)),
+  );
+  const SOI_EOI = [Uint8Array.of(0xff, 0xd8), Uint8Array.of(0xff, 0xd9)] as const;
+
+  it('a JPEG with an Exif orientation tag: the decoder sees no APP segment at all, and a clean image of the same size', async () => {
+    const [dqt, sof0, dht, dri, scan] = jpegCore();
+    const rotated = concat(SOI_EOI[0], EXIF_ROTATED, dqt!, sof0!, dht!, dri!, scan!, SOI_EOI[1]);
+    expect(has(rotated, 'Exif')).toBe(true);
+    const { d, decode } = deps();
+    await receiveProof(rotated, { mime: 'image/jpeg', width: 8, height: 8 }, d);
+    expect(decode).toHaveBeenCalledTimes(1);
+    const given = decode.mock.calls[0]![0];
+    expect(has(given, 'Exif')).toBe(false);
+    for (let i = 0; i + 1 < given.length; i++) expect(given[i] === 0xff && given[i + 1]! >= 0xe0 && given[i + 1]! <= 0xef, `APPn at ${i}`).toBe(false);
+    expect(readImageHeader(given)).toEqual({ mime: 'image/jpeg', width: 8, height: 8 });
+    expect(() => assertClean(given)).not.toThrow();
+  });
+
+  it('JPEG and PNG metadata (Exif, GPS, JFIF, XMP, ICC, text, Photoshop) never reaches the decoder', async () => {
+    for (const [bytes, declared] of [
+      [metadataJpeg(), { mime: 'image/jpeg', width: 8, height: 8 }],
+      [metadataPng(), PNG_DECL],
+    ] as const) {
+      const { d, decode } = deps();
+      await receiveProof(bytes, declared, d);
+      const given = decode.mock.calls[0]![0];
+      for (const s of ['Exif', 'GPS', 'JFIF', 'Photoshop', 'Jane Doe', 'Pixel 9', 'xmpmeta', 'Created with', 'tEXt', 'eXIf', 'iCCP', 'iTXt']) expect(has(given, s), s).toBe(false);
+      expect(readImageHeader(given)).toEqual(readImageHeader(bytes));
+      expect(() => assertClean(given)).not.toThrow();
+      expect(given).not.toBe(bytes);
+    }
+  });
+
+  it('a WebP: the EXIF, XMP and ICCP chunks go, the VP8X flags keep only alpha, and the RIFF size still fits the file', async () => {
+    const exif = webpChunk('EXIF', concat(latin1('MM\0*\0\0\0\x08'), Uint8Array.of(0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0)));
+    const xmp = webpChunk('XMP ', latin1('<x:xmpmeta>GPS</x:xmpmeta>'));
+    const icc = webpChunk('ICCP', latin1('profile'));
+    // Flags: ICC (0x20), alpha (0x10), Exif (0x08), XMP (0x04).
+    const extended = riff(vp8x(20, 10, 0x20 | 0x10 | 0x08 | 0x04), icc, vp8l(20, 10), exif, xmp);
+    const { d, decode } = deps();
+    await receiveProof(extended, { mime: 'image/webp', width: 20, height: 10 }, d);
+    const given = decode.mock.calls[0]![0];
+    for (const s of ['EXIF', 'XMP ', 'ICCP', 'xmpmeta', 'GPS', 'profile']) expect(has(given, s), s).toBe(false);
+    expect(has(given, 'VP8X')).toBe(true);
+    expect(has(given, 'VP8L')).toBe(true);
+    expect(given[20]).toBe(0x10);
+    expect(readImageHeader(given)).toEqual({ mime: 'image/webp', width: 20, height: 10 });
+
+    // A simple-format WebP is one image chunk already: handed over as it is, in a copy.
+    const simple = riff(vp8l(4, 4));
+    const s = deps();
+    await receiveProof(simple, { mime: 'image/webp', width: 4, height: 4 }, s.d);
+    const givenSimple = s.decode.mock.calls[0]![0];
+    expect(Buffer.from(givenSimple).equals(Buffer.from(simple))).toBe(true);
+    expect(givenSimple).not.toBe(simple);
   });
 });
 
