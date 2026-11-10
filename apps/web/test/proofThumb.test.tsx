@@ -124,6 +124,15 @@ describe('ProofThumb', () => {
     ['canvas fails', RECEIVED, PNG_4x3, { render: async () => Promise.reject(new Error('no canvas')) }],
     ['redrawn copy over the byte cap', RECEIVED, PNG_4x3, { render: async () => REDRAWN_HUGE }],
   ];
+  // Review of 9 Nov 2026, F5: the refusal has its own words. Not the generic damaged-file copy, no
+  // list of picture types (WebP cannot arrive: the envelope allows PNG and JPEG only), and one text
+  // for every refusal code, since the user can do nothing different for any of them.
+  it('the refusal copy is its own, short, and says the proof is not shown (COPY-UNSIGNED)', () => {
+    expect(PROOF_REFUSED_TITLE).toBe('Could not show this proof');
+    expect(PROOF_REFUSED_BODY).toBe('This proof could not be checked safely on your device, so it is not shown.');
+    expect(PROOF_REFUSED_BODY).not.toMatch(/damaged|WebP|PNG|JPEG/);
+  });
+
   for (const [name, bytes, declared, over] of refusals) {
     it(`${name}: a refusal, no image, no crash`, async () => {
       const { host } = render(<ProofThumb bytes={bytes} declared={declared} alt="Payment proof" deps={deps(over)} />);
