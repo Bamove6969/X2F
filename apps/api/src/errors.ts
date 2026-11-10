@@ -130,6 +130,10 @@ export type ApiErrorCode =
   | 'forbidden'
   | 'too-many-members'
   | 'member-cannot-sign'
+  // J-20 (owner p7-4, p7-11; review S-m4): a member's action on a trade or offer outside their
+  // trade-size band, and a session end asked for past the member's working hours.
+  | 'outside-trade-band'
+  | 'past-working-hours'
   // Owner 2 Nov 2026: Trader and Vendor accounts (only a vendor posts offers or has a team; the
   // switch needs a passkey, security key or PGP key), and the ban list (a banned PGP key).
   | 'not-vendor'
