@@ -111,7 +111,7 @@ describe('method profiles', () => {
   });
 
   it('refuses a profile whose timing is out of range (owner 2026-11-07 F9: up to 4 days, was 24 h)', () => {
-    const base = { id: 'ZELLE', whatItIs: 'x', landsIn: 'your bank account', checkPrompt: 'Check it.', arrival: 'instant', fields: [{ key: 'k', label: 'L', kind: 'text' }] };
+    const base = { id: 'ZELLE', whatItIs: 'x', landsIn: 'your bank account', checkPrompt: 'Check it.', arrival: 'instant', payWindowMin: 90, fields: [{ key: 'k', label: 'L', kind: 'text' }] };
     const load = (p: Record<string, unknown>) => () => loadProfiles({ profiles: [{ ...base, ...p }] }, catalog());
     expect(load({ confirmWindowMin: 5760 })).not.toThrow();
     expect(load({ confirmWindowMin: 90 })).not.toThrow();
@@ -121,7 +121,7 @@ describe('method profiles', () => {
   });
 
   it('a gift card profile may go down to 45 minutes (owner G50), and no lower; only gift cards (the rest keep 90)', () => {
-    const card = { id: 'OTHER_GIFT_CARD', whatItIs: 'x', landsIn: 'the card balance', checkPrompt: 'Check it.', arrival: 'instant', fields: [{ key: 'k', label: 'L', kind: 'text' }] };
+    const card = { id: 'OTHER_GIFT_CARD', whatItIs: 'x', landsIn: 'the card balance', checkPrompt: 'Check it.', arrival: 'instant', payWindowMin: 90, fields: [{ key: 'k', label: 'L', kind: 'text' }] };
     const load = (p: Record<string, unknown>) => () => loadProfiles({ profiles: [{ ...card, ...p }] }, catalog());
     expect(load({ confirmWindowMin: 45 })).not.toThrow();
     expect(load({ confirmWindowMin: 44 })).toThrow(/confirmWindowMin must be 45-5760/);
