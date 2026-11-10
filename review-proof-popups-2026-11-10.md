@@ -143,3 +143,55 @@ All through the serialised runner, from the proof-popups worktree:
 - **OQ4 (finding 9):** The "note with this trade's code is hidden" warning to the poster: keep it, or only the system
   heads-up in the chat that P-020 asks for?
 - Lead (not owner): finding 6 (accept a missing `takenAt`), 7a (round `takenAt`), the naming nit.
+
+## Re-verify 525c1bf7
+
+Branch `wip/lead-proof-popups` at 525c1bf7 (seven commits on 7d0c6be5), worktree clean. **Verdict: findings 1-8 are closed.
+Ready to land as far as engineering goes.** Four lead defaults wait on the owner (p11-140, -141, -142, -143), and one narrow
+residue of finding 5 remains (below). I found no weakened tests: every removed `expect` was replaced by a matching or
+stricter one (the old pinned `Oct 2 + fresh takenAt = in-range` is now asserted `out-of-range`; `send.disabled` became
+"sends with an empty explanation"; the `uploadPrompts` calls gained the `takenAt` argument).
+
+Runs (serialised runner): `@x2f/proof` detect, detect-labels, photoDate, codeBoxes, check, seal: **6 files, 253/253 passed**.
+`@x2f/web` proofPrompts, photoDate, cantDoThat-lint: **3 files, 32/32 passed**. `@x2f/api` reviews-sensitive: **1 file,
+4/4 passed**. `tsc --noEmit` is clean for packages/proof, apps/web and apps/api.
+
+- **F1 closed (a9db320f).** The element form now uses `xmpElement` with `indexOf`. Each open tag scans only to the next `<`
+  and is checked against the field's own close tag, so total work is linear. The attribute regex has no overlapping
+  quantifiers. I re-ran my probe from the first review: 16,000 and 60,000 spaces after an open tag now take 0.1-1.2 ms
+  (before: about 20 s at 16,000), a 1 MB iTXt 2.4 ms, a 4 MB file of repeated tags 11 ms. The file is now read through a
+  generator over byte ranges:
+  - only block headers and the bodies of PNG eXIf/iTXt and JPEG APP1 are read;
+  - a block over 256 KB is skipped unread;
+  - at most 1 MB is read in total (the sync `readPhotoTime` has the same budget);
+  - `photoTakenAt` reads through `Blob.slice`, and any rejection becomes null.
+
+  The tests are real. One hits the old pathology (20,000 spaces per field in JPEG and PNG) with a 50 ms bound; the old code
+  took seconds, so the margin is wide, though it is a wall-clock assertion on a shared box. Byte-counting readers prove that
+  a 4 MB JPEG scan or PNG IDAT is never read (total under the segment size + 64/200 bytes). An oversized chunk is skipped
+  having read under 4 KB. The web spy Blob counts the bytes handed out: under 1 KB for a 4 MB JPEG.
+- **F2 closed (36bcb6bd, `DATE_OUT_OF_RANGE_IF_EITHER = true`, owner p11-140).** `combineDates`: out of range if either the
+  photo time or a screenshot date is out of range; the photo time decides only when the screenshot shows no date. The
+  check.ts header now says the photo time is the buyer's claim. Setting the flag to `false` restores the 7 Nov behaviour.
+- **F3 closed (36bcb6bd, `POSTER_BLOCKED_WHEN_OUT_OF_RANGE = true`, owner p11-143).** `uploadPrompts` takes `takenAt` and
+  returns the same `date` that `proofDate` and the seller's `checkProof` give. A test loops over shots × times and asserts
+  `not-current` exactly when that verdict is `out-of-range`. Out of range blocks even when the screenshot is unreadable.
+  The stale "no prompt when no date" comments are fixed; no date found gives `posterDateLine` and posting stays allowed (G16).
+- **F4 closed (fcca7a45, `PROOF_EXPLANATION_REQUIRED = false`, owner p11-141).** Send proof works with an empty box, and a
+  TODO states plainly that the explanation goes nowhere and that Q43's "keeps these to improve detection" is not built and
+  needs a privacy design. No string claims it.
+- **F5 mostly closed (a10de7e7, `REVIEW_NOTE_NUMBER_LABELS = ['iban','account']`, owner p11-142).** Notes no longer refuse
+  "Paid with Visa 1500 EUR", "Sent via mobile 2500 MXN" or "Paid by card 1000" (all tested). Real card and phone numbers
+  are still refused by their shape, and "Acct 4821" still counts. **Residue (low, add to p11-142):** the account list also
+  holds payment-rail words, so these notes are still refused as `account`: "Paid via SWIFT 2000 EUR, slow", "Paid to
+  account 2500 MXN fast", "Sent from my conta 1500 BRL". The same fix applies: drop the rail words
+  (`swift`, `bic`, `routing`, `aba`) from the notes set, or skip a number followed by a currency code.
+- **F6 closed (9d1eb60b).** The field is renamed `photoTakenAt`, and a missing one parses as null. The old `takenAt` key is
+  refused cleanly: it is an extra key, so `ProofError('bad-payload')`, and `{...attached, takenAt: null}` is refused too
+  (tested). Nothing outside the package parses `proof.attached`, so no receiver or dispute view changes. One minor
+  behaviour: an own property set to `undefined` also parses as null, which JSON cannot produce anyway.
+- **F7 closed (0dfaf916).** Times are rounded down to the minute (`toUtcMinute`, and `isUtcMinute` refuses non-zero
+  seconds), well inside the 14 h slack. Only the date tags are still read. Not done, and not required: date-only
+  `photoshop:DateCreated` is still rejected, and field names still have no left boundary.
+- **F8 closed (525c1bf7).** `codeBoxes` joins each pair of adjacent lines (with nothing and with a space between) and
+  boxes each part of a code that crosses the line break on its own line. Tested.

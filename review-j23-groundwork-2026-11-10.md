@@ -52,3 +52,46 @@ The courier is a separate account mailbox (`/v1/account/chat-keys`), not the des
 ## Questions for the owner
 
 None. Findings 1 and 2 are protocol design for the lead and the Plan 1 Task 3 reviewer. They change nothing that users see.
+
+## Re-verify 7a7d4450 (10 Nov 2026)
+
+Throwaway worktree on `origin/wip/lead-multi-device-build` at `7a7d4450` (11 commits since ce3d54f8), since removed.
+
+**Verdict: every finding is closed, or narrowed to the residual its tripwire names. Fine to land as dormant groundwork.** The stance from the first verdict stands: nothing may wire `open` to a screen, or seal identity records under a handed-over ACK, until the p12-5 sender proof exists (`NEEDS_P12_5_SENDER_PROOF`). The new escrow-store reopen logic is sound.
+
+Tests (serialised runner):
+- protocol sealed: 9/9 passed.
+- api (chatKeys, accountInactivity, purge, frontDoor, schema, deviceApproval, jabber-paths, coolingOff): 8 files, 301/301 passed.
+- web (chatStore, chatAck, chatServeKeys, chatEngine, escrow-store, wallets): 6 files, 92/92 passed.
+- `tsc --noEmit` for protocol, api and web: all clean.
+
+Per finding:
+- **F1 (91b8e9d0): closed as far as phase 1 can close it.**
+  - The keeper takes a box only while a handover it started is pending (`chat-key-device` with `{accountId, epoch}`, a 10-minute window, held in memory only).
+  - The box now carries `'x2f/ack/v1' || accountId || epoch (u32 BE) || ACK`, 82 bytes, which seals to 130, inside the 1024 cap. The label, account and epoch inside the box must match the pending handover.
+  - The server's epoch outside the box is ignored.
+  - A different key at the held epoch is `'conflict'` and is never written. An older epoch is `stale-epoch`.
+  - The `NEEDS_P12_5_SENDER_PROOF` note in `ack.ts` is pinned by a test (`chatAck.test.ts:268`).
+  - **Residual** (named by that note, not a new finding): the expected epoch comes from the page, which takes it from the server. A party that can seal to the published device key can still plant a key at a *higher* epoch than the one held, and that replaces it. A `conflict` or `wrong-context` box also leaves the handover pending, so more attempts are possible within the window. Both go away with sender proof. Until then, one option for the lead: refuse any box while a key is held, unless a rotation this device saw is under way.
+- **F2 (c269ad12): closed.** `chat-key-make` and `chat-key-seal` are answered `refused` before the keeper is even created. The keeper's `makeKey`/`sealFor` stay, reachable only from tests. No page message returns ciphertext of the ACK any more.
+- **F3 (d3a323fc): closed.** The GET runs inside `withTx` through `strongCallerInTx`: live session under the account lock, strictly strong, refused with `recovery-hold` during a hold. The hold test now covers the GET. Collection is still client-acknowledged (a DELETE), which is acceptable until binding to the approval.
+- **F4 (053307bb): closed.** Superseded and over-cap rows are deleted, not expired at `now`. A test covers the same-millisecond case and the cap at one instant. Correction to my first report: the log was never at risk, because the API's `logError` serializer (`app.ts:199`) already drops the pg `detail`. The new test pins that (no row bytes, no account id, no "Failing row" in the 500's log). The 500 itself was real and is fixed.
+- **F5 (8c5b1d97): closed.** DELETE deletes the row. `purgeChatKeyEnvelopes` is in `RETENTION_JOBS` and removes expired rows, plus any collected rows left from before. d46dfb82 erases an account's envelopes in the close transaction (`accountInactivity.ts`), with a tripwire that every file setting `accounts.closed_at` calls `eraseChatKeyEnvelopes`.
+- **F6 (7a7d4450): closed.** Per-account `KeyedBuckets` on POST and DELETE (capacity 30, 10 a minute), applied after the session check, return 429 `slow-down`, and are tested. The GET has no bucket; it now takes the account lock per call. This is informational and in line with the other own-data reads.
+- **F7 (36f7d075): closed.** A low-order recipient key in `sealTo` is now TypeError, with a test.
+- **F8: open, as agreed for phase 2** (rotation is not built).
+- **F9 (550c8456): closed.** The chat store closes on `versionchange`, reopens on next use, and fails `unavailable` on a newer database, never hanging. Note: a chat-store reopen after a delete elsewhere *does* recreate an empty database and wrap key. That matches the escrow store's earlier behaviour and is acceptable for chat, because a delete there is a deliberate erase.
+- **F10:** unchanged, informational.
+
+The escrow store (12775671), checked closely:
+- Only the store's first open may create the database or the wrap key (`openDb(idb, true)`, `wrapKey(..., make = true)`).
+- Every reopen after a `versionchange` uses `openDb(idb, false)`. If `onupgradeneeded` fires, which means the database was deleted elsewhere, it aborts the upgrade transaction. Per the IndexedDB spec an aborted upgrade of a newly created database removes it, and an aborted upgrade of an existing one leaves it at its old version with its data intact. The open then fails `unavailable` (`onerror` with `preventDefault`).
+- A reopen also refuses when any of `trades`/`secrets`/`keys` is missing, closing the connection first. It refuses when the wrap key is missing, and never puts a fresh key in place (`wrapKey(..., false)`).
+- A newer version elsewhere gives VersionError, which is `unavailable`.
+- `close()` is final.
+- All of these are tested in `escrow-store.test.ts:178-290`: delete elsewhere, never recreated, no fresh wrap key, newer build, close final.
+- Within one operation, the wrap key and the db can come from different connections across a reopen. This is harmless, because the key is never re-made, so it is the same key.
+
+Wallets (b9c02676): closed. It reads `trades` by name instead of "the first store that is not the secrets store", which was `keys` and listed `wrap` as an open trade. Its short-lived open still aborts any upgrade, so it never creates the database, and it now also closes on `versionchange`.
+
+Dormancy: the only call site is `escrow/worker.ts:152` (`serveChatKeys`). No screen, engine or `apps/web/src` file outside `chat/` sends a `chat-key-*` message. No user-visible string was added.
