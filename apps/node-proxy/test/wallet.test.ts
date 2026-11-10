@@ -80,10 +80,31 @@ describe('node proxy with monero-ts wallets on a restricted regtest node', () =>
     expect((await daemon.getTx(hash))?.getIsConfirmed()).toBe(false);
     await mine(node.rpcUri, 1, aliceAddress);
     expect((await daemon.getTx(hash))?.getIsConfirmed()).toBe(true);
+
+    // The escrow's txStatus in the browser (P0 of 8 Nov): a plain fetch of /get_transactions from the
+    // web origin, preflight included (monero-ts's in-process HTTP cannot send in the web bundle).
+    const pre = await fetch(`${proxyUri}/get_transactions`, {
+      method: 'OPTIONS',
+      headers: { origin: 'https://x2f.example', 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' },
+    });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get('access-control-allow-origin')).toBe('https://x2f.example');
+    expect(pre.headers.get('access-control-allow-headers')).toBe('content-type');
+    const looked = await fetch(`${proxyUri}/get_transactions`, {
+      method: 'POST',
+      headers: { origin: 'https://x2f.example', 'content-type': 'application/json' },
+      body: JSON.stringify({ txs_hashes: [hash], decode_as_json: false, prune: true }),
+    });
+    expect(looked.status).toBe(200);
+    expect(looked.headers.get('access-control-allow-origin')).toBe('https://x2f.example');
+    const answer = (await looked.json()) as { status: string; txs: { tx_hash: string; in_pool: boolean; block_height: number }[] };
+    expect(answer.status).toBe('OK');
+    expect(answer.txs[0]).toMatchObject({ tx_hash: hash, in_pool: false });
+    expect(answer.txs[0]!.block_height).toBeGreaterThan(0);
     await bob.sync();
     expect((await bob.getTxs({ hash }))[0]?.getIsConfirmed()).toBe(true);
 
-    const refused = calls.filter((c) => c.status !== 200);
+    const refused = calls.filter((c) => c.status !== 200 && c.status !== 204); // 204: the preflight above
     expect(refused).toEqual([]);
     expect(calls.length).toBeGreaterThan(0);
     // Shown in the test output so a change in what wallets call is easy to review.
