@@ -7,6 +7,8 @@ import { serveChatKeys, type ChatKeysPort, type FromChatKeysWorker } from '../sr
 import { memoryChatStore } from '../src/chat/store.js';
 
 /** A port whose `ask` sends one message and resolves with the answer carrying the same id. */
+const ACCOUNT = '0f0e0d0c-0b0a-4908-8706-050403020100';
+
 function fakePort() {
   let handler: ((e: { data: unknown }) => void) | null = null;
   const waiting = new Map<number, (m: FromChatKeysWorker) => void>();
@@ -42,12 +44,12 @@ describe('serveChatKeys', () => {
   it('answers device, status, open and forget; a key made and sealed by the keeper itself (not by a message) is handed over', async () => {
     const a = worker();
     const b = worker();
-    const devB = await b.ask({ t: 'chat-key-device' });
+    const devB = await b.ask({ t: 'chat-key-device', accountId: ACCOUNT, epoch: 0 });
     expect(devB).toEqual({ t: 'chat-key', id: 1, ok: true, devicePublic: expect.stringMatching(/^[0-9a-f]{64}$/) });
     expect(await a.ask({ t: 'chat-key-status' })).toEqual({ t: 'chat-key', id: 1, ok: true, hasKey: false, epoch: null });
     // Review F2: making and sealing are not worker messages; the keeper is called directly here.
     await a.keeper.makeKey(0);
-    const sealed = { ...(await a.keeper.sealFor((devB as { devicePublic: string }).devicePublic))! };
+    const sealed = { ...(await a.keeper.sealFor((devB as { devicePublic: string }).devicePublic, ACCOUNT))! };
     const { sealed: box, epoch } = sealed;
     expect(await b.ask({ t: 'chat-key-open', sealed: box, epoch })).toEqual({ t: 'chat-key', id: 2, ok: true, result: 'opened' });
     expect(await b.ask({ t: 'chat-key-status' })).toEqual({ t: 'chat-key', id: 3, ok: true, hasKey: true, epoch: 0 });
@@ -80,7 +82,12 @@ describe('serveChatKeys', () => {
   it('refuses malformed requests (bad-request) and ignores what is not a chat-key message', async () => {
     const w = worker();
     expect(await w.ask({ t: 'chat-key-open', sealed: 42, epoch: 0 })).toMatchObject({ ok: false, error: 'bad-request' });
-    expect(await w.ask({ t: 'chat-key-open', sealed: 'x', epoch: '0' })).toMatchObject({ ok: false, error: 'bad-request' });
+    // Review F1: the device key is published only for a handover context (account and epoch).
+    expect(await w.ask({ t: 'chat-key-device' })).toMatchObject({ ok: false, error: 'bad-request' });
+    expect(await w.ask({ t: 'chat-key-device', accountId: 'x', epoch: 0 })).toMatchObject({ ok: false, error: 'bad-request' });
+    expect(await w.ask({ t: 'chat-key-device', accountId: ACCOUNT, epoch: -1 })).toMatchObject({ ok: false, error: 'bad-request' });
+    // The epoch outside the box is ignored (the one inside counts), so a missing one is fine.
+    expect(await w.ask({ t: 'chat-key-open', sealed: 'x' })).toMatchObject({ ok: true, result: 'bad-envelope' });
     // A box that is not one is the keeper's word, not a refusal of the request.
     expect(await w.ask({ t: 'chat-key-open', sealed: 'not base64url!', epoch: 0 })).toMatchObject({ ok: true, result: 'bad-envelope' });
     // Not for this half of the worker: no answer at all.

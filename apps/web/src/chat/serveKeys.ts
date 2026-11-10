@@ -14,12 +14,14 @@
 import type { AckKeeper, AckOpenResult } from './ack.js';
 
 export type ToChatKeysWorker =
-  | { t: 'chat-key-device'; id: number }
+  /** Publishes the device key for a handover of this account and epoch (review F1: starts it). */
+  | { t: 'chat-key-device'; id: number; accountId: string; epoch: number }
   | { t: 'chat-key-status'; id: number }
   /** Refused (review F2): kept in the union so the page's old shape type-checks and is answered. */
   | { t: 'chat-key-make'; id: number; epoch: number }
   | { t: 'chat-key-seal'; id: number; recipientPublic: string }
-  | { t: 'chat-key-open'; id: number; sealed: string; epoch: number }
+  /** `epoch` outside the box is ignored (review F1). */
+  | { t: 'chat-key-open'; id: number; sealed: string; epoch?: number }
   | { t: 'chat-key-forget'; id: number };
 
 export type ChatKeysFailure = 'bad-request' | 'unavailable' | 'refused';
@@ -65,15 +67,23 @@ export function serveChatKeys(port: ChatKeysPort, makeKeeper: () => Promise<AckK
       }
       try {
         switch (m.t) {
-          case 'chat-key-device':
-            return port.postMessage({ t: 'chat-key', id, ok: true, devicePublic: await k.devicePublic() });
+          case 'chat-key-device': {
+            let pub: string;
+            try {
+              pub = await k.devicePublic({ accountId: m.accountId as string, epoch: m.epoch as number });
+            } catch (e) {
+              if (e instanceof TypeError) return fail('bad-request');
+              throw e;
+            }
+            return port.postMessage({ t: 'chat-key', id, ok: true, devicePublic: pub });
+          }
           case 'chat-key-status': {
             const s = await k.status();
             return port.postMessage({ t: 'chat-key', id, ok: true, hasKey: s.hasKey, epoch: s.epoch });
           }
           case 'chat-key-open': {
-            if (typeof m.sealed !== 'string' || typeof m.epoch !== 'number') return fail('bad-request');
-            return port.postMessage({ t: 'chat-key', id, ok: true, result: await k.open({ sealed: m.sealed, epoch: m.epoch }) });
+            if (typeof m.sealed !== 'string') return fail('bad-request');
+            return port.postMessage({ t: 'chat-key', id, ok: true, result: await k.open({ sealed: m.sealed }) });
           }
           case 'chat-key-forget':
             await k.forget();
