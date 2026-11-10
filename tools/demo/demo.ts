@@ -212,6 +212,7 @@ async function main(): Promise<void> {
     ...demo,
     DEMO_API_PORT: String(PORTS.api), DEMO_RELAY_PORT: String(PORTS.relay), DEMO_NODE_PROXY_PORT: String(PORTS.nodeProxy),
     DEMO_GATEWAY_PORT: String(PORTS.gateway), DEMO_GATEWAY_TLS_PORT: String(PORTS.gatewayTls), DEMO_GATEWAY_NODE_PORT: String(PORTS.gatewayNode), DEMO_GATEWAY_NODE_TLS_PORT: String(PORTS.gatewayNodeTls), DEMO_PRIMARY_ORIGIN: PRIMARY, DEMO_ORIGINS: origins.join(','), DEMO_MONEROD_RPC: MONEROD_RPC,
+    DATABASE_URL: pgUrl('x2f'),
     ...(tsIp ? { DEMO_TAILSCALE_IP: tsIp, DEMO_TLS_KEY: tlsKey, DEMO_TLS_CERT: tlsCert } : {}),
   });
   await waitFor('the gateway', httpUp(`${LOCAL_ORIGIN}/`));

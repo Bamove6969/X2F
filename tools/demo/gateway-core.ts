@@ -8,6 +8,7 @@ import http, { type IncomingHttpHeaders, type IncomingMessage, type ServerRespon
 import net from 'node:net';
 import type { Duplex } from 'node:stream';
 import { brotliDecompressSync, gunzipSync, inflateSync } from 'node:zlib';
+import { pendingIdOf } from './door-parse.js';
 
 export const NOTES_TAG = '<script src="/__demo/notes.js" defer></script>';
 /** Larger HTML than this is passed on untouched rather than held in memory. */
@@ -29,6 +30,34 @@ export interface GatewayConfig {
   origins: Set<string>;
   /** Answers everything under /__demo/ on the web origin. */
   demo: (req: IncomingMessage, res: ServerResponse) => void;
+  /**
+   * Called with the `pendingId` of a password login step that answered `second-factor`, before the
+   * browser gets that answer (door.ts: the seeded accounts' way in from a fresh browser).
+   */
+  passwordStep?: (pendingId: string) => Promise<void>;
+}
+
+const PASSWORD_STEP = '/v1/login/password';
+
+/** Holds a password step's JSON answer, gives its pendingId to `hook`, then passes it on unchanged. */
+function holdPasswordStep(r: IncomingMessage, res: ServerResponse, out: IncomingHttpHeaders, hook: (pendingId: string) => Promise<void>, pendingIdOf: (body: Buffer) => string | null): void {
+  const chunks: Buffer[] = [];
+  r.on('data', (c: Buffer) => chunks.push(c));
+  r.on('error', () => res.destroy());
+  r.on('end', () => {
+    const raw = Buffer.concat(chunks);
+    const plain = decode(raw, out['content-encoding']);
+    const id = plain === null ? null : pendingIdOf(plain);
+    const send = (): void => {
+      res.writeHead(r.statusCode ?? 502, out);
+      res.end(raw);
+    };
+    if (id === null) return send();
+    hook(id).then(send, (e: unknown) => {
+      console.log(JSON.stringify({ reason: 'door-failed', error: (e as Error).message }));
+      send();
+    });
+  });
 }
 
 export function isDemoUrl(url: string): boolean {
@@ -147,6 +176,9 @@ export function createGateway(cfg: GatewayConfig): {
       const out = { ...r.headers };
       if (known && out['access-control-allow-origin'] === cfg.primary) out['access-control-allow-origin'] = from;
       const status = r.statusCode ?? 502;
+      if (t.api && cfg.passwordStep && req.method === 'POST' && t.path.split('?')[0] === PASSWORD_STEP && status === 200) {
+        return holdPasswordStep(r, res, out, cfg.passwordStep, pendingIdOf);
+      }
       if (t.api && isHtml(out) && status !== 204 && status !== 304) {
         if (req.method === 'GET') return injectInto(r, res, out);
         if (req.method === 'HEAD') {

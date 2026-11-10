@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
+import { createDoor } from './door.js';
 import { createGateway, type Route } from './gateway-core.js';
 import { assertDemo } from './guard.js';
 import { createNotesHandler, notesFiles } from './notes-server.js';
@@ -44,7 +45,9 @@ const demo = createNotesHandler({
   origins: ORIGINS,
   clientJs: readFileSync(new URL('./notes.js', import.meta.url)),
 });
-const { web, node, handle, upgrade } = createGateway({ api: API, relay: RELAY, node: NODE, primary: PRIMARY, origins: ORIGINS, demo });
+// The seeded accounts' way in from a fresh browser (door.ts).
+const passwordStep = createDoor(env('DATABASE_URL'));
+const { web, node, handle, upgrade } = createGateway({ api: API, relay: RELAY, node: NODE, primary: PRIMARY, origins: ORIGINS, demo, passwordStep });
 
 function serve(route: Route, port: number, host: string, tls: { key: Buffer; cert: Buffer } | null): void {
   const srv = tls ? https.createServer(tls, handle(route)) : http.createServer(handle(route));

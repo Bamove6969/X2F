@@ -5,6 +5,7 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEMO_DIR, DEMO_PASSWORD } from './config.js';
+import { SEEDED_FILE } from './door.js';
 import { assertDemo } from './guard.js';
 import { throwawayAddress } from './secrets.js';
 import { stepOf, TOTP_FILE, totpCode } from './totp.js';
@@ -132,21 +133,18 @@ const totp: Record<string, string> = {};
  * accounts as vendors straight in its own throwaway database, as the switch itself would
  * (account_type, vendor_since), and the offers then go through the real API.
  */
-async function makeVendor(displayName: string): Promise<void> {
-  const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
-  await db.connect();
-  try {
-    const r = await db.query("update accounts set account_type = 'vendor', vendor_since = now() where display_name = $1 and account_type = 'trader'", [displayName]);
-    if (r.rowCount !== 1) throw new Error(`demo seed: could not make ${displayName} a vendor`);
-  } finally {
-    await db.end();
-  }
+async function makeVendor(db: pg.Client, displayName: string): Promise<void> {
+  const r = await db.query("update accounts set account_type = 'vendor', vendor_since = now() where display_name = $1 and account_type = 'trader'", [displayName]);
+  if (r.rowCount !== 1) throw new Error(`demo seed: could not make ${displayName} a vendor`);
 }
+
+const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+await db.connect();
 
 const failures: string[] = [];
 for (const p of [...CAST, ...OWNER]) {
   const c = await signUp(p);
-  if (p.vendor) await makeVendor(p.displayName);
+  if (p.vendor) await makeVendor(db, p.displayName);
   for (const o of p.offers) {
     const r = await c.call('POST', '/v1/offers', o);
     if (r.status >= 300) failures.push(`${p.displayName} ${String(o.methodId)} ${String(o.currency)}: ${r.status} ${JSON.stringify(r.body)}`);
@@ -169,6 +167,10 @@ const logins = [
   ...CAST.map((p) => `  login name ${p.loginName.padEnd(16)} shown as ${p.displayName.padEnd(14)} authenticator secret ${totp[p.loginName]}`),
 ];
 writeFileSync(TOTP_FILE, JSON.stringify(totp, null, 2), { mode: 0o600 });
+// The accounts the gateway's door lets in from a fresh browser (door.ts).
+const seeded = await db.query<{ id: string }>('select id from accounts where display_name = any($1)', [[...CAST, ...OWNER].map((p) => p.displayName)]);
+writeFileSync(SEEDED_FILE, JSON.stringify(seeded.rows.map((r) => r.id)), { mode: 0o600 });
+await db.end();
 writeFileSync(join(DEMO_DIR, 'logins.txt'), `${logins.join('\n')}\n`);
 // monero-ts keeps a worker alive: exit once the seed is written.
 process.exit(0);
