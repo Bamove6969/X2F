@@ -132,3 +132,61 @@ describe('the database upgrade', () => {
     db.close();
   });
 });
+
+// Lead 10 Nov (J-23 point 5): a tab never stalls another tab's upgrade of the chat database. Every
+// connection the store opens closes itself on `versionchange`, and the store reopens on next use.
+describe('version changes from another tab', () => {
+  /** Opens `x2f-chat` at `version` and resolves 'opened', or 'blocked' when an open connection holds it back. */
+  const openRaw = (idb: IDBFactory, version: number) =>
+    new Promise<{ outcome: 'opened' | 'blocked'; db: IDBDatabase | null }>((res, rej) => {
+      const r = idb.open(CHAT_DB, version);
+      r.onblocked = () => res({ outcome: 'blocked', db: null });
+      r.onsuccess = () => res({ outcome: 'opened', db: r.result });
+      r.onerror = () => rej(r.error);
+    });
+
+  it('an open version-1 connection closes when version 2 opens: the upgrade is not blocked, and the old store fails cleanly', async () => {
+    const idb = new IDBFactory();
+    const old = await openChatStore({ indexedDB: idb, version: 1 });
+    await old.save(chatRecord());
+    // The current code opens version 2 while the version-1 store is still open.
+    const current = await openChatStore({ indexedDB: idb });
+    expect(await current.load(CODE)).toEqual(chatRecord());
+    const db = (await openRaw(idb, 2)).db!;
+    expect(db.version).toBe(2);
+    db.close();
+    // The version-1 store cannot reopen a newer database: an error, never a hang.
+    await expect(old.list()).rejects.toMatchObject({ code: 'unavailable' });
+  });
+
+  it('a later version opened elsewhere is not blocked by the current store', async () => {
+    const idb = new IDBFactory();
+    const store = await openChatStore({ indexedDB: idb });
+    await store.save(chatRecord());
+    const next = await openRaw(idb, 3);
+    expect(next.outcome).toBe('opened');
+    next.db!.close();
+  });
+
+  it('after a versionchange (the database deleted elsewhere) the store reopens on next use and its writes are readable by a fresh opener', async () => {
+    const idb = new IDBFactory();
+    const store = await openChatStore({ indexedDB: idb });
+    await store.save(chatRecord());
+    await store.saveAccount(account);
+    const deleted = await new Promise<'deleted' | 'blocked'>((res, rej) => {
+      const r = idb.deleteDatabase(CHAT_DB);
+      r.onblocked = () => res('blocked');
+      r.onsuccess = () => res('deleted');
+      r.onerror = () => rej(r.error);
+    });
+    expect(deleted).toBe('deleted');
+    // Reopened: a new, empty database, with a new wrap key kept in it.
+    expect(await store.list()).toEqual([]);
+    expect(await store.loadAccount()).toBeNull();
+    await store.save(chatRecord());
+    await store.saveAccount(account);
+    const fresh = await openChatStore({ indexedDB: idb });
+    expect(await fresh.load(CODE)).toEqual(chatRecord());
+    expect(await fresh.loadAccount()).toEqual(account);
+  });
+});
