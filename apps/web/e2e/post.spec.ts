@@ -1,8 +1,13 @@
-// PostOffer (Task 21, board PostOffer.dc.html). The API is stubbed per test with page.route, in
-// the shapes of Task 3 (GET /v1/methods, GET /v1/price, on the main line and checked against the
-// parsers 2026-10-27) and Task 4 (POST /v1/offers, GET /v1/offers; on the main line and checked
-// against these stubs 2026-10-28: 201 { id }, 409 { error } refusals). The method list is built from data/payment-methods.json with Task 3's own rule (a method with
-// `legalReview` is unavailable and left out).
+// PostOffer (Task 21, board PostOffer.dc.html; J-16, Plan 3 Tasks 34/35: flexible offers). The API
+// is stubbed per test with page.route, in the shapes of Task 3 (GET /v1/methods, GET /v1/price, on
+// the main line and checked against the parsers 2026-10-27) and Task 4 (POST /v1/offers, GET
+// /v1/offers; 201 { id }, 409 { error } refusals). J-16's POST body is `{ side, amountUnit,
+// currencies: [{ currency, bands }], methods: [{ methodId, adjustBps, instructions }], terms }`
+// (apps/web/src/screens/post/api.ts PostOfferBody); the form picks currencies and methods one at a
+// time (chips with a Remove button, an "Add a …" picker), with one band per currency here. The
+// method list is built from data/payment-methods.json with Task 3's own rule (a method with
+// `legalReview` is unavailable and left out). GET /v1/currencies is not stubbed: without it the
+// picker offers every list currency (currencyOptions with no list loaded).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page, type Request, type Route } from '@playwright/test';
@@ -72,8 +77,11 @@ async function stub(page: Page, o: Stubs = {}): Promise<Request[]> {
 }
 
 const f = (page: Page) => ({
-  method: page.getByLabel('Payment method'),
-  currency: page.getByLabel('Currency'),
+  // J-16: methods are added one at a time from the picker; each picked one is a [data-part="method"] row.
+  method: page.getByLabel('Add a payment method'),
+  methodRow: (id: string) => page.locator(`[data-part="method"][data-method="${id}"]`),
+  // J-16: the picked currencies are chips, each with its Remove button; "Add a currency" is the picker.
+  currencyChip: (code: string) => page.getByRole('button', { name: `Remove ${code}` }),
   min: page.getByLabel('Smallest trade', { exact: true }),
   max: page.getByLabel('Largest trade', { exact: true }),
   terms: page.getByLabel('Your terms (optional)'),
@@ -99,7 +107,10 @@ test('parity with PostOffer at 390x844', async ({ page }) => {
   // KNOWN_EXCEPTIONS.PostOffer (parity.ts): the board's "Bank transfer (ACH)" option is the catalog's
   // "ACH bank transfer (US)". Its other options (Zelle, Cash App, Cash by mail, Custom method) are
   // catalog methods the picker offers. The board draws a ±0.1% stepper; the owner's F1 (7 Nov) is
-  // above or below plus a typed percentage (KNOWN_EXCEPTIONS lists the stepper's marks).
+  // above or below plus a typed percentage (KNOWN_EXCEPTIONS lists the stepper's marks). J-16: the
+  // board's one Payment method select, Currency select, market line and "Who can trade with you"
+  // are now the pickers, chips, a market line per currency and a per-band "Minimum completed
+  // trades" (KNOWN_EXCEPTIONS, "board recapture pending").
   await stub(page);
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);
@@ -111,18 +122,23 @@ test('the board copy and the default market price', async ({ page }) => {
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);
   await expect(page.getByRole('heading', { name: 'Post an offer' })).toBeVisible();
-  for (const t of ['I want to', 'Your price', 'Who can trade with you', 'How others will see it']) await expect(page.getByText(t, { exact: true })).toBeVisible();
+  // J-16: the trade rule is per band, "Minimum completed trades" (the board's "Who can trade with you" section is gone).
+  for (const t of ['I want to', 'Your price', 'Minimum completed trades', 'How others will see it']) await expect(page.getByText(t, { exact: true })).toBeVisible();
   await expect(f(page).above).toBeChecked();
   await expect(f(page).margin).toHaveValue('0.5');
-  await expect(page.getByText('+0.5%', { exact: true })).toBeVisible();
+  // Design final call (10 Nov 2026): "0.5% above market", the figure in mono then the words (ui/margin.ts);
+  // J-16: the price at your margin follows on the band's readout.
+  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('0.5% above market · $331.55 / XMR');
+  await expect(page.getByText('0.5%', { exact: true })).toBeVisible();
   await expect(page.getByText('above market', { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("Market $329.90 / XMR right now. Your price follows the market, so it's always $331.55 / XMR at today's rate.", { exact: true }),
-  ).toBeVisible();
+  // J-16: each currency's card carries its market line.
+  await expect(page.getByText('Market $329.90 / XMR right now. Your prices follow the market.', { exact: true })).toBeVisible();
   const preview = page.getByRole('region', { name: 'Preview' });
   await expect(preview.getByText('Selling XMR via Zelle · USD · you', { exact: true })).toBeVisible();
   await expect(preview.getByText('$331.55 / XMR', { exact: true })).toBeVisible();
-  await expect(preview.getByText('$50 – $2,000 USD', { exact: true })).toBeVisible();
+  // Owner #11 (8 Nov): the preview shows the trade sizes in both units, the typed one exact.
+  await expect(preview.locator('[data-part="preview-fiat"]')).toHaveText('$50 – $2,000 USD');
+  await expect(preview.locator('[data-part="preview-xmr"]')).toHaveText(/^≈ 0\.\d{6} – 6\.\d{6} XMR$/);
   await expect(page.getByText('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.', { exact: true })).toBeVisible();
   await expect(page.locator('[data-primary]')).toHaveCount(1);
   await expect(page.locator('[data-primary]')).toHaveText('Post offer');
@@ -139,14 +155,14 @@ test('the margin is typed, above or below the market (owner F1)', async ({ page 
   await page.goto('/post?method=ZELLE');
   const preview = page.getByRole('region', { name: 'Preview' });
   await f(page).margin.fill('0.6');
-  await expect(page.getByText('+0.6%', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('0.6% above market · $331.88 / XMR');
   await expect(preview.getByText('$331.88 / XMR', { exact: true })).toBeVisible();
   await f(page).below.check();
   await f(page).margin.fill('0.1');
-  await expect(page.getByText('-0.1%', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('0.1% below market · $329.57 / XMR');
   await expect(page.getByText('below market', { exact: true })).toBeVisible();
   await f(page).margin.fill('12.25');
-  await expect(page.getByText('-12.25%', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-part="margin-reads"]')).toHaveText('12.25% below market · $289.49 / XMR');
   await expect(preview.getByText('$289.49 / XMR', { exact: true })).toBeVisible();
 });
 
@@ -171,7 +187,7 @@ test('50% above or below the market posts; 50.01% either way is refused inline a
   await expect(preview.getByText('$494.85 / XMR', { exact: true })).toBeVisible();
   await f(page).post.click();
   await expect.poll(() => posts.length).toBe(1);
-  expect(posts[0]!.postDataJSON()).toMatchObject({ pricing: { mode: 'market', marginBps: 5000 } });
+  expect(posts[0]!.postDataJSON()).toMatchObject({ currencies: [{ currency: 'USD', bands: [{ marginBps: 5000 }] }] });
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);
   await f(page).below.check();
@@ -179,7 +195,7 @@ test('50% above or below the market posts; 50.01% either way is refused inline a
   await expect(preview.getByText('$164.95 / XMR', { exact: true })).toBeVisible();
   await f(page).post.click();
   await expect.poll(() => posts.length).toBe(2);
-  expect(posts[1]!.postDataJSON()).toMatchObject({ pricing: { mode: 'market', marginBps: -5000 } });
+  expect(posts[1]!.postDataJSON()).toMatchObject({ currencies: [{ currency: 'USD', bands: [{ marginBps: -5000 }] }] });
 });
 
 test('a smallest trade above the largest is refused inline and nothing is posted', async ({ page }) => {
@@ -233,7 +249,10 @@ test('when the methods do not load, the form says so and Retry loads them', asyn
   await expect(page.getByText("The payment methods didn't load.", { exact: true })).toBeVisible();
   await expect(f(page).method).toHaveCount(0);
   await page.getByRole('button', { name: 'Retry' }).click();
-  await expect(f(page).method.locator('option', { hasText: 'Zelle' })).toHaveCount(1);
+  // Zelle (from ?method=ZELLE) is on the offer, so the picker offers the rest of the catalog.
+  await expect(f(page).methodRow('ZELLE')).toBeVisible();
+  await expect(f(page).method.locator('option', { hasText: 'PayPal' })).toHaveCount(1);
+  await expect(f(page).method.locator('option', { hasText: 'Zelle' })).toHaveCount(0);
   await expect(page.getByText("The payment methods didn't load.", { exact: true })).toHaveCount(0);
 });
 
@@ -252,15 +271,12 @@ test('there is no fixed price (owner Q1): no Fixed choice, no price box, no stal
   await expect(page.getByRole('region', { name: 'Preview' }).getByText('$324.95 / XMR', { exact: true })).toBeVisible();
   await f(page).post.click();
   await expect.poll(() => posts.length).toBe(1);
+  // J-16's body: the currency's one band in whole units (O-018), the method with no price change and no instructions.
   expect(posts[0]!.postDataJSON()).toEqual({
     side: 'sell',
-    methodId: 'ZELLE',
-    currency: 'USD',
-    pricing: { mode: 'market', marginBps: -150 },
     amountUnit: 'fiat',
-    minFiatCents: '5000',
-    maxFiatCents: '200000',
-    minTrades: null,
+    currencies: [{ currency: 'USD', bands: [{ min: '50', max: '2000', marginBps: -150, minTrades: null }] }],
+    methods: [{ methodId: 'ZELLE', adjustBps: 0, instructions: '' }],
     terms: '',
   });
 });
@@ -278,7 +294,7 @@ test('posting a sell ad returns to the list where buyers see it, with the offer 
   await expect(page).toHaveURL(/\/buy\/ZELLE\?currency=USD$/);
   await expect(page.locator('article')).toHaveCount(1);
   await expect(page.locator('article [data-username]').first()).toHaveText('nightowl_44');
-  expect(posts[0]!.postDataJSON()).toMatchObject({ pricing: { mode: 'market', marginBps: 50 }, minTrades: 5, terms: 'Put the trade number in the memo.' });
+  expect(posts[0]!.postDataJSON()).toMatchObject({ currencies: [{ currency: 'USD', bands: [{ marginBps: 50, minTrades: 5 }] }], terms: 'Put the trade number in the memo.' });
   expect(posts[0]!.postDataJSON()).not.toHaveProperty('country');
   // The draft is cleared once posted: a new /post starts empty.
   await page.goto('/post');
@@ -302,6 +318,8 @@ test('SBP and the other methods awaiting legal review are absent from the picker
   expect(options).toContain('Zelle');
   for (const name of ['SBP — Faster Payments System (Russia)', 'Mir card', 'YooMoney']) expect(options).not.toContain(name);
   await expect(f(page).method).toHaveValue('');
+  // ?method=SBP put nothing on the offer: a method off the list is never kept (J-16).
+  await expect(page.locator('[data-part="method"]')).toHaveCount(0);
 });
 
 test('a held user sees the API refusal as text', async ({ page }) => {
@@ -337,7 +355,7 @@ test('an account with no wallet lands on Add a wallet and returns to the filled 
   expect(back.startsWith('/post')).toBe(true);
   await page.goto(back);
   await expect(page.getByRole('radio', { name: 'Buy XMR' })).toBeChecked();
-  await expect(f(page).method).toHaveValue('ZELLE');
+  await expect(f(page).methodRow('ZELLE')).toBeVisible();
   await expect(f(page).min).toHaveValue('$50');
   await expect(f(page).max).toHaveValue('$2,000');
   // The pricing comes back too (J-02: below/above market and the percentage; was checked on the
@@ -381,7 +399,9 @@ test('a gift-card method shows the one bold warning (owner, 2026-10-21)', async 
   await page.goto('/post?method=ZELLE');
   const warning = page.getByText('When trading Monero for gift cards, you accept all risks and responsibilities that come with gift cards. Buyer beware.', { exact: true });
   await expect(warning).toHaveCount(0);
+  // J-16: the picker adds a method to the offer (Zelle stays); any gift-card method makes it a gift-card offer.
   await f(page).method.selectOption('AMAZON_GIFT_CARD');
+  await expect(f(page).methodRow('AMAZON_GIFT_CARD')).toBeVisible();
   await expect(warning).toBeVisible();
 });
 
@@ -407,7 +427,7 @@ test("a gift-card offer needs the card's country and sends it as `country` (Revi
   for (const box of await terms.all()) await box.check();
   await f(page).post.click();
   await expect.poll(() => posts.length).toBe(1);
-  expect(posts[0]!.postDataJSON()).toMatchObject({ methodId: 'AMAZON_GIFT_CARD', country: 'US', giftCardTerms: 'gift-card-terms-unsigned-1' });
+  expect(posts[0]!.postDataJSON()).toMatchObject({ methods: [{ methodId: 'ZELLE' }, { methodId: 'AMAZON_GIFT_CARD' }], country: 'US', giftCardTerms: 'gift-card-terms-unsigned-1' });
   // Back on a plain method the field goes, and the country is not sent.
   await page.goto('/post?method=ZELLE');
   await expect(f(page).country).toHaveCount(0);
@@ -466,7 +486,7 @@ test('trade size in XMR by default: one switch per box, both boxes switch togeth
   await expect(page.getByText('One unit for the whole offer. Traders see both, converted at your price.', { exact: true })).toBeVisible();
   await expect(preview.locator('[data-part="preview-xmr"]')).toHaveText('0.500000 – 25.000000 XMR');
   await expect(preview.locator('[data-part="preview-fiat"]')).toHaveText(/^≈ CA\$[\d,.]+ – CA\$[\d,.]+ CAD$/);
-  await expect(page.locator('[data-part="other-unit"]').first()).toHaveText(/^≈ CA\$[\d,.]+ at your price \(\+0\.5%\)$/);
+  await expect(page.locator('[data-part="other-unit"]').first()).toHaveText(/^≈ CA\$[\d,.]+ at your price \(0\.5% above market\)$/);
 
   // Tapping the currency on the Largest box moves both boxes, and converts what was typed at your
   // price (review H1): "0.5" is never re-read as CA$0.50.
@@ -481,6 +501,6 @@ test('trade size in XMR by default: one switch per box, both boxes switch togeth
 
   await f(page).post.click();
   await expect.poll(() => posts.length).toBe(1);
-  expect(posts[0]!.postDataJSON()).toMatchObject({ side: 'sell', currency: 'CAD', amountUnit: 'xmr', minAtomic: '500000000000', maxAtomic: '25000000000000' });
+  expect(posts[0]!.postDataJSON()).toMatchObject({ side: 'sell', amountUnit: 'xmr', currencies: [{ currency: 'CAD', bands: [{ min: '500000000000', max: '25000000000000' }] }] });
   expect(posts[0]!.postDataJSON()).not.toHaveProperty('minFiatCents');
 });

@@ -1,6 +1,9 @@
 // The smart proof check and the lines of the seller's proof card (Plan 5 Task 9, spec 4.2, P5-A28,
 // board SellerConfirm). The seller's own app runs it on the OCR of the blurred image it decrypted
-// (Task 16); nothing here trusts a value from the buyer except the `hidden` list it is given.
+// (Task 16); nothing here trusts a value from the buyer except the `hidden` list it is given and the
+// photo's own time (`proof.attached` `photoTakenAt`), which is the buyer's claim: it can fill in a date
+// the screenshot does not show, or make the proof out of range, but never clears a stale date the
+// screenshot shows (`DATE_OUT_OF_RANGE_IF_EITHER`, review 2026-11-10 finding 2).
 import { normalizeTradeCode } from '@x2f/core';
 import { findAmounts, parseAmounts } from './amounts.js';
 import { type HiddenKind, codePattern, markDates, normalizeText, showsWholeAmount } from './detect.js';
@@ -63,19 +66,21 @@ const HOUR = 60 * 60 * 1000;
  * grouping or case, with Crockford look-alikes (O for 0, I or L for 1), as Task 7 keeps it, also
  * with spaces around its dashes and wrapped onto the next line (review N1). A date is in range when
  * any reading of it is a day that overlaps `earliest..latest` in some time zone (UTC-12 to UTC+14).
+ * `takenAt` is the photo's own time from the poster's device (`proof.attached` `photoTakenAt`, owner G16), combined
+ * with the screenshot's dates by `combineDates` (out of range when either is; lead default pending
+ * owner p11-140); with an unreadable screenshot it alone decides.
  * The name is `visible` only after a sender label (review N3, see `senderNameShown`).
  */
-export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: HiddenKind[]): ProofCheck {
+export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: HiddenKind[], takenAt: Date | null = null): ProofCheck {
   const code = normalizeTradeCode(expected.tradeCode);
   if (code === null) throw new RangeError('expected.tradeCode is not a trade code');
-  const earliest = expected.earliest.getTime();
-  const latest = expected.latest.getTime();
-  if (!Number.isFinite(earliest) || !Number.isFinite(latest) || earliest > latest) throw new RangeError('expected.earliest..latest is not a range');
+  const { earliest, latest } = dateRange(expected);
 
   const nameHidden = hidden.includes('name');
-  const readable = words.filter((w) => w.conf >= MIN_CONF && w.text.trim().length > 0).length >= MIN_WORDS;
+  const readable = isReadable(words);
   if (!readable) {
-    return { readable, amount: { status: 'not-found', seen: null }, reference: 'not-found', date: 'not-found', name: nameHidden ? 'hidden' : 'not-found' };
+    const date = combineDates(takenAt === null ? 'not-found' : photoDateStatus(takenAt, earliest, latest), 'not-found');
+    return { readable, amount: { status: 'not-found', seen: null }, reference: 'not-found', date, name: nameHidden ? 'hidden' : 'not-found' };
   }
 
   const normalized = words.map((w) => ({ ...w, text: normalizeText(w.text) }));
@@ -84,7 +89,7 @@ export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: Hi
   // A whole amount with no marker that Task 7 keeps clear (`Total 250000`, owner Q17) is the amount
   // too, read by Task 7's own rule (review RV4-M4).
   const keep = { tradeCode: expected.tradeCode, fiatCents: expected.fiatCents, exponent: expected.exponent };
-  if (!amounts.includes(expected.fiatCents) && texts.some((t) => showsWholeAmount(t, keep))) amounts.push(expected.fiatCents);
+  if (!amounts.includes(expected.fiatCents) && texts.some((t, i) => showsWholeAmount(t, keep, texts[i - 1]))) amounts.push(expected.fiatCents);
   const amount: ProofCheck['amount'] = amounts.includes(expected.fiatCents)
     ? { status: 'match', seen: expected.fiatCents }
     : amounts.length > 0
@@ -94,9 +99,7 @@ export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: Hi
   const codeRe = codePattern(code);
   const reference = codeCandidates(texts).some((t) => hasMatch(t, codeRe)) ? 'match' : 'not-found';
 
-  const days = texts.flatMap((t) => datesIn(t, new Date(latest).getUTCFullYear()));
-  const date: ProofCheck['date'] =
-    days.length === 0 ? 'not-found' : days.some((d) => d - 14 * HOUR <= latest && d + 24 * HOUR + 12 * HOUR >= earliest) ? 'in-range' : 'out-of-range';
+  const date = combineDates(takenAt === null ? 'not-found' : photoDateStatus(takenAt, earliest, latest), screenshotDateStatus(texts, earliest, latest));
 
   const name: ProofCheck['name'] = nameHidden
     ? 'hidden'
@@ -105,6 +108,67 @@ export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: Hi
       : 'not-found';
 
   return { readable, amount, reference, date, name };
+}
+
+function isReadable(words: OcrWord[]): boolean {
+  return words.filter((w) => w.conf >= MIN_CONF && w.text.trim().length > 0).length >= MIN_WORDS;
+}
+
+function dateRange(w: { earliest: Date; latest: Date }): { earliest: number; latest: number } {
+  const earliest = w.earliest.getTime();
+  const latest = w.latest.getTime();
+  if (!Number.isFinite(earliest) || !Number.isFinite(latest) || earliest > latest) throw new RangeError('expected.earliest..latest is not a range');
+  return { earliest, latest };
+}
+
+/** The dates the screenshot shows: in range when any reading is a day that overlaps the window in some zone. */
+function screenshotDateStatus(texts: string[], earliest: number, latest: number): ProofCheck['date'] {
+  const days = texts.flatMap((t) => datesIn(t, new Date(latest).getUTCFullYear()));
+  if (days.length === 0) return 'not-found';
+  return days.some((d) => d - 14 * HOUR <= latest && d + 24 * HOUR + 12 * HOUR >= earliest) ? 'in-range' : 'out-of-range';
+}
+
+/**
+ * The photo's own time (owner G16), a UTC instant: in range within 14 hours of the window either
+ * side, the same zone slack the screenshot's dates get (a photo with no offset of its own was turned
+ * into UTC with the poster's device zone, which may not be the bank's).
+ */
+function photoDateStatus(takenAt: Date, earliest: number, latest: number): ProofCheck['date'] {
+  const t = takenAt.getTime();
+  if (!Number.isFinite(t)) return 'not-found';
+  return t >= earliest - 14 * HOUR && t <= latest + 14 * HOUR ? 'in-range' : 'out-of-range';
+}
+
+/**
+ * Lead default pending owner p11-140 (review 2026-11-10 finding 2): the proof is out of range when
+ * EITHER the photo's own time or a date on the screenshot is out of range; the photo's time decides
+ * only when the screenshot shows no date. A fresh metadata time is trivial to get for an old receipt
+ * (screenshot it again, photograph the screen, crop it), and on the seller's side it is the buyer's
+ * claim. `false` would restore the 7 Nov build (the photo's time, when there is one, overrides).
+ */
+export const DATE_OUT_OF_RANGE_IF_EITHER = true;
+
+/** One date verdict from the photo's own time and the screenshot's dates (see `DATE_OUT_OF_RANGE_IF_EITHER`). */
+function combineDates(photo: ProofCheck['date'], screenshot: ProofCheck['date']): ProofCheck['date'] {
+  if (!DATE_OUT_OF_RANGE_IF_EITHER) return photo !== 'not-found' ? photo : screenshot;
+  if (photo === 'out-of-range' || screenshot === 'out-of-range') return 'out-of-range';
+  if (photo === 'in-range' || screenshot === 'in-range') return 'in-range';
+  return 'not-found';
+}
+
+/**
+ * The proof's date as the poster's device sees it before posting (owner G16, Q42): the photo's own
+ * time (`takenAt`, from `readPhotoTime`, in UTC) and the dates OCR reads on the screenshot, combined
+ * as `checkProof` combines them, so both always give the same verdict. `earliest` and `latest` are
+ * `checkProof`'s. `'not-found'`: the poster is warned and may still post (`posterDateLine`);
+ * `'out-of-range'`: the send is blocked by item 63's pop-up (Q42).
+ */
+export function proofDate(words: OcrWord[], takenAt: Date | null, w: { earliest: Date; latest: Date }): ProofCheck['date'] {
+  const { earliest, latest } = dateRange(w);
+  const photo = takenAt === null ? 'not-found' : photoDateStatus(takenAt, earliest, latest);
+  if (!isReadable(words)) return combineDates(photo, 'not-found');
+  const texts = linesOf(words.map((x) => ({ ...x, text: normalizeText(x.text) }))).map((l) => l.text);
+  return combineDates(photo, screenshotDateStatus(texts, earliest, latest));
 }
 
 function hasMatch(text: string, re: RegExp): boolean {
@@ -246,9 +310,11 @@ function formatMinor(minor: bigint, currency: string, exponent: number): string 
 }
 
 /**
- * The card's lines in the board's order (amount, reference, name), then always the board's closing
- * line. An unreadable screenshot gets only the "couldn't read" line before it. No line is shown for
- * an amount or name that was not found, nor for the date (the plan gives no copy; PENDING LEAD).
+ * The card's lines in the board's order (amount, reference, name), then the date line, then always
+ * the board's closing line. An unreadable screenshot gets only the "couldn't read" line and the date
+ * line before it. No line is shown for an amount or name that was not found, nor for a date in range.
+ * The date line (owner G16, Q42): a date that could not be found warns the seller to take extra care
+ * without calling the proof invalid; a date outside the trade asks for a fresh screenshot.
  */
 export function proofCardLines(c: ProofCheck, t: CardTrade): CardLine[] {
   const lines: CardLine[] = [];
@@ -275,6 +341,8 @@ export function proofCardLines(c: ProofCheck, t: CardTrade): CardLine[] {
       lines.push({ tone: 'caution', text: 'Shows a sender name. Check it matches the sender in your bank.' });
     }
   }
+  const date = sellerDateLine(c.date, t.buyer);
+  if (date !== null) lines.push(date);
   // The board's closing line, always last. Its tone is a technical call: the board shows it as muted
   // text, and the type has only 'escrow' and 'caution'.
   lines.push({
@@ -282,4 +350,36 @@ export function proofCardLines(c: ProofCheck, t: CardTrade): CardLine[] {
     text: `Look for a ${t.total} payment with the note ${t.code} in your bank. Screenshot checks catch mistakes, but only your bank proves the money arrived.`,
   });
   return lines;
+}
+
+// TODO(design): the date lines below are placeholders until the designer words them (owner G16).
+
+function sellerDateLine(date: ProofCheck['date'], buyer: string): CardLine | null {
+  if (date === 'not-found') {
+    // COPY-UNSIGNED (owner G16)
+    return { tone: 'caution', text: "We couldn't confirm when this proof was made. That doesn't make it invalid, but take extra care with this trade." };
+  }
+  if (date === 'out-of-range') {
+    // COPY-UNSIGNED (owner Q42)
+    return { tone: 'caution', text: `This proof is dated outside this trade. Ask ${buyer} for a fresh screenshot.` };
+  }
+  return null;
+}
+
+/**
+ * The poster's line about the proof's date before posting (`proofDate`), or null when it is in range.
+ * No date found: posting stays allowed (owner G16). Out of range: the send is blocked (item 63's
+ * `ProofNotCurrent`, Q42 "No, ask for a fresh screenshot"; lead default pending owner p11-143), and
+ * this line says why.
+ */
+export function posterDateLine(date: ProofCheck['date']): CardLine | null {
+  if (date === 'not-found') {
+    // COPY-UNSIGNED (owner G16)
+    return { tone: 'caution', text: "We couldn't detect the date of this proof. You can still post it, and the seller will be told to take extra care." };
+  }
+  if (date === 'out-of-range') {
+    // COPY-UNSIGNED (owner Q42; lead default pending owner p11-143: the send is blocked)
+    return { tone: 'caution', text: 'This screenshot is dated outside this trade. Take a fresh screenshot of the payment.' };
+  }
+  return null;
 }

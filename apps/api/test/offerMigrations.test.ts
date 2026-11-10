@@ -1,5 +1,8 @@
 // Migrations that rewrite existing offers: 315 (owner 8 Nov: "Minimum completed trades" is no
-// minimum, 5, 10, 25 or 50; any other value goes down to the next lower allowed one).
+// minimum, 5, 10, 25 or 50; any other value goes down to the next lower allowed one), 345 (J-02: no
+// new fixed-price offer) and 490 (J-16: flexible offers move each offer's currency, range, margin,
+// rule and method into their own tables). The 315 and 345 tests stop before 490, which drops the
+// columns they read; 490's own test checks what becomes of them.
 import { copyFile, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +22,17 @@ async function migratedBefore(before: string, run: (db: pg.Pool) => Promise<void
     await run(db);
   } finally {
     await db.end();
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/** Applies the migrations not yet applied up to (not including) `before`. */
+async function migrateUpTo(db: pg.Pool, before: string): Promise<void> {
+  const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
+  try {
+    for (const f of (await readdir(MIGRATIONS_DIR)).filter((f) => f < before)) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
+    await migrate(db, dir);
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 }
@@ -54,7 +68,7 @@ describe('migration 315: minimum completed trades is no minimum, 5, 10, 25 or 50
       const ids = new Map<string, number | null>();
       for (const [before, after] of cases) ids.set(await offer(db, a, before), after);
       await db.query(`alter table offers add constraint offers_min_trades_check check (min_trades >= 0)`);
-      await migrate(db);
+      await migrateUpTo(db, '490');
       const { rows } = await db.query<{ id: string; min_trades: number | null }>('select id, min_trades from offers');
       expect(rows).toHaveLength(cases.length);
       for (const r of rows) expect(r.min_trades, r.id).toBe(ids.get(r.id));
@@ -82,7 +96,7 @@ describe('migration 345: no new fixed-price offer (owner Q1, 6 Nov: market ± % 
         [a],
       );
       const legacy = rows[0]!.id;
-      await migrate(db);
+      await migrateUpTo(db, '490');
       const kept = await db.query(`select price_mode, fixed_cents_per_xmr::text, margin_bps, status from offers where id = $1`, [legacy]);
       expect(kept.rows).toEqual([{ price_mode: 'fixed', fixed_cents_per_xmr: '34000', margin_bps: null, status: 'live' }]);
       await offer(db, a, 5);
@@ -98,6 +112,53 @@ describe('migration 345: no new fixed-price offer (owner Q1, 6 Nov: market ± % 
       await expect(db.query(`update offers set price_mode = 'fixed', margin_bps = null, fixed_cents_per_xmr = 1 where id = $1`, [m])).rejects.toThrow(
         /offers_market_only/,
       );
+    });
+  });
+});
+
+describe('migration 490: flexible offers (J-16)', () => {
+  it('every offer becomes one currency, one band in its own unit, one method with no instructions; the moved columns are gone', async () => {
+    await migratedBefore('490', async (db) => {
+      const a = await account(db);
+      const ins = async (cols: string, vals: string): Promise<string> =>
+        (await db.query<{ id: string }>(`insert into offers (account_id, side, ${cols}, terms, status, created_at, updated_at) values ($1, 'sell', ${vals}, '', 'live', now(), now()) returning id`, [a])).rows[0]!.id;
+      const fiat = await ins('method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades', `'ZELLE', 'EUR', 'market', 150, 5050, 200000, 10`);
+      const xmr = await ins(
+        'method_id, currency, price_mode, margin_bps, amount_unit, min_atomic, max_atomic, min_trades',
+        `'REVOLUT', 'USD', 'market', -20, 'xmr', 500000000000, 3000000000000, null`,
+      );
+      // A fixed row from before 345: lift its check for this one insert.
+      await db.query('alter table offers drop constraint offers_market_only');
+      const fixed = await ins('method_id, currency, price_mode, fixed_cents_per_xmr, min_fiat_cents, max_fiat_cents, min_trades', `'ZELLE', 'USD', 'fixed', 34000, 1000, 9000, null`);
+      await migrate(db);
+      const tiers = await db.query(
+        `select offer_id, currency, position, min_amount::text, max_amount::text, margin_bps, min_trades, method_ids from offer_tiers t order by t.min_amount`,
+      );
+      expect(tiers.rows).toEqual([
+        { offer_id: fixed, currency: 'USD', position: 0, min_amount: '1000', max_amount: '9000', margin_bps: 0, min_trades: null, method_ids: null },
+        { offer_id: fiat, currency: 'EUR', position: 0, min_amount: '5050', max_amount: '200000', margin_bps: 150, min_trades: 10, method_ids: null },
+        { offer_id: xmr, currency: 'USD', position: 0, min_amount: '500000000000', max_amount: '3000000000000', margin_bps: -20, min_trades: null, method_ids: null },
+      ]);
+      const methods = await db.query(
+        `select m.offer_id, m.method_id, m.instructions, m.adjust_bps, p.currency, p.instructions as pair
+           from offer_methods m join offer_method_currencies p using (offer_id, method_id) order by m.method_id, p.currency`,
+      );
+      expect(methods.rows).toHaveLength(3);
+      for (const r of methods.rows) expect(r).toMatchObject({ instructions: '', adjust_bps: 0, pair: null });
+      // The old fixed row stays fixed (J-02's open question), and the moved columns are gone.
+      const kept = await db.query(`select price_mode, fixed_cents_per_xmr::text, amount_unit from offers where id = $1`, [fixed]);
+      expect(kept.rows).toEqual([{ price_mode: 'fixed', fixed_cents_per_xmr: '34000', amount_unit: 'fiat' }]);
+      const cols = await db.query<{ column_name: string }>(`select column_name from information_schema.columns where table_name = 'offers'`);
+      for (const gone of ['method_id', 'currency', 'margin_bps', 'min_fiat_cents', 'max_fiat_cents', 'min_atomic', 'max_atomic', 'min_trades']) {
+        expect(cols.rows.map((c) => c.column_name)).not.toContain(gone);
+      }
+      // Still no new fixed-price offer.
+      await expect(
+        db.query(`insert into offers (account_id, side, price_mode, fixed_cents_per_xmr, terms, status, created_at, updated_at) values ($1, 'sell', 'fixed', 1, '', 'live', now(), now())`, [a]),
+      ).rejects.toThrow(/offers_market_only/);
+      // Trades gained the locked instructions, empty for the trades from before.
+      const tcols = await db.query<{ column_default: string }>(`select column_default from information_schema.columns where table_name = 'trades' and column_name = 'method_instructions'`);
+      expect(tcols.rows[0]?.column_default).toBe("''::text");
     });
   });
 });

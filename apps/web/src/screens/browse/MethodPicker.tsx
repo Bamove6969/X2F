@@ -25,6 +25,7 @@ export function MethodPicker({
   title,
   sub,
   href,
+  upTo,
 }: {
   /** The methods with a live offer in the currency, in the chosen sort. */
   live: readonly MethodRow[];
@@ -35,7 +36,10 @@ export function MethodPicker({
   /** A method's line ("34 buyers paying in USD · up to $331.20"). */
   sub: (m: MethodRow) => string;
   href: (m: MethodRow) => string;
+  /** "This payment method can take up to 24 hours." (owner p9-4), or null when the API sent no time. */
+  upTo?: (m: MethodRow) => string | null;
 }) {
+  const upToOf = (m: MethodRow) => upTo?.(m) ?? null;
   const [open, setOpen] = useState(false);
   const nameId = useId();
   const subId = useId();
@@ -71,13 +75,18 @@ export function MethodPicker({
             <span id={subId} className="x2f-method__sub">
               {sub(value)}
             </span>
+            {upToOf(value) === null ? null : (
+              <span className="x2f-method__sub" data-part="up-to">
+                {upToOf(value)}
+              </span>
+            )}
           </span>
           <Icon name="chevron-right" size={18} />
         </Link>
       </div>
       <Sheet open={open} title={title} wide="dialog" handle initialFocus="input:checked" onClose={() => setOpen(false)}>
         <div className="x2f-method-pick__list" onClick={onClick} onKeyDown={onKeyDown}>
-          <ChoiceGroup look="card" label={title} part="method-option" options={live.map((m) => ({ value: m.id, label: m.name, note: sub(m) }))} value={value.id} onChange={onChange} />
+          <ChoiceGroup look="card" label={title} part="method-option" options={live.map((m) => ({ value: m.id, label: m.name, note: upToOf(m) === null ? sub(m) : `${sub(m)}. ${upToOf(m)}` }))} value={value.id} onChange={onChange} />
         </div>
       </Sheet>
     </>

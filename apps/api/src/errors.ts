@@ -86,6 +86,8 @@ export type ApiErrorCode =
   | 'ad-busy'
   | 'price-changed'
   | 'starter-limit'
+  // Owner p11-6: the launch cap on one trade's USD value (trades/launchCap.ts), at post and take.
+  | 'launch-cap'
   | 'offer-busy'
   // Plan 4, Task 5: a security-key tap that is missing, expired, used, another account's or for another intent.
   | 'tap-invalid'

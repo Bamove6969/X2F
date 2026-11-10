@@ -141,7 +141,13 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // input check on PostOffer ("an input check on the percentage box"), a field rule, not a refusal.
     // 59 -> 61 (pay-details 2b54fe67, batch 4): ChatPanel's payErrorText field hints ("has too many lines",
     // "can't have line breaks", "can't have tabs or hidden characters"), input checks on the payment-details boxes.
-    expect(notARefusal).toBeLessThanOrEqual(61);
+    // 61 -> 64 (flex-launch, J-16, 10 Nov 2026): PostOffer's band input checks in post/offerForm.ts (MIN_OVER_MAX
+    // "can't be more than the largest", the bands' gap line, a band's margin plus a method's change "can't pass 50%"):
+    // field rules the API's checkBands and rateFor share, not refusals.
+    // 64 -> 65 (owner item 64, 3 Nov 2026; proof pop-ups landed 10 Nov): screens/proof/ProofPrompts.tsx's
+    // "Our automated system was unable to detect the amount ..." is a check on the screenshot asking
+    // for an explanation; the proof can still be sent.
+    expect(notARefusal).toBeLessThanOrEqual(65);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

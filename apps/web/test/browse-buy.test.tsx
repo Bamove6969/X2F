@@ -60,8 +60,9 @@ describe('OfferCard on the buy side', () => {
 
   it("satoshi_ghost's offer reads its markup as a percentage of the market (owner Q1: no fixed-price offers)", () => {
     const { host } = card(byName('satoshi_ghost'));
-    expect(margin(host)!.textContent).toBe('+0.03%');
-    expect(label(host)).toBe('Vendor markup');
+    expect(margin(host)!.textContent).toBe('0.03%');
+    expect(label(host)).toBe('above market');
+    expect(host.querySelector('[data-part="markup"]')?.textContent).toBe('0.03% above market');
     // Above market costs the buyer more: not in the escrow (good) tone.
     expect(margin(host)!.hasAttribute('data-tone')).toBe(false);
   });
@@ -74,15 +75,17 @@ describe('OfferCard on the buy side', () => {
   it('50% below the market, the lowest an offer goes (owner F1), is good for the buyer', () => {
     const s = byName('satoshi_ghost');
     const { host } = card({ ...s, rate: 16495n, pricing: { mode: 'market', marginBps: -5000 } });
-    expect(margin(host)!.textContent).toBe('\u221250%');
+    expect(margin(host)!.textContent).toBe('50%');
+    expect(label(host)).toBe('below market');
     expect(margin(host)!.getAttribute('data-tone')).toBe('escrow');
   });
 
-  it('a 0% margin reads "At market"; with no price now (the feed is down) there is no markup', () => {
+  it('a 0% margin reads "at market" with no figure; with no price now (the feed is down) there is no markup', () => {
     const s = byName('satoshi_ghost');
     const at = card({ ...s, rate: MARKET, pricing: { mode: 'market', marginBps: 0 } }).host;
-    expect(margin(at)!.textContent).toBe('0%');
-    expect(label(at)).toBe('At market');
+    expect(margin(at)).toBeNull();
+    expect(label(at)).toBe('at market');
+    expect(at.querySelector('[data-part="markup"]')?.textContent).toBe('at market');
     expect(margin(card({ ...s, rate: null }, { market: null }).host)).toBeNull();
   });
 
@@ -90,7 +93,8 @@ describe('OfferCard on the buy side', () => {
     expect(margin(card(byName('kettle.moss')).host)!.hasAttribute('data-tone')).toBe(false);
     const k = byName('kettle.moss');
     const below = card({ ...k, pricing: { mode: 'market', marginBps: -50 } }).host;
-    expect(margin(below)!.textContent).toBe('\u22120.5%');
+    expect(margin(below)!.textContent).toBe('0.5%');
+    expect(below.querySelector('[data-part="markup"]')?.textContent).toBe('0.5% below market');
     expect(margin(below)!.getAttribute('data-tone')).toBe('escrow');
   });
 

@@ -11,7 +11,10 @@
 import { inflateSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  CleanError,
   ProofReceiveError,
+  assertClean,
+  cleanImage,
   RECEIVE_MAX_BYTES,
   RECEIVE_MAX_RENDER_BYTES,
   RECEIVE_MAX_SIDE,
@@ -22,7 +25,7 @@ import {
   readImageHeader,
   receiveProof,
 } from '../src/index.js';
-import { PNG_H, PNG_SIGNATURE, PNG_W, cleanJpeg, cleanPng, concat, metadataJpeg, metadataPng, pngChunk, pngRaw, webp, zlibStored } from './fixtures.js';
+import { PNG_H, PNG_SIGNATURE, PNG_W, cleanJpeg, cleanPng, concat, jpegCore, metadataJpeg, metadataPng, pngChunk, pngRaw, webp, zlibStored } from './fixtures.js';
 
 const latin1 = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt(0));
 const has = (bytes: Uint8Array, s: string): boolean => Buffer.from(bytes).includes(Buffer.from(s, 'latin1'));
@@ -113,6 +116,45 @@ function fixCrcs(b: Uint8Array): Uint8Array {
     at += 12 + len;
   }
   return out;
+}
+
+/**
+ * What the WebP cutter must hand the decoder (re-verify of f8c9fa78, F-R5): a RIFF/WEBP whose RIFF
+ * size is the file's length less 8 and whose chunks fill it exactly; only VP8X, ALPH, `VP8 ` and
+ * VP8L; VP8X first if present, of size 10, with no flag but alpha and its reserved bytes 0; exactly
+ * one image chunk; at most one ALPH, and only before a `VP8 ` chunk. Returns the chunk FourCCs.
+ */
+function expectPictureOnlyWebp(b: Uint8Array, what = 'webp'): string[] {
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  expect(String.fromCharCode(...b.subarray(0, 4)), what).toBe('RIFF');
+  expect(String.fromCharCode(...b.subarray(8, 12)), what).toBe('WEBP');
+  expect(v.getUint32(4, true), `${what}: RIFF size`).toBe(b.length - 8);
+  const seen: string[] = [];
+  let at = 12;
+  while (at < b.length) {
+    expect(at + 8, `${what}: chunk header at ${at}`).toBeLessThanOrEqual(b.length);
+    const fourcc = String.fromCharCode(...b.subarray(at, at + 4));
+    const size = v.getUint32(at + 4, true);
+    expect(['VP8X', 'ALPH', 'VP8 ', 'VP8L'], `${what}: chunk ${JSON.stringify(fourcc)}`).toContain(fourcc);
+    if (fourcc === 'VP8X') {
+      expect(seen, `${what}: VP8X first`).toEqual([]);
+      expect(size, `${what}: VP8X size`).toBe(10);
+      expect(b[at + 8]! & ~0x10, `${what}: VP8X flags`).toBe(0);
+      expect([...b.subarray(at + 9, at + 12)], `${what}: VP8X reserved`).toEqual([0, 0, 0]);
+    }
+    seen.push(fourcc);
+    at += 8 + size + (size & 1);
+  }
+  expect(at, `${what}: the chunks fill the file`).toBe(b.length);
+  const images = seen.filter((c) => c === 'VP8 ' || c === 'VP8L');
+  expect(images, `${what}: one image chunk`).toHaveLength(1);
+  const alph = seen.indexOf('ALPH');
+  expect(seen.filter((c) => c === 'ALPH').length, `${what}: ALPH count`).toBeLessThanOrEqual(1);
+  if (alph !== -1) {
+    expect(images[0], `${what}: ALPH only with VP8`).toBe('VP8 ');
+    expect(alph, `${what}: ALPH before the image`).toBeLessThan(seen.indexOf('VP8 '));
+  }
+  return seen;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -285,6 +327,227 @@ describe('receiveProof: a valid image', () => {
     const out = await receiveProof(riff(vp8l(RECEIVE_MAX_SIDE, 1)), { mime: 'image/webp', width: RECEIVE_MAX_SIDE, height: 1 }, deps().d);
     expect(out.width).toBe(2600);
   });
+});
+
+describe('receiveProof: only the picture reaches the decoder (review of 9 Nov 2026, F2)', () => {
+  // Browsers apply an Exif orientation tag when they decode: createImageBitmap's `imageOrientation:
+  // 'none'` is deprecated and read as `'from-image'`, and nothing else turns it off. So a tag that
+  // the sender never attested could turn or mirror the picture this device shows, and an ICC profile
+  // could recolour it. The decoder is therefore handed the picture with every metadata chunk or
+  // segment removed, and nothing more.
+  const jpegSegment = (marker: number, body: Uint8Array): Uint8Array =>
+    concat(Uint8Array.of(0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff), body);
+  /** A real Exif block (big-endian TIFF, one IFD entry): Orientation (0x0112) = 6, "rotate 90 degrees clockwise". */
+  const EXIF_ROTATED = jpegSegment(
+    0xe1,
+    concat(latin1('Exif\0\0MM\0*\0\0\0\x08'), Uint8Array.of(0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0)),
+  );
+  const SOI_EOI = [Uint8Array.of(0xff, 0xd8), Uint8Array.of(0xff, 0xd9)] as const;
+
+  it('a JPEG with an Exif orientation tag: the decoder sees no APP segment at all, and a clean image of the same size', async () => {
+    const [dqt, sof0, dht, dri, scan] = jpegCore();
+    const rotated = concat(SOI_EOI[0], EXIF_ROTATED, dqt!, sof0!, dht!, dri!, scan!, SOI_EOI[1]);
+    expect(has(rotated, 'Exif')).toBe(true);
+    const { d, decode } = deps();
+    await receiveProof(rotated, { mime: 'image/jpeg', width: 8, height: 8 }, d);
+    expect(decode).toHaveBeenCalledTimes(1);
+    const given = decode.mock.calls[0]![0];
+    expect(has(given, 'Exif')).toBe(false);
+    for (let i = 0; i + 1 < given.length; i++) expect(given[i] === 0xff && given[i + 1]! >= 0xe0 && given[i + 1]! <= 0xef, `APPn at ${i}`).toBe(false);
+    expect(readImageHeader(given)).toEqual({ mime: 'image/jpeg', width: 8, height: 8 });
+    expect(() => assertClean(given)).not.toThrow();
+  });
+
+  it('JPEG and PNG metadata (Exif, GPS, JFIF, XMP, ICC, text, Photoshop) never reaches the decoder', async () => {
+    for (const [bytes, declared] of [
+      [metadataJpeg(), { mime: 'image/jpeg', width: 8, height: 8 }],
+      [metadataPng(), PNG_DECL],
+    ] as const) {
+      const { d, decode } = deps();
+      await receiveProof(bytes, declared, d);
+      const given = decode.mock.calls[0]![0];
+      for (const s of ['Exif', 'GPS', 'JFIF', 'Photoshop', 'Jane Doe', 'Pixel 9', 'xmpmeta', 'Created with', 'tEXt', 'eXIf', 'iCCP', 'iTXt']) expect(has(given, s), s).toBe(false);
+      expect(readImageHeader(given)).toEqual(readImageHeader(bytes));
+      expect(() => assertClean(given)).not.toThrow();
+      expect(given).not.toBe(bytes);
+    }
+  });
+
+  it('a WebP: the EXIF, XMP and ICCP chunks go, the VP8X flags keep only alpha, and the RIFF size still fits the file', async () => {
+    const exif = webpChunk('EXIF', concat(latin1('MM\0*\0\0\0\x08'), Uint8Array.of(0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0)));
+    const xmp = webpChunk('XMP ', latin1('<x:xmpmeta>GPS</x:xmpmeta>'));
+    const icc = webpChunk('ICCP', latin1('profile'));
+    // Flags: ICC (0x20), alpha (0x10), Exif (0x08), XMP (0x04).
+    const extended = riff(vp8x(20, 10, 0x20 | 0x10 | 0x08 | 0x04), icc, vp8l(20, 10), exif, xmp);
+    const { d, decode } = deps();
+    await receiveProof(extended, { mime: 'image/webp', width: 20, height: 10 }, d);
+    const given = decode.mock.calls[0]![0];
+    for (const s of ['EXIF', 'XMP ', 'ICCP', 'xmpmeta', 'GPS', 'profile']) expect(has(given, s), s).toBe(false);
+    expect(has(given, 'VP8X')).toBe(true);
+    expect(has(given, 'VP8L')).toBe(true);
+    expect(given[20]).toBe(0x10);
+    // The RIFF size is recomputed for the shorter file (F-R5: checked here directly, not only through the header walk).
+    expect(new DataView(given.buffer, given.byteOffset).getUint32(4, true)).toBe(given.length - 8);
+    expect(given.length).toBeLessThan(extended.length);
+    expect(expectPictureOnlyWebp(given)).toEqual(['VP8X', 'VP8L']);
+    expect(readImageHeader(given)).toEqual({ mime: 'image/webp', width: 20, height: 10 });
+
+    // A simple-format WebP is one image chunk already: handed over as it is, in a copy.
+    const simple = riff(vp8l(4, 4));
+    const s = deps();
+    await receiveProof(simple, { mime: 'image/webp', width: 4, height: 4 }, s.d);
+    const givenSimple = s.decode.mock.calls[0]![0];
+    expect(Buffer.from(givenSimple).equals(Buffer.from(simple))).toBe(true);
+    expect(givenSimple).not.toBe(simple);
+  });
+});
+
+describe('receiveProof: the WebP cutter (re-verify of f8c9fa78, F-R3)', () => {
+  const ALPHA = 0x10;
+  /** The chunk FourCCs of a RIFF/WEBP file, in order. */
+  const fourccs = (b: Uint8Array): string[] => {
+    const out: string[] = [];
+    for (let at = 12; at + 8 <= b.length; ) {
+      out.push(String.fromCharCode(...b.subarray(at, at + 4)));
+      const size = new DataView(b.buffer, b.byteOffset).getUint32(at + 4, true);
+      at += 8 + size + (size & 1);
+    }
+    return out;
+  };
+  const decl = { mime: 'image/webp', width: 20, height: 10 } as const;
+
+  it('writes the VP8X reserved bytes as 0, whatever they came as', async () => {
+    const x = vp8x(20, 10, ALPHA);
+    x.set([0xaa, 0xbb, 0xcc], 9); // the 3 reserved bytes after the flags byte
+    const bytes = riff(x, webpChunk('ALPH', latin1('a1')), vp8(20, 10));
+    expect(bytes.subarray(21, 24)).toEqual(Uint8Array.of(0xaa, 0xbb, 0xcc));
+    const { d, decode } = deps();
+    await receiveProof(bytes, decl, d);
+    const given = decode.mock.calls[0]![0];
+    expect(given[20]).toBe(ALPHA);
+    expect(given.subarray(21, 24)).toEqual(new Uint8Array(3));
+    expect(bytes.subarray(21, 24)).toEqual(Uint8Array.of(0xaa, 0xbb, 0xcc)); // the caller's buffer is untouched
+  });
+
+  it('keeps one ALPH before a VP8 chunk; a second ALPH before it is dropped', async () => {
+    const one = deps();
+    await receiveProof(riff(vp8x(20, 10, ALPHA), webpChunk('ALPH', latin1('first')), vp8(20, 10)), decl, one.d);
+    expect(fourccs(one.decode.mock.calls[0]![0])).toEqual(['VP8X', 'ALPH', 'VP8 ']);
+
+    const two = deps();
+    await receiveProof(riff(vp8x(20, 10, ALPHA), webpChunk('ALPH', latin1('first')), webpChunk('ALPH', latin1('second')), vp8(20, 10)), decl, two.d);
+    const given = two.decode.mock.calls[0]![0];
+    expect(fourccs(given)).toEqual(['VP8X', 'ALPH', 'VP8 ']);
+    expect(has(given, 'first')).toBe(true);
+    expect(has(given, 'second')).toBe(false);
+  });
+
+  it('refuses an ALPH beside a VP8L chunk, or after the image chunk, before any decode', async () => {
+    for (const bytes of [
+      riff(vp8x(20, 10, ALPHA), webpChunk('ALPH', latin1('a1')), vp8l(20, 10)),
+      riff(vp8x(20, 10, ALPHA), vp8l(20, 10), webpChunk('ALPH', latin1('a1'))),
+      riff(vp8x(20, 10, ALPHA), vp8(20, 10), webpChunk('ALPH', latin1('a1'))),
+      riff(vp8x(20, 10, ALPHA), webpChunk('ALPH', latin1('a1')), vp8(20, 10), webpChunk('ALPH', latin1('a2'))),
+    ]) {
+      expect(readImageHeader(bytes)).toEqual({ mime: 'image/webp', width: 20, height: 10 }); // the header walk accepts it
+      const { d, decode } = deps();
+      expect(await code(receiveProof(bytes, decl, d))).toBe('undecodable');
+      expect(decode).not.toHaveBeenCalled();
+    }
+  });
+});
+
+describe('receiveProof: transparency and colour-transform chunks are refused, not stripped (re-verify of f8c9fa78, Q2)', () => {
+  // Lead's ruling on owner question Q2: stripping PNG tRNS would turn transparent pixels opaque, and
+  // stripping JPEG APP14 changes how the decoder reads the components, so either would change which
+  // pixels this device shows. A received file carrying one is refused as `unsupported` (the sender's
+  // app redraws every proof and never writes either). gAMA, cHRM, sRGB and iCCP only shift the colours
+  // and are still stripped.
+  const jpegSegment = (marker: number, body: Uint8Array): Uint8Array =>
+    concat(Uint8Array.of(0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff), body);
+  /** Adobe APP14: "Adobe", version 100, flags0, flags1, transform 1 (YCbCr). */
+  const ADOBE = jpegSegment(0xee, concat(latin1('Adobe'), Uint8Array.of(0, 100, 0, 0, 0, 0, 1)));
+  const withSegment = (seg: Uint8Array, at: 'start' | 'middle'): Uint8Array => {
+    const [dqt, sof0, dht, dri, scan] = jpegCore();
+    const soi = Uint8Array.of(0xff, 0xd8);
+    const eoi = Uint8Array.of(0xff, 0xd9);
+    return at === 'start' ? concat(soi, seg, dqt!, sof0!, dht!, dri!, scan!, eoi) : concat(soi, dqt!, sof0!, seg, dht!, dri!, scan!, eoi);
+  };
+  const palette = (): Uint8Array =>
+    concat(PNG_SIGNATURE, ihdr(PNG_W, PNG_H, 8, 3), pngChunk('PLTE', Uint8Array.of(255, 0, 0, 0, 0, 255)), pngChunk('tRNS', Uint8Array.of(0)), pngChunk('IDAT', zlibStored(new Uint8Array(PNG_H * (1 + PNG_W)))), IEND);
+
+  it('a PNG with tRNS (truecolour or palette) is unsupported, never decoded', async () => {
+    for (const bytes of [png(PNG_W, PNG_H, pngRaw(), pngChunk('tRNS', Uint8Array.of(0, 0, 0, 0, 0, 0))), palette()]) {
+      expect(readImageHeader(bytes)).toEqual({ mime: 'image/png', width: PNG_W, height: PNG_H }); // a sound file
+      const { d, decode } = deps();
+      expect(await code(receiveProof(bytes, PNG_DECL, d))).toBe('unsupported');
+      expect(decode).not.toHaveBeenCalled();
+    }
+  });
+
+  it('a JPEG with APP14 (Adobe-tagged or not, wherever it sits) is unsupported, never decoded', async () => {
+    for (const bytes of [withSegment(ADOBE, 'start'), withSegment(ADOBE, 'middle'), withSegment(jpegSegment(0xee, latin1('NotAdobe')), 'start')]) {
+      expect(readImageHeader(bytes)).toEqual({ mime: 'image/jpeg', width: 8, height: 8 });
+      const { d, decode } = deps();
+      expect(await code(receiveProof(bytes, { mime: 'image/jpeg', width: 8, height: 8 }, d))).toBe('unsupported');
+      expect(decode).not.toHaveBeenCalled();
+    }
+  });
+
+  it('gAMA, cHRM, sRGB and iCCP are still stripped: the PNG is decoded without them', async () => {
+    const bytes = png(
+      PNG_W,
+      PNG_H,
+      pngRaw(),
+      pngChunk('gAMA', Uint8Array.of(0, 0, 0xb1, 0x8f)),
+      pngChunk('cHRM', new Uint8Array(32).fill(1)),
+      pngChunk('sRGB', Uint8Array.of(0)),
+      pngChunk('iCCP', concat(latin1('P3\0\0'), zlibStored(latin1('icc')))),
+    );
+    const { d, decode } = deps();
+    await receiveProof(bytes, PNG_DECL, d);
+    const given = decode.mock.calls[0]![0];
+    for (const t of ['gAMA', 'cHRM', 'sRGB', 'iCCP']) expect(has(given, t), t).toBe(false);
+    expect(() => assertClean(given)).not.toThrow();
+  });
+
+  it('the other JPEG APP segments (JFIF, Exif, Photoshop) and COM are still stripped, not refused', async () => {
+    const { d, decode } = deps();
+    await receiveProof(metadataJpeg(), { mime: 'image/jpeg', width: 8, height: 8 }, d);
+    expect(decode).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('receiveProof: a JPEG the header walk accepts but the sender\'s cleaner refuses (re-verify of f8c9fa78, F-R5)', () => {
+  // The header walk knows every frame type and DAC; cleanImage, the sender's allowlist, takes only
+  // Huffman SOF0-SOF2 with 1 or 3 components. Such a JPEG is `undecodable` before any decode.
+  const [dqt, sof0, dht, dri, scan] = jpegCore();
+  const soi = Uint8Array.of(0xff, 0xd8);
+  const eoi = Uint8Array.of(0xff, 0xd9);
+  const withFrame = (marker: number): Uint8Array => {
+    const f = sof0!.slice();
+    f[1] = marker;
+    return concat(soi, dqt!, f, dht!, dri!, scan!, eoi);
+  };
+  // SOF0 with nf = 4 (CMYK): 8-bit, 8 x 8, four components of 1x1 sampling on table 0.
+  const cmyk = concat(Uint8Array.of(0xff, 0xc0, 0, 8 + 12), Uint8Array.of(8, 0, 8, 0, 8, 4, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0, 4, 0x11, 0));
+  const dac = Uint8Array.of(0xff, 0xcc, 0, 4, 0x00, 0x10);
+  const cases: [string, Uint8Array][] = [
+    ['SOF3 (lossless)', withFrame(0xc3)],
+    ['SOF9 (arithmetic)', withFrame(0xc9)],
+    ['DAC', concat(soi, dqt!, sof0!, dac, dht!, dri!, scan!, eoi)],
+    ['CMYK (nf = 4)', concat(soi, dqt!, cmyk, dht!, dri!, scan!, eoi)],
+  ];
+
+  for (const [name, bytes] of cases) {
+    it(`${name}: undecodable, never decoded`, async () => {
+      expect(readImageHeader(bytes)).toEqual({ mime: 'image/jpeg', width: 8, height: 8 }); // the walk accepts it
+      expect(() => cleanImage(bytes)).toThrow(CleanError);
+      const { d, decode } = deps();
+      expect(await code(receiveProof(bytes, { mime: 'image/jpeg', width: 8, height: 8 }, d))).toBe('undecodable');
+      expect(decode).not.toHaveBeenCalled();
+    });
+  }
 });
 
 describe('receiveProof: refusals before any decode', () => {
@@ -557,6 +820,47 @@ describe('receiveProof: fuzz', () => {
       expect(refused).toBeGreaterThan(1000);
     });
   }
+
+  it('WebP cutter: 4000 malformed-chunk mutations are refused with a ProofReceiveError or reach the decoder as the picture only (F-R5)', async () => {
+    const odd = webpChunk('EVIL', concat(SCRIPT, latin1('x'))); // an unknown chunk of odd size, padded
+    const exif = webpChunk('EXIF', concat(latin1('MM\0*\0\0\0\x08'), Uint8Array.of(0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0)));
+    const xmp = webpChunk('XMP ', latin1('<x:xmpmeta>GPS</x:xmpmeta>'));
+    const icc = webpChunk('ICCP', latin1('profile'));
+    const x = vp8x(24, 16, 0x3c);
+    x.set([0xaa, 0xbb, 0xcc], 9);
+    const webpSeeds: [string, Uint8Array][] = [
+      ['lossy+alpha', riff(x, icc, webpChunk('ALPH', latin1('alpha-one')), webpChunk('ALPH', latin1('alpha-two')), vp8(24, 16), exif, xmp, odd)],
+      ['lossless', riff(x, icc, vp8l(24, 16), exif, odd, xmp)],
+    ];
+    const r = rng(0xf8c9fa78);
+    let reached = 0;
+    let refused = 0;
+    for (const [name, src] of webpSeeds) {
+      // The seed itself is accepted, and cut down to the picture.
+      const seed = deps();
+      await receiveProof(src, { mime: 'image/webp', width: 24, height: 16 }, seed.d);
+      expectPictureOnlyWebp(seed.decode.mock.calls[0]![0], `${name} seed`);
+      for (let i = 0; i < 2000; i++) {
+        const b = mutate(src, r);
+        const { d, decode, close, opened } = deps();
+        try {
+          await receiveProof(b, declaredFor(b, 'image/webp', src), d);
+          reached++;
+        } catch (e) {
+          expect(e, `${name} #${i}`).toBeInstanceOf(ProofReceiveError);
+          refused++;
+        }
+        for (const [given] of decode.mock.calls) {
+          expect(given, `${name} #${i}: a fresh buffer`).not.toBe(b);
+          expectPictureOnlyWebp(given, `${name} #${i}`);
+        }
+        expect(close).toHaveBeenCalledTimes(opened.n);
+      }
+    }
+    expect(reached + refused).toBe(4000);
+    expect(reached).toBeGreaterThan(100); // the walk is really exercised, not only the refusals
+    expect(refused).toBeGreaterThan(1000);
+  });
 
   it('polyglot fuzz: random script-like bytes appended to every valid image are always refused', async () => {
     const r = rng(42);

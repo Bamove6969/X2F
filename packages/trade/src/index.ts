@@ -44,10 +44,12 @@ export {
 export { SETTLE_KINDS, payoutsFor, sweepMinimums, type PayoutFacts, type RulingKind, type SettleKind } from './payouts.js';
 export { moneroUri } from './moneroUri.js';
 export { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
+export { LAUNCH_TRADE_CAP_USD_CENTS } from './limits.js';
 export {
   CLIENT_EVENTS,
   CLOSED_STATES,
   MAX_CONFIRM_WINDOW_MIN,
+  MAX_PAY_WINDOW_MIN,
   SYSTEM_EVENTS,
   TradeRuleError,
   apply,
@@ -127,6 +129,33 @@ export {
   type RangeBoth,
   type RangeCheck,
 } from './offerRange.js';
+export {
+  ADJUST_MAX_BPS,
+  ADJUST_MIN_BPS,
+  ADJUST_STEP_BPS,
+  BAND_DIFFER_DEFAULT,
+  BAND_MIN_TRADES,
+  MAX_BANDS,
+  MAX_CURRENCIES,
+  MAX_METHODS,
+  adjustAllowed,
+  bandsDiffer,
+  bandsToTiers,
+  checkBands,
+  headlineTier,
+  pickTier,
+  tierHolds,
+  tierRange,
+  tierRate,
+  type Band,
+  type BandDifference,
+  type BandsRefusal,
+  type MinTrades,
+  type TakeSizes,
+  type Tier,
+  type TierPick,
+} from './flexOffer.js';
+export { TOP_CURRENCIES, currencyChoices, currencyFlag, type CurrencyChoice } from './currencyChoices.js';
 export {
   SIGNAL_MAX_ADDRESS,
   SIGNAL_SENDERS,

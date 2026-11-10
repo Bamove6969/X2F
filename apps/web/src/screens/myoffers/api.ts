@@ -31,7 +31,13 @@ export interface MyOffer {
   maxFiatCents: bigint | null;
   minTrades: number;
   country?: string;
+  /** J-16: every currency of the offer in the poster's order (`currency` is the first). */
+  currencies: string[];
+  /** J-16: every payment method's name in the poster's order (`methodName` is the first). */
+  methodNames: string[];
   status: OfferState;
+  /** The buyer's time to pay with this method, in minutes (owner p9-6); missing from an older API. */
+  payWindowMin?: number;
   /** A live offer nobody can see right now, and why (review M4). */
   hidden?: (typeof HIDDEN_REASONS)[number];
 }
@@ -82,6 +88,27 @@ function parsePricing(v: unknown): MyOffer['pricing'] {
   throw shape();
 }
 
+/** J-16's `currencies`: `{ currency, rate, tiers }[]`, read for the codes; absent (before J-16): the one `currency`. */
+function currencyList(v: unknown, first: string): string[] {
+  if (v === undefined) return [first];
+  if (!Array.isArray(v) || v.length === 0) throw shape();
+  return v.map((c: unknown) => {
+    if (!isRecord(c) || !('rate' in c) || !Array.isArray(c.tiers)) throw shape();
+    return str(c.currency);
+  });
+}
+
+/** J-16's `methods`: `{ methodId, methodName, … }[]`, read for the names; absent (before J-16): the one `methodName`. */
+function methodNames(v: unknown, first: string): string[] {
+  if (v === undefined) return [first];
+  if (!Array.isArray(v) || v.length === 0) throw shape();
+  return v.map((m: unknown) => {
+    if (!isRecord(m)) throw shape();
+    str(m.methodId);
+    return str(m.methodName);
+  });
+}
+
 export function parseMyOffers(raw: unknown): MyOffer[] {
   if (!Array.isArray(raw)) throw shape();
   return raw.map((o: unknown) => {
@@ -99,9 +126,15 @@ export function parseMyOffers(raw: unknown): MyOffer[] {
       pricing: parsePricing(o.pricing),
       ...amounts(o),
       minTrades: o.minTrades ?? 0,
+      currencies: currencyList(o.currencies, str(o.currency)),
+      methodNames: methodNames(o.methods, str(o.methodName)),
       status: state(o.status),
     };
     if (o.country !== undefined) out.country = str(o.country);
+    if (o.payWindowMin !== undefined) {
+      if (typeof o.payWindowMin !== 'number' || !Number.isInteger(o.payWindowMin) || o.payWindowMin <= 0) throw shape();
+      out.payWindowMin = o.payWindowMin;
+    }
     if (o.hidden !== undefined) {
       const hidden = HIDDEN_REASONS.find((h) => h === o.hidden);
       if (hidden === undefined) throw shape();

@@ -19,8 +19,10 @@ export { Icon, type IconName } from '../../../web/src/ui/icons.js';
 export { Notice } from '../../../web/src/ui/Notice.js';
 export { Sheet } from '../../../web/src/ui/Sheet.js';
 export { Switch } from '../../../web/src/ui/Switch.js';
-// The News page's message card (apps/web, Plan 4 Task 28): NewsEditor's preview is the reader's card.
+// News (apps/web, Plan 4 Task 28): the message card NewsEditor lists the published messages with, and the
+// News page's own post for its preview, "As traders will see it" (design final call 10 Nov 2026).
 export { NewsMessage, type NewsItem } from '../../../web/src/screens/NewsMessage.js';
+export { NewsPost } from '../../../web/src/screens/NewsPost.js';
 // The Terms (owner 9 Nov 2026, p11-14: staff sign too): the trader app's Terms text and its version,
 // never a copy, and its signature pad (design 9 Nov, p11-15, canvas ea2a9ca8), for the invite's Terms step.
 export { SignaturePad } from '../../../web/src/screens/setup/SignaturePad.js';

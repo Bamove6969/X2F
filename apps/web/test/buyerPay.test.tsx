@@ -671,8 +671,10 @@ describe('buyer cancel (spec 2.3; owner G56, g67)', () => {
     expect(sheet()!.textContent).toContain(
       "The 1.250000 XMR in escrow is returned and this trade closes. Be sure before you cancel. Don't send any money after you cancel. Already paid? Don't cancel: tap I've paid instead.",
     );
-    // T-049 (owner p5-2): the body never names the seller.
+    // T-049 (owner p5-2): the body never names the seller. Design final call 10 Nov: with the escrow
+    // held this is the escrow-held version, never the unfunded line (TradeFund's, tradeFund.test.tsx).
     expect(sheet()!.textContent).not.toContain('satoshi_ghost');
+    expect(sheet()!.textContent).not.toContain('Nothing is in escrow yet');
     expect(sheet()!.querySelector('[data-username]')).toBeNull();
     // The board's emphasis: the amount in mono, XMR and "I've paid" in 600.
     expect(sheet()!.querySelector('.x2f-mono')?.textContent).toBe('1.250000');

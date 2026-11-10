@@ -101,6 +101,28 @@ describe('closeInactiveAccounts (Q77)', () => {
     expect(await liveSessions(t.id)).toBe(0);
   });
 
+  it("J-23 (lead 10 Nov): the close deletes the account's chat-key envelopes in its own transaction; another account's stay", async () => {
+    const t = await vendor();
+    // Logged in a day before the close is due for `t`: not due itself.
+    setNow(at(INACTIVE_MS - DAY));
+    const other = await trader();
+    const env = (accountId: string) =>
+      deps.db.query(
+        `insert into chat_key_envelopes (account_id, recipient_public, sealed, epoch, created_at, expires_at) values ($1, $2, $3, 0, $4, $5)`,
+        [accountId, Buffer.alloc(32, 7), Buffer.alloc(80, 9), START, at(INACTIVE_MS + DAY)],
+      );
+    await env(t.id);
+    await env(other.id);
+    const count = async (id: string) => (await deps.db.query<{ n: number }>('select count(*)::int as n from chat_key_envelopes where account_id = $1', [id])).rows[0]!.n;
+    await closeDueAccounts(deps, at(INACTIVE_MS - 1));
+    expect(await count(t.id)).toBe(1);
+    expect(await closeDueAccounts(deps, at(INACTIVE_MS))).toBeGreaterThanOrEqual(1);
+    expect((await row(t.id)).closed_reason).toBe('inactive');
+    expect(await count(t.id)).toBe(0);
+    expect((await row(other.id)).closed_at).toBeNull();
+    expect(await count(other.id)).toBe(1);
+  });
+
   it("owner G14: a closed vendor's PGP key can go on a new account (its key is released); its names stay taken", async () => {
     const t = await vendor();
     const key = await genKey();
@@ -114,8 +136,7 @@ describe('closeInactiveAccounts (Q77)', () => {
 
   it('a closed vendor cannot log in (403 account-disabled), and its live offer is no longer listed', async () => {
     const t = await vendor();
-    const offerId = await seedOffer(deps, t.id, 'seller');
-    await deps.db.query("update offers set status = 'live', method_id = 'ZELLE' where id = $1", [offerId]);
+    const offerId = await seedOffer(deps, t.id, 'seller', { methodId: 'ZELLE', status: 'live' });
     const other = await trader();
     expect((await other.browser.get(`/v1/offers/${offerId}`)).statusCode).toBe(200);
     await closeDueAccounts(deps, at(INACTIVE_MS));
@@ -276,8 +297,7 @@ describe('lead vendor review item 3 / security review 8 Nov M4: takes, closes an
 
   it('a close that holds the account lock wins: the take waiting on it finds the poster closed (404) and starts no trade', async () => {
     const t = await vendor();
-    const offerId = await seedOffer(deps, t.id, 'seller');
-    await deps.db.query("update offers set status = 'live', method_id = 'ZELLE' where id = $1", [offerId]);
+    const offerId = await seedOffer(deps, t.id, 'seller', { methodId: 'ZELLE', status: 'live' });
     const when = at(INACTIVE_MS);
     setNow(when);
     const taker = await trader(); // logged in now, so its session is live at the take
@@ -287,7 +307,7 @@ describe('lead vendor review item 3 / security review 8 Nov M4: takes, closes an
       await c.query('select id from accounts where id = $1 for update', [t.id]);
       await c.query("update accounts set disabled_at = $2, closed_at = $2, closed_reason = 'inactive' where id = $1", [t.id, when]);
       const taking = taker.browser.post(`/v1/offers/${offerId}/take`, {
-        amountAtomic: '100000000000', walletId: '00000000-0000-4000-8000-000000000001', centsPerXmr: '30000', fiatCents: '3000',
+        amountAtomic: '100000000000', walletId: '00000000-0000-4000-8000-000000000001', centsPerXmr: '30000', fiatCents: '3000', methodId: 'ZELLE', currency: 'USD',
       });
       await untilBlocked();
       await c.query('commit');

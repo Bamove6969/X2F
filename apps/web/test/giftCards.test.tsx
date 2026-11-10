@@ -12,30 +12,46 @@ import { GIFT_CARD_COPY, giftCardEvidenceText, giftCardTermText } from '../src/s
 import { CURRENCY_NOT_CARD, DEFAULT_FORM, GIFT_CARD_TERMS_UNTICKED, validate, type FormState } from '../src/screens/post/offerForm.js';
 import { fire, render } from './render.js';
 
-const form = (over: Partial<FormState> = {}): FormState => ({ ...DEFAULT_FORM, methodId: 'STEAM_GIFT_CARD', min: '50', max: '2000', unit: 'fiat', country: 'US', ...over });
+/** A fiat offer in `currencies` (one band 50-2,000 each) paid by a Steam card from the US (J-16's form shape). */
+const form = (over: Partial<FormState> = {}, currencies: string[] = ['USD'], methodId = 'STEAM_GIFT_CARD'): FormState => ({
+  ...DEFAULT_FORM,
+  unit: 'fiat',
+  currencies,
+  bands: Object.fromEntries(currencies.map((c, i) => [c, [{ key: i + 1, min: '50', max: '2000', marginSide: 'above', marginPct: '0.5', minTrades: null }]])),
+  methods: [{ methodId, adjustBps: 0, same: true, instructions: '', byCurrency: {} }],
+  country: 'US',
+  ...over,
+});
 const all = (role: GiftCardRole) => new Set<string>(GIFT_CARD_TERMS[role]);
+const giftCard = (id: string) => id !== 'ZELLE';
 
 describe('the post form (J-17)', () => {
-  it("the card's currency follows its country (T-081)", () => {
-    const r = validate(form({ country: 'DE', currency: 'USD' }), { giftCard: true, giftCardTicked: all('checker') });
+  it("the card's currency follows its country (T-081): every currency the card method is offered in", () => {
+    const r = validate(form({ country: 'DE' }), { giftCard, giftCardTicked: all('checker') });
     expect(r.body).toBeUndefined();
-    expect(r.errors).toEqual({ currency: CURRENCY_NOT_CARD });
-    expect(validate(form({ country: 'DE', currency: 'EUR' }), { giftCard: true, giftCardTicked: all('checker') }).errors).toEqual({});
-    // Not a gift card: any listed currency.
-    expect(validate(form({ methodId: 'ZELLE', country: '', currency: 'EUR' }), { giftCard: false }).errors).toEqual({});
+    expect(r.errors).toEqual({ currencies: CURRENCY_NOT_CARD });
+    expect(validate(form({ country: 'DE' }, ['EUR']), { giftCard, giftCardTicked: all('checker') }).errors).toEqual({});
+    // J-16: the form offers every method in every picked currency, so with a card method on the
+    // offer every picked currency must be the card's country's (lead ruling, 10 Nov).
+    expect(validate(form({}, ['USD', 'EUR']), { giftCard, giftCardTicked: all('checker') }).errors).toEqual({ currencies: CURRENCY_NOT_CARD });
+    // Panama's cards may be in US dollars (ISO 4217 lists both legal tenders).
+    expect(validate(form({ country: 'PA' }), { giftCard, giftCardTicked: all('checker') }).errors).toEqual({});
+    // Not a gift card: any listed currencies.
+    expect(validate(form({ country: '' }, ['USD', 'EUR'], 'ZELLE'), { giftCard }).errors).toEqual({});
   });
 
   it("the poster ticks every term of their side (a sell ad's poster checks the card, a buy ad's sends it); the body carries the version (F13)", () => {
     // Sell XMR: the poster is the seller, who checks the card.
-    const sell = validate(form(), { giftCard: true, giftCardTicked: all('sender') });
+    const sell = validate(form(), { giftCard, giftCardTicked: all('sender') });
     expect(sell.errors).toEqual({ giftCardTerms: GIFT_CARD_TERMS_UNTICKED });
-    const sold = validate(form(), { giftCard: true, giftCardTicked: all('checker') });
+    const sold = validate(form(), { giftCard, giftCardTicked: all('checker') });
     expect(sold.body?.giftCardTerms).toBe(GIFT_CARD_TERMS_VERSION);
+    expect(sold.body?.country).toBe('US');
     // Buy XMR: the poster pays with the card.
-    expect(validate(form({ side: 'buy' }), { giftCard: true, giftCardTicked: all('checker') }).errors).toEqual({ giftCardTerms: GIFT_CARD_TERMS_UNTICKED });
-    expect(validate(form({ side: 'buy' }), { giftCard: true, giftCardTicked: all('sender') }).body?.giftCardTerms).toBe(GIFT_CARD_TERMS_VERSION);
+    expect(validate(form({ side: 'buy' }), { giftCard, giftCardTicked: all('checker') }).errors).toEqual({ giftCardTerms: GIFT_CARD_TERMS_UNTICKED });
+    expect(validate(form({ side: 'buy' }), { giftCard, giftCardTicked: all('sender') }).body?.giftCardTerms).toBe(GIFT_CARD_TERMS_VERSION);
     // Never on another method.
-    expect(validate(form({ methodId: 'ZELLE', country: '' }), { giftCard: false, giftCardTicked: all('checker') }).body).not.toHaveProperty('giftCardTerms');
+    expect(validate(form({ country: '' }, ['USD'], 'ZELLE'), { giftCard, giftCardTicked: all('checker') }).body).not.toHaveProperty('giftCardTerms');
   });
 });
 
@@ -130,11 +146,11 @@ describe('<PostOffer> on a gift card (J-17)', () => {
     // A buy ad's poster pays with the card: the sender's boxes.
     const boxes = [...host.querySelectorAll<HTMLInputElement>('[data-part="gift-card-terms"] input[type="checkbox"]')];
     expect(boxes.map((b) => b.closest('[data-term]')?.getAttribute('data-term'))).toEqual([...GIFT_CARD_TERMS.sender]);
-    // The range boxes by id: since J-02 the first decimal box on the form is the market percentage.
-    expect(host.querySelector('#min')).not.toBeNull();
-    expect(host.querySelector('#max')).not.toBeNull();
-    setValue('#min', '0.5');
-    setValue('#max', '2');
+    // The one USD band's boxes (J-16: ids are currency-key-part); the form opens in XMR.
+    expect(host.querySelector('#USD-1-min')).not.toBeNull();
+    expect(host.querySelector('#USD-1-max')).not.toBeNull();
+    setValue('#USD-1-min', '0.5');
+    setValue('#USD-1-max', '2');
     const postButton = () => [...host.querySelectorAll('button')].find((b) => b.textContent === 'Post offer')!;
     fire(postButton(), new MouseEvent('click', { bubbles: true }));
     await settle();
@@ -144,7 +160,7 @@ describe('<PostOffer> on a gift card (J-17)', () => {
     fire(postButton(), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(posted).toHaveLength(1);
-    expect(posted[0]).toMatchObject({ methodId: 'STEAM_GIFT_CARD', country: 'US', currency: 'USD', giftCardTerms: GIFT_CARD_TERMS_VERSION });
+    expect(posted[0]).toMatchObject({ methods: [{ methodId: 'STEAM_GIFT_CARD' }], country: 'US', currencies: [{ currency: 'USD' }], giftCardTerms: GIFT_CARD_TERMS_VERSION });
     vi.unstubAllGlobals();
   });
 });

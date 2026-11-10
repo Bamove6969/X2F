@@ -144,11 +144,12 @@ describe('the model', () => {
 
   it("words an offer as the board does, and an On offer nobody can see says why (M4)", () => {
     const [a, b, c] = parseMyOffers(RAW) as [MyOffer, MyOffer, MyOffer];
-    expect([offerTitle(a), offerMethods(a), offerPrice(a), offerLimits(a)]).toEqual(['Selling XMR · USD', 'Zelle', '+0.5% · follows the market', '$50 – $2,000 per trade']);
-    expect([offerTitle(b), offerPrice(b), offerLimits(b)]).toEqual(['Buying XMR · EUR', '-10.0% · follows the market', '€12.50 – €500 per trade']);
+    expect([offerTitle(a), offerMethods(a), offerPrice(a), offerLimits(a)]).toEqual(['Selling XMR · USD', 'Zelle', '0.5% above market · follows the market', '$50 – $2,000 per trade']);
+    expect([offerTitle(b), offerPrice(b), offerLimits(b)]).toEqual(['Buying XMR · EUR', '10% below market · follows the market', '€12.50 – €500 per trade']);
     expect(offerMethods(c)).toBe('Amazon gift card (US)');
-    expect(offerPriceParts(a)).toEqual(['+0.5%', 'follows the market']);
-    expect(offerPriceParts(b)).toEqual(['-10.0%', 'follows the market']);
+    // Design final call (10 Nov 2026): the margin in the one form everywhere (ui/margin.ts).
+    expect(offerPriceParts(a)).toEqual(['0.5% above market', 'follows the market']);
+    expect(offerPriceParts(b)).toEqual(['10% below market', 'follows the market']);
     expect(statusLine(a)).toEqual({ text: 'On · people can see and take it', tone: 'on' });
     expect(statusLine(b)).toEqual({ text: 'Off · hidden from everyone', tone: 'off' });
     expect(statusLine({ ...a, hidden: 'trading-paused' })).toEqual({ text: 'On, hidden while trading is paused', tone: 'caution' });
@@ -167,6 +168,30 @@ describe('the model', () => {
     expect(isHeld([{ ...a, hidden: 'trading-paused' }, b], false)).toBe(false);
     expect(isHeld([b], true)).toBe(true);
     expect([allHint(0, 3), allHint(3, 3), allHint(2, 3)]).toEqual(['Pick offers to turn them on or off together.', 'All 3 offers selected.', 'Some selected: 2 of 3.']);
+  });
+
+  it('J-16: an offer with several currencies and payment types lists them all; no market price in any is said (Task 34 review M4)', () => {
+    const tier = { min: '5000', max: '200000', marginBps: 50, minTrades: null, methodIds: null };
+    const multi = {
+      ...RAW[0],
+      currencies: [{ currency: 'USD', rate: '33165', tiers: [tier] }, { currency: 'CAD', rate: null, tiers: [tier] }],
+      methods: [
+        { methodId: 'ZELLE', methodName: 'Zelle', adjustBps: 0, instructions: '', currencies: ['USD'], instructionsByCurrency: {} },
+        { methodId: 'PAYPAL', methodName: 'PayPal', adjustBps: 200, instructions: 'pp', currencies: ['USD', 'CAD'], instructionsByCurrency: {} },
+      ],
+    };
+    const [m] = parseMyOffers([multi]) as [MyOffer];
+    expect(m.currencies).toEqual(['USD', 'CAD']);
+    expect(m.methodNames).toEqual(['Zelle', 'PayPal']);
+    expect([offerTitle(m), offerMethods(m)]).toEqual(['Selling XMR · USD, CAD', 'Zelle, PayPal']);
+    // An answer from before J-16 (no lists) reads as its one currency and method.
+    const [a] = parseMyOffers(RAW) as [MyOffer];
+    expect([a.currencies, a.methodNames]).toEqual([['USD'], ['Zelle']]);
+    expect(() => parseMyOffers([{ ...multi, currencies: [{ currency: 'USD' }] }])).toThrow();
+    expect(() => parseMyOffers([{ ...multi, methods: [{ methodId: 'ZELLE' }] }])).toThrow();
+    const hidden = parseMyOffers([{ ...RAW[0], hidden: 'no-price' }])[0]!;
+    expect(hidden.hidden).toBe('no-price');
+    expect(statusLine(hidden).tone).toBe('caution');
   });
 
   it('applies results, words the summary, always sends explicit ids (M1) and batches them (M5)', () => {
@@ -218,8 +243,8 @@ describe('the My offers screen', () => {
     expect(tick(host, A).closest('label')!.className).toBe('x2f-tickbox');
     // M2: the names carry the method, price and limits. The switch is a real track with no words now.
     expect(sw(host, A).textContent).toBe('');
-    expect(nameOf(sw(host, A))).toBe('Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
-    expect(nameOf(tick(host, A))).toBe('Select Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
+    expect(nameOf(sw(host, A))).toBe('Selling XMR · USD Zelle 0.5% above market · follows the market $50 – $2,000 per trade');
+    expect(nameOf(tick(host, A))).toBe('Select Selling XMR · USD Zelle 0.5% above market · follows the market $50 – $2,000 per trade');
     expect(row(host, A).querySelector('[data-part="status"]')!.textContent).toBe('On · people can see and take it');
     // An Off offer's card is drawn dashed; a ticked one gets the ink ring (never orange).
     expect([row(host, A).getAttribute('data-on'), row(host, B).getAttribute('data-on')]).toEqual(['true', 'false']);

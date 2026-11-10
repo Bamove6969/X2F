@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest';
 import { feeFor } from '@x2f/core';
 import {
   CLIENT_EVENTS,
+  LAUNCH_TRADE_CAP_USD_CENTS,
+  MAX_PAY_WINDOW_MIN,
   SELLER_CONFIRM_CANCEL_TIMEOUT_H,
   awaitingCancelConfirm,
   amountForFunds,
@@ -24,6 +26,7 @@ const at = (min: number, ms = 0) => new Date(T0.getTime() + min * MIN + ms);
 const AMOUNT = 1_250_000_000_000n;
 const FUNDS = 1_262_500_000_000n; // poster seller: amount + 1%
 const RATE = { currency: 'USD', centsPerXmr: 33000n };
+const XMR = 1_000_000_000_000n;
 
 type By = 'buyer' | 'seller' | 'system';
 
@@ -99,6 +102,30 @@ const sampleEvent: Record<TradeEvent['type'], TradeEvent> = {
   'system-cancel': { type: 'system-cancel' },
   tick: { type: 'tick' },
 };
+
+describe('the time to pay is the payment method\'s, fixed at take (owner p9-6)', () => {
+  test('newTrade keeps the pay window it was given; without one it is TIMERS.payMin', () => {
+    expect(taken().payWindowMin).toBe(90);
+    expect(newTrade({ ...TAKE, poster: 'seller', payWindowMin: 1440 }, T0).payWindowMin).toBe(1440);
+  });
+
+  test("payBy counts the trade's own window from secured, and the seller's cancel waits for it", () => {
+    const slow = newTrade({ ...TAKE, poster: 'seller', payWindowMin: 1440 }, T0);
+    const s = run([[{ type: 'setup-done', escrowAddress: '4Escrow' }, 'system', 1], [chain(FUNDS, 0n, 1), 'system', 5], [chain(FUNDS, FUNDS, 10), 'system', 30]], slow);
+    expect(s.payBy).toEqual(at(30 + 1440));
+    // 90 minutes is not the time to pay any more for this trade.
+    expect(rule(() => apply(s, { type: 'request-refund' }, 'seller', at(121)))).toBe('too-early');
+    expect(rule(() => apply(s, { type: 'request-refund' }, 'seller', at(30 + 1440)))).toBe('too-early');
+    expect(apply(s, { type: 'request-refund' }, 'seller', at(30 + 1441)).state).toBe('settling');
+  });
+
+  test('a pay window outside 1..MAX_PAY_WINDOW_MIN is refused', () => {
+    expect(MAX_PAY_WINDOW_MIN).toBe(1440);
+    for (const bad of [0, -1, 1.5, MAX_PAY_WINDOW_MIN + 1, Number.NaN]) {
+      expect(() => newTrade({ ...TAKE, poster: 'seller', payWindowMin: bad }, T0)).toThrow(RangeError);
+    }
+  });
+});
 
 describe('constants', () => {
   test('TIMERS', () => {
@@ -374,8 +401,19 @@ describe('request-refund: the seller cancels after the time to pay (owner 8 Nov,
     expect(rule(() => apply(sellerCancelled(), { type: 'request-refund' }, 'seller', at(122)))).toBe('wrong-state');
     const p = apply(secured(), { type: 'pause' }, 'system', at(125));
     expect(rule(() => apply(p, { type: 'request-refund' }, 'seller', at(126)))).toBe('wrong-state');
+    // A dispute before "I've paid" is the seller's (the buyer can still cancel then; design P1).
     const d = apply(secured(), { type: 'open-dispute' }, 'seller', at(100));
     expect(rule(() => apply(d, { type: 'request-refund' }, 'seller', at(130)))).toBe('wrong-state');
+  });
+
+  test("p11-16: a dispute opened before \"I've paid\" takes the buyer's \"I've paid\" away at once", () => {
+    const d = apply(secured(), { type: 'open-dispute' }, 'seller', at(40));
+    expect(d.state).toBe('disputed');
+    expect(d.dispute).toEqual({ by: 'seller', at: at(40) });
+    expect(rule(() => apply(d, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(41)))).toBe('wrong-state');
+    // Also while it is still securing.
+    const s = apply(securing(), { type: 'open-dispute' }, 'seller', at(6));
+    expect(rule(() => apply(s, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(7)))).toBe('wrong-state');
   });
 
   test("race: I've paid and Cancel at the same moment; whichever the trade row takes first wins, the other is refused", () => {
@@ -1411,6 +1449,24 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     expect(g.amountAtomic).toBe(1_300_000_000_000n);
     const over = apply(apply(t, { type: 'setup-done', escrowAddress: '4E' }, 'system', at(1)), chain(1_300_020_000_000n, 1_300_020_000_000n, 10), 'system', at(2));
     expect(over.amountAtomic).toBe(AMOUNT);
+  });
+
+  test('growth stops at the launch-cap ceiling the take fixed, though the offer allows more (launch-rules review F1)', () => {
+    // An offer with a $20,000 maximum: the take clamps the trade's ceiling to $5,000 at $330/XMR.
+    const t = newTrade({ ...TAKE, poster: 'buyer', amountAtomic: XMR, maxFiatCents: LAUNCH_TRADE_CAP_USD_CENTS }, T0);
+    const f = apply(t, { type: 'setup-done', escrowAddress: '4E' }, 'system', at(1));
+    // 15.15 XMR is $4,999.50: it grows.
+    const within = (XMR * 1515n) / 100n;
+    expect(apply(f, chain(within, within, 10), 'system', at(2)).amountAtomic).toBe(within);
+    // 15.16 XMR is $5,002.80: the trade keeps its size and the surplus goes back to the seller.
+    const over = (XMR * 1516n) / 100n;
+    const kept = apply(f, chain(over, over, 10), 'system', at(2));
+    expect(kept.amountAtomic).toBe(XMR);
+    expect(kept.fiatCents).toBe(33000n);
+    expect(kept.grown).toBeNull();
+    // Grown to $4,999.50 first, a later extra past the ceiling keeps that size.
+    const grown = apply(f, chain(within, within, 10), 'system', at(2));
+    expect(apply(grown, chain(over, over, 10), 'system', at(3)).amountAtomic).toBe(within);
   });
 
   test('after I have paid the amount never changes; the surplus goes to the seller', () => {

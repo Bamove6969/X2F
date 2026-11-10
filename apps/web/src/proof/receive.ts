@@ -7,9 +7,10 @@ import { type ReceiveDeclared, type ReceiveDeps, receiveProof } from '@x2f/proof
 
 export function browserReceiveDeps(): ReceiveDeps {
   return {
-    // `imageOrientation: 'none'`: the sender's app already turned the picture upright and stripped
-    // its Exif, so the decoded size must be the header's size exactly.
-    decode: (bytes, mime) => createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mime }), { imageOrientation: 'none' }),
+    // No imageOrientation option: 'none' is deprecated and browsers read it as 'from-image' (Exif
+    // applied), so it never protected anything. receiveProof strips the metadata before it hands the
+    // bytes here, so there is no orientation tag left to apply, and the decoded size is the header's.
+    decode: (bytes, mime) => createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mime })),
     render: async (bitmap, width, height) => {
       const canvas = new OffscreenCanvas(width, height);
       const ctx = canvas.getContext('2d');

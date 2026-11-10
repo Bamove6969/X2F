@@ -25,6 +25,7 @@ const API = 'http://api-internal.test';
 const RELAY = 'http://relay-admin.test';
 const TERMS: AttestedTerms = {
   deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000' },
+  payWindowMin: 90,
   buyerPayout: '4'.padEnd(95, 'B'),
   sellerRefund: '8'.padEnd(95, 'S'),
 };

@@ -11,8 +11,9 @@ import './proof.css';
 
 // COPY-UNSIGNED (job J-22: the receiving device's refusal of a broken proof image)
 export const PROOF_REFUSED_TITLE = 'Could not show this proof';
-// COPY-UNSIGNED
-export const PROOF_REFUSED_BODY = 'The image is damaged or is not a PNG, JPEG or WebP picture, so your device did not open it. Ask for the proof to be sent again.';
+// COPY-UNSIGNED (review of 9 Nov 2026, F5: the refusal's own words, not the generic damaged-file copy;
+// every refusal code reads the same, since the user can do nothing different for any of them)
+export const PROOF_REFUSED_BODY = 'This proof could not be checked safely on your device, so it is not shown.';
 // COPY-UNSIGNED
 export const PROOF_CHECKING = 'Checking the proof image';
 

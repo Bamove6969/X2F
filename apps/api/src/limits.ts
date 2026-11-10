@@ -166,6 +166,13 @@ export const CHAT_OPEN_BUCKET: BucketSize = { capacity: 20, perMinute: 20 / 60 }
 export const CHAT_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 30 };
 
 /**
+ * J-23 review F6: the chat-key courier's writes per account (lead default). A handover posts one
+ * box per device and collects it once, so a person never comes near these; a loop runs dry.
+ */
+export const CHAT_KEY_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
+export const CHAT_KEY_COLLECT_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
+
+/**
  * `POST /v1/account/past-rep/start` (Plan 5 Task 10, lead follow-up 2026-11-01): starts per account
  * an hour. Each start inspects a pasted key and stores a challenge. The owner may change it.
  */
@@ -200,6 +207,10 @@ export interface Budgets {
   chatPost: KeyedBuckets;
   /** Per account: `POST /v1/account/past-rep/start`. */
   pastRepStart: KeyedBuckets;
+  /** Per account: `POST /v1/account/chat-keys` (J-23 review F6). */
+  chatKeyPost: KeyedBuckets;
+  /** Per account: `DELETE /v1/account/chat-keys/:id` (J-23 review F6). */
+  chatKeyCollect: KeyedBuckets;
   /** Per account: `POST /v1/account/past-rep/finish`. */
   pastRepFinish: KeyedBuckets;
 }
@@ -217,6 +228,8 @@ export function newBudgets(clock: () => Date): Budgets {
     chatOpen: new KeyedBuckets(CHAT_OPEN_BUCKET, clock),
     chatPost: new KeyedBuckets(CHAT_POST_BUCKET, clock),
     pastRepStart: new KeyedBuckets(PAST_REP_START_BUCKET, clock),
+    chatKeyPost: new KeyedBuckets(CHAT_KEY_POST_BUCKET, clock),
+    chatKeyCollect: new KeyedBuckets(CHAT_KEY_COLLECT_BUCKET, clock),
     pastRepFinish: new KeyedBuckets(PAST_REP_FINISH_BUCKET, clock),
   };
 }

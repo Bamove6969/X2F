@@ -27,6 +27,7 @@ import { tradeApp } from './helpers/tradeApp.js';
 import type { JabberSender } from '../src/jabber/sender.js';
 import { Browser, codeAt } from './helpers/totp.js';
 import { SIG } from './helpers/signature.js';
+import { flexBody, insertOffer } from './helpers/offers.js';
 
 const ORIGIN = 'https://x2f.test';
 const TERMS = '2026-10-17';
@@ -644,14 +645,10 @@ describe('during the hold', () => {
     const t = await heldTrader();
     const take = await t.thief.post('/v1/offers/00000000-0000-4000-8000-000000000000/take', {});
     expect(take.json()).toEqual({ error: 'recovery-hold', holdUntil: t.until });
-    expect(errorOf(await t.thief.post('/v1/offers', {}))).toBe('recovery-hold');
+    expect(errorOf(await t.thief.post('/v1/offers', flexBody({})))).toBe('recovery-hold');
     expect(errorOf(await t.thief.post('/v1/wallets', {}))).toBe('recovery-hold');
     expect(errorOf(await t.thief.delete('/v1/wallets/00000000-0000-4000-8000-000000000000'))).toBe('recovery-hold');
-    const { rows } = await deps.db.query<{ id: string }>(
-      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-       values ($1, 'sell', 'zelle', 'USD', 'market', 0, 1000, 100000, null, '', 'paused', $2, $2) returning id`,
-      [t.id, now],
-    );
+    const rows = [{ id: await insertOffer(deps.db, { accountId: t.id, side: 'sell', methodId: 'zelle', currency: 'USD', min: 1000, max: 100000, status: 'paused', at: now }) }];
     expect(errorOf(await t.thief.patch(`/v1/offers/${rows[0]!.id}`, { status: 'live' }))).toBe('recovery-hold');
     expect(errorOf(await t.thief.post('/v1/account/offers/status', { ids: [rows[0]!.id], status: 'live' }))).toBe('recovery-hold');
     expect((await t.thief.patch(`/v1/offers/${rows[0]!.id}`, { status: 'removed' })).statusCode).toBeLessThan(300);
@@ -1363,7 +1360,7 @@ describe('review round 2', () => {
         const agg = (from: string) => `select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text), '[]'::jsonb) as j from ${from}`;
         const tables = [
           'alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices', 'team_members', 'team_audit',
-          'recovery_code_reveals', 'held_trades', 'past_reputation', 'jabber_contacts',
+          'recovery_code_reveals', 'held_trades', 'past_reputation', 'jabber_contacts', 'chat_key_envelopes',
         ];
         const out: Record<string, unknown> = {};
         for (const t of tables) out[t] = (await deps.db.query<{ j: unknown }>(`${agg(`${t} t`)} where account_id = $1`, [accountId])).rows[0]!.j;
@@ -1614,6 +1611,17 @@ describe('review round 2', () => {
         'DELETE /v1/account/jabber': async () => {
           const o = await jabberOn();
           return { b: o.b, accountId: o.id, fire: () => o.b.delete('/v1/account/jabber') };
+        },
+        // J-23 groundwork: the chat-key courier (auth/chatKeys.ts), strong sessions only (a passkey session is).
+        'POST /v1/account/chat-keys': async () => {
+          const o = await passkeyWithPassword();
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/chat-keys', { recipientPublic: 'ab'.repeat(32), sealed: Buffer.alloc(80, 1).toString('base64url'), epoch: 0 }) };
+        },
+        'DELETE /v1/account/chat-keys/:id': async () => {
+          const o = await passkeyWithPassword();
+          const r = await o.b.post('/v1/account/chat-keys', { recipientPublic: 'cd'.repeat(32), sealed: Buffer.alloc(80, 2).toString('base64url'), epoch: 0 });
+          expect(r.statusCode, r.body).toBe(201);
+          return { b: o.b, accountId: o.id, fire: () => del(o.b, `/v1/account/chat-keys/${(r.json() as { id: string }).id}`) };
         },
       };
 

@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { BadgePill } from '../../ui/BadgePill.js';
 import { Button } from '../../ui/Button.js';
 import { Icon, type IconName } from '../../ui/icons.js';
+import { marginParts, type MarginParts } from '../../ui/margin.js';
 import { PickButton } from '../../ui/PickButton.js';
 import { formatMinor, type Offer, type OpensAt } from './api.js';
 import { cardRows, type RangeRows } from './offerAmounts.js';
@@ -113,27 +114,20 @@ function importedLine(l: { site: string; overUsd: number }): string {
 }
 
 /**
- * The markup at the card's bottom left (owner #11, 8 Nov; boards v142): the figure in mono over its
- * label, "+0.4%" over "Vendor markup", "0%" over "At market" when there is none. Every offer is the
- * market ± % (owner Q1: no fixed-price offers). Null while the offer has no price (the feed is down).
- * COPY-UNSIGNED: "Vendor markup", and the marks "+0.4%" / "−0.4%" and "0%" over "At market" (the
- * labels existed; the marks are new).
+ * The price against the market at the card's bottom left (owner #11, 8 Nov; boards v142): the
+ * figure in mono over its words, "0.4%" over "above market", "at market" alone when there is no
+ * margin; the one wording everywhere (design final call 10 Nov 2026, ui/margin.ts; it replaces
+ * "+0.4%" over "Vendor markup"). Every offer is the market +/- % (owner Q1: no fixed-price offers).
+ * Null while the offer has no price (the feed is down). COPY-UNSIGNED (ui/margin.ts).
  */
-export interface Markup {
-  mark: string | null;
-  label: string;
+export interface Markup extends MarginParts {
   favourable: boolean;
 }
-
-export const VENDOR_MARKUP = 'Vendor markup';
-const MINUS = '\u2212';
 
 export function markupOf(offer: Pick<Offer, 'rate' | 'pricing'>, copy: Pick<BrowseCopy, 'favourable'>): Markup | null {
   if (offer.rate === null) return null;
   const bps = offer.pricing.marginBps;
-  if (bps === 0) return { mark: '0%', label: 'At market', favourable: false };
-  const pct = (Math.abs(bps) / 100).toFixed(2).replace(/\.?0+$/, '');
-  return { mark: `${bps > 0 ? '+' : MINUS}${pct}%`, label: VENDOR_MARKUP, favourable: copy.favourable(bps) };
+  return { ...marginParts(bps), favourable: bps !== 0 && copy.favourable(bps) };
 }
 
 function Badges({ offer }: { offer: Offer }) {
@@ -313,12 +307,14 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
         <div className="x2f-offer__amounts">
           {markup ? (
             <span className="x2f-offer__markup" data-part="markup">
-              {markup.mark !== null ? (
-                <span className="x2f-offer__margin" data-tone={markup.favourable ? 'escrow' : undefined}>
-                  {markup.mark}
-                </span>
+              {markup.figure !== null ? (
+                <>
+                  <span className="x2f-offer__margin" data-tone={markup.favourable ? 'escrow' : undefined}>
+                    {markup.figure}
+                  </span>{' '}
+                </>
               ) : null}
-              <span className="x2f-offer__markup-label">{markup.label}</span>
+              <span className="x2f-offer__markup-label">{markup.words}</span>
             </span>
           ) : (
             <span />

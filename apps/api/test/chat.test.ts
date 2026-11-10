@@ -23,6 +23,7 @@ import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
+import { insertOffer } from './helpers/offers.js';
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -47,12 +48,9 @@ async function trader(): Promise<{ id: string; b: Browser }> {
 
 /** A live offer posted directly in the table (Task 4's route needs a wallet and prices). */
 async function seedOffer(accountId: string, side: 'sell' | 'buy' = 'sell', status = 'live'): Promise<string> {
-  const { rows } = await deps.db.query<{ id: string }>(
-    `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-     values ($1, $2, 'zelle', 'USD', 'market', 100, 1000, 100000, null, '', $3, $4, $4) returning id`,
-    [accountId, side, status, now],
-  );
-  return rows[0]!.id;
+  return insertOffer(deps.db, {
+    accountId, side, methodId: 'zelle', currency: 'USD', marginBps: 100, min: 1000, max: 100000, status: status as 'live' | 'paused' | 'removed', at: now,
+  });
 }
 
 function keyPair(): Identity {
@@ -195,15 +193,10 @@ describe('POST /v1/chats', () => {
     const other = await trader();
     // Migration 345 refuses new fixed rows; lift it for this one insert, as a row from before the rule.
     await deps.db.query('alter table offers drop constraint if exists offers_market_only');
-    const { rows } = await deps.db.query<{ id: string }>(
-      `insert into offers (account_id, side, method_id, currency, price_mode, fixed_cents_per_xmr, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
-       values ($1, 'sell', 'zelle', 'USD', 'fixed', 34000, 1000, 100000, null, '', 'live', $2, $2) returning id`,
-      [poster.id, now],
-    );
-    await deps.db.query(
-      `alter table offers add constraint offers_market_only check (price_mode = 'market' and margin_bps is not null and fixed_cents_per_xmr is null) not valid`,
-    );
-    const res = await other.b.post('/v1/chats', { offerId: rows[0]!.id });
+    const legacy = await insertOffer(deps.db, { accountId: poster.id, side: 'sell', methodId: 'zelle', currency: 'USD', min: 1000, max: 100000, at: now });
+    await deps.db.query(`update offers set price_mode = 'fixed', fixed_cents_per_xmr = 34000 where id = $1`, [legacy]);
+    await deps.db.query(`alter table offers add constraint offers_market_only check (price_mode = 'market' and fixed_cents_per_xmr is null) not valid`);
+    const res = await other.b.post('/v1/chats', { offerId: legacy });
     expect(res.statusCode, res.body).toBe(404);
     expect(res.json()).toEqual({ error: 'not-found' });
   });

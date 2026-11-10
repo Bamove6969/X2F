@@ -391,6 +391,21 @@ export interface JabberStatus {
   lastSentAt: string | null;
 }
 
+/**
+ * J-23 chat-key courier (`apps/api` auth/chatKeys.ts): a box sealed by one of the person's devices
+ * to another device's X25519 key. The API stores and serves it exactly as posted and opens nothing.
+ */
+export interface ChatKeyEnvelope {
+  id: string;
+  /** The receiving device's X25519 public key, 64 lower-case hex. */
+  recipientPublic: string;
+  /** The sealed box, base64url, exactly as posted. */
+  sealed: string;
+  epoch: number;
+  createdAt: string;
+  expiresAt: string;
+}
+
 // ---------------------------------------------------------------------------------------------
 // The client
 
@@ -522,6 +537,15 @@ export interface AuthApi {
   verifyJabber(b: { code: string }): Promise<JabberStatus>;
   setJabberEnabled(b: { on: boolean }): Promise<JabberStatus>;
   turnOffJabber(): Promise<void>;
+
+  // J-23 chat-key courier (dormant groundwork): full trader sessions of the owner, strong strictly
+  // (403 `weak-session`), never during a hold (403 `recovery-hold`).
+  /** `GET /v1/account/chat-keys`: the account's current epoch and its open envelopes, oldest first. */
+  listChatKeys(): Promise<{ epoch: number; envelopes: ChatKeyEnvelope[] }>;
+  /** `POST /v1/account/chat-keys`: 400 `bad-request` with `{ epoch }` when `epoch` is not the account's current one; 429 `slow-down`. */
+  postChatKey(b: { recipientPublic: string; sealed: string; epoch: number }): Promise<{ id: string; expiresAt: string }>;
+  /** `DELETE /v1/account/chat-keys/:id`: collects (deletes) an envelope; 404 `not-found`; 429 `slow-down`. */
+  collectChatKey(id: string): Promise<void>;
 
   // New-device approval (Task 16): full trader sessions only.
   /** `GET /v1/account/approvals`: the logins waiting for this account's approval. */
@@ -725,6 +749,9 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     verifyJabber: (b) => post('/v1/account/jabber/verify', b),
     setJabberEnabled: (b) => call('PUT', '/v1/account/jabber/enabled', b),
     turnOffJabber: () => done(call('DELETE', '/v1/account/jabber')),
+    listChatKeys: () => get('/v1/account/chat-keys'),
+    postChatKey: (b) => post('/v1/account/chat-keys', b),
+    collectChatKey: (id) => done(call('DELETE', `/v1/account/chat-keys/${seg(id)}`)),
     listApprovals: () => get('/v1/account/approvals'),
     getApproval: (id) => get(`/v1/account/approvals/${seg(id)}`),
     decideApproval: (id, b) => post(`/v1/account/approvals/${seg(id)}`, b),

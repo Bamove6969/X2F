@@ -11,6 +11,7 @@ import { runsWithSession } from '../src/auth/sessions.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
+import { flexBody } from './helpers/offers.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { SIG } from './helpers/signature.js';
 import { openTermsSignature } from '../src/termsSignature.js';
@@ -76,6 +77,7 @@ const MISSING_OFFER = '00000000-0000-4000-8000-000000000000';
 
 // Each marketplace read, and what a signed-in, set-up trader gets.
 const READS: { url: string; inside: number }[] = [
+  { url: '/v1/currencies', inside: 200 }, // J-16: which currencies have a price now is market data
   { url: '/v1/methods?side=sell&currency=USD', inside: 200 },
   { url: '/v1/offers?side=sell&method=ZELLE&currency=USD', inside: 200 },
   { url: `/v1/offers/${MISSING_OFFER}`, inside: 404 },
@@ -170,10 +172,10 @@ describe('marketplace reads are behind the front door', () => {
     );
     // Only vendors post offers (owner 2 Nov 2026); no minimum is null (owner 8 Nov: 5, 10, 25 or 50).
     await makeVendor(deps, p.id);
-    const posted = await p.browser.post('/v1/offers', {
+    const posted = await p.browser.post('/v1/offers', flexBody({
       side: 'sell', methodId: 'ZELLE', currency: 'USD', pricing: { mode: 'market', marginBps: 0 },
       minFiatCents: '1000', maxFiatCents: '100000', minTrades: null, terms: 'Zelle only.',
-    });
+    }));
     expect(posted.statusCode, posted.body).toBe(201);
     const id = (posted.json() as { id: string }).id;
     for (const url of [`/v1/offers/${id}`, '/v1/offers?side=sell&method=ZELLE&currency=USD', '/v1/methods?side=sell&currency=USD']) {

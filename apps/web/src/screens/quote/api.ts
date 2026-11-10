@@ -47,11 +47,15 @@ export async function fetchOffer(side: AdSide, method: string, currency: string,
   const found = parseOffers(await api(`/v1/offers?${q}`, signal ? { signal } : {})).find((o) => o.id === id);
   // The quote checks the poster's own unit at its own rate (review M1), so an offer set in XMR with
   // the feed down is still quoted: it reads "Price unavailable right now", never "no longer listed".
-  return found === undefined ? null : quoteOffer(found, side, currency);
+  return found === undefined ? null : quoteOffer(found, side, currency, method);
 }
 
-/** The browse card as the quote reads it: its public fields, plus the side and currency it was listed under. */
-export function quoteOffer(o: Offer, side: AdSide, currency: string): QuoteOffer {
+/**
+ * The browse card as the quote reads it: its public fields, plus the side, currency and method it
+ * was listed under (J-16: the take sends that currency and method; the bands are the ones offered
+ * with it, and its price change is the card's own).
+ */
+export function quoteOffer(o: Offer, side: AdSide, currency: string, methodId: string): QuoteOffer {
   const offer: QuoteOffer = {
     id: o.id,
     side,
@@ -65,6 +69,12 @@ export function quoteOffer(o: Offer, side: AdSide, currency: string): QuoteOffer
     minFiatCents: o.minFiatCents,
     maxFiatCents: o.maxFiatCents,
     minTrades: o.minTrades,
+    methodId,
+    adjustBps: o.methods.find((m) => m.methodId === methodId)?.adjustBps ?? 0,
+    tiers: o.tiers
+      .filter((t) => t.methodIds === null || t.methodIds.includes(methodId))
+      .map((t) => ({ min: t.min, max: t.max, marginBps: t.marginBps, minTrades: t.minTrades })),
+    viewerTrades: o.viewerTrades,
   };
   if (o.opensAt !== undefined) offer.opensAt = o.opensAt;
   return offer;
@@ -153,6 +163,10 @@ export interface TakeRequest {
   fiatCents: bigint;
   /** J-17 (F13): on a gift-card offer, the terms version the taker ticked; absent otherwise. */
   giftCardTerms?: string;
+  /** J-16: the payment method taken with (one of the offer's, offered in `currency`). */
+  methodId: string;
+  /** J-16: the currency taken in (one of the offer's); every figure above is in it. */
+  currency: string;
 }
 
 /** What the take locked: the trade's code, and the server's rate and total (lead decision 2026-10-29). */
@@ -160,10 +174,18 @@ export interface Taken {
   code: string;
   centsPerXmr: bigint;
   fiatCents: bigint;
+  /**
+   * The trade's growth ceiling: the offer's maximum, clamped at take so extra XMR never grows the
+   * trade past the launch cap (launch-rules review F1). It is the deal's `maxFiatCents`.
+   */
+  maxFiatCents: bigint;
 }
 
-/** `POST /v1/offers/:id/take` (Task 5) → the new trade's code and the rate and total that locked. */
+/** `POST /v1/offers/:id/take` (Task 5) → the new trade's code, the rate and total that locked, and its growth ceiling. */
 export async function takeOffer(offerId: string, body: TakeRequest): Promise<Taken> {
   const o = obj(await api(`/v1/offers/${encodeURIComponent(offerId)}/take`, { method: 'POST', body }), 'take');
-  return { code: str(o, 'code', 'take'), centsPerXmr: big(o, 'centsPerXmr', 'take'), fiatCents: big(o, 'fiatCents', 'take') };
+  return {
+    code: str(o, 'code', 'take'), centsPerXmr: big(o, 'centsPerXmr', 'take'), fiatCents: big(o, 'fiatCents', 'take'),
+    maxFiatCents: big(o, 'maxFiatCents', 'take'),
+  };
 }

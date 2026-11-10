@@ -5,13 +5,20 @@
 //   1. refuses a declared type other than PNG, JPEG or WebP, and bytes whose magic is not that type;
 //   2. reads the width and height from the header with bounds-checked walkers (like Task 7's
 //      cleaners) and refuses a malformed, truncated, animated or over-cap file BEFORE any decode;
-//   3. decodes it (the browser's createImageBitmap, passed in as `deps.decode`);
+//   3. refuses a PNG with tRNS or a JPEG with an APP14 segment (`unsupported`), since stripping
+//      either would change which pixels show and not only their tint (lead's ruling on the re-verify
+//      of f8c9fa78, owner question Q2: fail closed; the sender's app never produces either), then
+//      strips every other metadata chunk or segment (Exif with its orientation tag, XMP, ICC, text) and
+//      decodes only the picture left (the browser's createImageBitmap, passed in as `deps.decode`):
+//      browsers apply an Exif orientation when they decode, and nothing the sender never attested
+//      may turn, mirror or recolour what this device shows;
 //   4. draws the decoded pixels onto a fresh canvas and exports new PNG bytes (`deps.render`);
 //   5. checks that output is a well-formed PNG of the same size, no larger than
 //      RECEIVE_MAX_RENDER_BYTES (it becomes a data: URL, which browsers cap), and drops every chunk
 //      but IHDR, PLTE, IDAT and IEND (`cleanImage`).
-// Only the bytes from step 5 are ever shown. The received bytes never reach an <img>, so anything
-// smuggled in them (trailing script bytes, a polyglot, metadata) is not in what the user sees.
+// Only the bytes from step 5 are ever shown. The received bytes never reach an <img> or the decoder
+// as they came, so anything smuggled in them (trailing script bytes, a polyglot, metadata) is not in
+// what the user sees.
 // Any failure is a ProofReceiveError; nothing here falls back to the received bytes.
 //
 // Pure logic, no I/O, no Node-only APIs: the browser parts come in as `ReceiveDeps`.
@@ -40,8 +47,8 @@ export const RECEIVE_MAX_BYTES = PROOF_MAX_CIPHERTEXT;
 export const RECEIVE_MAX_RENDER_BYTES = 28 * 1024 * 1024;
 
 /**
- * - `unsupported`: the declared type is not PNG, JPEG or WebP, the bytes are another type, or the
- *   image is animated.
+ * - `unsupported`: the declared type is not PNG, JPEG or WebP, the bytes are another type, the
+ *   image is animated, or it is a PNG with tRNS or a JPEG with APP14 (see step 3 above).
  * - `too-large`: over RECEIVE_MAX_BYTES, or a side over RECEIVE_MAX_SIDE.
  * - `undecodable`: the header is malformed or truncated, does not match the declared size, or the
  *   decoder failed.
@@ -107,7 +114,12 @@ function crc32(bytes: Uint8Array): number {
 const PNG_DEPTHS: Record<number, readonly number[]> = { 0: [1, 2, 4, 8, 16], 2: [8, 16], 3: [1, 2, 4, 8], 4: [8, 16], 6: [8, 16] };
 const PNG_CRITICAL = new Set(['IHDR', 'PLTE', 'IDAT', 'IEND']);
 
-function pngHeader(b: Uint8Array): ImageHeader {
+/**
+ * `received`: the walk is of the bytes as they came from the sender, so a chunk or segment whose
+ * removal would change which pixels show (PNG tRNS, JPEG APP14) is refused as `unsupported` rather
+ * than stripped. Off for the device's own copies (the stripped picture, the fresh PNG).
+ */
+function pngHeader(b: Uint8Array, received: boolean): ImageHeader {
   let at = 8;
   let width = 0;
   let height = 0;
@@ -138,6 +150,9 @@ function pngHeader(b: Uint8Array): ImageHeader {
     }
     // APNG: an animation control chunk means more than one picture.
     if (type === 'acTL' || type === 'fcTL' || type === 'fdAT') throw err('unsupported');
+    // Transparency: dropping it would turn transparent pixels opaque. gAMA, cHRM, sRGB and iCCP only
+    // shift the colours, so they are stripped like any other ancillary chunk.
+    if (received && type === 'tRNS') throw err('unsupported');
     const critical = (typeBytes[0]! & 0x20) === 0;
     if (critical && !PNG_CRITICAL.has(type)) throw bad();
     if (type === 'PLTE') {
@@ -169,8 +184,10 @@ const DAC = 0xcc;
 const DRI = 0xdd;
 /** Every frame type: baseline, extended, progressive, lossless, Huffman or arithmetic. */
 const SOF = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+/** APP14: Adobe's colour transform flag, which decides how the decoder reads the components. */
+const APP14 = 0xee;
 
-function jpegHeader(b: Uint8Array): ImageHeader {
+function jpegHeader(b: Uint8Array, received: boolean): ImageHeader {
   let at = 2;
   let width = 0;
   let height = 0;
@@ -190,6 +207,8 @@ function jpegHeader(b: Uint8Array): ImageHeader {
     const body = b.subarray(at + 4, at + 2 + len);
     const end = at + 2 + len;
     const isApp = (marker >= 0xe0 && marker <= 0xef) || marker === 0xfe;
+    // Any APP14, Adobe-tagged or not: decoders differ on which ones they honour, so none is stripped.
+    if (received && marker === APP14) throw err('unsupported');
     if (SOF.has(marker)) {
       if (width !== 0) throw bad(); // one frame only
       if (body.length < 6) throw bad();
@@ -300,11 +319,88 @@ export function sniffImage(b: Uint8Array): ReceiveMime | null {
  * or with bytes after its end.
  */
 export function readImageHeader(bytes: Uint8Array): ImageHeader {
+  return header(bytes, false);
+}
+
+function header(bytes: Uint8Array, received: boolean): ImageHeader {
   const mime = sniffImage(bytes);
-  if (mime === 'image/png') return pngHeader(bytes);
-  if (mime === 'image/jpeg') return jpegHeader(bytes);
+  if (mime === 'image/png') return pngHeader(bytes, received);
+  if (mime === 'image/jpeg') return jpegHeader(bytes, received);
   if (mime === 'image/webp') return webpHeader(bytes);
   throw err('unsupported');
+}
+
+// ---------------------------------------------------------------------------------------------
+// What the decoder is handed: the picture, nothing else.
+
+/** The VP8X flag bits (WebP container spec): ICC profile, alpha, Exif, XMP, animation. */
+const VP8X_ALPHA = 0x10;
+
+/**
+ * A WebP with only its picture: VP8X (flags down to alpha, since the chunks the other flags announce
+ * are gone, and its reserved bytes 0 as the spec requires), at most one ALPH and the one VP8 or VP8L
+ * chunk, under a RIFF size that fits. EXIF, XMP and ICCP go. An ALPH is kept only before a lossy
+ * `VP8 ` chunk, the one place it means anything: a later ALPH before it is dropped (libwebp reads the
+ * first), and an ALPH after the image chunk or beside a VP8L chunk is refused (re-verify of f8c9fa78,
+ * F-R3). Runs after `webpHeader` accepted the file, and still checks every length.
+ */
+function webpPictureOnly(b: Uint8Array): Uint8Array {
+  const parts: Uint8Array[] = [];
+  let sawAlph = false;
+  let sawImage = false;
+  let at = 12;
+  while (at < b.length) {
+    if (at + 8 > b.length) throw bad();
+    const fourcc = String.fromCharCode(b[at]!, b[at + 1]!, b[at + 2]!, b[at + 3]!);
+    const size = u32le(b, at + 4);
+    if (size > b.length - at - 8) throw bad();
+    const next = at + 8 + size + (size & 1);
+    if (next > b.length) throw bad();
+    if (fourcc === 'VP8X') {
+      if (size !== 10) throw bad();
+      const x = b.slice(at, next);
+      x[8] = x[8]! & VP8X_ALPHA;
+      x.fill(0, 9, 12); // reserved
+      parts.push(x);
+    } else if (fourcc === 'ALPH') {
+      if (sawImage) throw bad();
+      if (!sawAlph) parts.push(b.subarray(at, next));
+      sawAlph = true;
+    } else if (fourcc === 'VP8 ' || fourcc === 'VP8L') {
+      if (sawImage || (fourcc === 'VP8L' && sawAlph)) throw bad();
+      sawImage = true;
+      parts.push(b.subarray(at, next));
+    }
+    at = next;
+  }
+  if (!sawImage) throw bad();
+  const out = new Uint8Array(12 + parts.reduce((n, part) => n + part.length, 0));
+  out.set(b.subarray(0, 12));
+  new DataView(out.buffer).setUint32(4, out.length - 8, true);
+  let p = 12;
+  for (const part of parts) {
+    out.set(part, p);
+    p += part.length;
+  }
+  return out;
+}
+
+/**
+ * The bytes handed to the decoder: the received picture with every metadata chunk or segment removed
+ * (review of 9 Nov 2026, F2). Browsers apply an Exif orientation tag when they decode (createImageBitmap's
+ * `imageOrientation: 'none'` is deprecated and read as `'from-image'`; nothing turns it off), and
+ * an ICC profile changes the colours, so a tag the sender never attested could turn, mirror or
+ * recolour what this device shows. With the metadata gone, the decoder sees only what the header
+ * walk checked. PNG and JPEG go through `cleanImage`, the sender's own allowlist, so a JPEG the
+ * sender could not have produced (lossless, arithmetic, CMYK) is `undecodable` here too.
+ */
+function pictureOnly(bytes: Uint8Array, mime: ReceiveMime): Uint8Array {
+  if (mime === 'image/webp') return webpPictureOnly(bytes);
+  try {
+    return cleanImage(bytes);
+  } catch {
+    throw bad();
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -319,7 +415,10 @@ export interface ReceiveBitmap {
 
 /** The browser parts, passed in so the rule can be tested without a real canvas. */
 export interface ReceiveDeps {
-  /** Decode the bytes as `mime` (createImageBitmap on a Blob). Throws or rejects on failure. */
+  /**
+   * Decode the bytes as `mime` (createImageBitmap on a Blob). Throws or rejects on failure. The bytes
+   * carry no metadata (receiveProof strips it first), so there is no orientation tag to apply.
+   */
   decode(bytes: Uint8Array, mime: ReceiveMime): Promise<ReceiveBitmap>;
   /** Draw `bitmap` at width x height on a fresh canvas and export it as PNG bytes. */
   render(bitmap: ReceiveBitmap, width: number, height: number): Promise<Uint8Array>;
@@ -353,13 +452,18 @@ export async function receiveProof(bytes: Uint8Array, declared: ReceiveDeclared,
   if (!RECEIVE_MIMES.includes(mime)) throw err('unsupported');
   if (bytes.length > RECEIVE_MAX_BYTES) throw err('too-large');
   if (sniffImage(bytes) !== mime) throw err('unsupported');
-  const head = readImageHeader(bytes);
+  const head = header(bytes, true);
   if (head.width > RECEIVE_MAX_SIDE || head.height > RECEIVE_MAX_SIDE) throw err('too-large');
   if (declared.width !== head.width || declared.height !== head.height) throw bad();
 
+  // The decoder gets a fresh copy with the metadata gone, never the caller's buffer; the copy must
+  // still be the same picture.
+  const picture = pictureOnly(bytes, mime);
+  const pictureHead = readImageHeader(picture);
+  if (pictureHead.mime !== mime || pictureHead.width !== head.width || pictureHead.height !== head.height) throw bad();
   let bitmap: ReceiveBitmap;
   try {
-    bitmap = await deps.decode(bytes.slice(), mime);
+    bitmap = await deps.decode(picture, mime);
   } catch {
     throw bad();
   }

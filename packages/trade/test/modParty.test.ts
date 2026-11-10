@@ -25,6 +25,7 @@ const start: ModPartyArgs = {
   feeWallet: '4fee',
   terms: {
     deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000' },
+    payWindowMin: 90,
     buyerPayout: '4'.padEnd(95, 'B'),
     sellerRefund: '8'.padEnd(95, 'S'),
   },

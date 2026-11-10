@@ -9,7 +9,7 @@
  * stand-ins; `extend`, `request-refund` and `mark-paid` never read them (test/refundRules.test.ts
  * checks the answers against the machine on real trades). Only these three events are asked.
  */
-import { apply, TradeRuleError, type Party, type Trade, type TradeRuleCode } from '@x2f/trade';
+import { apply, TIMERS, TradeRuleError, type Party, type Trade, type TradeRuleCode } from '@x2f/trade';
 import type { RefundView } from './refundSlot.js';
 
 /** The events these screens post. */
@@ -47,6 +47,8 @@ export function tradeFromView(v: RefundView): Trade {
     lockedRate: { currency: v.lockedRate.currency, centsPerXmr: atomic(v.lockedRate.centsPerXmr, 'rate') },
     fiatCents: atomic(v.fiatCents, 'fiat total'),
     confirmWindowMin: 1,
+    // The trade's own time to pay (owner p9-6); the server's payBy is what the rules read.
+    payWindowMin: v.payWindowMin ?? TIMERS.payMin,
     minFiatCents: 1n,
     // not-a-refusal: a field name in a developer error
     maxFiatCents: atomic(v.maxFiatCents, 'offer maximum'),

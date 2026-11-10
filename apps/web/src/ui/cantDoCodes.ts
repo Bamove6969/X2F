@@ -12,6 +12,10 @@
  * This file is the refusal text map: tools/copy-lint.ts judges refusal wording everywhere else
  * piece by piece, and passes it here. A plain module (no React, no CSS) so the lint can read it.
  */
+import { LAUNCH_TRADE_CAP_USD_CENTS } from '@x2f/trade';
+
+/** The launch cap as words ("$5,000"), from the one constant the API enforces. */
+export const LAUNCH_CAP_TEXT = `$${(LAUNCH_TRADE_CAP_USD_CENTS / 100n).toLocaleString('en-US')}`;
 
 export const CANT_DO_CODES = [
   // Plan 3 Task 5 (take; on the main line since 2026-10-29).
@@ -20,6 +24,8 @@ export const CANT_DO_CODES = [
   'own-offer',
   'already-waiting',
   'offer-busy',
+  // Owner p11-6: the launch cap on one trade, at take and at post.
+  'launch-cap',
   // Plan 3 Task 4 (post an offer).
   'trading-hold',
   'too-many-offers',
@@ -274,6 +280,9 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
       if (o.stageName === null) return 'This trade is above a trading limit right now. Try a smaller amount or another offer.';
       if (o.maxOpen !== null) return `Your account is on ${o.stageName} limits: at most ${o.maxOpen} open ${o.maxOpen === 1 ? 'trade' : 'trades'} at once. Finish one first.`;
       return `Your account is on ${o.stageName} limits${o.capText === null ? '' : ` up to ${o.capText} per trade`}. Try a smaller amount.`;
+    case 'launch-cap':
+      // COPY-UNSIGNED (owner p11-6: the launch cap; design writes the final words).
+      return `For now, one trade can be worth at most ${LAUNCH_CAP_TEXT}. Try a smaller amount.`;
     case 'own-offer':
       return 'This is your own offer.';
     case 'not-enough-trades':
@@ -339,6 +348,9 @@ export function postCantDoText(code: CantDoCode, caps: OfferCaps | null = null):
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'too-many-offers':
       return `${offerCapLine(caps)} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED
+    case 'launch-cap':
+      // COPY-UNSIGNED (owner p11-6: the launch cap; design writes the final words).
+      return `For now, one trade can be worth at most ${LAUNCH_CAP_TEXT}. Lower your offer's maximum to ${LAUNCH_CAP_TEXT} or less.`;
     // Plan 2 Task 18: a team member without the Offers role.
     case 'forbidden':
     case 'owner-only':
@@ -461,6 +473,8 @@ export const MY_OFFERS_HIDDEN = {
   'trading-hold': 'On, hidden while your account has a trading hold',
   'review-pending': 'On, hidden until you rate your last trade', // COPY-UNSIGNED (Plan 5 Task 3 review M3)
   'method-unavailable': "On, hidden: this payment method isn't available right now",
+  // COPY-UNSIGNED (J-16; Task 34 review M4): none of the offer's currencies has a market price now.
+  'no-price': 'On, hidden: no market price for its currencies right now',
 } as const;
 export type MyOffersHidden = keyof typeof MY_OFFERS_HIDDEN;
 

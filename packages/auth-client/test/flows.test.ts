@@ -36,7 +36,8 @@ const LABEL = 'Browser on Linux';
  * Push (its final-alert receipt route is gone with the final alert: trade-rules, owner 8 Nov p6-1); Task 24: the release confirmations; Task 26: nudges, nudge settings
   * and blocks; Task 27: the dispute and the appeal; Task 36: My offers; Task 37: the Blocked list and unblock; Plan 5 Tasks 4 and 21: the two feedback
  * routes; Plan 5 Task 3 and C12b: reviews, Skip review, the pending reviews and the traded-total setting; Plan 5 Task 10: the four past-reputation routes;
- * Plan 4 Task 8: the site state, read by the web shell). Any other new route still needs a client method.
+ * Plan 4 Task 8: the site state, read by the web shell; J-16 flex offers: the currency list, read by
+ * Post an offer in apps/web/src/screens/post/api.ts). Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
@@ -54,6 +55,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/chats/:chat',
   'GET /v1/chats/:chat/attestation',
   'GET /v1/chats/:chat/envelopes',
+  'GET /v1/currencies',
   'GET /v1/events',
   'GET /v1/methods',
   'GET /v1/news',

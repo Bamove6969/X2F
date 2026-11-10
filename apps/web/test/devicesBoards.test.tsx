@@ -224,7 +224,7 @@ describe('LoginApprove board, new-device side (ApproveOnDevice)', () => {
 
 const VIEW: ApprovalView = {
   id: '22222222-2222-4222-8222-222222222222', deviceLabel: 'Chrome on Windows', choices: [31, 47, 86],
-  createdAt: '2026-10-29T14:05:00.000Z', expiresAt: new Date(Date.now() + 299_000).toISOString(), atLimit: false, oneDevice: false,
+  createdAt: '2026-10-29T14:05:00.000Z', expiresAt: new Date(Date.now() + 299_000).toISOString(), atLimit: false, oneDevice: false, keysOffered: false,
 };
 
 const TOO_MANY = {

@@ -39,7 +39,16 @@ export interface Trade {
   /** Fixed at take (OD-5). */
   fiatCents: bigint;
   confirmWindowMin: number;
-  /** The offer's limits at take, as fiat totals in lockedRate's currency; a grown trade stays within them. */
+  /**
+   * The buyer's time to pay from "secured", in minutes: the payment method's (owner p9-6, 8 Nov),
+   * fixed at take so a later change to the method's profile never moves a live trade.
+   */
+  payWindowMin: number;
+  /**
+   * The offer's limits at take, as fiat totals in lockedRate's currency; a grown trade stays within
+   * them. `maxFiatCents` is the growth ceiling the API fixed at take: the offer's maximum, clamped
+   * so a grown trade stays within the launch cap (apps/api take.ts `growthCeiling`).
+   */
   minFiatCents: bigint;
   maxFiatCents: bigint;
   /**
@@ -210,6 +219,8 @@ const WHILE_PAUSED: readonly string[] = ['mark-paid', 'buyer-cancel', 'fund-star
  * 4 days, "raise the 24 h maximum").
  */
 export const MAX_CONFIRM_WINDOW_MIN = 5760;
+/** The longest time to pay a payment method may have: 24 hours (the slowest to send, cash by mail). */
+export const MAX_PAY_WINDOW_MIN = 1440;
 
 /** A new trade at take: amounts, fee and the fiat total are fixed here (OD-5). */
 export function newTrade(
@@ -223,6 +234,8 @@ export function newTrade(
     amountAtomic: bigint;
     lockedRate: Price;
     confirmWindowMin: number;
+    /** The method's time to pay; TIMERS.payMin (the instant methods' 90 min) when not given. */
+    payWindowMin?: number;
     minFiatCents: bigint;
     maxFiatCents: bigint;
   },
@@ -231,6 +244,10 @@ export function newTrade(
   checkNow(now);
   if (!Number.isSafeInteger(a.confirmWindowMin) || a.confirmWindowMin <= 0 || a.confirmWindowMin > MAX_CONFIRM_WINDOW_MIN) {
     throw new RangeError('bad confirm window');
+  }
+  const payWindowMin = a.payWindowMin ?? TIMERS.payMin;
+  if (!Number.isSafeInteger(payWindowMin) || payWindowMin <= 0 || payWindowMin > MAX_PAY_WINDOW_MIN) {
+    throw new RangeError('bad pay window');
   }
   if (a.sellerId === a.buyerId) throw new RangeError('seller and buyer must differ');
   const plan = escrowPlan({ amountAtomic: a.amountAtomic, poster: a.poster });
@@ -251,6 +268,7 @@ export function newTrade(
     lockedRate: { currency: a.lockedRate.currency, centsPerXmr: a.lockedRate.centsPerXmr },
     fiatCents: fiat,
     confirmWindowMin: a.confirmWindowMin,
+    payWindowMin,
     minFiatCents: a.minFiatCents,
     maxFiatCents: a.maxFiatCents,
     grown: null,
@@ -345,7 +363,8 @@ function onChain(t: Trade, e: Extract<TradeEvent, { type: 'chain' }>, now: Date)
     next = { ...next, state: 'securing', fundingSeenAt: next.fundingSeenAt ?? now };
   }
   if (next.state === 'securing' && funded && releasable) {
-    next = { ...next, state: 'secured', securedAt: now, payBy: addMin(base(t, now), TIMERS.payMin) };
+    // The time to pay is the payment method's, fixed at take (owner p9-6).
+    next = { ...next, state: 'secured', securedAt: now, payBy: addMin(base(t, now), t.payWindowMin) };
   }
   if (next.state === 'settling') {
     if (!releasable) next = { ...next, settleBy: null };
@@ -357,7 +376,8 @@ function onChain(t: Trade, e: Extract<TradeEvent, { type: 'chain' }>, now: Date)
 /**
  * Extra XMR before "I've paid" (spec 11.1, owner 2026-10-20): when the escrow
  * holds more than the trade needs and the grown trade's fiat total, at the same
- * locked rate, stays within the offer's maximum, the amount, fee and fiat total
+ * locked rate, stays within `maxFiatCents` (the offer's maximum, clamped to the
+ * launch cap at take), the amount, fee and fiat total
  * grow to what was funded. Otherwise nothing changes and the surplus goes to
  * the seller at settlement (payoutsFor).
  *
@@ -375,7 +395,7 @@ function grow(t: Trade, now: Date): Trade {
   let amountAtomic = fromAtomic;
   if (basis > escrowPlan({ amountAtomic: fromAtomic, poster: t.poster }).sellerFundsAtomic) {
     const candidate = amountForFunds(basis, t.poster);
-    // Above the offer maximum the trade keeps the size it already has; that size is covered by basis.
+    // Above the ceiling (`maxFiatCents`) the trade keeps the size it already has; that size is covered by basis.
     if (candidate > fromAtomic) amountAtomic = fiatFor(candidate, t.lockedRate) <= t.maxFiatCents ? candidate : t.amountAtomic;
   }
   if (amountAtomic === t.amountAtomic) return t;
@@ -595,7 +615,7 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
 
     case 'request-refund':
       // The seller's "Cancel and get refund" (owner 8 Nov, p6-1 and p9-2, reversing G2 / g66 and the
-      // 15-minute final alert): once the buyer's time to pay (90 min from secured, plus any
+      // 15-minute final alert): once the buyer's time to pay (the method's payWindowMin from secured, plus any
       // extension) has passed without "I've paid", the refund starts at once: the trade settles as
       // `auto-refund` (the seller builds it, the moderator co-signs on its own facts, Task 10). No
       // nudge is needed and the buyer gets no final warning. Once "I've paid" is in, it is

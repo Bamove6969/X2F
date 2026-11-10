@@ -6,6 +6,10 @@ export const TIMERS = {
    */
   setupMin: 60,
   fundMin: 30,
+  /**
+   * The shortest time to pay, the instant methods' (owner F9). Each trade has its own, the
+   * payment method's, fixed at take (`Trade.payWindowMin`, owner p9-6); this is its default.
+   */
   payMin: 90,
   extendMin: 30,
   maxExtensions: 2,
