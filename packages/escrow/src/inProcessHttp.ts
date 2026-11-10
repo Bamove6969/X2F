@@ -33,6 +33,25 @@ export interface WasmHttpResponse {
   body: string | Uint8Array;
 }
 
+/** The origins of the configured daemon URIs: the only places an in-process wallet may ask (re-verify R1). */
+const allowed = new Set<string>();
+
+function originOf(uri: string): string | null {
+  try {
+    const o = new URL(uri).origin;
+    return o === 'null' ? null : o;
+  } catch {
+    return null;
+  }
+}
+
+/** Allow requests to this configured daemon URI's origin (scheme, host and port). */
+export function allowDaemonOrigin(daemonUri: string): void {
+  const o = originOf(daemonUri);
+  if (o === null) throw new Error('in-process wallet: the daemon URI has no origin');
+  allowed.add(o);
+}
+
 export const inProcessHttp = {
   createCancelToken(): { token: AbortSignal; cancel: (reason?: string) => void } {
     const c = new AbortController();
@@ -42,6 +61,8 @@ export const inProcessHttp = {
   async request(r: WasmHttpRequest): Promise<WasmHttpResponse> {
     if (r.proxyUri) throw new Error('in-process wallet: proxied requests are not supported');
     if (r.username || r.password) throw new Error('in-process wallet: daemon authentication is not supported');
+    const origin = originOf(r.uri);
+    if (origin === null || !allowed.has(origin)) throw new Error('in-process wallet: not the configured daemon');
     const binary = r.body instanceof Uint8Array;
     const signals = [AbortSignal.timeout(DAEMON_TIMEOUT_MS), ...(r.cancelToken ? [r.cancelToken] : [])];
     const res = await fetch(r.uri, {
@@ -66,11 +87,14 @@ export const inProcessHttp = {
 };
 
 /**
- * Point in-process wallets at `inProcessHttp`. monero-ts sets the global itself once, when its
- * WebAssembly module first loads (in Node only), so the module is loaded first and the global set
- * after it. It is read on every request, so wallets opened earlier use it too.
+ * Point in-process wallets at `inProcessHttp`, allowed to ask only `daemonUri`'s origin (and those
+ * of earlier calls: one process may resume several sessions on the same node). monero-ts sets the
+ * global itself once, when its WebAssembly module first loads (in Node only), so the module is
+ * loaded first and the global set after it. It is read on every request, so wallets opened earlier
+ * use it too.
  */
-export async function useFetchForInProcessWallets(): Promise<void> {
+export async function useFetchForInProcessWallets(daemonUri: string): Promise<void> {
+  allowDaemonOrigin(daemonUri);
   await LibraryUtils.loadWasmModule();
   (globalThis as { HttpClient?: unknown }).HttpClient = inProcessHttp;
 }
