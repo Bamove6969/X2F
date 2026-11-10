@@ -9,11 +9,12 @@ import { requireStaff } from './guard.js';
  * payroll and treasury figures.
  *
  * The owner's rules (HANDOFF "Decided 2026-10-29c", owner answers 2026-10-28 13:26-13:45):
- * - the poster pays the 1% on a released trade and on a settled dispute; a cancel of any kind
- *   (buyer cancel, walk-away, mutual cancel, no-show or lapse refund) pays nothing;
- * - a party who loses a dispute with no money in the escrow (a buy-ad poster whose trade ends with
- *   the coins back to the seller) still owes the 1%, taken from their future trades; it is booked
- *   here as `owed` on the day it is collected (`bookOwedFeeCollected`), never when it is owed.
+ * - the poster pays the 1% on a released trade and on a ruling that completes the trade; a cancel
+ *   of any kind (buyer cancel, walk-away, mutual cancel, no-show or lapse refund) pays nothing, and
+ *   so does a ruling's full reversal, everything back to the original parties (owner g63, 7 Nov);
+ * - a fee owed with no money in the escrow to take it from (a lien, @x2f/staff `rulingFee`) is
+ *   taken from the poster's future trades; it is booked here as `owed` on the day it is collected
+ *   (`bookOwedFeeCollected`), never when it is owed.
  *
  * The ledger books exactly what the settlement's payout set sends to the fee wallet
  * (`feeOutputAtomic`, the same rule as @x2f/trade's `payoutsFor`), so it can be checked against the
@@ -30,20 +31,18 @@ export type FeeOutputKind = SettleKind | RulingKind;
 /**
  * What the fee wallet receives when a trade settles by `kind` (atomic units), the fee output of
  * `payoutsFor`:
- * - `release` and `dispute-buyer` (the ruling releases to the buyer): the trade's fee;
- * - `dispute-seller` on a seller's ad: the fee (the seller gets the balance less the fee);
- * - `dispute-seller` on a buyer's ad: nothing; the poster owes the fee instead (Task 12's
- *   `fees_owed`), booked when collected;
+ * - `release` and `dispute-buyer` (the ruling releases to the buyer, the trade completes): the
+ *   trade's fee;
+ * - `dispute-seller` (a full reversal, owner g63): nothing, whoever posted; the whole balance goes
+ *   back to the seller;
  * - every cancel and refund (`mutual-cancel`, `buyer-cancel`, `auto-refund`, `lapse-refund`): nothing.
  * An unknown kind pays nothing here (the trade store must never fail a settlement over the ledger).
  */
-export function feeOutputAtomic(kind: FeeOutputKind | string | null, poster: 'seller' | 'buyer', feeAtomic: bigint): bigint {
+export function feeOutputAtomic(kind: FeeOutputKind | string | null, _poster: 'seller' | 'buyer', feeAtomic: bigint): bigint {
   switch (kind) {
     case 'release':
     case 'dispute-buyer':
       return feeAtomic;
-    case 'dispute-seller':
-      return poster === 'seller' ? feeAtomic : 0n;
     default:
       return 0n;
   }
@@ -108,8 +107,8 @@ async function book(q: Queryable, a: { code: string; kind: 'fee' | 'owed'; debtI
 
 /**
  * Books a settled trade's 1%, in the transaction that stores its settlement (trades/store.ts
- * `applyEvent`, beside `countTradeTotals`): a `released` trade, or a `refunded` one whose payout set
- * carried the fee (a ruling's `dispute-seller` on a seller's ad). `kind` is the payout set the
+ * `applyEvent`, beside `countTradeTotals`): a `released` trade (a refund or a ruling's full
+ * reversal, `dispute-seller`, carries no fee: owner g63). `kind` is the payout set the
  * settlement used; it defaults to the row's `settling` (`release` for a release). Plan 4 Task 14's
  * ruling execution passes its `RulingKind` when the row does not name it. Idempotent per trade: a
  * second call, or a replayed event, books nothing. A trade still open, a cancel of any kind, or a
