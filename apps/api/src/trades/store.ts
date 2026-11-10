@@ -8,7 +8,7 @@ import { ApiError } from '../errors.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
 import { bookTradeRevenue } from '../staff/revenue.js';
 import { countActionTimes } from '../traders/actionTimes.js';
-import { countTradeTotals } from '../traders/tradedTotal.js';
+import { countCancel, countTradeTotals } from '../traders/tradedTotal.js';
 
 /**
  * Called after an event is committed (the app passes Task 19's `tradeEventPublisher`: SSE, Web
@@ -394,8 +394,10 @@ export async function applyEvent(
       // Task 27: a system escalation writes its dispute row with the trade (a trader's own
       // opening writes it through `within`, with the reason they gave).
       if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, next, now);
-      // C12b: a completed trade adds its take-time USD value to both sides' running totals, a settled
-      // buyer cancel to the buyer's cancel count (idempotent per trade; traders/tradedTotal.ts).
+      // C12b: a completed trade adds its take-time USD value to both sides' running totals; J-21: a
+      // cancel of any kind adds one to the cancel figure of the side that ended it (idempotent per
+      // trade; traders/tradedTotal.ts). A trade closed as `cancelled` pays nothing, so only the figure.
+      if (next.state !== prev.state && next.state === 'cancelled') await countCancel(client, code);
       if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) {
         await countTradeTotals(client, code);
         // Plan 4 Task 32: the 1% the settlement paid to the fee wallet goes into the aggregate

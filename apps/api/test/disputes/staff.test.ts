@@ -22,6 +22,7 @@ import { appealDirect, publishRuling } from '../helpers/disputes.js';
 import { STAFF_ORIGIN, StaffBrowser, insertSession, seedStaff } from '../helpers/staffApp.js';
 import { tradeApp } from '../helpers/tradeApp.js';
 import { driveTo, seedTrade } from '../helpers/trades.js';
+import { applyEvent } from '../../src/trades/store.js';
 
 const START = new Date('2026-11-02T12:00:00Z');
 
@@ -267,6 +268,23 @@ describe('the case view', () => {
     await mod.b.get(url(code));
     expect((await logOf(code)).filter((e) => e.action === 'case.opened').map((e) => e.actor_id)).toEqual([mod.id]);
     expect((await loadDispute(deps.db, code))!.seen).toContain(mod.id);
+  });
+
+  it("J-21 (owner T-017): each trader's ONE cancel figure, every kind together, is in the case view only, beside the public summaries", async () => {
+    const mod = await staff('mod');
+    const { code, seller, buyer } = await disputed();
+    // Earlier trades between them: the buyer cancelled two, the seller walked away from one.
+    const cancelled = async (by: 'buyer' | 'seller') => {
+      const { trade: t } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+      await applyEvent(deps, t.code, by === 'buyer' ? { type: 'buyer-cancel' } : { type: 'walk-away' }, by);
+    };
+    await cancelled('buyer');
+    await cancelled('buyer');
+    await cancelled('seller');
+    const v = (await mod.b.get(url(code))).json() as { cancels: unknown; traders: Record<string, Record<string, unknown>> };
+    expect(v.cancels).toEqual({ buyer: 2, seller: 1 });
+    // The summaries are what any trader sees: no cancel figure in them.
+    for (const side of ['buyer', 'seller']) expect(Object.keys(v.traders[side]!).some((k) => /cancel/i.test(k))).toBe(false);
   });
 });
 
