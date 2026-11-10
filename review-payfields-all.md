@@ -174,3 +174,85 @@ call.
   - The SWISH fallback case moved to NOT_A_METHOD, since SWISH now has its own row.
   - AMAZON_GIFT_CARD is exempted from "something must be filled", per the lead's decision of one
     optional box.
+
+---
+
+## Re-verify (10 Nov 2026, after the fixes: wip/lead-land-6, rebased on main d87fe04f)
+
+Fix commits checked: b2c44f55 (F2-F5, Pago Movil), 9b10a009 (F1), 7a7de526 (F7). I edited no code.
+
+### Verdict: approve with one fix (R1, medium)
+
+F1, F2, F4, F5 and F7 are closed. Pago Movil matches the lead's decision. F3's goal (labels out of
+the wire format, PAY_DETAILS_V = 2) is met, and payTextMatches checks the values exactly. But the
+sender now writes the labels freely, and the reader keeps and shows that sender-written text. That
+reopens a buyer-relevant gap the old exact compare had closed. See R1.
+
+### Each finding against its fix
+- **F1, closed.** ChatPanel.tsx shows the nothing-to-send line only when `snap.paySecured`. The new
+  test covers both the unsecured case (no line, no boxes) and the move to secured.
+- **F2, closed.** There is a per-box `maxLength` (default unchanged at 120/400), honoured by both
+  branches of checkPayDetails. QRIS is now `account` with 512 characters. Tests cover 250, 512 and
+  513 characters, a zero-width character and a tab. A 512-character value plus labels stays under the
+  2000-byte chat limit.
+- **F3: the wire problem is closed, but see R1.** PAY_DETAILS_V = 2, and v1 is refused (tested in
+  trade and in chatPay).
+- **F4, closed.** There is a card-number allow-list test, and BAD_LABEL now includes cédula, RIF,
+  MyKad, passport, citizen/national ID, RUT and DNI, with a CPF rule outside PIX. PAGO_MOVIL.idNumber
+  is the one named exemption. A positive and negative check of the regex was added.
+- **F5, closed.** PAYTM upiId, STRIKE lightningAddress and TIKKIE paymentLink are `account`, and so
+  are QRIS and Pago Movil's idNumber. Tested.
+- **F7, closed.** The page has a notes block (Mercado Pago by country, holder tax IDs go in the chat,
+  the Pago Movil exception), and the table rows match the code.
+- **Pago Movil.** A required `idNumber` "Cédula or RIF" box (`account`) is back, and the source string
+  records the lead's exception. It matches the decision.
+
+### payTextMatches (payFields.ts, end of file)
+What it guarantees, and I agree it holds:
+- The text is the title, then for each field in order: a newline, a non-empty label with no newline,
+  ": ", and exactly the sealed value.
+- Parsing from the end with the known values is unambiguous. A value spread over several lines
+  cannot shift a field boundary, because every value is stripped as a whole literal.
+- So the values, their order, their count and the title cannot differ from the sealed fields. The
+  trade test's negative list covers a changed value, swapped order, missing and extra lines, a wrong
+  title, an empty label, a missing newline, an extra blank line and a trailing newline.
+- A postal value can still carry "\nIBAN: X" lines. That was equally true under the old compare, and
+  the card shows the same value, so nothing changed there.
+
+**R1, medium: the sender's labels are free text, and readers keep and show that text.**
+- The label is any non-empty run without a newline, and it may contain ": ". So a seller can seal
+  `iban = DE89REAL` with the text "Payment details\nName on the account: Bob\nIBAN: DE00OTHER
+  (new account) - old IBAN: DE89REAL". payTextMatches accepts it; the trade test itself accepts
+  "Name: with a colon: Jane Doe".
+- openChatMessage keeps that text (`message.text = text`; chatPay.test.ts:113-116 asserts the
+  relabelled text is kept), and ChatPanel.tsx:125 reads `incoming.text` to the screen reader. A blind
+  buyer therefore hears an IBAN that is in no field.
+- The PayCard, the buyer's "Send exactly" card (payDetailsFeed) and a moderator's view all render
+  `pay` with the table's labels. So the moderator never sees the misleading text.
+- That is the dispute scam: the buyer pays the account named only in the label, then the seller
+  points at the card's IBAN and says he was never paid.
+- Under the old exact compare the text was fully determined by the fields and the table, so this
+  could not happen. The same applies to any reader that shows `text` as the fallback, which is what
+  the module promises ("the plain text every chat reader shows").
+- **Fix (engineering, small):** once payTextMatches passes, the reader should replace the line's text
+  with its own `renderPayDetailsText(pay)`, using the reader's current labels. Then no sender-written
+  label is ever shown, and old wording still opens. Change chatPay.test.ts:116 to expect the local
+  rendering. That is a correction to the test's expectation, not a weakening. Optionally, also
+  restrict labels to /^[^:\n]{1,120}$/, which is belt and braces only; it does not fix R1 on its own,
+  because "IBAN DE00OTHER" needs no colon.
+
+### Tests: none weakened
+- The v1 to v2 swaps in the web tests (buyerPay, chatEngine, chatPay, payDetailsFeed, chatPanel) are
+  mechanical.
+- chatPay's "malformed" list now uses v1 where it used v2, and the trade bad-shape list adds v3 and
+  v1. Both still check that a wrong version is refused.
+- The exact-mismatch test (a changed value is refused, chatPay.test.ts:105) is still there.
+- The ID_EXEMPT and PIX exceptions in the coverage test are narrow and named.
+- The one test that asserts the weaker behaviour is chatPay.test.ts:116 (see R1).
+
+### Runs
+- semgrep --config auto on payFields.ts, chatCrypto.ts and ChatPanel.tsx: 0 findings.
+- Targeted tests through run-tests.sh:
+  - Trade, payFields.test.ts and payFieldsCoverage.test.ts: 27/27 passed.
+  - Web, chatPay, chatPanel, chatEngine, payDetailsFeed and buyerPay: 177/177 passed.
+- Not run: the full suite (the lead's check already covers it).
