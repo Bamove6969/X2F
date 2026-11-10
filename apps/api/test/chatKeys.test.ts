@@ -2,6 +2,8 @@
 // 6.1): the chat-key envelopes the API carries between a person's own devices. The API is a courier:
 // it stores and serves sealed bytes to the account's own strong sessions and never opens them.
 import { randomBytes } from 'node:crypto';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { AccountKind } from '@x2f/accounts';
 import { generateBoxKeyPair, openSealed, sealTo } from '@x2f/protocol';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
@@ -415,5 +417,23 @@ describe('the table', () => {
     await expect(deps.db.query('update accounts set chat_key_epoch = -1 where id = $1', [t.accountId])).rejects.toMatchObject({ code: '23514' });
     await deps.db.query('delete from accounts where id = $1', [t.accountId]);
     expect((await deps.db.query('select 1 from chat_key_envelopes where id = $1', [id])).rows).toEqual([]);
+  });
+});
+
+// Lead 10 Nov (J-23): an account close deletes its chat-key envelopes in the same transaction. The
+// same scan as the Terms signature's tripwire (termsSignature.test.ts): a file with a statement that
+// sets accounts.closed_at must call eraseChatKeyEnvelopes. (Staff removals and cancelled staff
+// invites close staff logins, which can never hold an envelope: the routes are trader-only.)
+describe('every account close deletes the chat-key envelopes (tripwire)', () => {
+  const SRC = fileURLToPath(new URL('../src/', import.meta.url));
+  const files = (dir: string): string[] =>
+    readdirSync(dir).flatMap((f) => (statSync(dir + f).isDirectory() ? files(`${dir}${f}/`) : f.endsWith('.ts') ? [dir + f] : []));
+
+  it('a statement that sets accounts.closed_at sits in a file that calls eraseChatKeyEnvelopes', () => {
+    const CLOSE = /update\s+accounts\b[^;`]*?\bclosed_at\s*=/s;
+    const closes = files(SRC).filter((f) => CLOSE.test(readFileSync(f, 'utf8')));
+    expect(closes.map((f) => f.slice(SRC.length))).toContain('accountInactivity.ts');
+    const missing = closes.filter((f) => !readFileSync(f, 'utf8').includes('eraseChatKeyEnvelopes('));
+    expect(missing.map((f) => f.slice(SRC.length)), 'delete the chat-key envelopes in this account close (eraseChatKeyEnvelopes)').toEqual([]);
   });
 });

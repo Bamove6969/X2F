@@ -109,6 +109,15 @@ function postBody(raw: unknown): { recipientPublic: Buffer; sealed: Buffer; epoc
   return { recipientPublic: Buffer.from(recipientPublic, 'hex'), sealed: bytes, epoch };
 }
 
+/**
+ * Deletes every chat-key envelope of the account, inside the caller's transaction (lead 10 Nov,
+ * J-23): every account close calls it (the tripwire in test/chatKeys.test.ts scans for it). A
+ * close that deletes the account row needs nothing more (the rows cascade).
+ */
+export async function eraseChatKeyEnvelopes(db: Queryable, accountId: string): Promise<void> {
+  await db.query('delete from chat_key_envelopes where account_id = $1', [accountId]);
+}
+
 /** The account's current chat-key epoch. */
 async function epochOf(db: Queryable, accountId: string): Promise<number> {
   const { rows } = await db.query<{ chat_key_epoch: number }>('select chat_key_epoch from accounts where id = $1', [accountId]);
