@@ -11,7 +11,8 @@
  *   weak" (`weakOf` lets a sign-up's first 30 minutes through, which is right for logging out and
  *   wrong for handing over keys). Anything else is 403 `weak-session`. The approval view's
  *   `keysOffered` (approval.ts) is the same rule applied to the new login and its approver.
- * - Never during an account hold (403 `recovery-hold`, checked under the account lock), never a
+ * - Never during an account hold (403 `recovery-hold`, checked under the account lock, for the
+ *   listing too: review F3), never a
  *   recovery session or a team member's session (`requireSession`: full trader sessions, the
  *   account owner only; section 3.1 rule 4).
  * - `POST /v1/account/chat-keys { recipientPublic, sealed, epoch }` → 201 `{ id, expiresAt }`.
@@ -140,16 +141,18 @@ export function chatKeyRoutes(app: FastifyInstance): void {
   app.get('/v1/account/chat-keys', { preHandler: trader }, async (req) => {
     const deps = req.server.deps;
     const now = deps.clock();
-    const { accountId, sessionId } = req.auth;
-    // Served to strong sessions only; the stored strength, as the live check reads it.
-    const { rows: me } = await deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [sessionId]);
-    if (!strongForKeys(me[0]?.strength)) throw weakRefusal();
-    const { rows } = await deps.db.query<EnvelopeRow>(
-      `select id, recipient_public, sealed, epoch, created_at, expires_at from chat_key_envelopes
-        where account_id = $1 and collected_at is null and expires_at > $2 order by created_at, id`,
-      [accountId, now],
-    );
-    return { epoch: await epochOf(deps.db, accountId), envelopes: rows.map(view) };
+    const { accountId } = req.auth;
+    // Review F3: the listing hands the boxes over, so it is checked as the writes are: the live
+    // caller under the account lock, strong strictly, and never during an account hold.
+    return withTx(deps.db, async (db) => {
+      await strongCallerInTx(db, req, now);
+      const { rows } = await db.query<EnvelopeRow>(
+        `select id, recipient_public, sealed, epoch, created_at, expires_at from chat_key_envelopes
+          where account_id = $1 and collected_at is null and expires_at > $2 order by created_at, id`,
+        [accountId, now],
+      );
+      return { epoch: await epochOf(db, accountId), envelopes: rows.map(view) };
+    });
   });
 
   app.post('/v1/account/chat-keys', { preHandler: trader }, async (req, reply) => {

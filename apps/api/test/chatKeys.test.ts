@@ -374,6 +374,8 @@ describe('who may use the courier', () => {
     try {
       expect((await t.b.post('/v1/account/chat-keys', (await envelopeFor(await generateBoxKeyPair())).body)).json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
       expect((await t.b.delete(`/v1/account/chat-keys/${id}`)).json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
+      // Review F3: the listing too (the box is what is handed over, not the DELETE).
+      expect((await t.b.get('/v1/account/chat-keys')).json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
       expect((await deps.db.query('select collected_at from chat_key_envelopes where id = $1', [id])).rows).toEqual([{ collected_at: null }]);
       expect((await deps.db.query('select count(*)::int as n from chat_key_envelopes where account_id = $1', [t.accountId])).rows[0]).toEqual({ n: 1 });
     } finally {
