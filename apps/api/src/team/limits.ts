@@ -10,9 +10,10 @@
  * trade or an offer must fall inside it, checked in the action's own transaction (`assertLiveMember`
  * in team/audit.ts, the one gate every such action passes):
  * - a trade: its amount (`trades.amount_atomic`, after any growth) inside [min, max];
- * - an offer (post, relist, pause, remove): its whole range inside [min, max]. An offer kept in
- *   fiat has no fixed size in XMR (it moves with the price), so a member with a band is refused on
- *   it (lead default, conservative; listed for the owner);
+ * - an offer, when it is posted or relisted (resumed): its whole range inside [min, max]. Pausing
+ *   and removing are never banded (review F2, owner question p11-134, lead default: shutting off
+ *   always works). An offer kept in fiat has no fixed size in XMR (it moves with the price), so a
+ *   member with a band is refused on posting or resuming it (lead default, conservative; F3);
  * - an action on neither (a note, the lead's waiting changes) is not touched by the band.
  * Reads (seeing trades and offers) are not limited by the band (lead default, listed).
  *
@@ -169,34 +170,76 @@ function outside(b: TradeBand): ApiError {
 }
 
 /**
+ * OWNER QUESTION p11-133 (review F1): the unit a band is counted in. The one switch point: every
+ * band check values its trade or offer through `tradeSize` / `offerRange` below, which read this.
+ * Built: 'xmr' (XMR atomic units, exact, no price feed; design TP4 A). The lead recommends the
+ * trade's USD value at market, as the take values it; switching means a 'usd' unit here whose
+ * `tradeSize` reads `trades.usd_cents` (set at take, never changes) and whose `offerRange` values
+ * the offer's bands with `usdCentsOf` at the current quote (409 `price-unavailable` with none, as the
+ * take), plus what follows the stored numbers' unit: the columns' names (migration 380), the
+ * request/answer fields (`minAtomic`/`maxAtomic`), the confirm words (accounts confirmAction.ts
+ * `bandWords`) and the web editor (teamCopy.ts `bandText`, Team.tsx's inputs).
+ */
+export const BAND_UNIT = 'xmr' as const;
+export type BandUnit = typeof BAND_UNIT;
+
+/** A trade's size in the band's unit; undefined when the trade is not found (left to the action's own 404). */
+async function tradeSize(q: Queryable, tradeCode: string): Promise<bigint | undefined> {
+  const { rows } = await q.query<{ amount_atomic: string }>('select amount_atomic::text from trades where code = $1', [tradeCode]);
+  return rows[0] ? BigInt(rows[0].amount_atomic) : undefined;
+}
+
+/**
+ * An offer's whole range in the band's unit: every band of every currency (flex offers, migration
+ * 490). Null when it has no size in that unit: an offer kept in fiat moves with the price in XMR
+ * (refused under a band: lead default, conservative; review F3, follows p11-133). Undefined when the
+ * offer is not found.
+ */
+async function offerRange(q: Queryable, offerId: string): Promise<{ min: bigint; max: bigint } | null | undefined> {
+  const { rows } = await q.query<{ amount_unit: string; min: string | null; max: string | null }>(
+    `select o.amount_unit, min(t.min_amount)::text as min, max(t.max_amount)::text as max
+       from offers o left join offer_tiers t on t.offer_id = o.id where o.id = $1 group by o.id`,
+    [offerId],
+  );
+  const r = rows[0];
+  if (!r) return undefined;
+  if (r.amount_unit !== BAND_UNIT || r.min === null || r.max === null) return null;
+  return { min: BigInt(r.min), max: BigInt(r.max) };
+}
+
+/** Whether the offer's whole range is inside `band` (true without a band, or for an offer not found). */
+export async function offerInsideBand(q: Queryable, band: TradeBand | null, offerId: string): Promise<boolean> {
+  if (band === null) return true;
+  const r = await offerRange(q, offerId);
+  if (r === undefined) return true;
+  return r !== null && r.min >= band.minAtomic && r.max <= band.maxAtomic;
+}
+
+/** A member's band (null: none, or the account owner), read in the caller's transaction. */
+export async function memberBand(q: Queryable, memberId: string | null): Promise<TradeBand | null> {
+  if (memberId === null) return null;
+  const { rows } = await q.query<{ band_min_atomic: string | null; band_max_atomic: string | null }>(
+    'select band_min_atomic::text, band_max_atomic::text from team_members where id = $1',
+    [memberId],
+  );
+  const r = rows[0];
+  return r ? bandOf(r.band_min_atomic, r.band_max_atomic) : null;
+}
+
+/**
  * Inside the action's transaction: 403 `outside-trade-band` `{ minAtomic, maxAtomic }` unless the
  * trade (`tradeCode`) or the offer (`offerId`) falls inside `band`. Nothing without a band, or for
  * an action on neither. A trade or offer that is not found is left to the action (its own 404).
+ * Callers pass `offerId` only for the actions that create or widen exposure (post, relist; review
+ * F2, p11-134): pausing and removing always work.
  */
 export async function assertInsideBand(q: Queryable, band: TradeBand | null, on: { tradeCode?: string | null; offerId?: string | null }): Promise<void> {
   if (band === null) return;
   if (on.tradeCode) {
-    const { rows } = await q.query<{ amount_atomic: string }>('select amount_atomic::text from trades where code = $1', [on.tradeCode]);
-    const r = rows[0];
-    if (r) {
-      const a = BigInt(r.amount_atomic);
-      if (a < band.minAtomic || a > band.maxAtomic) throw outside(band);
-    }
+    const a = await tradeSize(q, on.tradeCode);
+    if (a !== undefined && (a < band.minAtomic || a > band.maxAtomic)) throw outside(band);
   }
-  if (on.offerId) {
-    // Flex offers (migration 490): the range is every band of every currency, in the offer's unit.
-    const { rows } = await q.query<{ amount_unit: string; min_atomic: string | null; max_atomic: string | null }>(
-      `select o.amount_unit, min(t.min_amount)::text as min_atomic, max(t.max_amount)::text as max_atomic
-         from offers o left join offer_tiers t on t.offer_id = o.id where o.id = $1 group by o.id`,
-      [on.offerId],
-    );
-    const r = rows[0];
-    if (r) {
-      // A fiat range has no fixed XMR size (lead default, conservative): refused under a band.
-      if (r.amount_unit !== 'xmr' || r.min_atomic === null || r.max_atomic === null) throw outside(band);
-      if (BigInt(r.min_atomic) < band.minAtomic || BigInt(r.max_atomic) > band.maxAtomic) throw outside(band);
-    }
-  }
+  if (on.offerId && !(await offerInsideBand(q, band, on.offerId))) throw outside(band);
 }
 
 /**

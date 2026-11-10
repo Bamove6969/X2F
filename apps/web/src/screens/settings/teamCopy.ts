@@ -141,7 +141,7 @@ export const TEAM_COPY = {
   bandNone: 'Any trade size',
   bandMin: 'Smallest trade (XMR)',
   bandMax: 'Largest trade (XMR)',
-  bandHint: 'Everything this member does on a trade or an offer must fall inside these sizes. Offers priced in fiat are outside any limit.',
+  bandHint: 'Everything this member does on a trade, and every offer they post or turn on, must fall inside these sizes. They can always pause or remove an offer. Offers priced in fiat are outside any limit.', // J-20 review F2. DESIGN: wording
   hoursTitle: 'Working hours',
   hoursAny: 'Any time',
   hoursStart: 'From',

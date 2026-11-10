@@ -47,6 +47,9 @@ export type AuditAction =
  */
 export type LeadAuditAction = 'release-started';
 
+/** The offer actions the member's trade-size band limits (J-20 review F2): the ones that create or widen exposure. */
+export const BANDED_OFFER_ACTIONS: ReadonlySet<AuditAction> = new Set<AuditAction>(['offer-posted', 'offer-relisted']);
+
 /** The box each action needs (the route's `requireSession({ member })`), checked again live by `auditMember`. */
 export const ACTION_ABILITY: Readonly<Record<AuditAction, string>> = {
   'offer-posted': 'offers-post',
@@ -166,7 +169,10 @@ export async function auditMember(
   now: Date,
 ): Promise<void> {
   if (actor.memberId === null) return;
-  await assertLiveMember(q, actor, ACTION_ABILITY[a.action], now, { tradeCode: a.tradeCode ?? null, offerId: a.offerId ?? null });
+  // J-20 review F2 (p11-134, lead default): the band applies to an offer only when the action puts
+  // it in front of takers (post, relist); pausing and removing it always work.
+  const banded = a.offerId !== undefined && BANDED_OFFER_ACTIONS.has(a.action) ? a.offerId : null;
+  await assertLiveMember(q, actor, ACTION_ABILITY[a.action], now, { tradeCode: a.tradeCode ?? null, offerId: banded });
   const detail = {
     ...(a.tradeCode ? await tradeAmount(q, a.tradeCode) : {}), ...(a.offerId ? await offerTerms(q, a.offerId) : {}), ...(a.detail ?? {}),
   };
