@@ -895,8 +895,9 @@ export function offerRoutes(app: FastifyInstance): void {
          select $1, * from unnest($2::text[], $3::text[], $4::text[])`,
         [offerId, pairs.map((p) => p.methodId), pairs.map((p) => p.currency), pairs.map((p) => p.instructions)],
       );
-      // Task 18: a team member's post is in the account owner's audit log, in this transaction.
-      await auditMember(client, req.auth, { action: 'offer-posted', detail: { offerId } }, now);
+      // Task 18: a team member's post is in the account owner's audit log, in this transaction, with
+      // the offer's terms (review 2026-11-09 M2: `offerId`, not just the id in `detail`).
+      await auditMember(client, req.auth, { action: 'offer-posted', offerId }, now);
       return offerId;
     });
     return reply.code(201).send({ id });
@@ -961,14 +962,14 @@ export function offerRoutes(app: FastifyInstance): void {
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
         await client.query(`update offer_methods set instructions = '' where offer_id = $1 and instructions <> ''`, [id]);
         await client.query(`update offer_method_currencies set instructions = null where offer_id = $1 and instructions is not null`, [id]);
-        await auditMember(client, req.auth, { action: 'offer-removed', detail: { offerId: id } }, now);
+        await auditMember(client, req.auth, { action: 'offer-removed', offerId: id }, now);
       });
     } else {
       // Pausing: no guard but a live session (review round 5 M2), under the account lock.
       await inTransaction(deps.db, async (client) => {
         await lockAccountLive(client, req.auth!, now);
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
-        await auditMember(client, req.auth, { action: 'offer-paused', detail: { offerId: id } }, now);
+        await auditMember(client, req.auth, { action: 'offer-paused', offerId: id }, now);
       });
     }
     return { id, status };
