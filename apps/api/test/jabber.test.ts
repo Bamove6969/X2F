@@ -138,7 +138,7 @@ describe('set-up: address, test code, done', () => {
 
   it('a change through a real route queues one notice; the worker sends the fixed sentence to the address', async () => {
     const t = await withJabber();
-    expect((await t.browser.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(200);
+    expect((await t.browser.put('/v1/account/nudges', { enabled: false, quietFrom: null, quietTo: null, tz: null })).statusCode).toBe(200);
     expect(await notices(t.id)).toBe(1);
     expect(await sendAll()).toEqual({ sent: 1, retried: 0, dropped: 0 });
     expect(sent).toEqual([{ to: t.jid, message: { kind: 'account-change' } }]);
@@ -201,7 +201,7 @@ describe('switching off, turning off and changing the address tell the address t
     const t = await withJabber();
     const off = await t.browser.put('/v1/account/jabber/enabled', { on: false });
     expect(off.json()).toMatchObject({ state: 'paused' });
-    expect((await t.browser.put('/v1/account/security/logout-timer', { idleHours: 4 })).statusCode).toBe(200);
+    expect((await t.browser.put('/v1/account/nudges', { enabled: false, quietFrom: null, quietTo: null, tz: null })).statusCode).toBe(200);
     expect((await t.browser.put('/v1/account/jabber/enabled', { on: true })).json()).toMatchObject({ state: 'on' });
     await sendAll();
     expect(sent).toEqual([{ to: t.jid, message: { kind: 'account-change' } }]);
@@ -224,7 +224,7 @@ describe('switching off, turning off and changing the address tell the address t
     const code = lastCode();
     sent.length = 0;
     // Still pending: the old address keeps getting notices.
-    expect((await t.browser.put('/v1/account/security/logout-timer', { idleHours: 6 })).statusCode).toBe(200);
+    expect((await t.browser.put('/v1/account/nudges', { enabled: false, quietFrom: null, quietTo: null, tz: null })).statusCode).toBe(200);
     expect((await t.browser.post('/v1/account/jabber/verify', { code })).json()).toMatchObject({ state: 'on', address: maskJid(next) });
     await sendAll();
     expect(sent).toEqual([{ to: t.jid, message: { kind: 'account-change' } }, { to: t.jid, message: { kind: 'account-change' } }]);
@@ -235,7 +235,7 @@ describe('fire and forget', () => {
   it('a failing Jabber server never fails or delays the change; the notice is retried, then dropped, and nothing is logged with the address', async () => {
     const t = await withJabber();
     failing = true;
-    expect((await t.browser.put('/v1/account/security/logout-timer', { idleHours: 8 })).statusCode).toBe(200);
+    expect((await t.browser.put('/v1/account/nudges', { enabled: false, quietFrom: null, quietTo: null, tz: null })).statusCode).toBe(200);
     expect(await sendAll()).toEqual({ sent: 0, retried: 1, dropped: 0 });
     // Not due again until its retry time.
     expect(await sendAll()).toEqual({ sent: 0, retried: 0, dropped: 0 });
@@ -278,8 +278,8 @@ describe('who may change it', () => {
     const owner = await withJabber();
     const loginId = await seedAccount(deps, { loginName: `jmember${n}x`, displayName: `jm-${n}-placeholder`, kind: 'member' });
     await deps.db.query(
-      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
-       values ($1, 'Jmate', 'jmate', '{offers}', $2, $3, $2, $2)`,
+      `insert into team_members (account_id, display_name, display_key, abilities, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, 'Jmate', 'jmate', '{offers-see}', $2, $3, $2, $2)`,
       [owner.id, deps.clock(), loginId],
     );
     // Adding the member was a team change.
@@ -356,7 +356,7 @@ describe('review M4: a key removed from X2F_JABBER_KEYS', () => {
     const t = await withJabber();
     advance(RESEND_WAIT_S * 1000 + 1);
     expect((await t.browser.post('/v1/account/jabber/test', { address: address() })).statusCode).toBe(202);
-    expect((await t.browser.put('/v1/account/security/logout-timer', { idleHours: 6 })).statusCode).toBe(200);
+    expect((await t.browser.put('/v1/account/nudges', { enabled: false, quietFrom: null, quietTo: null, tz: null })).statusCode).toBe(200);
     expect(await notices(t.id)).toBe(1);
     const old = deps.config.jabberKeys!;
     const fresh = new Uint8Array(randomBytes(32));
