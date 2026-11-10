@@ -17,7 +17,7 @@ describe('node proxy with monero-ts wallets on a restricted regtest node', () =>
   let proxyUri: string;
   const wallets: MoneroWalletFull[] = [];
   /** Every call the proxy answered: path (and json_rpc method) with its status. */
-  const calls: { call: string; status: number }[] = [];
+  const calls: { method: string; call: string; status: number }[] = [];
 
   beforeAll(async () => {
     node = await startRegtest({ restrictedRpc: true });
@@ -35,7 +35,7 @@ describe('node proxy with monero-ts wallets on a restricted regtest node', () =>
           call += ' (unparsed)';
         }
       }
-      calls.push({ call, status: reply.statusCode });
+      calls.push({ method: req.method, call, status: reply.statusCode });
     });
     await app.listen({ host: '127.0.0.1', port: 0 });
     const a = app.server.address();
@@ -80,10 +80,34 @@ describe('node proxy with monero-ts wallets on a restricted regtest node', () =>
     expect((await daemon.getTx(hash))?.getIsConfirmed()).toBe(false);
     await mine(node.rpcUri, 1, aliceAddress);
     expect((await daemon.getTx(hash))?.getIsConfirmed()).toBe(true);
+
+    // The escrow's txStatus in the browser (P0 of 8 Nov): a plain fetch of /get_transactions from the
+    // web origin, preflight included (monero-ts's in-process HTTP cannot send in the web bundle).
+    const pre = await fetch(`${proxyUri}/get_transactions`, {
+      method: 'OPTIONS',
+      headers: { origin: 'https://x2f.example', 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' },
+    });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get('access-control-allow-origin')).toBe('https://x2f.example');
+    expect(pre.headers.get('access-control-allow-headers')).toBe('content-type');
+    const looked = await fetch(`${proxyUri}/get_transactions`, {
+      method: 'POST',
+      headers: { origin: 'https://x2f.example', 'content-type': 'application/json' },
+      body: JSON.stringify({ txs_hashes: [hash], decode_as_json: false, prune: true }),
+    });
+    expect(looked.status).toBe(200);
+    expect(looked.headers.get('access-control-allow-origin')).toBe('https://x2f.example');
+    const answer = (await looked.json()) as { status: string; txs: { tx_hash: string; in_pool: boolean; block_height: number }[] };
+    expect(answer.status).toBe('OK');
+    expect(answer.txs[0]).toMatchObject({ tx_hash: hash, in_pool: false });
+    expect(answer.txs[0]!.block_height).toBeGreaterThan(0);
     await bob.sync();
     expect((await bob.getTxs({ hash }))[0]?.getIsConfirmed()).toBe(true);
 
-    const refused = calls.filter((c) => c.status !== 200);
+    // The one preflight above is the only answer that may be other than 200 (review L4).
+    const preflight = (c: (typeof calls)[number]): boolean => c.method === 'OPTIONS' && c.call === '/get_transactions' && c.status === 204;
+    expect(calls.filter(preflight)).toHaveLength(1);
+    const refused = calls.filter((c) => c.status !== 200 && !preflight(c));
     expect(refused).toEqual([]);
     expect(calls.length).toBeGreaterThan(0);
     // Shown in the test output so a change in what wallets call is easy to review.
