@@ -555,7 +555,7 @@ describe('the worker side of the chat protocol (serve.ts)', () => {
 });
 
 describe('chat engine: the payment details package (J-08, S-090)', () => {
-  const INTERAC: PayDetailsPayload = { v: 1, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }] };
+  const INTERAC: PayDetailsPayload = { v: 2, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }] };
   const TEXT = 'Payment details\nFull name: Jane Doe\nEmail: jane@example.ca';
 
   /** The seller's device sends a package (this device is the buyer here, as everywhere in this file). */

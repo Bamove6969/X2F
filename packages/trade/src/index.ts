@@ -109,6 +109,8 @@ export {
   checkPayDetails,
   parsePayDetails,
   payFieldsFor,
+  payeeGivesNothing,
+  payTextMatches,
   renderPayDetailsText,
   type PayDetailField,
   type PayDetailsErrorCode,

@@ -14,7 +14,7 @@ import { render } from './render.js';
 
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
 const CHAT = 'Q2W3-E4R5-T6Y7-U8I9';
-const PAY = { v: 1 as const, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }] };
+const PAY = { v: 2 as const, method: 'INTERAC_E_TRANSFER', fields: [{ key: 'name', value: 'Jane Doe' }, { key: 'email', value: 'jane@example.ca' }] };
 const TEXT = 'Payment details\nFull name: Jane Doe\nEmail: jane@example.ca';
 const ROWS = [
   { label: 'Full name', value: 'Jane Doe' },
