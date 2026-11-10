@@ -430,6 +430,25 @@ describe('lead follow-up to interop 4b: the prekeys X2F used are remembered acro
     await deps.db.query('delete from jabber_omemo_prekeys');
   });
 
+  it('review R3: two processes during a rotation (the same two keys, either one current) take one lock per address, so concurrent sends never share a prekey', async () => {
+    await deps.db.query('delete from jabber_omemo_prekeys');
+    const old = deps.config.jabberKeys!;
+    const fresh = new Uint8Array(randomBytes(32));
+    const oldFirst: Keyring = { current: old.current, keys: new Map([...old.keys, [old.current + 1, fresh]]) };
+    const newFirst: Keyring = { current: old.current + 1, keys: new Map([[old.current + 1, fresh], ...old.keys]) };
+    const id = identityFromSeed(newIdentitySeed());
+    const secrets = generateBundleSecrets(id, 20);
+    const encryptors = [oldFirst, newFirst].map((ring) => omemoEncryptorFrom({ deviceId: 777, ...id }, secrets, undefined, dbPreKeyStore(deps.db, ring, deps.clock)));
+    for (let round = 0; round < 12; round++) {
+      const phone = new OmemoDevice(30 + round, 2);
+      const to = `race${round}@xmpp.example.org`;
+      const bundles = [parseBundle(phone.deviceId, phone.bundleXml())!];
+      const out = await Promise.all(encryptors.map((e) => e.encrypt({ to, plaintext: ACCOUNT_CHANGE_TEXT, bundles })));
+      expect(new Set(out.map(preKeyIdOf)).size, `round ${round}`).toBe(2);
+    }
+    await deps.db.query('delete from jabber_omemo_prekeys');
+  });
+
   it('purgeJabberPreKeys drops records not touched for 30 days and keeps the rest', async () => {
     await deps.db.query('delete from jabber_omemo_prekeys');
     const at = (ms: number) => new Date(now.getTime() - ms);

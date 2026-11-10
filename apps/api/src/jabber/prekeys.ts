@@ -6,7 +6,7 @@
  *
  * Each send loads the records of the recipient, seeds the ledger with those of the devices it is
  * about to encrypt to, encrypts, and writes back what the ledger then holds, in one transaction
- * under an advisory lock per recipient (two API processes never pick from the same record at once).
+ * under an advisory lock per recipient, whatever key the ring puts first (two API processes never pick from the same record at once).
  * Reconciled against the fetched bundle on every load: an id the bundle no longer lists is dropped
  * (the client used it and republished; it can never be picked again anyway), and a record whose
  * identity key differs (a reinstalled client under the same device id) is replaced. A record with
@@ -19,7 +19,7 @@
  * reseals the rest for every address it opens, so removing an old key afterwards loses none. A
  * record it cannot match to an address stays as it is and ages out (`purgeJabberPreKeys`).
  */
-import { createHmac, hkdfSync } from 'node:crypto';
+import { createHash, createHmac, hkdfSync } from 'node:crypto';
 import type pg from 'pg';
 import type { PreKeyLedger, RecipientBundle } from '@x2f/omemo';
 import { keyringBox, type SecretBox } from '../auth/keystore.js';
@@ -52,6 +52,13 @@ export const recipientTag = (ring: Keyring, keyId: number, jid: string): Buffer 
 export const recipientTags = (ring: Keyring, jid: string): Buffer[] =>
   [ring.current, ...[...ring.keys.keys()].filter((id) => id !== ring.current)].map((id) => recipientTag(ring, id, jid));
 
+/**
+ * The advisory lock for an address (review R3): from the address under a fixed, non-secret label,
+ * not from a ring key, so two processes whose rings put different keys first (during a rotation)
+ * still take the same lock. Only a 64-bit hash of it reaches Postgres (`pg_locks`).
+ */
+const lockKey = (jid: string) => createHash('sha256').update('x2f/jabber-prekeys-lock\0').update(jid, 'utf8').digest('hex');
+
 /** The sealed device: its id (4 bytes, big-endian) and its identity key in wire form. */
 const deviceBytes = (b: RecipientBundle) => {
   const id = Buffer.alloc(4);
@@ -68,7 +75,7 @@ export function dbPreKeyStore(db: pg.Pool, ring: Keyring, clock: () => Date): Pr
       const c = await db.connect();
       try {
         await c.query('begin');
-        await c.query('select pg_advisory_xact_lock(hashtextextended($1, 335))', [current.toString('hex')]);
+        await c.query('select pg_advisory_xact_lock(hashtextextended($1, 335))', [lockKey(to)]);
         const { rows } = await c.query<{ id: string; recipient_tag: Buffer; device_sealed: Buffer; prekey_ids: number[] }>(
           'select id, recipient_tag, device_sealed, prekey_ids from jabber_omemo_prekeys where recipient_tag = any($1)',
           [tags],
