@@ -7,6 +7,12 @@ owner to sign the wording. "one of: X" means at least one box of group X must be
 
 127 methods. Confidence: high = provider documentation, medium = several secondary sources agree, low = unclear.
 
+Notes:
+
+- Mercado Pago: the boxes are the Argentina flow (CVU, alias, email or phone). Brazil pays by Pix and Mexico by CLABE: a later per-country refinement.
+- Countries whose banks need a holder tax ID for a transfer (Chile RUT, Colombia cédula, Brazil CPF for TED) arrange it in the chat for now: personal tax IDs are never a box.
+- Pago Móvil is the one exception: its cédula or RIF is the method's own payee identifier, so it is a required box.
+
 ## Payment apps
 
 | id | boxes | confidence |
@@ -26,15 +32,15 @@ owner to sign the wording. "one of: X" means at least one box of group X must be
 | TRANSFERWISE_USD | Name on the account (text, required)<br>Wisetag (account, one of: reach)<br>Email registered with Wise (email, one of: reach)<br>ACH routing number and account number (account, one of: reach)<br>Full address (postal, optional) | high |
 | PAYSERA | Name on the account (text, required)<br>Email on the Paysera account (email, one of: reach)<br>Phone number on the Paysera account (phone, one of: reach)<br>Paysera account number (IBAN) (iban, one of: reach) | high |
 | PAXUM | Paxum email (email, required)<br>Name on the account (text, optional) | medium |
-| PAYTM | UPI ID (text, one of: reach)<br>Mobile number (UPI-linked) (phone, one of: reach)<br>Bank account number and IFSC (account, one of: reach)<br>Name on the account (text, optional) | high |
+| PAYTM | UPI ID (account, one of: reach)<br>Mobile number (UPI-linked) (phone, one of: reach)<br>Bank account number and IFSC (account, one of: reach)<br>Name on the account (text, optional) | high |
 | NEQUI | Nequi mobile number (phone, required)<br>Bre-B key (if different) (account, optional)<br>Name on the account (text, optional) | medium |
 | BIZUM | Spanish mobile number (phone, required)<br>Name on the account (text, optional) | medium |
 | CAPITUAL | Capitual account number (account, required)<br>Name on the account (text, optional) | low (status unclear) |
 | MONESE | Name on the account (text, required)<br>Phone number (Monese to Monese) (phone, one of: reach)<br>Sort code and account number (GBP) (account, one of: reach)<br>IBAN (EUR/RON) (iban, one of: reach) | medium |
 | MPESA | M-PESA phone number (phone, required)<br>Name on the account (text, optional) | high |
 | SATISPAY | Mobile number on Satispay (phone, required)<br>Name on the account (text, optional) | high |
-| TIKKIE | Tikkie payment link (text, required)<br>Name on the account (text, optional) | medium |
-| STRIKE | Strike username (account, one of: reach)<br>Lightning address (text, one of: reach) | high |
+| TIKKIE | Tikkie payment link (account, required)<br>Name on the account (text, optional) | medium |
+| STRIKE | Strike username (account, one of: reach)<br>Lightning address (account, one of: reach) | high |
 | CASH_APP | $cashtag (account, one of: reach)<br>Phone number (phone, one of: reach)<br>Email (email, one of: reach) | high |
 | VENMO | Venmo username (account, one of: reach)<br>Phone number (phone, one of: reach)<br>Email (email, one of: reach)<br>Name on the account (text, optional) | high |
 | PAYPAL | Email (email, one of: reach)<br>Phone number (phone, one of: reach)<br>PayPal username (account, one of: reach)<br>PayPal.Me link (account, one of: reach)<br>Name on the account (text, optional) | high |
@@ -91,8 +97,8 @@ owner to sign the wording. "one of: X" means at least one box of group X must be
 | ACH_TRANSFER | Name on the account (text, required)<br>Routing number (ABA) (account, required)<br>Account number (account, required)<br>Account type (checking or savings) (text, required)<br>Bank name (text, optional) | high |
 | DOMESTIC_WIRE_TRANSFER | Name on the account (text, required)<br>Beneficiary address (postal, required)<br>Bank name (text, required)<br>Wire routing number (ABA) (account, required)<br>Account number (account, required) | medium |
 | NIP | Bank name (text, required)<br>Account number (NUBAN) (account, required)<br>Name on the account (text, required) | high |
-| PAGO_MOVIL | Mobile number affiliated to Pago Móvil (phone, required)<br>Bank (name or 4-digit code) (text, required)<br>Full name (text, optional) | medium |
-| QRIS | QR code text (text, required)<br>Name shown on the QRIS (text, optional)<br>Bank or e-wallet (text, optional) | medium |
+| PAGO_MOVIL | Mobile number affiliated to Pago Móvil (phone, required)<br>Cédula or RIF (account, required)<br>Bank (name or 4-digit code) (text, required)<br>Full name (text, optional) | medium |
+| QRIS | QR code text (account, required, up to 512 characters)<br>Name shown on the QRIS (text, optional)<br>Bank or e-wallet (text, optional) | medium |
 | RAAST | Raast ID (mobile number) (phone, one of: reach)<br>IBAN (iban, one of: reach)<br>Name on the account (text, optional) | medium |
 | PAYNOW | Mobile number registered for PayNow (phone, one of: reach)<br>UEN (businesses) (account, one of: reach)<br>PayNow VPA (account, one of: reach)<br>Name shown on PayNow (text, optional) | high |
 | FPS | Mobile number registered for FPS (phone, one of: reach)<br>Email registered for FPS (email, one of: reach)<br>FPS ID (account, one of: reach)<br>Bank code and account number (account, one of: reach)<br>Name on the account (text, optional) | medium |
