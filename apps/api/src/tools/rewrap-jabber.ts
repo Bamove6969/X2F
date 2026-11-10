@@ -1,5 +1,5 @@
 // `npm run rewrap-jabber -w @x2f/api` (review M4): reseals every Jabber address, queued notice and
-// X2F's OMEMO identity key under the current X2F_JABBER_KEYS key (jabber/rewrap.ts). Run it after
+// X2F's OMEMO identity key and bundle under the current X2F_JABBER_KEYS key (jabber/rewrap.ts). Run it after
 // putting a new key first, and again before removing the old one. Prints counts only.
 import { loadConfig } from '../config.js';
 import { createPool } from '../db/pool.js';
