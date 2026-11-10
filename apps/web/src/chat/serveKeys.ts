@@ -4,24 +4,32 @@
  * for another device, or to open a box the API served. The page gets back hex public keys,
  * base64url ciphertext and words; no key, in any form, crosses postMessage. No screen sends these
  * yet (the handover gesture waits for owner p12-5): the page side is wired when the boards exist.
+ *
+ * J-23 review F2 (lead 10 Nov): `chat-key-make` and `chat-key-seal` are answered `refused` and do
+ * nothing. Sealing the key to a key the page names would let any script in the page get the key
+ * sealed to itself, and making one would fork the account's key. They come back only when the
+ * worker checks the recipient itself (the commit and code of the design note, section 3.3); the
+ * keeper's `makeKey` and `sealFor` stay, called directly by tests.
  */
 import type { AckKeeper, AckOpenResult } from './ack.js';
 
 export type ToChatKeysWorker =
   | { t: 'chat-key-device'; id: number }
   | { t: 'chat-key-status'; id: number }
+  /** Refused (review F2): kept in the union so the page's old shape type-checks and is answered. */
   | { t: 'chat-key-make'; id: number; epoch: number }
   | { t: 'chat-key-seal'; id: number; recipientPublic: string }
   | { t: 'chat-key-open'; id: number; sealed: string; epoch: number }
   | { t: 'chat-key-forget'; id: number };
 
-export type ChatKeysFailure = 'no-key' | 'bad-request' | 'unavailable';
+export type ChatKeysFailure = 'bad-request' | 'unavailable' | 'refused';
+
+/** Messages the worker refuses outright (review F2), until it checks the recipient itself. */
+const REFUSED = new Set(['chat-key-make', 'chat-key-seal']);
 
 export type FromChatKeysWorker =
   | { t: 'chat-key'; id: number; ok: true; devicePublic: string }
   | { t: 'chat-key'; id: number; ok: true; hasKey: boolean; epoch: number | null }
-  | { t: 'chat-key'; id: number; ok: true; epoch: number }
-  | { t: 'chat-key'; id: number; ok: true; sealed: string; epoch: number }
   | { t: 'chat-key'; id: number; ok: true; result: AckOpenResult }
   | { t: 'chat-key'; id: number; ok: true }
   | { t: 'chat-key'; id: number; ok: false; error: ChatKeysFailure };
@@ -47,6 +55,7 @@ export function serveChatKeys(port: ChatKeysPort, makeKeeper: () => Promise<AckK
     if (typeof m !== 'object' || m === null || typeof m.t !== 'string' || !KINDS.has(m.t) || typeof m.id !== 'number') return;
     const id = m.id;
     const fail = (error: ChatKeysFailure) => port.postMessage({ t: 'chat-key', id, ok: false, error });
+    if (REFUSED.has(m.t)) return fail('refused');
     void (async () => {
       let k: AckKeeper;
       try {
@@ -61,16 +70,6 @@ export function serveChatKeys(port: ChatKeysPort, makeKeeper: () => Promise<AckK
           case 'chat-key-status': {
             const s = await k.status();
             return port.postMessage({ t: 'chat-key', id, ok: true, hasKey: s.hasKey, epoch: s.epoch });
-          }
-          case 'chat-key-make': {
-            if (typeof m.epoch !== 'number' || !Number.isInteger(m.epoch) || m.epoch < 0) return fail('bad-request');
-            return port.postMessage({ t: 'chat-key', id, ok: true, epoch: (await k.makeKey(m.epoch)).epoch });
-          }
-          case 'chat-key-seal': {
-            if (typeof m.recipientPublic !== 'string' || !HEX_KEY.test(m.recipientPublic)) return fail('bad-request');
-            const out = await k.sealFor(m.recipientPublic);
-            if (out === null) return fail('no-key');
-            return port.postMessage({ t: 'chat-key', id, ok: true, sealed: out.sealed, epoch: out.epoch });
           }
           case 'chat-key-open': {
             if (typeof m.sealed !== 'string' || typeof m.epoch !== 'number') return fail('bad-request');

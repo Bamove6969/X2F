@@ -39,17 +39,16 @@ function worker(makeKeeper?: () => Promise<AckKeeper>) {
 }
 
 describe('serveChatKeys', () => {
-  it('answers device, status, make, seal, open and forget; two workers hand a key over through the messages alone', async () => {
+  it('answers device, status, open and forget; a key made and sealed by the keeper itself (not by a message) is handed over', async () => {
     const a = worker();
     const b = worker();
     const devB = await b.ask({ t: 'chat-key-device' });
     expect(devB).toEqual({ t: 'chat-key', id: 1, ok: true, devicePublic: expect.stringMatching(/^[0-9a-f]{64}$/) });
     expect(await a.ask({ t: 'chat-key-status' })).toEqual({ t: 'chat-key', id: 1, ok: true, hasKey: false, epoch: null });
-    expect(await a.ask({ t: 'chat-key-seal', recipientPublic: (devB as { devicePublic: string }).devicePublic })).toEqual({ t: 'chat-key', id: 2, ok: false, error: 'no-key' });
-    expect(await a.ask({ t: 'chat-key-make', epoch: 0 })).toEqual({ t: 'chat-key', id: 3, ok: true, epoch: 0 });
-    const sealed = await a.ask({ t: 'chat-key-seal', recipientPublic: (devB as { devicePublic: string }).devicePublic });
-    expect(sealed).toEqual({ t: 'chat-key', id: 4, ok: true, sealed: expect.stringMatching(/^[A-Za-z0-9_-]+$/), epoch: 0 });
-    const { sealed: box, epoch } = sealed as { sealed: string; epoch: number };
+    // Review F2: making and sealing are not worker messages; the keeper is called directly here.
+    await a.keeper.makeKey(0);
+    const sealed = { ...(await a.keeper.sealFor((devB as { devicePublic: string }).devicePublic))! };
+    const { sealed: box, epoch } = sealed;
     expect(await b.ask({ t: 'chat-key-open', sealed: box, epoch })).toEqual({ t: 'chat-key', id: 2, ok: true, result: 'opened' });
     expect(await b.ask({ t: 'chat-key-status' })).toEqual({ t: 'chat-key', id: 3, ok: true, hasKey: true, epoch: 0 });
     const keyOf = (s: ReturnType<typeof memoryChatStore>) => (JSON.parse(s.account!) as { ack: { key: string } }).ack.key;
@@ -57,17 +56,29 @@ describe('serveChatKeys', () => {
     expect(await b.ask({ t: 'chat-key-forget' })).toEqual({ t: 'chat-key', id: 4, ok: true });
     expect(b.store.account).toBeNull();
     // Nothing that crossed the port was the key or a device secret.
-    const crossed = JSON.stringify([devB, sealed]);
+    const crossed = JSON.stringify([devB]);
     expect(crossed).not.toContain(keyOf(a.store));
     expect(crossed).not.toContain((JSON.parse(a.store.account!) as { deviceKey: { boxSecret: string } }).deviceKey.boxSecret);
   });
 
+  it('review F2: the worker refuses chat-key-make and chat-key-seal, well formed or not, and changes nothing', async () => {
+    const w = worker();
+    await w.keeper.makeKey(0);
+    const before = w.store.account;
+    const pub = (await generateBoxKeyPair()).boxPublic;
+    for (const m of [
+      { t: 'chat-key-make', epoch: 0 }, { t: 'chat-key-make', epoch: 1 }, { t: 'chat-key-make', epoch: -1 },
+      { t: 'chat-key-seal', recipientPublic: pub }, { t: 'chat-key-seal', recipientPublic: 'AB'.repeat(32) }, { t: 'chat-key-seal' },
+    ]) {
+      const r = await w.ask(m);
+      expect(r, JSON.stringify(m)).toMatchObject({ t: 'chat-key', ok: false, error: 'refused' });
+      expect(JSON.stringify(r)).not.toMatch(/sealed/);
+    }
+    expect(w.store.account).toBe(before);
+  });
+
   it('refuses malformed requests (bad-request) and ignores what is not a chat-key message', async () => {
     const w = worker();
-    expect(await w.ask({ t: 'chat-key-make', epoch: -1 })).toMatchObject({ ok: false, error: 'bad-request' });
-    expect(await w.ask({ t: 'chat-key-make', epoch: '0' })).toMatchObject({ ok: false, error: 'bad-request' });
-    expect(await w.ask({ t: 'chat-key-seal', recipientPublic: 'AB'.repeat(32) })).toMatchObject({ ok: false, error: 'bad-request' });
-    expect(await w.ask({ t: 'chat-key-seal' })).toMatchObject({ ok: false, error: 'bad-request' });
     expect(await w.ask({ t: 'chat-key-open', sealed: 42, epoch: 0 })).toMatchObject({ ok: false, error: 'bad-request' });
     expect(await w.ask({ t: 'chat-key-open', sealed: 'x', epoch: '0' })).toMatchObject({ ok: false, error: 'bad-request' });
     // A box that is not one is the keeper's word, not a refusal of the request.
