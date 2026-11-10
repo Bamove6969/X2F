@@ -49,6 +49,7 @@ import {
   chatIdentityProofBytes,
   checkChatEnvelope,
   parsePayDetails,
+  payTextMatches,
   renderPayDetailsText,
   type PayDetailsPayload,
 } from '@x2f/trade';
@@ -289,7 +290,7 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
   const message: ChatMessage = { from: opened.from, seq: env.seq, text };
   if (packaged) {
     // Only a trader has payment details to send, only once the escrow is secured (owner Q12), and
-    // the text must be exactly the rendering of the boxes.
+    // the text must render exactly the boxes' values (review F3: whatever labels it was sealed under).
     if (opened.from === 'mod' || a.payAllowed !== true) throw notChat();
     let pay: PayDetailsPayload;
     try {
@@ -298,7 +299,9 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
       if (e instanceof PayDetailsError) throw notChat();
       throw e;
     }
-    if (renderPayDetailsText(pay) !== text) throw notChat();
+    if (!payTextMatches(pay, text)) throw notChat();
+    // Review R1: nothing downstream sees the sender's label text, only this reader's own rendering.
+    message.text = renderPayDetailsText(pay);
     message.pay = pay;
   }
   return { message, state: { ...state, guard: guard.toJSON() } };

@@ -109,10 +109,32 @@ describe('openChatMessage with a package', () => {
     expect(await codeOf(read(plainOnly, 'buyer'))).toBe('ok');
   });
 
+  it('review F3: a package sealed under other labels (the owner re-words them, J-26) still opens; its values are what is checked', async () => {
+    const relabelled = await raw({ text: 'Payment details\nYour full name: Jane Doe\nEmail address: jane@example.ca', pay: INTERAC });
+    const got = await read(relabelled, 'buyer');
+    expect(got.message.pay).toEqual(INTERAC);
+    // Review R1: the reader keeps none of the sender's label text; the line reads with its own labels.
+    expect(got.message.text).toBe(renderPayDetailsText(INTERAC));
+  });
+
+  it('review R1: a label hiding another IBAN opens with the text rendered from the fields; the fake IBAN is nowhere in the message', async () => {
+    const SEPA: PayDetailsPayload = { v: PAY_DETAILS_V, method: 'SEPA', fields: [{ key: 'name', value: 'Bob Seller' }, { key: 'iban', value: 'DE89370400440532013000' }] };
+    const spoof = await raw({ text: 'Payment details\nName on the account: Bob Seller\nIBAN DE00999999999999999999 (new account) old IBAN: DE89370400440532013000', pay: SEPA });
+    const got = await read(spoof, 'buyer');
+    expect(got.message.pay).toEqual(SEPA);
+    expect(got.message.text).toBe(renderPayDetailsText(SEPA));
+    expect(JSON.stringify(got.message)).not.toContain('DE00999999999999999999');
+  });
+
+  it('review R1: a label holding a colon is not a chat message', async () => {
+    const colon = await raw({ text: 'Payment details\nFull name: Jane Doe\nIBAN: DE00 or Email: jane@example.ca', pay: INTERAC });
+    expect(await codeOf(read(colon, 'buyer'))).toBe('bad-message');
+  });
+
   it('a malformed package is not a chat message, and the guard does not move for it', async () => {
     const state = newChatState(channel);
     const bad: unknown[] = [
-      { text: renderPayDetailsText(INTERAC), pay: { ...INTERAC, v: 2 } },
+      { text: renderPayDetailsText(INTERAC), pay: { ...INTERAC, v: 1 } }, // review F3: a version 1 package (J-08 never ran live)
       { text: renderPayDetailsText(INTERAC), pay: { ...INTERAC, extra: 1 } },
       { text: renderPayDetailsText(INTERAC), pay: { ...INTERAC, fields: [{ key: 'email', value: 'jane@example.ca' }] } },
       { text: renderPayDetailsText(INTERAC), pay: 'INTERAC' },
