@@ -2,14 +2,17 @@ import { useId, useState } from 'react';
 import { Button } from '../../ui/Button.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { turnCourtesyOff } from './courtesy.js';
+import './courtesy.css';
 
 /**
  * "Trading with more than one person?" (build spec j31a section 2, owner p9-3 / T-039; boards
- * BuyQuote, SellQuote: a bottom sheet; SellQuote-Wide: a centred dialog). After a taker's trade
- * request is sent, before the trade room, on every trade until they tick "Don't show this again".
- * Posters never see it, and there is no penalty for opening several trades (T-038). "Got it" is the
- * only action and goes on to the trade room; closing the sheet any other way does the same, since
- * the trade is already open. COPY-UNSIGNED
+ * BuyQuote, SellQuote: a bottom sheet; SellQuote-Wide: a centred dialog). Design final call (10 Nov
+ * 2026): it shows OVER the trade room the first time the taker's new trade opens (TradeRoom.tsx,
+ * quote/courtesy.ts), never on the quote before the room, so the browser's Back cannot lose the step
+ * into the room (review L2); on every new trade until they tick "Don't show this again" (kept on this
+ * device). Posters never see it, and there is no penalty for opening several trades (T-038). "Got it"
+ * is the only action and closes it; closing the sheet any other way does the same, since the trade is
+ * already open underneath. COPY-UNSIGNED
  */
 export function CourtesySheet({ open, onDone }: { open: boolean; onDone: () => void }) {
   const bodyId = useId();

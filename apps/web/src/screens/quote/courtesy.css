@@ -1,0 +1,35 @@
+/* The courtesy sheet's own styles (CourtesySheet.tsx), shown over the trade room (design 10 Nov 2026). */
+/* Courtesy sheet (j31a section 2): body 16/24, a 44 px tick row on surface-raised, then Got it. */
+.x2f-courtesy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+}
+
+.x2f-courtesy__text {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--x2f-ink);
+}
+
+.x2f-courtesy__tick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  font-size: 15px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.x2f-courtesy__tick input {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--x2f-ink);
+}
