@@ -447,10 +447,14 @@ describe('the audit log', () => {
     await owner.browser.patch(`/v1/offers/${posted.id}`, { status: 'paused' });
     expect((await auditRows(owner.id)).map((r) => r.action)).toEqual(['offer-posted', 'offer-paused', 'offer-relisted']);
     expect((await auditRows(owner.id)).every((r) => r.member_id === m.id)).toBe(true);
-    // Review 2026-11-09 M2 (the owner's "name and amount"): every offer row carries what the offer was.
+    // Review 2026-11-09 M2 (the owner's "name and amount"): every offer row carries what the offer was,
+    // in J-16's shape (migration 490): its side and unit, each currency with its bands (ranges in the
+    // unit's minor units, margins, trade rule, method restriction) and each method with its
+    // adjustment and the currencies it is offered in. Never its payment instructions.
     const terms = {
-      offerId: posted.id, side: 'sell', currency: 'USD', methodId: 'ZELLE', priceMode: 'market', marginBps: 0, fixedCentsPerXmr: null,
-      amountUnit: 'fiat', minAtomic: null, maxAtomic: null, minFiatCents: '1000', maxFiatCents: '1000000',
+      offerId: posted.id, side: 'sell', amountUnit: 'fiat', priceMode: 'market',
+      currencies: [{ currency: 'USD', bands: [{ min: '1000', max: '500000', marginBps: 0, minTrades: null, methodIds: null }] }],
+      methods: [{ methodId: 'ZELLE', adjustBps: 0, currencies: ['USD'] }],
     };
     const offerRows = await deps.db.query<{ detail: unknown }>('select detail from team_audit where account_id = $1 order by id', [owner.id]);
     expect(offerRows.rows.map((r) => r.detail)).toEqual([terms, terms, terms]);
