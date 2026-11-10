@@ -119,6 +119,19 @@ export async function assertSessionEndInHours(q: Queryable, memberId: string | n
   if (until !== null && end.getTime() > until.getTime()) throw new ApiError(403, 'past-working-hours', { workingUntil: until.toISOString() });
 }
 
+/**
+ * Review F6, as staff (staff/login.ts caps the end a client sees at `windowEndsAt`): the end a
+ * member's session reports, `end` or the end of their working window if that is sooner. The
+ * stored end is not changed (the window is enforced on every request and by the sweep). `end`
+ * unchanged for the account owner and for "any" hours.
+ */
+export async function endWithinHours(q: Queryable, memberId: string | null, now: Date, end: Date): Promise<Date> {
+  if (memberId === null) return end;
+  const { rows } = await q.query<{ hours: unknown }>('select hours from team_members where id = $1', [memberId]);
+  const until = workingUntil(rows[0]?.hours, now);
+  return until !== null && until.getTime() < end.getTime() ? until : end;
+}
+
 /** The band of a stored row, or null. */
 export function bandOf(min: string | null, max: string | null): TradeBand | null {
   if (min === null || max === null) return null;

@@ -12,7 +12,7 @@ import { tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { abilitiesView } from '../team/members.js';
-import { assertSessionEndInHours } from '../team/limits.js';
+import { assertSessionEndInHours, endWithinHours } from '../team/limits.js';
 import type { PresetId, TeamRole } from '../team/abilities.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
@@ -108,6 +108,14 @@ export interface SessionInfo {
 export async function sessionAccountType(db: Queryable, accountId: string): Promise<SessionAccountType> {
   const { rows } = await db.query<{ account_type: string | null }>(`select to_jsonb(a) ->> 'account_type' as account_type from accounts a where a.id = $1`, [accountId]);
   return rows[0]?.account_type === 'vendor' ? 'vendor' : 'trader';
+}
+
+/** `sessionInfo` for the calling session; a team member's end is capped at their working window's end (J-20 review F6). */
+async function callerSessionInfo(
+  db: Queryable, auth: { accountId: string; memberId: string | null }, row: { length_hours: number | null; expires_at: Date }, now: Date,
+): Promise<SessionInfo> {
+  const expires_at = await endWithinHours(db, auth.memberId, now, row.expires_at);
+  return sessionInfo(await sessionAccountType(db, auth.accountId), { length_hours: row.length_hours, expires_at }, now);
 }
 
 function sessionInfo(type: SessionAccountType, row: { length_hours: number | null; expires_at: Date }, now: Date): SessionInfo {
@@ -284,7 +292,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     member,
     // The end this request's token has (review S-m1: the token before an extend keeps the old end).
     session: row.kind === 'trader' && row.level === 'full'
-      ? sessionInfo(await sessionAccountType(deps.db, accountId), { ...row, expires_at: new Date(Math.min(row.expires_at.getTime(), req.auth.expiresAt.getTime())) }, now)
+      ? await callerSessionInfo(deps.db, req.auth, { ...row, expires_at: new Date(Math.min(row.expires_at.getTime(), req.auth.expiresAt.getTime())) }, now)
       : null,
     idleReminderMinutes: row.kind === 'trader' ? await idleReminderOf(deps.db, methodsOf) : null,
   };
@@ -487,7 +495,7 @@ export function accountRoutes(app: FastifyInstance): void {
         returning length_hours, expires_at`,
           [req.auth.sessionId, hours, now, end],
         );
-        return { info: sessionInfo(await sessionAccountType(db, req.auth.accountId), rows[0]!, now), shortened: end.getTime() < old.expires_at.getTime() };
+        return { info: await callerSessionInfo(db, req.auth, rows[0]!, now), shortened: end.getTime() < old.expires_at.getTime() };
       });
       // Review M1: a stream opened before keeps the old end as its lifetime; end it now.
       if (shortened) req.server.events.closeSession(req.auth.accountId, req.auth.sessionId);
@@ -540,7 +548,7 @@ export function accountRoutes(app: FastifyInstance): void {
         returning length_hours, expires_at`,
           [req.auth.sessionId, now, UNCHOSEN_SESSION_HOURS, hours],
         );
-        return { info: sessionInfo(await sessionAccountType(db, req.auth.accountId), rows[0]!, now), setCookie };
+        return { info: await callerSessionInfo(db, req.auth, rows[0]!, now), setCookie };
       });
       setCookie();
       return info;
