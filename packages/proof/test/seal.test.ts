@@ -11,13 +11,13 @@ import {
   decryptProof,
   encryptProof,
   isProofId,
-  isUtcSecond,
+  isUtcMinute,
   newProofId,
   parseProofPayload,
   proofKeyFromBase64,
   proofKeyToBase64,
   sealProofEnvelope,
-  toUtcSecond,
+  toUtcMinute,
   type ProofKind,
 } from '../src/index.js';
 
@@ -298,7 +298,7 @@ describe('sealed key payloads (Plan 1 seal/open)', () => {
     const { ids, parts } = await participants();
     const proofId = newProofId();
     const enc = await encryptProof(image(), { code: CODE, proofId, kind: 'proof' });
-    const payload = { proofId, kind: 'proof', key: await b64(enc.key), sha256: enc.sha256, width: 1170, height: 2532, mime: 'image/jpeg', hidden: ['card', 'email'], photoTakenAt: '2026-10-16T12:32:05Z' };
+    const payload = { proofId, kind: 'proof', key: await b64(enc.key), sha256: enc.sha256, width: 1170, height: 2532, mime: 'image/jpeg', hidden: ['card', 'email'], photoTakenAt: '2026-10-16T12:32:00Z' };
     const env = await seal({ trade: CHANNEL, from: 'buyer', seq: 1, type: 'proof.attached', payload, to: ['buyer', 'seller', 'mod'], me: ids.buyer, participants: parts });
     const opened = await open(env, { me: ids.seller, myRole: 'seller', participants: parts, trade: CHANNEL, guard: new ReplayGuard(CHANNEL) });
     const parsed = parseProofPayload(opened.type, opened.payload);
@@ -334,8 +334,9 @@ describe('parseProofPayload', () => {
     expect(bad('proof.attached', { ...attached(), width: PROOF_MAX_SIDE, height: 1 })).toBe('no error');
   });
 
-  it('photoTakenAt is null or a UTC instant to the second (owner G16), nothing else', () => {
-    for (const t of [null, '2026-10-16T12:32:05Z', '1990-01-01T00:00:00Z', '2026-02-28T23:59:59Z']) {
+  // Review 2026-11-10 finding 7: the time is rounded down to the minute (the check has 14 h of slack).
+  it('photoTakenAt is null or a UTC instant to the minute (owner G16), nothing else', () => {
+    for (const t of [null, '2026-10-16T12:32:00Z', '1990-01-01T00:00:00Z', '2026-02-28T23:59:00Z']) {
       expect(bad('proof.attached', { ...attached(), photoTakenAt: t }), String(t)).toBe('no error');
     }
     for (const t of [
@@ -346,14 +347,17 @@ describe('parseProofPayload', () => {
       '2026-10-16',
       '2026-02-30T00:00:00Z',
       '2026-10-16T24:00:00Z',
-      '1989-12-31T23:59:59Z',
+      '1989-12-31T23:59:00Z',
+      '2026-10-16T12:32:05Z',
+      '2026-02-28T23:59:59Z',
       1760617925000,
       { exif: 'DateTimeOriginal' },
     ]) {
       expect(bad('proof.attached', { ...attached(), photoTakenAt: t }), String(t)).toBe('bad-payload');
     }
-    expect(isUtcSecond(toUtcSecond(new Date('2026-10-16T12:32:05.789Z')))).toBe(true);
-    expect(toUtcSecond(new Date('2026-10-16T12:32:05.789Z'))).toBe('2026-10-16T12:32:05Z');
+    expect(isUtcMinute(toUtcMinute(new Date('2026-10-16T12:32:59.789Z')))).toBe(true);
+    expect(toUtcMinute(new Date('2026-10-16T12:32:59.789Z'))).toBe('2026-10-16T12:32:00Z');
+    expect(toUtcMinute(new Date('2026-12-31T23:59:59.999Z'))).toBe('2026-12-31T23:59:00Z');
   });
 
   // Review 2026-11-10 finding 6: an envelope from a client built before the field reads as null
@@ -363,7 +367,7 @@ describe('parseProofPayload', () => {
     const parsed = parseProofPayload('proof.attached', old);
     expect(parsed.type === 'proof.attached' && parsed.payload.photoTakenAt).toBeNull();
     expect(bad('proof.attached', { ...attached(), photoTakenAt: undefined })).toBe('no error');
-    expect(bad('proof.attached', { ...old, takenAt: '2026-10-16T12:32:05Z' })).toBe('bad-payload');
+    expect(bad('proof.attached', { ...old, takenAt: '2026-10-16T12:32:00Z' })).toBe('bad-payload');
     expect(bad('proof.attached', { ...attached(), takenAt: null })).toBe('bad-payload');
   });
 

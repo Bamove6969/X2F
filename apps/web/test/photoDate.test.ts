@@ -1,6 +1,6 @@
 // Owner G16 (2026-11-07): the proof's date comes first from the photo's own Exif date, read in the
 // browser before the re-encode strips it; only the UTC time is sent, never the Exif.
-import { isUtcSecond } from '@x2f/proof';
+import { isUtcMinute } from '@x2f/proof';
 import { describe, expect, it } from 'vitest';
 import { photoTakenAt, photoTimeToUtc } from '../src/proof/photoDate.js';
 import { hasImageMetadata } from '../src/proof/reencode.js';
@@ -46,18 +46,20 @@ function jpeg(t: Uint8Array): Blob {
 
 describe('photoTakenAt (owner G16)', () => {
   it('a photo with its own offset gives that exact instant in UTC', async () => {
-    expect(await photoTakenAt(jpeg(tiff('2026:10:16 14:32:05', '+02:00')))).toBe('2026-10-16T12:32:05Z');
+    // Rounded down to the minute (review 2026-11-10 finding 7).
+    expect(await photoTakenAt(jpeg(tiff('2026:10:16 14:32:05', '+02:00')))).toBe('2026-10-16T12:32:00Z');
     expect(await photoTakenAt(jpeg(tiff('2026:10:16 22:10:00', '-05:00')))).toBe('2026-10-17T03:10:00Z');
   });
 
   it('a photo with no offset is read in this device time zone', async () => {
-    const want = new Date(2026, 9, 16, 14, 32, 5).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    const want = new Date(2026, 9, 16, 14, 32, 0).toISOString().replace(/\.\d{3}Z$/, 'Z');
     expect(await photoTakenAt(jpeg(tiff('2026:10:16 14:32:05')))).toBe(want);
   });
 
   it('gives only a UTC time: no camera, place or other Exif field', async () => {
     const out = await photoTakenAt(jpeg(tiff('2026:10:16 14:32:05', '+00:00')));
-    expect(isUtcSecond(out)).toBe(true);
+    expect(isUtcMinute(out)).toBe(true);
+    expect(out).toBe('2026-10-16T14:32:00Z');
     expect(hasImageMetadata(latin1(String(out)))).toBe(false);
   });
 
@@ -85,7 +87,7 @@ describe('photoTakenAt (owner G16)', () => {
         return part;
       },
     } as unknown as Blob;
-    expect(await photoTakenAt(spy)).toBe('2026-10-16T12:32:05Z');
+    expect(await photoTakenAt(spy)).toBe('2026-10-16T12:32:00Z');
     expect(read).toBeLessThan(1024);
   });
 

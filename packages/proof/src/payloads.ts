@@ -12,7 +12,7 @@
  *
  * Neither carries a file name, original type or anything else about the source file, except
  * `proof.attached`'s `photoTakenAt`: the time the picture was made, read from its own metadata on
- * the poster's device before cleaning (owner G16), as a UTC instant to the second, or null. The
+ * the poster's device before cleaning (owner G16), as a UTC instant rounded down to the minute, or null. The
  * metadata block itself never leaves the device. (Named so as not to be confused with a trade's
  * `takenAt`, when the trade was taken.)
  * `parseProofPayload` checks an opened envelope's `{type, payload}` exactly.
@@ -47,7 +47,7 @@ export interface ProofAttachedPayload {
   /** What was blurred, each kind at most once. */
   hidden: HiddenKind[];
   /**
-   * When the picture was made, from its own Exif/XMP date (owner G16): `YYYY-MM-DDTHH:MM:SSZ`, or
+   * When the picture was made, from its own Exif/XMP date (owner G16): `YYYY-MM-DDTHH:MM:00Z`, or
    * null. Always written; an envelope without it (a client from before the field) parses as null.
    */
   photoTakenAt: string | null;
@@ -87,26 +87,30 @@ function common(p: Record<string, unknown>): ProofUnblurredPayload {
   return { proofId, key, sha256, width, height, mime: mime as ProofMime };
 }
 
-const UTC_SECOND = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z$/;
+const UTC_MINUTE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):00Z$/;
 
-/** `YYYY-MM-DDTHH:MM:SSZ` naming a real instant in 1990..2200, as `toUtcSecond` writes it. */
-export function isUtcSecond(s: unknown): s is string {
+/** `YYYY-MM-DDTHH:MM:00Z` naming a real minute in 1990..2200, as `toUtcMinute` writes it. */
+export function isUtcMinute(s: unknown): s is string {
   if (typeof s !== 'string') return false;
-  const m = UTC_SECOND.exec(s);
+  const m = UTC_MINUTE.exec(s);
   if (!m) return false;
-  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6]));
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]));
   const y = Number(m[1]);
-  return y >= 1990 && y <= 2200 && toUtcSecond(new Date(t)) === s;
+  return y >= 1990 && y <= 2200 && toUtcMinute(new Date(t)) === s;
 }
 
-/** A time as `proof.attached` carries it: UTC, to the second (`2026-10-16T12:32:05Z`). */
-export function toUtcSecond(d: Date): string {
-  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+/**
+ * A time as `proof.attached` carries it: UTC, rounded down to the minute (`2026-10-16T12:32:00Z`).
+ * The date check has 14 hours of slack, so the seconds tell the other side nothing it needs (review
+ * 2026-11-10 finding 7).
+ */
+export function toUtcMinute(d: Date): string {
+  return d.toISOString().replace(/:\d{2}\.\d{3}Z$/, ':00Z');
 }
 
 function photoTakenAtOf(v: unknown): string | null {
   if (v === null || v === undefined) return null;
-  if (!isUtcSecond(v)) throw fail();
+  if (!isUtcMinute(v)) throw fail();
   return v;
 }
 
@@ -125,7 +129,7 @@ function hiddenList(h: unknown): HiddenKind[] {
  * ProofError('bad-payload') for an unknown type, a missing or extra field, a key that is not
  * exactly 32 bytes of canonical base64, a malformed proof id or sha256, a side outside
  * 1..PROOF_MAX_SIDE, a mime other than PNG or JPEG, `hidden` that is not a set of HiddenKind, or a
- * `photoTakenAt` that is neither null nor `isUtcSecond`. A missing `photoTakenAt` is null.
+ * `photoTakenAt` that is neither null nor `isUtcMinute`. A missing `photoTakenAt` is null.
  */
 export function parseProofPayload(type: string, payload: unknown): ProofEnvelope {
   if (!isPlainObject(payload)) throw fail();
