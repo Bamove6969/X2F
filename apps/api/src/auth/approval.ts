@@ -47,6 +47,7 @@ import {
   endHoldIfOwner, holdInTx, holdRefusal, lockAccount, ownerProof, requireLiveSessionInTx, settleOf, weakOf, weakRefusal, type ProvenMethod,
 } from './hold.js';
 import { syncHeldTrades } from '../trades/held.js';
+import { keysOffered } from './chatKeys.js';
 import { loginStrength, waits, type LoginFactorKind, type LoginStrength } from './strength.js';
 import { assertNotDisabled, cleanLabel, openSession, presentedTokenHash, requireSession } from './sessions.js';
 
@@ -504,6 +505,13 @@ export interface ApprovalView {
   /** The account is at its device limit: approving needs `logOut` (unless "One device at a time" is on). */
   atLimit: boolean;
   oneDevice: boolean;
+  /**
+   * J-23 (design note docs/security/multi-device-2026-11-09.md section 3.1 rule 2): whether a
+   * chat-key handover may be offered with this approval at all: the new login's stored strength and
+   * this viewing session's stored strength are both `'strong'`, strictly (`chatKeys.ts`
+   * `keysOffered`). Nothing rides on it yet: the handover gesture waits for owner p12-5.
+   */
+  keysOffered: boolean;
 }
 
 async function views(deps: Deps, req: FastifyRequest, id: string | null): Promise<ApprovalView[]> {
@@ -520,6 +528,8 @@ async function views(deps: Deps, req: FastifyRequest, id: string | null): Promis
   if (rows.length === 0) return [];
   const max = rows[0]!.one_device ? 1 : await maxDevices(deps.db);
   const inUse = await devicesInUse(deps.db, accountId, now, null);
+  const me = await deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
+  const viewer = me.rows[0]?.strength ?? null;
   return rows.map((r) => ({
     id: r.id,
     deviceLabel: r.device_label,
@@ -528,6 +538,7 @@ async function views(deps: Deps, req: FastifyRequest, id: string | null): Promis
     expiresAt: r.expires_at.toISOString(),
     atLimit: !r.one_device && inUse >= max,
     oneDevice: r.one_device,
+    keysOffered: keysOffered(r.strength, viewer),
   }));
 }
 
@@ -616,8 +627,9 @@ async function decide(req: FastifyRequest) {
       endId = body.logOut;
     }
     await db.query(
-      `update login_approvals set outcome = 'approved', decided_at = $2, decided_by = $3, expires_at = $4, ends = $5, end_session = $6 where id = $1`,
-      [id, now, sessionId, new Date(now.getTime() + APPROVAL_TTL_MS), ends, endId],
+      `update login_approvals set outcome = 'approved', decided_at = $2, decided_by = $3, expires_at = $4, ends = $5, end_session = $6, keys_offered = $7 where id = $1`,
+      // J-23: the handover gate as it stood at the decision (the live caller under the locks); nothing uses it yet (p12-5).
+      [id, now, sessionId, new Date(now.getTime() + APPROVAL_TTL_MS), ends, endId, keysOffered(row.strength, caller.strength)],
     );
     return { outcome: 'approved' as const };
   });

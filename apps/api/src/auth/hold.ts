@@ -74,6 +74,7 @@ import { applyPgpKey } from './pgp.js';
 import { applyRecoveryCodes } from './recovery.js';
 import { waits, type LoginStrength } from './strength.js';
 import { applyTotp } from './totp.js';
+import { CHAT_KEY_WRITE_ROUTES } from './chatKeyRouteList.js';
 import { JABBER_WRITE_ROUTES } from '../jabber/routeList.js';
 import { applyCredential, type StoredCredential } from './webauthn.js';
 import { applyAbilities, applyMemberRemoval } from '../team/members.js';
@@ -596,6 +597,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'POST /v1/account/past-rep/finish',
   // Owner rule p5-7: the Jabber alert set-up (jabber/routes.ts `writeGate`).
   ...JABBER_WRITE_ROUTES,
+  // J-23 groundwork: the chat-key courier re-checks the session (strong, strictly) and the hold
+  // under the account lock (auth/chatKeys.ts `strongCallerInTx`).
+  ...CHAT_KEY_WRITE_ROUTES,
 ];
 
 /**
@@ -665,6 +669,9 @@ export const WEAK_LIMITED_ROUTES: readonly string[] = [
   'DELETE /v1/account/push',
   'POST /v1/account/push',
   'POST /v1/account/alerts/:id/seen',
+  // J-23 groundwork: a weak session may not use the chat-key courier at all (strictly 'strong',
+  // auth/chatKeys.ts), on itself or anyone else.
+  ...CHAT_KEY_WRITE_ROUTES,
 ];
 
 /**
@@ -695,6 +702,8 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   // Owner rule p5-7 (lead default): the Jabber alert set-up waits out a hold like the other
   // security settings; each also checks it under the account lock (jabber/routes.ts `writeGate`).
   ...JABBER_WRITE_ROUTES,
+  // J-23 groundwork (design note 2.4): nothing is handed over during a hold (auth/chatKeys.ts).
+  ...CHAT_KEY_WRITE_ROUTES,
 ];
 
 /**

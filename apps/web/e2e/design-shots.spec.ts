@@ -161,6 +161,7 @@ const approval = (over: Record<string, unknown> = {}) => ({
   expiresAt: new Date(Date.now() + 240_000).toISOString(),
   atLimit: false,
   oneDevice: false,
+  keysOffered: false,
   ...over,
 });
 

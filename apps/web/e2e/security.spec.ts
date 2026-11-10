@@ -314,7 +314,7 @@ test('a logged-in device asked "Is this you?" taps the number and lets the new d
   await base(page);
   const id = '22222222-2222-4222-8222-222222222222';
   await page.route('**/v1/account/approvals', json([
-    { id, deviceLabel: 'Chrome on Windows', choices: [31, 47, 86], createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: false, oneDevice: false },
+    { id, deviceLabel: 'Chrome on Windows', choices: [31, 47, 86], createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: false, oneDevice: false, keysOffered: false },
   ]));
   let decision: unknown = null;
   await page.route(`**/v1/account/approvals/${id}`, async (r) => {
@@ -522,7 +522,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     await base(page);
     const id = '22222222-2222-4222-8222-222222222222';
     await page.route('**/v1/account/approvals', json([
-      { id, deviceLabel: 'Chrome on Windows', choices: [31, 47, 86], createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: true, oneDevice: false },
+      { id, deviceLabel: 'Chrome on Windows', choices: [31, 47, 86], createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: true, oneDevice: false, keysOffered: false },
     ]));
     await page.route('**/v1/account/security/devices', json({ oneDevice: false, maxDevices: 3 }));
     await page.route(`**/v1/account/approvals/${id}`, json({

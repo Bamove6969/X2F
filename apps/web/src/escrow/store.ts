@@ -202,23 +202,52 @@ function done(tx: IDBTransaction): Promise<void> {
   });
 }
 
-function openDb(idb: IDBFactory): Promise<IDBDatabase> {
+/**
+ * Opens the database. Every connection closes itself when another tab asks for a version change (a
+ * newer build's upgrade, or a delete), so this tab never stalls it (lead 10 Nov). `create` is true
+ * only for the store's first open: a reopen never creates or upgrades anything, because this
+ * database holds escrow keys and an empty one in its place would lose them (the upgrade is aborted,
+ * which also removes a database the abort would otherwise have created).
+ */
+function openDb(idb: IDBFactory, create: boolean): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const r = idb.open(DB_NAME, DB_VERSION);
+    let r: IDBOpenDBRequest;
+    try {
+      r = idb.open(DB_NAME, DB_VERSION);
+    } catch {
+      reject(new EscrowStoreError('unavailable'));
+      return;
+    }
     r.onupgradeneeded = () => {
+      if (!create) {
+        r.transaction?.abort();
+        return;
+      }
       const db = r.result;
       for (const name of [TRADES, SECRETS, KEYS]) if (!db.objectStoreNames.contains(name)) db.createObjectStore(name);
     };
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error ?? new EscrowStoreError('unavailable'));
+    r.onsuccess = () => {
+      const db = r.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
+    // Also a newer database than this build knows (VersionError): unavailable, never a hang.
+    r.onerror = (e) => {
+      e.preventDefault();
+      reject(new EscrowStoreError('unavailable'));
+    };
     r.onblocked = () => reject(new EscrowStoreError('unavailable'));
   });
 }
 
-/** The wrapping key: made once, non-extractable, kept as a CryptoKey object in IndexedDB. */
-async function wrapKey(db: IDBDatabase, subtle: SubtleCrypto): Promise<CryptoKey> {
+/**
+ * The wrapping key: made once, non-extractable, kept as a CryptoKey object in IndexedDB. With
+ * `make` false (a reopen) a missing key is `unavailable`: a fresh key is never put in place of one.
+ */
+async function wrapKey(db: IDBDatabase, subtle: SubtleCrypto, make = true): Promise<CryptoKey> {
   const existing = await req(db.transaction(KEYS).objectStore(KEYS).get(KEY_ID));
   if (existing instanceof CryptoKey) return existing;
+  if (!make) throw new EscrowStoreError('unavailable');
   const fresh = await subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
   // get-then-put in one transaction: two tabs opening at once end up with the same key.
   const tx = db.transaction(KEYS, 'readwrite');
@@ -239,10 +268,43 @@ export async function openEscrowStore(o: { indexedDB?: IDBFactory; crypto?: Cryp
   const idb = o.indexedDB ?? globalThis.indexedDB;
   const cr = o.crypto ?? globalThis.crypto;
   if (!idb || !cr?.subtle) throw new EscrowStoreError('unavailable');
-  const db = await openDb(idb);
-  const key = await wrapKey(db, cr.subtle);
+
+  // The live connection and its wrap key. A version change from another tab closes it; the next use
+  // reopens onto the existing database and key only (never creating either); close() is final.
+  type Conn = { db: IDBDatabase; key: CryptoKey; closed: boolean };
+  let latest: Conn | null = null;
+  const attach = (db: IDBDatabase, key: CryptoKey): Conn => {
+    const conn: Conn = { db, key, closed: false };
+    latest = conn;
+    db.onversionchange = () => {
+      conn.closed = true;
+      db.close();
+    };
+    return conn;
+  };
+  const first = await openDb(idb, true);
+  let current: Promise<Conn> = Promise.resolve(attach(first, await wrapKey(first, cr.subtle)));
+  let ended = false;
+  const reopen = async (): Promise<Conn> => {
+    const db = await openDb(idb, false);
+    try {
+      for (const name of [TRADES, SECRETS, KEYS]) if (!db.objectStoreNames.contains(name)) throw new EscrowStoreError('unavailable');
+      return attach(db, await wrapKey(db, cr.subtle, false));
+    } catch (e) {
+      db.close();
+      throw e instanceof EscrowStoreError ? e : new EscrowStoreError('unavailable');
+    }
+  };
+  const conn = async (): Promise<Conn> => {
+    if (ended) throw new EscrowStoreError('unavailable');
+    const c = await current.catch(() => null);
+    if (c !== null && !c.closed) return c;
+    current = reopen();
+    return current;
+  };
 
   const wrap = async (store: string, code: string, value: unknown): Promise<Wrapped> => {
+    const { key } = await conn();
     const iv = cr.getRandomValues(new Uint8Array(12));
     const ct = await cr.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: aad(store, code) }, key, encode(value));
     return { iv, ct };
@@ -250,6 +312,7 @@ export async function openEscrowStore(o: { indexedDB?: IDBFactory; crypto?: Cryp
   const unwrap = async (store: string, code: string, w: unknown): Promise<unknown> => {
     const x = w as Partial<Wrapped> | null;
     if (!x || !(x.iv instanceof Uint8Array) || !(x.ct instanceof ArrayBuffer)) throw new EscrowStoreError('bad-record');
+    const { key } = await conn();
     let plain: ArrayBuffer;
     try {
       plain = await cr.subtle.decrypt({ name: 'AES-GCM', iv: x.iv, additionalData: aad(store, code) }, key, x.ct);
@@ -259,12 +322,14 @@ export async function openEscrowStore(o: { indexedDB?: IDBFactory; crypto?: Cryp
     return decode(plain);
   };
   const get = async (store: string, code: string): Promise<unknown> => {
+    const { db } = await conn();
     const raw = await req(db.transaction(store).objectStore(store).get(code));
     return raw === undefined ? null : unwrap(store, code, raw);
   };
 
   const store: EscrowStore = {
     async codes() {
+      const { db } = await conn();
       const keys = await req(db.transaction(TRADES).objectStore(TRADES).getAllKeys());
       return keys.filter((k): k is string => typeof k === 'string');
     },
@@ -275,6 +340,7 @@ export async function openEscrowStore(o: { indexedDB?: IDBFactory; crypto?: Cryp
     },
     async save(rec) {
       const w = await wrap(TRADES, rec.code, rec);
+      const { db } = await conn();
       const tx = db.transaction(TRADES, 'readwrite');
       tx.objectStore(TRADES).put(w, rec.code);
       await done(tx);
@@ -291,6 +357,7 @@ export async function openEscrowStore(o: { indexedDB?: IDBFactory; crypto?: Cryp
       const fresh = hex(cr.getRandomValues(new Uint8Array(PASSWORD_BYTES)));
       const w = await wrap(SECRETS, code, { password: fresh });
       // add() refuses an existing key, so a racing second call cannot replace the first password.
+      const { db } = await conn();
       const tx = db.transaction(SECRETS, 'readwrite');
       const added = tx.objectStore(SECRETS).add(w, code);
       added.onerror = (e) => {
@@ -302,13 +369,15 @@ export async function openEscrowStore(o: { indexedDB?: IDBFactory; crypto?: Cryp
       return stored;
     },
     async delete(code) {
+      const { db } = await conn();
       const tx = db.transaction([TRADES, SECRETS], 'readwrite');
       tx.objectStore(TRADES).delete(code);
       tx.objectStore(SECRETS).delete(code);
       await done(tx);
     },
     close() {
-      db.close();
+      ended = true;
+      latest?.db.close();
     },
   };
   return store;
