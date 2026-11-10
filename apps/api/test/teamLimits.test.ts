@@ -250,11 +250,45 @@ describe('the trade-size band limits every member action on a trade or an offer 
     expect(err(fiat)).toEqual({ status: 403, error: 'outside-trade-band' });
     const { rows } = await deps.db.query<{ n: number }>('select count(*)::int as n from offers where account_id = $1', [owner.id]);
     expect(rows[0]!.n).toBe(1);
-    // The lead's own offer outside the band: the member cannot pause or remove it.
-    const big = (await owner.browser.post('/v1/offers', XMR_OFFER(XMR, 5n * XMR))).json() as { id: string };
-    expect(err(await m.browser.patch(`/v1/offers/${big.id}`, { status: 'paused' }))).toEqual({ status: 403, error: 'outside-trade-band' });
     const id = (inside.json() as { id: string }).id;
     expect((await m.browser.patch(`/v1/offers/${id}`, { status: 'paused' })).statusCode).toBe(200);
+    expect((await m.browser.patch(`/v1/offers/${id}`, { status: 'live' })).statusCode).toBe(200);
+  });
+
+  it('F2 (p11-134, lead default): the band never stops a member pausing or removing an offer; resuming one outside it is refused', async () => {
+    const owner = await team();
+    const m = await member(owner.id, rolesToAbilities(['offers']));
+    expect((await setLimits(owner, m.id, { minAtomic: (XMR / 10n).toString(), maxAtomic: XMR.toString() }, 'any')).statusCode).toBe(200);
+    const post = async (b: Record<string, unknown>) => {
+      const res = await owner.browser.post('/v1/offers', b);
+      expect(res.statusCode, res.body).toBe(201);
+      return (res.json() as { id: string }).id;
+    };
+    // The lead's own offers outside the band, one in XMR and one in fiat.
+    const big = await post(XMR_OFFER(XMR, 5n * XMR));
+    const fiat = await post(FIAT_OFFER);
+    expect((await m.browser.patch(`/v1/offers/${big}`, { status: 'paused' })).statusCode).toBe(200);
+    expect((await m.browser.patch(`/v1/offers/${fiat}`, { status: 'paused' })).statusCode).toBe(200);
+    // Resuming (relisting) one outside the band is refused and leaves it paused.
+    expect(err(await m.browser.patch(`/v1/offers/${big}`, { status: 'live' }))).toEqual({ status: 403, error: 'outside-trade-band' });
+    // Removing one outside the band works.
+    expect((await m.browser.patch(`/v1/offers/${fiat}`, { status: 'removed' })).statusCode).toBe(200);
+    const status = async (id: string) => (await deps.db.query<{ status: string }>('select status from offers where id = $1', [id])).rows[0]!.status;
+    expect([await status(big), await status(fiat)]).toEqual(['paused', 'removed']);
+    // The bulk switch: a member turns on what is inside the band; one outside is named, not the batch failed.
+    const small = await post(XMR_OFFER(XMR / 10n, XMR / 2n));
+    expect((await owner.browser.patch(`/v1/offers/${small}`, { status: 'paused' })).statusCode).toBe(200);
+    const on = await m.browser.post('/v1/account/offers/status', { ids: [big, small], status: 'live' });
+    expect(on.statusCode, on.body).toBe(200);
+    expect((on.json() as { results: unknown[] }).results).toEqual([
+      { id: big, status: 'paused', refused: 'outside-trade-band' },
+      { id: small, status: 'live' },
+    ]);
+    // ...and pauses everything, inside the band or not.
+    await deps.db.query(`update offers set status = 'live' where id = $1`, [big]);
+    const off = await m.browser.post('/v1/account/offers/status', { ids: [big, small], status: 'paused' });
+    expect(off.statusCode, off.body).toBe(200);
+    expect((off.json() as { results: unknown[] }).results).toEqual([{ id: big, status: 'paused' }, { id: small, status: 'paused' }]);
   });
 });
 
