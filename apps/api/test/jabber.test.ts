@@ -380,6 +380,25 @@ describe('lead follow-up to interop 4b: the prekeys X2F used are remembered acro
     expect(await notices(t.id)).toBe(0);
   });
 
+  it('within a pass, once a recipient is known used up, its remaining notices are deferred without connecting', async () => {
+    const t = await withJabber();
+    await sendAll();
+    await deps.db.query('delete from jabber_omemo_prekeys');
+    const phone = new OmemoDevice(22, 2);
+    const s = omemoSender(() => [phone]);
+    await changes(t, 4);
+    expect(await s.pass()).toEqual({ sent: 2, retried: 0, dropped: 0, deferred: 2 });
+    // Two sent, the third found the device used up; the fourth never reached the sender.
+    expect(s.calls.n).toBe(3);
+    expect(await notices(t.id)).toBe(2);
+    for (const xml of s.delivered) expect(phone.decrypt(xml)).toBe(ACCOUNT_CHANGE_TEXT);
+    phone.replenish();
+    expect(await s.pass()).toEqual({ sent: 2, retried: 0, dropped: 0, deferred: 0 });
+    expect(s.calls.n).toBe(5);
+    for (const xml of s.delivered.slice(2)) expect(phone.decrypt(xml)).toBe(ACCOUNT_CHANGE_TEXT);
+    await deps.db.query('delete from jabber_omemo_prekeys');
+  });
+
   it('purgeJabberPreKeys drops records not touched for 30 days and keeps the rest', async () => {
     await deps.db.query('delete from jabber_omemo_prekeys');
     const at = (ms: number) => new Date(now.getTime() - ms);

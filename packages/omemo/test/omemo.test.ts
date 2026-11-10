@@ -218,6 +218,17 @@ describe('encryptMessage', () => {
       expect(() => encryptMessage(me, 'n1', [recipientBundle(phone)], ledger.forRecipient('mira@xmpp.example.org'))).toThrow(PreKeysExhausted);
     });
 
+    it('usedUp: once a device of a recipient had no prekey left, the ledger says so for that recipient alone, so the outbox can skip the rest of the pass', () => {
+      const me = sender();
+      const phone = new OmemoDevice(59, 1);
+      const ledger = new PreKeyLedger();
+      encryptMessage(me, 'n0', [recipientBundle(phone)], ledger.forRecipient('mira@xmpp.example.org'));
+      expect(ledger.usedUp('mira@xmpp.example.org')).toBe(false);
+      expect(() => encryptMessage(me, 'n1', [recipientBundle(phone)], ledger.forRecipient('mira@xmpp.example.org'))).toThrow(PreKeysExhausted);
+      expect(ledger.usedUp('mira@xmpp.example.org')).toBe(true);
+      expect(ledger.usedUp('noor@xmpp.example.org')).toBe(false);
+    });
+
     it('a notice to several devices, one of them used up, is deferred whole (one message per notice), and the other devices keep the prekeys it had picked', () => {
       const me = sender();
       const phone = new OmemoDevice(54, 1);

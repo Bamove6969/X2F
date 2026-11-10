@@ -65,7 +65,8 @@ and Dino use libsignal, Gajim uses omemo-dr, Monal its own port of the same). So
    pass** (`PreKeysExhausted` in the package, `NoticeDeferred` in the API): it stays in the outbox,
    untried (its attempt count unchanged, due at once), and the next pass sends it against the bundle
    fetched then (a client republishes fresh prekeys after reading); the outbox logs only a
-   `deferred` count. Lead decision 2026-11-10, after interop step 4b: python-omemo (Gajim and other
+   `deferred` count; once a recipient is found used up, its remaining notices in that pass are
+   deferred without connecting (`PreKeyLedger.usedUp`). Lead decision 2026-11-10, after interop step 4b: python-omemo (Gajim and other
    clients) refuses a PreKeySignalMessage without `OPK` ("No pre key with id 0 known"), so the
    earlier no-`OPK` fallback is gone; a prekey is never reused and a session never set up without
    one. The outbox keeps one row per notice, sent as one message keyed to every device, so a notice

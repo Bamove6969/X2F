@@ -56,7 +56,8 @@ export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
  * reading). Never on a reused prekey and never without one (lead decision after the interop run of
  * 2026-11-10, step 4b: python-omemo refuses that). The whole notice waits, not only that device:
  * a row is one notice to the address, sent as one message keyed to every device at once, so the
- * outbox cannot record which devices already have it.
+ * outbox cannot record which devices already have it. Once a recipient is found used up, its
+ * remaining notices in the pass are deferred the same way without connecting.
  */
 export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
   const out: OutboxResult = { sent: 0, retried: 0, dropped: 0, deferred: 0 };
@@ -80,6 +81,8 @@ export async function sendDueNotices(deps: OutboxDeps): Promise<OutboxResult> {
       continue;
     }
     try {
+      // A recipient this pass already found used up is not connected to again (it would be deferred anyway).
+      if (preKeys.usedUp(jid)) throw new NoticeDeferred();
       await withTimeout(deps.sender.send(jid, { kind: row.kind }, { preKeys }), SEND_TIMEOUT_MS);
       out.sent++;
       await deps.db.query('update jabber_contacts set last_sent_at = $2 where account_id = $1', [row.account_id, deps.clock()]);

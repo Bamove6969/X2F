@@ -76,6 +76,7 @@ export class PreKeysExhausted extends Error {
  */
 export class PreKeyLedger {
   private readonly used = new Map<string, Set<number>>();
+  private readonly exhausted = new Set<string>();
 
   private usedBy(recipient: string, b: RecipientBundle): Set<number> {
     const device = `${recipient}\n${b.deviceId}\n${b.identityKey.toString('hex')}`;
@@ -89,11 +90,23 @@ export class PreKeyLedger {
     return (b) => {
       const used = this.usedBy(recipient, b);
       const left = b.preKeys.filter((p) => !used.has(p.id));
-      if (left.length === 0) return null;
+      if (left.length === 0) {
+        this.exhausted.add(recipient);
+        return null;
+      }
       const pick = left[randomInt(left.length)]!;
       used.add(pick.id);
       return pick;
     };
+  }
+
+  /**
+   * Whether a device of `recipient` had no prekey left in this pass: the outbox defers the rest of
+   * the pass's notices to that recipient without connecting (its bundle could have been refreshed
+   * meanwhile, but only a connection would tell; the next pass looks).
+   */
+  usedUp(recipient: string): boolean {
+    return this.exhausted.has(recipient);
   }
 
   /** Marks `ids` as used for `recipient`'s device `b` (ids the API recorded in earlier passes). */
