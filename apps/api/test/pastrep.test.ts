@@ -558,6 +558,28 @@ describe('one fingerprint, one account (P5-A24)', () => {
     expect((await rows()).find((r) => r.id === res.json().id)).toMatchObject({ account_id: bAcc.id, fingerprint: ed.fingerprint, status: 'signed' });
   });
 
+  it('owner G21 (J-21, R-028): the other account must PROVE the revoked key; once it has, the key is its own and the first account is refused', async () => {
+    const a = await login();
+    const c1 = await start(a.b, ed);
+    const first = (await finishOf(a.b, c1.challengeId, await clearsign(c1.text, ed))).json().id as string;
+    await deps.db.query(`update past_reputation set status = 'revoked', decided_at = $2, reason = 'test' where id = $1`, [first, T0]);
+    const bAcc = await login();
+    // Naming the revoked key without its signature is no proof: a signature by another key is refused, nothing stored.
+    const unproven = await start(bAcc.b, ed);
+    const refused = await finishOf(bAcc.b, unproven.challengeId, await clearsign(unproven.text, other));
+    expect(refused.statusCode, refused.body).toBe(400);
+    expect((await rows()).filter((r) => r.account_id === bAcc.id)).toEqual([]);
+    // With the proof the claim is B's and goes to a moderator (signed); A's revoked row stays as it was.
+    const proven = await start(bAcc.b, ed);
+    const res = await finishOf(bAcc.b, proven.challengeId, await clearsign(proven.text, ed));
+    expect([res.statusCode, res.json()]).toEqual([201, { id: expect.any(String), status: 'signed' }]);
+    expect((await rows()).find((r) => r.id === first)).toMatchObject({ account_id: a.id, status: 'revoked' });
+    // While B's claim is live, A cannot take the key back by proving it again: one key, one live account.
+    const again = await start(a.b, ed);
+    expect((await finishOf(a.b, again.challengeId, await clearsign(again.text, ed))).json()).toMatchObject({ error: 'fingerprint-claimed' });
+    expect((await rows()).filter((r) => r.status === 'signed').map((r) => r.account_id)).toEqual([bAcc.id]);
+  });
+
   it("another account's claim cannot be removed (404) and is not listed", async () => {
     const a = await login();
     const c = await start(a.b, ed);
