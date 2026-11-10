@@ -4,9 +4,9 @@
 // owner 2026-11-02 08:17: a warning when the uploader's own blur covers the amount or the memo
 // (posting still allowed); item 65: the "X2F's own screen as fake proof" disclaimer. The upload
 // screen itself is Plan 5 Task 15's; these are its units.
-import type { OcrWord, ProofCheck, ProofExpected } from '@x2f/proof';
+import { type OcrWord, type ProofCheck, type ProofExpected, proofDate } from '@x2f/proof';
 import { describe, expect, it, vi } from 'vitest';
-import { hiddenByUploader, uploadPrompts, uploaderPopup } from '../src/proof/uploaderChecks.js';
+import { POSTER_BLOCKED_WHEN_OUT_OF_RANGE, hiddenByUploader, uploadPrompts, uploaderPopup } from '../src/proof/uploaderChecks.js';
 import {
   PROOF_AMOUNT_HIDDEN,
   PROOF_FAKE_DISCLAIMER,
@@ -30,6 +30,11 @@ describe('uploaderPopup: which pop-up the proof poster sees', () => {
     expect(uploaderPopup({ ...ok, date: 'not-found' })).toBeNull();
     // Unreadable: the editor's own "couldn't check this image" line covers it (Task 15).
     expect(uploaderPopup({ readable: false, amount: { status: 'not-found', seen: null }, reference: 'not-found', date: 'not-found', name: 'not-found' })).toBeNull();
+  });
+
+  it('item 63 blocks whenever the date is out of range, even on an unreadable screenshot (lead default pending owner p11-143)', () => {
+    expect(POSTER_BLOCKED_WHEN_OUT_OF_RANGE).toBe(true);
+    expect(uploaderPopup({ readable: false, amount: { status: 'not-found', seen: null }, reference: 'not-found', date: 'out-of-range', name: 'not-found' })).toBe('not-current');
   });
 
   it('item 63: a date outside the trade -> not-current; it wins over a missing amount', () => {
@@ -75,17 +80,42 @@ describe('uploadPrompts: the check the uploader\'s app runs on its own screensho
 
   it('a current screenshot with the amount: no pop-up, nothing hidden', () => {
     const w = words('Sent Oct 16, 2026', 'Note K7M2-9QXA-4FTR-8WPN', 'Amount $412.50');
-    expect(uploadPrompts(w, expected, [])).toEqual({ popup: null, hidden: { amount: false, memo: false } });
+    expect(uploadPrompts(w, expected, [], null)).toEqual({ popup: null, date: 'in-range', hidden: { amount: false, memo: false } });
   });
 
   it('an old screenshot -> not-current; no amount -> no-amount', () => {
-    expect(uploadPrompts(words('Sent Mar 2, 2025', 'Note K7M2-9QXA-4FTR-8WPN', 'Amount $412.50'), expected, []).popup).toBe('not-current');
-    expect(uploadPrompts(words('Sent Oct 16, 2026', 'Note K7M2-9QXA-4FTR-8WPN', 'Thank you'), expected, []).popup).toBe('no-amount');
+    expect(uploadPrompts(words('Sent Mar 2, 2025', 'Note K7M2-9QXA-4FTR-8WPN', 'Amount $412.50'), expected, [], null).popup).toBe('not-current');
+    expect(uploadPrompts(words('Sent Oct 16, 2026', 'Note K7M2-9QXA-4FTR-8WPN', 'Thank you'), expected, [], null).popup).toBe('no-amount');
   });
 
   it('the uploader blurred the amount and the memo: warnings, and still no no-amount pop-up (the check reads the original)', () => {
     const w = words('Sent Oct 16, 2026', 'Note K7M2-9QXA-4FTR-8WPN', 'Amount $412.50');
-    expect(uploadPrompts(w, expected, [{ x0: 0, y0: 20, x1: 400, y1: 60 }])).toEqual({ popup: null, hidden: { amount: true, memo: true } });
+    expect(uploadPrompts(w, expected, [{ x0: 0, y0: 20, x1: 400, y1: 60 }], null)).toEqual({ popup: null, date: 'in-range', hidden: { amount: true, memo: true } });
+  });
+
+  // Review 2026-11-10 finding 3: one date verdict for the poster, the photo's own time included.
+  it('takes the photo\'s time and agrees with proofDate: not-current exactly when the date is out of range', () => {
+    const shots = [
+      words('Sent Oct 16, 2026', 'Note K7M2-9QXA-4FTR-8WPN', 'Amount $412.50'),
+      words('Payment', 'Note K7M2-9QXA-4FTR-8WPN', 'Amount $412.50'),
+      words('Sent Mar 2, 2025', 'Note K7M2-9QXA-4FTR-8WPN', 'Amount $412.50'),
+      words('Sent Oct 16, 2026', 'Note K7M2-9QXA-4FTR-8WPN', 'Thank you'),
+      words('Sent Oct 16, 2026', 'Note K7M2-9QXA-4FTR-8WPN', 'Amount $412.50').map((x) => ({ ...x, conf: 10 })),
+    ];
+    const photos = [null, new Date('2026-10-16T10:00:00Z'), new Date('2026-09-01T10:00:00Z')];
+    for (const [i, w] of shots.entries()) {
+      for (const takenAt of photos) {
+        const p = uploadPrompts(w, expected, [], takenAt);
+        const d = proofDate(w, takenAt, expected);
+        expect(p.date, `${i} ${String(takenAt)}`).toBe(d);
+        expect(p.popup === 'not-current', `${i} ${String(takenAt)}`).toBe(d === 'out-of-range');
+      }
+    }
+    // An old receipt re-shot today is still not current (lead default pending owner p11-140).
+    expect(uploadPrompts(shots[2]!, expected, [], new Date('2026-10-16T10:00:00Z')).popup).toBe('not-current');
+    // No date on the screenshot: the photo's time decides.
+    expect(uploadPrompts(shots[1]!, expected, [], new Date('2026-09-01T10:00:00Z')).popup).toBe('not-current');
+    expect(uploadPrompts(shots[1]!, expected, [], null).date).toBe('not-found');
   });
 });
 

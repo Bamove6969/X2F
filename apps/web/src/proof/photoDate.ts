@@ -2,8 +2,9 @@
 // cleaned or re-encoded (`cleanImage`, `reencodeImage`), which drop every metadata block. Only the
 // time leaves the device, as UTC to the second (`proof.attached` `takenAt`); the Exif itself is
 // never sent. Plan 5 Task 15 owes the call: `takenAt = await photoTakenAt(file)` on the file the
-// poster picked, then `proofDate(words, takenAt && new Date(takenAt), …)` and `posterDateLine` for
-// the warning, and `takenAt` in the sealed payload.
+// poster picked, then `uploadPrompts(words, expected, manual, takenAt && new Date(takenAt))` (its
+// `date` is `proofDate`'s verdict) with `posterDateLine(date)` for the warning, and `takenAt` in the
+// sealed payload.
 import { type PhotoTime, readPhotoTimeFrom, toUtcSecond } from '@x2f/proof';
 
 /**

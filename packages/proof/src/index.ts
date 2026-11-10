@@ -6,7 +6,7 @@ export { padAndMerge, redact } from './redact.js';
 export { CleanError, type CleanErrorCode, assertClean, cleanImage } from './clean.js';
 export { parseAmounts } from './amounts.js';
 export { type PhotoTime, readPhotoTime, readPhotoTimeFrom } from './photoDate.js';
-export { type CardLine, type CardTrade, type ProofCheck, type ProofExpected, checkProof, posterDateLine, proofCardLines, proofDate } from './check.js';
+export { type CardLine, type CardTrade, DATE_OUT_OF_RANGE_IF_EITHER, type ProofCheck, type ProofExpected, checkProof, posterDateLine, proofCardLines, proofDate } from './check.js';
 export {
   type ProofBinding,
   type ProofErrorCode,

@@ -1,6 +1,9 @@
 // The smart proof check and the lines of the seller's proof card (Plan 5 Task 9, spec 4.2, P5-A28,
 // board SellerConfirm). The seller's own app runs it on the OCR of the blurred image it decrypted
-// (Task 16); nothing here trusts a value from the buyer except the `hidden` list it is given.
+// (Task 16); nothing here trusts a value from the buyer except the `hidden` list it is given and the
+// photo's own time (`proof.attached` `photoTakenAt`), which is the buyer's claim: it can fill in a date
+// the screenshot does not show, or make the proof out of range, but never clears a stale date the
+// screenshot shows (`DATE_OUT_OF_RANGE_IF_EITHER`, review 2026-11-10 finding 2).
 import { normalizeTradeCode } from '@x2f/core';
 import { findAmounts, parseAmounts } from './amounts.js';
 import { type HiddenKind, codePattern, markDates, normalizeText, showsWholeAmount } from './detect.js';
@@ -63,8 +66,9 @@ const HOUR = 60 * 60 * 1000;
  * grouping or case, with Crockford look-alikes (O for 0, I or L for 1), as Task 7 keeps it, also
  * with spaces around its dashes and wrapped onto the next line (review N1). A date is in range when
  * any reading of it is a day that overlaps `earliest..latest` in some time zone (UTC-12 to UTC+14).
- * `takenAt` is the photo's own time from the poster's device (`proof.attached` `takenAt`, owner G16):
- * when given it decides the date, read or not, instead of the dates on the screenshot.
+ * `takenAt` is the photo's own time from the poster's device (`proof.attached`, owner G16), combined
+ * with the screenshot's dates by `combineDates` (out of range when either is; lead default pending
+ * owner p11-140); with an unreadable screenshot it alone decides.
  * The name is `visible` only after a sender label (review N3, see `senderNameShown`).
  */
 export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: HiddenKind[], takenAt: Date | null = null): ProofCheck {
@@ -75,7 +79,7 @@ export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: Hi
   const nameHidden = hidden.includes('name');
   const readable = isReadable(words);
   if (!readable) {
-    const date = takenAt === null ? 'not-found' : photoDateStatus(takenAt, earliest, latest);
+    const date = combineDates(takenAt === null ? 'not-found' : photoDateStatus(takenAt, earliest, latest), 'not-found');
     return { readable, amount: { status: 'not-found', seen: null }, reference: 'not-found', date, name: nameHidden ? 'hidden' : 'not-found' };
   }
 
@@ -95,7 +99,7 @@ export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: Hi
   const codeRe = codePattern(code);
   const reference = codeCandidates(texts).some((t) => hasMatch(t, codeRe)) ? 'match' : 'not-found';
 
-  const date = takenAt === null ? screenshotDateStatus(texts, earliest, latest) : photoDateStatus(takenAt, earliest, latest);
+  const date = combineDates(takenAt === null ? 'not-found' : photoDateStatus(takenAt, earliest, latest), screenshotDateStatus(texts, earliest, latest));
 
   const name: ProofCheck['name'] = nameHidden
     ? 'hidden'
@@ -136,17 +140,35 @@ function photoDateStatus(takenAt: Date, earliest: number, latest: number): Proof
 }
 
 /**
+ * Lead default pending owner p11-140 (review 2026-11-10 finding 2): the proof is out of range when
+ * EITHER the photo's own time or a date on the screenshot is out of range; the photo's time decides
+ * only when the screenshot shows no date. A fresh metadata time is trivial to get for an old receipt
+ * (screenshot it again, photograph the screen, crop it), and on the seller's side it is the buyer's
+ * claim. `false` would restore the 7 Nov build (the photo's time, when there is one, overrides).
+ */
+export const DATE_OUT_OF_RANGE_IF_EITHER = true;
+
+/** One date verdict from the photo's own time and the screenshot's dates (see `DATE_OUT_OF_RANGE_IF_EITHER`). */
+function combineDates(photo: ProofCheck['date'], screenshot: ProofCheck['date']): ProofCheck['date'] {
+  if (!DATE_OUT_OF_RANGE_IF_EITHER) return photo !== 'not-found' ? photo : screenshot;
+  if (photo === 'out-of-range' || screenshot === 'out-of-range') return 'out-of-range';
+  if (photo === 'in-range' || screenshot === 'in-range') return 'in-range';
+  return 'not-found';
+}
+
+/**
  * The proof's date as the poster's device sees it before posting (owner G16, Q42): the photo's own
- * time first (`takenAt`, from `readPhotoTime`, in UTC), else the dates OCR reads on the screenshot.
- * `earliest` and `latest` are `checkProof`'s. `'not-found'`: the poster is warned and may still post
- * (`posterDateLine`); `'out-of-range'`: the poster is asked for a fresh screenshot.
+ * time (`takenAt`, from `readPhotoTime`, in UTC) and the dates OCR reads on the screenshot, combined
+ * as `checkProof` combines them, so both always give the same verdict. `earliest` and `latest` are
+ * `checkProof`'s. `'not-found'`: the poster is warned and may still post (`posterDateLine`);
+ * `'out-of-range'`: the send is blocked by item 63's pop-up (Q42).
  */
 export function proofDate(words: OcrWord[], takenAt: Date | null, w: { earliest: Date; latest: Date }): ProofCheck['date'] {
   const { earliest, latest } = dateRange(w);
-  if (takenAt !== null) return photoDateStatus(takenAt, earliest, latest);
-  if (!isReadable(words)) return 'not-found';
+  const photo = takenAt === null ? 'not-found' : photoDateStatus(takenAt, earliest, latest);
+  if (!isReadable(words)) return combineDates(photo, 'not-found');
   const texts = linesOf(words.map((x) => ({ ...x, text: normalizeText(x.text) }))).map((l) => l.text);
-  return screenshotDateStatus(texts, earliest, latest);
+  return combineDates(photo, screenshotDateStatus(texts, earliest, latest));
 }
 
 function hasMatch(text: string, re: RegExp): boolean {
@@ -346,7 +368,9 @@ function sellerDateLine(date: ProofCheck['date'], buyer: string): CardLine | nul
 
 /**
  * The poster's line about the proof's date before posting (`proofDate`), or null when it is in range.
- * Posting stays allowed either way (owner G16; Q42 asks for a fresh screenshot).
+ * No date found: posting stays allowed (owner G16). Out of range: the send is blocked (item 63's
+ * `ProofNotCurrent`, Q42 "No, ask for a fresh screenshot"; lead default pending owner p11-143), and
+ * this line says why.
  */
 export function posterDateLine(date: ProofCheck['date']): CardLine | null {
   if (date === 'not-found') {
@@ -354,7 +378,7 @@ export function posterDateLine(date: ProofCheck['date']): CardLine | null {
     return { tone: 'caution', text: "We couldn't detect the date of this proof. You can still post it, and the seller will be told to take extra care." };
   }
   if (date === 'out-of-range') {
-    // COPY-UNSIGNED (owner Q42)
+    // COPY-UNSIGNED (owner Q42; lead default pending owner p11-143: the send is blocked)
     return { tone: 'caution', text: 'This screenshot is dated outside this trade. Take a fresh screenshot of the payment.' };
   }
   return null;

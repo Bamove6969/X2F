@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type CardTrade, type HiddenKind, type OcrWord, type ProofCheck, checkProof, posterDateLine, proofCardLines, proofDate } from '../src/index.js';
+import { type CardTrade, DATE_OUT_OF_RANGE_IF_EITHER, type HiddenKind, type OcrWord, type ProofCheck, checkProof, posterDateLine, proofCardLines, proofDate } from '../src/index.js';
 import { ocr } from './ocr.js';
 
 // Plan 5 Task 9: the smart proof check and the lines of the seller's proof card (board SellerConfirm).
@@ -229,8 +229,9 @@ describe('date', () => {
   });
 });
 
-// Owner G16 (2026-11-07): the photo's own date first, then the screenshot's; neither → warn both
-// sides, posting stays allowed. Q42: a stale date asks for a fresh screenshot.
+// Owner G16 (2026-11-07): the photo's own date and the screenshot's (out of range if either is, lead
+// default pending owner p11-140); neither → warn both sides, posting stays allowed. Q42: a stale date
+// asks for a fresh screenshot.
 const NOT_CONFIRMED = {
   tone: 'caution',
   text: "We couldn't confirm when this proof was made. That doesn't make it invalid, but take extra care with this trade.",
@@ -238,10 +239,27 @@ const NOT_CONFIRMED = {
 const STALE = { tone: 'caution', text: 'This proof is dated outside this trade. Ask mira.k for a fresh screenshot.' } as const;
 
 describe('date: the photo\'s own time (owner G16)', () => {
-  it('decides the date over what the screenshot shows', () => {
+  it('fills in a date the screenshot does not show, and a stale photo time makes the proof out of range', () => {
     expect(check(receipt({ date: null }), ['name'], {}, new Date('2026-10-16T14:14:00Z')).date).toBe('in-range');
     expect(check(receipt(), ['name'], {}, new Date('2026-10-01T14:14:00Z')).date).toBe('out-of-range');
-    expect(check(receipt({ date: 'Oct 2, 2026' }), ['name'], {}, new Date('2026-10-16T14:14:00Z')).date).toBe('in-range');
+  });
+
+  // Review 2026-11-10 finding 2, lead default pending owner p11-140: out of range when EITHER date is.
+  it('never clears a stale date on the screenshot: a fresh photo time of an old receipt is out of range', () => {
+    expect(DATE_OUT_OF_RANGE_IF_EITHER).toBe(true);
+    expect(check(receipt({ date: 'Oct 2, 2026' }), ['name'], {}, new Date('2026-10-16T14:14:00Z')).date).toBe('out-of-range');
+    expect(check(receipt({ date: 'Oct 2, 2026' }), ['name'], {}, new Date('2026-10-01T14:14:00Z')).date).toBe('out-of-range');
+    expect(check(receipt(), ['name'], {}, new Date('2026-10-16T14:14:00Z')).date).toBe('in-range');
+    expect(check(receipt({ date: null }), ['name']).date).toBe('not-found');
+  });
+
+  it('checkProof and proofDate give one verdict for every combination', () => {
+    const w = { earliest: EXPECTED.earliest, latest: EXPECTED.latest };
+    const shots = [receipt(), receipt({ date: null }), receipt({ date: 'Oct 2, 2026' }), receipt().map((x) => ({ ...x, conf: 10 }))];
+    const photos = [null, new Date('2026-10-16T14:14:00Z'), new Date('2026-10-01T14:14:00Z'), new Date(Number.NaN)];
+    for (const [i, words] of shots.entries()) {
+      for (const takenAt of photos) expect(check(words, ['name'], {}, takenAt).date, `${i} ${String(takenAt)}`).toBe(proofDate(words, takenAt, w));
+    }
   });
 
   it('is in range within 14 hours of the window, either side', () => {
@@ -284,6 +302,7 @@ describe('date lines (owner G16, Q42)', () => {
     expect(proofDate(receipt({ date: null }), new Date('2026-10-16T14:14:00Z'), w)).toBe('in-range');
     expect(proofDate(receipt({ date: null }), null, w)).toBe('not-found');
     expect(proofDate(receipt({ date: 'Oct 2, 2026' }), null, w)).toBe('out-of-range');
+    expect(proofDate(receipt({ date: 'Oct 2, 2026' }), new Date('2026-10-16T14:14:00Z'), w)).toBe('out-of-range');
     expect(proofDate(receipt().map((x) => ({ ...x, conf: 10 })), null, w)).toBe('not-found');
     expect(() => proofDate(receipt(), null, { earliest: w.latest, latest: w.earliest })).toThrow(RangeError);
     expect(posterDateLine('in-range')).toBeNull();
