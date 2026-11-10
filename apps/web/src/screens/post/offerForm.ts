@@ -198,15 +198,7 @@ function marginPctText(bps: number): string {
   return frac === '' ? `${Math.floor(abs / 100)}` : `${Math.floor(abs / 100)}.${frac}`;
 }
 
-/** "+0.5%", "-1.2%", "0.0%" as the board; a hundredth when the margin has one ("-12.25%", "+0.03%"). */
-export function marginText(bps: number): string {
-  return `${bps > 0 ? '+' : ''}${(bps / 100).toFixed(bps % 10 === 0 ? 1 : 2)}%`;
-}
-
-export function marginWord(bps: number): string {
-  if (bps === 0) return 'at market';
-  return bps > 0 ? 'above market' : 'below market';
-}
+// The margin's words ("0.5% above market") are ui/margin.ts's, the one form everywhere (design final call 10 Nov 2026).
 
 /** n / d rounded half up, for n >= 0 and d > 0. */
 const divHalfUp = (n: bigint, d: bigint): bigint => (n * 2n + d) / (d * 2n);

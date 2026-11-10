@@ -70,12 +70,15 @@ const CANCEL_T049 =
   'T-049 (owner p5-2, build spec j31a section 3, boards on wip/design-brief b5bb4faa): the sheet reads "Cancelling is likely final" and its body no longer names the seller. design/x2f-app still has the 7 Nov board.';
 
 const AD_CARD_V142 =
-  'Owner #11 (8 Nov), boards v142 on wip/design-brief: the ad card shows the markup bottom-left ("+0.4%" over "Vendor markup") and the range as two rows, XMR and fiat, each with its unit; the time moved to the price row. design/x2f-app still has the earlier card.';
+  'Owner #11 (8 Nov), boards v142 on wip/design-brief: the ad card shows the price bottom-left ("0.4%" over "above market", design final call 10 Nov, ui/margin.ts) and the range as two rows, XMR and fiat, each with its unit; the time moved to the price row. design/x2f-app still has the earlier card.';
+/** Design final call (10 Nov 2026): one price wording everywhere, "0.4% above market" / "at market" (ui/margin.ts), never a signed figure. */
+const PRICE_WORDING = 'Design final call (10 Nov 2026), ui/margin.ts: the price reads "0.5% above market" (the figure without a sign, then the words), so the board\'s signed "+0.5%" is not on the page.';
 
 export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: string }[]>> = {
-  BuyOffers: ['$0.10 above market', '$50 – $1,500Releases in ~8 min', '0.5% above market', '$100 – $3,000Releases in ~20 min', '0.9% above market', '$20 – $400Releases in ~30 min'].map(
-    (text) => ({ text, why: AD_CARD_V142 }),
-  ),
+  BuyOffers: [
+    { text: '$0.10 above market', why: 'Owner Q1 (6 Nov): every offer is the market +/- %, so the card reads "0.03% above market" (ui/margin.ts), never a fixed amount over it.' },
+    ...['$50 – $1,500Releases in ~8 min', '$100 – $3,000Releases in ~20 min', '$20 – $400Releases in ~30 min'].map((text) => ({ text, why: AD_CARD_V142 })),
+  ],
   BuyerPay: [
     ...['SG', 'Vendor', 'Online · replies in about 4 min', 'Online', '4', '1,284', 'trades', '99.4%', 'positive', '275.4', 'XMR traded', 'Trusted', 'Fast', '+3'].map(
       (text) => ({ text, why: TRADER_CARD }),
@@ -273,7 +276,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: '$20 – $200Deposit required',
       why: 'Buyer deposits were removed (plan Revision 2026-10-18, spec 2.5); the card shows its range and, when the API knows it, the typical time ("Pays in ~N min").',
     },
-    ...['0.4% above market', '$50 – $2,000Pays in ~6 min', '0.3% above market', '$100 – $5,000Pays in ~15 min'].map((text) => ({ text, why: AD_CARD_V142 })),
+    ...['$50 – $2,000Pays in ~6 min', '$100 – $5,000Pays in ~15 min'].map((text) => ({ text, why: AD_CARD_V142 })),
   ],
   PostOffer: [
     {
@@ -292,6 +295,7 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text,
       why: 'Owner F1 (7 Nov): the vendor picks Above or Below market and types the percentage, at most 50% (J-02); the board still draws the ±0.1% stepper buttons (design to-do).',
     })),
+    { text: '+0.5%', why: PRICE_WORDING },
   ],
   // Task 27's dispute boards: parts other tasks build (Plan 5's evidence and unblurred proof, Task 20's chat).
   DisputeOpen: [

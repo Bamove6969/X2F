@@ -719,8 +719,9 @@ describe("This offer's bands (BuyQuote board, canvas v142; owner 2026-11-08)", (
     expect(row.textContent).toContain('$338.25 / XMR');
     expect(part(row, 'band-range')).toBe('$50 – $1,500');
     expect(row.textContent).toContain('$50 – $1,500 USD');
-    expect(part(row, 'band-markup')).toBe('+2.50%');
-    expect(row.textContent).toContain('+2.50% markup');
+    // Design final call (10 Nov 2026): the one price wording, ui/margin.ts (was the board's "+2.50% markup").
+    expect(part(row, 'band-markup')).toBe('2.5% above market');
+    expect(row.querySelector('[data-part="band-markup"] .x2f-quote__mono')?.textContent).toBe('2.5%');
     expect(part(row, 'band-xmr')).toBe('≈ 0.147819 – 4.434589');
   });
 

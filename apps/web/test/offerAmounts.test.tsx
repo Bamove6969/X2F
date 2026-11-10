@@ -110,7 +110,7 @@ describe('the card rows', () => {
     expect(host.querySelector('[data-part="range-xmr"]')?.textContent).toBe('1.000000 – 5.000000 XMR');
     expect(host.querySelector('[data-part="range-xmr"] [data-unit="xmr"]')?.textContent).toBe('XMR');
     expect(host.querySelector('[data-part="range-fiat"]')?.textContent).toBe('≈ $330 – $1,650 USD');
-    expect(host.querySelector('[data-part="markup"]')?.textContent).toBe('+2.5%Vendor markup');
+    expect(host.querySelector('[data-part="markup"]')?.textContent).toBe('2.5% above market');
     // The markup and the rows share the bottom row; the price row sits above it.
     const bottom = host.querySelector('.x2f-offer__amounts')!;
     expect(bottom.firstElementChild?.getAttribute('data-part')).toBe('markup');

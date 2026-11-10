@@ -10,6 +10,7 @@ import { ApiCallError, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { CantDoThat, type CantDoCode } from '../ui/CantDoThat.js';
 import { Icon } from '../ui/icons.js';
+import { marginParts, marginWords } from '../ui/margin.js';
 import { RadioChips } from './browse/RadioChips.js';
 import { fetchMethods, fetchPrice, postOffer, type PickMethod, type PriceQuote, type Side } from './post/api.js';
 import { COUNTRIES } from './post/countries.js';
@@ -33,8 +34,6 @@ import {
   formatPrice,
   loadDraft,
   marginBpsOf,
-  marginText,
-  marginWord,
   parseRangeAmount,
   posterGiftCardRole,
   previewLine,
@@ -181,12 +180,13 @@ function PostOfferForm() {
     setCantDo(null);
   };
   const unitSwitch = (box: string) => <UnitSwitch box={box} currency={form.currency} unit={form.unit} onChange={changeUnit} />;
-  // Under each box, the other unit at your price (boards v142): "≈ $165.77 at your price (+0.5%)".
-  // COPY-UNSIGNED: "≈ … at your price (+N%)" and "≈ … at your price".
+  // Under each box, the other unit at your price (boards v142): "≈ $165.77 at your price (0.5% above
+  // market)", the margin in the one form (ui/margin.ts). COPY-UNSIGNED: "≈ … at your price (…)" and
+  // "≈ … at your price".
   const otherLine = (raw: string) => {
     const v = parseRangeAmount(raw, form.unit);
     if (v === null || v === 0n || yourPrice === null) return null;
-    const at = marginBps === null ? 'at your price' : `at your price (${marginText(marginBps)})`;
+    const at = marginBps === null ? 'at your price' : `at your price (${marginWords(marginBps)})`;
     return (
       <span className="post-muted post-other-unit" data-part="other-unit">
         {`${otherUnit(v, form.unit, form.currency, { currency: form.currency, centsPerXmr: yourPrice })} ${at}`}
@@ -365,8 +365,14 @@ function PostOfferForm() {
                 </span>
               </div>
               {marginBps !== null ? (
+                // "0.5% above market" / "at market", the one form everywhere (ui/margin.ts); the figure in mono.
                 <span className="post-muted" data-part="margin-reads">
-                  <span className="post-mono post-ink">{marginText(marginBps)}</span> <span>{marginWord(marginBps)}</span>
+                  {marginParts(marginBps).figure !== null ? (
+                    <>
+                      <span className="post-mono post-ink">{marginParts(marginBps).figure}</span>{' '}
+                    </>
+                  ) : null}
+                  <span>{marginParts(marginBps).words}</span>
                 </span>
               ) : null}
             </>,

@@ -392,7 +392,7 @@ test.describe("the offer's bands on the quote", () => {
     const xmr = bands(page).locator('[data-part="band-xmr"]');
     const withMarkup = bands(page).getByRole('radio', { name: 'With markup' });
     await expect(withMarkup).toHaveAttribute('aria-checked', 'true');
-    await expect(bands(page).locator('[data-part="band-markup"]')).toHaveText(['+2.50%']);
+    await expect(bands(page).locator('[data-part="band-markup"]')).toHaveText(['2.5% above market']);
     await expect(bands(page).locator('[data-part="band-rate"]')).toHaveText(['$338.25']);
     await expect(xmr).toHaveText(['≈ 0.147819 – 4.434589']);
     await expect(bands(page).locator('[data-part="band-updated"]')).toHaveCount(0);

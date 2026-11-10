@@ -30,8 +30,8 @@ test('each card shows the range in XMR and in fiat; the markup box recalculates 
   await expect(kettle.locator('[data-part="range-xmr"]')).toHaveText('1.000000 – 5.000000 XMR');
   await expect(kettle.locator('[data-part="range-fiat"]')).toHaveText('≈ $330 – $1,650 USD');
   // The markup stays bottom-left.
-  await expect(kettle.locator('[data-part="markup"] .x2f-offer__margin')).toHaveText('+2.5%');
-  await expect(kettle.locator('[data-part="markup"]')).toContainText('Vendor markup');
+  await expect(kettle.locator('[data-part="markup"] .x2f-offer__margin')).toHaveText('2.5%');
+  await expect(kettle.locator('[data-part="markup"]')).toHaveText('2.5% above market');
   const satoshi = card(page, 'satoshi_ghost');
   await expect(satoshi.locator('[data-part="range-fiat"]')).toHaveText('$50 – $1,500 USD');
   await expect(satoshi.locator('[data-part="range-xmr"]')).toHaveText(/^≈ \d+\.\d{6} – \d+\.\d{6} XMR$/);

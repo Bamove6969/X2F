@@ -1,7 +1,7 @@
 // An offer's size bands (owner 2026-11-06 Q23/Q27: up to 3 amount bands per currency, each with its
 // own price and fewest trades) and the words for its range and price, for the quote's bands card
 // (quote/QuoteBands.tsx). The offers card (OfferCard.tsx) words its range with offerAmounts.ts and
-// its markup with markupOf; the range words here are the card's (rangeText is fiatRangeText for a
+// its price with markupOf (ui/margin.ts); the range words here are the card's (rangeText is fiatRangeText for a
 // 2-place currency, an XMR band's range is the card's xmrRangeText), so the two screens never
 // disagree about an offer's range (owner 2026-11-08: the quote carries the bands over).
 //
@@ -77,28 +77,12 @@ export function bandRange(band: Band, currency: string, exponent = 2): string {
   return band.unit === 'xmr' ? xmrRangeText(band.from, band.to) : rangeText(band.from, band.to, currency, exponent);
 }
 
-/**
- * TODO(design): the offers card and the quote word an offer's price differently and design has not
- * picked one (asked 9 Nov). The card (batch 2, OfferCard.tsx markupOf) says "+0.4%" over "Vendor
- * markup"; this says "0.4% above market". Both are COPY-UNSIGNED; the numbers agree
- * (test/bands.test.ts). Keep both until design answers, then make one call the other.
- *
- * A price compared with the market: "0.2% above market", "At market" (every offer is market ± %,
- * owner Q1, 6 Nov 2026). `favourable` says whether a price above (positive) or below (negative) market is good for the
- * person looking (BrowseCopy.favourable), shown in the escrow tone.
- */
-export function marginText(pricing: Pricing, _currency: string, _market: bigint | null, favourable: (sign: number) => boolean): { text: string; favourable: boolean } {
-  const bps = pricing.marginBps;
-  if (bps === 0) return { text: 'At market', favourable: false };
-  const pct = (Math.abs(bps) / 100).toFixed(2).replace(/\.?0+$/, '');
-  return { text: `${pct}% ${bps > 0 ? 'above' : 'below'} market`, favourable: favourable(bps) };
-}
-
 // The quote's bands card (BuyQuote board, canvas v142, "This offer's bands"). Owner 2026-11-08,
 // "Offer amounts in XMR or fiat": the quote carries the markup, the ranges in both units, and the
 // with/without-markup view. All money maths is bigint (@x2f/trade); nothing goes through a float.
-// TODO(wip/lead-offer-units): switch bandRate, bandXmr and markupText to that branch's exported
-// conversion and markup helpers when it lands; an offer set in XMR then converts the other way.
+// The band's price against the market is worded by ui/margin.ts (design final call 10 Nov 2026).
+// TODO(wip/lead-offer-units): switch bandRate and bandXmr to that branch's exported conversion
+// helpers when it lands; an offer set in XMR then converts the other way.
 
 /**
  * The band's rate per XMR: its own price with `withMarkup` (offerRate), else the market price;
@@ -129,17 +113,6 @@ export function bandFiat(band: Band, rate: Price, currency: string, exponent = 2
  */
 export function bandOther(band: Band, rate: Price, currency: string, exponent = 2): { text: string; unit: string } {
   return band.unit === 'fiat' ? { text: `${APPROX}${bandXmr(band, rate)}`, unit: 'XMR' } : { text: `${APPROX}${bandFiat(band, rate, currency, exponent)}`, unit: currency };
-}
-
-/**
- * The band's markup over the market, 2 places as on the board: "+0.03%", "−0.20%", "0.00%": the
- * band's margin, exact (every band is market ± %, owner Q1; `market` is kept for the callers).
- */
-export function markupText(pricing: Pricing, _market: bigint | null): string | null {
-  const bps = BigInt(pricing.marginBps);
-  const abs = bps < 0n ? -bps : bps;
-  const sign = bps > 0n ? '+' : bps < 0n ? '−' : '';
-  return `${sign}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}%`;
 }
 
 /** A clip line: "Above $500 the rate changes to $331.88." (`dir` up) or "Below $500.01 …" (down); an XMR band's edge reads "5.000000 XMR". */

@@ -3,8 +3,9 @@
 import { describe, expect, it } from 'vitest';
 import { atomicForFiat, formatXmr, offerRate } from '@x2f/trade';
 import { formatMinor } from '../src/screens/browse/api.js';
-import { bandAt, bandFiat, bandOther, bandRange, bandRate, bandXmr, clipLines, marginText, markupText, money, offerBands, rangeText, type Band } from '../src/screens/browse/bands.js';
+import { bandAt, bandFiat, bandOther, bandRange, bandRate, bandXmr, clipLines, money, offerBands, rangeText, type Band } from '../src/screens/browse/bands.js';
 import { markupOf } from '../src/screens/browse/OfferCard.js';
+import { marginParts } from '../src/ui/margin.js';
 import { fiatRangeText, xmrRangeText } from '../src/screens/browse/offerAmounts.js';
 
 /** An offer set in fiat (owner 8 Nov: the poster sets the range in XMR or in fiat). */
@@ -94,37 +95,20 @@ describe('the words the offers card and the quote share', () => {
     expect(money(330_005n, 'KWD', 3).replace(/\u00a0/g, ' ')).toBe('KWD 330.005');
   });
 
-  // TODO(design): the card says "+0.4%" over "Vendor markup" (batch 2, markupOf), marginText says
-  // "0.4% above market", and the quote's bands card "+0.40% markup" (markupText, the BuyQuote
-  // board's 2 places). Design has not picked one wording (asked 9 Nov), so until then the screens
-  // must agree on the number and its direction, not the words.
-  it('the card, marginText and the quote say the same markup: the same number, the same direction', () => {
-    const num = (t: string) => Number(/[\d.,]+/.exec(t)![0].replace(/,/g, ''));
-    const dir = (t: string) => (/^\+|above/.test(t) ? 1 : /^\u2212|^-|below/.test(t) ? -1 : 0);
-    const cases: [Parameters<typeof marginText>[0], bigint | null][] = [
-      [{ mode: 'market', marginBps: 40 }, 33_000n],
-      [{ mode: 'market', marginBps: 20 }, null],
-      [{ mode: 'market', marginBps: -125 }, 33_000n],
-      [{ mode: 'market', marginBps: 3 }, 33_000n],
-      [{ mode: 'market', marginBps: 250 }, 33_000n],
-    ];
-    for (const [pricing, market] of cases) {
+  // Design final call (10 Nov 2026): one price wording everywhere, ui/margin.ts. The card's markup is
+  // that wording in two parts (the figure in mono over the words), favourable in the viewer's eyes.
+  it("the card's markup is ui/margin.ts's wording, with whether it favours the viewer", () => {
+    const cases: Parameters<typeof marginParts>[0][] = [40, 20, -125, 3, 250, 0];
+    for (const marginBps of cases) {
+      const pricing = { mode: 'market', marginBps } as const;
       const card = markupOf({ rate: 1n, pricing }, { favourable: buyerLikes })!;
-      const words = marginText(pricing, 'USD', market, buyerLikes);
-      const quote = markupText(pricing, market)!;
-      const at = JSON.stringify(pricing);
-      expect([at, num(card.mark!)]).toEqual([at, num(words.text)]);
-      expect([at, num(card.mark!)]).toEqual([at, num(quote)]);
-      expect([at, dir(card.mark!)]).toEqual([at, dir(words.text)]);
-      expect([at, dir(card.mark!)]).toEqual([at, dir(quote)]);
-      expect([at, card.favourable]).toEqual([at, words.favourable]);
+      expect([marginBps, card.figure, card.words]).toEqual([marginBps, marginParts(marginBps).figure, marginParts(marginBps).words]);
+      expect([marginBps, card.favourable]).toEqual([marginBps, marginBps < 0]);
     }
-  });
-
-  it("marginText's words (kept for the quote until design picks, see the TODO above)", () => {
-    expect(marginText({ mode: 'market', marginBps: 20 }, 'CAD', null, buyerLikes)).toEqual({ text: '0.2% above market', favourable: false });
-    expect(marginText({ mode: 'market', marginBps: -125 }, 'USD', null, buyerLikes)).toEqual({ text: '1.25% below market', favourable: true });
-    expect(marginText({ mode: 'market', marginBps: 0 }, 'USD', null, buyerLikes)).toEqual({ text: 'At market', favourable: false });
+    expect(markupOf({ rate: 1n, pricing: { mode: 'market', marginBps: 20 } }, { favourable: buyerLikes })).toEqual({ figure: '0.2%', words: 'above market', favourable: false });
+    expect(markupOf({ rate: 1n, pricing: { mode: 'market', marginBps: -125 } }, { favourable: buyerLikes })).toEqual({ figure: '1.25%', words: 'below market', favourable: true });
+    expect(markupOf({ rate: 1n, pricing: { mode: 'market', marginBps: 0 } }, { favourable: buyerLikes })).toEqual({ figure: null, words: 'at market', favourable: false });
+    expect(markupOf({ rate: null, pricing: { mode: 'market', marginBps: 20 } }, { favourable: buyerLikes })).toBeNull();
   });
 });
 
@@ -188,15 +172,6 @@ describe('an XMR band (an offer set in XMR): its XMR range, and the fiat "≈" a
     const two: Band[] = [xmrBand, { ...xmrBand, from: 5_000_000_000_001n, to: 9_000_000_000_000n, pricing: { mode: 'market', marginBps: 0 } }];
     expect(clipLines(two, { kind: 'in', index: 0 }, 'USD', MARKET)).toEqual([{ dir: 'up', at: '5.000000 XMR', rate: '$330.00' }]);
     expect(clipLines(two, { kind: 'in', index: 1 }, 'USD', MARKET)).toEqual([{ dir: 'down', at: '5.000000000001 XMR', rate: '$338.25' }]);
-  });
-});
-
-describe('markupText: the markup as the board writes it', () => {
-  it("a market band's margin, exact, 2 places", () => {
-    expect(markupText({ mode: 'market', marginBps: 250 }, null)).toBe('+2.50%');
-    expect(markupText({ mode: 'market', marginBps: 3 }, null)).toBe('+0.03%');
-    expect(markupText({ mode: 'market', marginBps: -20 }, null)).toBe('−0.20%');
-    expect(markupText({ mode: 'market', marginBps: 0 }, MARKET)).toBe('0.00%');
   });
 });
 
