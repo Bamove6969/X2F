@@ -284,15 +284,15 @@ export const PAY_FIELDS: Readonly<Record<string, PayFieldsSpec>> = Object.freeze
     source: 'research 2026-11-10 (high): https://afriex.com/faq-pages/how-do-i-send-money-to-another-afriex-user',
   },
   REMITLY: {
-    fields: [yes('name', 'Full legal name (as on ID / account)'), one('delivery', 'bankDetails', 'Bank details for your country'), one('delivery', 'mobileWallet', 'Mobile wallet number and provider'), one('delivery', 'cashPickup', 'Cash pickup: city or agent'), no('phone', 'Phone number', 'phone'), no('address', 'Address', 'postal')],
+    fields: [yes('name', 'Full legal name (as on ID / account)'), one('delivery', 'bankDetails', 'Bank details for your country'), one('delivery', 'mobileWallet', 'Mobile wallet number and provider'), one('delivery', 'cashPickup', 'Cash pickup city or agent'), no('phone', 'Phone number', 'phone'), no('address', 'Address', 'postal')],
     source: 'research 2026-11-10 (medium): https://www.remitly.com/financial-glossary/recipient; lead: as researched (legal name, one delivery route)',
   },
   WORLDREMIT: {
-    fields: [yes('name', 'Full name (as on ID / account)'), yes('phone', 'Mobile number', 'phone'), one('delivery', 'bankDetails', 'Bank details for your country'), one('delivery', 'mobileWallet', 'Mobile money number and provider'), one('delivery', 'cashPickup', 'Cash pickup: city'), no('email', 'Email', 'email')],
+    fields: [yes('name', 'Full name (as on ID / account)'), yes('phone', 'Mobile number', 'phone'), one('delivery', 'bankDetails', 'Bank details for your country'), one('delivery', 'mobileWallet', 'Mobile money number and provider'), one('delivery', 'cashPickup', 'Cash pickup city'), no('email', 'Email', 'email')],
     source: 'research 2026-11-10 (medium): https://www.worldremit.com/en/blog/product/use-worldremit; lead: as researched (legal name, one delivery route)',
   },
   XOOM: {
-    fields: [yes('name', 'Full name (as on bank account / ID)'), one('delivery', 'bankDetails', 'Bank name and account number / IBAN'), one('delivery', 'mobileWallet', 'Mobile wallet number'), one('delivery', 'cashPickup', 'Cash pickup: city'), no('phone', 'Phone number', 'phone'), no('address', 'Address', 'postal')],
+    fields: [yes('name', 'Full name (as on bank account / ID)'), one('delivery', 'bankDetails', 'Bank name and account number / IBAN'), one('delivery', 'mobileWallet', 'Mobile wallet number'), one('delivery', 'cashPickup', 'Cash pickup city'), no('phone', 'Phone number', 'phone'), no('address', 'Address', 'postal')],
     source: 'research 2026-11-10 (medium): https://help.xoom.com/s/article/what-are-the-bank-deposit-requirements-in-el-salvador; lead: bank, wallet or cash pickup only; no debit-card payout box',
   },
   // Bank transfers. COPY-UNSIGNED (payee-fields research 2026-11-10): every label in this block.
@@ -624,13 +624,19 @@ export function renderPayDetailsText(pay: PayDetailsPayload): string {
   return [PAY_DETAILS_TITLE, ...lines].join('\n');
 }
 
+/** A label inside a package's text (review R1): 1 to 120 characters, no colon, no line break. */
+const PAY_TEXT_LABEL = /^[^:\n]{1,120}$/;
+
 /**
  * Whether `text` is a rendering of `pay`'s values (review F3): the title, then one "<label>: <value>"
  * line per filled box, in order, with each value exactly as sealed. The labels themselves are not
  * checked: they are the table's COPY-UNSIGNED wording, which the owner re-words (J-26), and a package
- * sealed under older labels must still open. A label is any non-empty run without a line break (it
- * may hold ": "). Read from the end: a value may span lines (a mailing address), a label never does,
- * so each label is the rest of its line, and the split is unambiguous.
+ * sealed under older labels must still open. A label is 1 to 120 characters with no colon and no line
+ * break (review R1, belt and braces). Read from the end: a value may span lines (a mailing address), a
+ * label never does, so each label is the rest of its line, and the split is unambiguous.
+ *
+ * A reader never shows the sender's label text: once this passes it replaces the text with its own
+ * renderPayDetailsText (review R1: a label could otherwise name an account that is in no box).
  */
 export function payTextMatches(pay: PayDetailsPayload, text: string): boolean {
   let rest = text;
@@ -639,7 +645,7 @@ export function payTextMatches(pay: PayDetailsPayload, text: string): boolean {
     if (!rest.endsWith(tail)) return false;
     rest = rest.slice(0, rest.length - tail.length);
     const nl = rest.lastIndexOf('\n');
-    if (nl < 0 || nl === rest.length - 1) return false;
+    if (nl < 0 || !PAY_TEXT_LABEL.test(rest.slice(nl + 1))) return false;
     rest = rest.slice(0, nl);
   }
   return rest === PAY_DETAILS_TITLE;

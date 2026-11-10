@@ -69,9 +69,9 @@ Notes:
 | PAYONEER | Payoneer email (email, required)<br>Name on the account (text, optional) | high |
 | ZEN | Phone number on ZEN (phone, one of: reach)<br>ZEN account IBAN (iban, one of: reach)<br>Name on the account (text, optional) | high |
 | AFRIEX | Afriex $username (account, one of: reach)<br>Phone number on Afriex (phone, one of: reach)<br>Full name (text, optional) | high |
-| REMITLY | Full legal name (as on ID / account) (text, required)<br>Bank details for your country (text, one of: delivery)<br>Mobile wallet number and provider (text, one of: delivery)<br>Cash pickup: city or agent (text, one of: delivery)<br>Phone number (phone, optional)<br>Address (postal, optional) | medium |
-| WORLDREMIT | Full name (as on ID / account) (text, required)<br>Mobile number (phone, required)<br>Bank details for your country (text, one of: delivery)<br>Mobile money number and provider (text, one of: delivery)<br>Cash pickup: city (text, one of: delivery)<br>Email (email, optional) | medium |
-| XOOM | Full name (as on bank account / ID) (text, required)<br>Bank name and account number / IBAN (text, one of: delivery)<br>Mobile wallet number (text, one of: delivery)<br>Cash pickup: city (text, one of: delivery)<br>Phone number (phone, optional)<br>Address (postal, optional) | medium |
+| REMITLY | Full legal name (as on ID / account) (text, required)<br>Bank details for your country (text, one of: delivery)<br>Mobile wallet number and provider (text, one of: delivery)<br>Cash pickup city or agent (text, one of: delivery)<br>Phone number (phone, optional)<br>Address (postal, optional) | medium |
+| WORLDREMIT | Full name (as on ID / account) (text, required)<br>Mobile number (phone, required)<br>Bank details for your country (text, one of: delivery)<br>Mobile money number and provider (text, one of: delivery)<br>Cash pickup city (text, one of: delivery)<br>Email (email, optional) | medium |
+| XOOM | Full name (as on bank account / ID) (text, required)<br>Bank name and account number / IBAN (text, one of: delivery)<br>Mobile wallet number (text, one of: delivery)<br>Cash pickup city (text, one of: delivery)<br>Phone number (phone, optional)<br>Address (postal, optional) | medium |
 
 ## Bank transfers
 

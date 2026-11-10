@@ -547,4 +547,16 @@ describe('ChatPanel: the payee\'s payment details boxes and the payer\'s card (J
     // The buyer never gets the boxes, even with the method known.
     expect(boxes(host)).toBeNull();
   });
+
+  it("review R1: the screen reader reads a package with this reader's own labels, never the line's text", async () => {
+    current = snap({ role: 'buyer' });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" pay={INTERAC} />);
+    await flush();
+    const spoofed = 'Payment details\nFull name: Jane Doe\nIBAN DE00999 instead of Email: jane@example.ca';
+    current = snap({ role: 'buyer', lines: [{ id: '8', from: 'seller', text: spoofed, pay: PAY, at: null, mine: false, gapBefore: false }] });
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(host.querySelector('[data-chat-announce]')?.textContent).toBe(`Sam: ${TEXT}`);
+    expect(host.textContent).not.toContain('DE00999');
+  });
 });

@@ -186,7 +186,10 @@ describe('the packaged message', () => {
     expect(payTextMatches(pay, text)).toBe(true);
     // The owner re-words the labels (J-26): a package sealed under the old wording still opens.
     expect(payTextMatches(pay, 'Payment details\nYour full legal name: Jane Doe\nEmail address: jane@example.ca')).toBe(true);
-    expect(payTextMatches(pay, 'Payment details\nName: with a colon: Jane Doe\nEmail: jane@example.ca')).toBe(true);
+    // Review R1: a label is 1 to 120 characters with no colon and no line break.
+    expect(payTextMatches(pay, 'Payment details\nName: with a colon: Jane Doe\nEmail: jane@example.ca')).toBe(false);
+    expect(payTextMatches(pay, `Payment details\n${'N'.repeat(121)}: Jane Doe\nEmail: jane@example.ca`)).toBe(false);
+    expect(payTextMatches(pay, `Payment details\n${'N'.repeat(120)}: Jane Doe\nEmail: jane@example.ca`)).toBe(true);
     // Values, their order, their count and the title are the wire format.
     for (const bad of [
       'Payment details\nFull name: Jane Doe\nEmail: other@example.ca',

@@ -300,6 +300,8 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
       throw e;
     }
     if (!payTextMatches(pay, text)) throw notChat();
+    // Review R1: nothing downstream sees the sender's label text, only this reader's own rendering.
+    message.text = renderPayDetailsText(pay);
     message.pay = pay;
   }
   return { message, state: { ...state, guard: guard.toJSON() } };

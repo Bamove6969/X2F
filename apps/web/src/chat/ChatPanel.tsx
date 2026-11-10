@@ -39,7 +39,7 @@
  * Task 23's `setTradeChat` seam takes (`{ code, name, methodId }`); `OfferChatPanel` opens the
  * pre-trade chat on an offer (the quote's Chat button).
  */
-import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, payeeGivesNothing, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
+import { PAY_DETAILS_TITLE, PAY_DETAILS_V, PayDetailsError, checkPayDetails, payFieldsFor, payeeGivesNothing, renderPayDetailsText, type PayDetailsPayload, type PayFieldSpec } from '@x2f/trade';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiCallError } from '../api/client.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
@@ -122,7 +122,8 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
       if (newest === null || id > newest) newest = id;
     }
     const grew = newest !== seen.current;
-    if (incoming) setAnnounce(`${incoming.from === 'mod' ? 'Moderator' : nameRef.current}: ${incoming.text}`);
+    // Review R1: a package is read with this reader's own labels, never the line's text.
+    if (incoming) setAnnounce(`${incoming.from === 'mod' ? 'Moderator' : nameRef.current}: ${incoming.pay !== undefined ? announcePay(incoming.pay) : incoming.text}`);
     seen.current = newest ?? -1n;
     return grew;
   }, []);
@@ -339,6 +340,15 @@ export function ChatPanel({ chat, name, tradeCode, dispute, pay }: ChatPanelProp
       ) : null}
     </section>
   );
+}
+
+/** A package's plain text with this reader's labels (renderPayDetailsText); the title alone if a box is unknown here. */
+function announcePay(pay: PayDetailsPayload): string {
+  try {
+    return renderPayDetailsText(pay);
+  } catch {
+    return PAY_DETAILS_TITLE;
+  }
 }
 
 /** A package as a card, on both sides: the title and one row per filled box, labelled from the method table. */

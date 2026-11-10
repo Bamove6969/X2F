@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { PAY_FIELDS, payFieldsFor, payeeGivesNothing } from '../src/index.js';
+import { PAY_DETAILS_V, PAY_FIELDS, payFieldsFor, payTextMatches, payeeGivesNothing, renderPayDetailsText, type PayDetailsPayload } from '../src/index.js';
 
 /** The catalogue (data/payment-methods.json): every method a trade can carry. */
 const CATALOG = (JSON.parse(readFileSync(new URL('../../../data/payment-methods.json', import.meta.url), 'utf8')) as { methods: { id: string }[] }).methods.map((m) => m.id);
@@ -66,6 +66,15 @@ describe('the payee fields table covers the catalogue (owner order, 10 Nov 2026)
   it('review F4: the personal-ID check catches the terms the deviations removed', () => {
     for (const l of ['Cédula', 'cedula number', 'RIF', 'MyKad', 'Passport number', 'Citizen ID', 'National ID', 'RUT', 'DNI']) expect(BAD_LABEL.test(l), l).toBe(true);
     for (const l of ['Bank account number', 'UPI ID', 'Routing number', 'Country']) expect(BAD_LABEL.test(l), l).toBe(false);
+  });
+
+  it("review R1: every label is 1 to 120 characters with no colon, so a reader's own rendering of any package passes the text check", () => {
+    for (const [id, row] of Object.entries(PAY_FIELDS)) {
+      for (const f of row.fields) expect(/^[^:\n]{1,120}$/.test(f.label), `${id}.${f.key} label "${f.label}"`).toBe(true);
+      if (row.fields.length === 0) continue;
+      const pay: PayDetailsPayload = { v: PAY_DETAILS_V, method: id, fields: row.fields.map((f) => ({ key: f.key, value: f.kind === 'email' ? 'a@b.c' : 'X1' })) };
+      expect(payTextMatches(pay, renderPayDetailsText(pay)), id).toBe(true);
+    }
   });
 
   it('every one-of group has at least two boxes', () => {
