@@ -51,6 +51,7 @@ export const OWN_DATA_READS: Readonly<Record<string, string>> = {
   'GET /v1/account/approvals': 'my own pending new-device login approvals',
   'GET /v1/account/approvals/:id': 'one of my own pending new-device login approvals',
   'GET /v1/account/blocks': 'the traders I blocked',
+  'GET /v1/account/chat-keys': "my own account's sealed chat-key envelopes for my own devices (a strong session of the account owner only; ciphertext the API cannot open)",
   'GET /v1/account/hold': "my own account's hold, waiting changes and my session's drafts (hold model v3; a team member only by the hold rights, never the lead's device names)",
   'GET /v1/account/jabber': 'my own Jabber alert set-up (the masked address, its state); never another account',
   'GET /v1/account/methods': 'my own login methods',
@@ -125,6 +126,9 @@ export const OWN_DATA_WRITES: Readonly<Record<string, string>> = {
   'POST /v1/account/jabber/verify': 'proves my own typed Jabber address with its test code; answers my set-up state',
   'PUT /v1/account/jabber/enabled': 'switches my own Jabber alerts on or off; answers my set-up state',
   'DELETE /v1/account/jabber': 'removes my own Jabber set-up; no data back',
+  // J-23 groundwork: the chat-key courier between my own devices (a strong session of the account owner only).
+  'POST /v1/account/chat-keys': "stores a sealed chat-key envelope for one of my own devices; answers its id and expiry",
+  'DELETE /v1/account/chat-keys/:id': "marks one of my own account's chat-key envelopes collected; no data back",
   // Hold model v3: my own account's changes waiting their 24 h, and its replaced recovery code.
   'POST /v1/account/hold/changes/submit': "submits my own session's drafts; answers their count and date",
   'POST /v1/account/hold/changes/approve': "approves my own account's waiting changes now (a strong session); answers the outcome",

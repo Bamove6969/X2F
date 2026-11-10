@@ -10,6 +10,7 @@ import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { holdRoutes } from './auth/holdRoutes.js';
 import { recoveryRoutes } from './auth/recovery.js';
 import { approvalRoutes } from './auth/approval.js';
+import { chatKeyRoutes } from './auth/chatKeys.js';
 import { TRADER_LOGIN_KINDS, TRADER_REALM, logoutRoute, runsWithSession, type SessionRealm } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
@@ -304,6 +305,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   accountTypeRoutes(app);
   // Plan 2 Task 16: new-device approval (the new device's poll and the logged-in device's decision).
   approvalRoutes(app);
+  // J-23 groundwork: the chat-key courier between a person's own strong devices (ciphertext only).
+  chatKeyRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
   // Staff accounts log in only on the staff API (owner 2026-11-03): see `TRADER_LOGIN_KINDS`.
   webauthnRoutes(app);

@@ -43,6 +43,8 @@ export const CHANGE_TABLES: readonly ChangeTable[] = [
       login_tag_key_id: 'rotated with login_tag',
       login_name: 'nulled by the one-time tag-login-names tool',
       login_key: 'nulled by the one-time tag-login-names tool',
+      // J-23 groundwork (migration 500; lead default, owner p11-119 pattern): nothing moves it yet.
+      chat_key_epoch: 'the account chat-key epoch; a rotation comes with the removal or recovery that causes it, which notifies there',
     },
   },
   {
@@ -166,4 +168,6 @@ export const NOT_ACCOUNT_CHANGES: Readonly<Record<string, string>> = {
   'closed_account_keys.account_id': "a closed account's identifier tags kept for the ban scope, written by the close itself (closed_at notifies)",
   'feedback_form.account_id': 'feedback sent to X2F',
   'team_members.member_account_id': "a member's login account; its changes notify the team account through the trigger",
+  // J-23 groundwork (migration 500; lead default, owner p11-119 pattern): silent.
+  'chat_key_envelopes.account_id': "a sealed chat key in flight between the account's own strong devices (ciphertext the API cannot open); the login that brought the device notifies",
 };
