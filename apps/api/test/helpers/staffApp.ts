@@ -27,6 +27,8 @@ export async function staffApps(
   deps: Deps;
   setNow(d: Date): void;
   logs: string[];
+  /** The trader app's log lines (J-14 J6: no ticket text in either app's logs). */
+  traderLogs: string[];
   close(): Promise<void>;
 }> {
   const t = await testApp(overrides);
@@ -37,7 +39,7 @@ export async function staffApps(
     { logStream: stream, ...options },
   );
   return {
-    app, trader: t.app, deps: t.deps, setNow: t.setNow, logs,
+    app, trader: t.app, deps: t.deps, setNow: t.setNow, logs, traderLogs: t.logs,
     async close() {
       await app.close();
       await t.app.close();
