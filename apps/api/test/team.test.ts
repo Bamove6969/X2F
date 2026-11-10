@@ -291,6 +291,11 @@ describe('the member sign-up (two factors, the staff rule)', () => {
     expect((await b.get('/v1/news')).statusCode).toBe(200);
     const alerts = (await owner.browser.get('/v1/account/alerts')).json() as { kind: string }[];
     expect(alerts.map((a) => a.kind)).toContain('team-member-joined');
+    // J-20 review F5 (p11-27): the join is the member's first login, and the lead gets one alert for it,
+    // not joined + first login + login; the first login is recorded, so no later login re-announces it.
+    expect(alerts.map((a) => a.kind).filter((k) => k.startsWith('team-member-'))).toEqual(['team-member-joined']);
+    const fl = await deps.db.query<{ first_login_at: Date | null }>('select first_login_at from team_members where id = $1', [created.id]);
+    expect(fl.rows[0]!.first_login_at).not.toBeNull();
     expect(((await owner.browser.get('/v1/team')).json() as { members: { status: string }[] }).members[0]!.status).toBe('active');
   });
 
