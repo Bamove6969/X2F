@@ -35,6 +35,18 @@ describe('review notes refuse personal details (detectSensitiveText)', () => {
     }
   });
 
+  // Review 2026-11-10 finding 5, lead default pending owner p11-142: notes do not read the G17 card
+  // and phone field labels (proof screenshots still do), so a payment method and an amount is feedback.
+  it('allows a payment method followed by an amount (no G17 card/phone labels in notes)', () => {
+    for (const note of ['Paid with Visa 1500 EUR', 'Sent via mobile 2500 MXN', 'Paid by card 1000', 'Paid with Visa 1500 EUR, fast release', 'Sent via mobile 2500 MXN, great']) {
+      expect(hasPersonalDetails(note), note).toBe(false);
+    }
+    // Real details after those words are still refused by their own shape, and account labels still count.
+    for (const note of ['card 4111 1111 1111 1111', 'mobile +34 612 345 678', 'Acct 4821 if you want to pay again']) {
+      expect(hasPersonalDetails(note), note).toBe(true);
+    }
+  });
+
   it('leaves handles, street addresses and names to the person reviewed to report (owner Q16)', () => {
     for (const note of ['@janedoe on telegram', 'met at 12 Main St', 'name: Jane Doe']) {
       expect(hasPersonalDetails(note), note).toBe(false);

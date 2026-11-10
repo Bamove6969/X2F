@@ -144,7 +144,10 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // 61 -> 64 (flex-launch, J-16, 10 Nov 2026): PostOffer's band input checks in post/offerForm.ts (MIN_OVER_MAX
     // "can't be more than the largest", the bands' gap line, a band's margin plus a method's change "can't pass 50%"):
     // field rules the API's checkBands and rateFor share, not refusals.
-    expect(notARefusal).toBeLessThanOrEqual(64);
+    // 64 -> 65 (owner item 64, 3 Nov 2026; proof pop-ups landed 10 Nov): screens/proof/ProofPrompts.tsx's
+    // "Our automated system was unable to detect the amount ..." is a check on the screenshot asking
+    // for an explanation; the proof can still be sent.
+    expect(notARefusal).toBeLessThanOrEqual(65);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });
